@@ -19,17 +19,8 @@ use std::{io, path::Path};
 /// Original native model source, independent of historical datatype artifacts.
 pub const MODEL: &str = include_str!("model.json");
 
-#[path = "cases.rs"]
-mod cases;
-pub use cases::Case;
-use cases::{CaseSpec, Input, Row};
-
-/// FR-108: the spine counterpart of this module's native files.
-#[path = "spine.rs"]
-pub mod spine;
-
-/// Every declared case, in deterministic generation order.
-pub const CASES: &[Case] = cases::CASES;
+use super::config_version_spine::cases::{CaseSpec, Input, Row};
+pub use super::config_version_spine::Case;
 
 fn symbol(name: &str) -> ir::SymbolName {
     ir::SymbolName::new(name).expect("static example symbol")
@@ -388,5 +379,5 @@ pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()
     let program = write_program(directory, model, case)?;
     let inputs = write_inputs(directory, model, case)?;
     write_requests(directory, case, models, program, inputs)?;
-    spine::write(directory, case)
+    super::config_version_spine::spine::write(directory, case)
 }

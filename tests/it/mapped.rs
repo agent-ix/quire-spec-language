@@ -236,7 +236,8 @@ fn mapped_refusals_keep_the_selected_clause_and_original_bytes() {
     let models = [setup::native_rule_model::parts().model()];
     for (language, expression, code) in [
         ("ocl", "true", Code::UnknownLanguage),
-        ("ix:native", "@", Code::InvalidSyntax),
+        ("ix:native", "#", Code::InvalidSyntax),
+        ("ix:native", "@", Code::UnsupportedConstruct),
         ("ix:native", "self.missing", Code::MissingDeclaration),
         ("ix:native", "self.n", Code::IllTyped),
     ] {

@@ -17,8 +17,8 @@ Scope: FR-334-AC-1 to FR-334-AC-4.
 
 ## Test Procedure
 
-1. Compile two units that differ only in `s: Set<Int>` against
-   `s: Set<Int>[0, 18446744073709551615]`; compare node keys, `package_id`s
+1. Compile two units that differ only in `s: Set<Integer>` against
+   `s: Set<Integer>[0, 18446744073709551615]`; compare node keys, `package_id`s
    and node members.
 2. Lower `Population<Account>`, `Population<Account>[4]` and an unbounded
    `Set<Reference<Account>>`; compare node keys.
@@ -31,8 +31,8 @@ Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
 ## Expected Results
 
 - Step 1: different node keys and `package_id`s; no `collection_bounds` on
-  the unbounded node; `collection_bounds{0, 18446744073709551615}` on the
+  the unbounded node; `collection_bounds{min 0, max 18446744073709551615}` on the
   bounded one.
-- Step 2: three distinct node keys; no `UnrepresentableBound` refusal.
+- Step 2: three distinct node keys; no refusal.
 - Step 3: equal node keys and `package_id`.
 - Step 4: every node key equals the vector's expected key.

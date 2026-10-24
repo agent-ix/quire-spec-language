@@ -6,8 +6,6 @@ analysis: gap-analysis
 scope: "agent-ix/quire-spec-language@713238dc0b663181a2aa311a6776e09ea663c277; PR #657 own diff b90d17b13...713238dc0; FR-033-AC-6 as planned in open PR #655 (QSL-642, head 90bc007a7) and TC-912; FR-041-AC-3; tests/it/integer_lowering.rs, src/lowering/wire.rs"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-033
-    type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-041
     type: reviews
 ---

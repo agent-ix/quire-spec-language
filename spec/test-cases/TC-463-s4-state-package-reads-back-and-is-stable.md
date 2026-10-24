@@ -46,22 +46,3 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
   `ConfigVersion` node; both clauses reference that anchor.
 - Step 4: the compile refuses; no package bytes and no `state` node are
   emitted.
-
-## Status
-
-Passes. Step 2's double-compile identity case is covered by
-`s4_state_package_emission_is_stable_across_compiles`. Step 1
-(`s4_state_package_reads_back_through_i2`) passes: the package reads back
-through I2, including the reference-edge check of its
-`quire.op.model.reaches_field` application. Tests cover
-the rest of step 2 (`s4_renaming_parent_order_changes_no_node_id`,
-`s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id`,
-`s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim`,
-`s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame`)
-and step 3
-(`s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version`).
-Step 4 (fault-injected all-or-nothing emission) is covered:
-`qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing`
-proves the mechanism generically, and `qsl-replay`'s
-`a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives
-it at the `frame` node of a compiled ConfigVersion state-clause package.

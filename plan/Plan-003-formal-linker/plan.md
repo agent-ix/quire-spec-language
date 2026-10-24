@@ -27,7 +27,7 @@ no parallel agent or external reader prerequisite exists.
 
 ## Test plan and gates
 
-TM-003 is the single test inventory. This plan executes TC-020–024 and
+This plan executes TC-020–024 and
 TC-030–034; TC-025–029 remain FR-006's subsequent static-judgment work.
 
 Gate after Task-005: exact owner/source identities, missing/stale/ambiguous/atomic

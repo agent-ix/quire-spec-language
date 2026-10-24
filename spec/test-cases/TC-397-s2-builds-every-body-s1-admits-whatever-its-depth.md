@@ -34,10 +34,3 @@ Tag the test `#[trace("FR-091-AC-9", "TC-397")]`.
 - Each builds a form whose deepest expression node is at depth 9, 21 and
   130 respectively.
 - No S2 outcome names a depth.
-
-## Status
-
-Planned for the form above. The present
-`the_nesting_depth_bound_refuses_past_its_limit`
-(`qsl-forms/tests/it/value_forms.rs`) drives the S2 depth limit ADR-030
-deletes and is replaced by this case.

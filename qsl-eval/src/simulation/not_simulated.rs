@@ -4,12 +4,18 @@
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::family::{classify_extent, ClaimExtent, ClassifyFailure, UnboundedDomains};
 use quire_exact::ValueType;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::simulation::key::EncodingRefusal;
+
+/// The type positions the requires-bound pre-check visits at most, for every
+/// caller that classifies a subject's roots: the model check, the closure
+/// certificate check and replay classify the same roots under this one
+/// limit, so they agree on what is bounded.
+pub const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// Every unbounded domain a `requires-bound` request named, by key, with its
 /// kind (ADR-014 §4).
@@ -60,7 +66,7 @@ impl NotSimulated {
     /// `qsl-route`'s own `Disposition::RequiresBound` carries no catalog
     /// code (`qsl-route/src/routing.rs:29-31`); a `CatalogCoded` impl is
     /// documented as always `Category::Refusal` (`qsl_foundation::
-    /// diagnostic::CatalogCoded`), which `RequiresBound` is not, so this is
+    /// quire_semantic_value::catalog::CatalogCoded`), which `RequiresBound` is not, so this is
     /// an inherent method, not that trait. `GeneratorMismatch`,
     /// `EmptyInitial` and `KeyEncoding` are each
     /// `invalid_runtime_input`/`invalid-value`: `EmptyInitial` and

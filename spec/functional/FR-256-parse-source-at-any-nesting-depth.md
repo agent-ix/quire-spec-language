@@ -18,23 +18,15 @@ relationships:
 
 ## Description
 
-The complete-V1 lossless CST parser, and the root native parser behind
-`quire-spec parse`, `parse`, `parse_native` and `parse_native_source`, SHALL
-lex and parse source of any bracket nesting and any chain
-length. The complete-V1 parser is bounded by S1's resource limits: source
-bytes, tokens, syntax nodes and parser work. The root native parser is bounded
-by its `Limits`: `source_bytes`, `tokens` and `nodes`, each used as the caller
-gives it, and it refuses a source past one of them as
-`stage_limit_exceeded` carrying the `SyntaxLimit` it reached, with the ceiling
-in its message and no FR-255 setting name (ADR-030 D-4.1, NFR-001).
-`admit_namespace` hands the parser limits its caller gives it to every unit it
-parses. The native `read_verified`, link and check path keeps its bounded
-limits.
+The complete-V1 lossless CST parser, `qsl_cst::parse`, which the `parse`
+operation runs (FR-002), SHALL lex and parse source of
+any bracket nesting and any chain length, bounded by S1's resource limits:
+source bytes, tokens, syntax nodes and parser work (ADR-030 D-4.1, NFR-001).
 
 ## Behavior
 
 1. **Iterative walk.** The lexer SHALL track open delimiters on an explicit
-   heap stack, and each parser SHALL run its productions over an explicit
+   heap stack, and the parser SHALL run its productions over an explicit
    heap frame stack, so that no lexing or parsing step uses native recursion
    whose depth grows with the input. Each stack SHALL grow by at most a
    constant per token or syntax node already charged against `s1.tokens`,
@@ -47,7 +39,7 @@ limits.
    `stage_limit_exceeded` naming that limit, its configured value, the count
    reached and its setting (FR-255), located at the region S1's diagnostic
    names.
-4. **Every source settles.** Each S1 parser SHALL return a parse result or
+4. **Every source settles.** The S1 parser SHALL return a parse result or
    a parse diagnostic for every source within S1's configured limits,
    whatever its bracket nesting, operator chain length or `let`,
    `if … else` or prefix chain length.
@@ -59,8 +51,7 @@ limits.
 | FR-256-AC-1 | On a thread with a 512 KiB stack, the complete-V1 parser parses each of: brackets nested 100,000 deep around a literal, a `not` chain of 100,000, a `+` chain of 100,000 terms, an `else if` chain of 100,000 and a `let … in` chain of 100,000, each under `s1.input_bytes`, `s1.tokens`, `s1.nodes` and `s1.work_units` raised to fit it. | Test (TC-722) |
 | FR-256-AC-2 | At the default S1 limits, each chain of AC-1 built to the longest length the defaults admit parses, and the same chain one element longer stops with `stage_limit_exceeded` naming `s1.tokens`, `s1.nodes` or `s1.work_units`, with its configured value and the count reached, and parses once that setting is raised through FR-255's settings operation, which the driver CLI exposes as `--limit` (ADR-029 CB-1). With `s1.nodes` at 200000 and every other S1 limit at its default, brackets nested to the depth the default token limit admits parse, and one pair deeper stops with `stage_limit_exceeded` naming `s1.tokens`, bound 100000 and the count reached. | Test (TC-723) |
 | FR-256-AC-3 | `qsl_cst::Limits` holds source bytes, tokens, nodes and parser work, each set through its builder method, and no S1 outcome names a nesting depth. A parse of brackets nested 10,000 deep within the default byte, token and node limits succeeds. | Test (TC-723) |
-| FR-256-AC-4 | On a thread with a 512 KiB stack, the root native parser, through `parse` (the historical edition) and through `parse_native_source` (the composed edition), parses each of: brackets nested 100,000 deep around a literal, a `not` chain of 100,000, a `+` chain of 100,000 terms, an `else if` chain of 100,000 and a `let … in` chain of 100,000, each under `source_bytes`, `tokens` and `nodes` raised to fit it. No outcome names a nesting depth, and a limit the caller raises is used as given, with no ceiling above it, and `admit_namespace` called with raised parser limits admits a 100,000-term composed source that the default parser limits refuse and reports those limits unchanged. | Test (TC-749) |
-| FR-256-AC-5 | `quire-spec parse` takes `--source-bytes`, `--tokens` and `--nodes`, each a count used as given with no ceiling above it; with none given it uses `Limits::default()`. A source nested 100,000 deep parses through it with those three raised to fit, and is refused `stage_limit_exceeded` (exit 22) without them. | Test (TC-750) |
+| FR-256-AC-5 | The `parse` operation takes its S1 limits as the `qsl_cst::Limits` its caller gives it, each used as given with no ceiling above it; FR-255's settings operation given no operand returns the FR-255 defaults. A source nested 100,000 deep parses through the operation under the limits the settings operation returns for `s1.input_bytes`, `s1.tokens`, `s1.nodes` and `s1.work_units` raised to fit, its document's exit code 0, and under the defaults is refused `stage_limit_exceeded` naming the reached `s1.*` limit, its configured value, the count reached and its setting, its document's exit code 22. | Test (TC-750) |
 
 ## Dependencies
 

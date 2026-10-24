@@ -28,11 +28,10 @@ Static navigation over a resolved relationship end — qualified-name
 resolution, `r.name` runtime traversal and the typed
 `Option<Reference<U>>`/`Reference<U>`/`Set<Reference<U>>`/`Bag<Reference<U>>`
 result quire-specification [FR-152](ix://agent-ix/quire-specification/FR-152)'s
-"Navigation" section defines — is out of this requirement's scope; it is
-tracked by [#147](https://github.com/agent-ix/quire-spec-language/issues/147),
-which names FR-152-AC-1/3/5/7 as its unbacked criteria. This requirement
-resolves and binds a relationship end's declared type, role and multiplicity
-only.
+"Navigation" section defines — is out of this requirement's scope; its static
+typing is [FR-363](FR-363-type-navigation-over-a-relationship-end.md)'s. This
+requirement resolves and binds a relationship end's declared type, role and
+multiplicity only.
 
 ## Inputs
 
@@ -104,19 +103,18 @@ as a Connection is
   AD-006's model-view decision keeps relationships in the checked model
   view. `qsl-semantics/src/model/systems.rs::classify`'s relationship-classification loop
   is the only place a plain object-to-object relationship's ends
-  are resolved today, and it does not yet implement this requirement's
-  `missing_declaration`/`missing-name` cause: for a relationship where one
-  end resolves to a declared object type and the other end resolves to
-  neither a declared object type nor a declared endpoint, it reports both
-  ends `UnknownEndpoint`/`dangling_reference`, including the legitimately
-  resolving end, rather than refusing only the missing end with this
-  requirement's cause. FR-085-AC-1 does not ship today. Remaining work:
-  #120.
+  are resolved. For a relationship where one end resolves to a declared
+  object type and the other end resolves to neither a declared object type
+  nor a declared endpoint, `classify` shall refuse only the missing end with
+  this requirement's `missing_declaration`/`missing-name` cause and shall
+  not report the legitimately resolving end (FR-085-AC-1).
 - **Downstream:** relationship end resolution feeds the object-reference
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is
   [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s scope over
-  an already-admitted value graph.
+  an already-admitted value graph. The instances a navigation reads and its
+  runtime evaluation are
+  [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s.
 - Relates to [FR-086](FR-086-bind-systems-model-references.md), which
   classifies and admits Port-to-Port relationships as Connections; this
   requirement's scope is bounded to plain object-to-object relationship-end

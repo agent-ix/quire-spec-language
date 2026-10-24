@@ -60,7 +60,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -115,7 +115,7 @@ pub struct SeamLocation {
 /// so it resolves unqualified.
 ///
 /// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
-/// `catalog_code()` match over `crate::check::WrongSnapshotCause`, whose
+/// `catalog_code()` match over `quire_semantic_value::call::WrongSnapshotCause`, whose
 /// `#[cfg(seam_probe)]` variant has an arm only in `WrongSnapshotCause::
 /// as_str`. **S4-shaped, not S4 itself (PR #434 review, LOW-4):** the match
 /// has the same shape S4 does (a `Cause` enum's `catalog_code()` arm), but
@@ -128,7 +128,7 @@ pub struct SeamLocation {
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
 /// `qsl-eval`'s `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
 /// `S6aFamilyKind::family` mapping to `FamilyKind`, and the one
-/// `match` over `crate::family::FamilyOutcome` (`ValueFunctionFamily::
+/// `match` over `quire_eval::FamilyOutcome` (`ValueFunctionFamily::
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
 /// `EvalOutcome`). Each enum carries a `#[cfg(seam_probe)]` variant.
 ///
@@ -238,13 +238,19 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         },
         SeamLocation {
             file: "qsl-replay/src/execute.rs".to_owned(),
-            item: "replay".to_owned(),
+            item: "replay_with_cancel".to_owned(),
         },
         // FR-100: `qsl_replay::spine::run`'s own seam over
         // `FamilyOutcome`, mirroring `execute::replay`'s above.
         SeamLocation {
             file: "qsl-replay/src/spine/call.rs".to_owned(),
             item: "convert_outcome".to_owned(),
+        },
+        // FR-337: the temporal letter reader's `match` over `FamilyOutcome`
+        // (`ObservedLetters::atom`), mirroring `execute::replay`'s above.
+        SeamLocation {
+            file: "qsl-eval/src/temporal/observed.rs".to_owned(),
+            item: "ObservedLetters::atom".to_owned(),
         },
         // FR-357: `replay_value_parity`'s own seam over `FamilyOutcome`,
         // mirroring `execute::replay`'s above.
@@ -286,7 +292,7 @@ impl<'ast> Visit<'ast> for EnclosingItem {
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let previous = self
             .current_impl_self
-            .replace(crate::impl_self_name(&node.self_ty));
+            .replace(qsl_string_edge::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.current_impl_self = previous;
     }
@@ -528,6 +534,7 @@ fn compare_probe_builds(builds: &[ProbeBuild], checked_in: &BTreeSet<SeamLocatio
 /// build that succeeds with none), then the checked-in-list comparison
 /// itself.
 pub fn run(workspace_root: &Path) -> Result<String> {
+    let model_arms = state_model_arm_report(workspace_root)?;
     // FR-063 constraint: assert the probe build fails AND the normal build
     // succeeds -- one without the other is half a test. If `--cfg
     // seam_probe` silently stopped being applied, only checking the normal
@@ -580,9 +587,435 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     Ok(format!(
         "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe (qsl-forms: seam_probe_forms) \
          (qsl-forms, qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
-         {locations}.\n",
+         {locations}.\n{model_arms}",
         checked_in.len()
     ))
+}
+
+/// FR-300: qualify the production StateModel S1/S3 arms and inspect S2's
+/// actual forms dispatch table alongside rustc's function-level evidence.
+/// E0004 alone cannot distinguish two missing variants in one function.
+pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
+    let sites = [
+        (
+            "S1 prefix",
+            "qsl-semantics/src/family/mod.rs",
+            "FamilyKind",
+            "catalog_code_prefix",
+            "Self",
+            vec!["StateModel"],
+        ),
+        (
+            "S3 hook",
+            "qsl-semantics/src/check/state_model.rs",
+            "StateModelFamily",
+            "check",
+            "Form",
+            vec!["Attribute", "AllInstances", "Lookup", "Reaches", "Dispatch"],
+        ),
+    ];
+    let mut report = Vec::new();
+    let mut missing = Vec::new();
+    for (stage, file, owner, method, prefix, variants) in sites {
+        let path = workspace_root.join(file);
+        let source = fs::read_to_string(&path).map_err(|source| Error::SeamProbeReadSource {
+            path: path.clone(),
+            source,
+        })?;
+        let parsed = syn::parse_file(&source).map_err(|error| Error::SeamProbeMismatch {
+            unexpected_but_present: format!("{}: {error}", path.display()),
+            expected_but_missing: "valid production Rust syntax".to_owned(),
+        })?;
+        let mut arms = ModelArms {
+            prefix,
+            variants: BTreeSet::new(),
+            wildcard: false,
+        };
+        for item in parsed.items {
+            if let syn::Item::Impl(item) = item {
+                if qsl_string_edge::impl_self_name(&item.self_ty) != owner {
+                    continue;
+                }
+                for item in item.items {
+                    if let syn::ImplItem::Fn(item) = item {
+                        if item.sig.ident == method {
+                            arms.visit_block(&item.block);
+                        }
+                    }
+                }
+            }
+        }
+        for variant in variants {
+            let location =
+                format!("StateModel {stage} arm {file}::{owner}::{method}::{prefix}::{variant}");
+            if arms.variants.contains(variant) && !arms.wildcard {
+                report.push(location);
+            } else {
+                missing.push(location);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{missing:?}"),
+        });
+    }
+    report.push(forms_s2_report(workspace_root)?);
+    Ok(format!("{}\n", report.join("\n")))
+}
+
+/// Inspect the S2 dispatch table itself. An S3 typing arm cannot establish
+/// that a family has an S2 producer. Keep a known Value entry as a control so
+/// a missing or renamed production table cannot silently report absence.
+#[string_edge]
+fn forms_s2_report(workspace_root: &Path) -> Result<String> {
+    const FILE: &str = "qsl-forms/src/dispatch.rs";
+    let path = workspace_root.join(FILE);
+    let source = fs::read_to_string(&path).map_err(|source| Error::SeamProbeReadSource {
+        path: path.clone(),
+        source,
+    })?;
+    let parsed = syn::parse_file(&source).map_err(|error| Error::SeamProbeMismatch {
+        unexpected_but_present: format!("{}: {error}", path.display()),
+        expected_but_missing: "valid production Rust syntax".to_owned(),
+    })?;
+    let dispatch = parsed.items.iter().find_map(|item| match item {
+        syn::Item::Fn(function) if function.sig.ident == "dispatch" => Some(function),
+        _ => None,
+    });
+    let arms = dispatch
+        .and_then(|function| {
+            function
+                .block
+                .stmts
+                .iter()
+                .find_map(|statement| match statement {
+                    syn::Stmt::Expr(syn::Expr::Match(expression), _) => Some(&expression.arms),
+                    _ => None,
+                })
+        })
+        .ok_or_else(|| Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{FILE}::dispatch match kind"),
+        })?;
+    fn production(arm: &syn::Arm) -> Option<&syn::Path> {
+        let syn::Expr::Call(call) = &*arm.body else {
+            return None;
+        };
+        let syn::Expr::Path(function) = &*call.func else {
+            return None;
+        };
+        Some(&function.path)
+    }
+    let is_call = |path: &syn::Path, module: &str, function: &str| {
+        path.segments.len() == 2
+            && path.segments[0].ident == module
+            && path.segments[1].ident == function
+    };
+    let value_present = arms.iter().any(|arm| {
+        matches!(&arm.pat, syn::Pat::Path(pattern) if pattern.path.segments.last().is_some_and(|segment| segment.ident == "Function"))
+            && production(arm).is_some_and(|path| is_call(path, "value", "function"))
+    });
+    if !value_present || arms.iter().any(|arm| matches!(arm.pat, syn::Pat::Wild(_))) {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!("{FILE}::dispatch Value producer (LeadingTokenKind::Function => value::function) without wildcard"),
+        });
+    }
+    let state_model_arms: Vec<&syn::Arm> = arms
+        .iter()
+        .filter(|arm| {
+            production(arm).is_some_and(|path| {
+                path.segments.len() == 2 && path.segments[0].ident == "state_model"
+            })
+        })
+        .collect();
+    // ADR-016 FP-1/FP-3 as amended by FR-380: the one `StateModel`
+    // declaration with a leading token is `bound`, so the declaration
+    // dispatch has exactly the arm `Bound => state_model::population_bound`.
+    // Any other `state_model::` arm contradicts the design.
+    let is_bound_arm = |arm: &syn::Arm| {
+        matches!(&arm.pat, syn::Pat::Path(pattern) if pattern.path.segments.last().is_some_and(|segment| segment.ident == "Bound"))
+            && production(arm).is_some_and(|path| is_call(path, "state_model", "population_bound"))
+    };
+    if let Some(other) = state_model_arms.iter().find(|arm| !is_bound_arm(arm)) {
+        let called = production(other)
+            .and_then(|path| path.segments.last())
+            .map_or_else(String::new, |segment| segment.ident.to_string());
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: format!("{FILE}::dispatch state_model::{called} arm"),
+            expected_but_missing:
+                "only the `Bound => state_model::population_bound` StateModel arm in the declaration dispatch (ADR-016 FP-1, FP-3)".to_owned(),
+        });
+    }
+    if state_model_arms.len() != 1 {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!(
+                "{FILE}::dispatch StateModel arm (LeadingTokenKind::Bound => state_model::population_bound)"
+            ),
+        });
+    }
+    Ok(format!(
+        "StateModel S2 arm Bound => state_model::population_bound (ADR-016 FP-1, FP-3, FR-380): {FILE}::dispatch (Value producer present)"
+    ))
+}
+
+struct ModelArms<'a> {
+    prefix: &'a str,
+    variants: BTreeSet<String>,
+    wildcard: bool,
+}
+
+#[cfg(test)]
+mod state_model_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    #[trace("TC-791")]
+    #[test]
+    fn state_model_arm_report_reads_the_production_matches() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let report = state_model_arm_report(root).unwrap();
+        for stage in ["S1 prefix", "S3 hook"] {
+            assert!(
+                report.contains(&format!("StateModel {stage} arm")),
+                "{report}"
+            );
+        }
+        assert!(
+            report.contains(
+                "StateModel S2 arm Bound => state_model::population_bound (ADR-016 FP-1, FP-3, FR-380): qsl-forms/src/dispatch.rs::dispatch"
+            ),
+            "{report}"
+        );
+        assert!(!report.contains("StateModel S2 hook arm"), "{report}");
+    }
+
+    #[derive(Default)]
+    struct LookupArm {
+        span: Option<proc_macro2::Span>,
+    }
+
+    impl<'ast> Visit<'ast> for LookupArm {
+        fn visit_arm(&mut self, arm: &'ast syn::Arm) {
+            if let syn::Pat::Struct(pattern) = &arm.pat {
+                let segments: Vec<_> = pattern
+                    .path
+                    .segments
+                    .iter()
+                    .map(|segment| segment.ident.to_string())
+                    .collect();
+                if segments == ["Form", "Lookup"] {
+                    self.span = Some(arm.span());
+                }
+            }
+            syn::visit::visit_arm(self, arm);
+        }
+    }
+
+    fn offset(source: &str, position: proc_macro2::LineColumn) -> usize {
+        source
+            .split_inclusive('\n')
+            .take(position.line - 1)
+            .map(str::len)
+            .sum::<usize>()
+            + position.column
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn deleting_the_actual_s3_lookup_arm_names_it_as_missing() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        // Establish green on the scratch source before deleting an actual
+        // production arm; the probe's expected list is never rewritten.
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch
+            .path()
+            .join("qsl-semantics/src/check/state_model.rs");
+        let mut source = fs::read_to_string(&file).unwrap();
+        let mut arm = LookupArm::default();
+        arm.visit_file(&syn::parse_file(&source).unwrap());
+        let span = arm.span.expect("the real S3 Form::Lookup arm");
+        source.replace_range(
+            offset(&source, span.start())..offset(&source, span.end()),
+            "",
+        );
+        fs::write(file, source).unwrap();
+        let error = run(scratch.path()).expect_err("the actual seam-probe must reject deletion");
+        let message = error.to_string();
+        assert!(message.contains("expected-but-missing"), "{message}");
+        assert!(
+            message.contains("StateModel S3 hook arm")
+                && message.contains("StateModelFamily::check::Form::Lookup"),
+            "{message}"
+        );
+        eprintln!("{message}");
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn a_state_model_arm_in_the_s2_dispatch_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let changed = source.replace(
+            "LeadingTokenKind::Body => protocol_clause::operation_body(construct),",
+            "LeadingTokenKind::Body => state_model::declaration(construct),",
+        );
+        assert_ne!(changed, source, "the real Body arm was found");
+        fs::write(file, changed).unwrap();
+        let error = state_model_arm_report(scratch.path())
+            .expect_err("a StateModel arm in the declaration dispatch contradicts the design");
+        let message = error.to_string();
+        assert!(message.contains("state_model::"), "{message}");
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn a_second_state_model_arm_or_a_missing_bound_arm_in_the_s2_dispatch_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let bound = "LeadingTokenKind::Bound => state_model::population_bound(construct),";
+        assert!(source.contains(bound), "the real Bound arm was found");
+        // A renamed Bound arm is not the expected arm.
+        fs::write(
+            &file,
+            source.replace(
+                bound,
+                "LeadingTokenKind::Bound => state_model::other(construct),",
+            ),
+        )
+        .unwrap();
+        let message = state_model_arm_report(scratch.path())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("state_model::other"), "{message}");
+        // The Bound arm deleted: the expected arm is missing.
+        fs::write(
+            &file,
+            source.replace(bound, "LeadingTokenKind::Bound => value::alias(construct),"),
+        )
+        .unwrap();
+        let message = state_model_arm_report(scratch.path())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("expected-but-missing") && message.contains("population_bound"),
+            "{message}"
+        );
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn renaming_the_actual_s2_value_producer_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let changed = source.replace(
+            "LeadingTokenKind::Function => value::function(construct)",
+            "LeadingTokenKind::Function => value::alias(construct)",
+        );
+        assert_ne!(changed, source, "the real S2 Value producer was found");
+        fs::write(file, changed).unwrap();
+        let error = state_model_arm_report(scratch.path())
+            .expect_err("the actual S2 Value producer must be verified");
+        let message = error.to_string();
+        assert!(message.contains("expected-but-missing"), "{message}");
+        assert!(
+            message.contains("qsl-forms/src/dispatch.rs::dispatch")
+                && message.contains("Value producer"),
+            "{message}"
+        );
+    }
+}
+
+impl ModelArms<'_> {
+    fn pattern(&mut self, pattern: &syn::Pat) {
+        let path = match pattern {
+            syn::Pat::Path(pattern) => Some(&pattern.path),
+            syn::Pat::Struct(pattern) => Some(&pattern.path),
+            syn::Pat::TupleStruct(pattern) => Some(&pattern.path),
+            syn::Pat::Or(pattern) => {
+                for case in &pattern.cases {
+                    self.pattern(case);
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(path) = path {
+            if path.segments.len() == 2 && path.segments[0].ident == self.prefix {
+                self.variants.insert(path.segments[1].ident.to_string());
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ModelArms<'_> {
+    fn visit_expr_match(&mut self, expression: &'ast syn::ExprMatch) {
+        let mut matched = ModelArms {
+            prefix: self.prefix,
+            variants: BTreeSet::new(),
+            wildcard: false,
+        };
+        for arm in &expression.arms {
+            matched.pattern(&arm.pat);
+        }
+        if !matched.variants.is_empty() {
+            self.wildcard |= expression
+                .arms
+                .iter()
+                .any(|arm| matches!(arm.pat, syn::Pat::Wild(_) | syn::Pat::Ident(_)));
+            self.variants.extend(matched.variants);
+        }
+        syn::visit::visit_expr_match(self, expression);
+    }
 }
 
 #[cfg(test)]
@@ -602,7 +1035,7 @@ mod tests {
         fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
             let previous = self
                 .current_impl_self
-                .replace(crate::impl_self_name(&node.self_ty));
+                .replace(qsl_string_edge::impl_self_name(&node.self_ty));
             syn::visit::visit_item_impl(self, node);
             self.current_impl_self = previous;
         }
@@ -1090,8 +1523,13 @@ mod tests {
     /// variant through a forced `_` arm with no `E0004`, defeating the seam
     /// entirely).
     fn assert_enum_is_not_non_exhaustive(workspace_root: &Path, file: &str, name: &str) {
-        let path = workspace_root.join(file);
-        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("{file}: {error}"));
+        assert_enum_file_is_not_non_exhaustive(&workspace_root.join(file), file, name);
+    }
+
+    /// [`assert_enum_is_not_non_exhaustive`] over an enum in the source file
+    /// at `path`, reported as `file`.
+    fn assert_enum_file_is_not_non_exhaustive(path: &Path, file: &str, name: &str) {
+        let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("{file}: {error}"));
         let parsed = syn::parse_file(&source).unwrap_or_else(|error| panic!("{file}: {error}"));
         let item_enum = parsed
             .items
@@ -1116,7 +1554,7 @@ mod tests {
     /// enum (`ExprNode`), the checked node enum (`NodeKind`), `Value`'s
     /// function family's own `Cause` (`CheckCause`) or
     /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
-    /// family-`Cause`, cause) carries `#[non_exhaustive]`.
+    /// family-`Cause`, cause; defined in `quire-semantic-value`) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
     #[test]
     fn closed_enums_carry_no_non_exhaustive_attribute() {
@@ -1127,11 +1565,29 @@ mod tests {
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
             ("qsl-forms/src/syntax.rs", "ExprNode"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
-            ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);
         }
+        // `WrongSnapshotCause` is defined in `quire-semantic-value` (FR-401
+        // S1): read its source from the dependency `cargo metadata` resolves,
+        // as `canonical_types` reads the shared leaves.
+        let metadata =
+            crate::canonical_types::cargo_metadata(workspace_root).expect("cargo metadata runs");
+        let leaf = crate::canonical_types::packages(&metadata)
+            .expect("metadata reads")
+            .into_iter()
+            .find(|package| package.name == "quire-semantic-value")
+            .expect("quire-semantic-value is a resolved dependency");
+        let root = leaf
+            .roots
+            .first()
+            .expect("quire-semantic-value has a source root");
+        assert_enum_file_is_not_non_exhaustive(
+            &root.join("call.rs"),
+            "quire-semantic-value/src/call.rs",
+            "WrongSnapshotCause",
+        );
     }
 
     /// Whether `attrs` deny `clippy::wildcard_enum_match_arm` or
@@ -1181,7 +1637,7 @@ mod tests {
         fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
             let previous = self
                 .current_impl_self
-                .replace(crate::impl_self_name(&node.self_ty));
+                .replace(qsl_string_edge::impl_self_name(&node.self_ty));
             syn::visit::visit_item_impl(self, node);
             self.current_impl_self = previous;
         }
@@ -1315,13 +1771,13 @@ mod tests {
             .expect("read the workspace Makefile");
         let ci_line = makefile
             .lines()
-            .find(|line| line.starts_with("ci:"))
-            .expect("Makefile has a ci: target line");
+            .find(|line| line.starts_with("CI_CHECKS :="))
+            .expect("Makefile has the CI_CHECKS aggregate list");
         assert!(
             ci_line
                 .split_whitespace()
                 .any(|prereq| prereq == "seam-probe"),
-            "ci: does not name seam-probe as a prerequisite: {ci_line}"
+            "CI_CHECKS does not name seam-probe as an internal prerequisite: {ci_line}"
         );
         let recipe_runs_xtask = makefile
             .lines()

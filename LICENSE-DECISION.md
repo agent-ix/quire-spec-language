@@ -1,6 +1,7 @@
 # License decision before implementation or publication
 
-Private bootstrap, 2026-09-07.
+Recorded 2026-09-07, while the repository was a private bootstrap. It is now
+public (public prerelease).
 
 The owner approved the proposed native finite-state implementation profile and
 `AGPL-3.0-only` for new compiler implementation in the active task conversation

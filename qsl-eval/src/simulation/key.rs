@@ -61,8 +61,9 @@ pub enum EncodingRefusal {
 }
 
 impl EncodingRefusal {
-    /// `error` from encoding under `identity`.
-    fn of(error: &quire_canonical::Error, identity: IdentityLimits) -> Self {
+    /// `error` from encoding under `identity`: the refusal of a caller that
+    /// encodes keys itself, as EN-1's retained graph does.
+    pub fn of(error: &quire_canonical::Error, identity: IdentityLimits) -> Self {
         match error {
             quire_canonical::Error::Limit(limit) => Self::Limit(LimitExceeded::new(
                 Setting::IdentityInputBytes,

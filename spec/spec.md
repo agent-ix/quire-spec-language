@@ -8,8 +8,6 @@ standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-034
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-035
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-036
@@ -60,6 +58,12 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-013
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-015
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
@@ -68,17 +72,9 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-008
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-033
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-031
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-030
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-029
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-028
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-027
     type: contains
@@ -100,11 +96,7 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-008
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-009
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-010
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-011
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-001
     type: contains
@@ -126,8 +118,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-002
     type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-003
-    type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-005
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-005
@@ -148,23 +138,9 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-006
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-019
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-020
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-021
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-022
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-023
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-024
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-025
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/NFR-007
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-007
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-013
     type: contains
@@ -179,6 +155,10 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-031
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-033
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/AD-001
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-018
     type: contains
@@ -452,6 +432,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-448
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-355
@@ -704,6 +686,12 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-262
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-402
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-405
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-406
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-263
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-264
@@ -714,7 +702,61 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-358
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-359
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-360
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-361
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-362
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-363
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-364
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-365
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-366
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-367
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-381
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-382
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-383
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-384
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-390
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-392
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-393
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-394
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-395
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-396
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-397
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-398
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-399
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-404
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-430
     type: contains
 ---
 # Master Requirements Specification
@@ -734,7 +776,7 @@ qualification.
 
 ### 2.1 In Scope
 
-LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned verification under NFR-005.
+LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC05 existing-extractor integration; Rust-owned verification under NFR-005.
 
 L2 admits Semantic IR 2.0.0 domain packages as Quire model declarations through
 [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) and adds edition-selected syntax and exact package linking across state, temporal
@@ -844,29 +886,13 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 Run Quire over this exact repository scope and execute the serial Rust gates in
 both feature configurations. Use independently authored expected values and real
-existing emitters/consumers at integration boundaries. Historical finite-state
-acceptance covers healthy, violating and refused/incomplete workflows. TC-113–
-121 cover composed parsing, linkage, checking and the `/1` emitter; TC-122–125
-cover L5; TC-126–137 cover the consolidated L3/L4/L6 and state-input contracts;
-TC-138 covers the strict `/2` temporal selection extension. TC-145–148 and IT-012
-cover domain-package model intake through the real quire-rs and FCD crates. TC-135 proves only A's byte-exact compiler-to-
-B intake contribution; D's research #39/#49 owns the later version-locked
-aggregate campaign with accepted B/F revisions. A passed earlier stage cannot
+existing emitters/consumers at integration boundaries. TC-135 proves only A's
+byte-exact compiler-to-B intake contribution. A passed earlier stage cannot
 qualify an unexecuted later one.
 
 ## 13. Change Management
 
 The user requested /specify and /spec-review for all work. Existing implementation is being specified retrospectively and remains subject to findings. Further dependent implementation waits for the required review and accepted shared contracts. Historical fixture and profile bytes remain immutable under their selected bindings.
-
-## 14. Lifecycle Status
-
-Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. The owner also adopted specification PR8 for internal implementation. Accepted IR ADR-0054 subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
-
-The PR10 model/checker scope is now qualified under Plan-005 and SR-083–087.
-TM-003 contains its 35 qualified cases; the earlier planned status above is
-historical. The LC03 packet adds FR-018, expands FR-007/008, and defines NFR-006,
-IT-006 and TM-004. Its 23 runtime cases are planned. Its input/evaluation API
-specification does not close LC02/FS03 acceptance or replace IT-002.
 
 ## 15. Governance Notes
 
@@ -888,9 +914,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-006](functional/FR-006-check-defined-expressions.md) | FR |
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR |
-| [FR-009](functional/FR-009-lower-qualified-projections.md) | FR |
 | [FR-010](functional/FR-010-report-native-outcomes.md) | FR |
-| [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR |
 | [US-001](usecase/US-001-author-native-source.md) | US |
 | [US-002](usecase/US-002-link-exact-models.md) | US |
 | [US-003](usecase/US-003-evaluate-bounded-state.md) | US |
@@ -921,9 +945,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-003](non-functional/NFR-003-preserve-uncertain-outcomes.md) | NFR |
 | [NFR-004](non-functional/NFR-004-preserve-implementation-rights.md) | NFR |
 | [IT-002](integration/IT-002-native-state-workflow.md) | IT |
-| [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT |
 
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR |
+| [NFR-014](non-functional/NFR-014-check-native-ci-suite-emptiness.md) | NFR |
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT |
 | [FR-013](functional/FR-013-link-formal-environments.md) | FR |
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR |
@@ -933,22 +957,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT |
-| [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR |
-| [FR-020](functional/FR-020-read-and-rebind-native-packages.md) | FR |
-| [FR-021](functional/FR-021-derive-native-package-identity.md) | FR |
-| [FR-022](functional/FR-022-compile-mapped-native-clauses.md) | FR |
-| [FR-023](functional/FR-023-run-native-packages.md) | FR |
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR |
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR |
-| [FR-028](functional/FR-028-run-selected-native-package.md) | FR |
-| [FR-029](functional/FR-029-export-executable-projection.md) | FR |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR |
-| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR |
-| [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR |
-| [FR-034](functional/FR-034-project-state-scalars.md) | FR |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR |
@@ -1061,6 +1075,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-315](functional/FR-315-encode-the-smt-lib-transition-relation.md) | FR |
 | [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR |
 | [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR |
+| [FR-410](functional/FR-410-emit-a-checked-state-graph-claim-as-a-v2-claim-node.md) | FR |
+| [FR-411](functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md) | FR |
 | [FR-325](functional/FR-325-parse-temporal-operators-with-an-optional-interval.md) | FR |
 | [FR-326](functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md) | FR |
 | [FR-327](functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md) | FR |
@@ -1083,6 +1099,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-351](functional/FR-351-settle-each-capability-from-its-executed-vectors.md) | FR |
 | [FR-352](functional/FR-352-report-capability-coverage.md) | FR |
 | [FR-353](functional/FR-353-settle-the-complete-v1-qualification-verdict.md) | FR |
+| [FR-448](functional/FR-448-cross-check-verification-backends-over-the-conformance-corpus.md) | FR |
 | [FR-354](functional/FR-354-admit-extensions-from-declarative-grammar-and-typed-node-schemas.md) | FR |
 | [FR-355](functional/FR-355-check-the-quire-fences-of-spec-artifacts.md) | FR |
 | [FR-129](functional/FR-129-check-strong-fairness-constraints.md) | FR |
@@ -1236,18 +1253,52 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-260](functional/FR-260-admit-semantic-ir-documents-at-any-depth.md) | FR |
 | [FR-261](functional/FR-261-read-other-untrusted-json-at-any-depth.md) | FR |
 | [FR-262](functional/FR-262-evaluate-values-and-calls-at-any-depth.md) | FR |
+| [FR-402](functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md) | FR |
+| [FR-405](functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md) | FR |
+| [FR-406](functional/FR-406-evaluate-clause-families-through-a-quire-eval-clause-entry.md) | FR |
 | [FR-263](functional/FR-263-replay-at-any-depth-under-the-request-limits.md) | FR |
 | [FR-264](functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md) | FR |
 | [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR |
 | [FR-357](functional/FR-357-replay-scalar-parity-claims.md) | FR |
 | [FR-358](functional/FR-358-settle-a-composite-bounded-shadow-item.md) | FR |
+| [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
+| [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
+| [FR-361](functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md) | FR |
+| [FR-362](functional/FR-362-bind-a-checked-unit-to-its-source-by-digest.md) | FR |
+| [FR-363](functional/FR-363-type-navigation-over-a-relationship-end.md) | FR |
+| [FR-364](functional/FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md) | FR |
+| [FR-365](functional/FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md) | FR |
+| [FR-366](functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md) | FR |
+| [FR-367](functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md) | FR |
+| [FR-380](functional/FR-380-bound-a-domain-package-population-and-link-a-reachability-to-its-node.md) | FR |
+| [FR-381](functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md) | FR |
+| [FR-382](functional/FR-382-build-the-terminal-declaration-form-at-s2.md) | FR |
+| [FR-383](functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md) | FR |
+| [FR-384](functional/FR-384-derive-the-protocol-occurrence-schema-and-runtime-binding-requirements.md) | FR |
+| [FR-390](functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md) | FR |
+| [FR-391](functional/FR-391-name-a-population-in-a-state-clause.md) | FR |
+| [FR-392](functional/FR-392-build-the-probabilistic-claim-form-at-s2.md) | FR |
+| [FR-393](functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md) | FR |
+| [FR-394](functional/FR-394-expose-the-admitted-enum-key-table-through-the-replay-facade.md) | FR |
+| [FR-395](functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md) | FR |
+| [FR-396](functional/FR-396-expose-the-admitted-record-and-tuple-keys-through-the-replay-facade.md) | FR |
+| [FR-397](functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md) | FR |
+| [FR-398](functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md) | FR |
+| [FR-399](functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md) | FR |
+| [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
+| [FR-404](functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
+| [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
+| [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
+| [NFR-016](non-functional/NFR-016-audit-unsafe-code-in-the-evaluator-closure.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR |
 | [ADR-031](decisions/ADR-031-state-forall-separating-witness.md) | ADR |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR |
+| [ADR-033](decisions/ADR-033-one-source-text-for-the-checked-graph-and-the-type-report.md) | ADR |
+| [AD-001](assurance/AD-001-shared-evaluation-core-interface.md) | ArchitectureDescription |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR |
@@ -1291,4 +1342,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-296](functional/FR-296-select-the-execution-backend-in-the-request.md) | FR |
 | [FR-277](functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md) | FR |
 | [FR-284](functional/FR-284-keep-the-qualified-core-separable-by-crate.md) | FR |
+| [FR-430](functional/FR-430-check-refinement-reductions-and-strong-fairness-over-timed-subjects.md) | FR |
 | [ADR-030](decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md) | ADR |

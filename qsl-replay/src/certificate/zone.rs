@@ -22,7 +22,7 @@
 //! harnesses run that same code over a machine integer, where every
 //! addition is checked for overflow.
 
-use quire_exact::Integer;
+use quire_exact::{Integer, NonZeroInteger};
 
 /// Seals [`Exact`]: only this module chooses the integers a zone may hold.
 mod sealed {
@@ -75,7 +75,9 @@ impl Exact for Integer {
     }
 
     fn halved(&self) -> Self {
-        self.div_mod_floor(&Integer::from(2_i64)).0
+        let two = Integer::from(2_i64);
+        let divisor = NonZeroInteger::try_from(&two).expect("the literal two is nonzero");
+        self.div_mod_floor(divisor).0
     }
 }
 

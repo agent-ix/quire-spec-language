@@ -30,7 +30,7 @@ pub fn all(bytes: &[u8], mut accepts: impl FnMut(&str) -> bool) -> bool {
                     position = number_like_end(bytes, end);
                     continue;
                 }
-                let Ok(number) = std::str::from_utf8(&bytes[start..end]) else {
+                let Ok(number) = core::str::from_utf8(&bytes[start..end]) else {
                     return false;
                 };
                 if !accepts(number) {

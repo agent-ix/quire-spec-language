@@ -31,13 +31,15 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-182
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: references
 ---
 # FR-163: Check a hyper item's product-closure certificate in the qualified core
 
 ## Description
 
-When EN-1 returns `Holds` for an HP-1, HP-2, HP-3, HP-5 or HP-6 item, the
-layer-A engine in `qsl-analyze` SHALL hand over a
+When EN-1 returns `Holds` for an HP-1, HP-2, HP-3 or HP-6 item, or
+`Witnessed` for an HP-5 item (FR-181), the layer-A engine in `qsl-analyze` SHALL hand over a
 `ProductClosureCertificate`, and QSL's layer-6 crate `qsl-replay` SHALL hold
 `check_product_closure`, which accepts the certificate only when the
 certified set holds every initial product state, is closed under the
@@ -82,6 +84,13 @@ A product state key is the tuple of each component's
 automaton's canonical state key (ADR-018 PC-3), and for HP-3 the witness
 set's members as sorted (existential tuple key, automaton key) pairs.
 
+For HP-3, `states` is the universal tuple and each witness pair's tuple is
+the existential tuple, each in its own quantifier order (ADR-023 HC-2).
+When there are no universal variables, the universal tuple is empty. An
+empty tuple and an absent tuple are different values. The witness set may
+also be empty; neither case introduces a component state or an automaton
+state that the product does not contain.
+
 ## Outputs
 
 ```rust
@@ -89,34 +98,65 @@ pub enum ProductClosureCheck {
     Accepted,
     Rejected(CertificateRejection),          // FR-338's: rule and locus
     Stopped(ReachedLimit),                   // FR-126: the limit and its value
+    PackageMismatch { certificate: PackageId, recompiled: PackageId },  // FR-282
 }
 ```
 
-The checker uses FR-338's `CertificateRejection{rule, state}`; `Rejected`
-settles ADR-018 PC-2's `CertificateRejected{rule, state}`. It reuses
+The certificate's `package_id` is its `closure`'s (FR-338), the package
+EN-1 explored.
+
+The checker uses FR-338's `CertificateRejection{rule, at}`; `Rejected`
+settles ADR-018 PC-2's `CertificateRejected{rule, at}`. It reuses
 FR-338's `InitialMissing` (a missing initial product state),
 `SuccessorMissing` (a missing successor), `NotPartition` (components that
 do not partition the members), `BackwardEdge` (an edge from a component to
 an earlier one) and `WitnessFails` (a component whose witness fails), and FR-338's `CertificateRule` gains
 `Malformed`, `UndefinedMember` and `ViolatingMember`. `CertificateLocus`
-gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
-`Malformed` carries the first offending member's key.
+gains `HyperProductState(ProductStateKey)`, the hyper product's state key,
+`HyperTransitionTuple`, the ordered tuple of labelled edges of an HP-1
+check, and `CertificateMember`, the name of a malformed certificate member.
+An HP-1 edge retains its pre-state key, transition identity (operation,
+receiver and arguments), post-state key and observed result as FR-179
+retains them. The tuple is in execution-variable binding order. It is not
+the tuple of source states: two edges from the same source state can have
+different arguments, post-states or results. FR-331's Certification table
+spells these loci and lists the rules admitted at each (FR-338 "Rejection
+spellings").
 
 ## Behavior
 
-- **Production.** When EN-1 returns `Holds` for one of these forms, the
+- **Production.** When EN-1 returns `Holds` for one of these forms, or
+  `Witnessed` for HP-5, the
   `qsl-analyze` engine SHALL write the certificate from its retained
   product: every stored product state, and for HP-2 and HP-3 the
   components of its SCC decomposition, each with the first PC-4 witness
-  that holds for it.
+  that holds for it in FR-126's witness order. The certificate SHALL be a
+  function of the request, the item and the limits: `closure` lists its
+  keys ascending; the components follow FR-126's component rule over the
+  hyper product, each component's vertex index the least FR-101 canonical
+  breadth-first index of its states in that product; each component's
+  states are ascending in the closure's key order; and every `sub` and
+  constraint list follows FR-126's refinement and constraint-list rules.
+  The certificate covers one object parameter binding (`instance`), so no
+  order across bindings arises. The checker requires a topological order
+  only and does not reject another topological order.
 - **Core code only.** `check_product_closure` SHALL build each alias's
   `ModelSystem` by FR-128's rules and SHALL expand product states through
   `qsl-eval`'s hyper product successor function, property-automaton
   translation, witness-set step and fairness-enabledness predicates (ADR-018
   LA-2), using no `qsl-analyze` code.
+- **Package identity.** The checker SHALL compare the recompiled package's
+  `package_id` with the certificate's first, before any other rule. When
+  they differ it SHALL return `PackageMismatch{certificate, recompiled}`
+  naming both and evaluate nothing else (FR-282); a stale certificate is
+  never `Rejected`, `Stopped` or `Accepted`.
 - **Malformed.** A certificate whose `closure` keys are unsorted or
   duplicated, or whose `components` are absent for HP-2 or HP-3, SHALL be
-  rejected with rule `Malformed` before any recomputation.
+  rejected with rule `Malformed` before any recomputation. Absent
+  `components` SHALL name `CertificateMember("components")`, also when
+  `closure` is empty. An unsorted or duplicate key SHALL name the first
+  offending key in the supplied closure sequence. The checker SHALL NOT
+  substitute a made-up member key for an absent structure.
 - **Initial.** Every recomputed initial product state SHALL be a member;
   otherwise the checker SHALL reject with rule `InitialMissing`.
 - **Closure.** Every recomputed successor of every member, canonicalised by
@@ -142,10 +182,16 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
   - HP-6: a member whose monitor state rejects (PC-3 (c));
   - HP-1: a tuple of member transitions, one per execution variable with
     its step label, on which the body evaluates false.
+  For HP-1, `ViolatingMember` SHALL name the complete
+  `HyperTransitionTuple`, in ADR-023 HC-3 / FR-179's canonical edge-tuple
+  order. An `UndefinedMember` caused by evaluating that tuple's body SHALL
+  name the same tuple. Other failures on an HP-1 subject's state SHALL name
+  the actual state member, without an invented automaton key.
   For HP-5 the closure, initial and undefined rules are the whole check,
   since its witnesses are checked by their own replay (FR-181).
 - **Order.** The checker SHALL apply the rules in the order listed and
-  report the first failing rule with its member.
+  report the first failing rule with the locus specified above: the absent
+  certificate member, offending state key or labelled transition tuple.
 - **Limits.** The checker SHALL count recomputed states and successors
   against the request's `ModelCheckLimits` with checked arithmetic.
 - **Stop.** When a count reaches its limit, the checker SHALL return
@@ -154,9 +200,12 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
 - **Purity.** The checker SHALL read no path, environment variable, clock
   or search location, and its result SHALL be a function of the
   certificate, the request and the limits.
-- **Settlement.** FR-182 SHALL settle `proved`, `Certified` only on
-  `Accepted`, V-6 `CertificateRejected{rule, state}` on `Rejected`, and V-7
-  on `Stopped`.
+- **Settlement.** The settling entry, FR-182's `settle_hyper_check` for an
+  HP-1, HP-2, HP-3 or HP-6 item and FR-169's `settle_existential` for an
+  HP-5 item, SHALL settle `proved`, `Certified` only on `Accepted`, V-6
+  `CertificateRejected{rule, at}` on `Rejected`, V-6
+  `StaleDependency{requested, recompiled}` with `requested` the
+  certificate's `package_id` on `PackageMismatch`, and V-7 on `Stopped`.
 
 ## Acceptance Criteria
 
@@ -166,6 +215,11 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
 | FR-163-AC-2 | Rejected vectors over the AC-1 `NonInterference` certificate: one member removed is `Rejected` with rule `SuccessorMissing` naming the member whose successor is missing; its keys unsorted is `Rejected` with rule `Malformed` before any recomputation; an added member whose `l` components differ, in a component marked `MissingAcceptance`, is `Rejected` with rule `WitnessFails`; one member listed in two components is `Rejected` with rule `NotPartition`; two components joined by an edge listed in the reverse order is `Rejected` with rule `BackwardEdge`; the initial product state removed is `Rejected` with rule `InitialMissing`. | Test (TC-646) |
 | FR-163-AC-3 | A certificate for the leaky vault's `NonInterference` built by listing its 14 product states with the components of the secure run, which do not cover the leaky states, is `Rejected` with rule `NotPartition`, so a false proof is never accepted; a certificate for FR-181-AC-5's body listing the reached product states is `Rejected` with rule `UndefinedMember` at the first state with `l = 1`. | Test (TC-646) |
 | FR-163-AC-4 | The AC-1 `NonInterference` certificate checked with `max_states` 1 returns `Stopped` with `{MaxStates, 1}` naming the limit and its value; checking it twice gives equal results. | Test (TC-646) |
+| FR-163-AC-5 | HP-2 and HP-3 certificates with absent `components`, including one with an empty closure, reject `Malformed` at `CertificateMember("components")` before any successor recomputation, without selecting a state key. | Test (TC-646) |
+| FR-163-AC-6 | An HP-1 certificate for FR-179-AC-2's nondeterministic `Det` subject rejects `ViolatingMember` at the first complete labelled edge tuple in canonical order; equal pre-state keys and arguments with different post-states remain distinct. FR-179-AC-4's undefined body rejects `UndefinedMember` at its complete edge tuple. | Test (TC-646) |
+| FR-163-AC-7 | For ADR-023 HC-2 with zero universal variables, a supplied key with an empty universal tuple and its actual witness set retains both on serialization and reading; the empty witness set remains distinct from an absent witness set. No component is added to satisfy a nonempty-array constraint. | Test (TC-646) |
+| FR-163-AC-8 | Package identity. FR-181-AC-1's HP-5 certificate and §8.1's secure `NonInterference` certificate each carry the `package_id` of the package EN-1 explored and are `Accepted`. Each with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule; the `NonInterference` certificate with its keys also unsorted returns `PackageMismatch`, not `Malformed`. | Test (TC-1198) |
+| FR-163-AC-9 | Production order. §8.1's secure `NonInterference` proof run twice writes byte-equal RFC 8785 certificates, whose `closure` keys are ascending, whose components are in FR-126's component order over the self-composed product's canonical breadth-first indices, and whose components each list their states ascending in the closure's key order. The same certificate with two components that no edge joins listed in the other order is still `Accepted`. | Test (TC-646) |
 
 ## Dependencies
 
@@ -177,7 +231,8 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
   (PC-3 and PC-4 certificates),
   [FR-174](FR-174-reduce-hyper-products-and-check-copy-swap-symmetry.md)
   (copy-swap canonicalisation).
-- FR-176 to FR-179 and FR-181 produce the certificate; FR-182 settles it.
+- FR-176 to FR-179 and FR-181 produce the certificate; FR-182 settles it,
+  and FR-169 settles an HP-5 item's.
 
 ## References
 

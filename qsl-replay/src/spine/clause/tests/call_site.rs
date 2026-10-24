@@ -16,9 +16,10 @@
 use super::frame::identifier;
 use super::*;
 use crate::spine::OperationName;
+use crate::FrameOperation;
 use crate::{
     call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, OccurrenceKey, OperationSite,
-    Origin, Role, WireNodeId,
+    Origin, QualifiedName, Role, WireNodeId,
 };
 
 fn wire(node: NodeKey) -> WireNodeId {
@@ -29,6 +30,15 @@ fn operation(model: &str, object: &str, operation: &str) -> OperationName {
     OperationName {
         model: identifier(model),
         object: identifier(object),
+        operation: identifier(operation),
+    }
+}
+
+/// The `{model::object, operation}` pair a frame packet carries.
+fn frame_operation(model: &str, object: &str, operation: &str) -> FrameOperation {
+    FrameOperation {
+        object: QualifiedName::new(vec![identifier(model), identifier(object)])
+            .expect("two segments"),
         operation: identifier(operation),
     }
 }
@@ -75,7 +85,7 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     };
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
@@ -90,6 +100,37 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
          Boolean pure {{ a = b }}\n"
     );
     (unit, document)
+}
+
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_call_site_operation_variants_keep_format_identity() {
+    for clauses in [false, true] {
+        let (unit, document) = two_operation_unit(clauses);
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+        compile_config_version_unit(&unit, &packages);
+    }
+    for (unit, packages) in [
+        sub_field_unit_and_packages(),
+        two_population_unit_and_packages(),
+    ] {
+        compile_config_version_unit(&unit, &packages);
+    }
+}
+
+fn sub_field_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
+    let unit = insert_clause_after(
+        &unit,
+        "VersionUnchanged",
+        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
+    );
+    (unit, packages)
+}
+
+fn two_population_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    (unit, packages)
 }
 
 /// `call_site` over `unit` with `document` supplied, selecting `selection`.
@@ -143,6 +184,10 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
         wire(single_state_node_key(graph, "operation_anchor"))
     );
     assert_eq!(operation.frame, frame);
+    assert_eq!(
+        operation.frame_operation,
+        frame_operation("Config", "ConfigVersion", "attemptUpdate")
+    );
     assert_eq!(
         operation.frame_occurrence,
         OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))
@@ -367,7 +412,7 @@ fn function_nodes_declaring(
 #[test]
 fn function_site_names_its_function_node_and_declaration_occurrence() {
     const PQ: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"quire.model.complete/v1\";\n\
         function p using v(x: Int[0, 9]): Boolean pure { x < 5 }\n\
         function q using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let site = |unit: &str, name: &str| {
@@ -515,6 +560,11 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
             [4; 32],
         ),
         &[],
+        crate::ReplayTarget::function(
+            crate::QualifiedName::new(vec![quire_exact::Identifier::new("attemptUpdate").unwrap()])
+                .unwrap(),
+            Some(crate::target::test_key()),
+        ),
     );
     wire.byte_provision.retain(|(domain, _, _)| {
         domain.as_deref() != Some(qsl_foundation::digest::DigestDomain::Sha256Jcs.as_str())
@@ -586,12 +636,7 @@ fn field(model: &str, object: &str, field: &str) -> crate::FieldName {
 #[trace("TC-516", "FR-121-AC-18")]
 #[test]
 fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
-    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
-    let unit = insert_clause_after(
-        &unit,
-        "VersionUnchanged",
-        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
-    );
+    let (unit, packages) = sub_field_unit_and_packages();
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
     let config_version = wire(config_version_node_key(graph));
@@ -810,7 +855,7 @@ fn population(model: &str, population: &str) -> crate::PopulationName {
 #[trace("TC-516", "FR-121-AC-21")]
 #[test]
 fn call_site_keys_a_population_as_its_requirement_records_do() {
-    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    let (unit, packages) = two_population_unit_and_packages();
     let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -893,4 +938,161 @@ fn call_site_refuses_an_unknown_population_paired_with_its_package() {
             other => panic!("expected UnknownPopulation for {selection}, got {other:?}"),
         }
     }
+}
+
+/// FR-121-AC-23: `Sub` inherits `attemptUpdate` without declaring it, so the
+/// `Config::Sub::attemptUpdate` selection's `frame_operation` names the
+/// declaring `ConfigVersion`, not the selected `Sub`, and every other
+/// identity equals the `ConfigVersion` selection's.
+#[trace("TC-516", "FR-121-AC-23")]
+#[test]
+fn call_site_names_the_declaring_object_of_an_inherited_operation() {
+    let (unit, _) = sub_field_unit_and_packages();
+    let document = sub_with_fields_document();
+    let through = |object: &str| {
+        locate(
+            &unit,
+            &document,
+            &operation("Config", object, "attemptUpdate"),
+        )
+        .expect("attemptUpdate is named by VersionUnchanged")
+    };
+    let declared = through("ConfigVersion");
+    let inherited = through("Sub");
+    let expected = frame_operation("Config", "ConfigVersion", "attemptUpdate");
+    assert_eq!(declared.site.frame_operation, expected);
+    assert_eq!(inherited.site.frame_operation, expected);
+    assert_eq!(inherited.site.anchor, declared.site.anchor);
+    assert_eq!(inherited.site.frame, declared.site.frame);
+    assert_eq!(
+        inherited.site.frame_occurrence,
+        declared.site.frame_occurrence
+    );
+}
+
+/// `size`, an operation with no parameter and an empty frame, declared by
+/// `ConfigVersion` and redefined by `Sub` (FR-103-AC-10's package).
+fn size_operation(owner: &str, redefines: Option<&str>) -> serde_json::Value {
+    let mut operation = config_version_probe_operation();
+    let identity = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/{owner}/size");
+    operation["identity"] = json!(identity);
+    operation["name"] = json!("size");
+    operation["params"] = json!([]);
+    if let Some(parent) = redefines {
+        operation["redefines"] = json!(format!(
+            "ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/{parent}/size"
+        ));
+    }
+    operation
+}
+
+fn redefining_size_document() -> Vec<u8> {
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_operations(vec![
+            size_operation("ConfigVersion", None),
+        ]))
+        .expect("the document is JSON");
+    let sub = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types is an array")
+        .push(json!({
+            "identity": sub,
+            "displayName": sub,
+            "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": sub,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [sub],
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [config_version_type()],
+            "fields": [],
+            "operations": [size_operation("Sub", Some("ConfigVersion"))],
+        }));
+    envelope.to_string().into_bytes()
+}
+
+/// FR-121-AC-24: `Sub.size` redefines `ConfigVersion.size`, so the
+/// `Config::Sub::size` selection's `frame_operation` is `Sub`'s own
+/// declaration, at a different frame from the `ConfigVersion` selection's.
+#[trace("TC-516", "FR-121-AC-24")]
+#[test]
+fn call_site_names_the_redefining_type_for_a_redefined_operation() {
+    let document = redefining_size_document();
+    let (unit, _) = config_version_unit_and_packages_for(document.clone());
+    let unit = insert_clause_after(
+        &unit,
+        "VersionUnchanged",
+        "post SizeBase using v on Config::ConfigVersion::size { true }\n\
+         post SizeSub using v on Config::Sub::size { true }",
+    );
+    let through = |object: &str| {
+        locate(&unit, &document, &operation("Config", object, "size"))
+            .expect("size is named by a clause")
+    };
+    let base = through("ConfigVersion");
+    let redefined = through("Sub");
+    assert_eq!(
+        base.site.frame_operation,
+        frame_operation("Config", "ConfigVersion", "size")
+    );
+    assert_eq!(
+        redefined.site.frame_operation,
+        frame_operation("Config", "Sub", "size")
+    );
+    assert_ne!(redefined.site.frame, base.site.frame);
+}
+
+/// [`config_version_domain_document_with_sub`] plus `SubSub`, a subtype of
+/// `Sub`, so `ConfigVersion` is two supertype steps above `SubSub`.
+fn two_level_document() -> Vec<u8> {
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_sub())
+            .expect("the document is JSON");
+    let identity = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/SubSub");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types is an array")
+        .push(json!({
+            "identity": identity,
+            "displayName": identity,
+            "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [identity],
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub")],
+            "fields": [],
+            "operations": [],
+        }));
+    envelope.to_string().into_bytes()
+}
+
+/// FR-121-AC-23, two levels: `SubSub` extends `Sub` extends `ConfigVersion`,
+/// and only `ConfigVersion` declares `attemptUpdate`, so the `SubSub`
+/// selection's `frame_operation` names `ConfigVersion`, not `Sub`.
+#[trace("TC-516", "FR-121-AC-23")]
+#[test]
+fn call_site_names_the_declaring_object_of_an_operation_inherited_two_levels() {
+    let document = two_level_document();
+    let (unit, _) = config_version_unit_and_packages_for(document.clone());
+    let site = locate(
+        &unit,
+        &document,
+        &operation("Config", "SubSub", "attemptUpdate"),
+    )
+    .expect("attemptUpdate is named by VersionUnchanged");
+    assert_eq!(
+        site.site.frame_operation,
+        frame_operation("Config", "ConfigVersion", "attemptUpdate")
+    );
 }

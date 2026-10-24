@@ -8,6 +8,19 @@ license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quire.checked-package/v2 emitter and the I2 byte reader."
 
 [features]
+# NFR-015: `std` is on by default. With it off the crate is `no_std` + `alloc`
+# and keeps the in-memory checked-IR path; the v2 wire (emitter, I2 reader,
+# `link_with`) needs `quire-contract-model` and is behind `std`.
+default = ["std"]
+std = [
+    "dep:quire-contract-model",
+    "dep:quire-canonical",
+    "dep:quire-exact",
+    "dep:serde_json",
+    "dep:thiserror",
+    "qsl-foundation/std",
+    "thiserror/std",
+]
 # `emit_checked_with_fault` and `checked_node_id_of`, the FR-105-AC-6
 # fault-injection seam, are public only under `test-support` (the same
 # pattern qsl-semantics uses, see its Cargo.toml), so a dependent crate's own
@@ -25,28 +38,25 @@ test-support = []
 # ADR-012 section 9 / FR-064: the `#[string_edge]` marker attribute, exempt
 # from the layer table below (it is a zero-cost marker `xtask string-edge`
 # reads, not a semantic dependency).
-qsl-attrs = { path = "../qsl-attrs" }
-qsl-foundation = { path = "../qsl-foundation" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+qsl-foundation = { path = "../qsl-foundation", default-features = false }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
 # (ADR-013 O-07).
-quire-exact = { workspace = true }
+quire-exact = { workspace = true, optional = true }
 # The v2 wire vocabulary: the identity-preimage types the emitter builds and
 # IR's `checked_package` v2 reader the I2 byte reader delegates to.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main", optional = true }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it.
-quire-canonical = { workspace = true }
+quire-canonical = { workspace = true, optional = true }
 # ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
-# The emitter writes its wire envelope as a `Serialize` struct over IR's
-# types; it encodes through `quire-canonical` only.
-serde = { version = "1.0.228", features = ["derive"] }
-thiserror = "2.0.20"
+serde_json = { version = "1.0.151", optional = true }
+thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # The emitter's tests build a one-function `PackageDeclarations`, whose
 # declarations are layer-2 parsed forms. Layer 2 is below this crate, so the
 # edge closes no cycle; TC-390 admits it in this table only.
@@ -59,8 +69,12 @@ qsl-cst = { path = "../qsl-cst" }
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The tests build v2 wires and golden preimages as JSON.
+# The tests derive `Deserialize` for QSpec fixture envelopes.
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
+# The X18 test validates QSpec's published definitions file against its schema.
+jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -48,7 +48,9 @@ use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records, PackageDocument};
+use qsl_semantics::model::intake::{
+    admit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
+};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 use qsl_semantics::model::systems::{
@@ -71,7 +73,7 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
 /// `manifest_path` for that package -- the same shell-out-and-parse pattern
 /// `tools/arch-lint/metadata.rs` already uses. Memoized: every test below that needs it calls this, and
 /// `cargo metadata` is not free.
-fn fcd_fixtures_dir() -> &'static Path {
+pub(super) fn fcd_fixtures_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let output = Command::new(env!("CARGO"))
@@ -109,13 +111,14 @@ fn fcd_fixtures_dir() -> &'static Path {
 }
 
 /// FR-260-AC-1 (TC-730 step 2), on a 512 KiB stack: every corpus domain
-/// package FR-056's tests admit still admits under the `sha256-jcs` digest
-/// it had. The digests are SHA-256 over each document's RFC 8785 text,
-/// computed outside this crate; the architecture document is the one FCD's
-/// real lift produces at the pinned rev (68ace480).
+/// package FR-056's tests admit also admits when selected by the
+/// `sha256-jcs` digest of its document. The architecture document is the one
+/// FCD's real lift produces at the pinned rev. The stable, QSL-owned
+/// `domain_package_digest_matches_its_golden_vector` test separately pins
+/// the digest algorithm against QSL-owned bytes.
 #[trace("TC-730", "FR-260-AC-1")]
 #[test]
-fn every_corpus_package_admits_under_its_recorded_digest() {
+fn every_corpus_package_admits_under_its_canonical_digest() {
     on_a_small_stack(|| {
         let fixtures = fcd_fixtures_dir();
         let architecture = lift_document(
@@ -127,29 +130,20 @@ fn every_corpus_package_admits_under_its_recorded_digest() {
             ],
         )
         .expect("FCD's real architecture fixture lifts cleanly");
-        let corpus: [(&str, Vec<u8>, &str); 3] = [
+        let corpus: [(&str, Vec<u8>); 3] = [
             (
                 "spine-model",
                 include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json").to_vec(),
-                "5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd",
             ),
             (
                 "systems-interface",
                 include_bytes!("../../../tests/fixtures/systems-interface.semantic-ir.json")
                     .to_vec(),
-                "47b316eca571f39b6f9d4592940e8c6467c3874d91d7c86faa1379ab95b5cf72",
             ),
-            (
-                "architecture",
-                architecture,
-                "aed361978b4f0fcc5b7ca5d7dfc95abb32023913d563f9a08101065e6ef48ee0",
-            ),
+            ("architecture", architecture),
         ];
-        for (name, bytes, recorded) in corpus {
-            let mut digest = [0_u8; 32];
-            for (index, byte) in digest.iter_mut().enumerate() {
-                *byte = u8::from_str_radix(&recorded[2 * index..2 * index + 2], 16).unwrap();
-            }
+        for (name, bytes) in corpus {
+            let digest = parse_document(&bytes).jcs_digest();
             let package: Value = serde_json::from_slice(&bytes).unwrap();
             let offered = DomainPackageRef {
                 identity: package["package"]["identity"].as_str().unwrap().to_owned(),
@@ -195,7 +189,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         lifted, expected,
         "lift_document must produce the fixture's committed expected document"
     );
-    let actual_digest: [u8; 32] = Sha256::digest(&document).into();
+    let actual_digest = parse_document(&document).jcs_digest();
 
     let package = lifted;
     let identity = package["package"]["identity"]
@@ -227,70 +221,19 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     assert_eq!(admitted_document.tree(), &package);
 }
 
-/// (a): `agent-ix/filament-core-data` PR #200 (merged; this crate's pinned
-/// `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` rev now includes
-/// it) fixes FCD #199's four gaps and produces the architecture golden at
-/// `crates/extraction-frontend/fixtures/architecture/expected/semantic-ir.json`
-/// in the pinned dependency checkout: 12 types,
-/// `kind: {module, name}`, no package-local scalar/alias nodes, no
-/// `/type//field//operation/` identity segments, and `Flow2`'s inline
-/// `relationships[]` in the real `sourceEnd`/`targetEnd`
-/// (`role`+`multiplicity`+`type`) shape.
+/// FR-056 requires `UUID` among the native value types a field may name, so
+/// the architecture golden of the pinned `agent-ix-extraction-frontend`
+/// (12 types, no `populations[]`, asserted below) reads clean: `Pump.id`,
+/// `Sys.id` and `Tank.id` (`typeRef` `ix://quire/native/UUID`) read as
+/// `Native(Uuid)` field members.
 ///
-/// Measured (not predicted) against the now-pinned rev:
-/// `validate_with_semantic_ir` admits the whole document -- the schema at
-/// this pin recognizes both a field's `constraints[]` and a relationship's
-/// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
-/// `Severity::Error` diagnostic and `read_records` reaches its own per-node
-/// reading over the golden for the first time. Of its 12 types (no
-/// `populations[]`, asserted below rather than assumed), **4 refuse and 8
-/// read clean**. `Count`, a `quire.meaning.model.record-value-type/v1`
-/// type, reads as a record value type (it refused as an unsupported
-/// declaration form until its reader was added):
-///
-/// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
-///   relationship -- FCD's relationship identity form
-///   (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`, an
-///   extra `relationship` segment and `-` separators) does not parse as
-///   `<owner>/<name>` (FR-056 Declarations, FR-056-AC-5). PR #200 review
-///   finding H1: earlier in this same PR, this refusal did not fire at all
-///   -- `read_relationship` applied no identity check, so this exact golden
-///   entry was accepted verbatim as the record's key and `Flow2` read
-///   "clean" only because the check was missing, not because the shape
-///   conforms. Fixed in `read_relationship` (validates through the same
-///   `member_identity_name` rule `read_field_member`/`read_operation_member`
-///   already apply, and separately refuses a missing source span per
-///   FR-056-AC-5's other half); this is the corrected, honest count.
-/// - `Pump.id`, `Sys.id`, `Tank.id`: `IntakeMalformedDeclaration` -- each
-///   field's `typeRef` is `ix://quire/native/UUID`, R5's ruling that QSL's
-///   native-value-type vocabulary is the conformant side and FCD's wider
-///   one is not QSL's to narrow (see [`super::read_value_type_ref`]'s docs
-///   and its own
-///   `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836` test).
-///   PLAT-836 (a separate ticket) narrows what FCD *emits* for these
-///   fields, not this reader; until it lands, this refusal is correct.
-///
-/// A prior static reading of this reader predicted 5 of 12 refusing, naming
-/// `Flow2` alongside `Count`/`Pump`/`Sys`/`Tank` on the theory that its
-/// relationships would still miss a role/multiplicity this reader requires.
-/// That theory was wrong (the golden's `Flow2` relationship has both a role
-/// and a multiplicity on each end) and, before H1's fix, the measurement
-/// disagreed with it too (4 refusing, `Flow2` clean) -- the prediction and
-/// the first honest measurement landed on the same headline number (5) by
-/// two different, both-wrong routes. H1's fix is what makes 5-refusing
-/// correct now, for the real reason (a relationship member's identity form),
-/// not the predicted one (role/multiplicity).
-///
-/// The remaining 8 -- `Count`, `Flow`, `pipe`, `pump_alloc`, `pump_out`,
-/// `sys_pump`, `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
-/// as "produced no refusal": it discards every already-read record when any
-/// node refuses, so no content assertion for these 7 is possible against
-/// the whole-document call above. `reads_pump_out_as_a_real_endpoint_record`
-/// below asserts real content for one of them by isolating it into its own
-/// single-type document.
+/// `read_records` discards every already-read record when any node refuses,
+/// so this whole-document read is the proof that no node of the golden
+/// refuses. `reads_pump_out_as_a_real_endpoint_record` below asserts content
+/// for one type by isolating it.
 #[trace("TC-145", "TC-146", "FR-056-AC-3", "FR-056-AC-5")]
 #[test]
-fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types() {
+fn reading_fcd_199s_golden_shape_reads_all_12_types() {
     let package_identity = "agent-ix/architecture";
     let document =
         std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
@@ -305,67 +248,35 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types
             .expect("the golden's types is an array")
             .len(),
         12,
-        "the golden's own type count; if this drifts, the 4-of-12/8-clean split below is stale"
+        "the golden's own type count"
     );
     assert!(
         parsed.get("populations").is_none(),
-        "this test's breakdown assumes no populations[] in the golden"
+        "this test assumes no populations[] in the golden"
     );
 
-    let refusals = read_records(package_identity, &parse_document(document.as_bytes())).expect_err(
-        "measured: 4 of the golden's 12 types refuse at read_records even though the whole \
-         document now clears validate_with_semantic_ir's schema check",
-    );
+    let records = read_records(package_identity, &parse_document(document.as_bytes()))
+        .expect("every type of the golden reads, `UUID` fields included");
 
-    assert_eq!(
-        refusals.len(),
-        4,
-        "measured refusal count over the post-#200 golden, post-H1 fix, with the \
-         record-value-type reader: {refusals:#?}"
-    );
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, NativeValueType, ValueTypeRef,
+    };
 
-    use qsl_foundation::diagnostic::Code;
-    use qsl_semantics::model::normalize::ModelRefusalCause;
-
-    let (flow2, pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2], &refusals[3]);
-
-    assert_eq!(flow2.code, Code::InvalidModelBinding);
-    match &flow2.cause {
-        ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-            assert_eq!(
-                node,
-                "ix://agent-ix/architecture/relationship/Flow2-specializes-Flow"
-            );
-        }
-        other => panic!("Flow2: expected IntakeMalformedDeclaration, got {other:?}"),
-    }
-    assert!(
-        flow2
-            .detail
-            .contains("is not ix://agent-ix/architecture/Flow2/<name>"),
-        "Flow2 detail: {}",
-        flow2.detail
-    );
-
-    for (refusal, expected_node) in [
-        (pump, "ix://agent-ix/architecture/Pump/id"),
-        (sys, "ix://agent-ix/architecture/Sys/id"),
-        (tank, "ix://agent-ix/architecture/Tank/id"),
-    ] {
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert_eq!(node, expected_node);
-            }
-            other => panic!("{expected_node}: expected IntakeMalformedDeclaration, got {other:?}"),
-        }
-        assert!(
-            refusal.detail.contains("ix://quire/native/UUID")
-                && refusal
-                    .detail
-                    .contains("names no native value type QSL declares"),
-            "{expected_node} detail: {}",
-            refusal.detail
+    for owner in ["Pump", "Sys", "Tank"] {
+        let identity = format!("ix://{package_identity}/{owner}/id");
+        let field = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) if field.key.node == identity => {
+                    Some(field)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{identity} reads as a field member"));
+        assert_eq!(
+            field.value_type,
+            ValueTypeRef::Native(NativeValueType::Uuid),
+            "{identity}"
         );
     }
 }
@@ -479,7 +390,11 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     };
     let count = key(package_identity, "ix://agent-ix/architecture/Count");
     assert!(records.contains(&DomainPackageRecord::RecordValueType(
-        RecordValueTypeRecord { key: count.clone() }
+        RecordValueTypeRecord {
+            key: count.clone(),
+            identity_fields: Vec::new(),
+            supertypes: Vec::new()
+        }
     )));
     let field = |node: &str| {
         records
@@ -527,11 +442,13 @@ const PLACEHOLDER_DIGEST: &str =
 
 /// The FR-154 intake document envelope `agent-ix-semantic-ir`'s own schema
 /// layer requires beyond `constructs[]`/`types[]` (M5, review of PR #200):
-/// `contractVersion`, `source`, `package`'s full required member set,
-/// `occurrences` and `extensions`, filled with schema-valid stand-ins.
+/// `contractVersion`, the canonicalization profile, `source`, `package`'s full
+/// required member set, `occurrences` and `extensions`, filled with
+/// schema-valid stand-ins.
 fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
     serde_json::json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{package_identity}/spec"),
             "version": "1.0.0",
@@ -621,6 +538,173 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
     })
 }
 
+fn original_document() -> (Value, Value, Value) {
+    let package_identity = "test/origins";
+    let owner = "ix://test/origins/A";
+    let target = "ix://test/origins/B";
+    let source_origin = serde_json::json!({"source": {
+        "sourceIdentity": "ix://authored/model/A", "path": "model/A.md",
+        "startLine": 12, "startColumn": 3, "endLine": 15, "endColumn": 9,
+    }});
+    let relationship_origin = serde_json::json!({"source": {
+        "sourceIdentity": "ix://authored/model/A", "path": "model/A.md",
+        "startLine": 30, "startColumn": 2, "endLine": 30, "endColumn": 57,
+    }});
+    let relationship = serde_json::json!({
+        "identity": "ix://test/origins/relationship/A-related-B", "category": "structural", "composite": false,
+        "direction": "source-to-target", "origin": relationship_origin,
+        "sourceEnd": {"role": "related", "type": owner, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
+        "targetEnd": {"type": target, "multiplicity": {"lower": 0, "ordered": false, "unique": true}},
+    });
+    let kind = serde_json::json!({"module": package_identity, "name": "thing"});
+    let mut construct = wire_construct(
+        package_identity,
+        "thing",
+        meaning::OBJECT_TYPE,
+        serde_json::json!({"fields": "required", "identityFields": "required"}),
+    );
+    construct["construct"]["identity"] = "identified".into();
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([construct]),
+        serde_json::json!([
+            wire_type(
+                owner,
+                kind.clone(),
+                serde_json::json!({
+                    "origin": source_origin, "fields": [wire_field("ix://test/origins/A/id", "id", "ix://quire/native/Boolean")],
+                    "identityFields": ["ix://test/origins/A/id"], "supertypes": [], "operations": [], "relationships": [relationship],
+                })
+            ),
+            wire_type(
+                target,
+                kind,
+                serde_json::json!({
+                    "fields": [wire_field("ix://test/origins/B/id", "id", "ix://quire/native/Boolean")],
+                    "identityFields": ["ix://test/origins/B/id"], "supertypes": [], "operations": [], "relationships": [],
+                })
+            ),
+        ]),
+    );
+    (document, source_origin, relationship_origin)
+}
+
+#[trace("TC-145", "FR-056-AC-1", "FR-056-AC-5")]
+#[test]
+fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
+    use qsl_semantics::model::admitted::AdmittedPackage;
+    let package_identity = "test/origins";
+    let (document, source_origin, relationship_origin) = original_document();
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let parsed = parse_document(&bytes);
+    let package = read_domain_package(
+        DomainPackageRef {
+            identity: package_identity.into(),
+            version: "1.0.0".into(),
+            digest: parsed.jcs_digest(),
+        },
+        &parsed,
+    )
+    .expect("a complete valid source document reads");
+    let package =
+        AdmittedPackage::admit(package, &mut default_meter()).expect("all declarations admit");
+    assert_eq!(package.len(), 5);
+    let declaration = package.declaration("A").unwrap();
+    let original = declaration
+        .original
+        .expect("source declaration retains provenance");
+    assert_eq!(original.meaning.as_deref(), Some(meaning::OBJECT_TYPE));
+    assert_eq!(original.origin, source_origin);
+    assert_eq!(original.member_name, None);
+    let relationship = package.member(declaration.key, "related").unwrap();
+    let original = relationship
+        .original
+        .expect("relationship retains its own source");
+    assert_eq!(original.meaning, None);
+    assert_eq!(original.member_name.as_deref(), Some("related"));
+    assert_eq!(original.origin, relationship_origin);
+    let generated = package.declaration("B").unwrap().original.unwrap();
+    assert_eq!(generated.origin, document["types"][1]["origin"]);
+    assert!(generated.origin.get("source").is_none());
+    for declaration in package.declarations() {
+        assert!(
+            declaration.original.is_some(),
+            "no admitted original loses its provenance: {:?}",
+            declaration.key
+        );
+    }
+}
+
+#[trace("TC-145", "FR-056-AC-5")]
+#[test]
+fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
+    let (mut missing, _, relationship_origin) = original_document();
+    missing["types"][0]["relationships"][0]["targetEnd"]["type"] =
+        "ix://test/origins/Missing".into();
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals = read_records("test/origins", &parsed)
+        .expect_err("an absent relationship target admits no declarations");
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
+            node: "ix://test/origins/relationship/A-related-B".into(),
+            reference: "ix://test/origins/Missing".into(),
+            origin: relationship_origin,
+            path: "/types/0/relationships/0/targetEnd/type".parse().unwrap(),
+            member: "TypeDefinition.relationships[0].targetEnd.type"
+                .parse()
+                .unwrap(),
+        }
+    );
+}
+
+/// FR-056-AC-5: a reference to a node absent from the package refuses
+/// `missing_declaration`/`missing-name`, retained at the referring field with
+/// that field's identity, origin and pointer. A field with no origin is not a
+/// missing name: the semantic-IR schema requires every member's origin, and
+/// FR-056-AC-5 refuses a member missing its source
+/// `invalid_model_binding`/`malformed-declaration`, so that case never reaches
+/// the missing-name path and needs no origin fallback.
+#[trace("TC-145", "FR-056-AC-5")]
+#[test]
+fn missing_field_type_ref_retains_the_field_identity_origin_and_pointer() {
+    let field = "ix://test/origins/A/id";
+    let (mut missing, _, _) = original_document();
+    missing["types"][0]["fields"][0]["typeRef"] = "ix://test/origins/Missing".into();
+    let field_origin = missing["types"][0]["fields"][0]["origin"].clone();
+
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals = read_records("test/origins", &parsed)
+        .expect_err("an absent field type admits no declarations");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
+            node: field.into(),
+            reference: "ix://test/origins/Missing".into(),
+            origin: field_origin,
+            path: "/types/0/fields/0/typeRef".parse().unwrap(),
+            member: "TypeDefinition.fields[0].typeRef".parse().unwrap(),
+        }
+    );
+
+    missing["types"][0]["fields"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("origin");
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals =
+        read_records("test/origins", &parsed).expect_err("a field with no origin refuses");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+}
+
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity
 /// form throughout -- `ix://<package identity>/<artifact id>` for every
 /// type-definition node, never FCD's own `ix://<pkg>/type/<id>` form (FCD
@@ -638,7 +722,7 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
 /// FCD's upstream fix), but this fixture simply was not authored to
 /// exercise that path -- native-typeRef resolution is covered separately by
 /// direct unit tests of `read_value_type_ref` and, end to end, by
-/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
+/// `reading_fcd_199s_golden_shape_reads_all_12_types`.
 /// It admits through `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape
@@ -668,6 +752,17 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
                 "object_type",
                 meaning::OBJECT_TYPE,
                 serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "interface",
+                meaning::SYSTEMS_INTERFACE,
+                serde_json::json!({
+                    "featureOrder": "required",
+                    "fields": "optional",
+                    "operations": "optional",
+                    "supertypes": "optional",
+                }),
             ),
             wire_construct(
                 package_identity,
@@ -721,7 +816,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         serde_json::json!([
             wire_type(
                 &flow_type,
-                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"module": package_identity, "name": "interface"}),
                 serde_json::json!({
                     "supertypes": [],
                     "fields": [wire_field(
@@ -730,6 +825,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
                         &sys,
                     )],
                     "operations": [],
+                    "featureOrder": [format!("{flow_type}/rate")],
                 }),
             ),
             wire_type(
@@ -807,7 +903,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     .to_string()
     .into_bytes();
 
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
     let offered = DomainPackageRef {
@@ -859,6 +955,181 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         AllocationCheckOutcome::Admitted,
         "PumpAlloc's target SysPump classifies as a Part"
     );
+}
+
+/// TC-197 Y10 (FR-152-AC-8): a node's systems kind comes from its construct
+/// meaning, never from its kind name. `Probe` has the kind name `port` under
+/// another module but the object-type meaning, so it has no systems kind and
+/// no `systems.kind` charge, and a binder request for a Port naming it refuses
+/// `invalid_model_binding`/`wrong-export` with required kind `Port` and actual
+/// kind `none`. `PumpOut` has the kind name `socket` but the Port meaning, so
+/// it maps to Port.
+///
+/// Mutation used (derived by reading, not executed): classifying by kind name
+/// makes `Probe` a Port and `PumpOut` kindless, so the `Probe` refusal is
+/// lost and `PumpOut` fails to resolve.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-8")]
+#[test]
+fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
+    use qsl_semantics::model::systems::{resolve_kind, Kind};
+
+    let package_identity = "test/plant";
+    let other = "test/other";
+    let node = |name: &str| format!("ix://{package_identity}/{name}");
+    let object_kind = serde_json::json!({"module": package_identity, "name": "object_type"});
+
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([
+            wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "interface",
+                meaning::SYSTEMS_INTERFACE,
+                serde_json::json!({
+                    "featureOrder": "required",
+                    "fields": "optional",
+                    "operations": "optional",
+                    "supertypes": "optional",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "part",
+                meaning::SYSTEMS_PART,
+                serde_json::json!({
+                    "declaredType": "required",
+                    "fields": "forbidden",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+            wire_construct(other, "port", meaning::OBJECT_TYPE, serde_json::json!({})),
+            wire_construct(
+                other,
+                "socket",
+                meaning::SYSTEMS_PORT,
+                serde_json::json!({
+                    "direction": "required",
+                    "fields": "forbidden",
+                    "interfaceType": "required",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &node("Flow"),
+                serde_json::json!({"module": package_identity, "name": "interface"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(
+                        &format!("{}/rate", node("Flow")),
+                        "rate",
+                        &node("Sys"),
+                    )],
+                    "operations": [],
+                    "featureOrder": [format!("{}/rate", node("Flow"))],
+                }),
+            ),
+            wire_type(
+                &node("Sys"),
+                object_kind.clone(),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("Pump"),
+                object_kind,
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("Probe"),
+                serde_json::json!({"module": other, "name": "port"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("SysPump"),
+                serde_json::json!({"module": package_identity, "name": "part"}),
+                serde_json::json!({
+                    "owner": node("Sys"),
+                    "declaredType": node("Pump"),
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &node("PumpOut"),
+                serde_json::json!({"module": other, "name": "socket"}),
+                serde_json::json!({
+                    "owner": node("SysPump"),
+                    "interfaceType": node("Flow"),
+                    "direction": "out",
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+        ]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let digest = parse_document(&document).jcs_digest();
+    let mut bytes_by_digest = BTreeMap::new();
+    bytes_by_digest.insert(digest, document);
+    let offered = DomainPackageRef {
+        identity: package_identity.to_owned(),
+        version: "1.0.0".to_owned(),
+        digest,
+    };
+    let (package_ref, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
+    let records = read_records(package_identity, &admitted_document)
+        .expect("the document reads with no refusals");
+    let domain_package = DomainPackage::new(package_ref, records);
+
+    let mut meter = default_meter();
+    let classification =
+        classify(&domain_package, &mut meter).expect("an unlimited meter never runs out");
+    assert_eq!(classification.refusals, Vec::new());
+    assert_eq!(
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == ChargePoint::SystemsKind)
+            .count(),
+        3,
+        "Flow, SysPump and PumpOut are charged; Probe has no systems kind"
+    );
+
+    let refusal = resolve_kind(
+        &classification,
+        Kind::Port,
+        &key(package_identity, &node("Probe")),
+    )
+    .expect_err("a port-named object type is not a Port");
+    assert_eq!(refusal.code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusal.cause.as_str(), "wrong-export");
+    assert!(refusal.detail.contains("required kind Port"), "{refusal:?}");
+    assert!(refusal.detail.contains("actual kind none"), "{refusal:?}");
+
+    let resolved = resolve_kind(
+        &classification,
+        Kind::Port,
+        &key(package_identity, &node("PumpOut")),
+    )
+    .expect("the Port meaning maps the renamed node to Port");
+    assert_eq!(resolved.kind, Kind::Port);
 }
 
 /// FR-056-AC-6 (TC-147): `normalize.record` charging under
@@ -1103,6 +1374,7 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
                         node,
                         artifact: Some(artifact),
                         span: Some(span),
+                        ..
                     } if *node == widget
                         && artifact == "ix://acme/orders/spec"
                         && (span.start.line, span.start.column) == (3, 5)
@@ -1155,7 +1427,7 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
                 read_records(package_identity, &parsed).expect_err("a composite cycle refuses");
             let closing = format!("ix://{package_identity}/relationship/C{}-has-C0", count - 1);
             let names_it = refusals.iter().any(|refusal| {
-                refusal.detail.contains("COMPOSITE_CYCLE")
+                refusal.code == qsl_foundation::diagnostic::Code::InvalidModelBinding
                     && matches!(
                         &refusal.cause,
                         qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
@@ -1182,6 +1454,8 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     let offered = DomainPackageRef {
         identity: qsl_semantics::model::intake::native::RESERVED_IDENTITY.to_owned(),
         version: "1".to_owned(),
+        // This deliberately unrelated token is never looked up: the reserved
+        // identity refuses before byte resolution.
         digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
     };
     let bytes_by_digest = BTreeMap::new();
@@ -1225,7 +1499,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     let document =
         quire_canonical::to_vec(&tree, quire_semantic_value::semantic_node::IDENTITY_LIMITS)
             .expect("a document of strings encodes");
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document);
 
@@ -1237,6 +1511,8 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     let second = DomainPackageRef {
         identity: "acme/orders".to_owned(),
         version: "2".to_owned(),
+        // This deliberately unrelated token is never looked up: duplicate
+        // identity refuses before the second selection's byte resolution.
         digest: Sha256::digest(b"second selection: refused before this is ever looked up").into(),
     };
 
@@ -1341,7 +1617,7 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
     .to_string()
     .into_bytes();
 
-    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let digest = parse_document(&document).jcs_digest();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
     let offered = DomainPackageRef {
@@ -1502,4 +1778,54 @@ fn lift_document_blocks_on_a_duplicate_identity() {
         }
         other => panic!("expected LiftFailure::Blocked, got {other:?}"),
     }
+}
+
+/// A bare-string core kind refuses at the member `kind` of the declaration,
+/// through the package read as well as the record read.
+#[test]
+fn a_bare_string_kind_refuses_at_the_kind_member_through_the_package_read() {
+    let package_identity = "test/bare";
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([]),
+        serde_json::json!([wire_type(
+            "ix://test/bare/Count",
+            serde_json::json!("scalar"),
+            serde_json::json!({"scalar": "integer"}),
+        )]),
+    );
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let parsed = parse_document(&bytes);
+    let selection = DomainPackageRef {
+        identity: package_identity.into(),
+        version: "1.0.0".into(),
+        digest: parsed.jcs_digest(),
+    };
+    let refusals = match read_domain_package(selection, &parsed) {
+        Ok(package) => match qsl_semantics::model::normalize::normalize(
+            &package,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        ) {
+            qsl_semantics::model::normalize::NormalizeOutcome::Refused(refusals) => {
+                refusals.iter().cloned().collect()
+            }
+            other => panic!("the bare-string kind must refuse, got {other:?}"),
+        },
+        Err(refusals) => refusals,
+    };
+    let members: Vec<String> = refusals
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                member,
+                ..
+            } if node == "ix://test/bare/Count" => Some(member.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        members.iter().any(|member| member == "TypeDefinition.kind"),
+        "{members:?}"
+    );
 }

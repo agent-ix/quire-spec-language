@@ -7,7 +7,7 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, AnchorSite, BinderForm, BinderKind, BuiltinType, DeclarationForm, ExprNode,
-    ExprRef, ExpressionSpans, FormsCause, ParsedUnit, ProtocolConstructKind,
+    ExprRef, ExpressionSpans, FormsCause, OperationBodyForm, ParsedUnit, ProtocolConstructKind,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId,
     StateClauseForm, StateClauseKind, TypeFormHead,
 };
@@ -105,9 +105,61 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
-        | DeclarationForm::Protocol(_) => panic!("a state clause form, not {form:?}"),
+        | DeclarationForm::Abstraction(_)
+        | DeclarationForm::OperationBody(_)
+        | DeclarationForm::PopulationBound(_)
+        | DeclarationForm::Protocol(_)
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("a state clause form, not {form:?}"),
+    }
+}
+
+fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
+    match form {
+        DeclarationForm::OperationBody(body) => body,
+        DeclarationForm::Function(_)
+        | DeclarationForm::Alias(_)
+        | DeclarationForm::Record(_)
+        | DeclarationForm::Tuple(_)
+        | DeclarationForm::Enum(_)
+        | DeclarationForm::Dimension(_)
+        | DeclarationForm::Union(_)
+        | DeclarationForm::Unit(_)
+        | DeclarationForm::Abstraction(_)
+        | DeclarationForm::StateClause(_)
+        | DeclarationForm::PopulationBound(_)
+        | DeclarationForm::Protocol(_)
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("an operation body form, not {form:?}"),
     }
 }
 
@@ -119,9 +171,28 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
-        | DeclarationForm::StateClause(_) => panic!("a protocol form, not {form:?}"),
+        | DeclarationForm::Abstraction(_)
+        | DeclarationForm::OperationBody(_)
+        | DeclarationForm::PopulationBound(_)
+        | DeclarationForm::StateClause(_)
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("a protocol form, not {form:?}"),
     }
 }
 
@@ -372,6 +443,61 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
     assert_eq!(declaration.name.name, "Tried");
 }
 
+/// QSL-667 reserves `absent` for lookup's absence mode, but the CST grammar
+/// still admits it as an operation member after `::`. S2 must read that
+/// structural member without requiring the ordinary identifier token class.
+#[trace("FR-102-AC-2")]
+#[test]
+fn s2_preserves_reserved_operation_member_names() {
+    for (source, kind) in [
+        (
+            "pre P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Precondition,
+        ),
+        (
+            "post P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Postcondition,
+        ),
+    ] {
+        let (text, unit) = build(source);
+        let form = state_clause(unit.forms()[0].form());
+        assert_eq!(form.kind, kind);
+        let operation = form.operation.as_ref().expect("the operation member");
+        assert_eq!(operation.name, "absent");
+        assert_eq!(
+            &text[form.context.span.start..form.context.span.end],
+            "Config::ConfigVersion"
+        );
+        assert_eq!(&text[operation.span.start..operation.span.end], "absent");
+    }
+}
+
+/// The same reserved member spelling is legal in an attempt operation name;
+/// retain its context and exact source span while the ordinary-name control
+/// remains covered by `s2_captures_an_attempts_operation_name_and_contracts_list`.
+#[trace("FR-114-AC-1", "TC-513")]
+#[test]
+fn s2_preserves_reserved_attempt_operation_members() {
+    let source = recovery_flow("Main::Committed", true, "").replacen(
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate",
+        "attempt Tried by R on Config::ConfigVersion::absent",
+        1,
+    );
+    let (text, unit) = build(&source);
+    let form = protocol_form(unit.forms()[0].form());
+    let attempt = &form.attempts[0];
+    assert_eq!(attempt.context.name, "Config::ConfigVersion");
+    assert_eq!(attempt.operation.name, "absent");
+    assert_eq!(
+        &text[attempt.context.span.start..attempt.context.span.end],
+        "Config::ConfigVersion"
+    );
+    assert_eq!(
+        &text[attempt.operation.span.start..attempt.operation.span.end],
+        "absent"
+    );
+}
+
 /// SR-770 FND-001/FND-008: S2 records what S3 needs to decide
 /// whether it checks a protocol in full -- the `using` alias, each role,
 /// each binder's declared type, each body block (whether it is a bare
@@ -434,12 +560,20 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
     assert!(at(form.constructs[3].span).starts_with("channel C"));
     assert!(at(form.constructs[5].span).starts_with("related by rel"));
 
-    let bodies: Vec<(&str, Option<bool>)> = form
+    let bodies: Vec<(&str, bool)> = form
         .bodies
         .iter()
-        .map(|body| (at(body.span), body.constant))
+        .map(|body| {
+            (
+                at(body.span),
+                matches!(
+                    body.expression.expression.root_node(),
+                    ExprNode::Boolean(false)
+                ),
+            )
+        })
         .collect();
-    assert_eq!(bodies, [("tried", None), ("false", Some(false))]);
+    assert_eq!(bodies, [("tried", false), ("false", true)]);
     assert_eq!(
         form.declarations[form.bodies[0].owner].kind,
         ProtocolNodeKind::Attempt
@@ -800,9 +934,9 @@ fn s2_builds_the_channel_of_a_send_and_receive_only() {
     let form = protocol_form(unit.forms()[0].form());
 
     let send = decl(form, "Ping", ProtocolNodeKind::Send);
-    assert_eq!(send.channel.as_deref(), Some("C"));
+    assert_eq!(send.channel.as_ref().map(|c| c.name.as_str()), Some("C"));
     let receive = decl(form, "Got", ProtocolNodeKind::Receive);
-    assert_eq!(receive.channel.as_deref(), Some("D"));
+    assert_eq!(receive.channel.as_ref().map(|c| c.name.as_str()), Some("D"));
     // Every other declared kind carries no channel.
     assert_eq!(decl(form, "Main", ProtocolNodeKind::Sequence).channel, None);
     assert_eq!(decl(form, "End", ProtocolNodeKind::Finish).channel, None);
@@ -830,6 +964,9 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::SelfRef => "SelfRef".into(),
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+        ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
         other => panic!("this fixture's bodies use no other form: {other:?}"),
     };
     if children.is_empty() {
@@ -1108,4 +1245,72 @@ fn a_100000_deep_repeat_chain_builds_its_anchors_on_a_small_stack() {
             2 * depth + 1,
         );
     });
+}
+
+/// FR-102 "Outputs": a `body` declaration builds one `OperationBodyForm`
+/// that keeps the label, the `using` alias, every target segment, every
+/// positional parameter name and the body expression, each with its own
+/// source span, and resolves none of them. The label is local and is not the
+/// operation's identity.
+#[trace("TC-457", "FR-102-AC-7")]
+#[test]
+fn a_body_builds_one_operation_body_form_with_every_part_spelled_and_spanned() {
+    let (text, unit) =
+        build("body forB using v on Config::ConfigVersion::resize(amount, extra) { amount + 22 }");
+    let [parsed] = unit.forms() else {
+        panic!("one declaration builds one form");
+    };
+    let form = operation_body(parsed.form());
+    let slice = |span: Span| &text[span.start..span.end];
+    assert_eq!(form.label.name, "forB");
+    assert_eq!(slice(form.label.span), "forB");
+    assert_eq!(form.profile.alias, "v");
+    assert_eq!(slice(form.profile.span), "v");
+    let segments: Vec<&str> = form.target.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(segments, ["Config", "ConfigVersion", "resize"]);
+    for segment in &form.target {
+        assert_eq!(slice(segment.span), segment.name);
+    }
+    assert_eq!(
+        slice(form.target_span),
+        "Config::ConfigVersion::resize",
+        "the target span covers the whole name"
+    );
+    let parameters: Vec<&str> = form.parameters.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(parameters, ["amount", "extra"]);
+    for parameter in &form.parameters {
+        assert_eq!(slice(parameter.span), parameter.name);
+    }
+    let body_span = form
+        .spans
+        .body
+        .span(form.spans.body.root())
+        .expect("the body has a root span");
+    assert_eq!(slice(body_span), "amount + 22");
+    assert_eq!(slice(form.spans.declaration), slice(parsed.span()));
+    assert_eq!(form.spans.measure, None);
+}
+
+/// FR-102 "Behavior": a `body` with no parameters and a reserved operation
+/// member name (`size`) builds, and two bodies keep their own labels in
+/// source order.
+#[trace("TC-457", "FR-102-AC-7")]
+#[test]
+fn a_parameterless_body_builds_and_bodies_keep_source_order() {
+    let (_, unit) = build(
+        "body forB using v on Config::ConfigVersion::size() { 22 }\n\
+         body forA using v on Config::ConfigVersion::size() { 11 }",
+    );
+    let labels: Vec<&str> = unit
+        .forms()
+        .iter()
+        .map(|form| operation_body(form.form()).label.name.as_str())
+        .collect();
+    assert_eq!(labels, ["forB", "forA"]);
+    for form in unit.forms() {
+        let body = operation_body(form.form());
+        assert!(body.parameters.is_empty());
+        let target: Vec<&str> = body.target.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(target, ["Config", "ConfigVersion", "size"]);
+    }
 }

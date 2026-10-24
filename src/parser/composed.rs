@@ -9,7 +9,7 @@ mod protocol;
 mod temporal;
 
 impl Parser {
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub(super) fn native_unit(&mut self) -> Result<NativeUnit, Box<Diagnostic>> {
         self.expect(K::Language)?;
         let language = self.string()?;

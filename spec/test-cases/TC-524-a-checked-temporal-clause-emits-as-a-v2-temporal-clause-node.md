@@ -50,7 +50,3 @@ Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
 - Step 4: a schema failure; `invalid_package`/`operation-member-mismatch`;
   `missing_declaration`/`missing-name`; `ill_typed`/`operator-ineligible`;
   each at FR-370's locus.
-
-## Status
-
-🚧 Planned.

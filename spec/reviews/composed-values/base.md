@@ -16,7 +16,7 @@ relationships:
 
 PASS for specification readiness. The delegated selection is base plus failure-domain: explicit profile, source and numeric refusal boundaries warrant that lens. No `type: AssuranceProfile` document applies in the local specification scope. QUOIN's installed SpecReview skeleton/schema supplied this artifact's contract.
 
-IDs are unique and correctly formed; US-002 states user value, priority and two Given/When/Then examples. Inputs, outputs, refusal classes and dependencies agree with the selected state definitions. All 17 ACs map to [TC-119](../../test-cases/TC-119-check-composed-values.md) groups 1–10 or [TC-120](../../test-cases/TC-120-admit-rational-native-model-profile.md) groups 1–7 and [TM-003](../../model-linking/tests.md). Scoped relative file targets resolve.
+IDs are unique and correctly formed; US-002 states user value, priority and two Given/When/Then examples. Inputs, outputs, refusal classes and dependencies agree with the selected state definitions. All 17 ACs map to [TC-119](../../test-cases/TC-119-check-composed-values.md) groups 1–10 or [TC-120](../../test-cases/TC-120-admit-rational-native-model-profile.md) groups 1–7. Scoped relative file targets resolve.
 
 The six coverage rules have planned controls: profile permutations; numeric/wrapper/work boundaries; typed failures; source→draft→admission→binding transitions; and source, capture, graph and dependency edge cases. This establishes test-design coverage, not executed coverage. FR-040's full proof/runtime obligations remain planned; FR-041 supplies only the explicit producer prerequisite. Code/Rust and execution-evidence reviews remain separate.
 

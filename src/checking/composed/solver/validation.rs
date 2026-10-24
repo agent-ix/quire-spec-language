@@ -185,6 +185,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
             }
             NativeType::Option(value) => self.wrappers(value, at)?,
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }
@@ -207,7 +209,11 @@ impl<'a> Solver<'_, 'a, '_, '_> {
     }
     fn equality(&mut self, ty: &NativeType<'_>, at: ExprId) -> Result<()> {
         match ty {
-            NativeType::Boolean | NativeType::Scalar { .. } | NativeType::Enumeration { .. } => {}
+            NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
+            | NativeType::Scalar { .. }
+            | NativeType::Enumeration { .. } => {}
             NativeType::Object { .. } | NativeType::Reference { .. } => {
                 self.require(at, Capability::Graph)?
             }
@@ -256,6 +262,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                 (*model, *role)
             }
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }

@@ -41,19 +41,19 @@ use qsl_semantics::value::{
 use quire_exact::NodeKey;
 use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
 
-const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}"#;
+const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}"#;
 const EFFECTIVE_TYPE_DIGEST: &str =
-    "3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203";
+    "4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8";
 
-const EFFECTIVE_MEMBER: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"},"version":"quire.model.effective-declaration/v1"}"#;
+const EFFECTIVE_MEMBER: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
 const EFFECTIVE_MEMBER_DIGEST: &str =
-    "750ec6cfe7da00cb205a6fd47a10b7a06b71b746afa4b358e3828bc62b1e002f";
+    "86ed7ba6c712042c8f4440fbfd0c011656b58a062cb02b1ac3caffab928dfeaf";
 
-const UNIVERSE: &str = r#"{"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"root_types":[{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"}],"version":"quire.model.object-universe/v1"}"#;
-const UNIVERSE_DIGEST: &str = "41ebe3815ccf4b9ccdad84c1efa3393c37cff35f3d81778b6e2655d3d48ae48d";
+const UNIVERSE: &str = r#"{"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"root_types":[{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"}],"version":"quire.model.object-universe/v2"}"#;
+const UNIVERSE_DIGEST: &str = "00f7200465ac45bc1e37886e4498b80e65e09c73c2487a48da22bd454c90b755";
 
-const VIEW: &str = r#"{"declarations":[{"effective_id":{"digest":"3b79bb92933313c6724ccfa216190afc89e1ba4c0c5a1fa0b7832aa6c98b8203","domain":"quire.model.effective-declaration/v1"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}}],"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"rules":{"identity":"quire.model.complete.rules/v1","revision":"1-draft.1"},"version":"quire.model.effective-view/v1"}"#;
-const VIEW_DIGEST: &str = "6ec2e0e4656fe1d1c174d2598d2f447f8ef68b3447ed52c3b4ad059301ff66e8";
+const VIEW: &str = r#"{"declarations":[{"effective_id":{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}}],"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"rules":{"identity":"quire.model.complete.rules/v1"},"version":"quire.model.effective-view/v2"}"#;
+const VIEW_DIGEST: &str = "3576335e1feebaac47af4b4e99140fa5d294c8007473b6167805cfe2a9834e15";
 
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
 const ENUM_DECLARATION_DIGEST: &str =
@@ -138,15 +138,16 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
         derivation: vec![Fact {
             ordinal: 0,
             rule: RULE_QUALIFY,
-            inputs: vec![key(node)].into(),
+            inputs: vec![key(node)],
+            parent: None,
         }],
     }
 }
 
-/// `quire.model.effective-declaration/v1`, for an effective type (`null`
+/// `quire.model.effective-declaration/v2`, for an effective type (`null`
 /// owner) and an effective member (an `{domain, digest}` owner), with the
 /// encoder's byte count equal to the text's length.
-#[trace("QSpec-TC-195")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn effective_declaration_identities_match_their_golden_vectors() {
     let effective_type = qualified("ix://test/orders/A", None);
@@ -169,7 +170,7 @@ fn effective_declaration_identities_match_their_golden_vectors() {
     );
 }
 
-/// `quire.model.object-universe/v1`.
+/// `quire.model.object-universe/v2`.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn object_universe_identity_matches_its_golden_vector() {
@@ -184,7 +185,7 @@ fn object_universe_identity_matches_its_golden_vector() {
     );
 }
 
-/// `quire.model.effective-view/v1`, over the view `normalize` builds for a
+/// `quire.model.effective-view/v2`, over the view `normalize` builds for a
 /// one-type domain package.
 #[trace("QSpec-TC-195")]
 #[test]

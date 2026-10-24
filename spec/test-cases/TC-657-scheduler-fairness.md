@@ -22,8 +22,8 @@ Use FR-212-AC-1's `Chatter` protocol.
    fairness set.
 2. Add `scheduling adversarial`; compare identities; check the same claim
    and read the lasso and fairness set.
-3. Check constraints naming `s`, `Done` and `Missing`, and two `scheduling`
-   members; read the root's and `left`'s classes over ADR-027 §7.
+3. Check constraints naming `Chatter::Both::s`, `Chatter::Done` and
+   `Missing`, and two `scheduling` members; read the root's and `left`'s classes over ADR-027 §7.
 4. Check `always holds(k.flag <= 1)` with and without the member.
 
 Tag the tests `#[trace("TC-657", "FR-212-AC-n")]`.

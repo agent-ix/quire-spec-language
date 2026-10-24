@@ -14,7 +14,7 @@ Verify `map_state`: the key-preserving population image, reference lifting,
 field rows through the clause evaluator, history reads, hidden slots, and
 `MappingFailure::Undefined` for a row that evaluates undefined.
 
-Scope: FR-140-AC-1 to FR-140-AC-4.
+Scope: FR-140-AC-1 to FR-140-AC-4 and FR-140-AC-15.
 
 ## Test Procedure
 
@@ -26,6 +26,7 @@ Fixtures: `CasRefinesCounter` (ADR-020 §8); `RingIsQueue` (FR-139);
 2. Map the ring state of FR-140-AC-2.
 3. Map ring states with `size >= 1` under FR-140-AC-3's `only` condition.
 4. Map `value = 1`, `last = 0`, with and without the `prev` row.
+5. Map a state of `TwoPopulations` (FR-140-AC-15) with both populations undefined, then with only the second in digest order undefined.
 
 Tag the tests `#[trace("TC-545", "FR-140-AC-n")]`.
 
@@ -37,3 +38,4 @@ Tag the tests `#[trace("TC-545", "FR-140-AC-n")]`.
 - Step 3: `MappingFailure::Undefined` naming the `items` row, `r` and the
   undefined cause.
 - Step 4: `value = 1`, `prev = 0`; then `hidden = [(r, prev)]`.
+- Step 5: the `Undefined` of the population first in digest order; then of the other.

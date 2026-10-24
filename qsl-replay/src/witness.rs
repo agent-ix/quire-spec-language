@@ -21,14 +21,16 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
-    SourceDigestWire, TracePosition,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
+    TracePosition,
 };
+use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::BackendId;
 
 mod value;
 mod value_text;
@@ -76,7 +78,7 @@ impl Witness {
     /// bytes). A cover-playback block, zero blocks, more than one block, or
     /// extra surrounding bytes each refuse; none produces a
     /// partially-built `Witness`.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn parse(transcript: impl Into<String>) -> Result<Self, MalformedTranscript> {
         let transcript = transcript.into();
         let blocks = find_blocks(&transcript);
@@ -168,6 +170,18 @@ impl Witness {
     /// [`DecodeRefusal::Malformed`] when an entry's text is not a value of
     /// the binding's type. No refusal leaves a partial result.
     pub fn decode(&self, bindings: &[WitnessBinding]) -> Result<Vec<WitnessValue>, DecodeRefusal> {
+        self.decode_optional(bindings, |_| false)
+            .map(|values| values.into_iter().flatten().collect())
+    }
+
+    /// [`Self::decode`] where a binding for which `optional` holds may have
+    /// no entry: its slot is `None` rather than [`DecodeRefusal::Missing`]
+    /// (FR-098 "unread parameters"). Every other refusal is `decode`'s.
+    pub(crate) fn decode_optional(
+        &self,
+        bindings: &[WitnessBinding],
+        optional: impl Fn(&WitnessBinding) -> bool,
+    ) -> Result<Vec<Option<WitnessValue>>, DecodeRefusal> {
         let entries = self
             .raw_bindings()
             .into_iter()
@@ -200,15 +214,20 @@ impl Witness {
             .zip(&names)
             .map(|(binding, name)| {
                 let mut matching = entries.iter().filter(|(entry, _)| entry == name);
-                let (_, text) = matching
-                    .next()
-                    .ok_or(DecodeRefusal::Missing(binding.parameter))?;
+                let Some((_, text)) = matching.next() else {
+                    return if optional(binding) {
+                        Ok(None)
+                    } else {
+                        Err(DecodeRefusal::Missing(binding.parameter))
+                    };
+                };
                 if matching.next().is_some() {
                     return Err(DecodeRefusal::Duplicate(binding.parameter));
                 }
                 binding
                     .value_type
                     .read(text)
+                    .map(Some)
                     .map_err(|fault| DecodeRefusal::Malformed {
                         parameter: binding.parameter,
                         value_type: binding.value_type,
@@ -236,7 +255,7 @@ pub enum WitnessValueType {
 
 impl WitnessValueType {
     /// `text` as a value of this type, or the fault that makes it none.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(self, text: &str) -> Result<WitnessValue, EntryFault> {
         match self {
             Self::Boolean => match text {
@@ -349,7 +368,7 @@ fn find_blocks(text: &str) -> Vec<&str> {
     blocks
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn parse_block(block: &str) -> Option<BlockFields<'_>> {
     let inner = block.strip_prefix("<<<")?.strip_suffix(">>>")?;
     let mut parts = inner.splitn(4, '|');
@@ -508,13 +527,13 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     obligation_identity: ObligationIdentity,
     occurrence_key: OccurrenceKey,
     clause_node: WireNodeId,
-    selected_function: QualifiedName,
+    replay_target: ReplayTarget,
     package_id: DigestRecord,
     source_digests: Vec<RawSourceRef>,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
-    backend: Backend,
+    backend: BackendId,
     trace_position: Option<TracePosition>,
     source: ReplaySource,
     family_payload: P,
@@ -533,9 +552,10 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     pub fn clause_node(&self) -> WireNodeId {
         self.clause_node
     }
-    /// The selected function, always a typed [`QualifiedName`].
-    pub fn selected_function(&self) -> &QualifiedName {
-        &self.selected_function
+    /// The replay target (QSpec FR-323): the one function, frame operation
+    /// or state clause this counterexample selects, always typed names.
+    pub fn replay_target(&self) -> &ReplayTarget {
+        &self.replay_target
     }
     /// The package this counterexample was produced from.
     pub fn package_id(&self) -> DigestRecord {
@@ -560,7 +580,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         &self.declared_domains
     }
     /// The backend that produced this counterexample.
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &BackendId {
         &self.backend
     }
     /// The trace position this counterexample was produced at, if the
@@ -818,8 +838,9 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub occurrence_key: Option<OccurrenceKey>,
     /// The clause node this counterexample witnesses against.
     pub clause_node: Option<WireNodeId>,
-    /// The selected function.
-    pub selected_function: Option<QualifiedName>,
+    /// The replay target members (QSpec FR-323): exactly one must be
+    /// present.
+    pub replay_target: ReplayTargetMembers,
     /// `(digest domain, digest hex)` naming the package.
     pub package_id: Option<(Option<String>, String)>,
     /// `(authority, identity, revision namespace, revision, digest domain,
@@ -851,10 +872,7 @@ pub struct WitnessPacket<P: FamilyPayload> {
 /// packet omitted contribute zero, exactly like an absent wire member would.
 fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize {
     let mut total = 0usize;
-    total += packet
-        .selected_function
-        .as_ref()
-        .map_or(0, |name| name.to_string().len());
+    total += packet.replay_target.measured_bytes();
     total += packet.package_id.as_ref().map_or(0, |(_, hex)| hex.len());
     total += packet.source_digests.as_ref().map_or(0, |digests| {
         digests.iter().map(RawSourceRef::wire_len).sum()
@@ -914,6 +932,13 @@ pub enum WitnessRefusal {
     /// A required O-25 member is absent from the packet.
     #[error("missing_declaration: O-25 member {0:?} is absent")]
     MissingMember(&'static str),
+    /// More than one QSpec FR-323 replay target member is present: the
+    /// members the packet carries, in FR-323's order.
+    #[error("invalid_runtime_input/invalid-value: the packet carries more than one replay target")]
+    ConflictingTarget {
+        /// The members present.
+        members: Vec<TargetMember>,
+    },
     /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
     #[error("invalid_identifier: the backend identity is empty")]
     EmptyBackendIdentity,
@@ -946,7 +971,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// Reconstruct a positive envelope from `packet`. Refuses (with no
     /// partially-built envelope returned) if the encoded size is over the
     /// configured bound, if any O-25 member is absent, or if a digest names a domain outside the closed FR-201 set.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn reconstruct(
         packet: WitnessPacket<P>,
         limits: ReplayLimits,
@@ -963,9 +988,15 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let clause_node = packet
             .clause_node
             .ok_or(WitnessRefusal::MissingMember("clause_node"))?;
-        let selected_function = packet
-            .selected_function
-            .ok_or(WitnessRefusal::MissingMember("selected_function"))?;
+        let replay_target = packet
+            .replay_target
+            .select()
+            .map_err(|refusal| match refusal {
+                TargetSelectionRefusal::Missing => WitnessRefusal::MissingMember("replay_target"),
+                TargetSelectionRefusal::Conflicting { members } => {
+                    WitnessRefusal::ConflictingTarget { members }
+                }
+            })?;
         let (package_domain, package_hex) = packet
             .package_id
             .ok_or(WitnessRefusal::MissingMember("package_id"))?;
@@ -995,7 +1026,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         if backend_identity.is_empty() {
             return Err(WitnessRefusal::EmptyBackendIdentity);
         }
-        let backend = Backend::new(backend_identity);
+        let backend = BackendId::new(backend_identity);
         let trace_position = packet
             .trace_position
             .ok_or(WitnessRefusal::MissingMember("trace_position"))?;
@@ -1010,7 +1041,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             obligation_identity,
             occurrence_key,
             clause_node,
-            selected_function,
+            replay_target,
             package_id,
             source_digests,
             profile_selections,
@@ -1033,7 +1064,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             obligation_identity: Some(*self.obligation_identity.as_bytes()),
             occurrence_key: Some(self.occurrence_key.clone()),
             clause_node: Some(self.clause_node),
-            selected_function: Some(self.selected_function.clone()),
+            replay_target: self.replay_target.clone().into(),
             package_id: Some((
                 Some(self.package_id.domain().as_str().to_owned()),
                 self.package_id.hex(),
@@ -1047,7 +1078,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
-            backend: Some(self.backend.identity().to_owned()),
+            backend: Some(self.backend.as_str().to_owned()),
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
             family_payload: Some(self.family_payload.clone()),
@@ -1070,6 +1101,7 @@ pub(crate) fn origin(role: &str, ordinal: u64) -> Origin {
 mod envelope_tests {
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
+    use crate::identity::QualifiedName;
     use ix_trace_rs::trace;
     use qsl_foundation::bound::{DomainKind, ProofBound};
     use quire_exact::Identifier;
@@ -1101,7 +1133,7 @@ mod envelope_tests {
                 origin("reference", occurrence_ordinal),
             )),
             clause_node: Some(WireNodeId::from_digest(digest(3))),
-            selected_function: Some(
+            replay_target: ReplayTargetMembers::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             ),
             package_id: Some((
@@ -1299,6 +1331,80 @@ mod envelope_tests {
         ));
     }
 
+    fn frame_operation() -> FrameOperation {
+        FrameOperation {
+            object: QualifiedName::new(vec![
+                Identifier::new("Config").unwrap(),
+                Identifier::new("ConfigVersion").unwrap(),
+            ])
+            .unwrap(),
+            operation: Identifier::new("attemptUpdate").unwrap(),
+        }
+    }
+
+    fn clause_name() -> QualifiedName {
+        QualifiedName::new(vec![Identifier::new("VersionUnchanged").unwrap()]).unwrap()
+    }
+
+    /// FR-070-AC-18 (TC-183 step 6): a function, a frame and a state-clause
+    /// packet each reconstruct and round-trip with their one target; the
+    /// same packets with the target removed refuse
+    /// `MissingMember("replay_target")`; a second member refuses
+    /// `ConflictingTarget` naming the two, and no envelope is built.
+    #[trace("TC-183", "FR-070-AC-18")]
+    #[test]
+    fn tc_183_replay_target_round_trips_and_refuses_none_and_two() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let targets = [
+            ReplayTarget::function(function.clone(), None),
+            ReplayTarget::FrameOperation(frame_operation()),
+            ReplayTarget::state_clause(clause_name()),
+        ];
+        for target in targets {
+            let mut packet = full_packet(0);
+            packet.replay_target = target.clone().into();
+            let envelope =
+                WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
+            assert_eq!(envelope.replay_target(), &target);
+            let again =
+                WitnessEnvelope::reconstruct(envelope.to_packet(), crate::ReplayLimits::default())
+                    .unwrap();
+            assert_eq!(again.replay_target(), &target);
+
+            let mut removed = full_packet(0);
+            removed.replay_target = ReplayTargetMembers::default();
+            assert_eq!(
+                WitnessEnvelope::reconstruct(removed, crate::ReplayLimits::default()),
+                Err(WitnessRefusal::MissingMember("replay_target"))
+            );
+        }
+
+        let mut with_frame = full_packet(0);
+        with_frame.replay_target = ReplayTargetMembers {
+            function: Some(function.clone()),
+            frame_operation: Some(frame_operation()),
+            state_clause: None,
+        };
+        assert_eq!(
+            WitnessEnvelope::reconstruct(with_frame, crate::ReplayLimits::default()),
+            Err(WitnessRefusal::ConflictingTarget {
+                members: vec![TargetMember::Function, TargetMember::FrameOperation]
+            })
+        );
+        let mut with_clause = full_packet(0);
+        with_clause.replay_target = ReplayTargetMembers {
+            function: Some(function),
+            frame_operation: None,
+            state_clause: Some(clause_name()),
+        };
+        assert_eq!(
+            WitnessEnvelope::reconstruct(with_clause, crate::ReplayLimits::default()),
+            Err(WitnessRefusal::ConflictingTarget {
+                members: vec![TargetMember::Function, TargetMember::StateClause]
+            })
+        );
+    }
+
     /// FR-070-AC-5 (TC-184): the extension point is a generic parameter
     /// bounded by [`FamilyPayload`], never a `String`-keyed map. A new
     /// family-owned payload type (standing in for #186's state `forall`)
@@ -1443,7 +1549,7 @@ mod envelope_tests {
                 obligation_identity: self.obligation_identity,
                 occurrence_key: self.occurrence_key,
                 clause_node: self.clause_node,
-                selected_function: self.selected_function,
+                replay_target: self.replay_target,
                 package_id: self.package_id,
                 source_digests: self.source_digests,
                 profile_selections: self.profile_selections,

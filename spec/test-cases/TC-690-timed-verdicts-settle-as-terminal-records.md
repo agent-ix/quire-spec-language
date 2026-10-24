@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-690", "FR-235-AC-n")]`.
 ## Expected Results
 
 - Step 1: each row's `TerminalValue`, label, basis and category as FR-235 states.
-- Step 2: `Proved{ZoneCertified}`; `inconclusive`, `CertificateRejected`; `Proved{ZoneCertified}`.
+- Step 2: `Proved{ZoneCertified, Certified}`; `inconclusive`, `CertificateRejected`; `Proved{ZoneCertified, Certified}`.
 - Step 3: `refuted` after replay; `inconclusive`; `refuted`, `closed-scope`, `kind: TimeLock`.
 - Step 4: `inconclusive`, `NoAdmittedBehaviour`; `unsupported`, `PunctualInterval`; `incomplete`, `limit-reached`, naming the limit.

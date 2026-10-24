@@ -30,7 +30,3 @@ Tag the tests `#[trace("TC-734", "FR-262-AC-1")]`.
 - Step 1: completes with `100000`.
 - Step 2: `incomplete { limit_kind: work_units }` at the denied charge; then
   completes with `100000`.
-
-## Status
-
-Planned.

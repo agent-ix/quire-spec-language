@@ -61,21 +61,21 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-007-AC-1 | A dangling target in a complete universe receives dangling_reference. | Test |
-| FR-007-AC-2 | An incomplete required population receives incomplete_population without inferring missing targets to be dangling. | Test |
-| FR-007-AC-3 | Mismatched invocation anchors, selected snapshot roles or pre/post correspondence receive wrong_snapshot. | Test |
-| FR-007-AC-4 | An unauthorized changed object field or created/deleted object type receives frame_violation. | Test |
-| FR-007-AC-5 | Failed validation returns no ValidatedContext or predicate Boolean, including mixed invalid/unavailable inputs. | Test |
-| FR-007-AC-6 | Foreign authored clauses, model owners, conflicting input identities and stale selected digests refuse without first-match or latest-revision fallback. | Test |
-| FR-007-AC-7 | Every supplied selected object, State value, parameter and result satisfies exact fields, nominal types, scalar bounds, enum variants, option tags and sequence bounds, including skipped fields. | Test |
-| FR-007-AC-8 | Duplicate object identities and wrong reference type/universe refuse; reference cycles terminate validation without merging equal-valued objects. | Test |
-| FR-007-AC-9 | Missing required observations or State roots are incomplete; missing self in a complete required population refuses, with post self required only for postconditions. | Test |
-| FR-007-AC-10 | Parameters/results match the selected operation exactly; a pre-captured reference can resolve an object deleted at post without being retagged. | Test |
-| FR-007-AC-11 | Declared created/deleted sets are duplicate-free, disjoint and equal the actual complete population differences; wrong sets receive population_delta_mismatch. | Test |
-| FR-007-AC-12 | Each validation ceiling stops before its next charged operation; cancellation returns the actual partial diagnostics and usage with no successful context. | Test |
-| FR-007-AC-13 | With sufficient budget, inventory/population/field permutations preserve sorted diagnostics, including original native/model loci and exact structured runtime locations. | Test |
-| FR-007-AC-14 | Frame storage equality preserves State-root values and detects option-tag, nested-record or sequence-order/multiplicity changes; missing counterpart roots are incomplete. | Test |
-| FR-007-AC-15 | Repeated validation has fresh accounting and leaves the checked package/input bytes unchanged after success, refusal, exhaustion and cancellation. | Test |
+| FR-007-AC-1 | A dangling target in a complete universe receives dangling_reference. | Test (TC-059) |
+| FR-007-AC-2 | An incomplete required population receives incomplete_population without inferring missing targets to be dangling. | Test (TC-059) |
+| FR-007-AC-3 | Mismatched invocation anchors, selected snapshot roles or pre/post correspondence receive wrong_snapshot. | Test (TC-058, TC-061) |
+| FR-007-AC-4 | An unauthorized changed object field or created/deleted object type receives frame_violation. | Test (TC-062) |
+| FR-007-AC-5 | Failed validation returns no ValidatedContext or predicate Boolean, including mixed invalid/unavailable inputs. | Test (TC-064, TC-077) |
+| FR-007-AC-6 | Foreign authored clauses, model owners, conflicting input identities and stale selected digests refuse without first-match or latest-revision fallback. | Test (TC-058) |
+| FR-007-AC-7 | Every supplied selected object, State value, parameter and result satisfies exact fields, nominal types, scalar bounds, enum variants, option tags and sequence bounds, including skipped fields. | Test (TC-060) |
+| FR-007-AC-8 | Duplicate object identities and wrong reference type/universe refuse; reference cycles terminate validation without merging equal-valued objects. | Test (TC-059, TC-060) |
+| FR-007-AC-9 | Missing required observations or State roots are incomplete; missing self in a complete required population refuses, with post self required only for postconditions. | Test (TC-059, TC-061) |
+| FR-007-AC-10 | Parameters/results match the selected operation exactly; a pre-captured reference can resolve an object deleted at post without being retagged. | Test (TC-061) |
+| FR-007-AC-11 | Declared created/deleted sets are duplicate-free, disjoint and equal the actual complete population differences; wrong sets receive population_delta_mismatch. | Test (TC-062) |
+| FR-007-AC-12 | Each validation ceiling stops before its next charged operation; cancellation returns the actual partial diagnostics and usage with no successful context. | Test (TC-065) |
+| FR-007-AC-13 | With sufficient budget, inventory/population/field permutations preserve sorted diagnostics, including original native/model loci and exact structured runtime locations. | Test (TC-064) |
+| FR-007-AC-14 | Frame storage equality preserves State-root values and detects option-tag, nested-record or sequence-order/multiplicity changes; missing counterpart roots are incomplete. | Test (TC-063) |
+| FR-007-AC-15 | Repeated validation has fresh accounting and leaves the checked package/input bytes unchanged after success, refusal, exhaustion and cancellation. | Test (TC-066) |
 
 ## Dependencies
 
@@ -83,11 +83,3 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 - [FR-016](FR-016-check-native-clauses.md) owns static judgments and input obligations.
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) traces to StR-001.
 - [IT-006](../integration/IT-006-native-reference-workflow.md) exercises the native pipeline.
-
-## Status
-
-Validation is qualified by SR-097: all fifteen acceptance criteria
-have executed evidence in 35 public API tests. Reference execution is qualified
-by SR-098. Task-015 owns the complete native API review/handoff;
-remaining LC03/backend/Quire issue-level acceptance is separate.
-Remaining LC02/FS03 issue acceptance is separate from the landed checker API.

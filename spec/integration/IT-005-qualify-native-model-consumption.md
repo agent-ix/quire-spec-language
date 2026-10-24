@@ -122,4 +122,3 @@ The native implementation specification owns its bounded work and runner limits.
 - [FR-005](../functional/FR-005-link-shared-model.md)
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
 - [IT-002](IT-002-native-state-workflow.md)
-- [TM-003](../model-linking/tests.md)

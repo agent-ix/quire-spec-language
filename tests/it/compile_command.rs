@@ -156,11 +156,7 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
 #[test]
 #[trace("TC-105", "FR-027-AC-3")]
 fn compile_arity_is_checked_before_opening_any_request() {
-    for arguments in [
-        vec!["compile"],
-        vec!["compile", "missing.json", "extra"],
-        vec!["compile", "missing.json", "--target", "integer-ir/v1"],
-    ] {
+    for arguments in [vec!["compile"], vec!["compile", "missing.json", "extra"]] {
         let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
             .args(arguments)
             .output()
@@ -246,21 +242,13 @@ fn shared_format_catalog_preserves_existing_wire_spellings() {
         vec![
             json!("native-run/1"),
             json!("native-compile/1"),
-            json!("native-run-result/1"),
+            json!("native-run-result/2"),
             json!("native-rule-model/1"),
             json!("native-rule-model/2"),
             json!("native-state-input/1"),
             json!("native-linked-package/1"),
             json!("spine-run-result/1")
         ]
-    );
-    let result_schema: Value = serde_json::from_str(include_str!(
-        "../../schemas/native-run-result-1.schema.json"
-    ))
-    .unwrap();
-    assert_eq!(
-        result_schema["$defs"]["report"]["properties"]["format"]["const"],
-        WireFormat::RunResult.as_str()
     );
     assert_eq!(
         quire_spec_language::model_source::FORMAT,
@@ -329,7 +317,7 @@ const SPINE_FIXTURE: &str = "tests/fixtures/spine-compile.native";
 /// The fixture's header and profile selection, which every stage-refusal
 /// body below follows.
 const SPINE_HEADER: &str =
-    "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n";
 
 /// Write `program` as `program.native` under `directory` with a
 /// native-compile/1 request selecting it, no models and no clause bindings.
@@ -376,43 +364,22 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
-/// FR-029-AC-3 (TC-107): `lower` refuses a `1-draft` program with
-/// `unknown_edition`, naming the file and locating the edition literal by
-/// span, the same existing intake behavior FR-029 says `lower` retains from
-/// `compile`.
-///
-/// `lower`'s refusal comes from the native parser's own header check
-/// (`src/parser.rs`), not `compile`'s `Edition::of` dispatch
-/// (`an_edition_neither_compiler_reads_refuses`, above): its `message` is
-/// the generic "supported edition is 0-draft", naming neither the file nor
-/// the offered edition in prose, so this asserts the file through
-/// `details.path` and the edition through the refusal's own span, over the
-/// message text those two checks take there.
+/// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
+/// unknown command that exits 20 without reading its operand.
 #[test]
-#[trace("TC-107", "FR-029-AC-3")]
-fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
-    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+#[trace("TC-015", "FR-010-AC-3")]
+fn lower_is_an_unknown_command() {
     let directory = tempfile::tempdir().unwrap();
-    spine_request(directory.path(), &program);
     let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("lower")
-        .arg(directory.path().join("compile.json"))
-        .current_dir(directory.path().parent().unwrap())
+        .args(["lower", "missing.json"])
+        .current_dir(directory.path())
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "unknown_edition", "{failure}");
-    assert_eq!(failure["details"]["path"], "program.native", "{failure}");
-    let text = String::from_utf8(program).expect("the spine fixture is UTF-8");
-    let literal = text
-        .find("\"1-draft\"")
-        .expect("the fixture declares edition \"1-draft\"");
-    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
     assert_eq!(
-        failure["details"]["span"]["end"]["byte"],
-        literal + "\"1-draft\"".len()
+        std::str::from_utf8(&output.stderr).unwrap(),
+        "unknown command: lower\n"
     );
 }
 
@@ -570,13 +537,11 @@ fn each_spine_stage_refusal_reports_its_stage_and_code() {
             None,
         ),
         (
-            "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }\n",
+            "synthesis Syn using v grammar M::G domain M::D satisfies { true };\n",
             "forms",
             "unsupported_construct",
             21,
-            Some(
-                "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }",
-            ),
+            Some("synthesis Syn using v grammar M::G domain M::D satisfies { true };"),
         ),
         (
             "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",
@@ -851,9 +816,17 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
 /// the program's import. Stdout is exactly the bytes `qsl_replay::spine`'s
 /// operations emit over the same program and dependency input.
 #[test]
-#[trace("TC-446", "FR-027-AC-10")]
+#[trace("TC-446", "FR-027-AC-10", "TC-885", "FR-003-AC-9")]
 fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    crate::support::front_end::emitted(
+        geometry_identity(),
+        "geometry.native",
+        &library,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("the supplied library retains its formatted checked identity");
     let directory = tempfile::tempdir().unwrap();
     let program = spine_library_request(directory.path(), &library, "test/geometry");
     let output = compile(directory.path());

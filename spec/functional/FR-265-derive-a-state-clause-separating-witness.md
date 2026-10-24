@@ -95,8 +95,7 @@ record the same way.
 ## Criteria fixture
 
 The criteria use FR-108's `Config` domain package and a unit `witness`
-whose invariants are on `Config::ConfigVersion` at `current`. A state clause
-cannot query a population (ADR-016 FE-4), so each claim ranges over a
+whose invariants are on `Config::ConfigVersion` at `current`. A claim here ranges over a
 collection the claim builds or over a collection-typed member of `self`.
 `L` is the list `[0, self.versionNumber, self.versionNumber]` built in the
 claim:

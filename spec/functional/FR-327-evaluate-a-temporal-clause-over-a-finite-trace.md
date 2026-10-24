@@ -32,7 +32,8 @@ The layer-5 TemporalTrace evaluator SHALL evaluate a checked temporal clause
 (FR-326) over a trace of observations, addressing positions by
 `TemporalPosition` (ADR-014 TR-2) and charging work on the caller's meter
 (TR-5). Under a bounded profile it SHALL evaluate a closed finite trace with
-the profile's own meaning and closed-boundary rule (ADR-018 SM-1). The
+the profile's own meaning and closed-boundary rule (ADR-018 SM-1), and a
+protocol lasso whose loop has no counted step as FR-329 states. The
 infinite-trace profile's readings of a finite prefix and of a lasso are
 FR-328 and FR-329. This evaluator is the one definition of a temporal
 formula's truth on a trace that replay, monitors and the model checker use
@@ -61,7 +62,11 @@ with an incomplete result, never a guess, when the work budget runs out.
 - An evaluation outcome: `Completed(true)`; `Completed(false)` with the
   `TemporalPosition` of the first activation that evaluated false;
   `Undefined(UndefinedEvaluation{where, cause})` with `where` a
-  `TemporalPosition`; or `Incomplete` with its charge point.
+  `TemporalPosition`; `InsufficientData{where, atom, count, min_count}`
+  with `where` a `TemporalPosition`, `atom` the window aggregate atom's
+  locus in the clause (as FR-330 names an undefined atom's), and `count` and
+  `min_count` the atom's `u64` values (FR-194); or `Incomplete` with its
+  charge point.
 - `TemporalPosition` encodes into `qsl_replay::TracePosition` as decimal
   ASCII with no leading zero, `0` for position zero.
 
@@ -112,9 +117,52 @@ with an incomplete result, never a guess, when the work budget runs out.
   hold on it.
 - A window aggregate atom that has no value because its window lacks data
   (`insufficient-data{count, min_count}`, QSpec FR-414) is not an undefined
-  evaluation: the evaluator SHALL settle the clause at that position in the
-  O-16 category `undefined` with that cause, never `UndefinedEvaluation`
-  and never violation (QSpec FR-414).
+  evaluation. An activation that reads such an atom at any position it
+  reads has no truth value, even when another position it reads is false,
+  and even when another atom of the same letter at that position is false:
+  the letter at a position is the value of every atom there (ADR-018 UE-1),
+  so an atom with no value leaves the letter with none, as an undefined atom
+  does, and no Boolean connective reads a truth value from it;
+  the evaluator SHALL record it and SHALL continue with the clause's other
+  activations, so insufficient data never hides a decisive result:
+  - A false activation, an undefined atom and a refused condition SHALL be
+    returned by the rules of this section and the next, in evaluation
+    order (position order, and clause-node order among the atoms of one
+    position), whether or not an activation before them lacked data. At one
+    position, an atom that is undefined or refused decides the result over
+    an atom there that is short of data, in either clause-node order.
+  - Only when evaluation completes with none of these, and at least one
+    activation lacked data, SHALL the evaluator return
+    `InsufficientData{where, atom, count, min_count}`, `where` the first
+    position, in evaluation order, at which an atom was short of data and
+    `atom` the first such atom there in clause-node order, in place of a
+    truth value.
+  - Positions read after an activation that lacked data are charged as any
+    other (Work), and a denied charge returns `Incomplete`.
+- `InsufficientData` SHALL map to the O-16 category `undefined` with cause
+  `insufficient-data{count, min_count}`, never `UndefinedEvaluation` and
+  never violation (QSpec FR-414): the trace lacks the data to decide the
+  claim, so it neither holds nor fails on it.
+
+### Refused condition
+
+- When the S6a evaluation of a `holds` condition at a position the clause
+  reads is a refusal (a kernel `Outcome::Refused` or a family
+  `FamilyResult::Refused`), the evaluator SHALL stop at that atom and
+  return the refused condition, its position and that evaluation, in
+  place of a truth value. The rule holds for every profile and trace shape
+  the evaluator reads, FR-328's prefix and FR-329's lasso included. An
+  activation that evaluates false, and an atom that evaluates undefined,
+  at an earlier position in the evaluation order SHALL be returned
+  instead; an earlier atom short of data SHALL NOT be (Undefined
+  evaluation).
+- A refused condition SHALL keep its refusal's FR-096 record (code, cause,
+  fields and the atom's locus) and its O-16 category: it is a refusal of
+  the run, neither an undefined evaluation nor an internal fault. The
+  kernel `Refusal::CheckedInvariant` is the exception: the evaluator SHALL
+  return it as a refused condition like any other refusal, and FR-330
+  reports that refused condition as an internal failure, as FR-100 maps
+  it.
 
 ### Work
 
@@ -139,7 +187,9 @@ with an incomplete result, never a guess, when the work budget runs out.
 | FR-327-AC-2 | Over the same trace, `always[0,0] holds(c.value <= 1)` with activation `on each` is `Completed(false)` at position 2. | Test (TC-837) |
 | FR-327-AC-3 | `TracePosition` `0` and `2` decode to positions 0 and 2; `02`, `-1`, the empty string and `18446744073709551616` refuse `invalid_runtime_input`/`invalid-value`; position `3` on the three-position trace refuses `invalid_runtime_input`/`invalid-value` at reconstruction. Position 12 encodes as `12`. | Test (TC-837) |
 | FR-327-AC-4 | Over AC-1's trace, `eventually[0,2] holds(c.value = 2)` `on origin` makes 4 visits: the `eventually` node at position 0 and the `holds` atom at positions 0, 1 and 2. With a meter of 3 work units it returns `Incomplete` at the `WorkUnits` charge point and no truth value; with a meter of 4 it returns `Completed(true)` and charges 4. | Test (TC-837) |
-| FR-327-AC-5 | Over the closed `Counter` trace with `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(2 / (2 - c.value) >= 1)` `on origin` returns `Undefined{where: 2, cause: division-by-zero}`, category violation; `eventually[0,1] holds(2 / (2 - c.value) = 2)` reads positions 0 and 1 only and returns `Completed(true)`. | Test (TC-847) |
+| FR-327-AC-5 | Over the closed `Counter` trace with `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(3 mod (2 - c.value) >= 0)` `on origin` returns `Undefined{where: 2, cause: division-by-zero}`, category violation; `eventually[0,1] holds(3 mod (2 - c.value) = 0)` reads positions 0 and 1 only and returns `Completed(true)`. Both atoms type-check: `mod` is the Euclidean remainder of two integers and needs no division-law selection (FR-091), while an integer `/` with no `Rational` expected type is refused `ill_typed` (FR-100-AC-5, FR-109-AC-9). | Test (TC-847) |
+| FR-327-AC-6 | Over AC-1's trace with a `holds` atom whose S6a evaluation is `Completed(true)` at position 0 and a kernel `Outcome::Refused(IntegerOutOfDomain)` at position 1, `always[0,2] holds(...)` `on origin` returns the refused condition at position 1 with the record `integer_out_of_domain`/`outside-domain`, its `expected` field and the atom's locus, category refusal, and no truth value; with the refusal at position 1 and a false atom at position 0 it returns `Completed(false)` at position 0; with `Refusal::CheckedInvariant` at position 1 it returns the refused condition at position 1 carrying `CheckedInvariant`, not a `TemporalRefusal::Fault`, and FR-330 reports it as `internal-failure`. The same atom under infinite-trace over the prefix (FR-328) and over the lasso with an empty prefix and loop 0, 1 (FR-329) returns the refused condition at position 1. | Test (TC-1160) |
+| FR-327-AC-7 | Over the closed `Counter` trace with `c.value` 0, 1, 2 under event-position false-extension, with `A` the atom `count where holds(c.value != 2) over past[0, 0] min_count 1 >= 1` (true at positions 0 and 1, short of data at 2) and `B` the atom `count over past[0, 9] min_count 2 >= 1` (short of data at position 0, true at 1 and 2): `always[0,2] A` `on origin` returns `InsufficientData{where: 2, atom: A, count: 0, min_count: 1}`, category `undefined`, not a truth value and not `UndefinedEvaluation`; `always[0,0] (holds(c.value != 1) and A)` `on each` returns `Completed(false)` at position 1; `always[0,0] (holds(c.value != 2) and B)` `on each` returns `Completed(false)` at position 2, the later false activation winning over the earlier activation that lacked data; `always[0,0] (holds(3 mod (1 - c.value) >= 0) and A)` `on each` returns `Undefined(UndefinedEvaluation{where: 1, cause: division-by-zero})`; `always[0,0] (holds(3 mod (2 - c.value) >= 0) and B)` `on each` returns `UndefinedEvaluation` at position 2; `always[0,0] (holds(c.value <= 2) and B)` `on each` returns `InsufficientData{where: 0, atom: B, count: 1, min_count: 2}`, no activation being false; `always[0,2] (holds(c.value != 2) and B)` `on origin` returns `InsufficientData` at position 0, its one activation having no truth value. `always[0,0] (holds(c.value != 0) and B)` `on each` returns `InsufficientData{where: 0, atom: B, count: 1, min_count: 2}`, not `Completed(false)` at position 0: the false `holds` atom beside the short `B` in the one letter at position 0 does not make that activation false, and the activations at positions 1 and 2 are true. Over the one-position trace with `c.value` 2, `always[0,0] (holds(3 mod (2 - c.value) >= 0) and A)` and `always[0,0] (A and holds(3 mod (2 - c.value) >= 0))` `on each` each return `UndefinedEvaluation` at position 0. | Test (TC-847) |
 
 ## Dependencies
 

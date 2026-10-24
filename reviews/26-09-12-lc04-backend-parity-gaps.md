@@ -8,8 +8,6 @@ review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-008
     type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-009
-    type: reviews
   - target: ix://agent-ix/quire-spec-language/TC-094
     type: references
 ---

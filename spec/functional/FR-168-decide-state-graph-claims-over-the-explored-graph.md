@@ -28,7 +28,8 @@ evidence only where open nodes cannot change it (ADR-022 GM-6): a trap whose
 forward closure is closed, a pair of paths through known nodes, or an
 undefined evaluation. A witness for every initial state decides `possible`
 only when the exploration reached every reachable node and found no
-undefined evaluation of the target (ADR-022 GV-1, RU-5). Evidence is canonical, so the same request gives the same evidence.
+undefined evaluation of a predicate of the claim or of one of the subject's
+expressions (ADR-022 GV-1, RU-5). Evidence is canonical, so the same request gives the same evidence.
 
 ## Use case
 
@@ -43,7 +44,7 @@ left undecided, never guessed.
 
 - FR-167's `ExploredStateGraph` for the subject.
 - FR-166's sampled witnesses for each `Possible` instance.
-- Each state-graph item (FR-165) and its instances.
+- Each state-graph item (FR-165) and its instances (FR-125).
 
 ## Outputs
 
@@ -54,7 +55,7 @@ left undecided, never guessed.
   or `Explored`, on a run that completed with no open node;
 - `WitnessedUnchecked { paths, end, open }`: the same witnesses on a run
   that a limit stopped or that ended with open nodes, so a reachable
-  undefined evaluation of the target is not ruled out, with the run's end
+  undefined evaluation is not ruled out, with the run's end
   and its open causes;
 - `Trapped { stem }`: a `ModelPath` ending at a trap node;
 - `PathPair { stem, first, second }`: a stem ending at a node where `from`
@@ -65,7 +66,9 @@ left undecided, never guessed.
 - `NoDecision { end, open }`: the run's end and the causes of its open
   nodes, which FR-169 maps;
 - `Undefined { stem, undefined }`: a `ModelPath` ending at the first node, in
-  discovery order, where a predicate of the claim evaluates undefined, and
+  discovery order, where a predicate of the claim or one of the subject's
+  expressions (a guard, the `terminal when` predicate, a state constraint)
+  evaluates undefined, and
   its `UndefinedEvaluation{where, cause}`;
 - `NoInitialState`.
 
@@ -130,9 +133,10 @@ Each carries its instance's `over` binding.
   other edge out of that position's node into `H`, the prefix, that edge,
   then the shortest path on. The stem is the canonical breadth-first path to
   the node.
-- Otherwise `UniquePath` SHALL return `Trapped` for the first closed node in
+- Otherwise `UniquePath` SHALL return `Trapped` for the first known node in
   discovery order where `from` holds and that counts 0, with its canonical
-  breadth-first stem.
+  breadth-first stem. A closed node that counts 0 only because the nodes it
+  reaches are open is not known and is no trap.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
   node where `from` holds counts exactly 1.
 
@@ -146,6 +150,23 @@ Each carries its instance's `over` binding.
   FR-391 states them: the predicate, the node's state-key digest and the
   locus of the expression with no value, and the catalogued reason
   (ADR-022 GV-7, ADR-018 UE-1).
+- The engine SHALL also treat as evaluated at an explored node the
+  subject's own expressions (QSpec FR-391 "Undefined evaluation"): the
+  guard, the effective precondition, of each transition enabled-tested at
+  the node; the `terminal when` predicate (FR-124) at a node with no enabled
+  transition; and a selected state constraint (ADR-021) that restricts the
+  explored states.
+- If one of the subject's expressions evaluates `Undefined` at an explored
+  node, then the engine SHALL return `Undefined` for every state-graph item
+  instance over the subject whose exploration reaches that node, with the
+  canonical breadth-first path to the node as its stem and a `where` that
+  names the node's state-key digest and the locus of the expression with no
+  value, plus the FR-181 transition identity for a guard and neither a
+  predicate nor a transition for the `terminal when` predicate or a state
+  constraint (QSpec FR-393).
+- The engine SHALL NOT read an undefined guard as a disabled transition, and
+  SHALL NOT read an undefined `terminal when` predicate as a non-terminal
+  node.
 - `Undefined` SHALL take the place of `Witnessed`, `WitnessedUnchecked`
   and `Holds`, whether the witnesses were sampled or explored. When a trap
   or a path pair is found at a node earlier in discovery order, the engine
@@ -177,11 +198,15 @@ Each carries its instance's `over` binding.
 | FR-168-AC-2 | §7.2: `CanStillWin` returns `Trapped` at `Lost` with stem `play, lose`; with `from (x.phase != Lost)` it returns `Holds{Exhaustive}`; with the `restart` operation and no `from` it returns `Holds{Exhaustive}`. | Test (TC-593) |
 | FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds{Exhaustive}`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
 | FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]`, initially 0, and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under the search horizon `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
-| FR-168-AC-5 | Over §7.1's subject, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
+| FR-168-AC-5 | Over §7.1's subject, `possible 2 div (2 - c.versionNumber) = 2` for `c = a` under the subject's integer-division law (its package selects one, as FR-168-AC-11's fixture does; `div` needs that selection) returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
 | FR-168-AC-6 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
 | FR-168-AC-7 | FR-168-AC-5's item with default `witness_samples` holds a sampled witness from `(0, 0)` ending at `(1, 0)` and still returns `Undefined` at `(2, 0)`, not `Witnessed`; `ReachesTwo` with default limits returns `Witnessed` with `Sampled` sources from a run that completed with no open node. | Test (TC-613) |
 | FR-168-AC-8 | `ReachesTwo` with default `witness_samples` and `max_states` 2 returns `WitnessedUnchecked` with `Sampled` sources and `end` `Stopped(ResourceExhausted, MaxStates)`; with `witness_samples` 0 and `max_states` 2 it returns `NoDecision` with the same `end`. | Test (TC-614) |
 | FR-168-AC-9 | Fixture `Fork`: one object with `pos: Int[0, 4]`, initially 0; operations `toA()` (pre `pos = 0`, post `pos = 1`), `toB()` (pre `pos = 0`, post `pos = 2`), `fromA()` (pre `pos = 1`, post `pos = 3`), `fromB()` (pre `pos = 2`, post `pos = 4`) and `back()` (pre `pos = 3`, post `pos = 0`), each framed `modifies self.pos`, with `toA` before `toB` in canonical transition order. `possible x.pos = 4` with `witness_samples` 0 under horizon 2: the node with `pos = 3` is open, `pos = 1` and `pos = 2` both have `d` 1, and the explored witness is `toB, fromB`, ending at the target `pos = 4`, not `toA, fromA`; the outcome is `WitnessedUnchecked`. | Test (TC-619) |
+| FR-168-AC-10 | `unique path Once from (x.pos = 0) to (x.pos = <end>)` with `witness_samples` 0 over two fixtures, each one object with an integer `pos`, initially 0, and operations that each take `pos` from one value to another (pre `pos = from`, post `pos = to`, framed `modifies self.pos`), named in canonical transition order. `Ladder` (`pos: Int[0, 3]`, end 3; `a` 0 to 1, `b` 0 to 2, `c` and `d` 1 to 3, `e` 2 to 3) returns `PathPair` with first `a, c` and second `a, d`, not `b, e`: of two equally short deviations whose edges both rank above the first path's, the later is the lesser. `Detour` (`pos: Int[0, 5]`, end 5; `s` 0 to 1, `t` 0 to 2, `u` 1 to 4, `w` 2 to 5, `y` 2 to 4, `x` 4 to 5) returns `PathPair` with first `t, w` and second `s, u, x`, not `t, y, x`: an equally short earlier deviation whose edge ranks below the first path's is the lesser. | Test (TC-593) |
+| FR-168-AC-11 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (FR-169-AC-11's fixture), `ReachesTwo` for `c = a`, which has a witness ending at `va = 2`, returns `Undefined`, not `Witnessed`, with stem `(0) -upd(a)-> (1) -upd(a)-> (2)` and a `where` naming the state key of `va = 2`, the guard's locus and the transition identity of `upd(a)`, with no predicate; `always possible CanReachTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }` for `c = a` returns the same evidence; `ReachesThree` (`possible c.versionNumber = 3`, which no node satisfies) over the same subject returns the same `Undefined` evidence, not `Trapped`, with the node `va = 2` open `UndecidedSuccessor`; each item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
+| FR-168-AC-12 | Over FR-126-AC-9's `Counter` subject with `terminal Done using v on Counter when { 6 mod (3 - c.value) = 0 }`, the claim `possible c.value = 3` returns `Undefined` at the terminal node `value = 3`, with a `where` naming its state key and the terminal predicate's locus, with neither a predicate nor a transition, although the node satisfies the target. | Test (TC-612) |
+| FR-168-AC-13 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0`, a package that selects an integer-division law (as FR-168-AC-11's fixture does) and the unit declaring the state constraint `constraint Half using v on Config::ConfigVersion at current { 2 div (2 - self.versionNumber) >= 1 }` (ADR-021 SC-1; S2 kind `Constraint` by FR-102, checked by FR-158 and emitted by FR-105 as a `state`/`state_clause` node of clause `constraint`), selected by the request's `reductions.constraint` (FR-159): the unit compiles, `Half` holds at `va = 0` and `va = 1` so both are expanded, and `ReachesTwo` for `c = a` returns `Undefined` at `va = 2` with stem `(0) -upd(a)-> (1) -upd(a)-> (2)`, cause `division-by-zero` and a `where` naming its state key and the locus of `Half` (its `state_clause` node and claim occurrence), with neither a predicate nor a transition; the node is not reported as a `ConstraintBoundary`, and the item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
 
 ## Dependencies
 

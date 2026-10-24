@@ -36,7 +36,7 @@ Tag the tests `#[trace("TC-542", "FR-137-AC-n")]`.
 - Step 1: six `Weak Each` constraints in `F_C` and `[Weak Each inc]` in
   `F_A`; `[Weak Whole inc]` with a different node identity; empty `F_A`.
 - Step 2: `missing_declaration`/`missing-name` naming `Spec`; the
-  same naming `Impl`; `missing_declaration`/`missing-name`; one constraint.
+  same naming `Impl`; `missing_declaration`/`missing-name`; `invalid_model_binding`/`conflicting-binding` naming both rows, for each duplicate pair.
 - Step 3: three `Scheduler` constraints (branch `A`, branch `B`, root);
   those three and the authored one; the authored one only.
 - Step 4: `F_A` is `[Strong Each inc]`; `F_C` gains `Strong Whole retryA`.

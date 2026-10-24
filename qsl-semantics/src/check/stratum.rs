@@ -8,7 +8,7 @@
 //! No production names itself or a higher stratum, so a body's JSON depth is
 //! fixed whatever the expression's depth.
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use serde_json::Value;
 
 /// Whether `term` is a Leaf: a literal, a reference, a dependency reference,

@@ -76,7 +76,9 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     QSL writes: the packages of steps 1, 5, 6, 7 and 10, `fadd` over
     `Float32[nearest-even]`, the declared record and tuple, TC-435's and
     TC-442's spine fixtures, TC-442's unit with a `Population<M::Gadget>[3]`
-    parameter, a reference to a systems interface, TC-469's ConfigVersion
+    parameter, and with `Population<M::Gadget>[N]` parameters for N = 0, N = 1
+    and two distinct bounds in one function, each population node carrying
+    role `type` alone and its bound as the `max` binding, a reference to a systems interface, TC-469's ConfigVersion
     unit, TC-440's records, TC-160's `q` and `t`, a unit of quantifiers
     over a set, a bag and an ordered set with a predicate, a decimal
     comparison and record and tuple values, and an equality over the
@@ -94,8 +96,8 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     `emit_checked` it. That unit's source text holds each clause's text, so
     each clause function's `generated` occurrence is placed at a region of
     it; an `UnlocatedOccurrence` refusal fails the step. For every emitted node, read its `owner` and
-    its `identity_projection` entry's `owner`, and compare them with the
-    owner of the node's preimage; recompute each structural key and each
+    compare it with the owner of the node's preimage; confirm the wire
+    `identity_preimage` carries no `identity_projection`; recompute each structural key and each
     group label from the wire node alone with a test-side key function that
     calls no `qsl-package` function, and read each package with IR's v2
     reader (FR-093-AC-21).
@@ -107,6 +109,12 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
+Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
+`owner` member until IR-646 adds it to `CheckedSemanticNodeV2`. AC-7 is
+unmet as worded until then: step 2's test supplies the owner (`a`, `u`)
+itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
+`owner` member.
+
 ## Expected Results
 
 - Step 2: every recomputed key equals the node's `node_id`.
@@ -116,12 +124,12 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   `expression` occurrence per read; the scalar nodes typing P1's body
   literals have a `generated` occurrence.
 - Step 5: the three members carry the label
-  `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`, their
-  graph order is G5, G4, G6 (ordinals 0 to 2), and step 2's recomputation
+  `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6`, their
+  graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's recomputation
   from graph order gives G4 to G6.
 - Step 6: every emitted list equals its rebuilt list. In ascending digest
   order, E1 lists P2, P1; F2 lists P2, P1, E1; E2 lists L1, F2, P1; T4 lists
-  T2; G4 lists G5, P4; G5 lists L1, E11, G6; G6 lists G4, E13; G7 lists G9;
+  T2; G4 lists G5, P4; G5 lists L1, G6, E11; G6 lists E13, G4; G7 lists G9;
   G8 lists G7; G9 lists G8; T1, L1 and P1 list none.
 - Step 7: IR admits each emitted package, and each compared member equals
   the fixture's. The compared members are exactly those FR-093-AC-13
@@ -166,32 +174,3 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 - Step 13: the `Point` ids differ, the `List` labels and member ids differ,
   the `Integer` id is equal, the `package_id`s differ, and IR admits both
   (FR-093-AC-22).
-
-## Status
-
-Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs`.
-Step 8 implemented (`emit/tests.rs` and
-`checked_v2::tests::conformance_dependency_selection_vectors`).
-Step 9 implemented (`the_lock_selects_the_catalog_definitions`).
-Step 10 implemented in `qsl-package/src/emit/tests.rs`
-(`enum_members_no_literal_names_are_placed_under_an_ordered_comparison`,
-`an_ordered_comparison_of_enum_parameters_reads_back_verified`,
-`enum_members_no_literal_names_are_placed_under_an_equality`,
-`types_no_function_names_are_placed_at_their_declared_names`,
-`a_node_two_unnamed_types_share_is_placed_at_the_least_name`,
-`a_node_a_state_clause_places_does_not_move_to_a_type_name`).
-Step 11 implemented in `qsl-package/src/emit/tests/admission_corpus.rs`
-(`every_emitted_node_family_is_admitted_at_its_package_id`).
-Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
-(`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
-`FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are
-compared, and IR's v2 reader admits each emitted package. It compares every
-member including `mode` (`float64.add` under `toward-zero` and `nearest-even`)
-and skips, by name, the fixture identities no row lowers in a
-function body.
-
-Steps 12 and 13 are not implemented yet (QSL-638): the emitter writes no
-`owner` member until IR-646 adds it to `CheckedSemanticNodeV2`. AC-7 is
-unmet as worded until then: step 2's test supplies the owner (`a`, `u`)
-itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
-`owner` member.

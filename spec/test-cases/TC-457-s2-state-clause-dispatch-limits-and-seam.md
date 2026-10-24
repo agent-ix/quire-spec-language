@@ -13,7 +13,7 @@ relationships:
 Verify the S2 entry table's new arms, deep clause bodies building with no
 S2 limit, and the S2 seam probe.
 
-Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
+Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6, FR-102-AC-7.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
    then, on a thread with a 512 KiB stack, one of 100,000 nested `not`s,
    parsed under S1 limits raised to fit it.
 4. Run `xtask seam-probe` with the `seam-probe` feature.
+5. Build units holding `body` declarations (FR-102-AC-7) and inspect each
+   `OperationBodyForm`.
 
 Tag the tests `#[trace("TC-457", "FR-102-AC-n")]`. The existing
 `no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token` test
@@ -38,7 +40,5 @@ moves from `invariant` to `temporal`.
 - Step 3: both bodies build their forms, and no S2 outcome names a depth.
 - Step 4: the E0004 locations equal the checked-in S2 list, unchanged: a
   state clause has no match over a probed enum, so it adds no new location.
-
-## Status
-
-Planned.
+- Step 5: each form keeps its label, alias, target segments, parameter names
+  and body with spans that slice to their source text.

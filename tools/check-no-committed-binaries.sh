@@ -25,7 +25,6 @@
 # No allow-list carve-outs: a tracked file that trips this check is the next
 # thing to remove, not an exception to add here.
 #
-# Uses GNU `stat -c%s`; a BSD/macOS `stat` will fail here (not silently).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,7 +61,7 @@ while IFS= read -r -d '' file; do
 	# A submodule gitlink or other non-blob entry has no working-tree file.
 	[ -f "$file" ] || continue
 
-	size="$(stat -c%s "$file")"
+	size="$(wc -c <"$file" | tr -d ' ')"
 	if [ "$size" -gt "$max_bytes" ]; then
 		echo "check-no-committed-binaries: $file is $size bytes, over the ${max_bytes}-byte ceiling" >&2
 		fail=1

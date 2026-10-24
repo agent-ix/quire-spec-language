@@ -66,8 +66,8 @@ thing, and an attempt means exactly what the operation's contract means in
 pub trait MemoryModel {
     type Component: Serialize;            // (a) member of the state key
     // (b) observe, (c) write, (d) internal steps with identity,
-    // enabledness and effect, (e) gate on fork, join, send, receive and
-    // attempt, (f) split and merge, (g) atom values, (h) fairness with a
+    // enabledness and effect, (e) gate on fork, join, send, receive,
+    // attempt and fence, (f) split and merge, (g) atom values, (h) fairness with a
     // `memory` origin
 }
 
@@ -119,7 +119,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
 
 - An `attempt` or `cattempt` SHALL call the same function `ModelSystem`
   uses to expand one application (effective precondition, frame
-  post-states, postconditions, `check_frame`'s delta), passing the clauses
+  post-states, postconditions, the frame decision's delta), passing the clauses
   its attempt selects and the observation the memory model gives. The
   protocol system SHALL have no second contract evaluator.
 - Each expanded state SHALL carry FR-120's invariant findings for its model
@@ -146,6 +146,21 @@ compiler produces it and CG reads it in counterexamples; it serializes as
   `activate` steps, and each replicated role's population universe. An
   unbounded root SHALL return FR-126's `RequiresBound`, and no state is
   explored.
+- The records a binder of a record type ranges over SHALL be the record
+  type's value domain: every record that gives each field a value of that
+  field's value domain. A field's value domain is FR-120's for its type; for a
+  field of an enum type, each member in declaration order; for a field of a
+  record type, that record type's value domain by this rule. The records SHALL
+  be ordered with the first declared field most significant, each field in its
+  own domain order. The protocol system SHALL enumerate this domain for every
+  binder of an `event`, `send`, `receive`, `finish`, `cattempt` and `activate`
+  step, and SHALL enumerate it for every record type whose fields all have
+  finite domains, so no bounded record type is refused as one it cannot
+  enumerate. A record type with a field whose type has no finite domain by
+  this rule (`Integer`, `Text` or a collection with no declared maximum, for
+  example) is an unbounded root: the pre-check above returns `RequiresBound` naming the
+  binder, the record type and the unbounded field, before any state is
+  explored.
 - `model_check` SHALL explore the product of `ProtocolSystem` with the
   property automaton, keyed by (protocol state key, automaton state index),
   on FR-101's engine, with FR-126's edge retention, SCC phase, fairness
@@ -162,6 +177,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
 | FR-215-AC-2 | For the attempt `bump()` of FR-206-AC-2, the successor model states and FR-120 transition identities `ProtocolSystem` gives are equal to those `ModelSystem` gives for the same application. A variant whose postcondition is undecided by the evaluator yields `ContractUndetermined`, and `model_check` settles V-6 `UndecidedSuccessor`. | Test (TC-660) |
 | FR-215-AC-3 | `Sc`'s component serializes as an empty member of every key, `Sc` gives no internal step, and every gate is true: the states of `Fill` under `ProtocolSystem<Sc>` equal those of a test memory model that implements `Sc`'s eight members independently. | Test (TC-660) |
 | FR-215-AC-4 | A protocol with an `event` node whose record type has an unbounded `Int` field returns `RequiresBound` naming that binder before any state is explored. `model_check` over the `Fill` deadlock-freedom item returns `Violated` with `kind: Deadlock`, and over the repaired `Fill` returns `Holds{Exhaustive}` over ten states; running each twice gives equal outcomes and byte-equal counterexamples. | Test (TC-660) |
+| FR-215-AC-5 | With `enum Mode { slow, fast }`, `record Inner { on: Boolean; }` and `record Msg { n: Int[0, 1]; m: Mode; i: Inner; }`, an `event` node with binder `e: Msg` and constraint `true` gives exactly eight `event` steps from a state where its thread rests at it, one per record, and the records in domain order are `{n: 0, m: slow, i: {on: false}}`, `{n: 0, m: slow, i: {on: true}}`, `{n: 0, m: fast, i: {on: false}}` and so on to `{n: 1, m: fast, i: {on: true}}`; building the system refuses nothing. `record Wide { n: Int[0, 1]; t: Integer; }` as the binder type returns `RequiresBound` naming the binder, `Wide` and the field `t` before any state is explored. | Test (TC-660) |
 
 ## Dependencies
 

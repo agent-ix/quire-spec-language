@@ -10,9 +10,9 @@ relationships:
 
 ## Description
 
-Verify S3's checks of hyper clauses over behaviours and relations over model executions: alias binding, object parameters, indexed atoms, the `μ` split, per-variable fairness, `align skip`, execution bindings, refusals at their spans, and identity.
+Verify S3's checks of hyper clauses over behaviours and relations over model executions: alias binding, object parameters, indexed atoms, the `μ` split, per-variable fairness, `align skip`, execution bindings, body expressions typed under the value typer's rules, `let`s that shadow a clause variable, refusals at their spans, and identity.
 
-Scope: FR-172-AC-1 to FR-172-AC-4.
+Scope: FR-172-AC-1 to FR-172-AC-6.
 
 ## Test Procedure
 
@@ -22,6 +22,8 @@ Fixtures: ADR-023 §1, §8.2 and §13's clauses over the vault and device models
 2. Check each FR-172-AC-2 variant.
 3. Check §13's clause and each FR-172-AC-3 variant.
 4. Check `Det`; compare node identities of `NonInterference`, its fairness-swapped variant and its variant with an extra `match` conjunct.
+5. In a unit declaring aliases `V` and `N`, check `NonInterference` with each FR-172-AC-5 `match` block, and evaluate the two `!=` blocks over the same joint steps.
+6. Check each FR-172-AC-6 variant of `Det` and `NonInterference`. Type-check `half(x.i) < rational(3, 4)` as the body of a value clause over a parameter `x` of a record type with one field `i` of `x.i`'s type, and `rational(1, 2) < rational(3, 4)` as the body of a value clause.
 
 Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 
@@ -31,3 +33,5 @@ Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 - Step 2: each refuses with the code and span FR-172-AC-2 names.
 - Step 3: `align_skip` holding `mix`; each variant refuses `unsupported_construct`/`expression-form`.
 - Step 4: two model execution bindings; three distinct identities.
+- Step 5: the operation-constant match checks with both conjuncts in `mu_universal`; each `!=` block has its one conjunct in `mu_universal` and the two hold at the same joint steps; each variant, the field-naming `V::Vault::l` included, refuses with the code at the qualified name FR-172-AC-5 names.
+- Step 6: `undefined_expression`/`unproved-range` at `rational(3, 4)`; `ill_typed`/`ambiguous-literal` for both comparison variants; each refusal equal in code and cause to its value clause's, at the corresponding expression; `ambiguous_declaration`/`ambiguous-name` at the `let` naming trace variable `a`, at the `let` naming object parameter `v`, and at the `let` naming execution variable `x` in `Det`.

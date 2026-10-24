@@ -25,36 +25,96 @@
 //! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal
 //! version, with the shape ADR-013 specifies; `identity` names the ticket
 //! that absorbs it.
+//!
+//! # Former paths (FR-401-AC-3)
+//!
+//! The ADR-013 O-16 `Category` a `Verdict` carries is
+//! `quire_semantic_value::catalog::Category`. This crate no longer re-exports
+//! it:
+//!
+//! ```
+//! use quire_semantic_value::catalog::Category;
+//! # let _ = Category::Success;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_replay::Category;
+//! ```
 
 #![forbid(unsafe_code)]
 
+mod admitted;
 mod bounds;
+mod call_replay_context;
+mod call_requirements;
 mod call_site;
 mod compile;
-// Crate-private until `check_zone_certificate` (FR-245) calls it; until then
-// only its own tests and Kani harnesses reach it.
+// The facade exports the rejection vocabulary. Zone arithmetic stays
+// crate-private until `check_zone_certificate` (FR-245) calls it; its tests
+// and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
-    reason = "the zone certificate checker is its first caller and has not landed yet"
+    reason = "the zone certificate checker and the FR-339 component certificate check are its first callers and have not landed yet"
 )]
 mod certificate;
 mod composite;
 mod execute;
+mod hybrid;
 mod identity;
 mod limits;
+mod model_check;
+mod object_environment;
 mod outcome;
 mod proof_result;
+mod refinement;
 mod request;
 mod result;
 mod scalar;
 pub mod spine;
+pub mod statistical;
+mod supplied_limits;
+mod target;
 mod witness;
 
+pub use admitted::{
+    compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
+    AdmittedContext, AdmittedDimension, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal,
+    AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
+};
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
+pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
+pub use call_requirements::{
+    run_with_requirements, CallRequirement, CallRequirements, RunWithRequirements,
+};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
+pub use certificate::closed_form::outcome::{
+    AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,
+    HighModeMiss, JobIterates, MissEvidence, ScheduleLimit, TaskFixpoint,
+};
+pub use certificate::closed_form::recompute::{recompute, ClosedFormCheck, ClosedFormDisagreement};
+pub use certificate::closed_form::settle::settle;
+pub use certificate::closed_form::task_set::{
+    Arrival, Criticality, ScheduleClaim, ScheduleSubject, SchedulingPolicy, Task, TaskSet,
+    TaskSetRefusal, TimeMember, Wcet,
+};
+pub use certificate::closure::{
+    check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
+    ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
+    TemporalCertificateCheck,
+};
+pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::simulation::{
+    check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
+    IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
+    UndeterminedStep,
+};
+pub use certificate::state_graph::{
+    check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
+};
+pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -64,16 +124,79 @@ pub use composite::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, settle_verified_shadow, BoundEntries, DependencySelectionsCause, Domain,
-    FrameIdentityMismatch, FrameReplayResult, IdentityEncodeError, LimitAboveReader,
-    ParityArgument, ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch,
-    ValueParityReport, ValueParityResult,
+    replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
+    DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
+    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport,
+    ValueParityResult,
+};
+pub use hybrid::{
+    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
 };
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
+    RawSourceRef, TracePosition,
 };
-pub use limits::CallerLimits;
+pub use limits::{AccountingLimits, CallerLimits, PrepareLimits, RenderLimits};
+pub use model_check::counterexample::{
+    deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
+    MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
+};
+pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
+pub use model_check::graph_settle::{
+    settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
+    StateGraphRecord,
+};
+pub use model_check::hyper_counterexample::{
+    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
+    HyperUndefined, StepMark,
+};
+pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
+pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
+pub use model_check::hyper_settle::{
+    settle_hyper_check, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+};
+pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
+pub use model_check::limits::{
+    meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
+    DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
+};
+pub use model_check::outcome::{
+    MemoryCause, ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause,
+};
+pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
+pub use model_check::refinement_settle::{
+    settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
+};
+pub use model_check::replay::{
+    replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
+    StrongFairnessHint,
+};
+pub use model_check::settle::{
+    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, ResultLabel, Truth,
+    EXPLICIT_STATE,
+};
+pub use model_check::smt_query::{encode_smt_query, Refusal, SmtEncodingRefusal, SmtQueryKind};
+pub use model_check::state_graph::{
+    GraphUndefined, GraphWitness, LassoWitness, ModelLasso, ModelPath, OpenCause, RunEnd,
+    StateGraphInstanceOutcome, StateGraphOutcome, WitnessSource,
+};
+pub use model_check::step_settle::{
+    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
+    STEP_INDUCTION_DEPTH,
+};
+pub use refinement::{
+    abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
+    step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
+    LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey,
+    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome,
+    SafetyUndecided, StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken,
+    Undetermined,
+};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
@@ -85,11 +208,17 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
-    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, read_plugin_assignments, read_plugin_basis,
+    read_plugin_cause_kind, read_plugin_certification, read_plugin_inconclusive_cause,
+    AppliedReduction, BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember,
+    PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause,
+    ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind,
+    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
+    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
-pub use qsl_foundation::{Code, InternalFault, RequestIndex};
+pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
@@ -120,11 +249,19 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
-// The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
-// so CG names `Category::Success` and `Category::Violation` through this crate.
-pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
-pub use quire_exact::{Identifier, Origin, Role, ScalarLimits, Value};
+pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
+// FR-395: the types of `run`'s signature and result that the root did not
+// export, so a consumer calls `run_with_requirements` and reads its result
+// without naming `qsl_replay::spine` or `qsl_semantics`.
+pub use qsl_semantics::library::PackageId;
+pub use qsl_semantics::model::object_environment::ObjectEnvironment;
+pub use qsl_semantics::value::supplied::SuppliedLimits;
+pub use quire_exact::{Cancel, CancelCause};
+pub use spine::{
+    Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
+    CompileRefusal, RunRefusal, SpineLimits,
+};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;
@@ -137,25 +274,41 @@ pub use quire_semantic_value::call::InputRefusal;
 // `FiniteBound::cardinality`/`integer_range`/`depth`, `IntegerInterval::new` and `Integer`'s `From`
 // conversions -- and the refusals they return. None is a T-12-governed
 // constructor (ADR-011 §3 FB-05).
+pub use execute::{ObjectEnvironmentFailure, Unresolved};
+pub use object_environment::{
+    object_reference_witness, read_object_environment, write_object_environment, EnvironmentLabels,
+    EnvironmentModel, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentDocument,
+    ObjectEnvironmentRef, ObjectEnvironmentRefusal, ObjectEnvironmentWriteError,
+    ObjectReferenceError,
+};
 pub use qsl_foundation::bound::{
     DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
     ProofBoundRefusal,
 };
+pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
+pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimits, StateEnvironment,
+    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
     InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
     Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
+pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
+// QSpec FR-323: the replay target a packet, envelope and request each carry.
+pub use target::{
+    NamedKind, ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
+    TargetSelectionRefusal,
+};
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,
@@ -175,7 +328,8 @@ pub use witness::{
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
-    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
+    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
+    SelectedObject,
 };
 
 // FR-122: the state-clause counterexample's replay entry, payload and
@@ -242,7 +396,10 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
@@ -252,6 +409,8 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -282,7 +441,10 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
@@ -292,6 +454,8 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

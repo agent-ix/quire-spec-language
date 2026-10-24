@@ -15,12 +15,14 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16 to FR-126-AC-19.
 
 ## Test Procedure
 
 Fixtures: ADR-018 §6's ConfigVersion example unit and its shipped unit,
-universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
+both with `attemptUpdate` framed `modifies self.versionNumber` (FR-154),
+universe `{a, b}`, both versions 0, and the subject's `max_candidates` set
+to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the `Counter` unit (FR-124-AC-1); the
 `Health` unit and its `Restless` variant (FR-126-AC-4).
 
 1. The TP-4 claim under a weak `each` constraint and under a weak
@@ -28,28 +30,63 @@ universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
    `each` constraint over the shipped unit.
 2. The TP-2 `on origin` variant and the TP-1 invariant over the example
    unit; the two TP-2 `on each` clauses of FR-126-AC-2 over `Counter`.
-3. `DeadlockFreedom` over `Counter` with no `terminal` member and with a
+3. `DeadlockFreedom` over `Counter` with no `terminal` declaration and with a
    `When` member covering value 3; `always eventually holds(c.value = 0)`
    under infinite-trace.
 4. The recovery-stability formula over `Health` and over `Restless`.
 5. The TP-4 claim with no granularity with `max_depth` 2, with `max_depth`
    3, with `max_states` 2, with `max_transitions` 3, and with a `Cancel`
-   handle already cancelled; `Counter` with an evaluation meter budget of zero.
+   handle already cancelled; `DeadlockFreedom` over `Counter` with an
+   evaluation meter budget of zero.
 6. The `eventually[0,100]` formula over `Restless` with
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none
-   undefined; `always holds(true)` over FR-120-AC-9's `test/tallies` subject
-   from `t1`; a subject with an unbounded population root.
+   undefined (FR-126-AC-6's test `TransitionSystem` over the `Counter`
+   subject, whose initial state and expansions of values 0, 2 and 3 are the
+   `Counter` subject's own and whose expansion of value 1, reached by `inc`
+   from 0, records `ContractUndetermined` for `inc` with one `Refused`
+   evaluation); `always holds(true)` over the `Counter` subject with `pre CanInc
+   { 6 mod (2 - self.value) >= 0 }` from value 2; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
+8. The TP-4 claim with no granularity over the example unit with initial
+   versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
+   c.versionNumber) >= 0)` over the example unit with both versions 0 and
+   with `a` 0 and `b` 1 (FR-126-AC-11).
+9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each from a
+   test-built checked package carrying its `temporal_clause` node in QSpec
+   FR-370's shape, with its `when` condition read by the test's own letters.
+   Then, from the same package form, the guarded TP-4 clauses of
+   FR-126-AC-16: over the example unit, `eventually holds(c.versionNumber =
+   2)` `on each` when `c.versionNumber = 1` under a weak `each` constraint and
+   under a weak constraint with no granularity, then when `c.versionNumber =
+   7` with no fairness, then with the condition undefined at version 1; over
+   `Counter`, `always eventually holds(c.value = 0)` `on each` when
+   `c.value = 3` and when `c.value = 7`. Replay the weak no-granularity lasso
+   and the `Counter` stutter lasso by FR-128, then replay the first with the
+   condition's letters reading false at every position.
+10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
+    counterexample replayed.
+11. Step 1's weak `each` proof twice, comparing certificate order with the
+    order FR-126 computes from the retained product graph; the `Fork` unit's
+    `always eventually holds(f.phase = 1)` with no fairness constraint, then
+    its certificate checked by FR-339's checker; FR-130-AC-5's mutex proof.
+    Also run FR-126-AC-19's meter and candidate cases: `DeadlockFreedom` over
+    `Counter` under `work_units` 0, `always holds(c.value <= 3)` over the
+    no-precondition `Counter` variant under `work_units` 0, and
+    `DeadlockFreedom` over the example subject with `max_candidates` 1; repeat
+    each with the settings operation's `accounting.work_units=1000000` and
+    `expansion.max_candidates=1000000` settings.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Holds{Exhaustive}` with 15 product states; `Violated` with an
-  empty stem and the three-step `upd(a)` loop for `c = b`; `Violated` with
+- Step 1: `Holds{Exhaustive}` with 30 product states, the 15-state product of
+  each bound instance; `Violated` with an
+  empty stem and the three-step loop `(0,0) -upd(b)-> (0,1) -upd(b)-> (0,2)
+  -upd(b)-> (0,0)` bound to `a`; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
-- Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
+- Step 2: `Violated` with a five-step prefix bound to `a`, on which `va` is never 2;
   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix
   `0 -inc-> 1`.
 - Step 3: `Violated`, `kind: Deadlock`, prefix `0 -inc-> 1 -inc-> 2 -inc->
@@ -61,11 +98,42 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `Stopped{ResourceExhausted, {MaxStates, 2}}`;
   `Stopped{ResourceExhausted, {MaxTransitions, 3}}`;
   `Stopped{Cancelled, None}`; `Stopped{ResourceExhausted,
-  {EvaluationMeter, 0}}`.
+  {EvaluationMeter{work_units}, 0}}`.
 - Step 6: `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an
   automaton-state count of 50 and no counterexample, then `Violated` with
   at least 101 consecutive unhealthy positions;
   `Undecided(UndecidedSuccessor)`; `Violated` with the empty prefix at
-  `t1`, `kind: UndefinedEvaluation`, cause `SumOutOfDomain`, at position 0;
+  value 2, `kind: UndefinedEvaluation`, cause `DivisionByZero`, at position 0;
   `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.
+- Step 8: `Violated` bound to `b` with an empty stem and the loop through
+  `(2,0)`, length 3; `Violated` bound to `a` with the prefix to position 2,
+  `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
+  `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.
+- Step 9: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`; `Holds{Exhaustive}`;
+  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with the
+  closure certificate of its explored product states, keyed `"each-when"`; `Violated`, `kind: UndefinedEvaluation` naming
+  the activation at position 2. For the guarded TP-4 clauses:
+  `Holds{Exhaustive}` with an accepted component certificate; `Violated`
+  bound to `a` with the stem `(0,0) -upd(a)-> (1,0)` and the three-step
+  `upd(b)` loop, length 4; `Holds{Exhaustive}`; `Violated`, `kind:
+  UndefinedEvaluation` naming the activation at position 1; `Violated` with
+  the prefix to value 3 and the terminal stutter loop; `Holds{Exhaustive}`.
+  Both lassos replay to `reproduced-with-evaluated-witness`; with the
+  condition false everywhere the replay settles `inconclusive`,
+  `ReplayParity`.
+- Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
+  terminal-stutter loop at position 3 and length 4; then
+  `reproduced-with-evaluated-witness`.
+- Step 11: the weak `each` proof has closure and component states ascending by
+  `ProductStateRef`, binding `a`'s components before `b`'s, with each binding's
+  components in the computed order and byte-equal certificates across runs;
+  the `Fork` result is `Holds{Exhaustive}` with components `(0,q0)`, `(0,q1)`,
+  `(2,q0)`, `(1,q0)`, `(2,q1)`, `(1,q0)` carrying `MissingAcceptance` and the
+  rest `Trivial`, accepted by the checker; the `UnfairStrong` entry lists
+  `acq(1)` before `acq(2)`. `DeadlockFreedom` over `Counter` stops at the `inc`
+  precondition with `{EvaluationMeter{work_units}, 0}`; the no-precondition
+  `Counter` clause stops at position 0 without a counterexample or certificate;
+  the example subject stops with `{MaxCandidates, 1}`. Each stop names
+  `accounting.work_units` or `expansion.max_candidates`, and raised limits
+  allow the corresponding run to complete without that stop.

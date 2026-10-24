@@ -43,16 +43,18 @@
 //! limit, profile ceiling or backend budget ever makes a domain bounded
 //! (ADR-014 §1).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{InternalFault, Setting};
+use qsl_foundation::Setting;
 use quire_exact::{NodeKey, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::check::Capability;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::fairness::FairnessKind;
 
 /// The non-empty set of an item's unbounded domains, each with its kind,
 /// in [`DomainKey`] order.
@@ -116,18 +118,81 @@ impl ClaimExtent {
     }
 }
 
+/// Why the request writer disposes an item `Unsupported` before any engine
+/// sees it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum UnsupportedItem {
+    /// FR-234 "Punctuality" (ADR-026 DF-5): a timed invariant, timed safety
+    /// or timed liveness claim over a timed subject holding a punctual
+    /// interval, at the interval's span.
+    PunctualInterval {
+        /// The punctual interval's span.
+        span: qsl_foundation::Span,
+    },
+}
+
 /// One item's requirements (ADR-012 §2, FR-062-AC-4; ADR-014 §4, §6 step
-/// 1): the FR-057 capability kind it requests and its extent.
+/// 1): the FR-057 capability kind it requests, its extent, the fairness
+/// kinds its fairness set uses (FR-134; empty for an item with none), and
+/// the cause the request writer disposes it `Unsupported` for, if any.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Requirements {
     kind: Capability,
     extent: ClaimExtent,
+    fairness: BTreeSet<FairnessKind>,
+    unsupported: Option<UnsupportedItem>,
+    model_subject: bool,
 }
 
 impl Requirements {
     /// The requirements of an item requesting `kind` over `extent`.
     pub fn new(kind: Capability, extent: ClaimExtent) -> Self {
-        Self { kind, extent }
+        Self {
+            kind,
+            extent,
+            fairness: BTreeSet::new(),
+            unsupported: None,
+            model_subject: false,
+        }
+    }
+
+    /// The requirements of an item over a model subject (FR-331, FR-368:
+    /// only such a temporal item has a `subject`).
+    #[must_use]
+    pub fn over_model_subject(mut self) -> Self {
+        self.model_subject = true;
+        self
+    }
+
+    /// Whether the item is over a model subject.
+    pub fn model_subject(&self) -> bool {
+        self.model_subject
+    }
+
+    /// The requirements of an item the request writer disposes
+    /// `Unsupported` for `cause`, routing it to no engine (FR-234).
+    #[must_use]
+    pub fn with_unsupported(mut self, cause: UnsupportedItem) -> Self {
+        self.unsupported = Some(cause);
+        self
+    }
+
+    /// Why the request writer disposes the item `Unsupported`, if it does.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
+    }
+
+    /// The requirements with the fairness kinds the item's fairness set
+    /// uses (FR-134): a backend is a candidate only when it advertises each.
+    #[must_use]
+    pub fn with_fairness(mut self, kinds: impl IntoIterator<Item = FairnessKind>) -> Self {
+        self.fairness = kinds.into_iter().collect();
+        self
+    }
+
+    /// The fairness kinds the item's fairness set uses.
+    pub fn fairness(&self) -> &BTreeSet<FairnessKind> {
+        &self.fairness
     }
 
     /// The requested capability kind.
@@ -267,6 +332,10 @@ pub fn classify_domains(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(union_members) => union_members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 // Pushed last-first so the stack visits them in order.
                 for (index, member) in members.into_iter().enumerate().rev() {
@@ -279,9 +348,12 @@ pub fn classify_domains(
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Text(_)
+            | ValueType::String
             | ValueType::Enum(_)
             | ValueType::Reference(_)
-            | ValueType::Population(Some(_)) => {}
+            | ValueType::Population(Some(_))
+            | ValueType::Uuid
+            | ValueType::Timestamp => {}
         }
     }
     Ok(domains)

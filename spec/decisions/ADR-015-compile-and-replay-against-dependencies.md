@@ -22,14 +22,6 @@ relationships:
 ---
 # ADR-015: Compile and replay against dependencies
 
-## Status
-
-Accepted (2026-09-25). Amends ADR-011 §2.1 (E3), §4 (dependency binding)
-and §5 (spine `compile`), and ADR-013 O-02, O-04, O-26 and QC-27, as each
-decision below states. QSpec states the wire and identity parts in FR-307,
-FR-322 and FR-323 (agent-ix/quire-specification); this
-record states QSL's side.
-
 ## Context
 
 ADR-011 §4 says E4 and the layer-6 `replay` facade check every dependency
@@ -56,6 +48,12 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 5. How E3 types a use of an imported name, such as `l::f(x)`, when an
    `ImportView` carries names only; and how a reference into a dependency
    enters a node's identity (ADR-013 QC-27, FR-087-AC-13, TC-379).
+
+Amends ADR-011 §2.1 (E3), §4 (dependency binding)
+and §5 (spine `compile`), and ADR-013 O-02, O-04, O-26 and QC-27, as each
+decision below states. QSpec states the wire and identity parts in FR-307,
+FR-322 and FR-323 (agent-ix/quire-specification); this
+record states QSL's side.
 
 ## Decision
 
@@ -87,6 +85,12 @@ sources:
   `source` is the same source selection a model or the program uses
   (file, `sha256:` source digest and the two labels) (FR-027);
 - `replay` builds it from the request's package reference (D-4).
+
+A compile also takes the optional **refinement internals** input, a JSON
+value for the unit and one for each supplied library, which QSpec FR-375 names
+(FR-099). It is carried unchanged to S3, which owns every refusal of its
+content (FR-147); it is part of the refinement node's identity, so replay
+carries it in the package reference beside `dependencies`.
 
 The **S4 source resolution** is the spine step between S2 and E3 that turns
 the unit's imports into what E3 and E4 admit. It runs beside I1 and its own
@@ -133,7 +137,7 @@ library's source. A refusal at one of the unit's own imports (step 3) is the uni
 E3 receives, per import, the `ImportView` and the library's `CheckedGraph`
 (D-5). E4 receives, per import, the library's `CheckedPackage` and links
 through `CheckedPackage::link_with`, which records the closure and applies
-FR-307's diamond rule. A supplied library that no import reaches is not
+FR-307's diamond rule. A supplied library that no import reaches and that has no refinement internals value is not
 compiled and is not recorded.
 
 With the dependency input in place, E3 refuses an `import` only by the

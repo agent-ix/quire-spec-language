@@ -6,11 +6,12 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::diagnostic::{kernel_refusal_record, CatalogCode, Category, Locus};
+use qsl_foundation::diagnostic::{kernel_refusal_record, Locus};
 use quire_exact::{
     DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval,
     Location, NodeKey, Origin, RationalDomain, Refusal, RoundingMode, TextProfile, TextType,
 };
+use quire_semantic_value::catalog::{CatalogCode, Category};
 
 fn int(value: i64) -> Integer {
     Integer::from(value)
@@ -190,7 +191,12 @@ fn an_ieee_refusal_renders_widths_and_ordered_flags() {
 #[test]
 fn a_checked_invariant_builds_no_record() {
     assert_eq!(
-        kernel_refusal_record(&Refusal::CheckedInvariant, Some(locus())),
+        kernel_refusal_record(
+            &Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted
+            },
+            Some(locus())
+        ),
         None
     );
 }

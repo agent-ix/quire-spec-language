@@ -2,8 +2,9 @@
 //! `qsl-route`: the ADR-011 §6.1 layer **R** crate (ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
 //! §7). Among the workspace crates it depends only on `qsl-semantics`
-//! (layer 3) and `qsl-foundation` (layer F); its one other dependency is
-//! `thiserror`.
+//! (layer 3) and `qsl-foundation` (layer F), and on the layer-SV leaf
+//! `quire-semantic-value` for the [`deadlock`] item's property form; its one
+//! other dependency is `thiserror`.
 //!
 //! `route` answers one question -- **which registered backends, if any,
 //! advertise the capability kind a requested item needs** -- and nothing
@@ -12,7 +13,12 @@
 //! [`qsl_semantics::check::Capability`] kind alone (FR-075): mode
 //! (`bounded`/`unbounded`) never filters candidacy, and no local
 //! capability-kind type is defined here or anywhere else in this ticket's
-//! scope (FR-075-AC-5).
+//! scope (FR-075-AC-5). Fairness kinds do filter (FR-134): a backend is a
+//! candidate for an item only when it advertises every fairness kind the
+//! item's fairness set uses ([`Registry::candidates_for_fairness`]). So do
+//! memory models (FR-226): an item over a subject with a weak `parallel` is
+//! given only backends advertising its resolved models
+//! ([`Registry::candidates_for_models`]).
 //!
 //! `route` negotiates nothing and settles no disposition. An item whose
 //! kind no registered backend advertises reports an ordinary, well-formed
@@ -26,7 +32,7 @@
 //! disposition of its own.
 //!
 //! A backend registers from the labels its FR-331 provider manifest states
-//! ([`BackendDescriptor::admit`], FR-057-AC-8): each advertised kind and
+//! ([`descriptor_from_manifest`], FR-057-AC-8): each advertised kind and
 //! mode is admitted under the same exact-label rules as a requested pair,
 //! and an absent or unknown kind or an unknown mode refuses the whole
 //! registration, keyed by backend identity. A candidate is the ADR-013
@@ -44,76 +50,22 @@
 //! records the gates (`make route-lint`, `cargo deny check bans`) that hold
 //! both of those.
 
+pub mod deadlock;
+pub mod model_request;
 pub mod request;
 pub mod routing;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt;
-
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
-use qsl_foundation::{CatalogCode, Category, Code};
+use qsl_foundation::{BackendId, MemoryModelName};
+#[cfg(test)]
+use qsl_foundation::{Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;
-
-/// A backend's declared identity, unique within one [`Registry`] (FR-290
-/// "Candidate set and negotiation": "a backend identity is unique within a
-/// registry"). Opaque, typed data: on the wire it is the
-/// `backend` member, the identity string exactly as the FR-331 manifest
-/// states it (ADR-012 §7.1, ADR-013 O-19), which this module receives
-/// already formed and does not itself mint.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub struct BackendId(String);
-
-impl BackendId {
-    /// Build a `BackendId` from its wire identity string. This module
-    /// applies no normalization: the identity is opaque data, compared only
-    /// for exact equality.
-    pub fn new(identity: impl Into<String>) -> Self {
-        Self(identity.into())
-    }
-
-    /// Read a `BackendId` from the wire `backend` member (ADR-013 O-19,
-    /// FR-075-AC-6): the identity is kept verbatim, and an empty identity
-    /// refuses with [`EmptyBackendIdentity`].
-    pub fn from_wire(identity: &str) -> Result<Self, EmptyBackendIdentity> {
-        if identity.is_empty() {
-            Err(EmptyBackendIdentity)
-        } else {
-            Ok(Self::new(identity))
-        }
-    }
-
-    /// The identity's exact wire spelling.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// [`BackendId::from_wire`]'s refusal: the `backend` member is empty.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("invalid_identifier: the backend identity is empty")]
-pub struct EmptyBackendIdentity;
-
-impl EmptyBackendIdentity {
-    /// The catalog code of this refusal, the one
-    /// `qsl_replay::ReplayRequestRefusal::EmptyBackendIdentity` carries:
-    /// `invalid_identifier`.
-    pub const fn code(&self) -> Code {
-        Code::InvalidIdentifier
-    }
-
-    /// Always `Category::Refusal` (ADR-013 O-16): the input is refused, not
-    /// a fault.
-    pub const fn category(&self) -> Category {
-        Category::Refusal
-    }
-}
-
-impl fmt::Display for BackendId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+use quire_semantic_value::catalog::CatalogCode;
+#[cfg(test)]
+use quire_semantic_value::catalog::Category;
+use quire_semantic_value::fairness::FairnessKind;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Whether a backend advertises a capability kind over a bounded domain
 /// only, or over an unbounded domain too (ADR-012 §1.1).
@@ -147,13 +99,78 @@ impl Mode {
 
     /// Read a mode from its exact FR-290 wire spelling, with no
     /// normalization or default. Any other label (FR-290 "a mode outside
-    /// these two") is `None`; [`BackendDescriptor::admit`] turns that into
+    /// these two") is `None`; [`descriptor_from_manifest`] turns that into
     /// `invalid_capability`/`unknown-mode`.
     pub fn from_wire(label: &str) -> Option<Mode> {
         Mode::ALL
             .iter()
             .copied()
             .find(|mode| mode.to_wire() == label)
+    }
+}
+
+/// A probabilistic evidence kind (FR-290 "Evidence kinds"): what a
+/// `probabilistic-satisfaction` provider produces and what an item asks for.
+/// The two are never substituted for each other (FR-075-AC-13).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EvidenceKind {
+    /// A measured result with an error guarantee (EN-4).
+    Statistical,
+    /// An exact probability over the full finite subject.
+    Exact,
+}
+
+impl EvidenceKind {
+    /// Both FR-290 evidence kinds. The order carries no meaning; the slice
+    /// exists so [`EvidenceKind::from_wire`] derives from
+    /// [`EvidenceKind::to_wire`] rather than restating the two labels.
+    pub const ALL: &'static [EvidenceKind] = &[EvidenceKind::Statistical, EvidenceKind::Exact];
+
+    /// The FR-290 wire spelling: exactly `statistical` or `exact`.
+    pub const fn to_wire(self) -> &'static str {
+        match self {
+            EvidenceKind::Statistical => "statistical",
+            EvidenceKind::Exact => "exact",
+        }
+    }
+
+    /// Read an evidence kind from its exact wire spelling, with no
+    /// normalization or default.
+    pub fn from_wire(label: &str) -> Option<EvidenceKind> {
+        EvidenceKind::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.to_wire() == label)
+    }
+}
+
+/// The evidence kind a `probabilistic-satisfaction` item names, preserved as
+/// the item carries it (FR-075 "Candidate computation matches probabilistic
+/// evidence exactly"). An absent or unknown value yields no candidate and
+/// stays on the [`CandidateSet`] for negotiation to refuse as
+/// `absent-evidence-kind` or `unknown-evidence-kind`; it is never turned into
+/// a supported candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ItemEvidence {
+    /// The item names no evidence kind.
+    Absent,
+    /// The item names a label that is neither `statistical` nor `exact`;
+    /// carries the exact received bytes.
+    Unknown(String),
+    /// The item names one of the two evidence kinds.
+    Kind(EvidenceKind),
+}
+
+impl ItemEvidence {
+    /// Read an item's evidence label, `None` when the item names none.
+    pub fn from_label(label: Option<&str>) -> Self {
+        match label {
+            None => ItemEvidence::Absent,
+            Some(label) => EvidenceKind::from_wire(label).map_or_else(
+                || ItemEvidence::Unknown(label.to_owned()),
+                ItemEvidence::Kind,
+            ),
+        }
     }
 }
 
@@ -216,6 +233,154 @@ pub struct BackendDescriptor {
     manifest_digest: ManifestDigest,
     advertises: HashSet<(Capability, Mode)>,
     domains: Option<BTreeSet<DomainKind>>,
+    fairness_kinds: BTreeSet<FairnessKind>,
+    memory_models: BTreeSet<MemoryModelName>,
+    evidence_kinds: BTreeSet<EvidenceKind>,
+}
+
+/// Convert one already-read FR-331 provider manifest into its routed
+/// descriptor. The driver supplies the manifest fields as data; this is the
+/// sole manifest conversion entry point shared by linked and process
+/// providers (FR-288, C-28).
+///
+/// `fairness_kinds` is the FR-331 manifest's `fairness_kinds` member exactly
+/// as supplied, `None` when the manifest has none (FR-134 "Manifest
+/// `fairness_kinds` admission"). It is judged after every advertised pair and
+/// `domains`, and only for a backend that advertises `temporal-satisfaction`:
+/// a member of any other backend is ignored. For a temporal backend a
+/// defective member refuses `invalid-fairness-kinds` retaining the
+/// [`FairnessKindsDefect`]: `absent`, `not-a-list`, `unknown-label` (the first
+/// in member order) or `duplicate-label`. An empty list is admitted and
+/// advertises none.
+///
+/// `evidence_kinds` is the manifest's evidence-kind labels, `None` when it
+/// has none. It is judged last (after every advertised pair, `domains` and
+/// `fairness_kinds`), and only for a backend that advertises
+/// `probabilistic-satisfaction`: a member of any other backend is ignored.
+/// For a probabilistic backend an absent or empty set, or a label that is
+/// not byte-equal to `statistical` or `exact`, refuses
+/// `unknown-evidence-kind` (FR-075-AC-11); a repeated label is one member.
+pub fn descriptor_from_manifest<'a>(
+    backend: Candidate,
+    origin: ProviderOrigin,
+    manifest_digest: ManifestDigest,
+    advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    domains: Option<&[&str]>,
+    fairness_kinds: Option<FairnessKindsMember<'_>>,
+    evidence_kinds: Option<&[&str]>,
+) -> Result<BackendDescriptor, RegistrationRefusal> {
+    let refuse = |cause| RegistrationRefusal {
+        backend: backend.clone(),
+        manifest_digest,
+        cause,
+    };
+    let mut advertises = HashSet::new();
+    for (kind, mode) in advertised {
+        let kind = kind.ok_or_else(|| refuse(RegistrationCause::AbsentKind))?;
+        let kind = Capability::from_wire(kind).map_err(|unknown| {
+            refuse(RegistrationCause::UnknownKind(
+                unknown.received().to_owned(),
+            ))
+        })?;
+        let mode = mode
+            .and_then(Mode::from_wire)
+            .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
+        advertises.insert((kind, mode));
+    }
+    let advertises_bounded = advertises
+        .iter()
+        .any(|&(_, mode)| matches!(mode, Mode::Bounded));
+    let domains = admit_domains(domains, advertises_bounded)
+        .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
+    let advertises_temporal = advertises
+        .iter()
+        .any(|&(kind, _)| matches!(kind, Capability::TemporalSatisfaction));
+    let fairness_kinds = if advertises_temporal {
+        admit_fairness_kinds(fairness_kinds).map_err(refuse)?
+    } else {
+        BTreeSet::new()
+    };
+    let evidence_kinds = if advertises_probabilistic(&advertises) {
+        admit_evidence_kinds(evidence_kinds)
+            .map_err(|defect| refuse(RegistrationCause::UnknownEvidenceKind(defect)))?
+    } else {
+        BTreeSet::new()
+    };
+    Ok(BackendDescriptor {
+        backend,
+        origin,
+        manifest_digest,
+        advertises,
+        domains,
+        fairness_kinds,
+        evidence_kinds,
+        // Remaining work: QSpec FR-331-AC-30's `memory_models` member is not
+        // read here yet, so a manifest descriptor advertises `sc` only, as a
+        // descriptor without the member does (FR-226).
+        memory_models: BTreeSet::new(),
+    })
+}
+
+/// One element of a manifest's `fairness_kinds` list as the driver read it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessLabel<'a> {
+    /// A string element, its exact bytes.
+    Text(&'a str),
+    /// An element that is not a string, rendered as the manifest wrote it
+    /// (such as `1` or `null`); it is never a fairness kind.
+    Other(&'a str),
+}
+
+/// A manifest's present `fairness_kinds` member, exactly as supplied.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessKindsMember<'a> {
+    /// A list, in member order.
+    List(&'a [FairnessLabel<'a>]),
+    /// A value that is not a list, rendered as the manifest wrote it (such
+    /// as `null`, `"weak"` or `{}`).
+    NotAList(&'a str),
+}
+
+/// Admit a temporal backend's `fairness_kinds` member (FR-134-AC-3 to
+/// AC-5): the first unknown element wins over any repeat, and a repeat is
+/// never collapsed.
+fn admit_fairness_kinds(
+    member: Option<FairnessKindsMember<'_>>,
+) -> Result<BTreeSet<FairnessKind>, RegistrationCause> {
+    let labels = match member {
+        None => {
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::Absent,
+            ))
+        }
+        Some(FairnessKindsMember::NotAList(value)) => {
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::NotAList(value.to_owned()),
+            ))
+        }
+        Some(FairnessKindsMember::List(labels)) => labels,
+    };
+    let kinds = labels
+        .iter()
+        .map(|label| match *label {
+            FairnessLabel::Text("weak") => Ok((FairnessKind::Weak, "weak")),
+            FairnessLabel::Text("strong") => Ok((FairnessKind::Strong, "strong")),
+            FairnessLabel::Text(other) | FairnessLabel::Other(other) => {
+                Err(RegistrationCause::InvalidFairnessKinds(
+                    FairnessKindsDefect::UnknownLabel(other.to_owned()),
+                ))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = BTreeSet::new();
+    for (kind, label) in &kinds {
+        if !seen.insert(*kind) {
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::DuplicateLabel((*label).to_owned()),
+            ));
+        }
+    }
+    Ok(seen)
 }
 
 impl BackendDescriptor {
@@ -225,17 +390,23 @@ impl BackendDescriptor {
     /// Inputs). `domains` is the manifest's `domains`, `None` when it has
     /// none.
     ///
-    /// The same `domains` rules as [`BackendDescriptor::admit`] apply: an
+    /// The same `domains` rules as [`descriptor_from_manifest`] apply: an
     /// absent set while a `bounded` pair is advertised, an empty set, or a
     /// kind that is not boundable refuses `invalid_capability`/
     /// `invalid-domains`, keyed by `backend` and `manifest_digest`. (A set
     /// holds no repeat.)
+    ///
+    /// `evidence_kinds` is required and nonempty exactly when a
+    /// `probabilistic-satisfaction` pair is advertised, else
+    /// `unknown-evidence-kind` (FR-075-AC-11); it is ignored for any other
+    /// backend (FR-075-AC-12). Judged after `domains`.
     pub fn new(
         backend: Candidate,
         origin: ProviderOrigin,
         manifest_digest: ManifestDigest,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
         domains: Option<BTreeSet<DomainKind>>,
+        evidence_kinds: Option<BTreeSet<EvidenceKind>>,
     ) -> Result<Self, RegistrationRefusal> {
         let advertises: HashSet<_> = advertises.into_iter().collect();
         let advertises_bounded = advertises
@@ -248,90 +419,93 @@ impl BackendDescriptor {
                 cause: RegistrationCause::InvalidDomains(defect),
             }
         })?;
+        let evidence_kinds = if advertises_probabilistic(&advertises) {
+            check_evidence_kinds(evidence_kinds.as_ref()).map_err(|defect| {
+                RegistrationRefusal {
+                    backend: backend.clone(),
+                    manifest_digest,
+                    cause: RegistrationCause::UnknownEvidenceKind(defect),
+                }
+            })?;
+            evidence_kinds.unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
         Ok(Self {
             backend,
             origin,
             manifest_digest,
             advertises,
             domains,
+            fairness_kinds: BTreeSet::new(),
+            memory_models: BTreeSet::new(),
+            evidence_kinds,
         })
     }
 
-    /// Build a descriptor from the advertised `(kind, mode)` labels exactly
-    /// as the backend's provider manifest states them (FR-057 "Stage
-    /// ownership", FR-290 "Advertised mode", ADR-013 C-28).
-    ///
-    /// Each kind is admitted under the same rule as a requested pair: exact
-    /// byte equality with one FR-290 label, no normalization or default.
-    /// Any failing pair refuses the whole registration, keyed by
-    /// `backend` and `manifest_digest`:
-    ///
-    /// - kind `None` (absent or `null`): `invalid_capability`/`absent-kind`;
-    /// - kind not an FR-290 label: `invalid_capability`/`unknown-kind`,
-    ///   carrying the received bytes;
-    /// - mode `None`, or other than `bounded`/`unbounded`:
-    ///   `invalid_capability`/`unknown-mode`, carrying the received bytes
-    ///   when there are any.
-    ///
-    /// **First-failure rule.** A refusal names one cause (FR-290: "refuse
-    /// that registration with `invalid_capability` (`absent-kind`,
-    /// `unknown-kind` or `unknown-mode`)"). When more than one pair fails,
-    /// the cause reported is the first failure in the order the pairs are
-    /// given, and within one pair the kind is checked before the mode, so a
-    /// pair whose kind and mode are both bad reports its kind. FR-290 treats
-    /// the advertised pairs as a set and does not rank causes; this order
-    /// is this function's own, stated here so it is deterministic for one
-    /// manifest. Whether the refusal is reported at all never depends on
-    /// order.
-    ///
-    /// `domains` is the manifest's `domains` (`None` when absent), and is
-    /// checked after every pair. A defective one refuses
-    /// `invalid_capability`/`invalid-domains` (FR-290 "Advertised mode"),
-    /// with the defect in [`DomainsDefect`]: absent while a `bounded` pair is
-    /// advertised, empty, a kind that is not one of the four boundable ones
-    /// (an unknown label included), or a repeated kind. A registration that
-    /// advertises only `unbounded` modes may omit `domains`. The admitted
-    /// descriptor keeps them ([`BackendDescriptor::domains`]).
-    ///
-    /// A refused descriptor never exists, so it contributes nothing to any
-    /// registry.
-    pub fn admit<'a>(
-        backend: Candidate,
-        origin: ProviderOrigin,
-        manifest_digest: ManifestDigest,
-        advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
-        domains: Option<&[&str]>,
-    ) -> Result<Self, RegistrationRefusal> {
-        let refuse = |cause| RegistrationRefusal {
-            backend: backend.clone(),
-            manifest_digest,
-            cause,
-        };
-        let mut advertises = HashSet::new();
-        for (kind, mode) in advertised {
-            let kind = kind.ok_or_else(|| refuse(RegistrationCause::AbsentKind))?;
-            let kind = Capability::from_wire(kind).map_err(|unknown| {
-                refuse(RegistrationCause::UnknownKind(
-                    unknown.received().to_owned(),
-                ))
-            })?;
-            let mode = mode
-                .and_then(Mode::from_wire)
-                .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
-            advertises.insert((kind, mode));
+    /// Advertise the fairness kinds this backend decides (FR-134, QSpec
+    /// FR-368 `fairness_kinds`). A descriptor built without this call
+    /// advertises none, so it is no candidate for an item whose fairness
+    /// set uses a kind.
+    #[must_use]
+    pub fn with_fairness_kinds(mut self, kinds: impl IntoIterator<Item = FairnessKind>) -> Self {
+        self.fairness_kinds = kinds.into_iter().collect();
+        self
+    }
+
+    /// The fairness kinds this backend advertises (FR-134).
+    pub fn fairness_kinds(&self) -> &BTreeSet<FairnessKind> {
+        &self.fairness_kinds
+    }
+
+    /// Advertise the memory models this backend decides (FR-226, ADR-025
+    /// MX-7, QSpec FR-439), by the names of the `memory` clause. A
+    /// descriptor built without this call advertises `sc` only (QSpec
+    /// FR-331), so it is no candidate for an item resolved to `tso` or `ra`.
+    #[must_use]
+    pub fn with_memory_models(mut self, models: impl IntoIterator<Item = MemoryModelName>) -> Self {
+        self.memory_models = models.into_iter().collect();
+        self
+    }
+
+    /// The memory models this backend advertises (FR-226).
+    pub fn memory_models(&self) -> &BTreeSet<MemoryModelName> {
+        &self.memory_models
+    }
+
+    /// Whether this backend decides an item whose subject resolves its
+    /// outermost `parallel` controls to `resolved` (FR-226): it advertises
+    /// every resolved model, and a descriptor with no `memory_models`
+    /// advertises `sc` only (QSpec FR-331). An item over a subject with no
+    /// `parallel` resolves no model and is decided by every backend.
+    fn decides_models(&self, resolved: &BTreeSet<MemoryModelName>) -> bool {
+        if self.memory_models.is_empty() {
+            resolved.iter().all(|model| !model.is_weak())
+        } else {
+            resolved.is_subset(&self.memory_models)
         }
-        let advertises_bounded = advertises
-            .iter()
-            .any(|&(_, mode)| matches!(mode, Mode::Bounded));
-        let domains = admit_domains(domains, advertises_bounded)
-            .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
-        Ok(Self {
-            backend,
-            origin,
-            manifest_digest,
-            advertises,
-            domains,
-        })
+    }
+
+    /// The evidence kinds this backend produces for
+    /// `probabilistic-satisfaction` (FR-075-AC-10); empty for a backend that
+    /// does not advertise that kind.
+    pub fn evidence_kinds(&self) -> &BTreeSet<EvidenceKind> {
+        &self.evidence_kinds
+    }
+
+    /// Whether this backend is a candidate for an item of `kind` naming
+    /// `evidence`: for `probabilistic-satisfaction` its evidence-kind set
+    /// must contain the item's exact evidence kind (neither kind substitutes
+    /// for the other), and an absent or unknown item evidence matches no
+    /// backend (FR-075-AC-13); any other kind ignores evidence.
+    fn serves_evidence(&self, kind: Capability, evidence: &ItemEvidence) -> bool {
+        if !matches!(kind, Capability::ProbabilisticSatisfaction) {
+            return true;
+        }
+        match evidence {
+            ItemEvidence::Kind(wanted) => self.evidence_kinds.contains(wanted),
+            ItemEvidence::Absent | ItemEvidence::Unknown(_) => false,
+        }
     }
 
     /// The boundable domain kinds the manifest accepts a finite bound for
@@ -375,7 +549,7 @@ impl BackendDescriptor {
     /// never filters candidacy (FR-075).
     ///
     /// ADR-012 §5.1 S7's "registry advertisement check" seam: exhaustive by
-    /// hand over [`Capability`]'s ten members, with no wildcard arm, so a
+    /// hand over [`Capability`]'s twelve members, with no wildcard arm, so a
     /// variant added to `Capability` fails this match to compile
     /// (FR-080-AC-5) instead of silently comparing unequal. Checked in as an
     /// S7 seam-probe location (`xtask seam_probe::checked_in_locations`,
@@ -400,9 +574,50 @@ impl BackendDescriptor {
                 Capability::Refinement => matches!(b, Capability::Refinement),
                 Capability::Realizability => matches!(b, Capability::Realizability),
                 Capability::Composition => matches!(b, Capability::Composition),
+                Capability::ProbabilisticSatisfaction => {
+                    matches!(b, Capability::ProbabilisticSatisfaction)
+                }
+                Capability::Schedulability => matches!(b, Capability::Schedulability),
             }
         }
         self.advertises.iter().any(|(k, _)| same_kind(*k, kind))
+    }
+}
+
+/// Whether the advertised pairs include `probabilistic-satisfaction`.
+fn advertises_probabilistic(advertises: &HashSet<(Capability, Mode)>) -> bool {
+    advertises
+        .iter()
+        .any(|&(kind, _)| matches!(kind, Capability::ProbabilisticSatisfaction))
+}
+
+/// Admit a probabilistic backend's evidence-kind labels (FR-075-AC-11): the
+/// first label that is neither `statistical` nor `exact` wins, then
+/// [`check_evidence_kinds`].
+fn admit_evidence_kinds(
+    labels: Option<&[&str]>,
+) -> Result<BTreeSet<EvidenceKind>, EvidenceKindsDefect> {
+    let Some(labels) = labels else {
+        return Err(EvidenceKindsDefect::Absent);
+    };
+    let mut parsed = BTreeSet::new();
+    for &label in labels {
+        let kind = EvidenceKind::from_wire(label)
+            .ok_or_else(|| EvidenceKindsDefect::Unknown(label.to_owned()))?;
+        parsed.insert(kind);
+    }
+    check_evidence_kinds(Some(&parsed))?;
+    Ok(parsed)
+}
+
+/// The FR-075 evidence-kind rule over typed kinds: present and nonempty.
+fn check_evidence_kinds(
+    evidence_kinds: Option<&BTreeSet<EvidenceKind>>,
+) -> Result<(), EvidenceKindsDefect> {
+    match evidence_kinds {
+        None => Err(EvidenceKindsDefect::Absent),
+        Some(kinds) if kinds.is_empty() => Err(EvidenceKindsDefect::Empty),
+        Some(_) => Ok(()),
     }
 }
 
@@ -465,6 +680,36 @@ pub enum DomainsDefect {
     Repeated(DomainKind),
 }
 
+/// What is wrong with a probabilistic backend's evidence kinds (FR-075-AC-11):
+/// the detail of [`RegistrationCause::UnknownEvidenceKind`].
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum EvidenceKindsDefect {
+    /// No evidence-kind set, though `probabilistic-satisfaction` is
+    /// advertised.
+    Absent,
+    /// The evidence-kind set is present and empty.
+    Empty,
+    /// A label that is neither `statistical` nor `exact`; carries the first
+    /// such label in member order, exactly as received.
+    Unknown(String),
+}
+
+/// What is wrong with a manifest's `fairness_kinds` (QSpec FR-272): the
+/// detail of [`RegistrationCause::InvalidFairnessKinds`].
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FairnessKindsDefect {
+    /// A temporal backend's manifest has no `fairness_kinds` member.
+    Absent,
+    /// The member is not a list; carries it as supplied.
+    NotAList(String),
+    /// An element is not byte-equal to `weak` or `strong`; carries the first
+    /// such element in member order.
+    UnknownLabel(String),
+    /// A label repeats; carries the first element that repeats an earlier
+    /// one.
+    DuplicateLabel(String),
+}
+
 /// Why a registration is refused: the FR-290 registration causes, all
 /// under code `invalid_capability` (FR-057-AC-8).
 ///
@@ -477,14 +722,21 @@ pub enum RegistrationCause {
     DuplicateBackend,
     /// An advertised pair names no kind.
     AbsentKind,
-    /// An advertised kind is not byte-equal to an FR-290 label; carries the
-    /// exact received bytes.
+    /// An advertised capability kind is not byte-equal to an FR-290 label;
+    /// carries the exact received bytes. A fairness label is never this
+    /// cause (see [`Self::InvalidFairnessKinds`]).
     UnknownKind(String),
     /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
     /// carries the exact received bytes, `None` when there were none.
     UnknownMode(Option<String>),
     /// The manifest's `domains` is defective (FR-290 "Advertised mode").
     InvalidDomains(DomainsDefect),
+    /// A `temporal-satisfaction` backend's `fairness_kinds` is defective
+    /// (FR-134-AC-3 to AC-5; QSpec FR-368-AC-8).
+    InvalidFairnessKinds(FairnessKindsDefect),
+    /// A `probabilistic-satisfaction` backend's evidence kinds are defective
+    /// (FR-075-AC-11).
+    UnknownEvidenceKind(EvidenceKindsDefect),
 }
 
 impl RegistrationCause {
@@ -496,6 +748,8 @@ impl RegistrationCause {
             Self::UnknownKind(_) => "unknown-kind",
             Self::UnknownMode(_) => "unknown-mode",
             Self::InvalidDomains(_) => "invalid-domains",
+            Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
+            Self::UnknownEvidenceKind(_) => "unknown-evidence-kind",
         }
     }
 }
@@ -557,9 +811,34 @@ pub struct CandidateSet {
     kind: Capability,
     requested_backend: Option<BackendId>,
     candidates: Vec<Candidate>,
+    fairness: BTreeMap<Candidate, BTreeSet<FairnessKind>>,
+    missing_fairness: BTreeSet<FairnessKind>,
+    evidence: Option<ItemEvidence>,
 }
 
 impl CandidateSet {
+    /// The empty set of an item of `kind` that is routed to no engine
+    /// whatever is registered (an item the request writer disposes
+    /// `Unsupported`, FR-234).
+    pub(crate) fn none(kind: Capability, named: Option<&BackendId>) -> Self {
+        Self {
+            kind,
+            requested_backend: named.cloned(),
+            candidates: Vec::new(),
+            fairness: BTreeMap::new(),
+            missing_fairness: BTreeSet::new(),
+            evidence: None,
+        }
+    }
+
+    /// The evidence value a `probabilistic-satisfaction` item named,
+    /// preserved unchanged for negotiation (FR-075 "Candidate computation
+    /// matches probabilistic evidence exactly"); `None` for an item of any
+    /// other kind.
+    pub fn evidence(&self) -> Option<&ItemEvidence> {
+        self.evidence.as_ref()
+    }
+
     /// The requested item's capability kind.
     pub fn kind(&self) -> Capability {
         self.kind
@@ -576,6 +855,21 @@ impl CandidateSet {
     /// refusal or a hold.
     pub fn candidates(&self) -> &[Candidate] {
         &self.candidates
+    }
+
+    /// The fairness kinds `candidate` advertises, carried unchanged from its
+    /// registration (FR-134). `None` when `candidate` is not in this set.
+    pub fn fairness_kinds(&self, candidate: &Candidate) -> Option<&BTreeSet<FairnessKind>> {
+        self.fairness.get(candidate)
+    }
+
+    /// The fairness kinds that emptied this set (FR-134-AC-2): the requested
+    /// kinds that a backend advertising the capability kind in scope lacks.
+    /// Empty when the set is not empty, when the item uses no fairness kind,
+    /// or when no backend advertises the capability kind at all (backend
+    /// absence, FR-076).
+    pub fn missing_fairness_kinds(&self) -> &BTreeSet<FairnessKind> {
+        &self.missing_fairness
     }
 
     /// Whether this set has no candidates (backend absence, FR-076).
@@ -647,8 +941,9 @@ impl Registry {
     ///   the identity's recorded conflict digests, and `held` is left
     ///   untouched (it already holds nothing for this identity).
     /// - When the identity is held with an equal descriptor (same identity,
-    ///   manifest digest and advertised pairs), the repeat is one
-    ///   registration and is not refused (FR-290-AC-9).
+    ///   manifest digest, origin, advertised pairs, `domains`, fairness kinds,
+    ///   memory models and evidence kinds), the repeat is one registration and
+    ///   is not refused (FR-290-AC-9).
     /// - When the identity is held with a descriptor that differs in any
     ///   member, the two conflict: the held registration is withdrawn, both
     ///   registrations' manifest digests are recorded, and every refusal
@@ -666,7 +961,7 @@ impl Registry {
     /// A capability kind outside the FR-290 vocabulary, or a mode other than
     /// `bounded`/`unbounded`, cannot reach this function at all: a
     /// [`BackendDescriptor`] holds only typed [`Capability`] and [`Mode`]
-    /// values, and [`BackendDescriptor::admit`] refuses such labels before a
+    /// values, and [`descriptor_from_manifest`] refuses such labels before a
     /// descriptor exists.
     pub fn register(
         &mut self,
@@ -754,37 +1049,118 @@ impl Registry {
     ///   [`CandidateOutcome::UnknownBackend`], never reported as an empty
     ///   set (FR-075-AC-3, FR-290-AC-10).
     pub fn candidates(&self, kind: Capability, named: Option<&BackendId>) -> CandidateOutcome {
-        match named {
+        self.candidates_for_fairness(kind, named, &BTreeSet::new())
+    }
+
+    /// Compute `kind`'s candidate set for an item whose fairness set uses
+    /// the kinds `required` (FR-134, ADR-019 DS-2): as [`Self::candidates`],
+    /// leaving out every backend that does not advertise each kind in
+    /// `required`. Each candidate carries its registration's fairness kinds
+    /// unchanged. When the filter empties the set,
+    /// [`CandidateSet::missing_fairness_kinds`] names the kinds that did it.
+    pub fn candidates_for_fairness(
+        &self,
+        kind: Capability,
+        named: Option<&BackendId>,
+        required: &BTreeSet<FairnessKind>,
+    ) -> CandidateOutcome {
+        self.candidates_for_models(kind, named, required, &BTreeSet::new())
+    }
+
+    /// Compute `kind`'s candidate set for an item whose fairness set uses
+    /// the kinds `required` and whose subject resolves its outermost
+    /// `parallel` controls to the models `resolved` (FR-226, ADR-025 MX-7):
+    /// as [`Self::candidates_for_fairness`], leaving out every backend that
+    /// does not advertise each resolved model (a backend advertising no
+    /// models advertises `sc` only). The
+    /// models are never weakened to fit a backend; when none advertises
+    /// them the set is empty, an ordinary set (FR-075).
+    pub fn candidates_for_models(
+        &self,
+        kind: Capability,
+        named: Option<&BackendId>,
+        required: &BTreeSet<FairnessKind>,
+        resolved: &BTreeSet<MemoryModelName>,
+    ) -> CandidateOutcome {
+        self.compute(kind, &ItemEvidence::Absent, named, required, resolved)
+    }
+
+    /// Compute the candidate set of a `probabilistic-satisfaction` item
+    /// naming `evidence` (FR-075-AC-13): a backend is a candidate only when
+    /// its evidence-kind set contains the item's exact evidence kind, so
+    /// `statistical` never stands for `exact` or the reverse. An absent or
+    /// unknown `evidence` gives no candidate and is preserved on the set
+    /// ([`CandidateSet::evidence`]). This entry applies neither the fairness
+    /// nor the memory-model filter, which a probabilistic item has none of: a
+    /// `temporal-satisfaction` item goes through
+    /// [`Self::candidates_for_models`], and any other `kind` here matches by
+    /// kind alone.
+    pub fn candidates_for_evidence(
+        &self,
+        kind: Capability,
+        evidence: &ItemEvidence,
+        named: Option<&BackendId>,
+    ) -> CandidateOutcome {
+        self.compute(kind, evidence, named, &BTreeSet::new(), &BTreeSet::new())
+    }
+
+    fn compute(
+        &self,
+        kind: Capability,
+        evidence: &ItemEvidence,
+        named: Option<&BackendId>,
+        required: &BTreeSet<FairnessKind>,
+        resolved: &BTreeSet<MemoryModelName>,
+    ) -> CandidateOutcome {
+        let in_scope: Vec<&BackendDescriptor> = match named {
             Some(id) => match self.held.get(id) {
-                None => CandidateOutcome::UnknownBackend(id.clone()),
-                Some(descriptor) => {
-                    let candidates = if descriptor.advertises_kind(kind) {
-                        vec![descriptor.backend.clone()]
-                    } else {
-                        Vec::new()
-                    };
-                    CandidateOutcome::Candidates(CandidateSet {
-                        kind,
-                        requested_backend: Some(id.clone()),
-                        candidates,
-                    })
-                }
+                None => return CandidateOutcome::UnknownBackend(id.clone()),
+                Some(descriptor) => vec![descriptor],
             },
-            None => {
-                let mut candidates: Vec<Candidate> = self
-                    .held
-                    .values()
-                    .filter(|descriptor| descriptor.advertises_kind(kind))
-                    .map(|descriptor| descriptor.backend.clone())
-                    .collect();
-                candidates.sort();
-                CandidateOutcome::Candidates(CandidateSet {
-                    kind,
-                    requested_backend: None,
-                    candidates,
-                })
-            }
-        }
+            None => self.held.values().collect(),
+        };
+        let capable: Vec<&BackendDescriptor> = in_scope
+            .into_iter()
+            .filter(|descriptor| {
+                descriptor.advertises_kind(kind)
+                    && descriptor.serves_evidence(kind, evidence)
+                    && descriptor.decides_models(resolved)
+            })
+            .collect();
+        let (kept, left_out): (Vec<&BackendDescriptor>, Vec<&BackendDescriptor>) = capable
+            .into_iter()
+            .partition(|descriptor| required.is_subset(&descriptor.fairness_kinds));
+        let missing_fairness = if kept.is_empty() {
+            left_out
+                .iter()
+                .flat_map(|descriptor| required.difference(&descriptor.fairness_kinds).copied())
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+        let mut candidates: Vec<Candidate> = kept
+            .iter()
+            .map(|descriptor| descriptor.backend.clone())
+            .collect();
+        candidates.sort();
+        let fairness = kept
+            .iter()
+            .map(|descriptor| {
+                (
+                    descriptor.backend.clone(),
+                    descriptor.fairness_kinds.clone(),
+                )
+            })
+            .collect();
+        CandidateOutcome::Candidates(CandidateSet {
+            kind,
+            requested_backend: named.cloned(),
+            candidates,
+            fairness,
+            missing_fairness,
+            evidence: matches!(kind, Capability::ProbabilisticSatisfaction)
+                .then(|| evidence.clone()),
+        })
     }
 }
 
@@ -809,6 +1185,7 @@ mod tests {
             ManifestDigest::from_digest([digest_byte; 32]),
             advertises,
             Some(BTreeSet::from([DomainKind::Collection])),
+            None,
         )
         .expect("a well-formed descriptor")
     }

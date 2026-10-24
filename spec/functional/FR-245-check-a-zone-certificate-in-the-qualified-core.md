@@ -60,10 +60,32 @@ pub struct CertificateCheckLimits {
 
 ## Outputs
 
-- `CertificateVerdict::Accepted`, `Rejected(RejectReason)` naming the first
-  failing node, edge or component, or `Stopped(IncompleteCause,
-  CertificateLimit)`.
+- `CertificateVerdict::Accepted`, `Rejected(CertificateRejection)` naming
+  the first failing rule and its node, edge, component, initial discrete
+  state or member, or `Stopped(IncompleteCause, CertificateLimit)`.
 - `CertificateRefusal` for a stale package or a mismatched identity.
+
+The checker uses FR-338's `CertificateRejection{rule, at}` with FR-338's
+`InitialMissing`, `SuccessorMissing`, `BadState`, `BackwardEdge` and
+`WitnessFails` and FR-163's `Malformed`. FR-338's `CertificateLocus` gains
+`ZoneNode { node: u64 }`, `ZoneEdge { edge: u64 }` and
+`ZoneComponent { component: u64 }`, positions in `nodes` and `edges` and a
+component index; the checker also uses FR-169's `ModelState` for the
+initial discrete state's state-key digest record and FR-163's
+`CertificateMember`. QSpec FR-331 writes them as its zone node, zone edge,
+zone component, State and certificate member forms; the member `lu_bounds`
+is written `bounds`.
+
+| Failure | `rule` | `at` |
+| --- | --- | --- |
+| A required member is absent: `components` for a CF-2 form, `divergence` for the time-lock-freedom item | `Malformed` | `CertificateMember` naming it |
+| The certificate's LU bounds are below the bounds the checker computes | `Malformed` | `CertificateMember("bounds")` |
+| No node of the initial discrete state covers the initial symbolic state | `InitialMissing` | `ModelState` of the initial discrete state |
+| A node has no listed edge for an enabled identity, or a successor is not covered by its edge's named target | `SuccessorMissing` | `ZoneNode` of that node |
+| A node is bad and not marked `locked`, or a `locked` node reaches a quiescent node or a node of a component with a cycle of positive total delay | `BadState` | `ZoneNode` of that node |
+| An edge goes to a node of smaller component index | `BackwardEdge` | `ZoneEdge` of that edge |
+| A component's stated reason does not hold | `WitnessFails` | `ZoneComponent` of that component |
+| A node's divergence path is absent or does not end at a divergent target, or the `admitted` path does not start at the initial node, follow certificate edges and end at a quiescent node or a node of a component with a cycle of positive total delay | `WitnessFails` | `ZoneNode` of that node; for `admitted`, its last node |
 
 ## Behavior
 
@@ -92,7 +114,9 @@ pub struct CertificateCheckLimits {
   - the `admitted` path starts at the initial node, follows certificate
     edges, and ends at a quiescent node or at a node of a component with a
     cycle of positive total delay (ADR-026 TD-6).
-- The first failure in node order SHALL return `Rejected` naming it.
+- The checker SHALL check the `Malformed` members first, then the initial
+  coverage, then the nodes in node order, and SHALL return `Rejected` with
+  the rule and locus the table above gives the first failure.
 - The checker SHALL run under `CertificateCheckLimits` and FR-276's
   `Cancel` handle; reaching a limit SHALL return `Stopped` naming the
   limit, its value and its setting.
@@ -100,7 +124,7 @@ pub struct CertificateCheckLimits {
   overflow and in agreement with a reference implementation on bounded
   dimensions.
 - **Verdict fit.** `Accepted` SHALL let the item settle
-  `Proved{basis: ZoneCertified}`; `Rejected` SHALL settle it
+  `Proved{basis: ZoneCertified, certification: Certified}`; `Rejected` SHALL settle it
   `inconclusive`, `CertificateRejected`; `Stopped` SHALL settle it V-7
   (FR-235).
 - The checker SHALL read no path, environment variable, clock or search
@@ -115,8 +139,9 @@ pub struct CertificateCheckLimits {
 | FR-245-AC-2 | Each tampering is `Rejected`, naming the failing part: one node removed; one target zone shrunk so it no longer covers its successor; one LU bound lowered below the computed bound; one edge pointing to a node of smaller component index; one component reason naming a fairness constraint that an edge inside it takes; one node replaced by a bad node; the `admitted` path cut so it ends at a node that is neither quiescent nor in a component with a positive-delay cycle. | Test (TC-700) |
 | FR-245-AC-3 | AC-1's certificate checked against the identity of another item refuses `stale_dependency`/`content-mismatch` naming both; after a source edit that changes the package identity it refuses by FR-098's rule. With `max_certificate_edges` 1 it returns `Stopped` naming the limit and the value 1. | Test (TC-700) |
 | FR-245-AC-4 | The Kani harnesses for the checker's `close`, `constrain`, `reset`, `up`, `includes` and aLU test pass for dimension at most 3 with bounds in `[-8, 8]`, proving no overflow and agreement with the reference implementation. | Test (TC-700) |
-| FR-245-AC-5 | FR-244-AC-4's certificate is `Accepted`; the same certificate with the `locked` mark removed is `Rejected` naming the bad node; a certificate for the variant in which `ping` resets `x` that marks `(B, x <= 1)` `locked` is `Rejected`, naming the `ping` cycle of positive total delay reachable from it. | Test (TC-700) |
+| FR-245-AC-5 | FR-244-AC-4's certificate is `Accepted`; the same certificate with the `locked` mark removed is `Rejected` `BadState` at the bad node; a certificate for the variant in which `ping` resets `x` that marks `(B, x <= 1)` `locked` is `Rejected` `BadState` at that `locked` node, from which the `ping` cycle of positive total delay is reachable. | Test (TC-700) |
 | FR-245-AC-6 | The checker's DBM code is separate from EN-6's: no crate of layers K to 6, SV or R, and no tool crate, names `qsl-analyze` in its normal, dev or build dependencies, so `qsl-replay`'s checker cannot call the engine's DBM (ADR-026 CF-6). | Test (TC-700) |
+| FR-245-AC-7 | Rejection rules and loci for AC-2's tamperings: the node removed rejects `SuccessorMissing` at the `ZoneNode` whose edge named it; the shrunk target, `SuccessorMissing` at the edge's source node; the lowered LU bound, `Malformed` at `CertificateMember("bounds")`; the backward edge, `BackwardEdge` at its `ZoneEdge`; the wrong component reason, `WitnessFails` at its `ZoneComponent`; the bad node, `BadState` at its `ZoneNode`; the cut `admitted` path, `WitnessFails` at its last node. A CF-2 certificate without `components` rejects `Malformed` at `CertificateMember("components")` before any successor is recomputed, and one whose initial node does not cover the initial symbolic state rejects `InitialMissing` at the `ModelState` of the initial discrete state. Each rejection is written with QSpec FR-331's rule spelling at its zone node, zone edge, zone component, State or certificate member form. | Test (TC-1197) |
 
 ## Dependencies
 

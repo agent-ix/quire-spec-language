@@ -3,6 +3,23 @@
 //! pattern as the root crate (`tests/it/main.rs`), `qsl-cst` and
 //! `qsl-source`.
 
+mod abstraction_declaration_forms;
+mod clause_text;
+mod hybrid_forms;
+mod hyper_clause_forms;
 mod identity_free_forms;
+mod model_source_forms;
+mod probabilistic_forms;
 mod protocol_clause_forms;
+mod protocol_control_forms;
+mod protocol_member_forms;
+mod protocol_reference_forms;
+mod refinement_forms;
+mod source_grammar_vectors;
+mod state_graph_forms;
+mod state_model_forms;
+mod sum_case_forms;
+mod temporal_clause_forms;
+mod terminal_declaration_forms;
+mod time_forms;
 mod value_forms;

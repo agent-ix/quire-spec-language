@@ -145,7 +145,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
     Exemption {
         crate_src: "src",
         module: "command",
-        functions: &["with_request"],
+        functions: &["with_request_limits"],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of the exact artifact bytes it read from disk, \

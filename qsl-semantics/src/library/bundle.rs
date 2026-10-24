@@ -396,7 +396,7 @@ impl CapabilityId {
     }
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_complete_capability(value: &str) -> bool {
     let Some(rest) = value.strip_prefix("V1-") else {
         return false;

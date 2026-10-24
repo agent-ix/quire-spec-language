@@ -33,7 +33,8 @@ FR-340's pair-level tool-failure results.
 - A JSON report on stdout with, in this member order: `cases`, a list of
   every result, each holding the case's name (for a versioning case, the
   prior and superseding `RawSourceRef`s and the selection; for a layering
-  case, FR-345's name), each side's class, stage and codes, any limit
+  case, FR-345's name), each side's class, stage and codes (none for a case
+  that could not be formed, which names its defect instead), any limit
   reached, and the result; then `verdict`; then `exit`.
 - The process exit code.
 
@@ -105,7 +106,7 @@ their exits.
 | FR-344-AC-3 | A corpus of three pairs, created on disk in an order other than their names' order, yields a report ordered by case name; two runs give byte-equal reports. | Test (TC-866) |
 | FR-344-AC-4 | A case whose superseding run exceeds its `accounting` work budget names, in its entry, `work_units`, the budget's value and the member `accounting`. | Test (TC-865) |
 | FR-344-AC-5 | The seeded-regression test corpus of TC-864 reports verdict violation, exit 10, and exactly one `regression`, naming the seeded case. | Test (TC-864) |
-| FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
+| FR-344-AC-6 | A layering result set holding one case, the six layer results and the six edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
 | FR-344-AC-7 | A gate run over a corpus whose verdict is violation exits 10 from `cargo run --package xtask -- refinement …` and fails its make target, and a success run exits 0 and passes it. | Test (TC-866) |
 
 ## Dependencies
@@ -120,7 +121,3 @@ their exits.
   case), RF-5.
 - Specification tickets QSL-386, QSL-387; implementation tickets QSL-40,
   QSL-39.
-
-## Status
-
-Specified; not yet implemented -- TC-864 to TC-866 planned.

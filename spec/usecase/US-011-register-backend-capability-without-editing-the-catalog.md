@@ -32,11 +32,10 @@ that waits indefinitely for a backend that may never register.
 
 ## Context
 
-`src/lowering/target.rs` currently defines `ProjectionTarget` as a fixed
-three-variant catalog (`BooleanOracleV1`, `IntegerIrV1`, `StateScalarIrV1`)
-built with the `targets!` macro. Every new backend needs a QSL code change to
-add a variant, and there is no registration boundary a backend implements
-once. Separately, the composed linker still reads backend support directly
+The deleted native `lowering` module defined `ProjectionTarget` as a fixed
+three-variant catalog (`BooleanOracleV1`, `IntegerIrV1`, `StateScalarIrV1`).
+Every new backend needed a QSL code change to add a variant, and there was no
+registration boundary a backend implements once. Separately, the composed linker still reads backend support directly
 when it records a capability request, and QSL's `value::ieee` and
 `value::division` modules carried `negotiate_*` functions left over from
 before capability negotiation moved to `quire-contract-codegen`'s single

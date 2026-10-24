@@ -235,7 +235,11 @@ the order a `TransitionSystem` lists them in. Breadth-first exploration
 keeps parent states in FIFO discovery order within a level. Each parent's
 successors are visited in ascending unsigned-lexicographic order of the
 RFC 8785 JCS UTF-8 bytes of their transition identity,
-`{"type":"transition","operation":"<qualified-name>","arguments":[<encoded>, ...]}`.
+`{"type":"transition","operation":"<qualified-name>","receiver":<encoded>|null,"arguments":[<encoded>, ...]}`
+(`receiver` the operation's receiver reference, `null` for an operation with
+no receiver; `arguments` the declared parameters in declaration order, the
+receiver not among them). Written as bytes the keys are in JCS order:
+`arguments`, `operation`, `receiver`, `type`.
 FR-181 does not order two successors with equal transition identities and
 different post-states. QSL orders them by the post-state's state-key bytes,
 ascending. Initial states are admitted in ascending state-key byte order,
@@ -390,16 +394,3 @@ repository (this repository's TC-210 is a witness-envelope case).
   `quire-canonical`; `sha2` stays a dev dependency.
 - [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md): the
   extent rule and `Outcome::category()`.
-
-## Status
-
-AC-1 to AC-15 implemented in `qsl_eval::simulation`; TC-439, TC-453 to
-TC-455, TC-474 and TC-536's `Limits` half pass locally in
-`qsl-eval/tests/it/finite_simulation.rs`, which carries none of QSpec's
-`TC-210` or `FR-181-AC-*` tags. `explore_request` and `sample_request` are
-the only public entries; `explore`, `sample` and `Sampler` are
-`pub(crate)`. `Outcome::category()` gives `Stopped` the category of its
-cause's code: incomplete for `resource_exhausted`, the catalog's category
-for any other catalogued code, and internal failure for a code the catalog
-does not define. The `TransitionSystem` reduction hooks are FR-162's and
-not yet implemented.

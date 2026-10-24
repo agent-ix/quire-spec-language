@@ -73,7 +73,13 @@ pub struct RetainedEdge {
   does not offer V-8 (FR-159). When a hook the system offers returns `None`
   in a run, the engine SHALL settle an internal fault,
   `TerminalValue::Failed`. `ModelSystem` SHALL offer all three and return `Some` from each, through FR-152, FR-155
-  and FR-158.
+  and FR-158. `ProtocolSystem` (FR-215) SHALL offer `holds_constraint` and
+  return `Some` from it, through FR-158.
+- **State-free footprint hook.** The `footprint` hook takes a transition
+  identity and no state, and SHALL return `Some` for every transition
+  identity of the system, enabled or disabled and whether or not the objects
+  it names exist in any state (FR-155). `model_check` SHALL use it for the
+  enabled and the disabled members of a candidate (FR-156).
 - **Product delegation.** The product system SHALL answer
   `offered_reductions` with its model component's answer, and `canonical` by
   canonicalising its model component and keeping the automaton state,
@@ -112,8 +118,9 @@ pub struct RetainedEdge {
 |----|----------|--------------|
 | FR-162-AC-1 | `ModelSystem` offers all three reductions through `offered_reductions` and returns `Some` from all three hooks for ADR-021 §7.1's annotated subject. A test `TransitionSystem` whose `offered_reductions` is `NONE` settles a request selecting symmetry, one selecting partial-order reduction, and one selecting a constraint each V-8 in the pre-check. FR-120's `explore_model` over §7.1's annotated subject stores 27 states and records findings for each, as it does without the annotation. | Test (TC-587) |
 | FR-162-AC-2 | The product system's `canonical` keeps the automaton state and canonicalises only the model state; its `footprint` for a model transition equals `ModelSystem::footprint`; the terminal stutter edge of FR-126-AC-3's subject has an empty footprint. Under symmetry every retained edge's target is canonical and `permutation` maps the concrete successor to it; without symmetry every `permutation` is the identity. | Test (TC-587) |
-| FR-162-AC-3 | Combination: ADR-021 §7.2's subject with `counters` annotated `symmetric`, `[[a, b, c]]` and partial-order reduction, instance `x = a` (group `{id, (b c)}`): the run stores 7 model states, `(0,0,0)`, `(0,0,1)`, `(0,1,1)`, `(0,1,2)`, `(0,2,2)`, `(1,2,2)` and `(2,2,2)`, and returns `Holds`, settling `Proved{Reduced{[Symmetry{…}, PartialOrder{BreadthFirstRevisit}]}}`. | Test (TC-587) |
+| FR-162-AC-3 | Combination: ADR-021 §7.2's subject with `counters` annotated `symmetric`, `[[a, b, c]]` and partial-order reduction, instance `x = a` (group `{id, (b c)}`): the run stores 7 model states, `(0,0,0)`, `(0,0,1)`, `(0,1,1)`, `(0,1,2)`, `(0,2,2)`, `(1,2,2)` and `(2,2,2)`, and returns `Holds`, settling `Proved{Reduced{[Symmetry{…}, PartialOrder{BreadthFirstRevisit}]}, Uncertified}`. | Test (TC-587) |
 | FR-162-AC-4 | `max_states` 5 over ADR-021 §7.3's constrained run stops `Stopped(ResourceExhausted, MaxStates)` with boundary states counted toward the 5. Two runs of AC-3 retain equal edge lists. | Test (TC-587) |
+| FR-162-AC-5 | `ModelSystem`'s `footprint` hook is called with no state: for `bump(d)` of FR-155-AC-7, whose `d` no state holds, and for `bump(a)`, whose precondition is false at some state, it returns `Some` with the footprints FR-155 derives; the product system's `footprint` for the same transitions equals the model's. | Test (TC-1075) |
 
 ## Dependencies
 

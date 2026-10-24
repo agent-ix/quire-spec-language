@@ -29,5 +29,5 @@ Tag the tests `#[trace("TC-587", "FR-162-AC-n")]`.
 
 - Step 1: `Some` from each; V-8 for each; 27 states with findings.
 - Step 2: model-only canonicalisation, equal footprints, canonical targets with mapping permutations, identity permutations without symmetry, an empty stutter footprint.
-- Step 3: the seven listed states and `Proved{Reduced{[Symmetry{…}, PartialOrder{BreadthFirstRevisit}]}}`.
+- Step 3: the seven listed states and `Proved{Reduced{[Symmetry{…}, PartialOrder{BreadthFirstRevisit}]}, Uncertified}`.
 - Step 4: `Stopped(ResourceExhausted, MaxStates)` counting boundary states; equal edge lists.

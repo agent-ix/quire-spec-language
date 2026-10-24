@@ -16,10 +16,11 @@ use std::num::NonZeroU64;
 use std::rc::Rc;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{IntegerInterval, NodeKey, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::CompositeShape;
 
 use super::argument::{declaration_of, enum_declarations};
@@ -338,6 +339,10 @@ pub(super) fn derive(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(union_members) => union_members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
                     pending.push(child(&position, index, member, Some(*declaration))?);
@@ -346,10 +351,13 @@ pub(super) fn derive(
             ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
+            | ValueType::String
             | ValueType::Text(_)
             | ValueType::Quantity(_)
             | ValueType::Reference(_)
-            | ValueType::Population(_) => {
+            | ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => {
                 found.insert(key(), Authored::Whole);
             }
         }

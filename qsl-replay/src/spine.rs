@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
-use qsl_forms::{FormsCause, FormsRefusal};
+use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
@@ -32,13 +32,17 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
-    ShadowedDeclaration,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::refusal::MemberPath;
+use quire_semantic_value::catalog::CatalogCoded;
 pub use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
@@ -49,26 +53,52 @@ pub use qsl_semantics::check::LockEvidence;
 
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
+#[cfg(test)]
+pub(crate) use lifecycle::{composed_declaration, composed_here};
+
+mod bind;
+pub use bind::{
+    admission_evidence, bind_scalar_operands, BindIdentityCause, BindOutcome, BindRefusal,
+    BoundOperand, BoundScalarOperands, OperandSource, ScalarOccurrence,
+};
 
 mod call;
+pub(crate) use call::run_reading;
 pub use call::{
     default_accounting, run, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome,
     CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
 };
 
-mod clause;
+pub(crate) mod clause;
 pub use clause::{
-    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunProvenance,
-    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
-    ClauseRunStage, ExtractionOrigin, OperationName,
+    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
+    ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
+    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
+};
+mod refinement;
+pub use refinement::{
+    classify_clause_run, classify_compile, classify_refusal, Classification, ReachedLimit,
+    RefinementClass, RefusalCause, RunClassification,
+};
+mod native_result;
+pub use native_result::{
+    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
+    CallOriginRead, ClauseRunRecord, CommandErrorRecord, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
+};
+mod request;
+pub use request::{
+    read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
+    ClauseRequestReadError, ClauseRunSelectionWire, ClauseSelectionParts, ClauseSelectionPartsKind,
+    ClauseSelectionWire, FrameSelectionWire, FunctionSelectionWire, ObjectReferenceWire,
+    ObservationLimitsWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
-pub(crate) use clause::{
-    check_clause_admitted, check_frame, resolve_frame, ClauseCheck, CompiledRun, UnitProvenance,
-};
+pub(crate) use clause::{check_clause_admitted, check_frame, ClauseCheck, CompiledRun, FrameCheck};
 // FR-268: the separation check settles a stopped evaluation through
 // FR-100's outcome mapping.
-pub(crate) use call::convert_outcome;
+pub(crate) use call::{convert_outcome, kernel_undefined_reason};
 
 /// Why the spine's front-end operations produced no output. Each
 /// variant is the stage that refused, with its typed cause and, where the
@@ -94,6 +124,29 @@ pub enum CompileRefusal {
         refusal: UnitIntakeRefusal,
         /// The region of the `model` declaration.
         region: Option<SourceRegion>,
+    },
+    /// FR-103: a kept operation `requires`/`ensures` clause text did not
+    /// parse as an expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .operation.node, clause_text_message(.failure))]
+    OperationClause {
+        /// The operation whose clause it is.
+        operation: DeclarationKey,
+        /// The member the clause is at: `Operation.pre[k]` or
+        /// `Operation.post[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
+    },
+    /// FR-366: the text of a type-level invariant clause did not parse as an
+    /// expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .clause.node, clause_text_message(.failure))]
+    TypeInvariant {
+        /// The clause that did not parse.
+        clause: DeclarationKey,
+        /// The member the clause is at: `TypeDefinition.clauses[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
     },
     /// E3 (FR-110): a header profile selection does not resolve against the
     /// `DefinitionLock` catalog.
@@ -170,6 +223,13 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
+            Self::OperationClause { failure, .. } | Self::TypeInvariant { failure, .. } => {
+                match failure {
+                    ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
+                    ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
+                    ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
+                }
+            }
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
@@ -202,12 +262,54 @@ impl CompileRefusal {
             Self::Dependency { refusal, .. } => refusal.cause(),
             Self::Link(refusal) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
+            Self::Intake { refusal, .. } => refusal.cause.cause(),
             Self::Source(_)
             | Self::Forms { .. }
-            | Self::Intake { .. }
+            | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
+        }
+    }
+
+    /// The typed fields of a reached limit this refusal reports: a stage
+    /// limit's `kind`, `bound`, `actual` and `setting`, or a caller-budget
+    /// ceiling's record: the intake size record, or a denied charge's `setting`,
+    /// `limit`, `actual` and retained charge (FR-255 Behavior 1). `None`
+    /// for a refusal that is no limit.
+    pub fn fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::Limit(limit) => limit.catalog_fields(),
+            Self::Intake { refusal, .. } => {
+                refusal.cause.denial().map(|denial| denial.catalog_fields())
+            }
+            Self::Dependency { refusal, .. } => refusal.fields(),
+            // FR-302: a family that stopped on a caller-budget ceiling
+            // reports its retained charge.
+            Self::Check { refusals, .. } => {
+                let mut fields = refusals
+                    .iter()
+                    .find_map(|refusal| match refusal.cause.unwrapped() {
+                        CheckCause::DispatchLink(cause) => {
+                            cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                // FR-366: a refusal in a type-level invariant names the
+                // clause and the `TypeDefinition.clauses[k]` member it is at,
+                // since its location is a bare expression.
+                if let Some(refusal) = refusals.iter().find_map(|refusal| match &refusal.cause {
+                    CheckCause::TypeInvariant(refusal) => Some(refusal),
+                    _ => None,
+                }) {
+                    fields.insert("clause", refusal.clause.node.clone());
+                    fields.insert("member", refusal.member().to_string());
+                }
+                (!fields.is_empty()).then_some(fields)
+            }
+            _ => None,
         }
     }
 
@@ -216,21 +318,31 @@ impl CompileRefusal {
         match self {
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
-            Self::Intake { .. } | Self::DependencyInput(_) | Self::Import { .. } => {
-                SpineStage::Intake
-            }
+            Self::Intake { .. }
+            | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
+            | Self::DependencyInput(_)
+            | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
             Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
+                // Formatting, rendering and backend prepare are never compile stages.
+                Setting::FormatOutputBytes
+                | Setting::RenderOutputBytes
+                | Setting::PrepareCompileWorkUnits
+                | Setting::PrepareCodeBytes => {
+                    unreachable!("format, render and prepare limits are not compile refusals")
+                }
                 Setting::S1InputBytes
                 | Setting::S1Tokens
                 | Setting::S1Nodes
                 | Setting::S1WorkUnits => SpineStage::Source,
-                Setting::S3Nodes | Setting::S3InputBytes | Setting::S3WorkUnits => {
-                    SpineStage::Check
-                }
+                Setting::S3Nodes
+                | Setting::S3InputBytes
+                | Setting::S3WorkUnits
+                | Setting::S3RationalBits => SpineStage::Check,
                 Setting::S3DecimalScale
                 | Setting::EnvironmentAncestorSteps
                 | Setting::EnvironmentWorkUnits
@@ -257,8 +369,8 @@ impl CompileRefusal {
                 | Setting::I2Occurrences
                 | Setting::I2Diagnostics
                 | Setting::I2WorkUnits => SpineStage::Intake,
-                // Limits of operations after the compile: no front-end
-                // refusal carries one, so they name no stage of it.
+                // Limits of operations outside the front-end compile: no
+                // front-end refusal carries one, so they name no stage of it.
                 Setting::AdmissionPopulationMembers
                 | Setting::AdmissionWorkUnits
                 | Setting::AdmissionAncestorSteps
@@ -288,7 +400,12 @@ impl CompileRefusal {
                 Some(Locus::Region(region)) => Some(region),
                 Some(_) | None => None,
             },
-            Self::DependencyInput(_) | Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => None,
+            Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
+            | Self::DependencyInput(_)
+            | Self::Link(_)
+            | Self::Emit(_)
+            | Self::Omitted(_) => None,
         }
     }
 
@@ -334,6 +451,15 @@ impl SpineStage {
             Self::Check => "check",
             Self::Emit => "emit",
         }
+    }
+}
+
+/// A readable account of a kept operation clause's parse failure.
+fn clause_text_message(failure: &ClauseTextRefusal) -> String {
+    match failure {
+        ClauseTextRefusal::Source(diagnostic) => diagnostic.message.clone(),
+        ClauseTextRefusal::Forms(refusal) => forms_message(refusal),
+        ClauseTextRefusal::NotOneExpression => "the text is not one expression".to_owned(),
     }
 }
 
@@ -394,7 +520,7 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             format!("`{name}` names an imported declaration, which stands only as a callee")
         }
         AssemblyCause::AmbiguousTypeName { name, .. } => {
-            format!("`{name}` names more than one declaration")
+            format!("`{name}` names more than one candidate")
         }
         AssemblyCause::IllFormedBounds(_) => "a type's declared bounds are ill-formed".to_owned(),
         AssemblyCause::FloatingType { .. } => "a floating type is not admitted".to_owned(),
@@ -414,6 +540,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::IdentityAllocation { requested } => {
             format!("an identity preimage could not reserve {requested} bytes of memory")
         }
+        AssemblyCause::StorageAllocation { requested, unit } => format!(
+            "the type registry could not reserve {requested} {} of storage",
+            match unit {
+                StorageUnit::Bytes => "bytes",
+                StorageUnit::AdditionalElements => "additional elements",
+            }
+        ),
+        AssemblyCause::StorageCapacity { requested, unit } => format!(
+            "the type registry could not represent a reservation of {requested} {}",
+            match unit {
+                StorageUnit::Bytes => "bytes",
+                StorageUnit::AdditionalElements => "additional elements",
+            }
+        ),
         AssemblyCause::TypeLimit(limit) | AssemblyCause::IdentityLimit(limit) => format!(
             "{} (bound {}, reached {})",
             limit.kind().catalog_cause(),
@@ -463,8 +603,38 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedOperation { context, operation } => {
             format!("`{context}` has no operation `{operation}`")
         }
+        AssemblyCause::UnresolvedTerminalModel { alias } => {
+            format!("`terminal ... on {alias}` names no `model` declaration of the unit")
+        }
+        AssemblyCause::UnresolvedTerminalState { model } => {
+            format!("`terminal when` on `{model}`: the model declares no population to range over")
+        }
+        AssemblyCause::AmbiguousTerminalState { model } => format!(
+            "`terminal when` on `{model}`: the model's populations range over more than one \
+             object type"
+        ),
+        AssemblyCause::AmbiguousTerminal { model, spans } => {
+            format!("{} `terminal` declarations are on `{model}`", spans.len())
+        }
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
+        }
+        AssemblyCause::DuplicateOperationBody { operation, bodies } => format!(
+            "{} operation-body declarations resolve to the operation `{}`",
+            bodies.len(),
+            operation.node
+        ),
+        AssemblyCause::OverNotObjectType { claim } => {
+            format!("the `over` type of state-graph claim `{claim}` is not an object type")
+        }
+        AssemblyCause::DuplicateStateGraphClaim { name, .. } => {
+            format!("a second state-graph claim is named `{name}`")
+        }
+        AssemblyCause::UnresolvedPopulationBound { name } => {
+            format!("`bound` names `{name}`, which no declaration resolves")
+        }
+        AssemblyCause::AmbiguousPopulationBound { name, spans } => {
+            format!("{} `bound` declarations share `{name}`", spans.len())
         }
         AssemblyCause::AmbiguousPopulation {
             context,
@@ -477,6 +647,19 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        AssemblyCause::UnsupportedLayerForm { layer, form } => format!(
+            "{} is not an admitted form of `{}`",
+            form.refusal_cause(),
+            layer.identity()
+        ),
+        AssemblyCause::UnselectedModelConstruct(gate) => format!(
+            "a {} needs the header profile `{}`",
+            gate.family.as_str(),
+            gate.required_layer().identity()
+        ),
+        AssemblyCause::TimedNotChecked(construct) => {
+            format!("{} builds but is not checked yet", construct.description())
+        }
     };
     with_more(message, refusal.errors.len())
 }
@@ -489,6 +672,13 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
     let mut message = first.cause.code().as_str().to_owned();
     if let Some(cause) = first.cause.cause() {
         message = format!("{message} ({cause})");
+    }
+    if let CheckCause::TypeInvariant(refusal) = &first.cause {
+        message = format!(
+            "{message}: the invariant `{}` at {}",
+            refusal.clause.node,
+            refusal.member()
+        );
     }
     match &first.cause {
         CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
@@ -528,6 +718,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!(
                     "{message}: `{site}` names a `{actual}`, not {}",
                     admitted.join(" or ")
+                ),
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel, function, ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, but no function declaration resolves"
+                ),
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel,
+                    function,
+                    kind,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, which resolves to a `{kind}`, not a function"
+                ),
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel,
+                    function,
+                    expected_parameters,
+                    actual_parameters,
+                    expected_result,
+                    actual_result,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}` with signature {} -> {}; expected {} -> {}",
+                    signature_source(actual_parameters),
+                    value_type_source(actual_result),
+                    signature_source(expected_parameters),
+                    value_type_source(expected_result),
                 ),
                 ProtocolAnchorCause::ChannelMismatch {
                     receive_channel,
@@ -581,6 +799,457 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 ProtocolAnchorCause::BinderType { binder, fault, .. } => {
                     format!("{message}: binder `{binder}`'s type does not resolve ({fault:?})")
+                }
+                ProtocolAnchorCause::ChannelRole {
+                    channel, end, name, ..
+                } => format!(
+                    "{message}: channel `{channel}` names `{name}` as its {end:?} role, which the \
+                     protocol does not declare"
+                ),
+                ProtocolAnchorCause::ChannelType { channel, fault, .. } => {
+                    format!(
+                        "{message}: channel `{channel}`'s carried type does not resolve ({fault:?})"
+                    )
+                }
+                ProtocolAnchorCause::ChannelCarriesObject { channel, name, .. } => format!(
+                    "{message}: channel `{channel}` carries the object type `{name}`, not a message \
+                     type"
+                ),
+                ProtocolAnchorCause::RoleModel { role, context, .. } => format!(
+                    "{message}: role `{role}` is on `{context}`, which is not a type a role takes"
+                ),
+                ProtocolAnchorCause::JoinList {
+                    parallel, fault, ..
+                } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::MemoryConflict {
+                    outermost, nested, ..
+                } => format!(
+                    "{message}: `{nested}` declares a memory default other than its outermost \
+                     `{outermost}`'s"
+                ),
+                ProtocolAnchorCause::WeakJoin {
+                    parallel,
+                    model,
+                    policy,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares `memory {}` and joins `{policy}`",
+                    model.label()
+                ),
+                ProtocolAnchorCause::AccessOrdering {
+                    attempt,
+                    class,
+                    ordering,
+                    ..
+                } => {
+                    let kind = match class {
+                        AccessClass::Load => "load",
+                        AccessClass::Store => "store",
+                        AccessClass::Rmw => "read-modify-write",
+                        AccessClass::Local => "local",
+                    };
+                    match ordering {
+                        Some(ordering) => format!(
+                            "{message}: `{attempt}` is a {kind} access and takes no `{}` ordering",
+                            ordering.label()
+                        ),
+                        None => format!(
+                            "{message}: `{attempt}` is a {kind} access and needs an `ordering`"
+                        ),
+                    }
+                }
+                ProtocolAnchorCause::AccessShape {
+                    attempt, locations, ..
+                } => format!(
+                    "{message}: `{attempt}` is not one memory access ({})",
+                    locations.join(", ")
+                ),
+                ProtocolAnchorCause::NodeRole { node, name, .. } => {
+                    format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
+                }
+                ProtocolAnchorCause::MissingChannel { node, name, .. } => format!(
+                    "{message}: `{node}` is written via `{name}`, which is no channel of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
+                    "{message}: the binder's type is not the type channel `{channel}` carries"
+                ),
+                ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
+                    "{message}: the causal edges form a cycle through {}",
+                    nodes.join(", ")
+                ),
+                ProtocolAnchorCause::NoProgress { repeat, .. } => format!(
+                    "{message}: the body of `repeat {repeat}` does not necessarily take a step"
+                ),
+                ProtocolAnchorCause::KeyClause { channel, cause, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::KeyModelState { channel, .. } => {
+                    format!("{message}: the FIFO key of channel `{channel}` reads model state")
+                }
+                ProtocolAnchorCause::KeyEquality { channel, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` is of a type with no `=`"
+                ),
+                ProtocolAnchorCause::SlotClause { node, slot, cause, .. } => format!(
+                    "{message}: the {slot:?} of `{node}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::SlotModelState { node, slot, .. } => {
+                    format!("{message}: the {slot:?} of `{node}` reads model state")
+                }
+                ProtocolAnchorCause::WrongObservation {
+                    node,
+                    owner,
+                    binder,
+                    reason,
+                    ..
+                } => format!(
+                    "{message}: `{node}` reads `{binder}`, which is no listed fact of `{owner}` \
+                     ({})",
+                    reason.identifier()
+                ),
+                ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
+                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive \
+                     ({})",
+                    failed
+                        .iter()
+                        .map(|fault| fault.identifier())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ProtocolAnchorCause::AwaitedForm {
+                    node, event, form, ..
+                } => format!(
+                    "{message}: `await {node}` matches `{form} {event}`; an await matches a \
+                     receive, an effect or an event"
+                ),
+                ProtocolAnchorCause::AwaitWindow { node, .. } => format!(
+                    "{message}: the `within` of `await {node}` is not a closed interval with \
+                     lower <= upper"
+                ),
+                ProtocolAnchorCause::MissingTemporalProfile {
+                    construct, node, ..
+                } => format!(
+                    "{message}: `{construct} {node}` reads a clock, but the unit selects no \
+                     temporal profile"
+                ),
+                ProtocolAnchorCause::RoleMax { role, actual, .. } => format!(
+                    "{message}: replicated role `{role}` allows at most {actual} live instances; \
+                     at least 1 is required"
+                ),
+                ProtocolAnchorCause::MissingRolePopulation {
+                    role, population, ..
+                } => format!(
+                    "{message}: replicated role `{role}` is drawn from `{population}`, which is \
+                     no population of the package that declares its type"
+                ),
+                ProtocolAnchorCause::RolePopulationType {
+                    role, population, ..
+                } => format!(
+                    "{message}: replicated role `{role}` is drawn from `{population}`, whose \
+                     element type is not the role's type"
+                ),
+                ProtocolAnchorCause::MissingRelationship { name, .. } => {
+                    format!("{message}: `{name}` names no export of a selected model")
+                }
+                ProtocolAnchorCause::RelationshipExport { name, actual, .. } => {
+                    format!("{message}: `{name}` names a {actual}, not a relationship")
+                }
+                ProtocolAnchorCause::MissingRelated { node, name, .. } => format!(
+                    "{message}: `{node}` is related by `{name}`, which is no relationship of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::RelatedEnd {
+                    relationship, end, ..
+                } => format!(
+                    "{message}: the {} end of `related by {relationship}` is not of the \
+                     relationship end's type",
+                    end.identifier()
+                ),
+                ProtocolAnchorCause::MissingRequirement { name, .. } => {
+                    format!("{message}: `requires temporal {name}` names no declaration of the unit")
+                }
+                ProtocolAnchorCause::RequirementKind { name, kind, .. } => format!(
+                    "{message}: `requires temporal {name}` names a {kind}, not a temporal clause"
+                ),
+                ProtocolAnchorCause::RequirementCycle {
+                    protocol, temporal, ..
+                } => format!(
+                    "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
+            };
+        }
+        CheckCause::Abstraction(refusal) => {
+            message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
+        }
+        CheckCause::TerminalNotEmitted { name, .. } => {
+            message = format!("{message}: `terminal {name}` checks but is not emitted yet");
+        }
+        CheckCause::RefinementNotEmitted { name, .. } => {
+            message = format!("{message}: `refinement {name}` checks but is not emitted yet");
+        }
+        CheckCause::Refinement(refusal) => {
+            message = format!("{message}: in `refinement {}`", refusal.refinement);
+        }
+        CheckCause::TimedNotChecked { construct, .. } => {
+            message = format!("{message}: {} is not checked yet", construct.description());
+        }
+        // FR-185, FR-186: name what the `Probabilistic` check refused.
+        CheckCause::Probabilistic(cause) => {
+            message = match cause.as_ref() {
+                ProbabilisticCause::InvalidWeight { owner, .. } => {
+                    format!(
+                        "{message}: {owner:?} has a weight that is not a positive exact rational"
+                    )
+                }
+                ProbabilisticCause::ZeroDenominator { .. } => {
+                    format!("{message}: a rational has the denominator 0")
+                }
+                ProbabilisticCause::RepeatedSupportValue {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: `{operation}({parameter})` lists a value twice in its distribution"
+                ),
+                ProbabilisticCause::DuplicateDistribution {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}({parameter})` already has a distribution"),
+                ProbabilisticCause::DuplicateWeight {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}` twice"),
+                ProbabilisticCause::DuplicateReward {
+                    reward, operation, ..
+                } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
+                    "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
+                ),
+                ProbabilisticCause::StateReadInReward {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` reads state or an ambient value"
+                ),
+                ProbabilisticCause::QualitativeThreshold { claim, .. } => format!(
+                    "{message}: a threshold of claim `{claim}` is not strictly between 0 and 1; a \
+                     threshold of 0 or 1 is a qualitative claim, stated as an ADR-018 TP-2 claim \
+                     or as a possible property"
+                ),
+                ProbabilisticCause::PartialConfidence { claim, fault, .. } => format!(
+                    "{message}: the confidence of claim `{claim}` must state alpha, beta and \
+                     indifference once each ({fault:?})"
+                ),
+                ProbabilisticCause::InvalidConfidence {
+                    claim, parameter, ..
+                } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
+                ProbabilisticCause::UnresolvedOperation { name, .. } => {
+                    format!("{message}: `{name}` names no operation of a selected model")
+                }
+                ProbabilisticCause::AmbiguousOperation { name, .. } => {
+                    format!("{message}: `{name}` names more than one operation")
+                }
+                ProbabilisticCause::UnresolvedParameter {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}` has no parameter `{parameter}`"),
+                ProbabilisticCause::UnresolvedModel {
+                    workload, model, ..
+                } => format!("{message}: workload `{workload}` names no model `{model}`"),
+                ProbabilisticCause::ValueOutsideType {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: a value of `{operation}({parameter})` is not a literal of its type"
+                ),
+                ProbabilisticCause::RandomReadInPrecondition {
+                    operation,
+                    parameter,
+                    precondition,
+                } => format!(
+                    "{message}: precondition {precondition:?} of `{operation}` reads its random \
+                     parameter `{parameter}`"
+                ),
+                ProbabilisticCause::IncompleteWorkload {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` gives `{operation}` no weight"),
+                ProbabilisticCause::UnknownOperation {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}`, which is not in its model"),
+                ProbabilisticCause::RewardType {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` is neither an integer nor a quantity"
+                ),
+                ProbabilisticCause::DuplicateWorkload { workload, .. } => {
+                    format!("{message}: a workload `{workload}` is already declared")
+                }
+                ProbabilisticCause::UnresolvedSubject { claim, subject, .. } => format!(
+                    "{message}: claim `{claim}` is over `{subject}`, which names no model"
+                ),
+                ProbabilisticCause::TraceSubject { claim, subject, .. } => format!(
+                    "{message}: claim `{claim}` is over the trace subject `{subject}`; a \
+                     probabilistic claim has a model subject, and observed statistics of a trace \
+                     are window aggregates (FR-194)"
+                ),
+                ProbabilisticCause::TimedEventProfile { claim, .. } => format!(
+                    "{message}: claim `{claim}` is checked under the timed profile, which has no \
+                     probabilistic event reading"
+                ),
+                ProbabilisticCause::UnresolvedProfile { claim, alias, .. } => {
+                    format!("{message}: claim `{claim}` uses `{alias}`, which names no profile")
+                }
+                ProbabilisticCause::NotTemporalProfile { claim, profile, .. } => format!(
+                    "{message}: claim `{claim}` is checked under `{profile}`, which is not a \
+                     temporal profile"
+                ),
+                ProbabilisticCause::UnboundedEvent { claim, .. } => format!(
+                    "{message}: the event of claim `{claim}` needs a finite window: every \
+                     operator takes a closed interval under a bounded profile"
+                ),
+                ProbabilisticCause::UnresolvedWorkload {
+                    claim, workload, ..
+                } => format!("{message}: claim `{claim}` is under `{workload}`, which names no workload"),
+                ProbabilisticCause::ForeignWorkload {
+                    claim,
+                    workload,
+                    model,
+                    ..
+                } => format!(
+                    "{message}: claim `{claim}` is under workload `{workload}`, which is declared \
+                     on model `{model}`, not on the claim's subject"
+                ),
+                ProbabilisticCause::UnresolvedReward { claim, reward, .. } => format!(
+                    "{message}: claim `{claim}` names reward `{reward}`, which no operation of its \
+                     model declares"
+                ),
+                ProbabilisticCause::AmbiguousReward { claim, reward, .. } => format!(
+                    "{message}: claim `{claim}` names reward `{reward}`, which its model declares \
+                     with different value types"
+                ),
+                ProbabilisticCause::UnitMismatch {
+                    claim,
+                    threshold,
+                    reward,
+                    ..
+                } => format!(
+                    "{message}: a threshold of claim `{claim}` has dimension `{threshold}`, not \
+                     the reward's `{reward}`"
+                ),
+                ProbabilisticCause::FractionBound { claim, .. } => format!(
+                    "{message}: a fraction compared in an event of claim `{claim}` must be an \
+                     exact rational strictly between 0 and 1"
+                ),
+                ProbabilisticCause::ThresholdNotLiteral { claim, .. } => format!(
+                    "{message}: a threshold of claim `{claim}` must be a literal of the type of \
+                     the measure it bounds"
+                ),
+                ProbabilisticCause::OverNotObjectType {
+                    claim, parameter, ..
+                } => format!(
+                    "{message}: the `over` parameter `{parameter}` of claim `{claim}` must have \
+                     an object type of the claim's model"
+                ),
+                ProbabilisticCause::NotStatePredicate { claim, .. } => format!(
+                    "{message}: an operand of the reachability event of claim `{claim}` must be a \
+                     `holds(..)` state predicate"
+                ),
+                ProbabilisticCause::NotYetImplemented {
+                    claim, construct, ..
+                } => format!("{message}: `probabilistic {claim}` uses {construct}, which is not checked yet"),
+            };
+        }
+        // FR-326: name what the `TemporalTrace` check refused.
+        CheckCause::Temporal(cause) => {
+            message = match cause.as_ref() {
+                TemporalCause::ProfileSelection { found, .. } if found.is_empty() => {
+                    format!("{message}: the unit selects no temporal profile")
+                }
+                TemporalCause::ProfileSelection { found, .. } => format!(
+                    "{message}: the unit selects {} temporal profiles: {}",
+                    found.len(),
+                    found.join(", ")
+                ),
+                TemporalCause::MissingInterval { .. } => {
+                    format!("{message}: the operator needs a closed interval under this profile")
+                }
+                TemporalCause::OpenInterval { .. } => {
+                    format!("{message}: this profile admits no `[a,*]` interval")
+                }
+                TemporalCause::InvertedInterval { lower, upper, .. } => {
+                    format!("{message}: the interval [{lower},{upper}] has a > b")
+                }
+                TemporalCause::ParameterType { parameter, .. } => {
+                    format!("{message}: the type of `{parameter}` does not resolve")
+                }
+                TemporalCause::UnresolvedFairnessOperation { name, .. } => {
+                    format!("{message}: the fairness operation `{name}` names no model operation")
+                }
+                TemporalCause::AmbiguousFairnessOperation { name, .. } => format!(
+                    "{message}: the fairness operation `{name}` names operations of several types"
+                ),
+                TemporalCause::AmbiguousPopulation { populations, .. } => format!(
+                    "{message}: the `over` type is covered by several populations: {}",
+                    populations
+                        .iter()
+                        .map(|key| key.node.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                TemporalCause::FairnessUnderBoundedProfile { .. } => {
+                    format!("{message}: this profile admits no fairness constraint")
+                }
+                TemporalCause::NotEmitted { name, .. } => {
+                    format!("{message}: `temporal {name}` checks but is not emitted yet")
+                }
+                TemporalCause::TimedIntervalNotChecked { .. } => {
+                    format!("{message}: a timed interval is not checked yet")
+                }
+                TemporalCause::ProtocolFairnessNotEmitted { constraint, .. } => format!(
+                    "{message}: the fairness constraint names a target of protocol `{}`, \
+                     which is not emitted yet",
+                    constraint.protocol
+                ),
+                TemporalCause::InvalidTimedInterval { reason, .. } => {
+                    format!("{message}: the timed interval is invalid: {reason}")
+                }
+                TemporalCause::ModelTimeOnUntimedModel { model, .. } => {
+                    format!("{message}: `model-time` over `{model}`, which has no time member")
+                }
+                TemporalCause::UnitlessTimedBound { .. } => {
+                    format!("{message}: a `model-time` interval bound needs a time unit")
+                }
+                TemporalCause::ZeroDenominator { .. } => {
+                    format!("{message}: an interval bound has a zero denominator")
+                }
+                TemporalCause::TimeQuantity { cause, .. } => match &**cause {
+                    TimeUnitCause::NoTimeDimension => {
+                        format!("{message}: the unit graph has no base dimension `Time`")
+                    }
+                    TimeUnitCause::UnknownUnit { name } => {
+                        format!("{message}: the unit graph has no unit `{name}`")
+                    }
+                    TimeUnitCause::NotTimeDimension { name } => {
+                        format!("{message}: `{name}` is not a unit of the dimension `Time`")
+                    }
+                    TimeUnitCause::AffineUnit { name, offset } => {
+                        format!("{message}: the time unit `{name}` has the offset {offset}")
+                    }
+                },
+                TemporalCause::TimedProfileWithoutModelTime { clock, .. } => format!(
+                    "{message}: the timed profile under `clock \"{clock}\"` is not checked yet"
+                ),
+                TemporalCause::TimedTraceSubject { .. } => {
+                    format!("{message}: a timed clause over a trace subject is not checked yet")
                 }
             };
         }
@@ -943,14 +1612,132 @@ mod dependency_tests;
 #[cfg(test)]
 mod wide_integer_tests;
 
+/// A parameter list in source syntax: `(Boolean, Int[0, 3])`.
+fn signature_source(parameters: &[quire_exact::ValueType]) -> String {
+    let parameters: Vec<String> = parameters.iter().map(value_type_source).collect();
+    format!("({})", parameters.join(", "))
+}
+
+/// A value type in source syntax, with the bounds and modes the type
+/// declares. A record, tuple, union, enum or reference type carries only
+/// opaque identity digests, never a declared name, so it spells its kind and
+/// identity (`Composite[<node key>]`, `Reference[<effective id>]`) and an
+/// enum its kind alone.
+fn value_type_source(value_type: &quire_exact::ValueType) -> String {
+    use qsl_foundation::diagnostic::{spell_decimal, spell_int, spell_rational};
+    use quire_exact::{CollectionKind, RoundingMode, ValueType};
+    match value_type {
+        ValueType::Boolean => "Boolean".to_owned(),
+        ValueType::Integer => "Integer".to_owned(),
+        ValueType::Int(interval) => spell_int(interval),
+        ValueType::Rational(domain) => spell_rational(domain),
+        ValueType::Decimal(decimal) => spell_decimal(decimal),
+        ValueType::Float(float) => {
+            let bare = format!("Float{}", float.width().bits());
+            match float.rounding() {
+                RoundingMode::Exact => bare,
+                mode => format!("{bare}[{}]", mode.as_str()),
+            }
+        }
+        ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
+        ValueType::Text(text) => format!(
+            "Text[{}, {}; {}]",
+            text.min(),
+            text.max(),
+            text.profile().as_str()
+        ),
+        ValueType::String => "String".to_owned(),
+        ValueType::Uuid => "Uuid".to_owned(),
+        ValueType::Timestamp => "Timestamp".to_owned(),
+        ValueType::Enum(_) => "Enum".to_owned(),
+        ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
+        ValueType::Composite(key) => format!("Composite[{key}]"),
+        ValueType::Collection(collection) => {
+            let kind = match collection.kind() {
+                CollectionKind::Sequence => "Sequence",
+                CollectionKind::Set => "Set",
+                CollectionKind::Bag => "Bag",
+                CollectionKind::OrderedSet => "OrderedSet",
+            };
+            let element = value_type_source(collection.element());
+            match collection.bound() {
+                Some(bound) => format!(
+                    "{kind}<{element}>[{}, {}]",
+                    bound.minimum(),
+                    bound.maximum()
+                ),
+                None => format!("{kind}<{element}>"),
+            }
+        }
+        ValueType::Reference(id) => format!("Reference[{id}]"),
+        ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
+        ValueType::Population(None) => "Population<_>".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
+    use super::{
+        check_message, compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits,
+        SpineStage,
+    };
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
+    use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolAnchorCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    #[trace("TC-1065", "FR-218-AC-31")]
+    #[test]
+    fn predicate_join_refusal_messages_name_each_function_failure() {
+        let span = super::Span { start: 0, end: 0 };
+        let cases = [
+            (
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, but no function declaration resolves",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    kind: "predicate",
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, which resolves to a `predicate`, not a function",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    expected_parameters: vec![ValueType::Boolean, ValueType::Boolean].into_boxed_slice(),
+                    actual_parameters: vec![ValueType::Int(
+                        IntegerInterval::new(Integer::from(0_i64), Integer::from(3_i64)).unwrap(),
+                    )]
+                    .into_boxed_slice(),
+                    expected_result: Box::new(ValueType::Boolean),
+                    actual_result: Box::new(ValueType::Integer),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done` with signature (Int[0, 3]) -> Integer; expected (Boolean, Boolean) -> Boolean",
+            ),
+        ];
+
+        for (cause, expected) in cases {
+            let refusal = CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::ProtocolAnchor(Box::new(cause)),
+            };
+            let message = check_message(&[refusal]);
+            assert!(message.ends_with(expected), "{message}");
+        }
+    }
 
     /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on
     /// `not not not true`, after `g`'s one node, under a node limit of 4
@@ -1032,6 +1819,137 @@ mod tests {
         }
     }
 
+    /// FR-186-AC-3 (TC-621 step 3), at the CLI's compile: a `probabilistic`
+    /// claim over a trace subject is refused, and the diagnostic names window
+    /// aggregates as the form for observed statistics.
+    #[trace("TC-621", "FR-186-AC-3")]
+    #[test]
+    fn a_claim_over_a_trace_subject_names_window_aggregates() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
+            record Reading { level: Integer; }\n\
+            probabilistic C using ev on Reading under Steady on origin \
+            { probability >= 0.9 [ holds(true) ] }\n";
+        let refusal = compose(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a trace subject is refused");
+        assert_eq!(refusal.stage(), SpineStage::Check);
+        assert_eq!(refusal.code(), Code::InvalidProbabilisticModel);
+        let message = refusal.to_string();
+        assert!(message.contains("trace-subject"), "{message}");
+        assert!(message.contains("window aggregates (FR-194)"), "{message}");
+        let region = refusal.region().expect("the subject is located");
+        let (start, end) = (region.start() as usize, region.end() as usize);
+        assert_eq!(&unit[start..end], "Reading");
+    }
+
+    /// FR-186-AC-2 (TC-621 step 2), at the CLI's compile: a threshold of 1
+    /// is refused `qualitative-threshold`, and the diagnostic names the
+    /// qualitative form: an ADR-018 TP-2 claim or a possible property.
+    #[trace("TC-621", "FR-186-AC-2")]
+    #[test]
+    fn a_qualitative_threshold_names_the_qualitative_form() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
+            probabilistic C using ev on Service under Steady on origin \
+            { probability >= 1 [ holds(true) ] }\n";
+        let refusal = compose(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a threshold of 1 is refused");
+        assert_eq!(refusal.code(), Code::InvalidProbabilisticModel);
+        let message = refusal.to_string();
+        assert!(message.contains("qualitative-threshold"), "{message}");
+        assert!(message.contains("ADR-018 TP-2 claim"), "{message}");
+        assert!(message.contains("possible property"), "{message}");
+    }
+
+    /// FR-186-AC-3 (TC-621 step 3): the diagnostics of an unbounded event and
+    /// of a foreign workload read as the FR states them, and a fraction bound
+    /// outside (0, 1) is not advised as a qualitative claim.
+    #[trace("TC-621", "FR-186-AC-3")]
+    #[test]
+    fn the_event_and_workload_diagnostics_read_as_the_requirement_states_them() {
+        use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+        use quire_semantic_value::location::{Location, Origin};
+        let render = |cause: ProbabilisticCause| {
+            CompileRefusal::Check {
+                refusals: vec![CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::Probabilistic(Box::new(cause)),
+                }],
+                region: None,
+            }
+            .to_string()
+        };
+        let span = qsl_foundation::Span { start: 0, end: 1 };
+        let message = render(ProbabilisticCause::UnboundedEvent {
+            claim: "NoFault".to_owned(),
+            span,
+        });
+        assert!(message.contains("unbounded-event"), "{message}");
+        assert!(message.contains("needs a finite window"), "{message}");
+        let message = render(ProbabilisticCause::ForeignWorkload {
+            claim: "NoFault".to_owned(),
+            workload: "Throttle".to_owned(),
+            model: "Service".to_owned(),
+            span,
+        });
+        assert!(message.contains("foreign-workload"), "{message}");
+        assert!(
+            message.contains("`Throttle`") && message.contains("`Service`"),
+            "{message}"
+        );
+        let message = render(ProbabilisticCause::FractionBound {
+            claim: "Monthly".to_owned(),
+            span,
+        });
+        assert!(message.contains("fraction-bound-out-of-range"), "{message}");
+        assert!(message.contains("strictly between 0 and 1"), "{message}");
+        assert!(
+            !message.contains("TP-2") && !message.contains("possible property"),
+            "{message}"
+        );
+    }
+
+    /// FR-186-AC-2 (TC-621 step 2): the diagnostic of a threshold whose
+    /// dimension is not the reward's names both dimensions.
+    #[trace("TC-621", "FR-186-AC-2")]
+    #[test]
+    fn a_unit_mismatch_names_the_dimensions() {
+        use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+        use quire_semantic_value::location::{Location, Origin};
+        let refusal = CompileRefusal::Check {
+            refusals: vec![CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::Probabilistic(Box::new(ProbabilisticCause::UnitMismatch {
+                    claim: "P95".to_owned(),
+                    threshold: "Length".to_owned(),
+                    reward: "Time".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                })),
+            }],
+            region: None,
+        };
+        let message = refusal.to_string();
+        assert!(message.contains("ill_typed (unit-mismatch)"), "{message}");
+        assert!(
+            message.contains("`Length`") && message.contains("`Time`"),
+            "{message}"
+        );
+    }
+
     /// SR-771 FND-005 (SR-770 FND-001): the check-stage guard the rename
     /// above no longer gave. A protocol that names no model at all (so the
     /// assembler has nothing to refuse) but holds unchecked garbage -- an
@@ -1063,13 +1981,15 @@ mod tests {
         .expect_err("a protocol with unchecked content must not compile to a package");
         match refusal.as_ref() {
             CompileRefusal::Check { refusals, .. } => {
+                // Every part is checked now: the undeclared input, role and
+                // binder types and the undeclared channel each refuse.
                 assert!(
                     refusals.iter().any(|refusal| matches!(
                         &refusal.cause,
                         qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
                             if matches!(
                                 cause.as_ref(),
-                                qsl_semantics::check::ProtocolAnchorCause::Unimplemented { name, .. } if name == "Flow"
+                                qsl_semantics::check::ProtocolAnchorCause::MissingChannel { node, .. } if node == "S"
                             )
                     )),
                     "{refusals:?}"
@@ -1265,5 +2185,52 @@ mod tests {
         assert_eq!(refusal.stage(), SpineStage::Emit);
         assert_eq!(refusal.code(), Code::UnsupportedProjection);
         assert!(refusal.region().is_none());
+    }
+    /// A join signature spells every parameter type in source syntax, not
+    /// its debug form.
+    #[test]
+    fn join_signature_types_are_spelled_in_source_syntax() {
+        use quire_exact::{
+            CardinalityBound, CollectionKind, CollectionType, FloatType, IeeeWidth, NodeKey,
+            RoundingMode, TextProfile, TextType,
+        };
+        let sequence = ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Integer,
+            Some(CardinalityBound::new(1, 4).unwrap()),
+        ));
+        let cases = [
+            (
+                ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
+                "Float64",
+            ),
+            (
+                ValueType::Float(FloatType::new(
+                    IeeeWidth::Binary32,
+                    RoundingMode::NearestEven,
+                )),
+                "Float32[nearest-even]",
+            ),
+            (
+                ValueType::Text(TextType::new(0, 8, TextProfile::Nfc).unwrap()),
+                "Text[0, 8; nfc]",
+            ),
+            (sequence.clone(), "Sequence<Integer>[1, 4]"),
+            (
+                ValueType::Option(std::sync::Arc::new(sequence)),
+                "Option<Sequence<Integer>[1, 4]>",
+            ),
+            (
+                ValueType::Composite(NodeKey::from_digest([0xab; 32])),
+                &format!("Composite[{}]", "ab".repeat(32)),
+            ),
+        ];
+        for (value_type, expected) in cases {
+            assert_eq!(super::value_type_source(&value_type), expected);
+        }
+        assert_eq!(
+            super::signature_source(&[ValueType::Boolean, ValueType::String]),
+            "(Boolean, String)"
+        );
     }
 }

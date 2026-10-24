@@ -211,7 +211,7 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         "\"\\x\"",
         "\"\\é\"",
         "\"unterminated",
-        "true @ false",
+        "true # false",
         "true ^ false",
         "self'",
         "0x7fc00001",
@@ -222,6 +222,15 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         let e = read(document(expression).as_bytes(), Limits::default()).unwrap_err();
         assert_eq!(e.code, Code::InvalidSyntax, "{expression}: {e:?}");
         assert!(!e.is_incomplete());
+    }
+    // `@` is the hyper-form token: recognized, but unsupported by this
+    // historical profile, so it is located and distinct from malformed `#`.
+    {
+        let text = document("true @ false");
+        let e = read(text.as_bytes(), Limits::default()).unwrap_err();
+        assert_eq!(e.code, Code::UnsupportedConstruct, "{e:?}");
+        assert_eq!(e.span.start.byte, text.find('@').unwrap());
+        assert!(e.span.end.byte > e.span.start.byte);
     }
 }
 

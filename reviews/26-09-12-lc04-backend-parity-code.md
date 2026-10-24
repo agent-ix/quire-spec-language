@@ -6,8 +6,6 @@ analysis: code-review
 scope: "d2154af; tests/native_backend.rs; tests/fixtures/native-lowering; FR-009-AC-5; IT-008; TC-094"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-009
-    type: reviews
   - target: ix://agent-ix/quire-spec-language/TC-094
     type: references
 ---

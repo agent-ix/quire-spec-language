@@ -218,31 +218,6 @@ impl RawSourceRef {
     }
 }
 
-/// ADR-013 O-19: the `backend` member every proof-result envelope, witness
-/// envelope and replay request carries unchanged (QC-8): the provider
-/// identity exactly as the FR-331 manifest states it, and nothing else. Two
-/// backend identities are equal iff their strings are equal.
-///
-/// `Backend` keeps its own type, distinct from `qsl_route::BackendId`,
-/// because layer 6 (`replay`) cannot depend on layer R (`route`)
-/// (ADR-011 §6.1).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Backend {
-    identity: String,
-}
-
-impl Backend {
-    /// Name a backend by its provider identity.
-    pub fn new(identity: String) -> Self {
-        Self { identity }
-    }
-
-    /// The provider identity string, exactly as the FR-331 manifest states it.
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
-}
-
 /// One `v2` lock semantic-profile selection: a profile identifier and its
 /// selected value, exactly as the lock records it. Opaque to #231 -- no
 /// consumer here inspects an individual selection; they only round-trip

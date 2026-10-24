@@ -4,18 +4,23 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use qsl_foundation::diagnostic::{category_of, Category};
+use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
-use qsl_foundation::CatalogCode;
 use quire_canonical::Encode;
 use quire_exact::ValueType;
+use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
+use crate::simulation::footprint::Footprint;
 use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use crate::simulation::reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
+};
 use qsl_foundation::{IdentityLimits, Setting, SettingLimits};
 
 /// A finite-branching transition system the engine explores.
@@ -61,6 +66,45 @@ pub trait TransitionSystem {
         &self,
         state: &Self::State,
     ) -> ExpansionResult<Self::TransitionId, Self::State, Self::Finding>;
+
+    /// The reductions this system offers a model checker (ADR-021 EI-4,
+    /// FR-159): exactly the hooks below it implements. Exploration and
+    /// sampling never read it (ADR-021 RD-2).
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions::NONE
+    }
+
+    /// FR-152: the canonical representative of `state`'s orbit under
+    /// `group`, with the permutation of `group` that maps `state` to it;
+    /// `None` when the system does not offer symmetry.
+    fn canonical(
+        &self,
+        _state: &Self::State,
+        _group: &SymmetryGroup,
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
+        None
+    }
+
+    /// FR-158: how the state constraint `constraint`, a checked clause name
+    /// the caller resolved, reads at `state`; `None` when the system does
+    /// not offer state constraints.
+    fn holds_constraint(
+        &self,
+        _state: &Self::State,
+        _constraint: &str,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        None
+    }
+
+    /// FR-162: the footprint of `transition`, a function of the transition
+    /// identity alone (FR-155 "State-free"); `None` when the system does not
+    /// offer partial-order reduction.
+    fn footprint(
+        &self,
+        _transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
+        None
+    }
 }
 
 /// What [`TransitionSystem::successors`] returns: an [`Expansion`] or an
@@ -213,7 +257,7 @@ impl Outcome {
 /// takes the catalog's category, and a code the catalog does not define is
 /// an internal failure: the system stopped for a reason the engine cannot
 /// classify. The only site that reads a stop cause's code spelling.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn stop_category(cause: &CatalogCode) -> Category {
     if cause.code() == "resource_exhausted" {
         return Category::Incomplete;
@@ -445,8 +489,9 @@ pub fn explore_request<S: TransitionSystem>(
 
 #[cfg(test)]
 mod stop_category_tests {
-    use super::{stop_category, CatalogCode, Category};
+    use super::stop_category;
     use ix_trace_rs::trace;
+    use quire_semantic_value::catalog::{CatalogCode, Category};
 
     /// FR-101-AC-12: a stop for an unavailable observation or an incomplete
     /// population is incomplete, as is a stop at a work budget; a refusal

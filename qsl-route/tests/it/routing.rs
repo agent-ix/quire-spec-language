@@ -11,10 +11,11 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
+use qsl_foundation::BackendId;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, DomainsDefect, ManifestDigest, Mode,
-    ProviderOrigin, RegistrationCause, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, DomainsDefect,
+    ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -28,12 +29,14 @@ fn admit(
     digest_byte: u8,
     advertised: &[(Option<&str>, &str)],
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
-    BackendDescriptor::admit(
+    descriptor_from_manifest(
         candidate(id),
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         Some(&["collection", "integer"]),
+        None,
+        None,
     )
 }
 
@@ -45,6 +48,46 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
         .iter()
         .map(|candidate| candidate.id().as_str().to_owned())
         .collect()
+}
+
+/// FR-288: linked and process providers use the same manifest conversion.
+#[test]
+#[trace("TC-772", "FR-288-AC-5")]
+fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
+    let backend = candidate("shared");
+    let digest = ManifestDigest::from_digest([9; 32]);
+    let advertised = [(Some("value-validity"), Some("unbounded"))];
+    let linked = descriptor_from_manifest(
+        backend.clone(),
+        ProviderOrigin::Linked,
+        digest,
+        advertised,
+        None,
+        None,
+        None,
+    )
+    .expect("the manifest labels are valid");
+    let process = descriptor_from_manifest(
+        backend,
+        ProviderOrigin::Process,
+        digest,
+        advertised,
+        None,
+        None,
+        None,
+    )
+    .expect("the same manifest is valid for a process provider");
+
+    assert_eq!(linked.id(), process.id());
+    assert_eq!(linked.manifest_digest(), process.manifest_digest());
+    assert_eq!(
+        linked
+            .advertises()
+            .collect::<std::collections::HashSet<_>>(),
+        process.advertises().collect()
+    );
+    assert_eq!(linked.origin(), ProviderOrigin::Linked);
+    assert_eq!(process.origin(), ProviderOrigin::Process);
 }
 
 /// TC-155 step 3: an unknown kind, an absent kind and an unknown mode each
@@ -128,12 +171,14 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
 #[test]
 #[trace("TC-155", "FR-057-AC-8")]
 fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
-    let absent_mode = BackendDescriptor::admit(
+    let absent_mode = descriptor_from_manifest(
         candidate("absent-mode"),
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
         Some(&["collection"]),
+        None,
+        None,
     )
     .expect_err("an absent mode is never defaulted");
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
@@ -292,12 +337,14 @@ fn admit_domains(
     advertised: &[(Option<&str>, &str)],
     domains: Option<&[&str]>,
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
-    BackendDescriptor::admit(
+    descriptor_from_manifest(
         candidate("plug"),
         ProviderOrigin::Process,
         ManifestDigest::from_digest([4; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         domains,
+        None,
+        None,
     )
 }
 
@@ -424,6 +471,7 @@ fn the_typed_constructor_applies_the_same_domains_rules() {
             ManifestDigest::from_digest([4; 32]),
             [(Capability::ValueValidity, advertises)],
             domains,
+            None,
         )
     };
     let refused = |result: Result<BackendDescriptor, qsl_route::RegistrationRefusal>, defect| {

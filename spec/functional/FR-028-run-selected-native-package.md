@@ -39,9 +39,8 @@ execution and emits no predicate truth.
 
 ## Behavior
 
-The command shall count the selected package toward the existing 64-file and
-8 MiB aggregate intake ceilings.
-File-count preflight shall identify the exhausted named group, including packages.
+The command shall count the selected package's size toward FR-026's
+`dependent_bytes` limit.
 The command shall call NativePackage::read_verified with the expected byte
 reference, externally derived CheckBindings, admitted models and existing
 default support/stage limits.
@@ -53,17 +52,13 @@ The command shall preserve fresh budgets for subsequent requests.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-028-AC-1 | Selected exported state/operation packages produce the expected true, false and frame-refused outcomes through the real binary. | Test |
-| FR-028-AC-2 | An equivalent alternate package layout retains its selected byte digest while its static identity and runtime observations agree with source compilation. | Test |
-| FR-028-AC-3 | Stale bytes, forged claims with recomputed digest, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test |
-| FR-028-AC-4 | Selected-file/count/byte and runtime limits retain incomplete outcomes with fresh successful retry; omitted selection preserves run and compile behavior. | Test |
+| FR-028-AC-1 | Selected exported state/operation packages produce the expected true, false and frame-refused outcomes through `command` called as a library function, each returning a typed outcome with its FR-285 exit code and writing nothing to stdout or stderr. | Test (TC-106) |
+| FR-028-AC-2 | An equivalent alternate package layout retains its selected byte digest while its static identity and runtime observations agree with source compilation. | Test (TC-106) |
+| FR-028-AC-3 | Stale bytes, forged claims with recomputed digest, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test (TC-106) |
+| FR-028-AC-4 | `dependent_bytes` reached by the selected package, and runtime limits, retain incomplete outcomes with fresh successful retry; omitted selection preserves run and compile behavior. | Test (TC-106) |
 
 ## Dependencies
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): local run orchestration.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): actual artifact reconstruction.
 - [FR-027](FR-027-export-compiled-native-package.md): standalone package producer.
-
-## Status
-
-The selected package's sources carry the two source labels of FR-001 (FR-020). Implemented for the four-label identity (ADR-013 §7 S-4b) through FR-020's reader; the reader moves to two labels with FR-020.

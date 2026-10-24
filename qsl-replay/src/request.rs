@@ -16,20 +16,23 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
-    SourceDigestWire,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
 };
 use crate::limits::CallerLimits;
+use crate::object_environment::ObjectEnvironmentRef;
+use crate::target::{ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal};
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
+use qsl_foundation::BackendId;
 use qsl_foundation::Code;
 use qsl_foundation::IntakeLimits;
-use qsl_foundation::Setting;
+use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
 use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
+use qsl_semantics::value::supplied::SuppliedLimits;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -54,49 +57,113 @@ impl StateEnvironment {
 /// name (FR-255) to the bound the proving run configured, so a request never
 /// silently substitutes QSL's own compiled-in defaults for the proving run's
 /// actual limits (TC-185). A setting with no entry runs at its published
-/// default. Decode admits only settings of FR-255's table other than
-/// `replay.input_bytes`.
+/// default. Decode admits every setting of FR-255's tables other than
+/// `replay.input_bytes` and `format.output_bytes`. An entry named for an
+/// accounting counter replaces the request's accounting limit for that
+/// counter (FR-255 Behavior 10).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StageLimits(BTreeMap<Setting, u64>);
+pub struct StageLimits {
+    stages: BTreeMap<Setting, u64>,
+    accounting: BTreeMap<AccountingSetting, u64>,
+}
 
 impl StageLimits {
-    /// The entries as `(setting, bound)`, in setting order.
+    /// The stage entries as `(setting, bound)`, in setting order.
     pub fn iter(&self) -> impl Iterator<Item = (Setting, u64)> + '_ {
-        self.0.iter().map(|(setting, bound)| (*setting, *bound))
+        self.stages
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
     }
 
-    /// The bound the request gives `setting`, if it carries an entry.
+    /// The accounting-counter entries as `(setting, bound)`, in table order.
+    pub fn accounting_entries(&self) -> impl Iterator<Item = (AccountingSetting, u64)> + '_ {
+        self.accounting
+            .iter()
+            .map(|(setting, bound)| (*setting, *bound))
+    }
+
+    /// The bound the request gives the stage `setting`, if it carries an
+    /// entry.
     pub fn bound(&self, setting: Setting) -> Option<u64> {
-        self.0.get(&setting).copied()
+        self.stages.get(&setting).copied()
+    }
+
+    /// These limits with the stage or accounting limit named `name` (FR-255's
+    /// dotted name, such as `s1.input_bytes`) set to `bound`, replacing an
+    /// earlier entry of that name (FR-399). Refuses, returning no limits, a
+    /// name that is no setting of FR-255's tables and `replay.input_bytes` and
+    /// `format.output_bytes`, which a request does not carry.
+    ///
+    /// To compile a large source through `compile_admitted`, raise more than
+    /// `s1.input_bytes`. An `s1.input_bytes` above `ReplayLimits.input_bytes`
+    /// refuses as `AdmittedResource::AboveReader`, so raise
+    /// `ReplayLimits::with_input_bytes` with it. A source of real
+    /// declarations reaches the `s1.tokens` (100000) and `s1.nodes` (50000)
+    /// defaults at a few hundred kilobytes, far below 1 MiB, so raise those
+    /// two by name as well.
+    pub fn with_named(mut self, name: &str, bound: u64) -> Result<Self, StageLimitNameRefusal> {
+        match SettingName::from_name(name) {
+            Some(SettingName::Stage(setting))
+                if !matches!(
+                    setting,
+                    Setting::ReplayInputBytes | Setting::FormatOutputBytes
+                ) =>
+            {
+                self.stages.insert(setting, bound);
+            }
+            Some(SettingName::Accounting(setting)) => {
+                self.accounting.insert(setting, bound);
+            }
+            _ => {
+                return Err(StageLimitNameRefusal {
+                    name: name.to_owned(),
+                })
+            }
+        }
+        Ok(self)
     }
 
     /// Reads the wire entries, refusing the first whose name is no setting
-    /// of FR-255's table or is `replay.input_bytes`.
+    /// of FR-255's tables or is `replay.input_bytes` or `format.output_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
-        let mut limits = BTreeMap::new();
-        for (name, bound) in entries {
-            match Setting::from_name(&name) {
-                Some(setting) if setting != Setting::ReplayInputBytes => {
-                    limits.insert(setting, bound);
-                }
-                _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
-            }
-        }
-        Ok(Self(limits))
+        entries
+            .into_iter()
+            .try_fold(Self::default(), |limits, (name, bound)| {
+                limits
+                    .with_named(&name, bound)
+                    .map_err(|refusal| ReplayRequestRefusal::StageLimitEntry { name: refusal.name })
+            })
     }
 
     /// The entries as wire `name -> bound`.
     fn to_wire(&self) -> BTreeMap<String, u64> {
-        self.0
+        let stages = self
+            .stages
             .iter()
-            .map(|(setting, bound)| (setting.name().to_owned(), *bound))
-            .collect()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        let accounting = self
+            .accounting
+            .iter()
+            .map(|(setting, bound)| (setting.name().to_owned(), *bound));
+        stages.chain(accounting).collect()
     }
+}
+
+/// FR-399: the name given to [`StageLimits::with_named`] is no limit a stage
+/// takes.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("invalid_runtime_input/unknown-member: `{name}` is not a stage limit a request carries")]
+pub struct StageLimitNameRefusal {
+    /// The name as the caller wrote it.
+    pub name: String,
 }
 
 impl FromIterator<(Setting, u64)> for StageLimits {
     fn from_iter<T: IntoIterator<Item = (Setting, u64)>>(entries: T) -> Self {
-        Self(entries.into_iter().collect())
+        Self {
+            stages: entries.into_iter().collect(),
+            accounting: BTreeMap::new(),
+        }
     }
 }
 
@@ -182,14 +249,16 @@ pub struct ReplayRequest {
     package_id: DigestRecord,
     source_digests: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
-    selected_function: QualifiedName,
+    replay_target: ReplayTarget,
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
     obligation_identity: ObligationIdentity,
-    backend: Backend,
+    backend: BackendId,
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
+    supplied_limits: SuppliedLimits,
+    object_environment: Option<ObjectEnvironmentRef>,
     declared_domains: Vec<DeclaredDomain>,
     byte_provision: ByteProvision,
 }
@@ -208,12 +277,14 @@ impl ReplayRequest {
     pub fn dependencies(&self) -> &[DependencyEntry] {
         &self.dependencies
     }
-    /// The selected function. Always a typed [`QualifiedName`]; no
+    /// The replay target (QSpec FR-323): exactly one of a function, a
+    /// frame operation or a state clause, held as typed names only. No
     /// constructor or decoder on this type ever accepts a bare `&str` or
-    /// `String` here (FR-071-AC-3), and no `impl From<&str>`/`impl
-    /// From<String>` exists that could satisfy this position implicitly.
-    pub fn selected_function(&self) -> &QualifiedName {
-        &self.selected_function
+    /// `String` in a target position (FR-071-AC-3), and no `impl
+    /// From<&str>`/`impl From<String>` exists that could satisfy one
+    /// implicitly.
+    pub fn replay_target(&self) -> &ReplayTarget {
+        &self.replay_target
     }
     /// The witness or input replay source.
     pub fn source(&self) -> &ReplaySource {
@@ -232,20 +303,36 @@ impl ReplayRequest {
         self.obligation_identity
     }
     /// The backend that produced the originating counterexample.
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &BackendId {
         &self.backend
     }
     /// The scalar environment the replay starts from.
     pub fn state_environment(&self) -> &StateEnvironment {
         &self.state_environment
     }
-    /// The accounting limits the replay run itself is charged against.
+    /// The accounting limits the replay run itself is charged against: the
+    /// wire's `accounting_limits` with each counter its `stage_limits` names
+    /// replaced by the entry (FR-255 Behavior 10).
     pub fn accounting_limits(&self) -> ScalarLimits {
         self.accounting_limits
     }
     /// The stage limits copied from the proving run, by setting.
     pub fn stage_limits(&self) -> &StageLimits {
         &self.stage_limits
+    }
+
+    /// The effective supplied-value helper ceilings (QSpec FR-323
+    /// `limits.supplied`): the request's own, or each published default when
+    /// the caller stated none. A defaulted request and one that states the
+    /// defaults are the same request.
+    pub fn supplied_limits(&self) -> SuppliedLimits {
+        self.supplied_limits
+    }
+    /// The snapshot document that supplies the call's object environment
+    /// (FR-071, FR-098), when the request names one. The request never
+    /// reads it: the executor admits it by FR-106.
+    pub fn object_environment(&self) -> Option<&ObjectEnvironmentRef> {
+        self.object_environment.as_ref()
     }
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over (FR-071).
@@ -256,6 +343,25 @@ impl ReplayRequest {
     /// recompilation input's bytes (FR-071-AC-2).
     pub fn byte_provision(&self) -> &ByteProvision {
         &self.byte_provision
+    }
+}
+
+impl ReplayRequestWire {
+    /// The accounting limits the replay runs under and any identity binds
+    /// (FR-255 Behavior 10): `accounting_limits` with each counter a
+    /// `stage_limits` entry names replaced by the entry's bound. Computed
+    /// here once; [`ReplayRequest::accounting_limits`] returns it, so the
+    /// split between the two members never reaches a claim.
+    pub fn effective_accounting_limits(&self) -> ScalarLimits {
+        crate::limits::AccountingLimits::with_entries(
+            self.accounting_limits,
+            self.stage_limits.iter().filter_map(|(name, bound)| {
+                match SettingName::from_name(name) {
+                    Some(SettingName::Accounting(setting)) => Some((setting, *bound)),
+                    _ => None,
+                }
+            }),
+        )
     }
 }
 
@@ -277,8 +383,9 @@ pub struct ReplayRequestWire {
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
-    /// The selected function.
-    pub selected_function: QualifiedName,
+    /// The replay target: the QSpec FR-323 target members, exactly one of
+    /// which a decodable request carries.
+    pub replay_target: RequestTargetWire,
     /// The witness or input replay source.
     pub source: ReplaySource,
     /// The obligation this request replays: the ADR-013 O-09 obligation
@@ -292,9 +399,20 @@ pub struct ReplayRequestWire {
     /// The accounting limits the replay run itself is charged against.
     pub accounting_limits: ScalarLimits,
     /// The stage limits copied from the proving run: setting name (FR-255)
-    /// to bound. Decode refuses a name that is no setting of the table, and
-    /// `replay.input_bytes`.
+    /// to bound. Decode refuses a name that is no setting of either table,
+    /// and `replay.input_bytes` or `format.output_bytes`. A name that is an accounting counter
+    /// replaces that counter of `accounting_limits`.
     pub stage_limits: BTreeMap<String, u64>,
+    /// The supplied-value helper ceilings (QSpec FR-323 `limits.supplied`),
+    /// not a stage setting. `None` is a caller who stated none: each ceiling
+    /// resolves to its published default before the request is read, so the
+    /// request is the same one a caller stating those defaults makes. A
+    /// wire object that names only one ceiling, an unknown member or a
+    /// value past `u64` never reaches here: see [`crate::read_supplied_limits`].
+    pub supplied_limits: Option<SuppliedLimits>,
+    /// The snapshot document that supplies the call's object environment
+    /// (FR-071), or `None` for a request that supplies none.
+    pub object_environment: Option<ObjectEnvironmentRef>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
@@ -430,16 +548,97 @@ pub enum ReplayRequestRefusal {
         index: usize,
     },
     /// A `stage_limits` entry names no setting of FR-255's table, or names
-    /// `replay.input_bytes`, which a request does not carry
+    /// `replay.input_bytes` or `format.output_bytes`, which a request does not carry
     /// (`invalid_runtime_input`/`unknown-member`, FR-263 B2).
     #[error("invalid_runtime_input/unknown-member: stage_limits entry `{name}` is not a setting a request carries")]
     StageLimitEntry {
         /// The entry's name as the request wrote it.
         name: String,
     },
+    /// QSpec FR-323 decode rule 1: the request carries none of the three
+    /// replay target members
+    /// (`invalid_runtime_input`/`missing-member` at `/replay`).
+    #[error(
+        "invalid_runtime_input/missing-member at /replay: the request carries no replay target"
+    )]
+    MissingReplayTarget,
+    /// QSpec FR-323 decode rule 1: the request carries more than one replay
+    /// target member, named in FR-323's order
+    /// (`invalid_runtime_input`/`invalid-value` at the last one's pointer).
+    #[error("invalid_runtime_input/invalid-value at {}: the request carries more than one replay target ({})", .members.last().map_or("/replay", |member| member.pointer()), join_members(.members))]
+    ConflictingReplayTarget {
+        /// The members present, in FR-323's order.
+        members: Vec<TargetMember>,
+    },
+    /// QSpec FR-323 decode rule 1: a frame or state-clause request carries
+    /// `arguments` (`invalid_runtime_input`/`unknown-member` at
+    /// `/replay/arguments`).
+    #[error("invalid_runtime_input/unknown-member at /replay/arguments: a {target} request carries no arguments")]
+    UnexpectedArguments {
+        /// The request's target member.
+        target: TargetMember,
+    },
+    /// QSpec FR-323 decode rule 1: a `function` request carries no
+    /// `occurrence_key` (`invalid_runtime_input`/`missing-member` at
+    /// `/replay/occurrence_key`).
+    #[error("invalid_runtime_input/missing-member at /replay/occurrence_key: a function request carries no occurrence key")]
+    MissingOccurrenceKey,
+    /// QSpec FR-323 decode rule 1: a frame or state-clause request carries
+    /// an occurrence key (`invalid_runtime_input`/`unknown-member` at
+    /// `/replay/occurrence_key`).
+    #[error("invalid_runtime_input/unknown-member at /replay/occurrence_key: a {target} request carries no occurrence key")]
+    UnexpectedOccurrenceKey {
+        /// The request's target member.
+        target: TargetMember,
+    },
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+}
+
+fn join_members(members: &[TargetMember]) -> String {
+    members
+        .iter()
+        .map(|member| member.name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// QSpec FR-323 decode rule 1 over a request's target: exactly one target
+/// member, and `arguments` or an occurrence key only on a function request.
+fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestRefusal> {
+    let RequestTargetWire {
+        members,
+        arguments,
+        occurrence_key,
+    } = wire;
+    let target = members.select().map_err(|refusal| match refusal {
+        TargetSelectionRefusal::Missing => ReplayRequestRefusal::MissingReplayTarget,
+        TargetSelectionRefusal::Conflicting { members } => {
+            ReplayRequestRefusal::ConflictingReplayTarget { members }
+        }
+    })?;
+    let member = target.member();
+    if member == TargetMember::Function {
+        let Some(key) = occurrence_key else {
+            return Err(ReplayRequestRefusal::MissingOccurrenceKey);
+        };
+        return Ok(match target {
+            ReplayTarget::Declaration { kind, name, .. } => ReplayTarget::Declaration {
+                kind,
+                name,
+                occurrence_key: Some(key),
+            },
+            other @ ReplayTarget::FrameOperation(_) => other,
+        });
+    }
+    if arguments {
+        return Err(ReplayRequestRefusal::UnexpectedArguments { target: member });
+    }
+    if occurrence_key.is_some() {
+        return Err(ReplayRequestRefusal::UnexpectedOccurrenceKey { target: member });
+    }
+    Ok(target)
 }
 
 /// `bytes`' digest under `domain`: SHA-256 of the raw bytes for a
@@ -520,8 +719,41 @@ impl ReplayRequestRefusal {
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
             }
-            Self::StageLimitEntry { .. } => Code::InvalidRuntimeInput,
+            Self::StageLimitEntry { .. }
+            | Self::MissingReplayTarget
+            | Self::MissingOccurrenceKey
+            | Self::ConflictingReplayTarget { .. }
+            | Self::UnexpectedArguments { .. }
+            | Self::UnexpectedOccurrenceKey { .. } => Code::InvalidRuntimeInput,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
+        }
+    }
+
+    /// The catalog cause tag of a replay-target refusal (QSpec FR-323 decode
+    /// rule 1); `None` for every other refusal, whose text names its own.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
+            Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
+            Self::UnexpectedArguments { .. } | Self::UnexpectedOccurrenceKey { .. } => {
+                Some("unknown-member")
+            }
+            _ => None,
+        }
+    }
+
+    /// The RFC 6901 pointer of a replay-target refusal; `None` for every
+    /// other refusal.
+    pub fn pointer(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingReplayTarget => Some("/replay"),
+            Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
+            Self::ConflictingReplayTarget { members } => {
+                Some(members.last().map_or("/replay", |member| member.pointer()))
+            }
+            Self::UnexpectedArguments { .. } => Some("/replay/arguments"),
+            Self::UnexpectedOccurrenceKey { .. } => Some("/replay/occurrence_key"),
+            _ => None,
         }
     }
 }
@@ -571,7 +803,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
                         .sum::<usize>()
             })
             .sum::<usize>()
-        + wire.selected_function.to_string().len()
+        + wire.replay_target.members.measured_bytes()
         + wire.backend.len()
         + wire
             .state_environment
@@ -590,6 +822,14 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .map(|declared| crate::witness::finite_bound_bytes(declared.bound()))
             .sum::<usize>()
         + wire.source.measured_bytes()
+        + wire.object_environment.as_ref().map_or(0, |environment| {
+            let labels = environment.identity();
+            labels.authority.len()
+                + labels.identity.len()
+                + labels.revision_namespace.len()
+                + labels.revision.len()
+                + environment.digest().hex().len()
+        })
 }
 
 impl ReplayRequest {
@@ -597,12 +837,14 @@ impl ReplayRequest {
     /// checks happen before the byte provision or package reference is read
     /// at all: no package lookup or byte-provision access is observed
     /// before either refusal.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn decode(
-        wire: ReplayRequestWire,
+        mut wire: ReplayRequestWire,
         limits: ReplayLimits,
     ) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
+        // QSpec FR-323 decode rule 1: before any byte-provision rule.
+        let replay_target = decode_target(std::mem::take(&mut wire.replay_target))?;
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -615,8 +857,12 @@ impl ReplayRequest {
         if wire.backend.is_empty() {
             return Err(ReplayRequestRefusal::EmptyBackendIdentity);
         }
+        // Once, before the wire is taken apart: this is the value the call
+        // runs under and any claim binds (FR-255 Behavior 10).
+        let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
-        let intake = CallerLimits::for_request(&stage_limits, limits)
+        let supplied_limits = wire.supplied_limits.unwrap_or_default();
+        let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
             .spine
             .model
             .intake;
@@ -720,14 +966,16 @@ impl ReplayRequest {
             package_id,
             source_digests,
             dependencies,
-            selected_function: wire.selected_function,
+            replay_target,
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
-            backend: Backend::new(wire.backend),
+            backend: BackendId::new(wire.backend),
             state_environment: wire.state_environment,
-            accounting_limits: wire.accounting_limits,
+            accounting_limits,
             stage_limits,
+            supplied_limits,
+            object_environment: wire.object_environment,
             declared_domains: wire.declared_domains,
             byte_provision,
         })
@@ -760,13 +1008,15 @@ impl ReplayRequest {
                     sources: entry.sources.iter().map(RawSourceRef::to_wire).collect(),
                 })
                 .collect(),
-            selected_function: self.selected_function.clone(),
+            replay_target: self.replay_target.clone().into(),
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
-            backend: self.backend.identity().to_owned(),
+            backend: self.backend.as_str().to_owned(),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
+            supplied_limits: Some(self.supplied_limits),
+            object_environment: self.object_environment.clone(),
             declared_domains: self.declared_domains.clone(),
             byte_provision: self
                 .byte_provision
@@ -788,8 +1038,11 @@ impl ReplayRequest {
 mod tests {
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
+    use crate::identity::QualifiedName;
+    use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
+    use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
@@ -839,11 +1092,14 @@ mod tests {
                 DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![
-                Identifier::new("module").unwrap(),
-                Identifier::new("f").unwrap(),
-            ])
-            .unwrap(),
+            replay_target: RequestTargetWire::function(
+                QualifiedName::new(vec![
+                    Identifier::new("module").unwrap(),
+                    Identifier::new("f").unwrap(),
+                ])
+                .unwrap(),
+                crate::target::test_key(),
+            ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: crate::witness::WitnessValue::Integer(42),
@@ -853,6 +1109,8 @@ mod tests {
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
+            supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -893,6 +1151,25 @@ mod tests {
 
         let other = ReplayRequest::decode(wire(1000), crate::ReplayLimits::default()).unwrap();
         assert_ne!(request, other);
+    }
+
+    /// Trace: TC-721, FR-255-AC-4
+    #[trace("TC-721", "FR-255-AC-4")]
+    #[test]
+    fn replay_wire_refuses_limits_of_operations_it_does_not_run() {
+        for name in ["replay.input_bytes", "format.output_bytes"] {
+            let mut request = wire(999);
+            request.stage_limits.insert(name.to_owned(), 7);
+            let refusal = ReplayRequest::decode(request, ReplayLimits::default())
+                .expect_err("a replay request cannot carry a setting for another operation");
+            assert_eq!(
+                refusal,
+                ReplayRequestRefusal::StageLimitEntry {
+                    name: name.to_owned()
+                },
+                "{name}"
+            );
+        }
     }
 
     /// A `dependencies` entry over one `fill`-byte source under `identity`.
@@ -1204,30 +1481,225 @@ mod tests {
         let mut spaced = wire(1);
         spaced.backend = " kani ".to_owned();
         let request = ReplayRequest::decode(spaced, crate::ReplayLimits::default()).unwrap();
-        assert_eq!(request.backend().identity(), " kani ");
+        assert_eq!(request.backend().as_str(), " kani ");
     }
 
-    /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field
-    /// are both typed `QualifiedName`; a multi-segment name round-trips its
-    /// full segment sequence. (The "fails to compile" half of TC-187 -- no
-    /// `&str`/`String` entry point exists at all -- is a structural fact
-    /// about this module's public API, checked by inspection: `decode` and
-    /// `ReplayRequestWire::selected_function` are the only two entry points
-    /// that set this member, and both are typed `QualifiedName`.)
+    /// FR-071-AC-3 (TC-187): the replay target holds typed names only; a
+    /// multi-segment function name round-trips its full segment sequence.
+    /// (The "fails to compile" half of TC-187 -- no `&str`/`String` entry
+    /// point exists at all -- is a structural fact about this module's
+    /// public API, checked by inspection: `decode` and
+    /// `ReplayRequestWire::replay_target` are the only two entry points that
+    /// set this member, and both are typed.)
     ///
     /// N1: no `#[trace]` tag -- this test cannot fail on TC-187/FR-071-AC-3's
     /// full claim (that no bare-string entry point exists at all), only on
-    /// the positive round-trip half; `spec/tests.md` keeps the row `Planned`.
+    /// the positive round-trip half.
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
-        assert_eq!(request.selected_function().segments().len(), 2);
+        let Some(function) = request.replay_target().as_function() else {
+            panic!("the wire's target is a function");
+        };
+        assert_eq!(function.segments().len(), 2);
         let round_tripped =
             ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
-        assert_eq!(
-            round_tripped.selected_function().segments(),
-            request.selected_function().segments()
-        );
+        assert_eq!(round_tripped.replay_target(), request.replay_target());
+    }
+
+    fn frame_target() -> crate::witness::FrameOperation {
+        crate::witness::FrameOperation {
+            object: QualifiedName::new(vec![
+                Identifier::new("Config").unwrap(),
+                Identifier::new("ConfigVersion").unwrap(),
+            ])
+            .unwrap(),
+            operation: Identifier::new("attemptUpdate").unwrap(),
+        }
+    }
+
+    fn clause_name() -> QualifiedName {
+        QualifiedName::new(vec![Identifier::new("VersionUnchanged").unwrap()]).unwrap()
+    }
+
+    fn refusal_of(wire: ReplayRequestWire) -> ReplayRequestRefusal {
+        ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err()
+    }
+
+    /// FR-071-AC-14 (TC-185 step 6): a function, a frame-operation and a
+    /// state-clause request each round-trip with that one target.
+    #[trace("TC-185", "FR-071-AC-14")]
+    #[test]
+    fn tc_185_each_replay_target_round_trips() {
+        let targets = [
+            ReplayTarget::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                Some(crate::target::test_key()),
+            ),
+            ReplayTarget::FrameOperation(frame_target()),
+            ReplayTarget::state_clause(clause_name()),
+        ];
+        for target in targets {
+            let mut wire = wire(1);
+            wire.replay_target = target.clone().into();
+            let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+            assert_eq!(request.replay_target(), &target);
+            let again =
+                ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+            assert_eq!(again.replay_target(), &target);
+        }
+    }
+
+    /// FR-071-AC-15 (TC-185 step 7): a `function` request round-trips its
+    /// `declaration` occurrence key and an `expression` key at ordinal 1.
+    #[trace("TC-185", "FR-071-AC-15")]
+    #[test]
+    fn tc_185_a_function_request_round_trips_its_occurrence_key() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let node = WireNodeId::from_digest([5; 32]);
+        for key in [
+            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
+            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
+        ] {
+            let mut wire = wire(1);
+            wire.replay_target = RequestTargetWire::function(function.clone(), key.clone());
+            let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+            assert_eq!(request.replay_target().occurrence_key(), Some(&key));
+            let again =
+                ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+            assert_eq!(again.replay_target().occurrence_key(), Some(&key));
+        }
+    }
+
+    /// FR-071-AC-14 (TC-185 step 6): the reader refuses none, two and a
+    /// frame or state-clause request carrying `arguments` or an occurrence
+    /// key, with FR-323's codes and pointers, and a removed byte-provision
+    /// entry changes none of them.
+    #[trace("TC-185", "FR-071-AC-14")]
+    #[test]
+    fn tc_185_replay_target_refusals_precede_the_byte_provision_rule() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 9] = [
+            (
+                RequestTargetWire {
+                    occurrence_key: None,
+                    ..RequestTargetWire::function(function.clone(), crate::target::test_key())
+                },
+                ReplayRequestRefusal::MissingOccurrenceKey,
+                "missing-member",
+                "/replay/occurrence_key",
+            ),
+            (
+                RequestTargetWire::default(),
+                ReplayRequestRefusal::MissingReplayTarget,
+                "missing-member",
+                "/replay",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: Some(frame_target()),
+                    state_clause: None,
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::Function, TargetMember::FrameOperation],
+                },
+                "invalid-value",
+                "/replay/frame_operation",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: None,
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::Function, TargetMember::StateClause],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                RequestTargetWire {
+                    arguments: true,
+                    ..RequestTargetWire::frame_operation(frame_target())
+                },
+                ReplayRequestRefusal::UnexpectedArguments {
+                    target: TargetMember::FrameOperation,
+                },
+                "unknown-member",
+                "/replay/arguments",
+            ),
+            (
+                RequestTargetWire {
+                    occurrence_key: Some(crate::target::test_key()),
+                    ..RequestTargetWire::state_clause(clause_name())
+                },
+                ReplayRequestRefusal::UnexpectedOccurrenceKey {
+                    target: TargetMember::StateClause,
+                },
+                "unknown-member",
+                "/replay/occurrence_key",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: None,
+                    frame_operation: Some(frame_target()),
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::FrameOperation, TargetMember::StateClause],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: Some(frame_target()),
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![
+                        TargetMember::Function,
+                        TargetMember::FrameOperation,
+                        TargetMember::StateClause,
+                    ],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                RequestTargetWire {
+                    arguments: true,
+                    occurrence_key: Some(crate::target::test_key()),
+                    ..RequestTargetWire::frame_operation(frame_target())
+                },
+                ReplayRequestRefusal::UnexpectedArguments {
+                    target: TargetMember::FrameOperation,
+                },
+                "unknown-member",
+                "/replay/arguments",
+            ),
+        ];
+        for (target, expected, cause, pointer) in cases {
+            for strip_provision in [false, true] {
+                let mut wire = wire(1);
+                wire.replay_target = target.clone();
+                if strip_provision {
+                    wire.byte_provision.clear();
+                }
+                let refusal = refusal_of(wire);
+                assert_eq!(refusal, expected);
+                assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+                assert_eq!(refusal.cause(), Some(cause));
+                assert_eq!(refusal.pointer(), Some(pointer));
+            }
+        }
     }
 
     /// A `sha256-jcs` byte-provision entry that intake's read refuses keeps

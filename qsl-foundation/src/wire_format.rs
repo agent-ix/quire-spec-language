@@ -27,8 +27,8 @@ formats! {
     RunRequest => "native-run/1",
     /// Source-only native compilation request.
     CompileRequest => "native-compile/1",
-    /// Native command result or failure envelope.
-    RunResult => "native-run-result/1",
+    /// Native clause-run result or command-error envelope.
+    RunResult => "native-run-result/2",
     /// Source-aware rule-model authoring profile.
     RuleModel => "native-rule-model/1",
     /// Rule-model authoring profile with exact IR rational scalar roles.
@@ -42,8 +42,8 @@ formats! {
     SpineRunResult => "spine-run-result/1",
 }
 
-impl std::fmt::Display for WireFormat {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for WireFormat {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.as_str())
     }
 }

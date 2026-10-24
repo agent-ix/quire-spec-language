@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! The layer-5 TemporalTrace evaluator (FR-327, FR-328, FR-329, FR-125):
+//! the one definition of a checked temporal clause's truth on a closed
+//! finite trace, a finite prefix and a fair lasso, which replay, monitors and
+//! the model checker answer to (ADR-018 SM-1).
+//!
+//! [`evaluate`] settles a [`CheckedTemporalClause`] on a [`TemporalTrace`]:
+//! it reads the clause's letter through a [`TemporalLetters`], visits the
+//! formula with a work unit charged on the caller's meter for each visit,
+//! and returns a [`TemporalOutcome`], or [`TemporalRefusal`] for a trace it
+//! cannot read. [`evaluate_at`] reads the formula at one position, and
+//! [`unrolling`] states the positions a lasso is unrolled to (ADR-018 SM-8).
+//!
+//! [`AggregateAtom`] is the other kind of atom a monitor reads: a window
+//! aggregate over the positions before the current one (FR-194), computed
+//! at atom evaluation as an exact function of the trace, so the temporal
+//! evaluator receives a Boolean per position.
+//!
+//! [`evaluate_timed_at`] reads a clause under the timed profile at one
+//! position of a [`TimedTrace`], whose positions carry exact rational time
+//! stamps (FR-234).
+//!
+//! [`evaluate_tuple`] evaluates a hyper body over a tuple of behaviours in
+//! lockstep (FR-175) by reading the tuple as one lasso;
+//! [`evaluate_projected_prefix`] evaluates it three-valued over a tuple of
+//! projected prefixes (FR-178).
+//!
+//! An interval measures distance in positions, unless the letter says a step
+//! does not count ([`TemporalLetters::counts_step`], ADR-027 PB-3): then it
+//! measures counted steps, several positions share a distance, and a lasso
+//! with such a step is refused.
+//!
+//! The trace's observations and the `holds` conditions are the caller's:
+//! the evaluator reaches them only through [`TemporalLetters`], the seam to
+//! the one clause evaluator (FR-107).
+
+mod engine;
+mod input;
+mod letters;
+mod observed;
+mod outcome;
+mod plan;
+mod position;
+mod steps;
+mod timed;
+mod tuple;
+mod window;
+
+pub use engine::{unrolling, Unrolling};
+pub use input::TemporalTrace;
+pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
+pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
+pub use position::{PositionRefusal, TemporalPosition};
+pub use timed::{evaluate_timed_at, TimedTrace};
+pub use tuple::{
+    evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
+};
+pub use window::{
+    AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
+    WindowLimitReached, WindowRefusal, WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
+    MAX_WINDOW_VALUES_SETTING,
+};
+
+use qsl_semantics::check::CheckedTemporalClause;
+use quire_exact::Meter;
+
+/// Evaluate `clause` on `trace` under the clause's profile (FR-327 for a
+/// closed trace, FR-328 for a prefix, FR-329 for a lasso).
+///
+/// A clause under the infinite-trace profile that has a fairness set settles
+/// [`TemporalOutcome::MissingFairnessPremise`] on any trace given as
+/// observations, and evaluates nothing.
+pub fn evaluate<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause` on `trace` like [`evaluate`], for a caller whose trace
+/// carries the enabledness a fairness set needs and who has checked the set
+/// itself (replay re-executes a model, FR-128): the clause's fairness set
+/// does not make the evaluation `MissingFairnessPremise`, and it does not
+/// otherwise enter the formula's value.
+pub fn evaluate_with_enabledness<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            ..engine::Subject::of_clause(clause)
+        },
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause` on a finite prefix of `len` positions whose continuation
+/// is unknown, under any profile: the three-valued reading of an
+/// infinite-trace prefix (FR-328), where a position past the prefix is
+/// neither true nor false. `Violated` is a falsity every continuation shares;
+/// `Pending` is a prefix that decides nothing. The clause's fairness set is
+/// not read (see [`evaluate_with_enabledness`]).
+pub fn evaluate_open_prefix<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    len: u64,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            profile: qsl_semantics::check::TemporalProfile::InfiniteTrace,
+            ..engine::Subject::of_clause(clause)
+        },
+        TemporalTrace::Finite { len },
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
+/// activation and fairness (ADR-018 SM-8; FR-125 "Reading a lasso"). A
+/// lasso reaches every position by wrapping; a finite trace refuses a
+/// position it does not represent. `Holds` and `Violated` are the formula's
+/// value at `position`.
+pub fn evaluate_at<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    position: TemporalPosition,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::At(position),
+        letters,
+        meter,
+    )
+}

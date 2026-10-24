@@ -35,9 +35,9 @@ Tag the tests `#[trace("TC-640", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: `Completed` Rejected; the test stops at the first sample in
-  trace-index order that reaches `v = 1`, with `UndefinedEvaluation` naming
-  test 0, that trace index and the first position with `v = 1`, cause
-  `division-by-zero`.
+  trace-index order whose path takes `drop` with `b = 0`, with
+  `UndefinedEvaluation` naming test 0, that trace index and the first
+  position after that step, cause `absent-key`.
 - Step 2: `measured`, `rejected`, category violation, the record carrying
   the `UndefinedEvaluation`; the gate fails as on a violation.
 - Step 3: `Reproduced`; then `Inconclusive(ReplayParity)`.

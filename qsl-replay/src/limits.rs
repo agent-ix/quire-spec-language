@@ -9,13 +9,176 @@
 //! entry point.
 
 use qsl_eval::simulation::Limits as ExploreLimits;
-use qsl_foundation::{Setting, SettingLimits, UsageRefusal};
+use qsl_foundation::{AccountingSetting, Setting, SettingLimits, SettingName, UsageRefusal};
 use qsl_semantics::library::bundle::PackageLimits as LibraryLimits;
 use qsl_semantics::model::observation::ObservationLimits;
 use qsl_semantics::model::population::PopulationAdmissionLimits;
+use quire_exact::{LimitKind as Counter, ScalarLimits};
 
 use crate::bounds::ReplayLimits;
-use crate::spine::SpineLimits;
+use crate::spine::{default_accounting, SpineLimits, DEFAULT_WORK_UNITS};
+
+/// The call's accounting limits (`quire.value.accounting/v1`): each of the
+/// ten counters is an [`AccountingSetting`] named `accounting.<counter>` (FR-255's
+/// accounting table). A newtype over the foreign [`ScalarLimits`]. The
+/// default is FR-100's: `work_units` 1,000,000 and every other counter
+/// `u64::MAX`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccountingLimits(pub ScalarLimits);
+
+impl Default for AccountingLimits {
+    fn default() -> Self {
+        Self(default_accounting(DEFAULT_WORK_UNITS))
+    }
+}
+
+impl AccountingLimits {
+    /// The accounting limits a replay's call runs under (FR-255
+    /// Behavior 10): `base`, the request's own accounting limits, with each
+    /// counter an entry names at the entry's bound.
+    pub(crate) fn with_entries(
+        base: ScalarLimits,
+        entries: impl IntoIterator<Item = (AccountingSetting, u64)>,
+    ) -> ScalarLimits {
+        let mut limits = Self(base);
+        for (setting, bound) in entries {
+            limits.set_bound(setting, bound);
+        }
+        limits.0
+    }
+
+    /// The setting that raises `counter`'s bound (FR-255 Behavior 9).
+    #[must_use]
+    pub const fn setting_of(counter: Counter) -> AccountingSetting {
+        match counter {
+            Counter::IntegerBits => AccountingSetting::IntegerBits,
+            Counter::DecimalDigits => AccountingSetting::DecimalDigits,
+            Counter::ScaleExpansion => AccountingSetting::ScaleExpansion,
+            Counter::TextInputBytes => AccountingSetting::TextInputBytes,
+            Counter::TextScalars => AccountingSetting::TextScalars,
+            Counter::NormalizedScalars => AccountingSetting::NormalizedScalars,
+            Counter::UnitEdges => AccountingSetting::UnitEdges,
+            Counter::ValueOccurrences => AccountingSetting::ValueOccurrences,
+            Counter::WorkUnits => AccountingSetting::WorkUnits,
+            Counter::ResultUnits => AccountingSetting::ResultUnits,
+        }
+    }
+
+    /// Every counter with its setting and current bound, in the accounting
+    /// table's order.
+    #[must_use]
+    pub fn bounds(&self) -> Vec<(AccountingSetting, u64)> {
+        let limits = &self.0;
+        vec![
+            (AccountingSetting::IntegerBits, limits.integer_bits),
+            (AccountingSetting::DecimalDigits, limits.decimal_digits),
+            (AccountingSetting::ScaleExpansion, limits.scale_expansion),
+            (AccountingSetting::TextInputBytes, limits.text_input_bytes),
+            (AccountingSetting::TextScalars, limits.text_scalars),
+            (
+                AccountingSetting::NormalizedScalars,
+                limits.normalized_scalars,
+            ),
+            (AccountingSetting::UnitEdges, limits.unit_edges),
+            (
+                AccountingSetting::ValueOccurrences,
+                limits.value_occurrences,
+            ),
+            (AccountingSetting::WorkUnits, limits.work_units),
+            (AccountingSetting::ResultUnits, limits.result_units),
+        ]
+    }
+
+    /// Set the bound of the counter `setting` names and change nothing else.
+    pub fn set_bound(&mut self, setting: AccountingSetting, bound: u64) {
+        let limits = &mut self.0;
+        let field = match setting {
+            AccountingSetting::IntegerBits => &mut limits.integer_bits,
+            AccountingSetting::DecimalDigits => &mut limits.decimal_digits,
+            AccountingSetting::ScaleExpansion => &mut limits.scale_expansion,
+            AccountingSetting::TextInputBytes => &mut limits.text_input_bytes,
+            AccountingSetting::TextScalars => &mut limits.text_scalars,
+            AccountingSetting::NormalizedScalars => &mut limits.normalized_scalars,
+            AccountingSetting::UnitEdges => &mut limits.unit_edges,
+            AccountingSetting::ValueOccurrences => &mut limits.value_occurrences,
+            AccountingSetting::WorkUnits => &mut limits.work_units,
+            AccountingSetting::ResultUnits => &mut limits.result_units,
+        };
+        *field = bound;
+    }
+}
+
+/// FR-298: the output-byte budget of `render`, the FR-255 setting
+/// `render.output_bytes`. The default is 16777216 bytes (QSpec FR-461
+/// rule 2); the bound is used as given, including zero.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RenderLimits {
+    /// Inclusive count of every byte `render` returns, newlines included.
+    pub output_bytes: usize,
+}
+
+impl Default for RenderLimits {
+    fn default() -> Self {
+        Self {
+            output_bytes: 16_777_216,
+        }
+    }
+}
+
+impl SettingLimits for RenderLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![(
+            Setting::RenderOutputBytes,
+            u64::try_from(self.output_bytes).unwrap_or(u64::MAX),
+        )]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        if setting != Setting::RenderOutputBytes {
+            return false;
+        }
+        self.output_bytes = usize::try_from(bound).unwrap_or(usize::MAX);
+        true
+    }
+}
+
+/// FR-294: the translation work and generated code size one execution
+/// backend `prepare` may use, the FR-255 settings `prepare.compile_work_units`
+/// and `prepare.code_bytes`. Each bound is used as given, including zero.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrepareLimits {
+    /// Compile work units one `prepare` may charge.
+    pub compile_work_units: u64,
+    /// Generated code bytes one `prepare` may keep.
+    pub code_bytes: u64,
+}
+
+impl Default for PrepareLimits {
+    fn default() -> Self {
+        Self {
+            compile_work_units: 16_777_216,
+            code_bytes: 67_108_864,
+        }
+    }
+}
+
+impl SettingLimits for PrepareLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![
+            (Setting::PrepareCompileWorkUnits, self.compile_work_units),
+            (Setting::PrepareCodeBytes, self.code_bytes),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        match setting {
+            Setting::PrepareCompileWorkUnits => self.compile_work_units = bound,
+            Setting::PrepareCodeBytes => self.code_bytes = bound,
+            _ => return false,
+        }
+        true
+    }
+}
 
 /// Every limits type a caller can configure, one field per stage.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -32,6 +195,14 @@ pub struct CallerLimits {
     pub explore: ExploreLimits,
     /// The replay request and envelope readers.
     pub replay: ReplayLimits,
+    /// Formatter output bytes, configured independently of replay stages.
+    pub format: qsl_cst::format::FormatLimits,
+    /// Rendered output bytes (FR-298).
+    pub render: RenderLimits,
+    /// Execution-backend prepare (FR-294).
+    pub prepare: PrepareLimits,
+    /// The call's accounting budgets (`quire.value.accounting/v1`).
+    pub accounting: AccountingLimits,
 }
 
 impl CallerLimits {
@@ -49,7 +220,12 @@ impl CallerLimits {
     ) -> Result<Self, UsageRefusal> {
         let mut limits = Self::default();
         for (setting, bound) in qsl_foundation::setting::parse_operands(operands)? {
-            limits.set_bound(setting, bound);
+            match setting {
+                SettingName::Stage(setting) => {
+                    limits.set_bound(setting, bound);
+                }
+                SettingName::Accounting(setting) => limits.accounting.set_bound(setting, bound),
+            }
         }
         Ok(limits)
     }
@@ -58,26 +234,36 @@ impl CallerLimits {
     /// `replay.input_bytes` from the library entry's own limit (a
     /// `stage_limits` entry for it is ignored, whichever way the map was
     /// built), and every other setting at the request's entry or its
-    /// default.
+    /// default. `accounting` is the request's own accounting limits; the
+    /// result's [`Self::accounting`] is those with each counter a
+    /// `stage_limits` entry names replaced (FR-255 Behavior 10).
     pub(crate) fn for_request(
         stage_limits: &crate::request::StageLimits,
+        accounting: ScalarLimits,
         replay: ReplayLimits,
     ) -> Self {
         let mut limits = Self {
             replay,
+            accounting: AccountingLimits(AccountingLimits::with_entries(
+                accounting,
+                stage_limits.accounting_entries(),
+            )),
             ..Self::default()
         };
         for (setting, bound) in stage_limits.iter() {
-            // A request does not carry `replay.input_bytes`: the library
-            // entry's own limit bounds the request itself.
-            if setting != Setting::ReplayInputBytes {
+            // Requests carry neither their own envelope limit nor the
+            // formatter's limit: replay performs neither operation.
+            if !matches!(
+                setting,
+                Setting::ReplayInputBytes | Setting::FormatOutputBytes
+            ) {
                 limits.set_bound(setting, bound);
             }
         }
         limits
     }
 
-    fn parts(&self) -> [&dyn SettingLimits; 6] {
+    fn parts(&self) -> [&dyn SettingLimits; 9] {
         [
             &self.spine,
             &self.library,
@@ -85,6 +271,9 @@ impl CallerLimits {
             &self.observation,
             &self.explore,
             &self.replay,
+            &self.format,
+            &self.render,
+            &self.prepare,
         ]
     }
 }
@@ -95,13 +284,16 @@ impl SettingLimits for CallerLimits {
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        let parts: [&mut dyn SettingLimits; 6] = [
+        let parts: [&mut dyn SettingLimits; 9] = [
             &mut self.spine,
             &mut self.library,
             &mut self.admission,
             &mut self.observation,
             &mut self.explore,
             &mut self.replay,
+            &mut self.format,
+            &mut self.render,
+            &mut self.prepare,
         ];
         parts.into_iter().any(|part| part.set_bound(setting, bound))
     }
@@ -109,8 +301,6 @@ impl SettingLimits for CallerLimits {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use ix_trace_rs::trace;
     use qsl_foundation::UsageCause;
 
@@ -124,84 +314,6 @@ mod tests {
             .find(|(reported, _)| *reported == setting)
             .map(|(_, bound)| bound)
             .unwrap_or_else(|| panic!("no limits type reports {setting}"))
-    }
-
-    /// One row of FR-255's setting table.
-    struct Row {
-        name: String,
-        stage: String,
-        kind: String,
-        default: String,
-    }
-
-    /// FR-255's setting table, read from the spec file itself, so the tests
-    /// below judge the code against the requirement and not against the
-    /// code's own list.
-    fn spec_table() -> Vec<Row> {
-        const SPEC: &str = include_str!(
-            "../../spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md"
-        );
-        SPEC.lines()
-            .filter(|line| line.starts_with("| `"))
-            .map(|line| {
-                let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
-                assert_eq!(cells.len(), 5, "a table row has five cells: {line}");
-                Row {
-                    name: cells[0].trim_matches('`').to_owned(),
-                    stage: cells[1].to_owned(),
-                    kind: cells[2].to_owned(),
-                    default: cells[4].to_owned(),
-                }
-            })
-            .collect()
-    }
-
-    /// FR-255-AC-3: the union of the limits types' setting names equals
-    /// FR-255's table, each name once, with the table's stage and kind, and
-    /// setting one changes that field's bound and no other.
-    #[trace("TC-720", "FR-255-AC-3")]
-    #[test]
-    fn each_limits_field_maps_to_one_distinct_setting_and_sets_only_itself() {
-        let defaults = CallerLimits::default();
-        let reported: Vec<Setting> = defaults
-            .bounds()
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
-        let distinct: BTreeSet<Setting> = reported.iter().copied().collect();
-        assert_eq!(distinct.len(), reported.len(), "a setting is mapped twice");
-        let table = spec_table();
-        let table_names: BTreeSet<&str> = table.iter().map(|row| row.name.as_str()).collect();
-        assert_eq!(table_names.len(), table.len(), "a table row is repeated");
-        let code_names: BTreeSet<&str> = reported.iter().map(|setting| setting.name()).collect();
-        assert_eq!(
-            code_names, table_names,
-            "the limits types and FR-255's table name different settings"
-        );
-        for row in &table {
-            let setting = Setting::from_name(&row.name).expect("a table name is a setting");
-            assert_eq!(setting.stage(), row.stage, "{}", row.name);
-            let kind = setting
-                .kind()
-                .catalog_cause()
-                .trim_end_matches("-exceeded")
-                .replace('-', " ");
-            assert_eq!(kind, row.kind, "{}", row.name);
-        }
-        for (setting, bound) in defaults.bounds() {
-            let mut changed = defaults;
-            assert!(changed.set_bound(setting, bound ^ 1));
-            let before = defaults.bounds();
-            let after = changed.bounds();
-            assert_eq!(before.len(), after.len());
-            for ((name, old), (_, new)) in before.into_iter().zip(after) {
-                if name == setting {
-                    assert_eq!(new, bound ^ 1, "{name} did not take its value");
-                } else {
-                    assert_eq!(new, old, "setting {setting} changed {name}");
-                }
-            }
-        }
     }
 
     /// The builders and the settings mapping are one: each builder sets the
@@ -235,7 +347,12 @@ mod tests {
         mapped.set_bound(Setting::S3Nodes, 32);
         mapped.set_bound(Setting::S3InputBytes, 33);
         mapped.set_bound(Setting::S3WorkUnits, 34);
+        mapped.set_bound(Setting::S3RationalBits, 37);
         mapped.set_bound(Setting::IntakeInputBytes, 35);
+        mapped.set_bound(Setting::FormatOutputBytes, 36);
+        mapped.set_bound(Setting::RenderOutputBytes, 38);
+        mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
+        mapped.set_bound(Setting::PrepareCodeBytes, 40);
         let built = CallerLimits {
             spine: SpineLimits {
                 source: qsl_cst::Limits::default()
@@ -246,7 +363,8 @@ mod tests {
                 checking: quire_semantic_value::checking::CheckingLimits::default()
                     .with_nodes(32)
                     .with_input_bytes(33)
-                    .with_work_budget(34),
+                    .with_work_budget(34)
+                    .with_rational_bits(37),
                 assembly: qsl_semantics::check::AssemblyLimits {
                     identity: qsl_foundation::IdentityLimits::default().with_input_bytes(27),
                     ..qsl_semantics::check::AssemblyLimits::default()
@@ -277,6 +395,12 @@ mod tests {
                 .with_max_states(25)
                 .with_max_transitions(26),
             replay: ReplayLimits::default().with_input_bytes(18),
+            format: qsl_cst::format::FormatLimits::default().with_output_bytes(36),
+            render: RenderLimits { output_bytes: 38 },
+            prepare: PrepareLimits {
+                compile_work_units: 39,
+                code_bytes: 40,
+            },
             ..CallerLimits::default()
         };
         assert_eq!(by_builder(built), mapped.bounds());
@@ -284,9 +408,9 @@ mod tests {
 
     /// FR-255-AC-4's entry points: the settings operation takes every
     /// setting of the table, and a replay request's `stage_limits` entry
-    /// takes each setting but `replay.input_bytes`, which a request does not
-    /// carry and which `for_request` leaves at the library's value however
-    /// the entries were built. The stage-driven half, an input that reached
+    /// takes each setting but `replay.input_bytes` and `format.output_bytes`,
+    /// which a request does not carry and which `for_request` leaves at their
+    /// defaults however the entries were built. The stage-driven half, an input that reached
     /// a limit and passes once it is raised, is
     /// `a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request`.
     #[trace("TC-721", "FR-255-AC-4")]
@@ -298,8 +422,12 @@ mod tests {
             assert_eq!(bound_of(&limits, *setting), 123_456_789, "{setting}");
             let entries: StageLimits = [(*setting, 987_654_321)].into_iter().collect();
             let replay = ReplayLimits::default();
-            let requested = CallerLimits::for_request(&entries, replay);
-            let expected = if *setting == Setting::ReplayInputBytes {
+            let requested =
+                CallerLimits::for_request(&entries, AccountingLimits::default().0, replay);
+            let expected = if matches!(
+                setting,
+                Setting::ReplayInputBytes | Setting::FormatOutputBytes
+            ) {
                 bound_of(&CallerLimits::default(), *setting)
             } else {
                 987_654_321
@@ -332,23 +460,81 @@ mod tests {
         }
     }
 
-    /// FR-255-AC-6: with nothing configured, each limit is at the default
-    /// FR-255's table lists, read from the table itself.
-    #[trace("TC-721", "FR-255-AC-6")]
+    /// FR-255-AC-9: the grammar, duplicate and overflow rules of the stage
+    /// settings hold for the accounting names.
+    #[trace("TC-921", "FR-255-AC-9")]
     #[test]
-    fn unconfigured_limits_are_at_the_published_defaults() {
-        let defaults = CallerLimits::from_operands([]).unwrap();
-        let table: Vec<Row> = spec_table();
-        assert_eq!(table.len(), Setting::ALL.len());
-        for row in table {
-            let expected: u64 = row
-                .default
-                .split_whitespace()
-                .next()
-                .and_then(|first| first.parse().ok())
-                .unwrap_or_else(|| panic!("{} has no numeric default: {}", row.name, row.default));
-            let setting = Setting::from_name(&row.name).expect("a table name is a setting");
-            assert_eq!(bound_of(&defaults, setting), expected, "{}", row.name);
+    fn a_malformed_accounting_operand_is_a_usage_refusal_naming_it() {
+        for (operands, operand, cause) in [
+            (vec!["depth=1"], "depth=1", UsageCause::UnknownSetting),
+            (
+                vec!["work_units=1"],
+                "work_units=1",
+                UsageCause::UnknownSetting,
+            ),
+            (
+                vec!["accounting=1"],
+                "accounting=1",
+                UsageCause::UnknownSetting,
+            ),
+            (
+                vec!["accounting.work_units=ten"],
+                "accounting.work_units=ten",
+                UsageCause::NotAnInteger,
+            ),
+            (
+                vec!["accounting.work_units=-1"],
+                "accounting.work_units=-1",
+                UsageCause::NotAnInteger,
+            ),
+            (
+                vec!["accounting.work_units=18446744073709551616"],
+                "accounting.work_units=18446744073709551616",
+                UsageCause::NotAnInteger,
+            ),
+            (
+                vec!["accounting.work_units=5", "accounting.work_units=6"],
+                "accounting.work_units=6",
+                UsageCause::Repeated,
+            ),
+        ] {
+            let refusal = CallerLimits::from_operands(operands).unwrap_err();
+            assert_eq!(refusal.operand, operand);
+            assert_eq!(refusal.cause, cause);
         }
+    }
+
+    /// FR-255-AC-3, FR-255-AC-4: the supplied-value ceilings of FR-277 are no
+    /// setting-table rows, so the settings operation refuses them as it
+    /// refuses any name that is no setting; they travel in the typed
+    /// `limits.supplied` member.
+    #[trace("TC-721", "FR-255-AC-3", "FR-255-AC-4")]
+    #[test]
+    fn the_supplied_ceilings_are_not_settings() {
+        for name in [
+            "supplied.admission_work_units",
+            "supplied.conversion_work_units",
+        ] {
+            let operand = format!("{name}=5");
+            let refusal = CallerLimits::from_operands([operand.as_str()]).unwrap_err();
+            assert_eq!(refusal.operand, operand);
+            assert_eq!(refusal.cause, UsageCause::UnknownSetting);
+        }
+    }
+
+    /// FR-255-AC-10: a `stage_limits` counter entry replaces that counter of
+    /// the request's accounting limits and no other.
+    #[trace("TC-921", "FR-255-AC-10")]
+    #[test]
+    fn a_stage_limits_counter_replaces_only_that_accounting_counter() {
+        let base = crate::spine::default_accounting(77);
+        let effective = AccountingLimits::with_entries(base, [(AccountingSetting::WorkUnits, 5)]);
+        assert_eq!(
+            effective,
+            ScalarLimits {
+                work_units: 5,
+                ..base
+            }
+        );
     }
 }

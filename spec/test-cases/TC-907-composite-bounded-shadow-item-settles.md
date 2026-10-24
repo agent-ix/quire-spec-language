@@ -19,7 +19,7 @@ pair count with the retained shadow, and never settles `Refuted`.
 `settle_verified_shadow` applies the coverage rule and settles by rows V-1
 to V-5 for every CG FR-028-AC-17 strength.
 
-Scope: FR-358-AC-1 to FR-358-AC-8.
+Scope: FR-358-AC-1 to FR-358-AC-9.
 
 ## Test Procedure
 
@@ -47,8 +47,8 @@ call's harness bounds.
    - F-6: at `E` with `refinement: CeilingReached`, admitted operands, a
      `Completed` native and enough limits.
 3. Both entries, at `E`: call with an edited source; with an undeclared
-   `selected_function`; with a `node` the package does not hold; with the
-   node of `h`'s body while `selected_function` names `f`; with `operator`
+   `function` replay target; with a `node` the package does not hold; with
+   the node of `h`'s body while the `function` replay target names `f`; with `operator`
    `NotEqual`; with an `occurrence` the node does not have in `f`'s body and
    with one of another function; and with an `obligation_identity` over
    `[0, 9]` on the first `x` while the harness bound is `[0, 8]`.
@@ -94,9 +94,17 @@ call's harness bounds.
 12. `ReplayLimits`: a request whose S1 limit is above the default
     `replay.input_bytes` refuses `LimitAboveReader` through both entries
     under the default and settles when the limit is raised.
+13. Replay a falsified request with the replay target replaced by
+    `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`), and by
+    `state_clause` (`VersionUnchanged`).
 
 Tag each test `#[trace("TC-907", "FR-358-AC-N")]` for the criterion it
 backs.
+
+The `k` cases of steps 4 and 5 have no
+source form (the grammar takes only `K<T>[min, max]`), so the unbounded
+`K<T>` position derivation and coverage are tested directly, over each of
+`Sequence`, `Set`, `Bag` and `OrderedSet`.
 
 ## Expected Results
 
@@ -122,11 +130,11 @@ backs.
   (`content-mismatch`) refusals each with its own cause, two
   `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
   naming both digests. Each report carries the full claim.
-- Step 4: `Proved { success_checks: 4 }`, success, for each (row V-4).
+- Step 4: `Proved { basis: Checks { success_checks: 4 }, certification: Certified }`, success, for each (row V-4).
 - Step 5: `Tested`, success and never `Proved`, for each (row V-5).
 - Step 6: `Failed` for both `refinement: Disagreed` calls (row V-1);
   `Incomplete(ResourceExhausted)` for both `CeilingReached` calls (row
-  V-2); then `Proved { success_checks: 0 }`, inconclusive, cause
+  V-2); then `Proved { basis: Checks { success_checks: 0 }, certification: Certified }`, inconclusive, cause
   `kani_vacuous_proof` (row V-3).
 - Step 7: each refuses with no settlement row, at 4 checks and at 0, naming
   the key.
@@ -139,11 +147,4 @@ backs.
   two digests.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
-
-## Status
-
-Passed locally for steps 1 to 12. The `k` cases of steps 4 and 5 have no
-source form (the grammar takes only `K<T>[min, max]`), so the unbounded
-`K<T>` position derivation and coverage are tested directly, over each of
-`Sequence`, `Set`, `Bag` and `OrderedSet`. The `Text` leaf of step 5 uses a
-rational leaf until text-profile selection exists (QSL-646).
+- Step 13: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming `replay_composite_parity` and `function` (FR-358-AC-9).

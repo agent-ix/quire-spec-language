@@ -9,7 +9,7 @@
 ///
 /// `#[string_edge]`: reads the kernel's text status file by its field
 /// label; it selects no family semantics.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn peak_rss_kib() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     status.lines().find_map(|line| {

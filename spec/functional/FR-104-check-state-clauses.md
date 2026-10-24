@@ -19,8 +19,18 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: references
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-043
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-010
+    type: references
 ---
 # FR-104: Check state clauses at S3 and record their requirements
 
@@ -67,9 +77,30 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 
 - The assembler SHALL resolve the `using` alias to one of the unit's profile
   selections, exactly as it does for a function (FR-091).
-- If `M` names no `model` declaration of the unit, or `T` no object type of
-  its package, then the assembler SHALL refuse `missing_declaration`/
-  `missing-name` at the name.
+- If `M` names no `model` declaration of the unit, or `T` no object type,
+  state machine or process of its package, then the assembler SHALL refuse
+  `missing_declaration`/`missing-name` at the name.
+- The context `M::T` of a clause is the declaration `T` names, whichever of
+  the three it is, and a process is a context as an object type is. The
+  `self` of a clause on a process is one run of it (QSpec FR-208): a
+  `Reference<M::T>` to the run, whose declared object identity roots the
+  clause's receiver path (FR-107), so an invariant on a process holds for
+  every run of its population at `current` and a `pre` or `post` clause of a
+  process operation reads the run the operation is called on, as one on an
+  object type reads its object. An operation `op` a process declares
+  (FR-103) is resolved, anchored and framed as an object type's operation is
+  (FR-105): its anchor and frame are the ones every clause and attempt that
+  names it share, the anchor's `context` is the node of the process that
+  declares `op` (`model`/`process`), and the frame is the operation's
+  `OperationEffect` as FR-103 and FR-154 admit it. No scoped frame is built
+  for a process operation: intake refuses its receiver-scoped members
+  (`modifies_receiver`, `deletes_receiver: true`) at the member
+  (FR-154-AC-8), so the frame a clause names holds only `every-object` `modifies`
+  entries, `creates`, `deletes` and `deletes_parameters` entries, and no
+  clause can name a process operation whose frame holds a receiver-scoped
+  entry. The anchor context of an operation of a state machine is the node of
+  the state machine in the same way, with `self` the machine's context
+  (FR-107).
 - If a `pre` or `post` clause's `op` names no operation of `M::T`'s effective
   view (FR-103), then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at `op`.
@@ -102,11 +133,56 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   that declares a result, typed as that result. If `result` appears anywhere
   else, then the checker SHALL refuse `wrong_snapshot`/`wrong-anchor` at
   `result`, naming the clause kind and the operation.
+- A clause names a population by `M::P` as the operand of `allInstances` or
+  `lookup` or as the domain of a quantifier or population form; FR-391 owns
+  its resolution, typing and domain.
 - The checker SHALL bring each parameter of the operation into scope by name
   in a `pre` or `post` body, typed as FR-103 declares it, and no parameter
   into an invariant's scope.
 - Equality of two `Reference<M::T>` values SHALL check as identity equality,
   as it does for function parameters today.
+- The checker SHALL type every `=` and `!=` in a clause by QSpec FR-149's
+  expected-type rule for an arithmetic operand against a bounded integer,
+  wherever the equality is written: a guard, a capture, an invariant, a
+  function body, a retry relation or a recovery predicate. When one operand has
+  type `Int[lo,hi]` and the other, ignoring parentheses, is a binary `+`, `-`
+  or `*` whose operands are `Integer` or `Int[..]`, the checker SHALL type the
+  arithmetic node `Int[lo,hi]` with the obligation that its interval, under the
+  facts that hold where it executes, lies inside `[lo,hi]`, and SHALL refuse an
+  unproved obligation with `undefined_expression`/`unproved-range` located at
+  the arithmetic node, never at the equality, without clamping, wrapping or
+  widening the value.
+- The checker SHALL NOT apply that rule to any other form: an `Integer`-typed
+  unary `-`, path, call, `div`, `rem`, `count`, `sum` or unannotated
+  `let`-bound name against an `Int[..]` operand, and an arithmetic operand
+  against a `Rational[..]` or `Decimal[..]` operand, each refuse
+  `ill_typed`/`type-mismatch` at the comparison. An operand of the same
+  `Int[..]` type as its peer is accepted unchanged. The ordering operators `<`,
+  `<=`, `>` and `>=` supply no expected type and coerce nothing: between an
+  `Integer` operand and an `Int[..]` operand they are an integer ordering and
+  are accepted.
+- The checker SHALL type infix decimal arithmetic by QSpec FR-140's rule,
+  wherever it is written and whether or not its position supplies an
+  expected type. A binary `+`, `-` or `*` whose operands, ignoring
+  parentheses, have one named `Decimal[..]` type, and are not both
+  `decimal(c,s)` literals, SHALL have that type, with the type's `smax` as
+  its target scale; a literal operand SHALL take the other operand's type.
+  A binary `/` SHALL be typed the same way, rounding into the target scale by
+  the type's mode, and a unary `-` SHALL have its operand's decimal type.
+  So `a + b = b + a` with `a` and `b` of one decimal type is an equality of
+  that type (QSpec FR-149). Operands of two distinct named decimal types
+  SHALL refuse `ill_typed`/`type-mismatch` at the arithmetic node until a
+  `convert` selects one type. An operation whose operands are both literals
+  and whose position supplies no unique expected type SHALL refuse
+  `ill_typed`/`ambiguous-literal` at the arithmetic node.
+- The checker SHALL NOT record a range obligation for decimal arithmetic or
+  widen its type: a result outside the type's range is refused when it is
+  evaluated, `decimal_out_of_domain`/`outside-domain` (QSpec FR-140). A
+  result that needs a wider type `W` SHALL be written with its operands
+  converted to `W`, as in `convert<W>(a) + convert<W>(b)`. A declared result
+  or `convert` target gives the arithmetic no type of its own:
+  `convert<W>(a + b)` evaluates `a + b` in the operands' type first, and a
+  sum outside that type is refused before the conversion runs.
 
 ### Observations of reads
 
@@ -144,13 +220,21 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 - If `reaches` appears outside a state clause, then the checker SHALL refuse
   `ill_typed`/`operator-ineligible` at the `reaches`: only a clause has an
   observation to traverse (ADR-012 §15.2).
-- The checker SHALL admit `reaches(a, b, edge)` only when `a` and `b` are
-  `Reference<M::T>` of one object type and `edge` names a field of `T` whose
-  type is `Reference<M::T>`, `Option<Reference<M::T>>` or a sequence of
-  `Reference<M::T>` (QSpec `state-contract.md`, "Finite graph extension").
-  If `edge` has any other type, a set, bag or ordered set of references
-  included, then the checker SHALL refuse `ill_typed`/`operator-ineligible`
-  at the `reaches`.
+- The checker SHALL admit `reaches(a, b, edge)` only when `edge` names a field
+  of an object type `M::T` whose type is `Reference<M::T>`,
+  `Option<Reference<M::T>>` or a sequence of `Reference<M::T>`. For a package
+  selecting `quire.model.complete/v1`, the checker SHALL apply QSpec
+  [FR-043](ix://agent-ix/quire-specification/FR-043)'s conformance to the
+  static edge owner `T` to each operand and retain the checked operand
+  references without erasing the type identity that FR-043 uses for each
+  object's most-specific identity at evaluation; QSpec
+  [FR-010](ix://agent-ix/quire-specification/FR-010) delegates this traversal
+  profile to FR-043. For any other selection, `a` and `b` SHALL both be
+  `Reference<M::T>` of that exact object type, as before. An ineligible
+  operand or edge shape, including a set, bag or ordered set of references,
+  SHALL refuse `ill_typed`/`operator-ineligible` at the `reaches`. When `edge` names a
+  relationship end instead of a field, [FR-365](FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md)
+  checks, lowers and evaluates the form.
 
 ### Definedness facts
 
@@ -172,8 +256,9 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 ### Requirements
 
 - The `requirements` hook SHALL return one `Requirements` with capability kind
-  `operation-contract` for each clause, keyed by its `claim` occurrence
-  (ADR-012 §13.5).
+  `operation-contract` for each clause other than a state constraint, keyed
+  by its `claim` occurrence (ADR-012 §13.5). A state constraint is a method
+  parameter of a model-check request and gets no record (FR-158).
 - The hook SHALL return one `operation-contract` record for each frame of an
   operation that a `pre` or `post` clause or a protocol attempt (FR-114) of
   the unit names, keyed by one
@@ -190,16 +275,23 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   NOT depend on source order: reversing the unit's clauses SHALL NOT change
   which operation a given key names. An operation no clause and no attempt
   names gets no record.
+- The checker SHALL record on each such occurrence one region: the span of
+  the operation reference in the first clause or attempt, in source order,
+  that names the operation (FR-105 Outputs). The region follows source
+  order; the key does not.
 - Each record's extent SHALL follow ADR-014 §4 as FR-097 classifies it, over
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
   clause holds for) and each population a `reaches` walks. A domain-package
-  population declaration never has a maximum (QSpec FR-153's own record has
-  none), so each one is always an unbounded `Population(None)` domain,
-  boundable by `Cardinality`.
+  population declaration has no maximum of its own (QSpec FR-153's own record
+  has none), so a population is an unbounded `Population(None)` domain,
+  boundable by `Cardinality`, unless the package authors a bound on it
+  (FR-380). A population with an authored bound `N` is a `Population(Some(N))`
+  domain: it is not listed among the unbounded domains, and its available
+  finite bound is `Cardinality{N}`.
 - The checker SHALL key a population domain as
   `DomainKey::Population{member_type, ordinal}` with `member_type` the
-  `model`/`object_type` node of the population's *canonical*
+  `model`/`object_type` or `model`/`process` node of the population's *canonical*
   member type: the least, in ascending `DeclarationKey` order, of its
   declared member types -- never a node of the clause's context type `T`
   itself when `T` is a proper subtype of a member (SR-736 FND-010), and
@@ -213,15 +305,17 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
   within one domain-package digest only, and domain keys SHALL NOT be
   compared across digests. A population record has no node of its own
-  (FR-094), so its domain is named by the object type plus the population, as
-  a model member is (ADR-012 §15.4). A `reaches` over the context population
+  (FR-094; the one node FR-380 emits for a bounded population a `reaches`
+  walks is a `Population<T>[N]` type node, not the record), so its domain is
+  named by the object type plus the population, as a model member is
+  (ADR-012 §15.4). A `reaches` over the context population
   adds no second domain.
-- The context population SHALL be the one population with no maximum that
-  covers `T`: `T` itself, or a proper supertype of `T`, is one of its member
-  types, by conformance (FR-084's `allInstances<T>` reads this way, not by
+- The context population SHALL be the one population that covers `T`,
+  whether or not the package authors a bound on it (FR-380): `T` itself, or a
+  proper supertype of `T`, is one of its member types, by conformance (FR-084's `allInstances<T>` reads this way, not by
   exact identity). If no population covers `T`, then the clause's extent
   names no population domain for it. If `T` conforms to a member type of two
-  or more populations with no maximum, then the extent cannot name exactly
+  or more populations, then the extent cannot name exactly
   one population, and the checker SHALL refuse `ambiguous_declaration`/
   `ambiguous-name` at the clause's `on`, naming those populations in
   ascending `DeclarationKey` order.
@@ -241,11 +335,16 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-6 | Checking the same unit twice, and checking it with its clauses in another order, gives each clause the same node identity and the same requirement record keys. Two clauses with equal kind, anchor and body and different names share a node identity and differ in their `claim` occurrence (ordinals in source order). | Test (TC-461) |
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
+| FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
+| FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
+| FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
+| FR-104-AC-12 | Extend TC-459 step 7's fixture package with an object type `Counter { tally: Int[0,3]; next: Int[0,3]; }` and an operation `bump` declared on it. `self.tally < 3 and self.next = self.tally + 1` checks as `pre G using v on Config::Counter::bump` and as `invariant I using v on Config::Counter at current`; with `record Pair { tally: Int[0,3]; }`, `function f using v(earlier: Pair, later: Pair, n: Integer): Boolean pure { ... }` with body `earlier.tally < 3 and later.tally = earlier.tally + 1` checks. With `self.tally < 3 and` or `earlier.tally < 3 and` removed, each refuses `undefined_expression`/`unproved-range` at the sum. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
+| FR-104-AC-13 | With `type P = Decimal[-99, 99; 2, 2; nearest-even];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function c using v(a: P, b: P): Boolean pure { a + b = b + a }` checks with each sum typed `P`, as do the bodies `a * b = b * a`, `a - b = a - b` and `a + decimal(1, 2) = b`, the last with the literal typed `P`. With `b: R`, `a + b = b + a` refuses `ill_typed`/`type-mismatch` at the first `a + b`. `let s = decimal(1, 2) + decimal(2, 2) in s = a` refuses `ill_typed`/`ambiguous-literal` at the sum. Evaluating `c` with `a = decimal(1, 2)`, `b = decimal(2, 2)` returns `true`, and with `a = decimal(99, 2)`, `b = decimal(1, 2)` it is refused `decimal_out_of_domain`/`outside-domain`. With `type W = Decimal[-198, 198; 2, 2; nearest-even];`, `function w using v(a: P, b: P): W pure { convert<W>(a) + convert<W>(b) }` evaluated at `a = decimal(99, 2)`, `b = decimal(1, 2)` returns `decimal(100, 2)`, while the body `convert<W>(a + b)` at the same values is refused `decimal_out_of_domain`/`outside-domain`. `function d using v(a: P, b: P): P pure { a / b }` checks with `a / b` typed `P`; evaluated at `a = decimal(1, 2)`, `b = decimal(8, 2)` (exactly 0.125, a tie at scale 2) it returns `decimal(12, 2)` under `nearest-even`, and at `a = decimal(5, 2)`, `b = decimal(2, 2)` (2.50) it is refused `decimal_out_of_domain`/`outside-domain`. The body `-a = b` checks with `-a` typed `P`, and with `b: R` the body `a / b = a` refuses `ill_typed`/`type-mismatch` at `a / b`. | Test (TC-1084) |
 
 ## Dependencies
 
-- FR-102 (forms), FR-103 (operations), FR-062 and FR-097 (requirement
-  records and extent), FR-088 (clause identity), FR-057 (the
+- FR-102 (forms), FR-103 (operations), FR-380 (the authored population
+  bound), FR-062 and FR-097 (requirement records and extent), FR-088 (clause identity), FR-057 (the
   `operation-contract` kind).
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
-  "Finite graph extension") and FR-153.
+  "Finite graph extension"), FR-043, FR-010 and FR-153.

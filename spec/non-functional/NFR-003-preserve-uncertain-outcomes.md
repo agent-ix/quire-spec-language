@@ -12,8 +12,6 @@ relationships:
     type: constrains
   - target: "ix://agent-ix/quire-spec-language/FR-008"
     type: constrains
-  - target: "ix://agent-ix/quire-spec-language/FR-009"
-    type: constrains
 ---
 # NFR-003: Preserve refusal and incompleteness through the pipeline
 
@@ -42,4 +40,3 @@ Exercise missing models, unsupported features, invalid populations and exhausted
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
 - [FR-007](../functional/FR-007-validate-runtime-inputs.md)
 - [FR-008](../functional/FR-008-evaluate-state-reference.md)
-- [FR-009](../functional/FR-009-lower-qualified-projections.md)

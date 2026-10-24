@@ -75,11 +75,28 @@ impl SpanMemo {
     }
 }
 
+/// The span `location`'s path reaches in `spans`.
+pub(super) fn span_at(spans: &ExpressionSpans, location: &Location) -> Option<Span> {
+    SpanMemo::default().at(spans, location)
+}
+
 /// The source a region is read from, and the document it is embedded in.
 #[derive(Clone, Copy)]
 struct Document<'a> {
     source: &'a RawSourceRef,
     embedding: Option<&'a SourceMap>,
+}
+
+/// The spans of declarations that are not function or state clause forms: a
+/// declared type's name by the name, each declaration site with an
+/// expression tree of its own (a temporal clause's `holds` condition,
+/// FR-337) by its site name, and the declaration a function synthesized for
+/// dispatch was derived from by the function's index.
+#[derive(Clone, Copy)]
+struct DeclaredSpans<'a> {
+    types: &'a BTreeMap<String, Span>,
+    sites: &'a BTreeMap<String, ExpressionSpans>,
+    synthesized: &'a BTreeMap<usize, Span>,
 }
 
 /// The region `location` names, given each function's and each state
@@ -89,21 +106,39 @@ fn resolve<'s>(
     document: Document<'_>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
-    type_spans: &BTreeMap<String, Span>,
+    declared: DeclaredSpans<'_>,
     attempt_span: impl Fn(usize, usize) -> Option<Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
+    let DeclaredSpans {
+        types,
+        sites,
+        synthesized,
+    } = declared;
     let span = match &location.origin {
-        Origin::Body { index, .. } => memo.at(&spans(*index)?.body, location)?,
+        // A function synthesized for dispatch has no form spans: every
+        // occurrence in it is located at the declaration it came from.
+        Origin::Body { index, .. } => match spans(*index) {
+            Some(form) => memo.at(&form.body, location)?,
+            None => *synthesized.get(index)?,
+        },
         Origin::StateClause { index, .. } => memo.at(&clause_spans(*index)?.body, location)?,
         Origin::Measure { index, .. } => memo.at(spans(*index)?.measure.as_ref()?, location)?,
-        Origin::TypeDeclaration { name } if location.depth() == 0 => *type_spans.get(name)?,
+        // A site with an expression tree walks it; any other declared name
+        // names one span, at its root only.
+        Origin::TypeDeclaration { name } => match sites.get(name) {
+            Some(spans) => memo.at(spans, location)?,
+            None if location.depth() == 0 => *types.get(name)?,
+            None => return None,
+        },
         Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
-        Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
-            return None
-        }
+        // A kept operation clause is read from a domain package, not from
+        // this unit, so it names no region of the unit (FR-103).
+        Origin::ProtocolAttempt { .. }
+        | Origin::ModelOperationClause { .. }
+        | Origin::Expression => return None,
     };
     region(document.source, document.embedding, span)
 }
@@ -116,7 +151,7 @@ fn resolve<'s>(
 /// as if there were no embedding. A span the map splits into more than one
 /// document region (a layout deletion) is FR-096's fourth no-region case:
 /// no single document region names it.
-fn region(
+pub(super) fn region(
     source: &RawSourceRef,
     embedding: Option<&SourceMap>,
     span: Span,
@@ -144,7 +179,11 @@ impl PackageDeclarations {
             },
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
-            &self.declared_type_spans,
+            DeclaredSpans {
+                types: &self.declared_type_spans,
+                sites: &self.declared_site_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| self.attempt_span(protocol, attempt),
             location,
         )
@@ -172,8 +211,11 @@ impl PackageDeclarations {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.functions.get(index)?.spans()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.functions.get(index)?.spans() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
     }
 }
 
@@ -187,7 +229,15 @@ pub struct DeclarationRegions {
     spans: Vec<Option<DeclarationSpans>>,
     /// Each state clause's form spans, by its index in source order.
     clause_spans: Vec<DeclarationSpans>,
+    /// Each `terminal` declaration's predicate spans, by its index in source
+    /// order; `None` for `terminal any`.
+    terminal_spans: Vec<Option<ExpressionSpans>>,
     type_spans: BTreeMap<String, Span>,
+    /// Each declaration site with an expression tree of its own, by its
+    /// site name.
+    pub(super) site_spans: BTreeMap<String, ExpressionSpans>,
+    /// The declaration each function synthesized for dispatch came from.
+    synthesized_spans: BTreeMap<usize, Span>,
     /// Each protocol's own attempts' declared name spans,
     /// index-aligned with the package's own `protocols`/`protocol_attempts`.
     /// `pub(super)`: `check::mod`'s own pipeline copies it onto the final
@@ -207,7 +257,11 @@ impl DeclarationRegions {
             },
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
-            &self.type_spans,
+            DeclaredSpans {
+                types: &self.type_spans,
+                sites: &self.site_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
@@ -216,14 +270,31 @@ impl DeclarationRegions {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from the unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.spans.get(index)?.as_ref() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
+    }
+
+    /// The regions of the declarations a check refusal relates, in source
+    /// order (QSpec FR-272's `related`): both workloads of a repeated
+    /// workload name (FR-185); none for every other refusal.
+    pub fn related_regions(&self, refusal: &CheckRefusal) -> Vec<SourceRegion> {
+        let CheckCause::Probabilistic(cause) = &refusal.cause else {
+            return Vec::new();
+        };
+        cause
+            .related()
+            .iter()
+            .filter_map(|span| region(&self.source, self.embedding.as_deref(), *span))
+            .collect()
     }
 
     /// FR-096: the region a check refusal names. A stage limit a family
     /// `check` located carries its own region (a declaration's span, or the
-    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor` cause
-    /// (FR-113) carries its own span directly, since a protocol has no
+    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor`, `Temporal` or `ProtocolObligation` cause
+    /// (FR-113, FR-326, FR-381) carries its own span directly, since a protocol has no
     /// expression tree for a `Location` path to walk; every other refusal
     /// is located by its `location`.
     pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
@@ -231,6 +302,75 @@ impl DeclarationRegions {
             CheckCause::ResourceExhausted(limit) if limit.region.is_some() => limit.region.clone(),
             CheckCause::ProtocolAnchor(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::Temporal(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::Hyper(cause) if cause.span().is_some() => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
+            CheckCause::StateGraph(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
+            CheckCause::Hybrid(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::ProtocolObligation(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::Probabilistic(cause) => match cause.span() {
+                Some(span) => region(&self.source, self.embedding.as_deref(), span),
+                None => self.region(&refusal.location),
+            },
+            CheckCause::TerminalNotEmitted { span, .. }
+            | CheckCause::TimedNotChecked { span, .. } => {
+                region(&self.source, self.embedding.as_deref(), *span)
+            }
+            CheckCause::RefinementNotEmitted { span, .. } => {
+                region(&self.source, self.embedding.as_deref(), *span)
+            }
+            CheckCause::Abstraction(cause) => match &**cause {
+                super::abstraction::AbstractionRefusal::UnresolvedName { span, .. } => {
+                    region(&self.source, self.embedding.as_deref(), *span)
+                }
+                _ => self.region(&refusal.location),
+            },
+            // A defect of the `refinement_internals` value is located inside
+            // that value (FR-147), not in the source.
+            CheckCause::Refinement(cause)
+                if matches!(
+                    cause.cause,
+                    super::refinement::RefinementCause::InternalList(_)
+                ) =>
+            {
+                None
+            }
+            CheckCause::Refinement(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span)
+            }
+            CheckCause::Terminal(cause) => {
+                let spans = self.terminal_spans.get(cause.declaration)?.as_ref()?;
+                let span = SpanMemo::default().at(spans, &refusal.location)?;
+                region(&self.source, self.embedding.as_deref(), span)
+            }
+            CheckCause::MissingSegment {
+                offset,
+                span: Some(span),
+                ..
+            } => region(
+                &self.source,
+                self.embedding.as_deref(),
+                Span {
+                    start: span.start.checked_add(*offset)?,
+                    end: span.end,
+                },
+            ),
+            CheckCause::MissingSegment {
+                offset, span: None, ..
+            } => {
+                let whole = self.region(&refusal.location)?;
+                let start = whole.start().checked_add(u64::try_from(*offset).ok()?)?;
+                SourceRegion::new(whole.source().clone(), start, whole.end()).ok()
             }
             _ => self.region(&refusal.location),
         }
@@ -254,7 +394,19 @@ impl PackageDeclarations {
                 .iter()
                 .map(|clause| clause.spans.clone())
                 .collect(),
+            terminal_spans: self
+                .terminals
+                .iter()
+                .map(|terminal| match &terminal.kind {
+                    super::TerminalClauseKind::When { predicate, .. } => {
+                        Some(predicate.spans.clone())
+                    }
+                    super::TerminalClauseKind::Any => None,
+                })
+                .collect(),
             type_spans: self.declared_type_spans.clone(),
+            site_spans: self.declared_site_spans.clone(),
+            synthesized_spans: self.synthesized_spans.clone(),
             // SR-770 FND-007: `None` for an attempt whose declaration index
             // names no declaration of its protocol (a hand-built form, never
             // one S2 built), so its region is simply unresolved instead of
@@ -271,6 +423,28 @@ impl PackageDeclarations {
 }
 
 impl CheckedGraph {
+    /// The own declaration span of a function parameter occurrence. Reads
+    /// of the same keyed parameter in a body have their expression locations.
+    pub fn parameter_span(
+        &self,
+        node: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<Span> {
+        self.parameter_spans.get(&(node, origin.clone())).copied()
+    }
+
+    /// The original source region of one recorded occurrence, including a
+    /// function parameter's own declaration rather than its enclosing body.
+    pub fn occurrence_region(
+        &self,
+        node: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<SourceRegion> {
+        if let Some(span) = self.parameter_span(node, origin) {
+            return region(&self.source, self.embedding.as_deref(), span);
+        }
+        self.region(self.occurrence(node, origin)?)
+    }
     /// FR-096: the region of the checked unit that `location` names, by the
     /// same rule as [`PackageDeclarations::region`], so a consumer holding
     /// only the checked package resolves an `Evaluation.location`.
@@ -283,7 +457,11 @@ impl CheckedGraph {
             },
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
-            &self.type_spans,
+            DeclaredSpans {
+                types: &self.type_spans,
+                sites: &self.site_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
@@ -305,7 +483,11 @@ impl CheckedGraph {
                 },
                 |index| self.form_spans.get(index)?.as_ref(),
                 |index| Some(&self.state_clauses.get(index)?.spans),
-                &self.type_spans,
+                DeclaredSpans {
+                    types: &self.type_spans,
+                    sites: &self.site_spans,
+                    synthesized: &self.synthesized_spans,
+                },
                 |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
                 location,
             )
@@ -315,8 +497,11 @@ impl CheckedGraph {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.form_spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.form_spans.get(index)?.as_ref() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
     }
 }
 
@@ -628,12 +813,14 @@ mod tests {
         let k = prefix.len();
         let map = embedding_map(&document_text, k, embedding_body());
         let document = map.original().reference().clone();
+        let embedding = Arc::new(map);
         let mut declarations = unit();
-        declarations.embedding = Some(Arc::new(map));
+        declarations.embedding = Some(Arc::clone(&embedding));
+        let mut for_check = unit();
+        for_check.embedding = Some(embedding);
         let standalone = unit();
         let regions = declarations.regions();
-        let checked = declarations
-            .clone()
+        let checked = for_check
             .check(CheckingLimits::default())
             .expect("the unit checks");
         let cases = [

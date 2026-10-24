@@ -248,7 +248,7 @@ impl ModelDraft {
 }
 
 /// Decode and lower the selected rule-model profile with exact original loci.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn read(
     source: FormalSource,
     format: &str,

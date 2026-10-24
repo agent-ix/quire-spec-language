@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: verifies
 ---
 # TC-444: The replay executor recompiles, selects, calls, and refuses each O-26 case
 
@@ -15,8 +17,9 @@ request's byte provision, requires its `package_id`, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
-Scope: FR-098-AC-1 to FR-098-AC-7, and FR-001-AC-6 for the recompile's
-source labels.
+Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-27, FR-100-AC-20
+for the call depth S6a reports, and FR-001-AC-6 for the recompile's source
+labels.
 
 ## Test Procedure
 
@@ -30,7 +33,8 @@ of the other declared functions exercise -- the QSL-22 Layer 3 exemplar's
 own shape). Each request
 is built from the unit's spine compile: its `package_id`, its one source
 reference and its byte provision, with parameter node ids read from the
-compiled package.
+compiled package. Each request carries its function's `declaration`
+occurrence key unless a step names another occurrence.
 
 1. Replay `small` with an `Input` assignment `x = 7`; replay it with a
    `Witness` binding `x`'s node id to 8, then with a binding named `x`.
@@ -62,6 +66,27 @@ compiled package.
    reaches; then swap two entries; then repeat the entry; then add an entry
    whose source has `test/units`'s authority and identity; then remove the
    entry; then give the entry a second source.
+8. Replay a package whose refinement has a non-empty internal list with the
+   list carried at `/package/refinement_internals`; with the member removed;
+   with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
+   on a `dependencies` entry, valid and defective.
+
+9. Replay step 1's `small` request with its replay target replaced by
+   `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`); again with
+   its source edited so it does not compile; again with its source's
+   byte-provision entry removed.
+
+10. Compile one unit declaring the functions of FR-098-AC-22 to FR-098-AC-25
+    (`p`, `q`, `r`, `s`, `b`, `u`, `inc`) and replay each request of
+    FR-098-AC-22 to FR-098-AC-26, with the occurrence key each names (an
+    application's key read from the compiled package's requirement records
+    at the site the AC names, never by ordinal alone).
+
+11. Compile the unit of FR-098-AC-27 and FR-100-AC-20 (`d`, recursive with
+    `decreases(n)`, and `e`, which calls `d`). Call `d` with 0, 1, 2 and 3
+    and `e` with 1 through S6a and read each `Evaluation`'s outcome,
+    `location` and `frame_depth`; then replay `d` at its
+    `10 mod (n - 1)` record's occurrence with `n` = 0, 1, 2 and 3.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -113,13 +138,27 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
-
-## Status
-
-Passed locally, `qsl-replay/src/execute/tests.rs`, for
-steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally:
-`tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
-and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
-
-Step 5's whitespace-only authority passes locally with `invalid_source_identity`,
-cause `blank-label` and `label` `authority` (FR-001).
+- Step 8: the first replay recompiles to the proved `package_id`; the second
+  refuses `PackageIdMismatch` naming both identities; the third refuses
+  `Recompile` carrying `invalid_model_binding`/`malformed-declaration`
+  located at `/package/refinement_internals`; the `zz` spelling refuses
+  `missing_declaration`/`missing-name` at
+  `/package/refinement_internals/0/internal/0`; the dependency entry's list
+  applies to that dependency's refinements only, and its defect is located at
+  `/package/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
+- Step 9: `invalid_runtime_input`/`unknown-member` at
+  `/replay/frame_operation` naming the target, `replay` and `function`,
+  the first two times; `missing_import`/`missing-selection` the third
+  (FR-098-AC-21).
+- Step 10: the settlements, values and refusals FR-098-AC-22 to
+  FR-098-AC-26 state, in AC-26's order. The requests that reproduce are
+  `p` at its `declaration` occurrence with `x = 0`, `r` with `x = 0`, `s` at
+  its right operand's occurrence with `x = 0`, `b` with `t = [3, 0]` and `u`
+  with only `x = 0` assigned; `s` at its `then` branch's occurrence with
+  `x = 0` settles `NoValue`.
+- Step 11: `d(0)` completes `0` at depth 0; `d(1)` is `Undefined` at the
+  `10 mod (n - 1)` `Location` with `frame_depth` 0, `d(2)` with 1, `d(3)`
+  with 2, and `e(1)` with 1 (FR-100-AC-20). The replay with `n = 1` settles
+  `reproduced-without-witness` with value `false`; `n = 2` and `n = 3`
+  settle `inconclusive` with cause `NoValue`; `n = 0` settles
+  `inconclusive` with cause `Verdicts` and value `true` (FR-098-AC-27).

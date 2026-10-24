@@ -39,7 +39,3 @@ Tag the tests `#[trace("TC-721", "FR-255-AC-4")]`, `#[trace("TC-721", "FR-255-AC
   stage runs.
 - Step 3: each stage ran at FR-255's defaults, and the recorded effective
   limits equal them.
-
-## Status
-
-Implemented. Step 1 is stage-driven for `s1.tokens`, `s3.nodes`, `s3.work_units`, `identity.input_bytes` and the `library.*`, `admission.*` and dispatch limits named in FR-255's Status, and checked at the entry points for the other rows; steps 2 and 3 are implemented.

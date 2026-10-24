@@ -12,6 +12,9 @@ relationships:
 
 When a native runtime draft is supplied, the input constructor shall produce an immutable byte-bound artifact after its structural checks succeed.
 
+The artifact identity still carries the four-label identity until
+QSL-381 drops `revision_namespace` and `revision` (QSpec STD-150).
+
 ## Inputs
 
 SnapshotDraft or InvocationDraft, SourceIdentity labels and ArtifactLimits.
@@ -46,13 +49,13 @@ can select an exact digest. Limits and accounting follow
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-018-AC-1 | Valid flat drafts construct immutable artifacts preserving all roots, nodes, duplicate entries and vector order. | Test |
-| FR-018-AC-2 | Forward, self and out-of-range child/root indices refuse with invalid_runtime_input and no artifact; ValueIds have artifact-local meaning. | Test |
-| FR-018-AC-3 | Identical labels/content reproduce exact bytes/digests; changed labels or content produce the independently expected byte artifact. | Test |
-| FR-018-AC-4 | Snapshot and invocation references retain distinct roles and exact labels/digests; an empty authority or identity label refuses. | Test |
-| FR-018-AC-5 | Structural checks include unused nodes and preserve invalid model-dependent shapes for validation rather than manufacturing a successful runtime judgment. | Test |
-| FR-018-AC-6 | Byte, node and entry limits admit exact work and refuse before the next unit, including zero/lowered limits, and raised limits above the defaults that admit larger input; a value nested 100,000 containers deep constructs within node and entry limits sized for it, on a thread with a 512 KiB stack. | Test |
-| FR-018-AC-7 | Construction failures identify the actual draft path/labels and leave caller-retained input unchanged without a fabricated native source span. | Test |
+| FR-018-AC-1 | Valid flat drafts construct immutable artifacts preserving all roots, nodes, duplicate entries and vector order. | Test (TC-055) |
+| FR-018-AC-2 | Forward, self and out-of-range child/root indices refuse with invalid_runtime_input and no artifact; ValueIds have artifact-local meaning. | Test (TC-055) |
+| FR-018-AC-3 | Identical labels/content reproduce exact bytes/digests; changed labels or content produce the independently expected byte artifact. | Test (TC-056, TC-077) |
+| FR-018-AC-4 | Snapshot and invocation references retain distinct roles and exact labels/digests; an empty authority or identity label refuses. | Test (TC-056) |
+| FR-018-AC-5 | Structural checks include unused nodes and preserve invalid model-dependent shapes for validation rather than manufacturing a successful runtime judgment. | Test (TC-055) |
+| FR-018-AC-6 | Byte, node and entry limits admit exact work and refuse before the next unit, including zero/lowered limits, and raised limits above the defaults that admit larger input; a value nested 100,000 containers deep constructs within node and entry limits sized for it, on a thread with a 512 KiB stack. | Test (TC-057) |
+| FR-018-AC-7 | Construction failures identify the actual draft path/labels and leave caller-retained input unchanged without a fabricated native source span. | Test (TC-055, TC-056) |
 | FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`) emits native-state-input/1 bytes naming both labels and no other identity member, and its reference retains them; constructing it with an empty authority refuses with `invalid_source_identity`/`blank-label` and field `label` `authority`, and with a whitespace-only identity (authority non-blank) with `invalid_source_identity`/`blank-label` and `label` `identity`, checking the labels in FR-001's order (FR-018-AC-4). Two snapshots that differ only in content have different bytes and digests. | Test (TC-431) |
 
 ## Dependencies
@@ -60,14 +63,3 @@ can select an exact digest. Limits and accounting follow
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) supplies the operator need.
 - [FR-007](FR-007-validate-runtime-inputs.md) consumes artifacts without trusting construction as model validation.
 - Existing SourceIdentity, ByteDigest, IR RequirementRef/SymbolName and serde_json/sha2 dependencies are reused.
-
-## Status
-
-FR-018-AC-8 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the artifact identity drops `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed.
-
-Qualified construction API, reviewed in SR-096. TC-055–057 pass with
-21 public API tests and a role-separation compile-fail doctest. Model-aware
-validation and reference execution are qualified by SR-097 and SR-098;
-Task-015 owns the native API review/handoff. B retains portable ArtifactRef
-and result envelopes; this contract creates no new portable authority, semantic
-digest or input decoder.

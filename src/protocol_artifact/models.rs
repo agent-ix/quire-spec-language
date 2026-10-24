@@ -10,12 +10,13 @@ use quire_contract_model as ir;
 use super::domain::{self, DomainTarget};
 use super::{
     wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
-    SuppliedDependency, Unsupported, DOMAIN_PACKAGE_PROFILE,
+    SuppliedDependency, Unsupported,
 };
 use crate::checking::{Catalog, DomainField, NativeType};
 use crate::native_model::{
     NativeModel, ObjectRole, OperationRole, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
+use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 
 type RefKey<'a> = (
     &'a str,
@@ -369,7 +370,7 @@ pub(super) fn validate(
 /// package FR-056 admitted at linking, selects that package's document
 /// dependency, and carries only exports of that package, each located at
 /// the whole document. Returns its export targets.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn domain_model<'a>(
     model: &w::Model,
     artifact: &w::ArtifactRef,

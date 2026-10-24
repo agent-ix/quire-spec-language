@@ -34,7 +34,6 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 - `RecoveringCst` returns `invalid_syntax`.
 - `NoDispatchEntry` and `UnrepresentedConstruct` return
   `unsupported_construct`.
-- The floating-type cause returns `unknown_required_feature`.
 - Unresolved type name returns `missing_declaration`, ambiguous type name
   returns `ambiguous_declaration`, and ill-formed bounds return `ill_typed`.
 - The undeclared-alias cause returns `missing_declaration`, the
@@ -44,15 +43,19 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   `ambiguous_declaration`/`ambiguous-name`, and the nominal-admission-fault
   cause `runtime_invariant`/`established-invariant-broken`.
 - The duplicate dimension or unit name cause returns
-  `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit
-  name cause `missing_declaration`/`missing-name`, the dimension or unit
-  cycle cause `invalid_package`/`definition-cycle`, the zero-denominator
+  `ambiguous_declaration`/`ambiguous-name`, the unresolved unit dimension
+  name cause `missing_declaration`/`missing-name`, the zero-denominator
   cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale
-  limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology
-  cause returns the STD-112 cause once QSpec publishes it.
+  limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph
+  topology cause returns its QSpec FR-142 step, rule or row code:
+  `missing_declaration`/`missing-name` for an unknown term, an unresolved
+  dimension-equivalence dimension or unit name, the base-dimension rule and row 2;
+  `invalid_package`/`definition-cycle` for a dimension cycle, an equivalence
+  of one node and row 6; `invalid_package`/`invalid-value` for rows 1 and 5 and
+  an equivalence's affine unit or non-positive number;
+  `invalid_package`/`incompatible-definition` for an equivalence whose maps or
+  ratio differ or whose unit is of another dimension, and row 3; and
+  `invalid_package`/`conflicting-definition` for a repeated equivalence pair, a
+  base cycle whose ratios do not multiply to one, and row 4.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
-
-## Status
-
-Steps 1 and 2 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The duplicate-enum-member and nominal-admission causes are backed by `the_enum_causes_have_their_catalog_codes`. The dimension and unit causes are backed by `the_dimension_and_unit_causes_have_their_catalog_codes`; the unit-graph topology row waits on STD-112.

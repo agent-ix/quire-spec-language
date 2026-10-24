@@ -25,7 +25,8 @@ executed in the same run (FR-350).
 - The per-vector outcomes of FR-350.
 - The scope: the capability ids the caller selects, or, when the caller
   selects none, every capability the corpus lists whose applicability names
-  a QSL consumer type (FR-350).
+  a QSL consumer type and a semantic profile in QSL's definition catalog
+  ([FR-350](FR-350-run-the-conformance-corpus-against-qsl.md)).
 
 ## Outputs
 
@@ -35,6 +36,11 @@ of the vectors that decided it.
 
 ## Behavior
 
+- If scope resolution selects no capabilities, then the runner SHALL
+  return the empty-scope preflight refusal of
+  [FR-353](FR-353-settle-the-complete-v1-qualification-verdict.md), without
+  settling a capability. A nonempty scope with no applicable vectors
+  still settles its selected capabilities as `uncovered`.
 - If a capability in scope has no vector whose applicability names a QSL
   consumer type,
   then its outcome SHALL be `uncovered`.
@@ -49,6 +55,11 @@ of the vectors that decided it.
 - Each capability outcome is computed from vectors executed in this run.
   The corpus's recorded `results` member (QSpec FR-336) is not an input to
   any outcome.
+- A caller-selected scope SHALL be the set of the named capability ids:
+  repeating an id cannot execute its vectors twice or count the capability
+  twice. Selection does not grant a new consumer type to its vectors. An
+  explicitly selected capability with no QSL-applicable vectors is
+  `uncovered`, even when its monitor-only vectors have recorded passes.
 - If the caller selects a capability id the corpus does not list, then the
   runner SHALL refuse the run with `unknown_required_feature`/
   `unknown-feature`, naming the id, before it executes any vector.
@@ -57,10 +68,10 @@ of the vectors that decided it.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-351-AC-1 | A capability whose three vectors are `passed` is `passed`. A capability with one `passed` and one `failed` vector is `failed`, holding the failed vector's id. A capability with one `unsupported` and one `incomplete` vector is `unsupported`. A capability with one `tool-failure` and one `failed` vector is `failed`. | Test (TC-877) |
-| FR-351-AC-2 | A capability whose applicability names the `language` consumer type, with no vector, is `uncovered`. A capability whose applicability names only the `monitor` consumer type is outside the default scope and appears in no outcome. | Test (TC-877) |
-| FR-351-AC-3 | A corpus whose `results` member records `passed` for a vector QSL fails settles that vector's capability `failed`. | Test (TC-878) |
-| FR-351-AC-4 | A run scoped to two capability ids settles exactly those two. A run scoped to an id the corpus does not list refuses `unknown_required_feature`/`unknown-feature` naming the id and executes no vector. | Test (TC-878) |
+| FR-351-AC-1 | A capability whose three vectors are `passed` is `passed`. A capability with one `passed` and one `failed` vector is `failed`, holding the failed vector's id. A capability with one `unsupported` and one `incomplete` vector is `unsupported`. A capability with one `tool-failure` and one `failed` vector is `failed`. | Test |
+| FR-351-AC-2 | A capability whose applicability names the `language` consumer type and a catalog-held profile, with no vector, is `uncovered`. A capability whose applicability names only the `monitor` consumer type, and a language capability whose applicability names only a profile absent from QSL's catalog, are outside the default scope and appear in no outcome. | Test |
+| FR-351-AC-3 | A corpus whose `results` member records `passed` for a vector QSL fails settles that vector's capability `failed`. | Test |
+| FR-351-AC-4 | A run scoped to two capability ids settles exactly those two and executes no vector from another capability. Repeating one selected id gives the same vector executions and capability outcomes as naming it once. Explicitly selecting a monitor-only capability settles it `uncovered` without running its vectors. A run scoped to an id the corpus does not list refuses `unknown_required_feature`/`unknown-feature` naming the id and executes no vector. | Test |
 
 ## Dependencies
 

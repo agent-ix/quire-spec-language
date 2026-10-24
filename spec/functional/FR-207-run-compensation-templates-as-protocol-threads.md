@@ -56,7 +56,7 @@ checked over every behaviour.
 - Compensation registrations in the state key's `control` member with
   status `registered`, `activated`, `recovered` or `unrecovered` and their
   captures; compensation threads with their attempt counts in
-  `bounds`; `cattempt(c, r)` and `cend(c, r)` steps.
+  `bounds` and their attempt records in `observations`; `cattempt(c, r)` and `cend(c, r)` steps.
 
 ## Behavior
 
@@ -64,8 +64,12 @@ checked over every behaviour.
   `cattempt`, `cend` and commit rules, keying each registration by
   (template, the effect's thread path, ordinal).
 - The protocol system SHALL apply each `cattempt` through FR-206's
-  `attempt` rule for the template's operation by its role, with the attempt
-  type as the record.
+  `attempt` rule for the template's operation by its role, and SHALL take
+  one `cattempt` step per record of the template's attempt type, at a retry
+  only each record the retry relation admits with `earlier` bound to the
+  thread's attempt record and `later` to the step's record, as QSpec FR-427
+  states (ADR-027 ST-11). The step's record SHALL be the thread's attempt
+  record and part of the step's transition identity.
 - The protocol system SHALL keep `cend` enabled whether or not a retry is.
 - The protocol system SHALL mark a protocol instance finished in its
   `finish` step, which FR-206 enables only after every other thread of the
@@ -77,9 +81,11 @@ checked over every behaviour.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-207-AC-1 | ADR-027 §7.1 (`Pay`, `x.bal = 0`): the reachable states are exactly t0 to t8 with the enabled steps of its table, nine states and eight transitions. `event(Paid)` registers `Refund` in the same step; `event(Fail)` with `failed` true activates it in the same step and creates the compensation thread at count 0; with `failed` false the registration stays `registered` until `finish`, which removes the instance with its registration, so t5 holds no instance and no registration. | Test (TC-652) |
-| FR-207-AC-2 | In §7.1, `finish` is not enabled at t4 while the compensation thread is `running`. At t6 the count has reached `attempts 1`, so `cend` is the only step, and the registration is `recovered` at t7 because `bal = 0`. With the refund's postcondition changed to leave `bal = 1`, the registration is `unrecovered` after `cend`. | Test (TC-652) |
+| FR-207-AC-2 | In §7.1, `finish` is not enabled at t4 while the compensation thread is `running`. At t6 the count has reached `attempts 1`, so `cend` is the only step, and the registration is `recovered` at t7 because the recovery predicate `triggered`, over the activation capture, holds. With the predicate changed to `not triggered`, the registration is `unrecovered` after `cend`. | Test (TC-652) |
 | FR-207-AC-3 | With `attempts 2` and the retry relation `true`, both `cattempt(Refund)` and `cend(Refund)` are enabled at the retry point after the first attempt; after the second attempt only `cend` is. With the retry relation `false`, only `cend` is enabled after the first attempt. | Test (TC-652) |
 | FR-207-AC-4 | A variant of §7.1 with a `commit Ok` node between `Paid` and `Fail` and the template's `commit Main::Ok`: the registration closes at `Ok`'s step, `event(Fail)` with `failed` true activates nothing, and no state holds a compensation thread. A second effect of the template's forward node after `Ok` registers nothing. | Test (TC-652) |
+| FR-207-AC-5 | With the recovery predicate `r.bal = 0`, which reads its recovery binder `r`, the item settles V-8 `unsupported` with cause `RecoveryView{predicate}`, before any state is explored. | Test (TC-652) |
+| FR-207-AC-6 | A variant of §7.1 with `attempts 2 of M::RefundAttempt`, `RefundAttempt` with one field `ok: Boolean`, `refund()` with precondition `true`, and the retry relation `not e.ok` over (`e`, `l`): at t4 two `cattempt(Refund)` steps are enabled, whose transition identities differ only in `record`, one with `ok` true and one with `ok` false. At the retry point after the `ok` false attempt, two retry `cattempt` steps, one per record, and `cend` are enabled; after the `ok` true attempt only `cend` is. With the retry relation `l.ok`, the retry point after either first attempt enables one retry `cattempt`, whose record has `ok` true, and `cend`. | Test (TC-652) |
 
 ## Dependencies
 

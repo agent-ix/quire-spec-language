@@ -1,0 +1,403 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Conformance consumes the same selection owner and the facts of completed
+//! source checking. Structural target resolution belongs to normalization.
+
+use super::field_refinement::{checked_refinement_failures, RefinementObligation};
+use super::lowering::{AdmittedModel, ParentSlotFailure};
+use super::state_clause::{StateClauseDeclaration, TypedStateClause};
+use crate::model::accounting::{Incomplete, Meter};
+use crate::model::conformance::{self, ConformanceCheckOutcome, ConformanceOutcome};
+use crate::model::domain_package::DomainPackageRecord;
+use crate::model::intake::SelectedModel;
+use crate::model::key::DeclarationKey;
+use crate::model::normalize::ModelRefusalCause;
+use qsl_foundation::Code;
+use quire_semantic_value::declaration::{PendingFieldFailure, PendingTypeEnvironment};
+
+/// One failed axis of one immediate-parent member pair. A refinement
+/// failure additionally names the exposed writer and its own obligation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelConformanceFailure {
+    /// The redefining or subsetting member's original declaration key.
+    pub member: DeclarationKey,
+    /// Its immediate declared parent or subset target.
+    pub parent: DeclarationKey,
+    /// The actual exposed writer, when refinement fails.
+    pub writer: Option<DeclarationKey>,
+    /// The writer's failed presence, domain or unsupported proof obligation.
+    pub obligation: Option<RefinementObligation>,
+    /// The failed conformance axis.
+    pub axis: &'static str,
+    /// The stable top-level code.
+    pub code: Code,
+    /// The complete closed native cause payload.
+    pub cause: ModelRefusalCause,
+    /// A human-readable account of the failed axis.
+    pub detail: String,
+    /// The member's own exact admitted origin; absence remains absent.
+    pub member_origin: Option<serde_json::Value>,
+    /// The immediate parent's own exact admitted origin.
+    pub parent_origin: Option<serde_json::Value>,
+    /// The exposed writer's own exact admitted origin, never its sibling's.
+    pub writer_origin: Option<serde_json::Value>,
+}
+
+impl std::hash::Hash for ModelConformanceFailure {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.member.hash(state);
+        self.parent.hash(state);
+        self.writer.hash(state);
+        self.obligation.hash(state);
+        self.axis.hash(state);
+        self.code.hash(state);
+        self.cause.as_str().hash(state);
+        self.detail.hash(state);
+    }
+}
+
+pub(crate) enum StageDenial {
+    Refused(Vec<ModelConformanceFailure>),
+    Incomplete(Incomplete),
+    MissingModel(String),
+    /// A staged-admission read was refused.
+    Pending(PendingFieldFailure),
+}
+
+impl From<Incomplete> for StageDenial {
+    fn from(incomplete: Incomplete) -> Self {
+        Self::Incomplete(incomplete)
+    }
+}
+
+impl From<PendingFieldFailure> for StageDenial {
+    fn from(failure: PendingFieldFailure) -> Self {
+        Self::Pending(failure)
+    }
+}
+
+impl From<ParentSlotFailure> for StageDenial {
+    fn from(failure: ParentSlotFailure) -> Self {
+        match failure {
+            ParentSlotFailure::Incomplete(incomplete) => Self::Incomplete(incomplete),
+            ParentSlotFailure::Pending(failure) => Self::Pending(failure),
+        }
+    }
+}
+
+/// The parent members a redefinition is judged against, one per lineage (see
+/// [`AdmittedModel::parent_slots`]). Without a staged admission, or when no
+/// lineage reaches the target's owner, the declared target is the one parent.
+fn lineage_parents(
+    model: &AdmittedModel,
+    pending: &mut Option<&mut PendingTypeEnvironment>,
+    ancestor_steps: u64,
+    owner: &DeclarationKey,
+    target: &DeclarationKey,
+) -> Result<Vec<DeclarationKey>, StageDenial> {
+    let Some(staged) = pending.as_deref_mut() else {
+        return Ok(vec![target.clone()]);
+    };
+    let mut parents: Vec<DeclarationKey> = model
+        .parent_slots(staged, owner, target, ancestor_steps)?
+        .into_iter()
+        .map(|slot| slot.key.unwrap_or_else(|| target.clone()))
+        .collect();
+    if parents.is_empty() {
+        parents.push(target.clone());
+    }
+    Ok(parents)
+}
+
+fn origin(selection: &SelectedModel, key: &DeclarationKey) -> Option<serde_json::Value> {
+    selection
+        .view
+        .domain_package()
+        .originals
+        .get(key)
+        .map(|original| original.origin.clone())
+}
+
+fn append(
+    selection: &SelectedModel,
+    outcome: ConformanceCheckOutcome,
+    member: &DeclarationKey,
+    parent: &DeclarationKey,
+    failures: &mut Vec<ModelConformanceFailure>,
+) -> Result<(), Incomplete> {
+    let axes = match outcome {
+        ConformanceCheckOutcome::Incomplete(incomplete) => return Err(incomplete),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => return Ok(()),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(axes)) => axes,
+        ConformanceCheckOutcome::Refused(refusal) => vec![conformance::AxisFailure {
+            axis: "target",
+            code: refusal.code,
+            cause: refusal.cause,
+            detail: refusal.detail,
+        }],
+    };
+    failures.extend(axes.into_iter().map(|axis| ModelConformanceFailure {
+        member: member.clone(),
+        parent: parent.clone(),
+        writer: None,
+        obligation: None,
+        axis: axis.axis,
+        code: axis.code,
+        cause: axis.cause,
+        detail: axis.detail,
+        member_origin: origin(selection, member),
+        parent_origin: origin(selection, parent),
+        writer_origin: None,
+    }));
+    Ok(())
+}
+
+/// `selected` retains intake's canonical selection order and meter. Every
+/// real clause has completed before entry; a denied charge discards all
+/// failures collected in this unfinished conformance stage.
+pub(crate) fn check(
+    selected: &[SelectedModel],
+    meter: &mut Meter,
+    models: &[AdmittedModel],
+    forms: &[StateClauseDeclaration],
+    checked: &[TypedStateClause],
+    mut pending: Option<&mut PendingTypeEnvironment>,
+) -> Result<(), StageDenial> {
+    let mut failures = Vec::new();
+    for selection in selected {
+        let index = selection.view.model_index();
+        let model = models
+            .iter()
+            .find(|model| model.selection() == selection.view.model_selection())
+            .ok_or_else(|| {
+                StageDenial::MissingModel(selection.view.model_selection().identity.clone())
+            })?;
+        let mut records: Vec<_> = index.package().records.iter().collect();
+        records.sort_by(|a, b| a.key().cmp(b.key()));
+        for record in records {
+            match record {
+                DomainPackageRecord::FieldMember(field) => {
+                    if let Some(target) = &field.redefines {
+                        let parents = lineage_parents(
+                            model,
+                            &mut pending,
+                            meter.limits().ancestor_steps,
+                            &field.owner,
+                            target,
+                        )?;
+                        for parent in &parents {
+                            append(
+                                selection,
+                                conformance::check_field_redefinition(
+                                    index, &field.key, parent, meter,
+                                ),
+                                &field.key,
+                                parent,
+                                &mut failures,
+                            )
+                            .map_err(StageDenial::Incomplete)?;
+                            conformance::charge_refinement_axis(meter)
+                                .map_err(StageDenial::Incomplete)?;
+                            failures.extend(checked_refinement_failures(model, &field.key, parent, forms, checked)
+                                    .into_iter().map(|failure| ModelConformanceFailure {
+                                        member_origin: origin(selection, &failure.member),
+                                        parent_origin: origin(selection, &failure.parent),
+                                        writer_origin: origin(selection, &failure.writer),
+                                        member: failure.member, parent: failure.parent, writer: Some(failure.writer),
+                                        obligation: Some(failure.obligation), axis: "refinement", code: Code::UndefinedExpression,
+                                        cause: ModelRefusalCause::UnprovedRefinement,
+                                        detail: "the exposed writer does not establish its field refinement".to_owned(),
+                                    }));
+                        }
+                    }
+                    for parent in &field.subsets {
+                        append(
+                            selection,
+                            conformance::check_subsetting(index, &field.key, parent, meter),
+                            &field.key,
+                            parent,
+                            &mut failures,
+                        )
+                        .map_err(StageDenial::Incomplete)?;
+                    }
+                }
+                DomainPackageRecord::OperationMember(operation) => {
+                    if let Some(parent) = &operation.redefines {
+                        append(
+                            selection,
+                            conformance::check_operation_redefinition(
+                                index,
+                                &operation.key,
+                                parent,
+                                meter,
+                            ),
+                            &operation.key,
+                            parent,
+                            &mut failures,
+                        )
+                        .map_err(StageDenial::Incomplete)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(StageDenial::Refused(failures))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
+    use crate::model::domain_package::{
+        DomainPackage, DomainPackageRef, FieldMemberRecord, Multiplicity, NativeValueType,
+        ObjectTypeRecord, ValueTypeRef,
+    };
+    use crate::model::intake::SelectedModels;
+    use ix_trace_rs::trace;
+    use quire_exact::Presence;
+
+    fn package() -> DomainPackage {
+        let mut records = vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture("A"),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture("B"),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![DeclarationKey::fixture("A")],
+            }),
+        ];
+        for name in ["x", "y"] {
+            for (owner, native, lower, upper, redefines) in [
+                ("A", NativeValueType::Integer, 1, 1, None),
+                (
+                    "B",
+                    NativeValueType::Boolean,
+                    0,
+                    2,
+                    Some(DeclarationKey::fixture(format!("A/{name}"))),
+                ),
+            ] {
+                records.push(DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: DeclarationKey::fixture(format!("{owner}/{name}")),
+                    owner: DeclarationKey::fixture(owner),
+                    value_type: ValueTypeRef::Native(native),
+                    multiplicity: Multiplicity {
+                        lower,
+                        upper: Some(upper),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines,
+                }));
+            }
+        }
+        DomainPackage::new(
+            DomainPackageRef {
+                identity: "test/orders".to_owned(),
+                version: "1".to_owned(),
+                digest: [1; 32],
+            },
+            records,
+        )
+    }
+
+    fn admitted(
+        limits: ModelNormalizationLimits,
+    ) -> (Vec<SelectedModel>, Meter, Vec<AdmittedModel>) {
+        let group = SelectedModels::fixture(
+            "M",
+            qsl_foundation::Span { start: 0, end: 1 },
+            package(),
+            limits,
+        )
+        .expect("the real structural producer admits both member pairs");
+        let (selected, meter) = group.into_parts();
+        let models = selected
+            .iter()
+            .map(|selection| AdmittedModel::from_view(&selection.view))
+            .collect();
+        (selected, meter, models)
+    }
+
+    #[test]
+    #[trace("TC-196")]
+    fn completed_stage_retains_each_axis_and_member_pair_after_checked_clauses() {
+        let (selected, mut meter, models) = admitted(ModelNormalizationLimits::UNLIMITED);
+        let before = meter.consumed(LimitKind::WorkUnits);
+        let Err(StageDenial::Refused(failures)) =
+            check(&selected, &mut meter, &models, &[], &[], None)
+        else {
+            panic!("both actual fields fail both static axes");
+        };
+        assert_eq!(
+            failures
+                .iter()
+                .map(|failure| (&failure.member, &failure.parent, failure.axis))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    &DeclarationKey::fixture("B/x"),
+                    &DeclarationKey::fixture("A/x"),
+                    "value-type"
+                ),
+                (
+                    &DeclarationKey::fixture("B/x"),
+                    &DeclarationKey::fixture("A/x"),
+                    "multiplicity"
+                ),
+                (
+                    &DeclarationKey::fixture("B/y"),
+                    &DeclarationKey::fixture("A/y"),
+                    "value-type"
+                ),
+                (
+                    &DeclarationKey::fixture("B/y"),
+                    &DeclarationKey::fixture("A/y"),
+                    "multiplicity"
+                ),
+            ]
+        );
+        assert!(failures
+            .iter()
+            .all(|failure| failure.writer.is_none() && failure.obligation.is_none()));
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), before + 6);
+    }
+
+    #[test]
+    #[trace("TC-196")]
+    fn denied_later_pair_exposes_only_exact_incomplete_without_earlier_failures() {
+        let (_, unlimited, _) = admitted(ModelNormalizationLimits::UNLIMITED);
+        let normalization_work = unlimited.consumed(LimitKind::WorkUnits);
+        let (selected, mut meter, models) = admitted(ModelNormalizationLimits {
+            work_units: normalization_work + 3,
+            ..ModelNormalizationLimits::UNLIMITED
+        });
+        let Err(StageDenial::Incomplete(incomplete)) =
+            check(&selected, &mut meter, &models, &[], &[], None)
+        else {
+            panic!("the second pair's owning type charge is unavailable");
+        };
+        assert_eq!(
+            incomplete,
+            Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: normalization_work + 3,
+                consumed: normalization_work + 3,
+                next_charge: 1,
+                charge_point: ChargePoint::ConformanceAxis,
+            }
+        );
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), normalization_work + 3);
+    }
+}

@@ -11,16 +11,16 @@ relationships:
 ## Description
 
 Verify each rejection rule of `check_state_graph`: a missing successor, a
-broken or missing rank, an undefined predicate, a broken count and a broken
-order, each settling `CertificateRejected{rule, state}`, and a check that a
+broken or missing rank, an undefined predicate, an undefined contract
+conjunction, a broken count and a broken order, each settling `CertificateRejected{rule, at}`, and a check that a
 limit stops.
 
-Scope: FR-169-AC-10.
+Scope: FR-169-AC-10, FR-169-AC-11, FR-169-AC-15.
 
 ## Test Procedure
 
 Fixtures: TC-643's `ReachesTwo` and sequenced `InOneWay` certificates;
-FR-168-AC-5's item; §7.3's unsequenced job.
+FR-168-AC-5's item; §7.3's unsequenced job; TC-592's guarded subject (FR-167-AC-2).
 
 1. Check `ReachesTwo`'s certificate with `(2, 2)` removed, with the rank of
    `(1, 0)` set to 2, and with `(0, 0)` unranked.
@@ -29,17 +29,37 @@ FR-168-AC-5's item; §7.3's unsequenced job.
 3. Check an `InOneWay` certificate over the unsequenced job with every
    count 1, and the sequenced certificate with its order reversed.
 4. Check `ReachesTwo`'s certificate with `max_states` 2.
-5. Settle each step's result.
+5. Check a hand-built certificate of TC-592's guarded subject's 3 states, ranked 2, 1
+   and 0 for `ReachesTwo`, over the guarded subject, and over the same
+   subject without the guard.
+6. Settle each step's result.
+7. Check `ReachesTwo`'s certificate with the `counts` entry `(0, 1, 0)`
+   added, the sequenced `InOneWay` certificate with the `ranks` entry
+   `(0, 0)` added, and `ReachesTwo`'s certificate with the `counts` entry
+   `(9, 1, 0)` added; then check TC-643's `ReachesTwo` and sequenced
+   `InOneWay` certificates as the engine returns them, whose list of the
+   other form is empty; settle each.
 
-Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`.
+Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`,
+`#[trace("TC-644", "FR-169-AC-11")]` or `#[trace("TC-644", "FR-169-AC-15")]`.
 
 ## Expected Results
 
-- Step 1: `SuccessorMissing` at a state that reaches `(2, 2)`;
-  `RankBroken` at `(1, 0)`; `RankMissing` at `(0, 0)`.
-- Step 2: `PredicateUndefined` at `(2, 0)`.
-- Step 3: `CountBroken` at the node with two paths; `OrderBroken`.
+- Step 1: `SuccessorMissing` at the first, in certificate order, of
+  `(1, 2)` and `(2, 1)` (the engine: `(1, 2)`); `RankBroken` at `(0, 0)`; `RankMissing` at
+  `(0, 0)`.
+- Step 2: `PredicateUndefined` at the first, in certificate order, of the
+  states where `va = 2` (the engine: `(2, 0)`).
+- Step 3: `CountBroken` at the node with two paths; `OrderBroken` at the
+  first, in certificate order, of the nodes other than the `to` node (the
+  engine: `tff`); the all-count-1 certificate carries a valid order.
 - Step 4: stopped, naming `max_states` and 2.
-- Step 5: each rejection settles `inconclusive`,
-  `CertificateRejected{rule, state}`, never `proved`; step 4 settles
+- Step 5: over the guarded subject, `BadState` at the state where
+  `va = 2`; over the unguarded subject, accepted.
+- Step 6: each rejection settles `inconclusive`,
+  `CertificateRejected{rule, at}`, never `proved`; step 4 settles
   `failed`, naming `max_states`.
+- Step 7: `Malformed` at the `ModelState` of closure state 0 for the first
+  two and at `Entry { index: 9 }` for the third, with no successor
+  recomputed, each settling `inconclusive`, `CertificateRejected{Malformed,
+  at}`, never `proved`; the two engine certificates are accepted.

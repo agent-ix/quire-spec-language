@@ -1,5 +1,6 @@
 {
   "contractVersion": "2.0.0",
+  "canonicalization": { "algorithm": "rfc8785-v1", "digest": "sha256-jcs" },
   "source": {
     "identity": "ix://acme/systems/spec",
     "version": "1.0.0",

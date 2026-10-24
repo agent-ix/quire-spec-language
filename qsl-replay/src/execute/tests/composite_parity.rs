@@ -22,26 +22,75 @@ use crate::identity::DeclaredDomain;
 use crate::scalar::{OperandIdentity, ScalarClaim};
 use crate::witness::{WitnessField, WitnessSlot};
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::value::supplied::SuppliedLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimitKind;
 
 const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function f using v(a: Q, b: Q): Boolean pure { a = b }\n\
      function g using v(a: Q): Boolean pure { a != Q { x: 1, s: sequence[] } }\n\
+     function n using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure { a = b }\n\
      record List { head: Int[0, 9]; tail: List?; }\n\
      function h using v(a: List, b: List): Boolean pure { a = b }\n\
      enum Color { Red, Green, Blue }\n\
      function c using v(a: Color, b: Color): Boolean pure { a = b }\n\
-     record R { x: Int[0, 9]; label: Rational[0, 9; 1, 9]; }\n\
+     record R { x: Int[0, 9]; label: Text[0, 4; nfc]; }\n\
      function t using v(a: R, b: R): Boolean pure { a = b }\n\
-     function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n";
+     function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n\
+     function k using v(a: Integer): Boolean pure { a = 3 }\n\
+     function m using v(a: Int[0, 9]): Boolean pure { a = 3 }\n";
 
 struct Unit {
     source: String,
-    compiled: ComposedUnit,
+    compiled: Recompiled,
 }
 
 fn unit() -> Unit {
+    use crate::spine::{
+        check, package, parse, select, DependencyInput, LockEvidence, ParseRequest,
+    };
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::Cancel;
+
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{UNIT}");
-    let compiled = spine(&source, &BTreeMap::new());
+    let identity = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &identity,
+            path: IDENTITY,
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("the unit parses")
+    .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("the unit selects")
+        .into_value();
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    let checked = check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &LockEvidence::default().with_text_profile(text_profile),
+        limits,
+        &cancel,
+    )
+    .expect("the selected Text law checks")
+    .into_value();
+    let emitted = package(&checked, crate::spine::PackageLimits::default(), &cancel)
+        .expect("the unit emits")
+        .into_value();
+    let compiled = Recompiled {
+        checked,
+        emitted,
+        packages: BTreeMap::new(),
+        model_limits: SpineLimits::default().model,
+    };
     Unit { source, compiled }
 }
 
@@ -80,12 +129,15 @@ fn outcome(equal: bool, pair_count: u64) -> EqualityOutcome {
 
 impl Unit {
     fn parameter(&self, function: &str, index: usize) -> WireNodeId {
-        parameter(&self.compiled, function, index)
+        let package = self.compiled.checked.package();
+        let callable = package.graph().callable(function).expect("declared");
+        let keys = callable_parameter_keys(package, &callable).unwrap();
+        WireNodeId::from_digest(*keys[index].as_bytes())
     }
 
     /// The claimed equality node in `function`'s body.
     fn node(&self, function: &str) -> WireNodeId {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let found = semantic
@@ -100,7 +152,7 @@ impl Unit {
     /// The `index`th occurrence (in the package's own order) of `function`'s
     /// equality node in the function's body.
     fn occurrence_n(&self, function: &str, index: usize) -> quire_exact::Origin {
-        let graph = self.compiled.package.graph();
+        let graph = self.compiled.checked.package().graph();
         let identity = graph.callable(function).expect("declared").identity;
         let semantic = graph.semantic_graph();
         let key = semantic
@@ -124,7 +176,7 @@ impl Unit {
     }
 
     fn record_id(&self, name: &str) -> WireNodeId {
-        let types = self.compiled.package.graph().scope().types();
+        let types = self.compiled.checked.package().graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
@@ -196,17 +248,22 @@ impl Unit {
     ) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            self.compiled.emitted.package().package_id(),
             name(&[function]),
             ReplaySource::Input(vec![]),
         );
         wire.declared_domains = domains;
         let decoded = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).unwrap();
-        let limits = request_limits(decoded.stage_limits(), ReplayLimits::default()).unwrap();
+        let limits = request_limits(
+            decoded.stage_limits(),
+            decoded.accounting_limits(),
+            ReplayLimits::default(),
+        )
+        .unwrap();
         let compiled = recompile(&decoded, &limits).unwrap();
         let site = locate(
             &compiled,
-            decoded.selected_function(),
+            crate::execute::function_target(&decoded, crate::ReplayEntry::Replay).unwrap(),
             claim.node,
             &claim.occurrence,
             claim.operator,
@@ -513,6 +570,50 @@ fn tc_907_the_falsified_rows_settle_in_order() {
     assert_resource_exhausted(&report.terminal_value());
 }
 
+/// FR-358-AC-2 (TC-907 F-3), FR-277-AC-7: an operand declared `Int[0, 9]`
+/// is admitted by S6a admission as well as conversion. At 12 it settles
+/// `RefusedInput` naming its position, and over the request's magnitude
+/// bound B it settles the B limit stop, never a comparison.
+#[trace("TC-907", "FR-358-AC-2", "FR-277-AC-7")]
+#[test]
+fn tc_907_a_numeric_root_operand_is_admitted_by_its_domain_and_by_b() {
+    let unit = unit();
+    let claim = || unit.claim("n", EqualityOperator::Equal, vec![]);
+    let run = |wire: ReplayRequestWire, left: i64, right: i64| {
+        replay_composite_parity(
+            wire,
+            claim(),
+            falsified(int(left), int(right), outcome(false, 1)),
+            ReplayLimits::default(),
+        )
+    };
+    let wire = || unit.wire("n", &claim(), vec![]);
+
+    assert_refused_input(&run(wire(), 12, 3), 0);
+    assert_refused_input(&run(wire(), 3, 12), 1);
+    assert!(
+        matches!(
+            run(wire(), 3, 4).result(),
+            CompositeParityResult::Diverged { .. } | CompositeParityResult::Agrees { .. }
+        ),
+        "operands inside the domain are compared"
+    );
+
+    // 9 needs 4 magnitude bits: B = 3 stops admission on it.
+    let mut starved = wire();
+    starved.supplied_limits = Some(SuppliedLimits::default().with_numeric_magnitude_bits(3));
+    let report = run(starved, 9, 1);
+    let CompositeParityResult::Incomplete {
+        stage: IncompleteStage::Admission(stop),
+    } = report.result()
+    else {
+        panic!("expected the admission stage, got {:?}", report.result());
+    };
+    let limit = stop.limit().expect("a limit stop");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.limit, 3);
+}
+
 /// FR-358-AC-3 (TC-907 step 3): both entries refuse before any evaluation or
 /// settlement row, carrying the obligation identity.
 #[trace("TC-907", "FR-358-AC-3")]
@@ -528,7 +629,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
 
     let mut edited = request(
         edited_source.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -538,7 +639,8 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     }));
 
     let mut undeclared = unit.wire("f", &claim(), vec![]);
-    undeclared.selected_function = name(&["nope"]);
+    undeclared.replay_target =
+        crate::RequestTargetWire::function(name(&["nope"]), crate::target::test_key());
     cases.push(("an undeclared function", undeclared, claim(), |refusal| {
         matches!(refusal, ReplayRefusal::UnknownFunction { .. })
     }));
@@ -645,7 +747,10 @@ fn tc_907_a_covering_harness_proves() {
         );
         assert_eq!(
             report.terminal_value(),
-            TerminalValue::Proved { success_checks: 4 }
+            TerminalValue::Proved {
+                basis: crate::ProofBasis::Checks { success_checks: 4 },
+                certification: crate::Certification::Certified,
+            }
         );
         assert_eq!(report.terminal_value().category(), Category::Success);
     };
@@ -693,9 +798,9 @@ fn tc_907_a_covering_harness_proves() {
     proved(&settle(&unit, "c", bounds, vec![], exhausted));
 }
 
-/// FR-358-AC-5 (TC-907 step 5): evidence short of covering the claim's
+/// FR-358-AC-9 (TC-907 step 5): evidence short of covering the claim's
 /// domain is `Tested`, never `Proved`.
-#[trace("TC-907", "FR-358-AC-5")]
+#[trace("TC-907", "FR-358-AC-9")]
 #[test]
 fn tc_907_anything_short_of_covering_is_tested() {
     let unit = unit();
@@ -713,6 +818,7 @@ fn tc_907_anything_short_of_covering_is_tested() {
             "{what}"
         );
     };
+    text_leaf_is_tested(&unit, exhausted, &tested);
     let variants = |members: &[&str]| {
         FiniteBound::variants(members.iter().map(|member| (*member).to_owned())).unwrap()
     };
@@ -771,12 +877,6 @@ fn tc_907_anything_short_of_covering_is_tested() {
         "a partial variant set",
     );
 
-    // A rational leaf (a text leaf needs a text-profile lock the spine test harness does not carry); its whole declared domain cannot be shown covered.
-    let bounds = (0..2)
-        .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
-        .collect();
-    tested(settle(&unit, "t", bounds, vec![], exhausted), "a text leaf");
-
     // A recursive position with no declared domain is never covered. (The
     // `K<T>` cases of AC-4 and AC-5 wait on a source form for an unbounded
     // collection type: the grammar takes only `K<T>[min, max]`.)
@@ -790,6 +890,120 @@ fn tc_907_anything_short_of_covering_is_tested() {
         settle(&unit, "h", bounds, vec![], exhausted),
         "an undeclared depth",
     );
+}
+
+/// Length bounds do not cover a Text leaf's whole declared domain.
+fn text_leaf_is_tested(
+    unit: &Unit,
+    exhausted: VerifiedShadow,
+    tested: &impl Fn(VerifiedShadowReport, &str),
+) {
+    let record = unit
+        .compiled
+        .checked
+        .package()
+        .graph()
+        .scope()
+        .types()
+        .composites()
+        .find(|declaration| declaration.name() == "R")
+        .unwrap();
+    let quire_semantic_value::declaration::CompositeShape::Record(fields) = record.shape() else {
+        panic!("R must be a record");
+    };
+    assert_eq!(fields[0].name(), "x");
+    assert_eq!(
+        fields[0].value_type(),
+        &quire_exact::ValueType::Int(quire_exact::IntegerInterval::spanning(
+            Integer::from(0_i64),
+            Integer::from(9_i64)
+        ))
+    );
+    assert_eq!(fields[1].name(), "label");
+    assert_eq!(
+        fields[1].value_type(),
+        &quire_exact::ValueType::Text(
+            quire_exact::TextType::new(0, 4, quire_exact::TextProfile::Nfc).unwrap()
+        )
+    );
+    for index in 0..2 {
+        let parameter = unit.parameter("t", index);
+        let integer = super::super::composite_domain::derive(
+            &[(parameter, fields[0].value_type())],
+            unit.compiled.checked.package(),
+            10,
+        )
+        .unwrap();
+        let drawn = [bound(parameter, &[], range(0, 9))];
+        assert!(integer.covered(&integer.harness(&drawn).unwrap()));
+        let text = super::super::composite_domain::derive(
+            &[(parameter, fields[1].value_type())],
+            unit.compiled.checked.package(),
+            10,
+        )
+        .unwrap();
+        assert!(!text.covered(&text.harness(&[]).unwrap()));
+        let length = [bound(parameter, &[], FiniteBound::cardinality(4))];
+        assert!(
+            matches!(text.harness(&length), Err(ReplayRefusal::ParityBound(ref cause))
+            if matches!(cause.as_ref(), ParityBoundRefusal::HarnessKind { expected: None, .. }))
+        );
+    }
+    let bounds: Vec<_> = (0..2)
+        .map(|index| bound(unit.parameter("t", index), &[0], range(0, 9)))
+        .collect();
+    let claim = unit.claim("t", EqualityOperator::Equal, bounds.clone());
+    let mut wire = request(
+        unit.source.as_bytes(),
+        unit.compiled.emitted.package().package_id(),
+        name(&["t"]),
+        ReplaySource::Input(vec![]),
+    );
+    let site = locate(
+        &unit.compiled,
+        &name(&["t"]),
+        claim.node,
+        &claim.occurrence,
+        claim.operator,
+    )
+    .expect("the Text equality is in the checked function");
+    let parameters: Vec<_> = site
+        .operands
+        .iter()
+        .map(|operand| {
+            let crate::execute::composite_site::Operand::Parameter { node, value_type } = operand
+            else {
+                panic!("the Text equality compares two parameters");
+            };
+            (*node, value_type)
+        })
+        .collect();
+    let positions =
+        super::super::composite_domain::derive(&parameters, unit.compiled.checked.package(), 10)
+            .unwrap();
+    assert!(!positions.covered(&positions.harness(&bounds).unwrap()));
+    for (parameter, _) in &parameters {
+        let mut with_length = bounds.clone();
+        with_length.push(bound(*parameter, &[1], FiniteBound::cardinality(4)));
+        let key = DomainKey::Node {
+            node: *parameter,
+            path: vec![1],
+        };
+        assert!(matches!(positions.harness(&with_length),
+            Err(ReplayRefusal::ParityBound(ref cause)) if matches!(cause.as_ref(),
+                ParityBoundRefusal::HarnessKind { key: found, expected: None, .. } if found == &key)));
+    }
+    wire.obligation_identity =
+        *parity_obligation(&parity_preimage(&unit.compiled, &site, &claim).unwrap())
+            .unwrap()
+            .as_bytes();
+    let report = settle_verified_shadow(wire, claim, exhausted, ReplayLimits::default());
+    assert_eq!(report.claim().harness_bounds, bounds);
+    assert_eq!(
+        report.claim().evidence,
+        crate::composite::CompositeEvidence::Verified(exhausted)
+    );
+    tested(report, "a Text leaf with both integer positions covered");
 }
 
 /// FR-358-AC-6 (TC-907 step 6): rows V-1 to V-3.
@@ -833,7 +1047,13 @@ fn tc_907_refinement_and_a_vacuous_run_settle_before_coverage() {
     );
     assert!(matches!(report.result(), VerifiedShadowResult::Vacuous));
     let terminal = report.terminal_value();
-    assert_eq!(terminal, TerminalValue::Proved { success_checks: 0 });
+    assert_eq!(
+        terminal,
+        TerminalValue::Proved {
+            basis: crate::ProofBasis::Checks { success_checks: 0 },
+            certification: crate::Certification::Certified,
+        }
+    );
     assert_eq!(terminal.category(), Category::Inconclusive);
     assert_eq!(
         terminal.vacuous_proof_cause(),
@@ -993,7 +1213,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
     let edited = unit.source.replace("[0, 3]; }", "[0, 4]; }");
     let mut wire = request(
         edited.as_bytes(),
-        unit.compiled.emitted.package_id(),
+        unit.compiled.emitted.package().package_id(),
         name(&["f"]),
         ReplaySource::Input(vec![]),
     );
@@ -1030,7 +1250,7 @@ fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
     ] {
         let unbounded = ValueType::collection(CollectionType::new(kind, element.clone(), None));
         let parameter = WireNodeId::from_digest([5; 32]);
-        let package = &unit.compiled.package;
+        let package = unit.compiled.checked.package();
         let positions = || derive(&[(parameter, &unbounded)], package, 1_000).unwrap();
         let harness = vec![
             bound(parameter, &[], FiniteBound::cardinality(5)),
@@ -1077,11 +1297,16 @@ fn prepared(
 ) {
     let wire = unit.wire(function, claim, vec![]);
     let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default()).unwrap();
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        ReplayLimits::default(),
+    )
+    .unwrap();
     let compiled = recompile(&request, &limits).unwrap();
     let site = locate(
         &compiled,
-        request.selected_function(),
+        crate::execute::function_target(&request, crate::ReplayEntry::Replay).unwrap(),
         claim.node,
         &claim.occurrence,
         claim.operator,
@@ -1580,4 +1805,63 @@ fn tc_907_a_raised_replay_input_bound_admits_what_the_default_refuses() {
         report.result(),
         VerifiedShadowResult::Proved { .. }
     ));
+}
+
+/// FR-358 step 6, an integer literal operand: unwrapped (an `Integer` peer)
+/// it is an inline literal with the singleton `range`; wrapped in a
+/// `numeric.narrow` application (a bounded peer) the operand is that
+/// application, a graph child with the empty `bounds`.
+#[trace("TC-907", "FR-358-AC-3")]
+#[test]
+fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
+    use crate::execute::parity_identity::Domain;
+    let unit = unit();
+
+    let claim = unit.claim("k", EqualityOperator::Equal, vec![]);
+    let (_, compiled, site) = prepared(&unit, "k", &claim);
+    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
+    assert_eq!(
+        preimage.arguments[1].identity,
+        OperandIdentity::InlineLiteral
+    );
+    let Domain::Range(range) = &preimage.arguments[1].domain else {
+        panic!("an inline literal has a range domain");
+    };
+    assert_eq!(
+        *range,
+        quire_exact::IntegerInterval::spanning(Integer::from(3_i64), Integer::from(3_i64))
+    );
+
+    let claim = unit.claim("m", EqualityOperator::Equal, vec![]);
+    let (_, compiled, site) = prepared(&unit, "m", &claim);
+    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
+    let OperandIdentity::GraphChild(narrow) = preimage.arguments[1].identity else {
+        panic!("a narrowed literal is a graph child");
+    };
+    assert_ne!(narrow, unit.parameter("m", 0));
+    assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
+}
+
+/// FR-358-AC-9 (TC-907): `replay_composite_parity` refuses a request whose
+/// replay target is not `function` as `replay` does, naming itself.
+#[trace("TC-907", "FR-358-AC-9")]
+#[test]
+fn tc_907_the_composite_entry_refuses_a_non_function_target() {
+    let unit = unit();
+    for (target, pointer) in super::non_function_targets() {
+        let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
+        let mut wire = unit.wire("f", &claim, vec![]);
+        wire.replay_target = target.into();
+        let (left, right) = (unit.q(1, &[2]), unit.q(1, &[3]));
+        let report = replay_composite_parity(
+            wire,
+            claim,
+            falsified(left, right, outcome(false, 4)),
+            ReplayLimits::default(),
+        );
+        let CompositeParityResult::Refused(refusal) = report.result() else {
+            panic!("expected a refusal: {:?}", report.result());
+        };
+        super::assert_wrong_target(refusal, crate::ReplayEntry::ReplayCompositeParity, pointer);
+    }
 }

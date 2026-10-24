@@ -1,5 +1,9 @@
 # Native checked-package artifact and reconstruction
 
+> **Historical: `0-draft` edition.** This page describes the original `0-draft`
+> native path, which is being deleted. For `1-draft`, start from the
+> [README](../README.md) and the [run request reference](native-standalone.md).
+
 Draft LC02 contract for FR-019/020/021 and NFR-007. This is the compiler-owned payload
 inside any separately selected transport/reference envelope. B owns shared
 references/results; Contract IR owns executable binding. Plan-007 tracks
@@ -180,7 +184,7 @@ Each clause has exactly:
    it carries no predicate result or promise that runtime input is available.
 2. `{target: quire.contract.executable-projection/v1, status: unlowered,
    code: unsupported_construct, span: <original root expression byte span>}`.
-   It retains the original source obligation while LC04 lowering remains absent.
+   It retains the original source obligation while no lowering exists.
 
 No branch supplies a fake IR projection, executable AST, proof-as-code conversion
 or omitted clause. A later available IR disposition requires reviewed lowering,
@@ -188,7 +192,7 @@ actual BoundPackage construction and separate backend qualification. That change
 reopens this closed artifact contract; this version cannot be read as promising
 an available backend. The current package API exposes no successful BoundPackage
 accessor. The actual backend/full ConfigVersion workflow remains mandatory work
-under LC04/IT-002; it is not satisfied by unlowered descriptors.
+under IT-002; it is not satisfied by unlowered descriptors.
 
 ## Required feature derivation
 

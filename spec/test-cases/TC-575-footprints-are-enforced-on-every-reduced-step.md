@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify read enforcement through the restricted observation, write enforcement through `check_frame`, and determinism.
+Verify read enforcement through the restricted observation, write enforcement through `decide_frame`, and determinism.
 
 Scope: FR-155-AC-3 to FR-155-AC-4.
 

@@ -28,28 +28,30 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
-use super::facts::Definedness;
-use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
-use super::lowering::{AdmittedModel, LoweredClause};
+use super::facts::{CheckedFacts, Definedness};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind};
+use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
 use super::observation::Observations;
+use super::references::{body_objects, ModelReferences};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::{Capability, Scope};
 use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     FamilyContract, Requirements,
 };
+use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
 /// for an invariant, `pre` for a precondition, `post` for a postcondition.
 /// The checker types the clause's reads by it and S6a selects the clause's
 /// own observation by it.
-fn observation_of(kind: StateClauseKind) -> Observation {
+pub(crate) fn observation_of(kind: StateClauseKind) -> Observation {
     match kind {
         StateClauseKind::Invariant => Observation::Current,
         StateClauseKind::Precondition => Observation::Pre,
@@ -156,6 +158,9 @@ pub struct AttemptDeclaration {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type the attempt's `on M::T::op` names: the type of its
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation, resolved
     /// the same way a state clause's own `frame_population` is
     /// (FR-104 "Requirements"): `None` when the declaring type shares no
@@ -178,6 +183,10 @@ pub struct StateClauseDeclaration {
     /// The operation a `pre` or `post` clause names; `None` for an
     /// invariant.
     pub operation: Option<ClauseOperation>,
+    /// The `DeclarationKey` of the resolved operation a `pre` or `post`
+    /// clause names, the key the unit's operation bodies and clauses join on
+    /// (FR-103, FR-302); `None` for an invariant.
+    pub operation_key: Option<crate::model::key::DeclarationKey>,
     /// The context's population domain, the assembler's own resolution
     /// (FR-104 "Resolution", "Requirements"): the one population with no
     /// maximum whose member types cover `context`, by conformance
@@ -194,6 +203,52 @@ pub struct StateClauseDeclaration {
 }
 
 impl StateClauseDeclaration {
+    /// What the `ProtocolClause` family's check reads of this clause.
+    fn view(&self) -> ClauseView<'_> {
+        ClauseView {
+            kind: self.kind,
+            complete_value: is_complete_value(&self.selection),
+            context: Some(self.context),
+            receiver: Some(("self", ValueType::Reference(self.context))),
+            operation: self.operation.as_ref(),
+            context_population: self.context_population,
+            frame_population: self.frame_population,
+            body: &self.body,
+        }
+    }
+}
+
+/// Whether `selection` is the complete-value profile.
+pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
+    selection.identity
+        == crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
+            .identity
+}
+
+/// What [`check_clause`] reads of a clause: a unit's state clause
+/// ([`StateClauseDeclaration::view`]) or a domain package operation's kept
+/// `requires`/`ensures` (FR-103), which names no profile and so checks under
+/// the typer's profile-independent defaults.
+pub(crate) struct ClauseView<'a> {
+    pub(crate) kind: StateClauseKind,
+    /// Whether the selected profile is the complete-value one.
+    pub(crate) complete_value: bool,
+    /// The object type the clause is about; `None` for a state-graph claim
+    /// with no `over` binding.
+    pub(crate) context: Option<EffectiveId>,
+    /// Slot 0, bound as its name and type: `self` for a state clause, a kept
+    /// operation clause and a type invariant, the `over` parameter for a
+    /// state-graph claim's predicate. `None` binds nothing (a claim with no
+    /// `over`).
+    pub(crate) receiver: Option<(&'a str, ValueType)>,
+    pub(crate) operation: Option<&'a ClauseOperation>,
+    pub(crate) context_population: Option<PopulationDomain>,
+    pub(crate) frame_population: Option<PopulationDomain>,
+    pub(crate) body: &'a Expression,
+}
+
+impl ClauseView<'_> {
     /// The clause kind as the typer reads it: `pre(e)` is legal only in a
     /// postcondition.
     fn clause_kind(&self) -> ClauseKind {
@@ -214,8 +269,12 @@ impl StateClauseDeclaration {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), ValueType::Reference(self.context))];
-        let Some(operation) = &self.operation else {
+        let mut parameters: Vec<(String, ValueType)> = self
+            .receiver
+            .iter()
+            .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+            .collect();
+        let Some(operation) = self.operation else {
             return (parameters, false);
         };
         let result = match (self.kind, operation.declaration.result()) {
@@ -228,6 +287,103 @@ impl StateClauseDeclaration {
         parameters.extend(operation.declaration.parameters().iter().cloned());
         (parameters, result)
     }
+}
+
+/// Whether a value of `value_type` is, or contains, a reference to an object
+/// or a population: the values a callee reads objects through.
+fn holds_reference(types: &TypeEnvironment, value_type: &ValueType) -> bool {
+    let mut pending = vec![value_type.clone()];
+    let mut visited = BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        match &current {
+            ValueType::Reference(_) | ValueType::Population(_) => return true,
+            ValueType::Option(payload) => pending.push((**payload).clone()),
+            ValueType::Collection(collection) => {
+                pending.push(collection.element().clone());
+            }
+            ValueType::Composite(key) => {
+                let key = *key;
+                if !visited.insert(key) {
+                    continue;
+                }
+                match types.composite(key).map(|declaration| declaration.shape()) {
+                    Some(CompositeShape::Record(fields)) => {
+                        pending.extend(fields.iter().map(|field| field.value_type().clone()));
+                    }
+                    Some(CompositeShape::Tuple(positions)) => {
+                        pending.extend(positions.iter().cloned());
+                    }
+                    // A union's members are not walked: a conservative
+                    // refusal would reject every union argument.
+                    Some(CompositeShape::Union(_)) | None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// FR-366: checks a type invariant as `check_clause` checks a unit state
+/// clause, and returns the checked clause. A type invariant adds no claim or
+/// requirement record: its body is kept for evaluation per value.
+pub(crate) fn check_type_invariant<'a>(
+    invariant: &super::type_invariant::TypeInvariantDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Result<(super::type_invariant::CheckedTypeInvariant, u64), CheckRefusal> {
+    let typed = check_clause(
+        &invariant.view(),
+        declarations,
+        &mut cx.reborrow(declarations.scope),
+    )
+    .map_err(|refusal| invariant.refusal(refusal))?;
+    // A record or event value is evaluated with no object universe (FR-366
+    // "Evaluation per reachable value"), so a read of an object, a
+    // relationship or a population has nothing to observe.
+    if matches!(invariant.self_type, ValueType::Composite(_)) {
+        let types = declarations.scope.types();
+        let reads_objects =
+            typed
+                .body
+                .root()
+                .descendants()
+                .into_iter()
+                .any(|node| match node.kind() {
+                    NodeKind::Attribute { .. }
+                    | NodeKind::Navigate { .. }
+                    | NodeKind::AllInstances { .. }
+                    | NodeKind::Lookup { .. }
+                    | NodeKind::Reaches { .. }
+                    | NodeKind::ReachesEnd { .. }
+                    | NodeKind::Dispatch { .. } => true,
+                    // The callee's body is not entered, so a call that hands it a
+                    // reference or a population may read objects through it.
+                    NodeKind::Call { arguments, .. } | NodeKind::ImportedCall { arguments, .. } => {
+                        arguments
+                            .iter()
+                            .any(|argument| holds_reference(types, node.at(*argument).value_type()))
+                    }
+                    _ => false,
+                });
+        if reads_objects {
+            return Err(invariant.refusal(CheckRefusal {
+                location: declarations.location.clone(),
+                cause: CheckCause::ObjectReadInValueInvariant,
+            }));
+        }
+    }
+    Ok((
+        super::type_invariant::CheckedTypeInvariant {
+            clause: invariant.invariant.clause.clone(),
+            owner: invariant.invariant.owner.clone(),
+            applies_to: invariant.applies_to.clone(),
+            parameters: typed.parameters,
+            body: typed.body,
+            slots: typed.slots,
+        },
+        typed.nodes_used,
+    ))
 }
 
 /// The read-only declarations a state clause checks against.
@@ -251,6 +407,10 @@ pub struct ClauseDeclarations<'a> {
     /// The caller's cancellation handle, polled at every node charge of
     /// this clause's check (FR-276).
     pub(crate) cancel: Option<&'a quire_exact::Cancel>,
+    /// The staged model type admission, which the clause reads through its
+    /// immediate parents while the conformance stage has not yet judged them.
+    pub(crate) staged:
+        Option<&'a std::cell::RefCell<quire_semantic_value::declaration::PendingTypeEnvironment>>,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -262,6 +422,19 @@ pub struct ClauseDeclarations<'a> {
 pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
     pub(crate) ordinal: usize,
+    /// The maximum of the unit's authored bound on this population
+    /// (FR-380), which makes it a `Population(Some(N))` domain; `None` is
+    /// the unbounded `Population(None)` domain.
+    pub(crate) maximum: Option<u64>,
+}
+
+impl PopulationDomain {
+    /// The population's own declared member object type: the type of an
+    /// object parameter bound to it, whose instances a model check lists
+    /// from the subject's universe (FR-125 Instancing).
+    pub const fn object(&self) -> EffectiveId {
+        self.object
+    }
 }
 
 /// What an `operation-contract` claim is about.
@@ -295,6 +468,7 @@ pub struct ClauseClaim {
 /// lowering keys it.
 #[derive(Debug)]
 pub struct TypedStateClause {
+    pub(crate) facts: CheckedFacts,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
@@ -314,23 +488,27 @@ pub struct TypedStateClause {
     /// is exactly the kind of comparison a `#[string_edge]` reader marks,
     /// never an interior evaluator decision).
     pub(crate) has_result: bool,
+    /// The authored bound of every bounded population the claims name, the
+    /// ones an evaluation refuses above (FR-380-AC-7).
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
 /// FR-104).
 pub struct ProtocolClauseFamily;
 
-/// The one population with no maximum that covers `object`, by conformance
-/// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype
-/// of it): `Ok(None)` when none does, and the populations' keys in ascending
-/// `DeclarationKey` order when several do. A domain package population
-/// declares no maximum, so every one counts.
+/// The one population that covers `object`, by conformance (FR-104,
+/// FR-084's `allInstances<T>`: a member type or a proper supertype of it),
+/// whether or not the unit authors a bound on it (FR-380): `Ok(None)` when
+/// none does, and the populations' keys in ascending `DeclarationKey` order
+/// when several do. A domain package population declares no maximum, so
+/// every one counts.
 pub(crate) fn population_of(
     models: &[AdmittedModel],
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
-    let found: Vec<(usize, &DeclarationKey, EffectiveId)> = models
+    let found: Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> = models
         .iter()
         .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
         .collect();
@@ -339,16 +517,58 @@ pub(crate) fn population_of(
         // The domain names the population's own covering member type, not
         // `object` (SR-736 FND-010): `Sub` and `ConfigVersion` clauses over
         // `config_history` key the same `PopulationDomain`.
-        [(ordinal, _, member)] => Ok(Some(PopulationDomain {
+        [(ordinal, _, member, bound)] => Ok(Some(PopulationDomain {
             object: *member,
             ordinal: *ordinal,
+            maximum: bound.map(|bound| bound.maximum),
         })),
         many => {
             let mut keys: Vec<DeclarationKey> =
-                many.iter().map(|(_, key, _)| (*key).clone()).collect();
+                many.iter().map(|(_, key, _, _)| (*key).clone()).collect();
             keys.sort();
             Err(keys)
         }
+    }
+}
+
+/// The domain and authored bound of each population of `named` that the
+/// checked `root` names (FR-391 "Requirements").
+pub(crate) fn named_domains(
+    root: super::ir::CheckedNode<'_>,
+    named: &super::check::NamedScope,
+) -> Vec<(PopulationDomain, Option<AuthoredBound>)> {
+    root.descendants()
+        .into_iter()
+        .filter_map(|node| match node.kind() {
+            NodeKind::NamedPopulation { population, .. } => named
+                .keyed(population)
+                .map(|population| (population.domain, population.bound.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The authored bound (FR-380) of the one population that covers `object`,
+/// when the unit bounds it: what a reachability over `object` links to.
+fn walked_bound(
+    models: &[AdmittedModel],
+    object: EffectiveId,
+    types: &TypeEnvironment,
+) -> Option<AuthoredBound> {
+    models
+        .iter()
+        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .find_map(|(_, _, _, bound)| bound.cloned())
+}
+
+/// `refusal`'s cause attributed to the `StateModel` family.
+fn state_model_refusal(refusal: CheckRefusal) -> CheckRefusal {
+    CheckRefusal {
+        location: refusal.location,
+        cause: CheckCause::StateModel(Box::new(super::state_model::StateModelRefusal {
+            cause: refusal.cause,
+            receiver: None,
+        })),
     }
 }
 
@@ -386,9 +606,16 @@ impl FamilyContract for ProtocolClauseFamily {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
         let declarations = cx.declarations();
-        check_clause(form, declarations)
-            .map(Staged::new)
-            .map_err(StageFailure::Refused)
+        // FR-391: a unit-level state clause's body is a population position.
+        let named = super::check::NamedScope::of(declarations.models, declarations.scope);
+        check_clause_in(
+            &form.view(),
+            declarations,
+            &mut cx.reborrow(declarations.scope),
+            Some(named),
+        )
+        .map(Staged::new)
+        .map_err(StageFailure::Refused)
     }
 
     fn requirements(checked: &TypedStateClause) -> Vec<ClauseClaim> {
@@ -396,12 +623,57 @@ impl FamilyContract for ProtocolClauseFamily {
     }
 }
 
+/// A refused parent read of a clause as the refusal that reports it.
+fn parent_slot_refusal(
+    failure: super::lowering::ParentSlotFailure,
+    location: &Location,
+) -> CheckRefusal {
+    use super::lowering::ParentSlotFailure;
+    let cause = match failure {
+        ParentSlotFailure::Incomplete(incomplete) => CheckCause::ModelIncomplete(incomplete),
+        ParentSlotFailure::Pending(failure) => super::pending_refusal(failure),
+    };
+    CheckRefusal {
+        location: location.clone(),
+        cause,
+    }
+}
+
+/// FR-103: checks a kept operation clause as `check_clause` checks a unit
+/// state clause. The caller keeps the running node total and reads the
+/// body's parameter reads (FR-185); a kept clause adds no checked state
+/// clause, so it yields a refusal or nothing else.
+pub(crate) fn check_operation_clause<'a>(
+    clause: &super::operation_clause::OperationClauseDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause(
+        &clause.view(),
+        declarations,
+        &mut cx.reborrow(declarations.scope),
+    )
+}
+
 /// Type `form`'s body as a Boolean under its clause kind, give each model
 /// read its observation, and check its definedness (FR-104 "Typing",
 /// "Observations of reads", "Definedness facts").
-fn check_clause(
-    form: &StateClauseDeclaration,
+pub(crate) fn check_clause(
+    form: &ClauseView<'_>,
     input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_in(form, input, cx, None)
+}
+
+/// [`check_clause`] in a population position (FR-391) when `named` is
+/// given: the body may name the populations of `named`, each a domain of
+/// the clause's record.
+fn check_clause_in(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: Option<super::check::NamedScope>,
 ) -> Result<TypedStateClause, CheckRefusal> {
     let location = input.location;
     let mut nodes = input.nodes_used;
@@ -413,18 +685,38 @@ fn check_clause(
         &mut nodes,
         form.clause_kind(),
     )
-    .with_cancel(input.cancel);
+    .with_cancel(input.cancel)
+    .with_complete_value(form.complete_value)
+    .with_context(cx.reborrow(input.scope));
+    if let Some(named) = named.clone() {
+        typer = typer.with_named_populations(named);
+    }
     bind_parameters(&mut typer, &parameters, location)?;
+    let mut parent_projections = BTreeMap::new();
+    if let (StateClauseKind::Postcondition, Some(operation), Some(staged), Some(context)) = (
+        form.kind,
+        form.operation.as_ref(),
+        input.staged,
+        form.context,
+    ) {
+        let mut staged = staged.borrow_mut();
+        for model in input.models {
+            let projected = model
+                .parent_projections(context, operation, &mut staged, u64::MAX)
+                .map_err(|failure| parent_slot_refusal(failure, location))?;
+            parent_projections.extend(projected);
+        }
+    }
     typer.enter_state_clause(StateContext {
+        parent_projections,
         kind: form.kind,
         operation: form
             .operation
-            .as_ref()
             .map(|operation| operation.declaration.name().to_owned()),
         self_slot: 0,
         result_slot: has_result.then_some(1),
     });
-    let body = typer.infer(&form.body, Some(&ValueType::Boolean), location)?;
+    let body = typer.infer(form.body, Some(&ValueType::Boolean), location)?;
     if body.root().value_type() != &ValueType::Boolean {
         return Err(CheckRefusal {
             location: location.clone(),
@@ -435,13 +727,13 @@ fn check_clause(
     let slot_names = typer.slot_names().to_vec();
     let formed_units = typer.into_formed_units();
     let observations = Observations::of(body.root(), form.observation(), parameters.len());
-    Definedness::new(
+    let facts = Definedness::new(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     )
     .with_observations(&observations)
-    .check(body.root())?;
+    .check_and_retain(body.root())?;
 
     // The populations the clause ranges over: its context's, already
     // resolved by the assembler (FR-104 "Resolution"), then each one a
@@ -449,16 +741,57 @@ fn check_clause(
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population);
+    // Each relationship-end reachability that walks a population with an
+    // authored bound (FR-380), to be linked to that bound below.
+    let mut linked = Vec::new();
     for node in body.root().descendants() {
-        if let NodeKind::Reaches { source, .. } = node.kind() {
-            if let ValueType::Reference(object) = node.at(*source).value_type() {
-                let walked =
-                    population_of(input.models, *object, input.scope.types()).map_err(|keys| {
-                        ambiguous_population(input.scope, *object, &keys, node.location())
-                    })?;
-                clause_populations.extend(walked);
+        // The objects walked: a field edge's operand type, and an end's near
+        // end type `E` (FR-365 "The population a reachability walks").
+        let walked_object = match node.kind() {
+            NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
+                ValueType::Reference(object) => Some(*object),
+                _ => None,
+            },
+            NodeKind::ReachesEnd {
+                relationship, near, ..
+            } => input.scope.relationships().end_object(relationship, *near),
+            _ => None,
+        };
+        if let Some(object) = walked_object {
+            let end_form = matches!(node.kind(), NodeKind::ReachesEnd { .. });
+            let walked =
+                population_of(input.models, object, input.scope.types()).map_err(|keys| {
+                    let refusal = ambiguous_population(input.scope, object, &keys, node.location());
+                    // FR-365: a reachability over an end refuses as a
+                    // `StateModel` form; the field form's refusal is unchanged.
+                    if end_form {
+                        state_model_refusal(refusal)
+                    } else {
+                        refusal
+                    }
+                })?;
+            if end_form && walked.is_some_and(|domain| domain.maximum.is_some()) {
+                let bound = walked_bound(input.models, object, input.scope.types());
+                linked.extend(bound.map(|bound| (node.id(), bound)));
             }
+            clause_populations.extend(walked);
         }
+    }
+    // FR-391 "Requirements": each population the body names is a domain
+    // of the clause's record, with its authored bound.
+    let mut named_bounds = Vec::new();
+    let mut named_only = BTreeSet::new();
+    if let Some(named) = &named {
+        for (domain, bound) in named_domains(body.root(), named) {
+            if clause_populations.insert(domain) {
+                named_only.insert(domain);
+            }
+            named_bounds.extend(bound);
+        }
+    }
+    let mut body = body;
+    for (id, bound) in linked {
+        body.link_population(id, bound);
     }
     let mut claims = vec![ClauseClaim {
         subject: ClaimSubject::Clause,
@@ -470,6 +803,15 @@ fn check_clause(
             populations: form.frame_population.into_iter().collect(),
         });
     }
+    let mut bounds: Vec<AuthoredBound> = claims
+        .iter()
+        .flat_map(|claim| &claim.populations)
+        .filter(|domain| domain.maximum.is_some() && !named_only.contains(*domain))
+        .filter_map(|domain| walked_bound(input.models, domain.object, input.scope.types()))
+        .chain(named_bounds)
+        .collect();
+    bounds.sort_by(|left, right| left.label.cmp(&right.label));
+    bounds.dedup();
     let population_types = claims
         .iter()
         .flat_map(|claim| claim.populations.iter().map(|domain| domain.object))
@@ -477,6 +819,7 @@ fn check_clause(
         .into_iter()
         .collect();
     Ok(TypedStateClause {
+        facts,
         parameters,
         body,
         slots,
@@ -487,6 +830,7 @@ fn check_clause(
         population_types,
         claims,
         has_result,
+        bounds,
     })
 }
 
@@ -507,9 +851,16 @@ pub struct CheckedStateClause {
     pub(crate) claim: Origin,
     pub(crate) spans: DeclarationSpans,
     pub(crate) has_result: bool,
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 impl CheckedStateClause {
+    /// The authored bound of each bounded population the clause ranges over
+    /// (FR-380), ascending by label.
+    pub fn population_bounds(&self) -> &[AuthoredBound] {
+        &self.bounds
+    }
+
     /// The declared name.
     pub fn name(&self) -> &str {
         &self.name
@@ -578,6 +929,33 @@ impl CheckedStateClause {
     pub fn claim(&self) -> &Origin {
         &self.claim
     }
+
+    /// FR-391 "Evaluation": each domain-package population the body names,
+    /// by its declaration identity, with the observation it is read at, in
+    /// body order and once each. FR-106 requires each complete in the
+    /// snapshot of its observation.
+    pub fn named_reads(&self) -> Vec<(String, Observation)> {
+        let mut reads: Vec<(String, Observation)> = Vec::new();
+        for node in self.body.root().descendants() {
+            let (NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }) =
+                node.kind()
+            else {
+                continue;
+            };
+            let NodeKind::NamedPopulation { population, .. } = node.at(*population).kind() else {
+                continue;
+            };
+            let observation = self
+                .observations
+                .of_read(node.location())
+                .unwrap_or_else(|| self.observation());
+            let read = (population.node.clone(), observation);
+            if !reads.contains(&read) {
+                reads.push(read);
+            }
+        }
+        reads
+    }
 }
 
 /// The `operation-contract` requirement record of one claim (FR-104
@@ -593,6 +971,7 @@ fn record(
     boolean: NodeKey,
     types: &TypeEnvironment,
     position_limit: u64,
+    references: ModelReferences,
 ) -> Result<RequirementRecord, ClassifyFailure> {
     let mut domains = BTreeMap::new();
     match root_prefix {
@@ -618,7 +997,7 @@ fn record(
                 roots.iter().map(|(_, value_type)| *value_type).collect();
             for ((root, path), kind) in classify_domains(&root_types, types, position_limit)? {
                 let position = u32::try_from(root).map_err(|_| {
-                    ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
+                    ClassifyFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                         "check.requirements",
                         "type-position-index-past-u32",
                     ))
@@ -636,6 +1015,11 @@ fn record(
         }
     }
     for (domain, object) in populations {
+        // An authored bound makes the population a `Population(Some(N))`
+        // domain, which is not an unbounded domain (FR-380, ADR-014 §4).
+        if domain.maximum.is_some() {
+            continue;
+        }
         domains.insert(
             population_key(domain, *object).map_err(ClassifyFailure::Fault)?,
             DomainKind::Population,
@@ -648,7 +1032,14 @@ fn record(
         ),
         ValueType::Boolean,
         wire(boolean),
+        references,
     ))
+}
+
+/// The declaring object type and name of `operation`, as a record
+/// references it (ADR-017 AR-4).
+fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
+    (operation.declaring, operation.declaration.name().to_owned())
 }
 
 /// `domain`'s ADR-012 §15.7 key, `object` being its member type's
@@ -658,9 +1049,12 @@ fn record(
 pub(crate) fn population_key(
     domain: &PopulationDomain,
     object: NodeKey,
-) -> Result<DomainKey, qsl_foundation::InternalFault> {
+) -> Result<DomainKey, quire_semantic_value::catalog::InternalFault> {
     let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
-        qsl_foundation::InternalFault::new("check.requirements", "population-ordinal-past-u32")
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.requirements",
+            "population-ordinal-past-u32",
+        )
     })?;
     Ok(DomainKey::Population {
         member_type: wire(object),
@@ -712,6 +1106,11 @@ pub(crate) fn frame_record(
             .iter()
             .map(|(_, value_type)| (frame, value_type)),
     );
+    let references = ModelReferences::new(
+        BTreeSet::new(),
+        populations.iter().map(|(domain, _)| *domain),
+        Some(operation_reference(operation)),
+    );
     record(
         &roots,
         Some(frame),
@@ -719,6 +1118,7 @@ pub(crate) fn frame_record(
         boolean,
         types,
         position_limit,
+        references,
     )
     .map_err(|failure| classify_refusal(failure, location))
 }
@@ -777,6 +1177,11 @@ pub(crate) fn clause_records(
                     .copied()
                     .zip(clause.parameters.iter().map(|(_, value_type)| value_type))
                     .collect();
+                let references = ModelReferences::new(
+                    body_objects(clause.body.root()),
+                    populations.iter().map(|(domain, _)| *domain),
+                    form.operation.as_ref().map(operation_reference),
+                );
                 let record = record(
                     &roots,
                     None,
@@ -784,6 +1189,7 @@ pub(crate) fn clause_records(
                     lowered.boolean,
                     types,
                     position_limit,
+                    references,
                 )
                 .map_err(classify)?;
                 keyed.push(KeyedClaim {
@@ -868,6 +1274,7 @@ mod tests {
             modifies: vec![modifies_decl.clone()],
             creates: vec![creates_decl.clone()],
             deletes: Vec::new(),
+            ..Default::default()
         };
         let operation = ClauseOperation {
             declaring: EffectiveId::from_digest([9_u8; 32]),

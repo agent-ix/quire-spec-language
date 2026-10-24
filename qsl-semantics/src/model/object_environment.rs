@@ -10,12 +10,14 @@
 //! (ADR-011 §6.1, "K is a leaf"), and §6.1's order `semantic_value < model`
 //! forbids the upward import, so the populations map stays in `model`.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::model::observation::OutOfRange;
+use crate::model::clause_observation::Observation;
+use crate::model::key::DeclarationKey;
+use crate::model::observation::{OutOfRange, RelationshipExtents};
 use crate::model::population::PopulationBinding;
-use quire_exact::{ObjectReference, PopulationId};
+use quire_exact::{EffectiveId, ObjectReference, PopulationId, Value};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -44,6 +46,29 @@ pub struct ObjectEnvironment {
     /// outside their declared range; empty for every other environment.
     out_of_range: Vec<OutOfRange>,
     unresolved_references: bool,
+    /// The relationship instances this observation lists (FR-364); `None`
+    /// for an environment no snapshot admitted.
+    extents: Option<RelationshipExtents>,
+    /// How many objects each population of the snapshot lists, by the
+    /// population's declaration identity (FR-380); empty for an environment
+    /// no snapshot admitted.
+    population_sizes: BTreeMap<String, u64>,
+    /// Every object the snapshot admitted, ascending; empty for an
+    /// environment no snapshot admitted.
+    references: Vec<ObjectReference>,
+    /// The objects each population of the snapshot lists, by the
+    /// population's declaration identity, in ascending key order (FR-139);
+    /// empty for an environment no snapshot admitted.
+    population_members: BTreeMap<String, Vec<ObjectReference>>,
+    /// Whether the snapshot marks each population it lists `complete`, by
+    /// the population's declaration identity (FR-106); empty for an
+    /// environment no snapshot document admitted.
+    population_completeness: BTreeMap<String, bool>,
+    /// The history fields a refinement keeps for these objects, by object
+    /// and field name (FR-138); empty for every other environment.
+    history: BTreeMap<(ObjectReference, String), Value>,
+    /// Where an evaluation over this environment records what it reads.
+    read_log: Option<ReadLog>,
 }
 
 impl ObjectEnvironment {
@@ -54,7 +79,109 @@ impl ObjectEnvironment {
             populations: BTreeMap::new(),
             out_of_range: Vec::new(),
             unresolved_references: false,
+            extents: None,
+            population_sizes: BTreeMap::new(),
+            references: Vec::new(),
+            population_members: BTreeMap::new(),
+            population_completeness: BTreeMap::new(),
+            history: BTreeMap::new(),
+            read_log: None,
         }
+    }
+
+    /// Records the history fields a refinement keeps for these objects, so
+    /// a refinement row that reads one finds its value (FR-138).
+    #[must_use]
+    pub fn with_history(mut self, history: BTreeMap<(ObjectReference, String), Value>) -> Self {
+        self.history = history;
+        self
+    }
+
+    /// The value of the history field `field` of `object`, when the
+    /// refinement keeps one.
+    pub fn history(&self, object: &ObjectReference, field: &str) -> Option<&Value> {
+        self.history.get(&(object.clone(), field.to_owned()))
+    }
+
+    /// Records how many objects each population of the admitted snapshot
+    /// lists, by the population's declaration identity (FR-380).
+    #[must_use]
+    pub fn with_population_sizes(mut self, sizes: BTreeMap<String, u64>) -> Self {
+        self.population_sizes = sizes;
+        self
+    }
+
+    /// How many objects the snapshot lists for the population whose
+    /// declaration identity is `population`, when it lists that population.
+    pub fn population_size(&self, population: &str) -> Option<u64> {
+        self.population_sizes.get(population).copied()
+    }
+
+    /// Records the objects each population of the admitted snapshot lists,
+    /// by the population's declaration identity and in ascending key order,
+    /// so a refinement row that reads a whole population can enumerate it
+    /// (FR-139).
+    #[must_use]
+    pub fn with_population_members(
+        mut self,
+        members: BTreeMap<String, Vec<ObjectReference>>,
+    ) -> Self {
+        self.population_members = members;
+        self
+    }
+
+    /// The objects the snapshot lists for the population whose declaration
+    /// identity is `population`, in ascending key order, when it lists that
+    /// population.
+    pub fn population_members(&self, population: &str) -> Option<&[ObjectReference]> {
+        self.population_members.get(population).map(Vec::as_slice)
+    }
+
+    /// Records whether the admitted snapshot marks each population it lists
+    /// `complete`, by the population's declaration identity (FR-106).
+    #[must_use]
+    pub fn with_population_completeness(mut self, completeness: BTreeMap<String, bool>) -> Self {
+        self.population_completeness = completeness;
+        self
+    }
+
+    /// Whether the snapshot lists the population whose declaration identity
+    /// is `population` and marks it `complete`: what a clause naming it
+    /// requires before it is read (FR-391 "Evaluation").
+    pub fn population_complete(&self, population: &str) -> bool {
+        self.population_completeness
+            .get(population)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Records every object the snapshot admitted, so an evaluation that
+    /// ranges over the observation's objects (FR-366) can enumerate them.
+    #[must_use]
+    pub fn with_references(mut self, mut references: Vec<ObjectReference>) -> Self {
+        references.sort();
+        self.references = references;
+        self
+    }
+
+    /// Every object the snapshot admitted, ascending by reference; empty
+    /// for an environment no snapshot admitted.
+    pub fn references(&self) -> &[ObjectReference] {
+        &self.references
+    }
+
+    /// Records the relationship extents and the population traversal this
+    /// environment's snapshot admitted (FR-364).
+    #[must_use]
+    pub fn with_extents(mut self, extents: RelationshipExtents) -> Self {
+        self.extents = Some(extents);
+        self
+    }
+
+    /// The relationship extents this environment holds, when a snapshot
+    /// admitted it.
+    pub fn extents(&self) -> Option<&RelationshipExtents> {
+        self.extents.as_ref()
     }
 
     /// This environment with its references left unresolved: it holds no
@@ -102,6 +229,19 @@ impl ObjectEnvironment {
                     attribute.identity() == witnessed.field && attribute.stands_for(field)
                 })
         })
+    }
+
+    /// Records into `log` every field and population this environment
+    /// serves to an evaluation.
+    #[must_use]
+    pub fn with_read_log(mut self, log: ReadLog) -> Self {
+        self.read_log = Some(log);
+        self
+    }
+
+    /// The log an evaluation over this environment records its reads in.
+    pub fn read_log(&self) -> Option<&ReadLog> {
+        self.read_log.as_ref()
     }
 
     /// The environment's core object closure.
@@ -152,5 +292,63 @@ impl ObjectEnvironment {
     /// substituting a default binding).
     pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
         self.populations.get(&population_id).map(Arc::as_ref)
+    }
+}
+
+/// One read an evaluation made of an observation: a field of an object, or
+/// the membership of objects in a population.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ObservedRead {
+    /// A field of `object`, named by the attribute that stands for it in the
+    /// object's effective attribute set: the type that owns it and its name.
+    Field {
+        /// The instant the read observed.
+        observation: Observation,
+        /// The object read.
+        object: ObjectReference,
+        /// The type owning the attribute read.
+        owner: EffectiveId,
+        /// The attribute's declared name.
+        name: String,
+    },
+    /// The membership of a population: of `object` alone when the read
+    /// resolves one reference, otherwise of every object.
+    Membership {
+        /// The instant the read observed.
+        observation: Observation,
+        /// The population read.
+        population: DeclarationKey,
+        /// The one object looked up, or `None` for a read of every member.
+        object: Option<ObjectReference>,
+    },
+}
+
+/// The reads an evaluation made, shared by every observation environment it
+/// ran over.
+#[derive(Clone, Debug, Default)]
+pub struct ReadLog(Arc<Mutex<BTreeSet<ObservedRead>>>);
+
+impl ReadLog {
+    /// A log with no read in it.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records `read`.
+    pub fn record(&self, read: ObservedRead) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(read);
+    }
+
+    /// Every read recorded so far, in order.
+    pub fn reads(&self) -> Vec<ObservedRead> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .cloned()
+            .collect()
     }
 }

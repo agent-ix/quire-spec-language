@@ -12,7 +12,7 @@ identity digest that binds a proof to the exact content it proved. Package versi
 live in Cargo.toml / package.json and their lockfiles only; reports name the app
 version they ran.
 
-Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a private bootstrap repository, not a released implementation.
+Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
 retired; remaining non-temporal work belongs to the current `quire-agent-a/b/c`
@@ -30,7 +30,7 @@ with C before overlapping edits.
 - Use isolated worktrees for concurrent code sessions; preserve unrelated edits.
 - Run the actual build/test commands documented in README.md.
 - New integration tests go in `tests/it/<name>.rs` with a `mod <name>;` line added to `tests/it/main.rs` never a new top-level `tests/*.rs` file.
-- Owner directive: checks run locally until stable. Every hosted workflow must be manual-dispatch only (`workflow_dispatch`); do not add automatic triggers or dispatch a run without explicit direction. See NFR-002.
+- Owner directive: qualification checks run locally until stable. The native compiler CI workflow remains manual-dispatch only (`workflow_dispatch`); do not add automatic qualification triggers or dispatch a run without explicit direction. The automatic containment check `.github/workflows/language-boundary.yml` may run on `pull_request_target` solely to invoke the trusted Rust language-boundary checker and publish its result to the pull request head. This status is containment evidence, not a passing local build, test or qualification gate. The existing CLA workflow is separate. See NFR-002.
 
 <!-- required-language-policy:start -->
 ## Required implementation language and containment
@@ -67,3 +67,11 @@ Owner update (2026-09-09): prioritize engineering toward the first proof of
 concept. Track incomplete assurance separately from implementation dependencies;
 it need not block engineering delivery. Keep routine local checks and PR reviews,
 and retain unmet acceptance criteria for the later testing/assurance campaign.
+
+## Trace tag ids
+
+A `#[trace]` tag with a bare id (`TC-196`, `FR-075-AC-4`) names a QSL
+artifact. A tag that names a quire-specification requirement or test case
+carries the `QSpec-` prefix (`QSpec-TC-196`, `QSpec-FR-151-AC-2`), because
+the two repositories number their artifacts independently and the same id
+names different artifacts in each.

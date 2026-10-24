@@ -126,9 +126,11 @@ pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;
 pub mod environment_stage;
+pub(crate) mod layer;
 pub(crate) mod member;
 pub mod model_query;
 pub(crate) mod semantic_node;
+pub mod supplied;
 pub(crate) mod unit;
 
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
@@ -164,11 +166,13 @@ pub(crate) mod unit;
 // import them from there, not through a re-export here.
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, Trigger,
+    CatalogRole, DefinitionLock, DefinitionReference, ModelEntry, ModelRole, TemporalEntry,
+    TemporalRole, Trigger,
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
+pub use layer::{HeaderLayer, LayerForm, LayerRow, WitnessKind, WitnessRequest};
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
-// `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
+// `IeeeExact`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and
 // the private rounding/arithmetic engine beneath them were this module's
 // own `ieee` submodule, a byte-identical duplicate of `quire_exact`'s

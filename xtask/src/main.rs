@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `cargo xtask seam-probe` / `cargo xtask string-edge` / `cargo xtask
-//! route-lint` / `cargo xtask checked-input`: the gates `make ci` runs
-//! standalone. `cargo xtask canonical-types [<workspace>]` runs on demand,
-//! over this workspace or the one named.
+//! route-lint` / `cargo xtask checked-input` / `cargo xtask test-suites
+//! <lane> [<cargo test args>]` and `cargo xtask refinement versioning
+//! <corpus>`: the gates `make ci` runs standalone. `cargo xtask
+//! canonical-types [<workspace>]` runs on demand, over this workspace or the
+//! one named.
 #![forbid(unsafe_code)]
 
 use std::ffi::OsString;
@@ -11,31 +13,40 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use xtask::{
-    canonical_types, checked_input,
+    canonical_types, checked_input, conformance,
     error::{Error, Result},
-    route_lint, seam_probe, string_edge,
+    refinement, route_lint, seam_probe, string_edge, test_suites, Outcome,
 };
 
 const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       \
                      cargo xtask route-lint\n       cargo xtask checked-input\n       \
+                     cargo xtask test-suites <lane> [<cargo test args>]\n       \
+                     cargo xtask conformance-input\n       cargo xtask conformance\n       \
+                     cargo xtask ci\n       cargo xtask refinement versioning <corpus>\n       \
                      cargo xtask canonical-types [<workspace>]";
 
-#[qsl_attrs::string_edge]
-fn run(arguments: &[OsString]) -> Result<String> {
+#[ix_trace_rs::string_edge]
+fn run(arguments: &[OsString]) -> Result<Outcome> {
     let Some((command, operands)) = arguments.split_first() else {
         return Err(Error::Usage(USAGE));
     };
     let command = command.to_str().ok_or(Error::Usage(USAGE))?;
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask is one level under the workspace root")
+        .to_path_buf();
+    if command == "test-suites" {
+        return test_suites::run(&workspace_root, operands).map(Outcome::success);
+    }
+    if command == "refinement" {
+        return refinement::run(&workspace_root, operands);
+    }
     let workspace_operand = match (command, operands) {
         (_, []) => None,
         ("canonical-types", [workspace]) => Some(Path::new(workspace).to_path_buf()),
         _ => return Err(Error::Usage(USAGE)),
     };
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask is one level under the workspace root")
-        .to_path_buf();
-    match command {
+    let summary = match command {
         "seam-probe" => seam_probe::run(&workspace_root),
         "string-edge" => string_edge::run(&workspace_root),
         "route-lint" => route_lint::run(&workspace_root),
@@ -43,15 +54,21 @@ fn run(arguments: &[OsString]) -> Result<String> {
         "canonical-types" => {
             canonical_types::run(workspace_operand.as_deref().unwrap_or(&workspace_root))
         }
+        "conformance-input" => conformance::check_input(&workspace_root),
+        "conformance" => conformance::run(&workspace_root),
+        "ci" => conformance::run_ci(&workspace_root),
         _ => Err(Error::Usage(USAGE)),
-    }
+    };
+    summary.map(Outcome::success)
 }
 
-fn main() -> ExitCode {
-    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
-    match run(&arguments) {
-        Ok(summary) => match write!(io::stdout().lock(), "{summary}") {
-            Ok(()) => ExitCode::SUCCESS,
+/// The one exit function: writes what a command produced to stdout and
+/// chooses the process exit code. A command that ran exits with its
+/// [`Outcome`]'s code; one that failed exits with its error's code.
+fn exit(result: Result<Outcome>) -> ExitCode {
+    match result {
+        Ok(outcome) => match write!(io::stdout().lock(), "{}", outcome.stdout) {
+            Ok(()) => ExitCode::from(outcome.code),
             Err(error) => {
                 let _ = writeln!(io::stderr().lock(), "io: cannot write summary: {error}");
                 ExitCode::from(2)
@@ -62,4 +79,9 @@ fn main() -> ExitCode {
             ExitCode::from(error.exit_code())
         }
     }
+}
+
+fn main() -> ExitCode {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    exit(run(&arguments))
 }

@@ -27,8 +27,10 @@ pub struct ModelNormalizationLimits {
     /// Cumulative work units.
     pub work_units: u64,
     /// Ceiling on the `supertypes` edges one walk follows, charged before
-    /// each edge is followed: one conformance walk (FR-082), or one type's
-    /// ancestor-path enumeration in normalization. Under multiple
+    /// each edge is followed: one conformance walk (FR-082), or
+    /// normalization's one pass over the direct supertype edges, each counted
+    /// once however many paths reach its target (a type on or below a cycle
+    /// is explored by path, one walk per type). Under multiple
     /// supertypes it counts the walk's closure, never a chain depth, and
     /// each walk starts a fresh count. A target or ancestor `n` edges up a
     /// chain is reached at `ancestor_steps == n`. Applies to normalization
@@ -160,6 +162,7 @@ impl LimitKind {
             Self::DispatchCandidates => Setting::ModelDispatchCandidates,
             Self::HashedBytes => Setting::ModelHashedBytes,
             Self::WorkUnits => Setting::ModelWorkUnits,
+            Self::AncestorSteps => Setting::ModelAncestorSteps,
         }
     }
 }
@@ -217,6 +220,8 @@ pub enum LimitKind {
     HashedBytes,
     /// `work_units`.
     WorkUnits,
+    /// Per-walk `ancestor_steps`; this is not a retained meter counter.
+    AncestorSteps,
 }
 
 impl LimitKind {
@@ -239,6 +244,7 @@ impl LimitKind {
             Self::DispatchCandidates => "dispatch_candidates",
             Self::HashedBytes => "hashed_bytes",
             Self::WorkUnits => "work_units",
+            Self::AncestorSteps => "ancestor_steps",
         }
     }
 
@@ -247,14 +253,15 @@ impl LimitKind {
         matches!(self, Self::HashedBytes | Self::WorkUnits)
     }
 
-    fn index(self) -> usize {
+    fn index(self) -> Option<usize> {
         match self {
-            Self::DeclarationRecords => 0,
-            Self::DerivationFacts => 1,
-            Self::EffectiveDeclarations => 2,
-            Self::DispatchCandidates => 3,
-            Self::HashedBytes => 4,
-            Self::WorkUnits => 5,
+            Self::DeclarationRecords => Some(0),
+            Self::DerivationFacts => Some(1),
+            Self::EffectiveDeclarations => Some(2),
+            Self::DispatchCandidates => Some(3),
+            Self::HashedBytes => Some(4),
+            Self::WorkUnits => Some(5),
+            Self::AncestorSteps => None,
         }
     }
 
@@ -266,6 +273,7 @@ impl LimitKind {
             Self::DispatchCandidates => limits.dispatch_candidates,
             Self::HashedBytes => limits.hashed_bytes,
             Self::WorkUnits => limits.work_units,
+            Self::AncestorSteps => limits.ancestor_steps,
         }
     }
 }
@@ -274,7 +282,7 @@ impl LimitKind {
 ///
 /// This rung charges the phase-1/2/3/5 points below, plus
 /// phase 4's `normalize.redefinition-check`/`normalize.conflict-check`
-/// (`quire.model.normalize.redefine/v1`, TC-195 N06); see
+/// (`quire.model.normalize.redefine/v2`, TC-195 N06); see
 /// `crate::model::normalize` module docs for that pass's exact scope. FR-151
 /// adds `conformance.axis` (`crate::model::conformance`) and
 /// `dispatch.subtype`/`dispatch.candidate`/`dispatch.dominance`
@@ -283,10 +291,12 @@ impl LimitKind {
 /// where FR-151's exact prose figures depend on authored operation bodies
 /// this rung does not model. FR-152 adds `systems.kind`,
 /// `systems.connection-condition` and `systems.allocation`
-/// (`crate::model::systems`); its own module docs record that this rung
-/// does not implement `systems.resolve`/`model.navigate` (static/runtime
-/// navigation), which need a qualified-name binder and an object
-/// population this crate does not build.
+/// (`crate::model::systems`) and `systems.resolve`
+/// (`crate::model::qualified`); this rung does not charge `model.navigate`
+/// (runtime navigation), which needs an object population this crate does
+/// not build. FR-013 adds `frame.write` and
+/// `frame.redefines-link` (`crate::model::population::decide_frame`), one
+/// `work_units` unit each.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ChargePoint {
     /// `normalize.record`.
@@ -305,6 +315,8 @@ pub enum ChargePoint {
     NormalizeHash,
     /// `conformance.axis`.
     ConformanceAxis,
+    /// Availability of the next edge in one ancestor walk.
+    ModelAncestorEdge,
     /// `dispatch.subtype`.
     DispatchSubtype,
     /// `dispatch.candidate`.
@@ -317,11 +329,17 @@ pub enum ChargePoint {
     SystemsConnectionCondition,
     /// `systems.allocation`.
     SystemsAllocation,
+    /// `systems.resolve`.
+    SystemsResolve,
+    /// `frame.write`.
+    FrameWrite,
+    /// `frame.redefines-link`.
+    FrameRedefinesLink,
 }
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 18] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
@@ -330,12 +348,16 @@ impl ChargePoint {
         Self::NormalizeDeclaration,
         Self::NormalizeHash,
         Self::ConformanceAxis,
+        Self::ModelAncestorEdge,
         Self::DispatchSubtype,
         Self::DispatchCandidate,
         Self::DispatchDominance,
         Self::SystemsKind,
         Self::SystemsConnectionCondition,
         Self::SystemsAllocation,
+        Self::SystemsResolve,
+        Self::FrameWrite,
+        Self::FrameRedefinesLink,
     ];
 
     /// Normative identifier.
@@ -349,12 +371,16 @@ impl ChargePoint {
             Self::NormalizeDeclaration => "normalize.declaration",
             Self::NormalizeHash => "normalize.hash",
             Self::ConformanceAxis => "conformance.axis",
+            Self::ModelAncestorEdge => "model.ancestor-edge",
             Self::DispatchSubtype => "dispatch.subtype",
             Self::DispatchCandidate => "dispatch.candidate",
             Self::DispatchDominance => "dispatch.dominance",
             Self::SystemsKind => "systems.kind",
             Self::SystemsConnectionCondition => "systems.connection-condition",
             Self::SystemsAllocation => "systems.allocation",
+            Self::SystemsResolve => "systems.resolve",
+            Self::FrameWrite => "frame.write",
+            Self::FrameRedefinesLink => "frame.redefines-link",
         }
     }
 }
@@ -376,17 +402,32 @@ pub struct Incomplete {
 }
 
 impl Incomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`): the counter's
+    /// setting, effective limit, prior usage, the denied amount and the
+    /// charge point.
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: MODEL_NORMALIZATION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `ModelNormalizationLimitsV1` charge: model normalization,
+/// and the conformance and dispatch walks that share its meter.
+pub const MODEL_NORMALIZATION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "model-normalization",
+        accounting_contract: "ModelNormalizationLimitsV1",
+    };
 
 /// One exact `{ counter: amount }` charge vector: `work_units` plus at most
 /// one sized counter, since no model charge point sizes more than one.
@@ -479,9 +520,11 @@ impl Meter {
         &self.counters.limits
     }
 
-    /// Consumed value of one counter.
+    /// Consumed value of one retained counter. `AncestorSteps` belongs to
+    /// a walk, so the operation meter retains no consumption for it.
     pub fn consumed(&self, kind: LimitKind) -> u64 {
-        self.counters.consumed[kind.index()]
+        kind.index()
+            .map_or(0, |index| self.counters.consumed[index])
     }
 
     /// How many charges this meter has admitted.
@@ -539,9 +582,11 @@ impl Meter {
             _ => return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point)),
         };
         if let Some((kind, value)) = sized {
-            self.counters.consumed[kind.index()] = value;
+            if let Some(index) = kind.index() {
+                self.counters.consumed[index] = value;
+            }
         }
-        self.counters.consumed[LimitKind::WorkUnits.index()] = work_total;
+        self.counters.consumed[5] = work_total;
         self.counters.admissions = self.counters.admissions.saturating_add(1);
         #[cfg(feature = "test-support")]
         self.admitted.push(point);

@@ -38,7 +38,7 @@ all production and qualification. No external reader/#54 gate exists.
 
 ## Test Plan
 
-TM-003 is authoritative for criteria and execution status. Model cases qualify
+Model cases qualify
 the independent source-derived Rust producer, native roles, complete artifact
 identity, source loci, old/new linkage and lowered/hard limits. Checker cases
 exercise actual reference/operation rules, numeric proof, inference, observations,

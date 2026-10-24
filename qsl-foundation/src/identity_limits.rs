@@ -2,6 +2,7 @@
 //! FR-259 Behavior 3: the byte limit every identity is encoded under.
 
 use crate::setting::{Setting, SettingLimits};
+use alloc::{vec, vec::Vec};
 
 /// The published default of `identity.input_bytes`: 16 MiB (FR-259 B3).
 pub const DEFAULT_IDENTITY_INPUT_BYTES: u64 = 16_777_216;

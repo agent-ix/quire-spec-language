@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-21 and AC-22 (TC-416 steps 12 and 13): the v2 emission writes each
-//! structural node's `owner` onto the node and its `identity_projection`
-//! entry, exactly where the node's `quire.structural-node/v1` preimage carries
-//! one. Each key is recomputed from the wire node alone, and every package is
-//! read back through IR's v2 reader.
+//! structural node's `owner` onto the node, exactly where the node's
+//! `quire.structural-node/v1` preimage carries one. Each key is recomputed
+//! from the wire node alone, and every package is read back through IR's v2
+//! reader.
 
 use qsl_semantics::check::{
     checked_dispatch_operation, AdmittedModel, DispatchRoot, OperationClauses,
@@ -38,8 +38,10 @@ fn required_kind(node: &Value) -> Option<&'static str> {
         Some("source")
     } else if matches!(
         (node["node_tag"].as_str(), node["semantic_form"].as_str()),
-        (Some("model"), Some("object_type" | "systems_interface"))
-            | (Some("relation"), Some("relationship"))
+        (
+            Some("model"),
+            Some("object_type" | "systems_interface" | "record_value_type" | "event_type")
+        ) | (Some("relation"), Some("relationship"))
             | (Some("function"), _)
     ) {
         Some("model")
@@ -59,7 +61,7 @@ fn rebuilt_label(group: &[&Value]) -> String {
 }
 
 /// Every owner check of FR-093-AC-21 over one emitted package: each node's
-/// and projection entry's `owner` equals the owner of the checked node's
+/// `owner` equals the owner of the checked node's
 /// preimage (none for a nominal node), follows FR-322's presence rule, each
 /// key and each group label recomputes from the wire alone, and `read` admits
 /// the package. Returns the wire.
@@ -79,12 +81,14 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
         })
         .collect();
     let wire = wire(emission);
-    let projection = wire["identity_preimage"]["identity_projection"]
-        .as_array()
-        .unwrap();
+    assert!(
+        wire["identity_preimage"]
+            .get("identity_projection")
+            .is_none(),
+        "the wire preimage carries no identity_projection (FR-322)"
+    );
     let written = nodes(&wire);
-    assert_eq!(projection.len(), written.len());
-    for (node, projected) in written.iter().zip(projection) {
+    for node in written {
         let id = node["node_id"]["digest"].as_str().unwrap();
         assert_eq!(
             node.get("owner").cloned(),
@@ -93,7 +97,6 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
             node["node_tag"],
             node["semantic_form"]
         );
-        assert_eq!(projected.get("owner"), node.get("owner"), "{id} projection");
         assert_eq!(
             node.get("owner").and_then(|owner| owner["kind"].as_str()),
             required_kind(node),
@@ -125,7 +128,7 @@ fn owner_json(authority: &str, identity: &str) -> Value {
     json!({"kind": "source", "authority": authority, "identity": identity})
 }
 
-fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
+pub(super) fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["node_tag"] == tag && node["semantic_form"] == form)
@@ -252,7 +255,8 @@ fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecor
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         has_body: true,
         redefines: redefines.map(model_key),
     })
@@ -410,7 +414,9 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             let digest = wire["lock"]["model_selections"][0]["digest"]
                 .as_str()
                 .unwrap();
-            evidence.insert_domain_package_document(digest, &document[..]);
+            evidence
+                .insert_domain_package_document(digest, &document[..])
+                .expect("a fresh evidence key");
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),
                 "{root}: IR's v2 reader admits the package"

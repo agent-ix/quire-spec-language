@@ -89,17 +89,33 @@ holds. `lookup` and `allInstances` SHALL NOT re-check it, and SHALL NOT
 report it as a distinct outcome of a query against an already-admitted
 binding — only admission observes and reports it.
 
-### allInstances requires both object and subtype closure
+### allInstances requires subtype closure for T
 
-`allInstances<T>` SHALL return a complete result only when the population's
-object closure is established and every effective type conforming to `T` is
-covered by the population's declared member types (subtype closure for `T`).
-If either closure does not hold, the model checker SHALL return a typed
-incomplete result naming which closure is missing and SHALL return no
-collection, complete or partial. When both closures hold, the returned set
-SHALL contain each qualifying member exactly once, keyed by its reference
-identity, in canonical reference-key order, independent of the input member
-order.
+Successful admission establishes object closure: the admission rule above
+reports unknown closure and admits no binding when the population extent is
+not `closed` or object closure otherwise cannot be established. Therefore,
+`allInstances<T>` SHALL check only per-`T` subtype closure on an admitted
+binding. Subtype closure holds exactly when `T` conforms to at least one of
+the population's declared member types. Conformance is reflexive: a declared
+member type covers itself and every type that conforms to that declared
+member type, but a declared child does not cover its parent. If no declared
+member type covers `T`, the model checker SHALL return a typed incomplete
+result naming `T` and SHALL
+return no collection, complete or partial. When surfaced through S6a evaluation, that result is
+`FamilyResult::Undefined` with reason `incomplete-closure`, naming queried
+type `T`, as specified by FR-090. When
+subtype closure holds, the returned set SHALL contain each qualifying member
+exactly once, keyed by its reference identity, in canonical reference-key
+order, independent of the input member order.
+
+Admission establishes graph-level closure, not coverage for a queried `T`.
+Before its first query charge, each `allInstances<T>` query checks whether
+`T` conforms to any declared member type using the admitted model index. The
+index's existing conformance operation provides the reflexive and bounded
+generalization check; this coverage check adds no charge point. Member
+walking uses the existing `population.visit` charge. This ordering and charge
+allocation follow the QSpec `allInstances<T>` value-accounting mechanism in
+[`quire-specification/proposals/quire-v1/definitions/value-accounting.md`](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/definitions/value-accounting.md): coverage is determined before the first query charge without a new charge row, while member walking remains charged at `population.visit`.
 
 ### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
@@ -179,12 +195,12 @@ their content digest are equal.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same closed-extent population whose generalization graph is not itself closed (`GeneralizationClosure::Open`), admission likewise reports the distinct unknown-closure outcome, naming the unresolved type, and carries no binding; given the same population declared `closed`, with a closed generalization graph and every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
-| FR-084-AC-2 | Given a closed population whose object closure holds but whose declared member types do not cover every effective subtype of the queried type, `allInstances<T>` returns a typed incomplete result naming the missing subtype closure and no collection; given both closures established, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. | Test (TC-227) |
+| FR-084-AC-2 | Given a successfully admitted population, `allInstances<T>` returns a complete deduplicated set in canonical reference-key order exactly when `T` conforms to at least one declared member type, including when `T` equals that member type; otherwise it returns a typed incomplete result naming subtype closure and `T`, with no collection. Object closure is guaranteed by successful admission under the admission rule above. | Test (TC-227; `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`) |
 | FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode, a genuine completed result. | Test (TC-228) |
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
 | FR-084-AC-6 | Given an object whose most-specific effective type `C` is a proper subtype of `A`, selecting it through `allInstances<A>` and separately through `allInstances<C>` against the same binding yields the same `ReferenceKey` in both results, whose type component names `C` in both cases, never `A`. | Test (TC-242) |
-| FR-084-AC-7 | Given a model whose object types form three disconnected supertype components, `A` with subtype `B`, `C` and `D` with common subtype `E`, and `X` alone, the reference keys of a `B`, an `E` and an `X` member, each admitted in its own population, carry three different universes: the `quire.model.object-universe/v1` digests over the model selection with root types `[A]`, `[C, D]` and `[X]`. Each key's object component equals the member's authored object identity bytes. | Test (TC-410) |
+| FR-084-AC-7 | Given a model whose object types form three disconnected supertype components, `A` with subtype `B`, `C` and `D` with common subtype `E`, and `X` alone, the reference keys of a `B`, an `E` and an `X` member, each admitted in its own population, carry three different universes: the `quire.model.object-universe/v2` digests over the model selection with root types `[A]`, `[C, D]` and `[X]`. Each key's object component equals the member's authored object identity bytes. | Test (TC-410) |
 
 ## Dependencies
 

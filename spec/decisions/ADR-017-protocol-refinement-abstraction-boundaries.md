@@ -84,26 +84,6 @@ relationships:
 ---
 # ADR-017: Protocol/frame, refinement and abstraction-relation boundaries (ARCH-43)
 
-## Status
-
-Proposed, 2026-09-29. Owning ticket: GitHub #223 (ARCH-43),
-epic QSL-34 (#205), Layer 4 (coordination and conformance architecture). It
-is a prerequisite of gate QSL-15 (#224, ARCH-G4) for that gate's scenarios 5
-(scoped protocol/frame clause), 7 (spec/profile refinement regression) and 8
-(model-to-implementation relation with an unbound refusal). It implements no
-feature. Supersedes nothing. Its `/spec-review all` is SR-800 to SR-807 in
-[`spec/reviews/arch-43-boundaries/`](../reviews/arch-43-boundaries/integrity.md).
-
-Amended 2026-10-01 (abstraction relation FR pass, FR-304 to FR-307): AR-1,
-AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
-decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
-v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
-(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
-
-A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
-"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
-to this record; other artifacts cite them as `ADR-017 PF-n`.
-
 ## Context
 
 External ticket text is quoted as data, not verified in its repository.
@@ -130,9 +110,9 @@ FR-116):
   NodeKey, frame_origin: Origin }`, one per (declaring type, operation name),
   for each operation a clause or attempt names (`check/state_clause.rs:62-68`,
   `check/mod.rs:489-508`), and `CheckedAttempt { declaration, anchor, frame,
-  contracts: Vec<NodeKey> }` (`check/protocol_clause.rs:91-103`). A scoped
+  contracts: Vec<NodeKey> }` (`check/protocol_clause/types.rs`). A scoped
   anchor resolves to a `ProtocolNodeId` inside S3 only
-  (`check/protocol_clause.rs:532-608`).
+  (`check/protocol_clause/anchors.rs`).
 - S4 emits `state`/`operation_anchor`, `state`/`frame` (the QSpec FR-340
   term, each `modifies` entry a `FrameField { declaration: NodeRef, name }`)
   and `state`/`state_clause` (`check/lowering/state.rs:198-428`). No
@@ -152,9 +132,8 @@ FR-116):
   frame, keyed by the frame's occurrence (`check/mod.rs:1452-1572`).
 - Tests: TC-462, TC-463, TC-514 and TC-515 pass locally; TC-463 step 1 (the
   I2 read-back) passes through IR-370's `reaches_field` reference-edge check.
-  `spec/tests.md` still lists TC-510
-  to TC-513 as planned although traced tests for them exist; this record
-  cites them only as specified.
+  Traced tests exist for TC-510 to TC-513; this record cites them only as
+  specified.
 - SEAM-3 handoffs to IR are deleted (M-6d). `src/protocol_artifact`
   remains for the root crate's native, state and temporal paths only; no
   `qsl-*` crate imports it.
@@ -206,6 +185,16 @@ corpus, Backlog; IR-33 blocks IR-32). Frame lowering is
 agent-ix/quire-contract-ir#109 (IR-89; its lowering half is now IR-339,
 Backlog). Kani contracts and frame harnesses are
 agent-ix/quire-contract-codegen#49 (IR-93, Backlog).
+
+A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
+"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
+to this record; other artifacts cite them as `ADR-017 PF-n`.
+
+AR-1,
+AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
+decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
+v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
+(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
 
 ## Decision
 
@@ -295,7 +284,8 @@ PF-3 requires a typed name. TK-1 fixes it (§6).
 `replay_frame` reads the payload's members and not the envelope's three.
 
 **G-2.** Two carriers of one identity, one unread, can disagree silently.
-Decision, with no wire change:
+Decision (the first two bullets change no wire; the third is QSpec FR-323's
+replay target, Q-4):
 
 - For a frame packet, the envelope's `clause_node` is the frame node, its
   `occurrence_key` is the frame's `generated` occurrence, and its
@@ -305,13 +295,14 @@ Decision, with no wire change:
 - If the envelope's `clause_node` differs from the payload's `frame`, or its
   `occurrence_key` from the payload's `occurrence`, `replay_frame` refuses
   `stale_dependency`/`content-mismatch` naming both, before it recompiles.
-- `replay_frame` reads no `selected_function`: the envelope constructor
-  still requires one, and its value is not interpreted for a frame packet.
-  A selection member that names a function or a frame operation is a change
-  to QSpec FR-323's `selection` and CG's packet members, so it is Q-4, not
-  QSL work.
+- The packet, the envelope and the request carry no `selected_function`.
+  Each carries the QSpec FR-323 replay target (Q-4): a frame packet's is
+  `frame_operation`, which `replay_frame` resolves, and the payload names
+  no operation (FR-070, FR-071, FR-116). A request target that differs from
+  the envelope's refuses `stale_dependency`/`content-mismatch` naming both,
+  before the recompile.
 
-TK-2 implements the first two bullets (§6).
+TK-2 implements the first two bullets (§6); QSL-972 implements the third.
 
 #### PF-5 Frame representations
 
@@ -343,7 +334,7 @@ modules ADR-012 §12.2 and §15.3 name:
 
 1. **An S2-parsed construct gains its check** (for example `compensate`,
    parsed as `ProtocolNodeKind::CompensateTemplate`, `qsl-forms/src/syntax.rs:1225`,
-   and refused by S3's `covered_kind`, `check/protocol_clause.rs:389-405`):
+   and refused by S3's `covered_kind`, `check/protocol_clause/coverage.rs`):
    classify it in `covered_kind`, check it in `check::protocol_clause`, lower
    it in the `ProtocolClause` lowering.
 2. **A temporal atom over a protocol operation**: `TemporalTrace` reads the
@@ -500,10 +491,11 @@ regression.
 #### RF-3 Profile layering (#192, V1-TOOL-012)
 
 Q-5 is answered (amended 2026-10-01; QSpec FR-453): every QSpec AD-003 layer
-is header-selectable, and the gate compares all five `requires` edges (state
+is header-selectable, and the gate compares all six `requires` edges (state
 core to state queries, state queries to state graph, state core to complete
-value, state graph to complete model, complete value to complete model).
-FR-110's layer selection resolves a header naming any of the five layers, and
+value, state graph to complete model, complete value to complete model,
+complete model to complete temporal).
+FR-110's layer selection resolves a header naming any of the six layers, and
 S3 admits each declaration under that layer's admitted-form set, so both
 sides of every edge compile in the running build. A hand-written "parent
 refused" expectation that no compile checks is not V1-TOOL-012 evidence, and
@@ -630,7 +622,7 @@ implementation. Its surface spelling is QSpec FR-450's `abstraction-decl`
   one function.
 - QSpec FR-353's "AD-006 effective-declaration key" is QSL's O-03
   `DeclarationKey`. It is not O-05's `EffectiveId`
-  (`quire.model.effective-declaration/v1`), which keys normalized
+  (`quire.model.effective-declaration/v2`), which keys normalized
   declarations.
 
 **Implementation side.** `RustPath` is a non-empty sequence of Rust
@@ -689,7 +681,8 @@ There is no totality check.
   `route`. It names no `BackendId` (ADR-012 §11). For an emission onto
   implementation code, the driver puts only the bound items in the QSpec
   FR-331 request it sends CG, so CG receives no new input; CG reads the
-  bindings from the v2 node.
+  bindings from the v2 node. The export's bound and refused result kinds, which the driver reads, are fixed by
+  [FR-307](../functional/FR-307-export-the-bindings-each-item-references.md)-AC-6.
 - **Referenced elements.** An item references: the receiver's static object
   type of every model member in its checked claim (the O-06 declaring node,
   which is the static type even when a supertype declares the member,
@@ -801,7 +794,7 @@ These are proposed; the team lead files them.
 | Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar. Decided: QSpec FR-450 (STD-116) | QSpec | QSpec |
 | Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values. Decided: QSpec FR-451 (STD-116) | QSpec | QSpec |
 | Q-3 | QSpec FR-290 claim-form row: remove "(a relation-family refinement gate)"; re-trace V1-TOOL-011 and V1-TOOL-012 from QSpec FR-177 and TC-208 to the #191 and #192 gate tests | QSpec | QSpec |
-| Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50) | QSpec, CG | QSpec |
+| Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50). Decided: QSpec FR-323's replay target (STD-118), carried by FR-070, FR-071 and FR-116 and filled from FR-121's `OperationSite` (STD-245) | QSpec, CG | QSpec |
 | Q-5 | Which profile layering V1-TOOL-012 covers for a compiler whose selections are fixed by its catalog, and which QSpec AD-003 edges V1 requires. Answered by QSpec FR-453: every layer header-selectable, all five edges | QSpec | QSpec |
 | Q-6 | A catalog cause for an implementation-gap `unsupported_construct` refusal (QSL's `not-yet-implemented`) | QSpec | QSpec |
 | Q-7 | QSpec FR-353-AC-1: accept a frame binding keyed by the operation (declaring type key, operation identifier), with the frame and anchor identities derived from it, or amend AC-1. Decided: QSpec FR-353-AC-1 accepts the derived key (STD-121) | QSpec | QSpec |
@@ -827,8 +820,7 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - ADR-013 O-25 packet list: a frame packet's members per PF-4.
 - FR-057 claim-form row for refinement between operation contracts,
   FR-057-AC-10 (that row is outside V1) and its Dependencies; TC-153 step 7
-  and its expected results; the FR-057-AC-10 row of
-  `spec/model-linking/tests.md` (RF-1).
+  and its expected results (RF-1).
 - `spec/spec.md`: index row.
 - 2026-10-01, with FR-340 to FR-345: RF-2's pair direction is the corpus's
   `prior`/`superseding` naming alone (the lexical revision-label comparison
@@ -889,9 +881,9 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - **Carry the relation outside the checked package** (a side file for CG).
   Rejected. Kani and Verus would then have a second authority, which QSpec
   FR-353 and ARCH-G4 forbid.
-- **A `ReplaySelection` sum in QSL now.** Rejected. The selection is a QSpec
-  FR-323 member that CG copies; changing it is Q-4. TK-2's consistency check
-  removes the silent disagreement without a wire change.
+- **A `ReplaySelection` sum in QSL ahead of QSpec.** Rejected. The selection
+  is a QSpec FR-323 member that CG copies, so its shape is Q-4's; QSL types
+  it exactly as FR-323 does (FR-070, FR-071).
 - **Select a frame by the payload's `WireNodeId`s instead of its name.**
   Rejected. The name selects and the identities bind (PF-3), as ADR-013 OQ-5
   ruled for functions, so an inconsistent packet refuses naming both

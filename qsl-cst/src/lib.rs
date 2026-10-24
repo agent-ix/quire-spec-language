@@ -7,7 +7,7 @@
 //! unit.
 //!
 //! Module order: [`token`] < [`lexer`] < [`diagnostic`] < [`grammar`] <
-//! [`cst`] < `parser` (crate-private: [`parse`]/[`parse_source`] are its
+//! [`cst`] < `parser` < [`mod@format`] (`parser` is crate-private: [`parse`]/[`parse_source`] are its
 //! only outward surface). Every module here depends only on
 //! `qsl-foundation`
 //! (layer F) -- no module imports the QSL root crate or a SEAM module
@@ -19,9 +19,12 @@
 //! re-exports none of them (ADR-011 §7.2).
 
 #![forbid(unsafe_code)]
+// The `productions!` macro recurses once per production.
+#![recursion_limit = "256"]
 
 pub mod cst;
 pub mod diagnostic;
+pub mod format;
 pub mod grammar;
 pub mod lexer;
 mod parser;

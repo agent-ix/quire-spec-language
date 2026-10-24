@@ -3,10 +3,10 @@ id: Task-054
 title: "Qualify complete-V1 QSL compiler and reference-runtime coverage"
 type: Task
 status: not_started
-track: A08
+track: A07
 priority: P0
 relationships:
-  - target: ix://agent-ix/quire-spec-language/Task-053
+  - target: ix://agent-ix/quire-spec-language/Task-052
     type: depends_on
   - { target: ix://agent-ix/quire-specification/FR-132, type: references }
   - { target: ix://agent-ix/quire-specification/FR-133, type: references }
@@ -16,7 +16,6 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-303, type: references }
   - { target: ix://agent-ix/quire-specification/FR-311, type: references }
   - { target: ix://agent-ix/quire-specification/FR-336, type: references }
-  - { target: ix://agent-ix/quire-specification/TM-009, type: references }
   - { target: ix://agent-ix/quire-specification/TC-047, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-182, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-183, type: verifies }
@@ -31,10 +30,10 @@ relationships:
 
 ## Scope
 
-Execute QSL #123 after all QSL/WASM implementation tasks and required temporal,
+Execute QSL #123 after all QSL implementation tasks and required temporal,
 protocol, IR and integration consumers merge. Run the complete corpus against
 one exact dependency/tool lock, emit the authority-bound canonical manifest and
-reconcile all 83 Agent-A rows.
+reconcile all 82 Agent-A rows.
 
 ## Subtasks
 

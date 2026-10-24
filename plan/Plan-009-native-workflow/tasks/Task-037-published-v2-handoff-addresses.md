@@ -23,7 +23,7 @@ release, or edit any TL-owned repository.
 - [x] Export the producer-owned names and replace local handoff literals.
 - [x] Run the required serial local Rust gates with `target-codex-backends`.
 - [x] Complete self `/rust-review` and `/gap-analysis` and resolve their findings.
-- [x] Reconcile issue #78, Plan-009 and the Test Matrix for the reviewable one-ticket PR.
+- [x] Reconcile issue #78, and Plan-009 for the reviewable one-ticket PR.
 
 ## Delivery
 

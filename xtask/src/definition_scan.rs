@@ -116,7 +116,7 @@ impl<'ast> Visit<'ast> for DefScanner {
         }
         let previous = self
             .current_impl_self
-            .replace(crate::impl_self_name(&node.self_ty));
+            .replace(qsl_string_edge::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.current_impl_self = previous;
     }
@@ -177,7 +177,7 @@ impl<'ast> Visit<'ast> for DefScanner {
 /// relative to `workspace_root` (`tests`, `target` and `.git` directory
 /// entries excluded, matching `xtask::string_edge::source_files`'s own
 /// exclusion list).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn source_files(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     let root = workspace_root.join(dir);
     let mut files = Vec::new();
@@ -296,14 +296,76 @@ mod tests {
             .to_path_buf()
     }
 
+    /// Whether `tree` names `leaf` (as itself or as the source of a rename).
+    fn use_tree_names(tree: &syn::UseTree, leaf: &str) -> bool {
+        match tree {
+            syn::UseTree::Path(path) => use_tree_names(&path.tree, leaf),
+            syn::UseTree::Name(name) => name.ident == leaf,
+            syn::UseTree::Rename(rename) => rename.ident == leaf,
+            syn::UseTree::Glob(_) => false,
+            syn::UseTree::Group(group) => group.items.iter().any(|item| use_tree_names(item, leaf)),
+        }
+    }
+
+    /// Collects the files whose `pub use` names a given leaf.
+    struct PubUseFinder<'a> {
+        leaf: &'a str,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for PubUseFinder<'_> {
+        fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+            if !matches!(node.vis, syn::Visibility::Inherited)
+                && use_tree_names(&node.tree, self.leaf)
+            {
+                self.found = true;
+            }
+        }
+    }
+
+    /// FR-401-AC-3: `WrongSnapshotCause` lives in `quire-semantic-value`
+    /// alone. No QSL crate defines it or re-exports it through a `pub use`,
+    /// so no path of a QSL crate names it.
+    #[trace("FR-401-AC-3")]
+    #[test]
+    fn no_qsl_crate_reexports_wrong_snapshot_cause() {
+        let root = workspace_root();
+        let mut dirs = vec!["src".to_owned()];
+        for entry in fs::read_dir(&root).expect("workspace root lists") {
+            let name = entry.expect("entry reads").file_name();
+            let name = name.to_string_lossy().into_owned();
+            if name.starts_with("qsl-") && root.join(&name).join("src").is_dir() {
+                dirs.push(format!("{name}/src"));
+            }
+        }
+        let mut scanned = 0;
+        for dir in &dirs {
+            for file in source_files(&root, dir).expect("sources list") {
+                let parsed = parse_file(&root, &file).expect("source parses");
+                let mut finder = PubUseFinder {
+                    leaf: "WrongSnapshotCause",
+                    found: false,
+                };
+                finder.visit_file(&parsed);
+                assert!(!finder.found, "{file} re-exports WrongSnapshotCause");
+                scanned += 1;
+            }
+        }
+        assert!(scanned > 100, "the scan read {scanned} files");
+    }
+
     /// TC-170 step 2: `value::expression::mod.rs` declares none of `check`,
     /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
     /// module's own doc): its *only* declarations are `evaluate`, `family`
     /// (`value::expression::family.rs` keeps the evaluation half and
     /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
     /// `causes` (FR-090's family evaluation causes, defined beside the
-    /// evaluator) and `s6a` (the S6a family contract, `ReferenceEvaluation`
-    /// and `S6aFamilyKind`, layer 5), so an unexpected module
+    /// evaluator), `clause_set` (FR-107's clause-set evaluation, which runs
+    /// clauses through the evaluator) `s6a` (the S6a family contract,
+    /// `ReferenceEvaluation` and `S6aFamilyKind`, layer 5) and `value_invariants`
+    /// (FR-366's per-value evaluation, which runs invariants through the
+    /// evaluator) and `closure` (FR-401's reference `quire-eval` adapter over
+    /// the checked package), so an unexpected module
     /// cannot be hiding a renamed leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
@@ -316,13 +378,21 @@ mod tests {
                 "value::expression::mod.rs still declares mod {forbidden};"
             );
         }
-        let expected: std::collections::BTreeSet<&str> = ["causes", "evaluate", "family", "s6a"]
-            .into_iter()
-            .collect();
+        let expected: std::collections::BTreeSet<&str> = [
+            "causes",
+            "clause_set",
+            "closure",
+            "evaluate",
+            "family",
+            "s6a",
+            "value_invariants",
+        ]
+        .into_iter()
+        .collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family/s6a"
+            "value::expression::mod.rs declares an unexpected module beyond causes/clause_set/closure/evaluate/family/s6a/value_invariants"
         );
     }
 
@@ -427,7 +497,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",
@@ -444,6 +513,7 @@ mod tests {
             "DEFAULT_CHECKING_INPUT_BYTES",
             "DEFAULT_CHECKING_WORK_BUDGET",
             "CheckMode",
+            "WrongSnapshotCause",
         ] {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
             assert_not_defined_in_qsl(symbol, &locations);
@@ -468,7 +538,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
         ];
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
@@ -489,21 +558,17 @@ mod tests {
     #[test]
     fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in [
-            "checked_dispatch_operation",
-            "check_field_refinement_obligation",
-        ] {
-            let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_eq!(locations.len(), 1, "{name}: {locations:?}");
-            assert!(
-                locations[0].file.starts_with("qsl-semantics/src/check/"),
-                "{name} must now live in qsl-semantics/src/check/: {locations:?}"
-            );
-            assert!(
-                !locations[0].file.starts_with("qsl-semantics/src/model/"),
-                "{name}: {locations:?}"
-            );
-        }
+        let name = "checked_dispatch_operation";
+        let locations = definitions.items.get(name).cloned().unwrap_or_default();
+        assert_eq!(locations.len(), 1, "{name}: {locations:?}");
+        assert!(
+            locations[0].file.starts_with("qsl-semantics/src/check/"),
+            "{name} must now live in qsl-semantics/src/check/: {locations:?}"
+        );
+        assert!(
+            !locations[0].file.starts_with("qsl-semantics/src/model/"),
+            "{name}: {locations:?}"
+        );
     }
 
     /// TC-173 step 2: the loss records `ValueLoss` and `LocatedLoss` are

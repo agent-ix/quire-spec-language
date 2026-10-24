@@ -19,25 +19,32 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use super::native_literal::NativeConstructor;
 use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
     node, refuse, LocalKind, Typer,
 };
+use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
 use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
+    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, IntegerRange, Node, NodeId,
+    NodeKind, RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
+use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, IdentityNode, KeyFault};
+use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, ExprRef, Expression,
-    FieldInitializer,
+    Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
+    FieldInitializer, PopulationForm,
 };
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::Span;
 use quire_exact::{
-    ArithmeticOperator, CollectionType, NodeKey, OrderingOperator, Value, ValueType,
+    ArithmeticOperator, CollectionKind, CollectionType, IllTypedCause, Integer, IntegerInterval,
+    NodeKey, OrderingOperator, Value, ValueType,
 };
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
 
@@ -51,6 +58,92 @@ static BOOLEAN: ValueType = ValueType::Boolean;
 
 fn boolean<'r>() -> Want<'r> {
     Cow::Borrowed(&BOOLEAN)
+}
+
+/// The type of the binder of `seq(i in low .. high: e)` and the declared
+/// maximum length of the sequence, from the static bounds of `low` and
+/// `high` (FR-139, QSpec FR-376): `i` is `Int[lo_min, hi_max]` and the
+/// maximum is `max(0, hi_max - lo_min + 1)`. An operand with no static bound
+/// leaves `i` an `Integer` and the sequence with no maximum.
+fn seq_binder(
+    (low, high): (Option<IntegerRange>, Option<IntegerRange>),
+    location: &Location,
+) -> Result<(ValueType, Option<u64>), CheckRefusal> {
+    let (Some((lower, _)), Some((_, high_upper))) = (low, high) else {
+        return Ok((ValueType::Integer, None));
+    };
+    // An empty range never binds `i`; keep its interval well formed.
+    let upper = if high_upper < lower {
+        lower.clone()
+    } else {
+        high_upper.clone()
+    };
+    let interval = IntegerInterval::new(lower.clone(), upper)
+        .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))?;
+    let length = high_upper.sub(&lower).add(&Integer::one());
+    let maximum = if length.is_negative() {
+        0
+    } else {
+        length
+            .to_u64()
+            .ok_or_else(|| refuse(location, CheckCause::UnrepresentableBound))?
+    };
+    Ok((ValueType::Int(interval), Some(maximum)))
+}
+
+/// The population operand node of `population` at `location` (FR-391).
+fn population_operand(population: &super::NamedPopulation, location: &Location) -> Node {
+    node(
+        NodeKind::NamedPopulation {
+            population: population.key.clone(),
+            members: population.members.clone(),
+        },
+        ValueType::Population(population.domain.maximum),
+        location,
+    )
+}
+
+/// `Int[low, high]`.
+fn int_type(low: Integer, high: Integer, location: &Location) -> Result<ValueType, CheckRefusal> {
+    IntegerInterval::new(low, high)
+        .map(ValueType::Int)
+        .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))
+}
+
+/// A two-segment name whose alias also names an enum of the unit (FR-391
+/// "Resolution"): ambiguous, naming the alias, which the model selection and
+/// the enum both declare. Neither declaration is a position of the checked
+/// tree, so the one locus is the name.
+fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
+    let alias = name.split("::").next().unwrap_or(name);
+    refuse(
+        location,
+        CheckCause::AmbiguousName {
+            name: alias.to_owned(),
+            loci: vec![location.clone()],
+        },
+    )
+}
+
+/// `missing_declaration`/`missing-name` for a two-segment `M::P` name that
+/// names no population here, located at its second segment (FR-391
+/// "Resolution").
+fn missing_segment(name: &str, location: &Location) -> CheckRefusal {
+    missing_segment_at(name, location, None)
+}
+
+/// [`missing_segment`] for a name written at `span`, when its form records
+/// one (an empty span is a form not read from a source unit).
+fn missing_segment_at(name: &str, location: &Location, span: Option<Span>) -> CheckRefusal {
+    let offset = name.rfind("::").map_or(0, |at| at + 2);
+    refuse(
+        location,
+        CheckCause::MissingSegment {
+            name: name.to_owned(),
+            offset,
+            span: span.filter(|span| span.start < span.end),
+        },
+    )
 }
 
 /// Where a typed operand is admitted.
@@ -124,6 +217,7 @@ enum Frame<'e, 'r> {
     Upcast(Want<'r>, Location),
     If(Box<IfFrame<'e, 'r>>),
     Let(Box<LetFrame<'e, 'r>>),
+    Case(Box<CaseFrame<'e, 'r>>),
     Connective(Box<ConnectiveFrame<'e>>),
     Peer(Box<PeerFrame<'e, 'r>>),
     Unary(Box<UnaryFrame<'r>>),
@@ -136,6 +230,8 @@ enum Frame<'e, 'r> {
     Query(Box<QueryFrame<'e>>),
     Accumulate(Box<AccumulateFrame<'e>>),
     Tally(Box<TallyFrame<'e>>),
+    Population(Box<PopulationFrame<'e>>),
+    Seq(Box<SeqFrame<'e>>),
     Contains(Box<ContainsFrame<'e>>),
     Reaches(Box<ReachesFrame<'e>>),
     Lookup(Box<LookupFrame<'e>>),
@@ -179,6 +275,41 @@ struct LetFrame<'e, 'r> {
     value: Option<(Node, Slot)>,
 }
 
+/// `case scrutinee { arms }` (FR-318): the scrutinee first, then each arm
+/// whose head resolved, in source order.
+struct CaseFrame<'e, 'r> {
+    branches: Branches<'r>,
+    /// The `case` expression, whose arena holds its scrutinee and bodies.
+    expression: ExprRef<'e>,
+    case: &'e CaseForm,
+    location: Location,
+    stage: CaseStage<'r>,
+}
+
+enum CaseStage<'r> {
+    /// The scrutinee is being typed.
+    Scrutinee,
+    /// The arms are being resolved and their bodies typed.
+    Arms(Box<CaseArms<'r>>),
+}
+
+/// The arms of a `case` whose scrutinee is typed.
+struct CaseArms<'r> {
+    builder: CaseBuilder<'r>,
+    /// The next arm to resolve.
+    next: usize,
+    /// The arm whose body is being typed.
+    open: Option<OpenArm>,
+    /// The result type the arm bodies inferred so far.
+    result: Option<ValueType>,
+}
+
+/// An arm whose binders are bound and whose body is being typed.
+struct OpenArm {
+    member: usize,
+    binders: Vec<Slot>,
+}
+
 /// Which operand of a pair is being typed.
 enum Pair<'e, T> {
     /// The first; the other is still to type, at this location.
@@ -206,6 +337,7 @@ struct PeerFrame<'e, 'r> {
 /// A binary operator typed as an operand pair.
 enum PeerOperator {
     Arithmetic(ArithmeticOperator),
+    IntegerDivision(IntegerDivisionOperator),
     Ordering(OrderingOperator),
     Equality(EqualityOperator),
 }
@@ -220,17 +352,42 @@ enum PeerForm<'e, 'r> {
         hint: Option<Want<'r>>,
         pair: Pair<'e, Node>,
     },
+    IntegerDivision {
+        operator: IntegerDivisionOperator,
+        pair: Pair<'e, Node>,
+    },
     Ordering {
         operator: OrderingOperator,
         pair: Pair<'e, Node>,
     },
     Equality {
         operator: EqualityOperator,
-        pair: Pair<'e, (Node, EqualityOperand)>,
+        pair: Pair<'e, TypedOperand>,
         /// The target and location of the operand being typed, when it is
         /// a non-collection `convert<T>(e)` compared as converted.
         converted: Option<(ValueType, Location)>,
     },
+}
+
+/// A typed `=` operand with the equality operand the pair is first checked
+/// with (`checked`, which names a conversion) and the one the stored equality
+/// compares (`stored`, which compares an already converted operand as typed).
+pub(super) struct TypedOperand {
+    pub(super) node: Node,
+    pub(super) checked: EqualityOperand,
+    pub(super) stored: EqualityOperand,
+}
+
+impl TypedOperand {
+    /// An operand compared as it is typed.
+    fn typed(node: Node) -> Self {
+        let operand = EqualityOperand::typed(node.value_type.clone());
+        Self {
+            node,
+            checked: operand.clone(),
+            stored: operand,
+        }
+    }
 }
 
 /// A form over one operand whose node it finishes once the operand is
@@ -260,9 +417,34 @@ struct AttributeFrame<'e> {
     location: Location,
 }
 
-/// A function or tuple-constructor call.
+/// What an [`ApplicationFrame`] applies: `Value`'s call target, or the
+/// `SumCase` family's union member (FR-317).
+enum Callee<'r> {
+    Value(Application<'r>),
+    Union(UnionMember<'r>),
+}
+
+impl<'r> Callee<'r> {
+    /// The type the argument at `index` is checked against.
+    fn parameter(&self, index: usize) -> Option<&'r ValueType> {
+        match self {
+            Self::Value(application) => application.parameter(index),
+            Self::Union(member) => member.parameter(index),
+        }
+    }
+
+    /// The node over its checked `arguments`.
+    fn finish(self, arguments: Vec<NodeId>, location: &Location) -> Node {
+        match self {
+            Self::Value(application) => application.finish(arguments, location),
+            Self::Union(member) => member.finish(arguments, location),
+        }
+    }
+}
+
+/// A function, tuple-constructor or union-member call.
 struct ApplicationFrame<'e, 'r> {
-    application: Application<'r>,
+    application: Callee<'r>,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<NodeId>,
@@ -363,6 +545,53 @@ struct TallyFrame<'e> {
     source: Option<(Node, Slot)>,
 }
 
+/// Which operand of a population-valued form is being typed.
+enum PopulationAwait {
+    /// The `where` condition.
+    Condition,
+    /// The body of `sum` and `only`.
+    Body,
+}
+
+/// `count`, `sum`, `exists`, `all` or `only` over a concrete population
+/// (FR-139).
+struct PopulationFrame<'e> {
+    form: PopulationForm,
+    /// The population's objects, typed.
+    source: Node,
+    /// The slot the binder reads.
+    slot: Slot,
+    /// The body of `sum` and `only`.
+    body: Option<ExprRef<'e>>,
+    /// The typed condition, once typed.
+    typed_condition: Option<Node>,
+    awaiting: PopulationAwait,
+    location: Location,
+}
+
+/// Which operand of `seq(i in lo .. hi: e)` is being typed.
+enum SeqStage {
+    Low,
+    High {
+        low: Box<Node>,
+    },
+    Body {
+        low: Box<Node>,
+        high: Box<Node>,
+        slot: Slot,
+        maximum: Option<u64>,
+    },
+}
+
+/// `seq(i in lo .. hi: e)` (FR-139).
+struct SeqFrame<'e> {
+    binder: &'e str,
+    high: ExprRef<'e>,
+    body: ExprRef<'e>,
+    location: Location,
+    stage: SeqStage,
+}
+
 /// `contains(c, v)`.
 struct ContainsFrame<'e> {
     item: ExprRef<'e>,
@@ -404,6 +633,31 @@ struct DispatchArgumentsFrame<'e, 'r> {
     arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<NodeId>,
+}
+
+/// The result type the arm bodies infer once `body`, the next one in source
+/// order, is typed (QSpec FR-146 "Case result type"): the type every body
+/// shares, `Integer` when every body is `Integer` or an `Int[..]` type, and
+/// otherwise a refusal at the first body that has neither.
+fn case_result(result: Option<ValueType>, body: &Node) -> Result<ValueType, CheckRefusal> {
+    match result {
+        None => Ok(body.value_type.clone()),
+        Some(result) if result == body.value_type => Ok(result),
+        Some(result) if is_integer(&result) && is_integer(&body.value_type) => {
+            Ok(ValueType::Integer)
+        }
+        Some(_) => Err(mismatch(&body.location)),
+    }
+}
+
+/// A broken invariant of the `case` frame, never a refusal of the input.
+fn case_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+            quire_semantic_value::catalog::InternalFault::new("S3", invariant),
+        ))),
+    )
 }
 
 /// `(first, second)` in source order: `second` is the left operand when
@@ -529,6 +783,15 @@ impl<'a> Typer<'a> {
                     frames,
                 ))
             }
+            ExprNode::Case(case) => {
+                self.enter(&location)?;
+                Ok(Self::case(
+                    Branches::Expected(expected),
+                    (expression, case),
+                    location,
+                    frames,
+                ))
+            }
             _ => {
                 let hint = match expected {
                     Expected::Checked(required) => {
@@ -581,6 +844,24 @@ impl<'a> Typer<'a> {
             value: None,
         })));
         Step::Descend(Goal::Infer(value, None, value_location))
+    }
+
+    /// Start `case scrutinee { arms }` (FR-318): type the scrutinee first.
+    fn case<'e, 'r>(
+        branches: Branches<'r>,
+        (expression, case): (ExprRef<'e>, &'e CaseForm),
+        location: Location,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Step<'e, 'r> {
+        let scrutinee = Goal::Infer(expression.at(case.scrutinee), None, location.child(0));
+        frames.push(Frame::Case(Box::new(CaseFrame {
+            branches,
+            expression,
+            case,
+            location,
+            stage: CaseStage::Scrutinee,
+        })));
+        Step::Descend(scrutinee)
     }
 
     /// Start a form over one operand, `goal`.
@@ -648,10 +929,106 @@ impl<'a> Typer<'a> {
                     &location,
                 )
             }
+            ExprNode::String(text) => node(
+                NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
+                ValueType::String,
+                &location,
+            ),
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            ExprNode::Name(name) => self.name(name, &location)?,
+            // FR-185: a quantity literal is its magnitude, measured and
+            // reduced as an exact value, in the unit its name declares.
+            ExprNode::Quantity(quantity) => {
+                let magnitude = super::super::probabilistic::quantity_magnitude(
+                    &quantity.magnitude,
+                    self.limits.rational_bits(),
+                    &location,
+                )?;
+                let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::MissingName(quantity.unit.name.clone()),
+                    });
+                };
+                node(
+                    NodeKind::Literal(CheckedLiteral(Value::Quantity(quire_exact::Quantity::new(
+                        magnitude, unit,
+                    )))),
+                    ValueType::Quantity(unit),
+                    &location,
+                )
+            }
+            ExprNode::Name(name)
+                if self
+                    .named
+                    .as_ref()
+                    .is_some_and(|named| named.is_ambiguous(name)) =>
+            {
+                return Err(ambiguous_alias(name, &location));
+            }
+            // FR-391: in a population position a population is no value;
+            // anywhere else outside a refinement `M::P` names nothing.
+            ExprNode::Name(name)
+                if self.populations.is_none()
+                    && self
+                        .scope
+                        .known_populations
+                        .iter()
+                        .any(|known| known == name) =>
+            {
+                return Err(if self.named.is_some() {
+                    CheckRefusal::ill_typed(&location, IllTypedCause::OperatorIneligible)
+                } else {
+                    missing_segment(name, &location)
+                });
+            }
+            ExprNode::Name(name) if self.population_named(name).is_some() => {
+                self.population_objects(name, &location)?
+            }
+            ExprNode::Name(name) => {
+                let resolved = match resolve_target(self, name, &location, || Ok(())) {
+                    Ok(ResolvedTarget::UnionMember(member)) => member
+                        .admit_shape(None, &location)
+                        .map(|()| member.finish(Vec::new(), &location)),
+                    Ok(ResolvedTarget::Value(())) => self.name(name, hint.as_deref(), &location),
+                    Err(refusal) => Err(refusal),
+                };
+                // FR-391 "Resolution": in a population position an `M::X`
+                // that names no population (a type such as `M::Counter`
+                // included) is missing at its second segment.
+                let under_alias = self
+                    .named
+                    .as_ref()
+                    .is_some_and(|named| named.is_under_alias(name));
+                match resolved {
+                    Err(refusal)
+                        if under_alias && matches!(refusal.cause, CheckCause::MissingName(_)) =>
+                    {
+                        return Err(missing_segment(name, &location));
+                    }
+                    resolved => resolved?,
+                }
+            }
+            ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // A `hyper` clause's reads and labels have a meaning only inside
+            // the clause; S2 builds them nowhere else.
+            ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter => {
+                return Err(CheckRefusal {
+                    location,
+                    cause: CheckCause::Hyper(Box::new(
+                        crate::check::hyper_clause::HyperCause::OutsideHyperClause,
+                    )),
+                })
+            }
+            ExprNode::Case(case) => {
+                return Ok(Self::case(
+                    Branches::Inferred(hint),
+                    (expression, case),
+                    location,
+                    frames,
+                ))
+            }
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),
@@ -805,9 +1182,10 @@ impl<'a> Typer<'a> {
                 let (source, target) = (expression.at(*source), expression.at(*target));
                 // FR-104 (ADR-012 §15.2): only a state clause has an
                 // observation to traverse.
-                if !self.in_state_clause() {
-                    return Err(ineligible(&location));
-                }
+                self.model_check(
+                    super::super::state_model::Form::ReachesContext(self.in_state_clause()),
+                    &location,
+                )?;
                 let source_location = location.child(0);
                 frames.push(Frame::Reaches(Box::new(ReachesFrame {
                     edge,
@@ -817,16 +1195,29 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
-                let application = Application::resolve(self, name, arguments.len(), &location)?;
-                return Ok(Self::application(
-                    Box::new(ApplicationFrame {
-                        application,
-                        arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
-                        location,
-                        typed: Vec::with_capacity(arguments.len()),
-                    }),
-                    frames,
-                ));
+                if let Some(constructor) = NativeConstructor::named(name) {
+                    self.native_literal(constructor, name, expression, arguments, &location)?
+                } else {
+                    let arity = arguments.len();
+                    let application = match resolve_target(self, name, &location, || {
+                        Application::resolve(self, name, arity, &location)
+                    })? {
+                        ResolvedTarget::UnionMember(member) => {
+                            member.admit_shape(Some(arity), &location)?;
+                            Callee::Union(member)
+                        }
+                        ResolvedTarget::Value(application) => Callee::Value(application),
+                    };
+                    return Ok(Self::application(
+                        Box::new(ApplicationFrame {
+                            application,
+                            arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
+                            location,
+                            typed: Vec::with_capacity(arguments.len()),
+                        }),
+                        frames,
+                    ));
+                }
             }
             ExprNode::Record { name, fields } => {
                 let (key, declared) = self.record_declaration(name, &location)?;
@@ -869,6 +1260,13 @@ impl<'a> Typer<'a> {
                 body,
             } => {
                 let source_location = location.child(0);
+                // FR-391: a quantifier ranges over a named population.
+                let domain = match query {
+                    BinderQuery::Forall | BinderQuery::Exists => {
+                        self.named_domain(expression.at(*source), &source_location)?
+                    }
+                    BinderQuery::Map | BinderQuery::Filter | BinderQuery::FlatMap => None,
+                };
                 frames.push(Frame::Query(Box::new(QueryFrame {
                     query: *query,
                     binder,
@@ -876,11 +1274,12 @@ impl<'a> Typer<'a> {
                     location,
                     source: None,
                 })));
-                return Ok(Step::Descend(Goal::Infer(
-                    expression.at(*source),
-                    None,
-                    source_location,
-                )));
+                return Ok(match domain {
+                    Some(domain) => Step::Typed(domain),
+                    None => {
+                        Step::Descend(Goal::Infer(expression.at(*source), None, source_location))
+                    }
+                });
             }
             ExprNode::Flatten(source) => {
                 let goal = Goal::Infer(expression.at(*source), None, location.child(0));
@@ -944,6 +1343,50 @@ impl<'a> Typer<'a> {
                     frames,
                 )
             }
+            ExprNode::Population {
+                form,
+                binder,
+                population,
+                population_span,
+                condition,
+                body,
+            } => {
+                return self.population_form(
+                    (*form, binder, population, *population_span),
+                    (
+                        condition.map(|id| expression.at(id)),
+                        body.map(|id| expression.at(id)),
+                    ),
+                    location,
+                    frames,
+                )
+            }
+            ExprNode::Seq {
+                binder,
+                low,
+                high,
+                body,
+            } => {
+                if self.populations.is_none() {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::PopulationFormOutsideRefinement,
+                    ));
+                }
+                let low_location = location.child(0);
+                frames.push(Frame::Seq(Box::new(SeqFrame {
+                    binder,
+                    high: expression.at(*high),
+                    body: expression.at(*body),
+                    location,
+                    stage: SeqStage::Low,
+                })));
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*low),
+                    None,
+                    low_location,
+                )));
+            }
             ExprNode::Size(operand) => {
                 let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Size, goal, location, frames));
@@ -963,13 +1406,11 @@ impl<'a> Typer<'a> {
             }
             ExprNode::AllInstances { target, population } => {
                 let target = self.population_target(target, &location)?;
-                let goal = Goal::Infer(expression.at(*population), None, location.child(0));
-                return Ok(Self::unary(
-                    Unary::AllInstances(target),
-                    goal,
-                    location,
-                    frames,
-                ));
+                let population_location = location.child(0);
+                let named = self.named_operand(expression.at(*population), &population_location)?;
+                let goal = Goal::Infer(expression.at(*population), None, population_location);
+                let step = Self::unary(Unary::AllInstances(target), goal, location, frames);
+                return Ok(named.map_or(step, Step::Typed));
             }
             ExprNode::Lookup {
                 target,
@@ -979,6 +1420,7 @@ impl<'a> Typer<'a> {
             } => {
                 let target = self.population_target(target, &location)?;
                 let population_location = location.child(0);
+                let named = self.named_operand(expression.at(*population), &population_location)?;
                 frames.push(Frame::Lookup(Box::new(LookupFrame {
                     target,
                     reference: expression.at(*reference),
@@ -986,11 +1428,14 @@ impl<'a> Typer<'a> {
                     location,
                     population: None,
                 })));
-                return Ok(Step::Descend(Goal::Infer(
-                    expression.at(*population),
-                    None,
-                    population_location,
-                )));
+                return Ok(match named {
+                    Some(named) => Step::Typed(named),
+                    None => Step::Descend(Goal::Infer(
+                        expression.at(*population),
+                        None,
+                        population_location,
+                    )),
+                });
             }
             ExprNode::Dispatch {
                 receiver,
@@ -1053,6 +1498,22 @@ impl<'a> Typer<'a> {
     {
         let (left_location, right_location) = (location.child(0), location.child(1));
         let peer = match operator {
+            BinaryOperator::IntegerDiv
+            | BinaryOperator::IntegerRem
+            | BinaryOperator::IntegerMod => {
+                if !self.complete_value {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::ProfileProhibitedOperator(operator),
+                    ));
+                }
+                PeerOperator::IntegerDivision(match operator {
+                    BinaryOperator::IntegerDiv => IntegerDivisionOperator::Div,
+                    BinaryOperator::IntegerRem => IntegerDivisionOperator::Rem,
+                    BinaryOperator::IntegerMod => IntegerDivisionOperator::Mod,
+                    _ => return Err(ineligible(&location)),
+                })
+            }
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::Multiply
@@ -1103,6 +1564,13 @@ impl<'a> Typer<'a> {
         let ((first, first_location), (second, second_location)) =
             ordered(right_first, (left, left_location), (right, right_location));
         let (form, goal) = match peer {
+            PeerOperator::IntegerDivision(operator) => (
+                PeerForm::IntegerDivision {
+                    operator,
+                    pair: Pair::First(second, second_location),
+                },
+                Goal::Infer(first, None, first_location),
+            ),
             PeerOperator::Arithmetic(operator) => (
                 PeerForm::Arithmetic {
                     operator,
@@ -1170,33 +1638,64 @@ impl<'a> Typer<'a> {
         })
     }
 
-    /// A typed equality operand, the equality operand it compares as, and
-    /// the type its peer is hinted with. A converted operand's IEEE source
-    /// is refused.
+    /// A typed equality operand and the type its peer is hinted with. A
+    /// `convert<T>(e)` operand that changes the type is a `ConvertScalar`
+    /// node of type `T`, which the stored equality compares as typed; the
+    /// pair is first checked with the operand naming the conversion. IEEE
+    /// conversion is its own checked operation rather than an exact equality
+    /// coercion.
     fn equality_typed(
         &mut self,
         typed: Node,
         converted: Option<(ValueType, Location)>,
-    ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
+    ) -> Result<(TypedOperand, ValueType), CheckRefusal> {
         match converted {
             Some((target, location)) => {
+                if typed.value_type != target {
+                    if let Some(refusal) = self.identity_observing(
+                        &location,
+                        IdentityNode::Convert,
+                        IdentityForm::ReferenceConversion,
+                        &typed.value_type,
+                    ) {
+                        return Err(refusal);
+                    }
+                }
                 if matches!(typed.value_type, ValueType::Float(_)) {
-                    return Err(mismatch(&location));
+                    let converted = self.convert(&target, typed, &location)?;
+                    return Ok((TypedOperand::typed(converted), target));
                 }
                 let source = typed.value_type.clone();
+                let operand = EqualityOperand::converted(source.clone(), target.clone());
+                // A conversion that changes the type is its own typed node,
+                // so FR-093 lowers it as a `numeric.convert` operand and
+                // the equality compares at the converted type.
+                if source == target {
+                    let part = TypedOperand {
+                        node: typed,
+                        checked: operand.clone(),
+                        stored: operand,
+                    };
+                    return Ok((part, target));
+                }
+                let node = node(
+                    NodeKind::ConvertScalar(operand.clone(), self.push(typed)),
+                    target.clone(),
+                    &location,
+                );
+                let stored = EqualityOperand::typed(target.clone());
                 Ok((
-                    typed,
-                    EqualityOperand::converted(source, target.clone()),
+                    TypedOperand {
+                        node,
+                        checked: operand,
+                        stored,
+                    },
                     target,
                 ))
             }
             None => {
                 let value_type = typed.value_type.clone();
-                Ok((
-                    typed,
-                    EqualityOperand::typed(value_type.clone()),
-                    value_type,
-                ))
+                Ok((TypedOperand::typed(typed), value_type))
             }
         }
     }
@@ -1321,7 +1820,7 @@ impl<'a> Typer<'a> {
     /// Start `count<N>(x in c: p)` or `sum<N>(x in c: e)`: `N` names an
     /// integer type.
     fn tally<'e, 'r>(
-        &self,
+        &mut self,
         tally: Tally,
         (result_type, binder): (&str, &'e str),
         (source, body): (ExprRef<'e>, ExprRef<'e>),
@@ -1333,6 +1832,7 @@ impl<'a> Typer<'a> {
             return Err(mismatch(&location));
         }
         let source_location = location.child(0);
+        let domain = self.named_domain(source, &source_location)?;
         frames.push(Frame::Tally(Box::new(TallyFrame {
             tally,
             value_type,
@@ -1341,7 +1841,10 @@ impl<'a> Typer<'a> {
             location,
             source: None,
         })));
-        Ok(Step::Descend(Goal::Infer(source, None, source_location)))
+        Ok(match domain {
+            Some(domain) => Step::Typed(domain),
+            None => Step::Descend(Goal::Infer(source, None, source_location)),
+        })
     }
 
     /// Check a dispatch call's next argument, or build the call once every
@@ -1350,7 +1853,7 @@ impl<'a> Typer<'a> {
         &mut self,
         frame: Box<DispatchArgumentsFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
-    ) -> Step<'e, 'r> {
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let index = frame.typed.len();
         let operation = frame.operation;
         match (
@@ -1360,11 +1863,11 @@ impl<'a> Typer<'a> {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index + 1);
                 frames.push(Frame::DispatchArguments(frame));
-                Step::Descend(Goal::Expect(
+                Ok(Step::Descend(Goal::Expect(
                     argument,
                     Expected::Argument(Cow::Borrowed(parameter)),
                     location,
-                ))
+                )))
             }
             _ => {
                 let DispatchArgumentsFrame {
@@ -1374,16 +1877,16 @@ impl<'a> Typer<'a> {
                     typed,
                     ..
                 } = *frame;
-                Step::Typed(node(
-                    NodeKind::Dispatch {
-                        receiver: self.push(receiver),
-                        table: operation.table,
+                let receiver = self.push(receiver);
+                self.model_node(
+                    super::super::state_model::Form::Dispatch {
+                        receiver,
                         operation: operation_index,
                         arguments: typed,
                     },
-                    operation.result.clone(),
                     &location,
-                ))
+                )
+                .map(Step::Typed)
             }
         }
     }
@@ -1406,15 +1909,17 @@ impl<'a> Typer<'a> {
             }
             Frame::If(frame) => self.accept_if(frame, typed, frames),
             Frame::Let(frame) => self.accept_let(frame, typed, frames),
+            Frame::Case(frame) => self.accept_case(frame, typed, frames),
             Frame::Connective(frame) => Ok(self.accept_connective(frame, typed, frames)),
             Frame::Peer(frame) => self.accept_peer(frame, typed, frames),
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
             // FR-104: in a state clause, a field read through a reference
             // (`self.f`, `s.f`) is the `Attribute` node `deref(r).f` gives.
-            Frame::Field(field, location)
-                if self.in_state_clause()
-                    && matches!(typed.value_type, ValueType::Reference(_)) =>
-            {
+            // FR-363: `r.name` over a relationship end of a reference is a
+            // `Navigate` node. Only a receiver that can be a model receiver
+            // reaches the `StateModel` hook; every other `x.f` is the record
+            // field read it was.
+            Frame::Field(field, location) if self.is_model_receiver(&typed.value_type, field) => {
                 let operand_location = location.child(0);
                 self.attribute(typed, field, &operand_location, &location, false)
                     .map(Step::Typed)
@@ -1468,10 +1973,12 @@ impl<'a> Typer<'a> {
             Frame::Query(frame) => self.accept_query(frame, typed, frames),
             Frame::Accumulate(frame) => self.accept_accumulate(frame, typed, frames),
             Frame::Tally(frame) => self.accept_tally(frame, typed, frames),
+            Frame::Population(frame) => self.accept_population(frame, typed, frames),
+            Frame::Seq(frame) => self.accept_seq(frame, typed, frames),
             Frame::Contains(frame) => self.accept_contains(frame, typed, frames),
             Frame::Lookup(mut frame) => match frame.population.take() {
                 None => {
-                    Self::lookup_population(&typed)?;
+                    self.lookup_population(&typed)?;
                     let reference_location = frame.location.child(1);
                     let reference = frame.reference;
                     frame.population = Some(typed);
@@ -1501,7 +2008,7 @@ impl<'a> Typer<'a> {
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
                 let count = arguments.len();
-                Ok(self.dispatch_arguments(
+                self.dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
                         operation_index,
@@ -1511,11 +2018,11 @@ impl<'a> Typer<'a> {
                         typed: Vec::with_capacity(count),
                     }),
                     frames,
-                ))
+                )
             }
             Frame::DispatchArguments(mut frame) => {
                 frame.typed.push(self.push(typed));
-                Ok(self.dispatch_arguments(frame, frames))
+                self.dispatch_arguments(frame, frames)
             }
         }
     }
@@ -1629,6 +2136,102 @@ impl<'a> Typer<'a> {
         }
     }
 
+    /// Hand `typed` to a `case`: its scrutinee, or the body of its open arm.
+    fn accept_case<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        let arms = match std::mem::replace(&mut frame.stage, CaseStage::Scrutinee) {
+            CaseStage::Scrutinee => {
+                // A scrutinee refusal, including a type that is no declared
+                // union, ends the case before any arm is resolved.
+                let scope: &'a super::Scope = self.scope;
+                let union = UnionRef::of(scope.types(), &typed.value_type)
+                    .ok_or_else(|| mismatch(&typed.location))?;
+                let scrutinee = self.push(typed);
+                Box::new(CaseArms {
+                    builder: CaseBuilder::new(union, scrutinee),
+                    next: 0,
+                    open: None,
+                    result: None,
+                })
+            }
+            CaseStage::Arms(mut arms) => {
+                let open = arms
+                    .open
+                    .take()
+                    .ok_or_else(|| case_fault(&frame.location, "case-arm-body-unexpected"))?;
+                self.unbind(open.binders.len());
+                if matches!(frame.branches, Branches::Inferred(_)) {
+                    arms.result = Some(case_result(arms.result.take(), &typed)?);
+                }
+                let body = self.push(typed);
+                arms.builder.arm(open.member, open.binders, body);
+                arms
+            }
+        };
+        self.next_arm(frame, arms, frames)
+    }
+
+    /// Resolve arm heads in source order until one whose binders are typed
+    /// has a body to check, or every arm is resolved and the `case`
+    /// finishes. Recording a head refuses nothing.
+    fn next_arm<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        mut arms: Box<CaseArms<'r>>,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        while let Some(arm) = frame.case.arms.get(arms.next) {
+            let at = frame.location.child(1 + arms.next);
+            arms.next += 1;
+            let ArmHead::Resolved(member) = arms.builder.head(&arm.member.name, arm.binders.len())
+            else {
+                continue;
+            };
+            let mut binders = Vec::with_capacity(arm.binders.len());
+            for (binder, value_type) in arm.binders.iter().zip(arms.builder.payload(member)) {
+                binders.push(self.bind(&binder.name, value_type.clone(), &at, LocalKind::Bound)?);
+            }
+            let goal = frame.branches.goal(frame.expression.at(arm.body), at);
+            arms.open = Some(OpenArm { member, binders });
+            frame.stage = CaseStage::Arms(arms);
+            frames.push(Frame::Case(frame));
+            return Ok(Step::Descend(goal));
+        }
+        let CaseFrame {
+            branches, location, ..
+        } = *frame;
+        let CaseArms {
+            builder, result, ..
+        } = *arms;
+        let (scrutinee, declaration, arms) = builder.finish(&location)?;
+        let value_type = match branches {
+            Branches::Expected(expected) => expected.into_type(),
+            // Only a union with no member has no arm body to infer from.
+            Branches::Inferred(_) => result.ok_or_else(|| {
+                CheckRefusal::ill_typed(&location, IllTypedCause::AmbiguousLiteral)
+            })?,
+        };
+        Ok(Step::Typed(node(
+            NodeKind::Case {
+                scrutinee,
+                declaration,
+                arms,
+            },
+            value_type,
+            &location,
+        )))
+    }
+
     fn accept_connective<'e, 'r>(
         &mut self,
         frame: Box<ConnectiveFrame<'e>>,
@@ -1673,6 +2276,55 @@ impl<'a> Typer<'a> {
             location,
         } = *frame;
         match form {
+            PeerForm::IntegerDivision { operator, pair } => match pair {
+                Pair::First(second, second_location) => {
+                    let peer = typed.value_type.clone();
+                    frames.push(Frame::Peer(Box::new(PeerFrame {
+                        form: PeerForm::IntegerDivision {
+                            operator,
+                            pair: Pair::Second(typed),
+                        },
+                        right_first,
+                        location,
+                    })));
+                    Ok(Step::Descend(Goal::Infer(
+                        second,
+                        Some(Cow::Owned(peer)),
+                        second_location,
+                    )))
+                }
+                Pair::Second(first) => {
+                    let (left, right) = ordered(right_first, first, typed);
+                    if !is_integer(&left.value_type) || !is_integer(&right.value_type) {
+                        return Err(mismatch(&location));
+                    }
+                    let selection = match operator {
+                        IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                            Some(self.scope.integer_division.ok_or_else(|| {
+                                refuse(
+                                    &location,
+                                    CheckCause::MissingSelection {
+                                        role: crate::check::node_key::LawRole::IntegerDivision,
+                                    },
+                                )
+                            })?)
+                        }
+                        IntegerDivisionOperator::Mod => None,
+                    };
+                    let left = self.push(left);
+                    let right = self.push(right);
+                    Ok(Step::Typed(node(
+                        NodeKind::IntegerDivision {
+                            operator,
+                            selection,
+                            left,
+                            right,
+                        },
+                        ValueType::Integer,
+                        &location,
+                    )))
+                }
+            },
             PeerForm::Arithmetic {
                 operator,
                 hint,
@@ -1729,7 +2381,7 @@ impl<'a> Typer<'a> {
                 pair,
                 converted,
             } => {
-                let (typed, compared, peer) = self.equality_typed(typed, converted)?;
+                let (typed, peer) = self.equality_typed(typed, converted)?;
                 match pair {
                     Pair::First(second, second_location) => {
                         let mut converted = None;
@@ -1742,7 +2394,7 @@ impl<'a> Typer<'a> {
                         frames.push(Frame::Peer(Box::new(PeerFrame {
                             form: PeerForm::Equality {
                                 operator,
-                                pair: Pair::Second((typed, compared)),
+                                pair: Pair::Second(typed),
                                 converted,
                             },
                             right_first,
@@ -1751,13 +2403,49 @@ impl<'a> Typer<'a> {
                         Ok(Step::Descend(goal))
                     }
                     Pair::Second(first) => {
-                        let (left, right) = ordered(right_first, first, (typed, compared));
+                        let (left, right) = ordered(right_first, first, typed);
+                        let (left, right) = self.admit_sum_into_peer(left, right)?;
                         self.equality(operator, left, right, &location)
                             .map(Step::Typed)
                     }
                 }
             }
         }
+    }
+
+    /// FR-381-AC-10: an `Integer`-typed arithmetic operand of `=` against an
+    /// unconverted `Int[..]` operand is admitted into that interval through
+    /// a range-obligated coercion, so `x = y + 1` over `Int[0, 3]` operands
+    /// proves `y + 1` a member or refuses `unproved-range`. Any other
+    /// `Int[..]`-against-`Integer` pair is left for the equality matrix.
+    fn admit_sum_into_peer(
+        &mut self,
+        left: TypedOperand,
+        right: TypedOperand,
+    ) -> Result<(TypedOperand, TypedOperand), CheckRefusal> {
+        let is_sum = |part: &TypedOperand| {
+            part.node.value_type == ValueType::Integer
+                && matches!(part.node.kind, NodeKind::Arithmetic(..))
+                && part.checked.target().is_none()
+        };
+        let interval = |part: &TypedOperand| match &part.node.value_type {
+            ValueType::Int(_) if part.checked.target().is_none() => {
+                Some(part.node.value_type.clone())
+            }
+            _ => None,
+        };
+        let admit = |typer: &mut Self, sum: TypedOperand, into: &ValueType| {
+            typer.coerce(sum.node, into).map(TypedOperand::typed)
+        };
+        if let (true, Some(into)) = (is_sum(&right), interval(&left)) {
+            let right = admit(self, right, &into)?;
+            return Ok((left, right));
+        }
+        if let (true, Some(into)) = (is_sum(&left), interval(&right)) {
+            let left = admit(self, left, &into)?;
+            return Ok((left, right));
+        }
+        Ok((left, right))
     }
 
     fn accept_unary(&mut self, frame: UnaryFrame<'_>, operand: Node) -> Result<Node, CheckRefusal> {
@@ -1924,7 +2612,18 @@ impl<'a> Typer<'a> {
         identity: Option<Node>,
     ) -> Result<Node, CheckRefusal> {
         if !fold.source_type.kind().is_ordered() && !fold.catalogued {
-            return Err(ineligible(&frame.location));
+            let node = match frame.form {
+                Accumulation::Fold => IdentityNode::Fold,
+                Accumulation::Reduce => IdentityNode::Reduce,
+            };
+            return Err(self
+                .identity_observing(
+                    &frame.location,
+                    node,
+                    IdentityForm::OrderSensitiveTraversal,
+                    &fold.source.value_type,
+                )
+                .unwrap_or_else(|| ineligible(&frame.location)));
         }
         Ok(node(
             NodeKind::Fold {
@@ -1983,6 +2682,430 @@ impl<'a> Typer<'a> {
                         slot,
                         source: self.push(source),
                         body: self.push(body),
+                    },
+                    value_type,
+                    &location,
+                )))
+            }
+        }
+    }
+
+    /// The population a refinement row names `name`, when this pass reads
+    /// one (FR-139).
+    fn population_named(&self, name: &str) -> Option<&super::ScopedPopulation> {
+        self.populations
+            .as_ref()?
+            .populations
+            .iter()
+            .find(|population| population.name == name)
+    }
+
+    /// A concrete population name: the objects of the population in the
+    /// observed state, `Set<Reference<T>>` with the universe size left
+    /// symbolic (FR-139).
+    fn population_objects(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+        let population = self
+            .population_named(name)
+            .ok_or_else(|| refuse(location, CheckCause::MissingName(name.to_owned())))?;
+        Ok(node(
+            NodeKind::PopulationObjects {
+                population: population.key.clone(),
+            },
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Set,
+                ValueType::Reference(population.member),
+                None,
+            )),
+            location,
+        ))
+    }
+
+    /// The population `expression` names in a population position (FR-391),
+    /// when it is a `M::P` name of one; a two-segment name under an alias
+    /// that is also an enum refuses as ambiguous.
+    fn named_population(
+        &self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<super::NamedPopulation>, CheckRefusal> {
+        let (Some(named), ExprNode::Name(name)) = (&self.named, expression.node()) else {
+            return Ok(None);
+        };
+        if named.is_ambiguous(name) {
+            return Err(ambiguous_alias(name, location));
+        }
+        match named.named(name) {
+            Some(population) => Ok(Some(population.clone())),
+            None if named.is_under_alias(name) => Err(missing_segment(name, location)),
+            None => Ok(None),
+        }
+    }
+
+    /// The population operand `expression` of `allInstances` or `lookup`,
+    /// when it names a population in a population position (FR-391):
+    /// `Population<U>[N]`, carrying the population's declaration key.
+    fn named_operand(
+        &mut self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<Node>, CheckRefusal> {
+        let Some(population) = self.named_population(expression, location)? else {
+            return Ok(None);
+        };
+        self.enter(location)?;
+        Ok(Some(population_operand(&population, location)))
+    }
+
+    /// The domain `expression` of a quantifier or tally, when it names a
+    /// population in a population position (FR-391).
+    fn named_domain(
+        &mut self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<Node>, CheckRefusal> {
+        let Some(population) = self.named_population(expression, location)? else {
+            return Ok(None);
+        };
+        self.population_domain(&population, location).map(Some)
+    }
+
+    /// A named population read as a domain (FR-391 "Lowering"):
+    /// `allInstances<U>(M::P)` for its canonical member type `U`, typed
+    /// `Set<Reference<U>>[0,N]`.
+    fn population_domain(
+        &mut self,
+        population: &super::NamedPopulation,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.enter(location)?;
+        let operand = population_operand(population, &location.child(0));
+        self.all_instances(
+            &ValueType::Reference(population.domain.object),
+            operand,
+            location,
+        )
+    }
+
+    /// Start `form(binder in population where c [: e])` (FR-139).
+    fn population_form<'e, 'r>(
+        &mut self,
+        (form, binder, population, population_span): (PopulationForm, &'e str, &str, Span),
+        (condition, body): (Option<ExprRef<'e>>, Option<ExprRef<'e>>),
+        location: Location,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        // FR-139 in a refinement row; FR-391 in a population position;
+        // anywhere else `M::P` names no population.
+        let source = match (&self.populations, &self.named) {
+            (Some(_), _) => self.population_objects(population, &location)?,
+            (None, Some(named)) => {
+                if named.is_ambiguous(population) {
+                    return Err(ambiguous_alias(population, &location));
+                }
+                match named.named(population).cloned() {
+                    Some(named) => self.population_domain(&named, &location.child(0))?,
+                    None if named.is_under_alias(population) => {
+                        return Err(missing_segment_at(
+                            population,
+                            &location,
+                            Some(population_span),
+                        ))
+                    }
+                    None => {
+                        return Err(refuse(
+                            &location,
+                            CheckCause::PopulationFormOutsideRefinement,
+                        ))
+                    }
+                }
+            }
+            // A function body or type-level invariant: `M::P` names nothing
+            // there (FR-391); any other domain is FR-139's expression form.
+            (None, None) => {
+                return Err(refuse(
+                    &location,
+                    if self
+                        .scope
+                        .known_populations
+                        .iter()
+                        .any(|known| known == population)
+                    {
+                        return Err(missing_segment_at(
+                            population,
+                            &location,
+                            Some(population_span),
+                        ));
+                    } else {
+                        CheckCause::PopulationFormOutsideRefinement
+                    },
+                ))
+            }
+        };
+        let element = self.element_type(&source)?;
+        let slot = self.bind(binder, element, &location, LocalKind::Bound)?;
+        let (awaiting, first) = match (condition, body) {
+            (Some(condition), _) => (
+                PopulationAwait::Condition,
+                Goal::Expect(condition, Expected::Checked(boolean()), location.child(0)),
+            ),
+            (None, Some(body)) => (
+                PopulationAwait::Body,
+                Goal::Infer(body, None, location.child(0)),
+            ),
+            (None, None) => {
+                return self
+                    .finish_population(form, source, slot, None, None, &location)
+                    .map(Step::Typed)
+            }
+        };
+        frames.push(Frame::Population(Box::new(PopulationFrame {
+            form,
+            source,
+            slot,
+            body,
+            typed_condition: None,
+            awaiting,
+            location,
+        })));
+        Ok(Step::Descend(first))
+    }
+
+    fn accept_population<'e, 'r>(
+        &mut self,
+        mut frame: Box<PopulationFrame<'e>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        match frame.awaiting {
+            PopulationAwait::Condition => match frame.body {
+                Some(body) => {
+                    let body_location = frame.location.child(1);
+                    frame.typed_condition = Some(typed);
+                    frame.awaiting = PopulationAwait::Body;
+                    frames.push(Frame::Population(frame));
+                    Ok(Step::Descend(Goal::Infer(body, None, body_location)))
+                }
+                None => {
+                    let PopulationFrame {
+                        form,
+                        source,
+                        slot,
+                        location,
+                        ..
+                    } = *frame;
+                    self.finish_population(form, source, slot, Some(typed), None, &location)
+                        .map(Step::Typed)
+                }
+            },
+            PopulationAwait::Body => {
+                let PopulationFrame {
+                    form,
+                    source,
+                    slot,
+                    typed_condition,
+                    location,
+                    ..
+                } = *frame;
+                self.finish_population(form, source, slot, typed_condition, Some(typed), &location)
+                    .map(Step::Typed)
+            }
+        }
+    }
+
+    /// The node of a population-valued form over its typed operands
+    /// (FR-139). `count` and `sum` types leave the universe size symbolic:
+    /// they are `Integer` here, and the bound `Int[0, n]` is checked against
+    /// the type of the form's use when a subject admits its universes.
+    fn finish_population(
+        &mut self,
+        form: PopulationForm,
+        source: Node,
+        slot: Slot,
+        condition: Option<Node>,
+        body: Option<Node>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.unbind(1);
+        let truth = |location: &Location| {
+            node(
+                NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                ValueType::Boolean,
+                location,
+            )
+        };
+        let query = |typer: &mut Self, visit, source: Node, body: Node, value_type| {
+            node(
+                NodeKind::Query {
+                    visit,
+                    slot,
+                    source: typer.push(source),
+                    body: typer.push(body),
+                },
+                value_type,
+                location,
+            )
+        };
+        let tally = |typer: &mut Self, visit, value_type, source: Node, condition: Option<Node>| {
+            let body = condition.unwrap_or_else(|| truth(location));
+            query(typer, visit, source, body, value_type)
+        };
+        // FR-391: over a named population with an authored maximum `N` the
+        // bounds are `N`'s, not the universe size's.
+        let maximum = match &source.value_type {
+            ValueType::Collection(collection) => collection.bound().map(|bound| bound.maximum()),
+            _ => None,
+        };
+        let named = matches!(source.kind, NodeKind::AllInstances { .. });
+        match form {
+            PopulationForm::Count => {
+                let value_type = match (named, maximum) {
+                    (true, Some(maximum)) => {
+                        int_type(Integer::zero(), Integer::from(maximum), location)?
+                    }
+                    _ => ValueType::Integer,
+                };
+                Ok(tally(self, Visit::Count, value_type, source, condition))
+            }
+            PopulationForm::Exists => Ok(tally(
+                self,
+                Visit::Exists,
+                ValueType::Boolean,
+                source,
+                condition,
+            )),
+            PopulationForm::All => Ok(tally(
+                self,
+                Visit::Forall,
+                ValueType::Boolean,
+                source,
+                condition,
+            )),
+            PopulationForm::Sum | PopulationForm::Only => {
+                let body = body.ok_or_else(|| mismatch(location))?;
+                // A `sum` folds its condition into the summand, so each object
+                // is visited once; an `only` filters, and visits only the one
+                // object that passes again without a charge.
+                let (source, body) = match (condition, form) {
+                    (Some(condition), PopulationForm::Sum) if is_integer(&body.value_type) => {
+                        let zero = node(
+                            NodeKind::Literal(CheckedLiteral(Value::Integer(Integer::zero()))),
+                            ValueType::Integer,
+                            location,
+                        );
+                        let guarded = node(
+                            NodeKind::If {
+                                condition: self.push(condition),
+                                then: self.push(body),
+                                otherwise: self.push(zero),
+                            },
+                            ValueType::Integer,
+                            location,
+                        );
+                        (source, guarded)
+                    }
+                    (Some(condition), _) => {
+                        let filtered = source.value_type.clone();
+                        (
+                            query(self, Visit::Filter, source, condition, filtered),
+                            body,
+                        )
+                    }
+                    (None, _) => (source, body),
+                };
+                if form == PopulationForm::Sum {
+                    if !is_integer(&body.value_type) {
+                        return Err(refuse(
+                            &body.location,
+                            CheckCause::PopulationFormNotChecked {
+                                what: "a sum over a value that is not an integer",
+                            },
+                        ));
+                    }
+                    let value_type = match (named, maximum, self.static_range(&body)) {
+                        (true, Some(maximum), Some((low, high))) => {
+                            let count = Integer::from(maximum);
+                            let product_low = count.mul(&low);
+                            let product_high = count.mul(&high);
+                            int_type(
+                                product_low.min(Integer::zero()),
+                                product_high.max(Integer::zero()),
+                                location,
+                            )?
+                        }
+                        _ => ValueType::Integer,
+                    };
+                    Ok(query(self, Visit::Sum, source, body, value_type))
+                } else {
+                    let value_type = body.value_type.clone();
+                    Ok(query(self, Visit::Only, source, body, value_type))
+                }
+            }
+        }
+    }
+
+    fn accept_seq<'e, 'r>(
+        &mut self,
+        mut frame: Box<SeqFrame<'e>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        match std::mem::replace(&mut frame.stage, SeqStage::Low) {
+            SeqStage::Low => {
+                if !is_integer(&typed.value_type) {
+                    return Err(mismatch(&typed.location));
+                }
+                let high = frame.high;
+                let high_location = frame.location.child(1);
+                frame.stage = SeqStage::High {
+                    low: Box::new(typed),
+                };
+                frames.push(Frame::Seq(frame));
+                Ok(Step::Descend(Goal::Infer(high, None, high_location)))
+            }
+            SeqStage::High { low } => {
+                if !is_integer(&typed.value_type) {
+                    return Err(mismatch(&typed.location));
+                }
+                let (binder_type, maximum) = seq_binder(
+                    (self.static_range(&low), self.static_range(&typed)),
+                    &frame.location,
+                )?;
+                let slot =
+                    self.bind(frame.binder, binder_type, &frame.location, LocalKind::Bound)?;
+                let body = frame.body;
+                let body_location = frame.location.child(2);
+                frame.stage = SeqStage::Body {
+                    low,
+                    high: Box::new(typed),
+                    slot,
+                    maximum,
+                };
+                frames.push(Frame::Seq(frame));
+                Ok(Step::Descend(Goal::Infer(body, None, body_location)))
+            }
+            SeqStage::Body {
+                low,
+                high,
+                slot,
+                maximum,
+            } => {
+                self.unbind(1);
+                let location = frame.location.clone();
+                let bound = maximum
+                    .map(|maximum| super::bound(0, maximum, &location))
+                    .transpose()?;
+                let value_type = ValueType::collection(CollectionType::new(
+                    CollectionKind::Sequence,
+                    typed.value_type.clone(),
+                    bound,
+                ));
+                self.check_declared_type(&value_type, &location)?;
+                Ok(Step::Typed(node(
+                    NodeKind::Seq {
+                        slot,
+                        low: self.push(*low),
+                        high: self.push(*high),
+                        body: self.push(typed),
                     },
                     value_type,
                     &location,

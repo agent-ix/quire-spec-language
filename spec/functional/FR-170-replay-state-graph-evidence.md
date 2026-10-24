@@ -96,7 +96,9 @@ pub enum GraphEvidence {
   predicate values, as FR-128 carries its evaluated value; or a typed
   `ReplayRefusal` with no partial result.
 - For a trap, the replay result also carries the closure exploration's
-  node count.
+  node count and, when the closure holds a target node, the first such
+  node in FR-101 canonical breadth-first order of that exploration, as its
+  `quire.simulation.state-key/v1` digest.
 
 ## Behavior
 
@@ -143,7 +145,10 @@ pub enum GraphEvidence {
   node: `possible`'s and `always possible`'s target, or `unique path`'s `to`.
 - Exploration that completes with no target node SHALL settle
   `reproduced-with-evaluated-witness`. A target node SHALL settle
-  `inconclusive`, `Verdicts`. A node of the closure where the target
+  `inconclusive`, `Verdicts`, and the replay result SHALL name the first
+  target node the exploration reaches. This replay is the trap's whole
+  closure check: a trap carries no certificate, and no certificate
+  checker's rule settles it (FR-282). A node of the closure where the target
   evaluates `Undefined` SHALL settle `inconclusive`, `Verdicts`: the engine
   would have reported it as `Undefined` evidence (QSpec FR-391), not as a
   trap. Exploration a limit stops SHALL return the replay result stopped, naming
@@ -168,6 +173,23 @@ pub enum GraphEvidence {
   undefined cause equal to the payload's, the executor SHALL settle
   `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
   the value; otherwise `inconclusive`, `Verdicts`.
+- When `where` names a subject's expression (FR-168), the executor SHALL
+  re-execute the stem and evaluate at its last state the expression
+  `where.locus` names: the guard of the transition `where.transition` names,
+  enabled-tested there; the `terminal when` predicate, when no transition is
+  enabled there; or the state constraint whose clause `where.locus` names,
+  resolved in the recompiled package, which the executor reads from the locus
+  and never from the request. An `Undefined` value with
+  the payload's cause SHALL settle `reproduced-with-evaluated-witness`;
+  any other value, or an undefined evaluation at an earlier state of the
+  stem, SHALL settle `inconclusive`, `Verdicts`. For a state constraint the
+  executor SHALL also evaluate the constraint at every earlier state of the
+  stem, and a constraint false at one (a boundary state, which the engine
+  never expands) SHALL settle `inconclusive`, `Verdicts`.
+- When `where.locus` names a state constraint and the recompiled package has
+  no `constraint` clause there (the locus names no state clause, or one of
+  another kind), the executor SHALL refuse `stale_dependency`/
+  `content-mismatch`, naming the locus, and settle no result.
 
 ### Engine independence
 
@@ -186,8 +208,10 @@ pub enum GraphEvidence {
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
 | FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
-| FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.locus` naming another expression, with the same cause. Over the same subject, `always possible PDiv using v over (c: Config::ConfigVersion) from (c.versionNumber >= 1) { 2 / (2 - c.versionNumber) = 2 }` for `c = a`, a claim with two predicates, returns `Undefined` evidence with the same stem whose `where.predicate` names the body; it replays to `reproduced-with-evaluated-witness`, and the same evidence with `where.predicate` naming the `from` predicate `c.versionNumber >= 1`, same cause, settles `inconclusive`, `Verdicts`. | Test (TC-612) |
+| FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.locus` naming another expression, with the same cause. Over the same subject, `always possible PDiv using v over (c: Config::ConfigVersion) from (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`, a claim with two predicates, returns `Undefined` evidence with the same stem whose `where.predicate` names the body; it replays to `reproduced-with-evaluated-witness`, and the same evidence with `where.predicate` naming the `from` predicate `c.versionNumber >= 1`, same cause, settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
+| FR-170-AC-7 | FR-168-AC-11's guard evidence, FR-168-AC-12's terminal-predicate evidence and FR-168-AC-13's state-constraint evidence each replay to `reproduced-with-evaluated-witness`, and FR-168-AC-13's evidence does so through a request that selects `Half` and through one that selects no constraint, since the replay reads `Half` from `where.locus`; the guard evidence with `where.transition` naming another transition, or with its stem's last step removed, settles `inconclusive`, `Verdicts`. FR-168-AC-13's evidence with its stem's last step removed, which ends at `va = 1` where `Half` is defined, and with its cause changed to another reason, each settle `inconclusive`, `Verdicts`; the same evidence in an envelope over the unit where `Half` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-612) |
+| FR-170-AC-8 | Over ADR-022 §7.2's game model, `CanStillWin`'s trap at `Lost` replays by exploring its forward closure `{Lost}`, which holds no target node, reports node count 1, reproduces, and FR-169 settles it `refuted`, `closed-scope` (V-10) with no certificate checked. The same trap with its stem ending at `Mid`, whose forward closure reaches `Won`, settles `inconclusive`, `Verdicts`, and its replay result names `Won`'s state-key digest as the first target node. | Test (TC-595) |
 
 ## Dependencies
 

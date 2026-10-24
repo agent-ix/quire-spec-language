@@ -23,7 +23,7 @@ Scope: FR-196-AC-5, FR-202-AC-5, FR-203-AC-5.
 
 ## Test Procedure
 
-Fixture: the `Coin` model and claim of FR-196-AC-5.
+Fixture: the `Coin` model and claim of FR-196-AC-5 (`drop` deletes the coin when `b = 0`, and the claim reads `c.v`).
 
 1. Build the product and run EN-5.
 2. Replay the evidence, then the same evidence with `where` set to 0.
@@ -33,9 +33,9 @@ Tag the tests `#[trace("TC-641", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: the build stops at `v = 1`, position 1; evidence `Undefined` path
-  `flip` with `b = 1`, probability `1/2`, `UndefinedEvaluation{where: 1,
-  cause: division-by-zero}`.
+- Step 1: the build stops at the state reached by `drop` with `b = 0`,
+  position 1; evidence `Undefined` path `drop` with `b = 0`, probability
+  `1/2`, `UndefinedEvaluation{where: 1, cause: absent-key}`.
 - Step 2: `reproduced-with-evaluated-witness`; then `inconclusive`,
   `ReplayParity`.
 - Step 3: `refuted`, `decisive-counterexample`, category violation, cause

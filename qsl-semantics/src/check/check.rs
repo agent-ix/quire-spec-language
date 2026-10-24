@@ -48,17 +48,24 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+mod native_literal;
 mod typing;
+use typing::TypedOperand;
 
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
-    OrderedKind, RecordSlot, Slot, Visit,
+    OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
+use super::navigation::Relationships;
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
+    IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
+use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
-use crate::value::definition::AdmittedIeeeProfile;
+use crate::value::definition::{
+    AdmittedIeeeProfile, AdmittedIntegerDivision, CatalogRole, DefinitionLock,
+};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -75,14 +82,15 @@ use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
     FieldDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
+use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
@@ -146,9 +154,171 @@ impl ResolvedSignatures {
     }
 }
 
+/// The runtime members of a model variant type whose checked node is
+/// `declaration`, for `cases` in ascending UTF-8 byte order of their names
+/// (QSpec FR-144's key order for an unordered enumeration). Each member is
+/// keyed by [`mint_variant_id`] over the declaration and its case, and a case
+/// name is any non-empty string, kept exactly. `None` when `cases` is empty,
+/// repeats a name or has an empty name, which the model's intake refuses
+/// before a variant type is declared.
+fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
+    let runtime = EnumDeclaration::model_owned(declaration, cases.to_vec()).ok()?;
+    cases
+        .iter()
+        .map(|case| {
+            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            runtime.member(case, member).ok()
+        })
+        .collect()
+}
+
+/// A model variant type in the type environment (FR-056 "Variant types",
+/// FR-081, FR-360 item 11): the effective type the normalized view gives a
+/// `quire.meaning.model.variant-type/v1` declaration, named `M::<artifact
+/// id>`, with its cases. One declaration holds both keys of the type and of
+/// each case: the FR-081 effective identity and the checked node key, so
+/// neither is derived from the other and neither depends on the alias a unit
+/// gives the model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantTypeDeclaration {
+    key: EffectiveId,
+    name: String,
+    declaration: DeclarationKey,
+    node: NodeKey,
+    cases: Vec<VariantCaseDeclaration>,
+    members: Vec<EnumValue>,
+}
+
+impl VariantTypeDeclaration {
+    /// The variant type `name` with effective identity `key`, declared by
+    /// the model record `declaration` and checked node key `node`; `cases`
+    /// are kept in ascending UTF-8 byte order of their names. Each case's
+    /// checked key is the FR-141 member identity over `node` and the case
+    /// name. `None` when `cases` is not a valid case set of a model-owned
+    /// enumeration (see [`variant_type_members`]).
+    pub(crate) fn new(
+        key: EffectiveId,
+        name: String,
+        declaration: DeclarationKey,
+        node: NodeKey,
+        mut cases: Vec<(EffectiveId, String)>,
+    ) -> Option<Self> {
+        cases.sort_by(|left, right| left.1.cmp(&right.1));
+        let names: Vec<String> = cases.iter().map(|(_, case)| case.clone()).collect();
+        let members = variant_type_members(node, &names)?;
+        let cases = cases
+            .into_iter()
+            .map(|(key, case)| {
+                let variant = mint_variant_id(node, &case);
+                VariantCaseDeclaration {
+                    key,
+                    name: case,
+                    variant,
+                }
+            })
+            .collect();
+        Some(Self {
+            key,
+            name,
+            declaration,
+            node,
+            cases,
+            members,
+        })
+    }
+
+    /// The variant type's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The qualified name `M::<artifact id>`.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The model record that declares the variant type.
+    pub(crate) fn declaration(&self) -> &DeclarationKey {
+        &self.declaration
+    }
+
+    /// The variant type's checked node key (QSpec FR-322 "Model-owned
+    /// members" step 2), a function of the selected document's identity and
+    /// the type node alone.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The cases, ascending by the UTF-8 bytes of their names.
+    pub fn cases(&self) -> &[VariantCaseDeclaration] {
+        &self.cases
+    }
+
+    /// The kernel enum shape of the type: its cases' checked keys in
+    /// ascending UTF-8 byte order of the case names, which is QSpec FR-144's
+    /// key order for an unordered enumeration.
+    pub fn shape(&self) -> EnumShape {
+        EnumShape::new(
+            false,
+            self.cases.iter().map(VariantCaseDeclaration::variant),
+        )
+    }
+
+    /// The runtime members, in the order of [`Self::cases`].
+    pub(crate) fn members(&self) -> &[EnumValue] {
+        &self.members
+    }
+}
+
+/// One case of a [`VariantTypeDeclaration`]: an effective member of the
+/// variant type, keyed by its own effective identity and by its checked key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantCaseDeclaration {
+    key: EffectiveId,
+    name: String,
+    variant: VariantId,
+}
+
+impl VariantCaseDeclaration {
+    /// The case's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The case name, compared as exact UTF-8 bytes.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The case's checked key: the FR-141 member identity over the variant
+    /// type's checked node and the case name.
+    pub fn variant(&self) -> VariantId {
+        self.variant
+    }
+}
+
+/// The staged model type admission, held until the conformance stage has
+/// judged every redefinition.
+pub struct StagedTypes(pub quire_semantic_value::declaration::PendingTypeEnvironment);
+
+impl std::fmt::Debug for StagedTypes {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("StagedTypes")
+    }
+}
+
 /// The closed declarations of one package that expressions resolve against.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PackageDeclarations {
+    /// The staged model admission, completed once the conformance stage has
+    /// judged every model redefinition.
+    pub pending_types: Option<StagedTypes>,
+    /// The models and the meter their admission counted on, which the
+    /// conformance stage continues.
+    pub model_inputs: Option<(
+        Vec<crate::model::intake::SelectedModel>,
+        crate::model::accounting::Meter,
+    )>,
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -159,13 +329,24 @@ pub struct PackageDeclarations {
     /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
     /// a lowered operation may name (FR-093).
     pub lock_evidence: super::lowering::LockEvidence,
+    /// FR-110: the header-selectable layers the unit's header profiles
+    /// resolve to, ascending; the lock's `definition_selections` hold their
+    /// `requires` closure.
+    pub header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
+    /// Where each record keeps the fields its ancestors name (FR-359).
+    pub model_records: ModelRecords,
+    /// The relationships between the admitted models' object types, which
+    /// `r.name` navigates (FR-363).
+    pub relationships: Relationships,
     /// The model object types' own declared operations (FR-103), resolved
     /// through [`Self::types`]' effective view.
     pub operations: OperationTable,
     /// Enum declarations.
     pub enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, ascending by effective identity.
+    pub variant_types: Vec<VariantTypeDeclaration>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
     /// The unit's own `profile p = ...;` and `model M = ...;` selection
@@ -190,6 +371,8 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The package's admitted `div`/`rem` law, when one was selected.
+    pub integer_division: Option<AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
     /// resolve to, keyed by the receiver's static type and the member name.
     /// Built by the caller (the `crate::model` bridge); the checker only
@@ -213,11 +396,22 @@ pub struct PackageDeclarations {
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
-    /// FR-096: the span of each declared record's and tuple's name, by its
-    /// declared name, for the types read from the unit (the FR-091
-    /// assembler fills it). A type declared by hand has none, and its
-    /// `declaration` occurrence then names no region.
+    /// FR-096: the span of each declared record, tuple, enum, or selected
+    /// model alias, by its declared name, for declarations read from the
+    /// unit (the FR-091 assembler fills it). A declaration built by hand has
+    /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site that
+    /// has an expression tree of its own and is located by an
+    /// `Origin::TypeDeclaration` site name (a temporal clause's `holds`
+    /// condition), by that name. The FR-091 assembler fills it.
+    pub declared_site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
+    /// FR-096, FR-302: the span of the unit declaration each function
+    /// synthesized for dispatch without form spans of its own was derived
+    /// from, by index into [`Self::functions`]: every occurrence in such a
+    /// function resolves to that span. `link_dispatch` fills it for the
+    /// precondition functions it synthesizes from the unit's `pre` clauses.
+    pub synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves
     /// under the document's `RawSourceRef`, shifted by the body's offset in
@@ -252,12 +446,176 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
+    /// each as S2 built it, for the `TemporalTrace` family's `check`.
+    pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-304: the unit's `abstraction` declarations in declaration order,
+    /// each as S2 built it, for `CheckedGraph::abstraction`.
+    pub abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
+    /// FR-165: the unit's state-graph claims in declaration order, each with
+    /// its profile and `over` type resolved, for the `StateGraph` family's
+    /// `check`.
+    pub state_graph_claims: Vec<super::state_graph_claim::StateGraphDeclaration>,
+    /// FR-110, FR-326: the unit's header profile selections the
+    /// `TemporalTrace` family's catalog holds, in source order. A clause is
+    /// checked under the one of them, or refuses when there is none or
+    /// several.
+    pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-230, FR-233: the time source of each timed model, which a
+    /// `model-time` clause binds (FR-234). The assembler builds none: FR-230's
+    /// "Timed facet gate" refuses every `time` member, since no catalog holds
+    /// `quire.temporal.complete/v1`, so no model reaching S3 is timed. A
+    /// caller that holds a model's checked time source supplies it here.
+    pub time_sources: Vec<super::temporal_clause::ModelTimeSource>,
+    /// FR-110, FR-186: every header profile selection of the unit, in source
+    /// order, for a `probabilistic` claim's `using` alias to resolve against.
+    pub profile_selections: Vec<qsl_foundation::selection::ProfileSelection>,
+    /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
+    /// declaration order, each as S2 built it, for the `TemporalTrace`
+    /// family's `check`.
+    pub hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
+    /// FR-103: each domain-package operation `requires`/`ensures` clause the
+    /// driver parsed, with its operation resolved, checked beside the state
+    /// clauses. Checking yields a refusal or nothing.
+    pub operation_clauses: Vec<super::OperationClauseDeclaration>,
+    /// FR-366: each type-level `Invariant` clause the driver parsed, with its
+    /// owner resolved, checked beside the state clauses. A checked invariant
+    /// adds no declaration, claim or requirement record.
+    pub type_invariants: Vec<super::TypeInvariantDeclaration>,
+    /// FR-124: the unit's `terminal` declarations in declaration order, each
+    /// resolved by the FR-091 assembler and checked beside the state clauses.
+    pub terminals: Vec<super::TerminalClauseDeclaration>,
+    /// Test-only: check a package that holds a `terminal` declaration
+    /// without refusing it as not emitted (FR-124).
+    pub emit_unwritten_terminals: bool,
+    /// FR-135 to FR-137: the unit's `refinement` declarations in declaration
+    /// order, each resolved by the FR-091 assembler and checked after the
+    /// state clauses.
+    pub refinements: Vec<super::RefinementDeclaration>,
+    /// FR-447: the unit's `hybrid` declarations in declaration order, each
+    /// with its `using` alias resolved by the FR-091 assembler.
+    pub hybrids: Vec<super::HybridDeclaration>,
+    /// Test-only: check a package that holds a `hybrid` declaration without
+    /// refusing it as not emitted (FR-447).
+    pub emit_unwritten_hybrids: bool,
+    /// FR-147: the unit's `refinement_internals` input, supplied beside the
+    /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
+    /// name, "internal": [class, ...]}` objects. `None` is the empty list.
+    pub refinement_internals: Option<serde_json::Value>,
+    /// FR-135: the refinement features this build has built. A build
+    /// capability, not a request parameter; only a test replaces it.
+    pub refinement_support: super::RefinementSupport,
+    /// Test-only: check a package that holds a `refinement` declaration
+    /// without refusing it as not emitted (FR-135).
+    pub emit_unwritten_refinements: bool,
+    /// Test-only: check a package that holds a state-graph claim without
+    /// refusing it as not emitted (FR-165).
+    pub emit_unwritten_state_graph_claims: bool,
+    /// FR-103, FR-302: the unit's `operation-body` declarations in
+    /// declaration order, each resolved to its operation's `DeclarationKey`
+    /// by the FR-091 assembler. At most one per key.
+    pub operation_bodies: Vec<super::OperationBodyDeclaration>,
+    /// FR-103, FR-302: the effective view of each selected `model`
+    /// declaration, by its alias, with `has_body` set from the unit's
+    /// `operation-body` declarations that resolved into it. A model no body
+    /// names holds its admitted view, whose `has_body` is false throughout.
+    /// Dispatch linking reads a called operation's family from these views.
+    pub selected_views: BTreeMap<String, crate::model::normalize::EffectiveView>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
     pub identity: qsl_foundation::IdentityLimits,
 }
 
 impl PackageDeclarations {
+    /// These declarations, to be checked without refusing a `terminal`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::terminals`) stays testable until S4 writes it
+    /// (FR-124).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_terminals(mut self) -> Self {
+        self.emit_unwritten_terminals = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a `refinement`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::refinements`) stays testable until S4 writes it
+    /// (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_refinements(mut self) -> Self {
+        self.emit_unwritten_refinements = true;
+        self
+    }
+
+    /// These declarations with the unit's `refinement_internals` input
+    /// (FR-147).
+    #[must_use]
+    pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
+        self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations, to be checked as a build that has built only
+    /// `support` (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_refinement_support(mut self, support: super::RefinementSupport) -> Self {
+        self.refinement_support = support;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a state-graph
+    /// claim as not emitted, so the S3 value
+    /// (`CheckedGraph::state_graph_claims`) stays testable until S4 writes it
+    /// (FR-165).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_state_graph_claims(mut self) -> Self {
+        self.emit_unwritten_state_graph_claims = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a `hybrid`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::hybrid_models`) stays testable until S4 writes it
+    /// (FR-447).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_hybrids(mut self) -> Self {
+        self.emit_unwritten_hybrids = true;
+        self
+    }
+
+    /// The work units the staged model type admission has spent so far
+    /// (structural admission plus its metered reads), when one is staged.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn staged_work_units(&self) -> Option<u64> {
+        self.pending_types.as_ref().map(|staged| staged.0.spent())
+    }
+
+    /// Test fixture declarations retaining the genuine admission operation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_selected_models(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        identity: qsl_foundation::IdentityLimits,
+        selected: crate::model::intake::SelectedModels,
+    ) -> Self {
+        let (entries, meter) = selected.into_parts();
+        let mut declarations = Self::new(source, identity);
+        declarations.models = entries
+            .iter()
+            .map(|entry| super::AdmittedModel::from_view(&entry.view))
+            .collect();
+        declarations.model_inputs = Some((entries, meter));
+        declarations
+    }
+
     /// A package declared by the source unit `source` names, with no
     /// declaration yet and no lock evidence, whose node identities encode
     /// under `identity`.
@@ -266,23 +624,32 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
+            model_inputs: None,
+            pending_types: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
+            header_layers: Vec::new(),
             types: TypeEnvironment::default(),
+            model_records: ModelRecords::default(),
+            relationships: Relationships::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
+            variant_types: Vec::new(),
             aliases: Vec::new(),
             alias_names: std::collections::BTreeMap::new(),
             native_names: std::collections::BTreeSet::new(),
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
             models: Vec::new(),
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            declared_site_spans: BTreeMap::new(),
+            synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
@@ -291,8 +658,50 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            temporal_clauses: Vec::new(),
+            abstractions: Vec::new(),
+            probabilistic: Vec::new(),
+            state_graph_claims: Vec::new(),
+            temporal_selections: Vec::new(),
+            time_sources: Vec::new(),
+            profile_selections: Vec::new(),
+            hyper_clauses: Vec::new(),
+            operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
+            terminals: Vec::new(),
+            emit_unwritten_terminals: false,
+            refinements: Vec::new(),
+            hybrids: Vec::new(),
+            emit_unwritten_hybrids: false,
+            refinement_internals: None,
+            refinement_support: super::RefinementSupport::BUILD,
+            emit_unwritten_refinements: false,
+            emit_unwritten_state_graph_claims: false,
+            operation_bodies: Vec::new(),
+            selected_views: BTreeMap::new(),
             identity,
         }
+    }
+
+    /// FR-302: the unit's body for the operation `key`, if one resolved to
+    /// it.
+    pub fn operation_body(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Option<&super::OperationBodyDeclaration> {
+        self.operation_bodies.iter().find(|body| &body.key == key)
+    }
+
+    /// FR-103, FR-302: the unit `pre` and `post` clauses that resolved to
+    /// the operation `key`, in declaration order.
+    pub fn unit_clauses_for(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Vec<&super::StateClauseDeclaration> {
+        self.state_clauses
+            .iter()
+            .filter(|clause| clause.operation_key.as_ref() == Some(key))
+            .collect()
     }
 
     /// The unit's owner, `SourceOwner{authority, identity}` taken from its
@@ -322,17 +731,107 @@ pub struct DispatchOperation {
     pub table: usize,
 }
 
+/// What the checker knows of a model's record value types and event types
+/// beyond their composite declarations (FR-359).
+///
+/// A checked field read names its field by the record it is typed at and the
+/// name there. The value read is a child of that record, whose effective
+/// fields are ordered by their own keys, and which may redefine the field
+/// under another name (FR-082). This holds, for each record that redefines an
+/// ancestor's field under a different name, the name of its own field; a
+/// record with no such field keeps every field under its name. It also holds
+/// which declarations are event types, which FR-208 gives no equality.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ModelRecords {
+    /// By the value's declaration and the declaration the read is typed at,
+    /// then the name there: a read looks a borrowed name up and allocates
+    /// nothing, and a package with no redefinition under another name
+    /// holds an empty map.
+    renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey), BTreeMap<String, String>>,
+    events: BTreeSet<quire_exact::NodeKey>,
+}
+
+impl ModelRecords {
+    /// Record that the record `value` keeps the field `name` of the record
+    /// `read_at` under its own field `own`.
+    pub(crate) fn rename(
+        &mut self,
+        value: quire_exact::NodeKey,
+        read_at: quire_exact::NodeKey,
+        name: impl Into<String>,
+        own: impl Into<String>,
+    ) {
+        self.renamed
+            .entry((value, read_at))
+            .or_default()
+            .insert(name.into(), own.into());
+    }
+
+    /// Record that `declaration` is an event type.
+    pub(crate) fn declare_event(&mut self, declaration: quire_exact::NodeKey) {
+        self.events.insert(declaration);
+    }
+
+    /// Every entry of `other`.
+    pub(crate) fn extend(&mut self, other: ModelRecords) {
+        for (key, names) in other.renamed {
+            self.renamed.entry(key).or_default().extend(names);
+        }
+        self.events.extend(other.events);
+    }
+
+    /// The name under which a value of `declaration` keeps `field`.
+    fn own_name<'f>(
+        &'f self,
+        declaration: quire_exact::NodeKey,
+        field: &'f RecordField,
+    ) -> &'f str {
+        self.renamed
+            .get(&(declaration, field.declaration()))
+            .and_then(|names| names.get(field.name()))
+            .map_or(field.name(), String::as_str)
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
+    /// Where a record value keeps the fields its ancestors name (FR-359).
+    model_records: ModelRecords,
+    /// The relationship ends a receiver type navigates (FR-363).
+    relationships: Relationships,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, as the assembler ordered them.
+    /// A source name `M::T` resolves to one through [`Self::index`].
+    variant_types: Vec<VariantTypeDeclaration>,
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The IEEE package-selection trigger recorded from resolved declarations.
+    /// Every body float originates in a declaration: constants and conversion
+    /// into floats are unavailable, and model float intake is refused. Any new
+    /// source of floats must also extend this trigger before checking its body.
+    ieee_operation: bool,
+    pub(crate) integer_division: Option<AdmittedIntegerDivision>,
+    pub(crate) complete_value: bool,
+    /// The names of the concrete populations of the unit's models, which
+    /// refuse `unsupported_construct`/`expression-form` where no refinement
+    /// reads them (FR-139).
+    pub(crate) known_populations: Vec<String>,
+    /// The names of the history fields the unit's refinements declare
+    /// (FR-138). A field of that name is the refinement's own, so a state
+    /// clause that reads it refuses `missing-name`.
+    pub(crate) history_names: Vec<String>,
+    /// Every admitted model currently uses `quire.model.complete/v1`; an
+    /// absent model keeps the historical exact-edge typing rule.
+    pub(crate) complete_model: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
+    /// FR-150: each object type a `symmetric` population covers, with that
+    /// population's declaration key.
+    symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
     /// model operations are only ever looked up by name, so only this index
@@ -386,6 +885,52 @@ struct ScopeIndex {
     /// The checked `VariantId -> EnumValue` index over every binding's
     /// members, in binding then member order (ADR-013 T-6).
     enum_member_index: EnumMemberIndex,
+    /// Variant type name, then case, to the position of the variant type in
+    /// [`Scope::variant_types`] and of the case in its runtime members.
+    variant_cases: BTreeMap<String, BTreeMap<String, (usize, usize)>>,
+    /// Each variant type's enum shape to the type's position in
+    /// [`Scope::variant_types`].
+    variant_shapes: BTreeMap<EnumShape, usize>,
+    /// Every case name of every variant type, for the bare-case refusal.
+    bare_cases: BTreeSet<String>,
+    /// Each protocol declaration's name to its index in the unit's
+    /// protocols (FR-218: a protocol reference binds a local protocol only).
+    protocols: BTreeMap<String, usize>,
+    /// Each unit the unit declares, by its declared name (FR-091 "Dimension
+    /// and unit declarations": a unit is used by name outside a type form).
+    /// A quantity literal names its unit here (FR-185).
+    units: BTreeMap<String, quire_exact::UnitId>,
+}
+
+/// The units `graph` declares by their declared name, read from `declared`,
+/// the table built over the same graph.
+fn unit_ids_by_name(
+    graph: &quire_semantic_value::unit::UnitGraph,
+    declared: &quire_semantic_value::quantity::UnitTable,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    graph
+        .units()
+        .filter_map(|unit| {
+            let name = declared
+                .nominal_node(unit.key().as_bytes())
+                .map(|node| node.declaration.qualified_declaration.as_slice());
+            match name {
+                Some([name]) => Some((name.clone(), unit.id())),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The units `graph` declares by their declared name (QSpec FR-142
+/// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
+pub(crate) fn declared_unit_ids(
+    graph: &quire_semantic_value::unit::UnitGraph,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    unit_ids_by_name(
+        graph,
+        &quire_semantic_value::quantity::UnitTable::declared(graph),
+    )
 }
 
 impl ScopeIndex {
@@ -435,6 +980,25 @@ impl ScopeIndex {
         index
     }
 
+    /// Index `variant_types`: each type's name resolves to its enum shape
+    /// and each `T::Case` to its runtime member (FR-360 item 4).
+    fn variant_types(&mut self, variant_types: &[VariantTypeDeclaration]) {
+        for (position, declared) in variant_types.iter().enumerate() {
+            let shape = declared.shape();
+            self.named_type(declared.name(), ValueType::Enum(shape.clone()));
+            self.variant_shapes.insert(shape, position);
+            let cases = self
+                .variant_cases
+                .entry(declared.name().to_owned())
+                .or_default();
+            for (member, value) in declared.members().iter().enumerate() {
+                cases.insert(value.case().to_owned(), (position, member));
+                self.bare_cases.insert(value.case().to_owned());
+                self.enum_member_index.record(value.clone());
+            }
+        }
+    }
+
     fn named_type(&mut self, name: &str, value_type: ValueType) {
         self.types
             .entry(name.to_owned())
@@ -457,19 +1021,189 @@ impl Scope {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
             types,
+            model_records: ModelRecords::default(),
+            relationships: Relationships::default(),
             enums,
+            variant_types: Vec::new(),
             operations,
             ieee_profile,
+            ieee_operation: false,
+            integer_division: None,
+            complete_value: false,
+            known_populations: Vec::new(),
+            history_names: Vec::new(),
+            complete_model: false,
             dispatch_operations,
+            symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
         }
+    }
+
+    /// This scope with the object types the admitted models' `symmetric`
+    /// populations cover (FR-150).
+    pub(crate) fn with_symmetric_objects(
+        mut self,
+        symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
+    ) -> Self {
+        self.symmetric_objects = symmetric_objects;
+        self
+    }
+
+    /// FR-150: the `symmetric` population whose objects `value_type` is, or
+    /// contains, a reference to: through `Option`, a collection's element, a
+    /// record's field or a tuple's position. `None` when it reads no such
+    /// population.
+    pub(crate) fn symmetric_population_in(
+        &self,
+        value_type: &ValueType,
+    ) -> Option<&DeclarationKey> {
+        if self.symmetric_objects.is_empty() {
+            return None;
+        }
+        let mut pending = vec![value_type];
+        let mut seen = BTreeSet::new();
+        while let Some(current) = pending.pop() {
+            match current {
+                ValueType::Reference(object) => {
+                    if let Some(population) = self.symmetric_objects.get(object) {
+                        return Some(population);
+                    }
+                }
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(key) if seen.insert(*key) => {
+                    match self
+                        .types
+                        .composite(*key)
+                        .map(|declaration| declaration.shape())
+                    {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(|field| field.value_type()));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        Some(CompositeShape::Union(members)) => {
+                            pending.extend(members.iter().flat_map(|member| member.positions()))
+                        }
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// This scope with `imports`, each admitted import by its qualifier.
     pub(crate) fn with_imports(mut self, imports: BTreeMap<String, super::AdmittedImport>) -> Self {
         self.imports = imports;
         self
+    }
+
+    pub(crate) fn with_integer_division(
+        mut self,
+        division: Option<AdmittedIntegerDivision>,
+    ) -> Self {
+        self.integer_division = division;
+        self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
+        self.known_populations = names;
+        self
+    }
+
+    pub(crate) fn with_history_names(mut self, names: Vec<String>) -> Self {
+        self.history_names = names;
+        self
+    }
+
+    /// This scope with where its record values keep the fields their
+    /// ancestors name.
+    pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
+        self.model_records = model_records;
+        self
+    }
+
+    /// This scope with the relationship ends a receiver type navigates.
+    pub(crate) fn with_relationships(mut self, relationships: Relationships) -> Self {
+        self.relationships = relationships;
+        self
+    }
+
+    /// The relationship ends a receiver type navigates (FR-363).
+    pub(crate) fn relationships(&self) -> &Relationships {
+        &self.relationships
+    }
+
+    /// This scope with the admitted models' variant types.
+    pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
+        self.index.variant_types(&variant_types);
+        self.variant_types = variant_types;
+        self
+    }
+
+    pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
+        self.complete_model = complete_model;
+        self
+    }
+
+    /// This scope with the unit's admitted dimension and unit declarations
+    /// (FR-091): every unit of `graph` joins the type environment's unit
+    /// table, so a quantity of it types and lowers (FR-094), and is named by
+    /// its declared name for a quantity literal (FR-185). An empty graph
+    /// leaves the scope unchanged.
+    pub(crate) fn with_declared_units(
+        mut self,
+        graph: &quire_semantic_value::unit::UnitGraph,
+    ) -> Self {
+        if graph.units().next().is_none() {
+            return self;
+        }
+        let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
+        self.index.units.extend(unit_ids_by_name(graph, &declared));
+        let mut units = self.types.units().clone();
+        units.append(declared);
+        self.types = std::mem::take(&mut self.types).with_units(units);
+        self
+    }
+
+    /// The unit the unit declares under `name`, as a quantity's unit id.
+    pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
+        self.index.units.get(name).copied()
+    }
+
+    /// This scope with the unit's protocol declarations named `names`, in
+    /// declaration order (FR-218). A name declared twice keeps its first.
+    pub(crate) fn with_protocols<'n>(mut self, names: impl IntoIterator<Item = &'n str>) -> Self {
+        for (position, name) in names.into_iter().enumerate() {
+            self.index
+                .protocols
+                .entry(name.to_owned())
+                .or_insert(position);
+        }
+        self
+    }
+
+    /// The index of the unit's protocol declaration written `name`.
+    pub(crate) fn protocol_named(&self, name: &str) -> Option<usize> {
+        self.index.protocols.get(name).copied()
+    }
+
+    /// Every name a type of the unit binds, in name order.
+    pub(crate) fn type_names(&self) -> impl Iterator<Item = &str> {
+        self.index.types.keys().map(String::as_str)
+    }
+
+    /// Whether `name` is a declared type or enum of the unit, which a
+    /// protocol reference cannot name (FR-218).
+    pub(crate) fn declares_type(&self, name: &str) -> bool {
+        self.index.types.contains_key(name)
     }
 
     /// The checked graph of the admitted import whose library has
@@ -513,9 +1247,57 @@ impl Scope {
             })
     }
 
+    /// The admitted models' variant types, ascending by effective identity.
+    pub fn variant_types(&self) -> &[VariantTypeDeclaration] {
+        &self.variant_types
+    }
+
+    /// The variant type whose effective identity is `key`.
+    pub fn variant_type(&self, key: EffectiveId) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .iter()
+            .find(|declared| declared.key() == key)
+    }
+
+    /// Whether `name` is the name of an enum of the unit.
+    pub(crate) fn names_enum(&self, name: &str) -> bool {
+        self.index.enum_members.contains_key(name)
+    }
+
     /// The package's admitted enum declarations, in declaration order.
     pub(crate) fn enums(&self) -> &[EnumBinding] {
         &self.enums
+    }
+
+    /// Whether `shape` is the enum shape of a variant type.
+    pub(crate) fn is_variant_shape(&self, shape: &EnumShape) -> bool {
+        self.index.variant_shapes.contains_key(shape)
+    }
+
+    /// The variant type whose enum shape is `shape`.
+    pub(crate) fn variant_type_of(&self, shape: &EnumShape) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .get(*self.index.variant_shapes.get(shape)?)
+    }
+
+    /// The variant type `name` names, when it is a variant type name.
+    pub(crate) fn variant_type_named(&self, name: &str) -> Option<&VariantTypeDeclaration> {
+        let (position, _) = *self.index.variant_cases.get(name)?.values().next()?;
+        self.variant_types.get(position)
+    }
+
+    /// The runtime member of the case `name` (`T::Case`) names, with its
+    /// variant type's enum shape.
+    pub(crate) fn variant_case_named(&self, name: &str) -> Option<(EnumShape, &EnumValue)> {
+        let (type_name, case) = name.rsplit_once("::")?;
+        let &(position, member) = self.index.variant_cases.get(type_name)?.get(case)?;
+        let declared = self.variant_types.get(position)?;
+        Some((declared.shape(), declared.members().get(member)?))
+    }
+
+    /// Whether `name` is the case name of some variant type.
+    pub(crate) fn is_variant_case_name(&self, name: &str) -> bool {
+        self.index.bare_cases.contains(name)
     }
 
     /// The first enum binding whose shape is `shape`.
@@ -557,6 +1339,108 @@ impl Scope {
         &self.types
     }
 
+    /// Seal every declared union under the checked node id of its type
+    /// node, `nodes` mapping each declaration to its node (FR-319): each
+    /// member is bound to its QSpec FR-441 key over that node id, minted
+    /// here once, so the `VariantId` to (union, member, position) index the
+    /// type environment keeps is built exactly once and no other stage
+    /// derives it. Lowering produced `nodes`; a union it left out is an
+    /// internal fault.
+    pub(crate) fn seal_unions(
+        &mut self,
+        nodes: &BTreeMap<quire_exact::NodeKey, quire_exact::NodeKey>,
+    ) -> Result<(), CheckRefusal> {
+        let fault = |invariant: &'static str| CheckRefusal {
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                quire_semantic_value::catalog::InternalFault::new("S3", invariant),
+            ))),
+        };
+        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+            .types
+            .composites()
+            .filter_map(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => Some((
+                    declaration.key(),
+                    members
+                        .iter()
+                        .map(|member| member.identifier().clone())
+                        .collect(),
+                )),
+                CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+            })
+            .collect();
+        for (handle, members) in unions {
+            let node = *nodes
+                .get(&handle)
+                .ok_or_else(|| fault("union-node-missing"))?;
+            let bindings = members
+                .into_iter()
+                .map(|member| {
+                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
+                    quire_exact::UnionMember::from_admitted(node, key, member)
+                })
+                .collect();
+            self.types
+                .seal_union_verified(handle, node, bindings)
+                .map_err(|_| fault("union-seal"))?;
+        }
+        Ok(())
+    }
+
+    /// Whether a value of `value_type` holds an event type anywhere inside
+    /// it: FR-208 gives an event type no equality, so none compares one.
+    pub(crate) fn reaches_event(&self, value_type: &ValueType) -> bool {
+        if self.model_records.events.is_empty() {
+            return false;
+        }
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![value_type];
+        while let Some(value_type) = pending.pop() {
+            match value_type {
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(declaration) => {
+                    if self.model_records.events.contains(declaration) {
+                        return true;
+                    }
+                    if !seen.insert(*declaration) {
+                        continue;
+                    }
+                    match self.types.composite(*declaration).map(|c| c.shape()) {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(FieldDeclaration::value_type));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        Some(CompositeShape::Union(members)) => {
+                            pending.extend(members.iter().flat_map(|member| member.positions()));
+                        }
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// The position, in the record `declaration`'s own fields, of the field
+    /// `field` names (FR-359 item 2): found in the value's own declaration by
+    /// the field's identity, never by a position computed from the record
+    /// the read was typed at. `None` when the declaration is no record or
+    /// holds no such field.
+    pub fn record_slot(
+        &self,
+        declaration: quire_exact::NodeKey,
+        field: &RecordField,
+    ) -> Option<usize> {
+        let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
+            return None;
+        };
+        let name = self.model_records.own_name(declaration, field);
+        fields.iter().position(|candidate| candidate.name() == name)
+    }
+
     /// The package's model object types' declared operations (FR-103).
     pub fn operations(&self) -> &OperationTable {
         &self.operations
@@ -565,6 +1449,77 @@ impl Scope {
     /// The package's admitted IEEE profile, if it selects one.
     pub fn ieee_profile(&self) -> Option<&AdmittedIeeeProfile> {
         self.ieee_profile.as_ref()
+    }
+
+    /// The admitted policy selected by this package's declared-float trigger.
+    /// An available policy alone does not select a row for a float-free package.
+    pub fn ieee_profile_selection(&self) -> Option<&AdmittedIeeeProfile> {
+        self.ieee_profile.as_ref().filter(|_| self.ieee_operation)
+    }
+
+    /// Select the catalog's IEEE policy when a resolved declaration contains
+    /// a float, including unused fields and nested option/collection types.
+    pub(crate) fn select_declared_ieee_profile(
+        &mut self,
+        signatures: &[Signature],
+    ) -> Result<(), CheckRefusal> {
+        let mut declared: Vec<&ValueType> = self.index.types.values().flatten().collect();
+        for signature in signatures {
+            declared.extend(signature.parameters.iter().map(|(_, ty)| ty));
+            declared.push(&signature.result);
+        }
+        for declaration in self.types.composites() {
+            match declaration.shape() {
+                CompositeShape::Record(fields) => {
+                    declared.extend(fields.iter().map(FieldDeclaration::value_type));
+                }
+                CompositeShape::Tuple(positions) => declared.extend(positions),
+                CompositeShape::Union(members) => {
+                    declared.extend(members.iter().flat_map(|member| member.positions()));
+                }
+            }
+        }
+        declared.extend(self.types.object_types().flat_map(|declaration| {
+            declaration
+                .attributes()
+                .iter()
+                .map(FieldDeclaration::value_type)
+        }));
+        let has_float = declared.into_iter().any(|mut ty| loop {
+            match ty {
+                ValueType::Float(_) => return true,
+                ValueType::Option(payload) => ty = payload,
+                ValueType::Collection(collection) => ty = collection.element(),
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Quantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Composite(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => return false,
+            }
+        });
+        self.ieee_operation = has_float;
+        if has_float && self.ieee_profile.is_none() {
+            let lock = DefinitionLock::pinned();
+            let definition = lock.entry(CatalogRole::IeeeProfile).reference();
+            self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
+                |cause| CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
+                        cause,
+                    ))),
+                },
+            )?);
+        }
+        Ok(())
     }
 
     /// The package's FR-151 dispatch operations, indexed by a checked
@@ -678,7 +1633,9 @@ struct Local {
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
+    complete_value: bool,
     signatures: &'a Signatures,
+    context: Option<crate::family::CheckContext<'a, Scope>>,
     limits: CheckingLimits,
     nodes: &'a mut u64,
     /// The caller's cancellation handle, polled at every node charge
@@ -709,6 +1666,158 @@ pub(crate) struct Typer<'a> {
     units: UnitScope<'a>,
     /// The nodes typed so far, each stored once a parent names it.
     body: BodyBuilder,
+    /// The concrete populations a refinement row reads (FR-139); `None`
+    /// outside a refinement declaration, where a population name resolves
+    /// through `named` (FR-391) and `seq` refuses
+    /// `unsupported_construct`/`expression-form`.
+    populations: Option<PopulationScope>,
+    /// The populations a population position may name (FR-391); `None`
+    /// outside one, where a `M::P` name names no population.
+    named: Option<NamedScope>,
+    /// The history fields a refinement row reads (FR-138); empty outside a
+    /// refinement declaration, where the name of one is a missing field.
+    history: Vec<ScopedHistory>,
+}
+
+/// One history field a refinement row's expression may read (FR-138).
+#[derive(Clone, Debug)]
+pub(crate) struct ScopedHistory {
+    /// The concrete object type the refinement adds the field to.
+    pub(crate) object_type: EffectiveId,
+    /// The field's name.
+    pub(crate) name: String,
+    /// The field's declared type.
+    pub(crate) value_type: ValueType,
+}
+
+/// The value of the enum member `member` of `binding`: its identity and its
+/// own canonical rank (ADR-013 O-14/OQ-D), which `member.position()` is,
+/// verified at `AdmittedEnumDeclaration::admit_member`
+/// (`value/enumeration.rs`).
+pub(crate) fn enum_value(binding: &EnumBinding, member: &EnumValue) -> Value {
+    let rank = u32::try_from(member.position())
+        .expect("an admitted enum has far fewer than u32::MAX members");
+    Value::Enum(EnumMember::new(
+        mint_variant_id(binding.declaration.key(), member.case()),
+        rank,
+    ))
+}
+
+/// The concrete populations a refinement row's expression may name (FR-139,
+/// ADR-020 RM-8).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PopulationScope {
+    pub(crate) populations: Vec<ScopedPopulation>,
+}
+
+/// One concrete population a row may name, with the name a row spells it
+/// by.
+#[derive(Clone, Debug)]
+pub(crate) struct ScopedPopulation {
+    /// The qualified name a row writes, `Alias::name`.
+    pub(crate) name: String,
+    /// The population's declaration.
+    pub(crate) key: DeclarationKey,
+    /// The object type its members are, `T` of `Set<Reference<T>>[0, n]`.
+    pub(crate) member: EffectiveId,
+}
+
+/// The domain-package populations a population position may name
+/// (FR-391): the body of a unit-level state clause or a `holds` atom.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct NamedScope {
+    /// Every population of the unit's models, by the name `M::P` spells.
+    pub(crate) populations: Vec<NamedPopulation>,
+    /// The model aliases that also name an enum of the unit: a two-segment
+    /// name under one is ambiguous.
+    pub(crate) ambiguous: Vec<String>,
+    /// Every model alias of the unit: a two-segment name under one that
+    /// names no population is missing at its second segment.
+    pub(crate) aliases: Vec<String>,
+}
+
+/// One population a population position may name (FR-391).
+#[derive(Clone, Debug)]
+pub(crate) struct NamedPopulation {
+    /// The qualified name a clause writes, `Alias::P`.
+    pub(crate) name: String,
+    /// The population's declaration.
+    pub(crate) key: DeclarationKey,
+    /// Its declared member types.
+    pub(crate) members: Vec<EffectiveId>,
+    /// The requirement-record domain it adds (FR-104 "Requirements").
+    pub(crate) domain: super::state_clause::PopulationDomain,
+    /// The unit's authored bound on it (FR-380).
+    pub(crate) bound: Option<super::lowering::AuthoredBound>,
+}
+
+impl NamedScope {
+    /// The scope over `models`, with `scope`'s enums for the ambiguity rule.
+    pub(crate) fn of(models: &[super::lowering::AdmittedModel], scope: &Scope) -> Self {
+        let mut populations = Vec::new();
+        let mut ambiguous = Vec::new();
+        let mut aliases = Vec::new();
+        for model in models {
+            let Some(alias) = model.alias() else {
+                continue;
+            };
+            aliases.push(alias.to_owned());
+            if scope.names_enum(alias) {
+                ambiguous.push(alias.to_owned());
+            }
+            populations.extend(model.named_populations().map(|record| NamedPopulation {
+                name: format!("{alias}::{}", record.name),
+                key: record.key.clone(),
+                members: record.members,
+                domain: super::state_clause::PopulationDomain {
+                    object: record.canonical,
+                    ordinal: record.ordinal,
+                    maximum: record.bound.map(|bound| bound.maximum),
+                },
+                bound: record.bound.cloned(),
+            }));
+        }
+        Self {
+            populations,
+            ambiguous,
+            aliases,
+        }
+    }
+
+    /// The population `name` spells, when it spells one.
+    pub(crate) fn named(&self, name: &str) -> Option<&NamedPopulation> {
+        self.populations
+            .iter()
+            .find(|population| population.name == name)
+    }
+
+    /// The population whose declaration is `key`.
+    pub(crate) fn keyed(&self, key: &DeclarationKey) -> Option<&NamedPopulation> {
+        self.populations
+            .iter()
+            .find(|population| &population.key == key)
+    }
+
+    /// Whether `name` is two segments whose first is a model alias that
+    /// also names an enum of the unit.
+    pub(crate) fn is_ambiguous(&self, name: &str) -> bool {
+        alias_of(name).is_some_and(|alias| self.ambiguous.iter().any(|known| known == alias))
+    }
+
+    /// Whether `name` is two segments whose first is a model alias of the
+    /// unit (FR-391 "Resolution").
+    pub(crate) fn is_under_alias(&self, name: &str) -> bool {
+        alias_of(name).is_some_and(|alias| self.aliases.iter().any(|known| known == alias))
+    }
+}
+
+/// The first segment of `name` when it is exactly two segments.
+fn alias_of(name: &str) -> Option<&str> {
+    let mut segments = name.split("::");
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some(alias), Some(_), None) => Some(alias),
+        _ => None,
+    }
 }
 
 /// A state clause's own typing context (FR-104 "Typing"): its kind, the
@@ -716,6 +1825,8 @@ pub(crate) struct Typer<'a> {
 /// `result` are bound to.
 #[derive(Clone, Debug)]
 pub(crate) struct StateContext {
+    pub(crate) parent_projections:
+        BTreeMap<quire_semantic_value::declaration::FieldRef, (ValueType, Presence)>,
     /// The clause kind.
     pub(crate) kind: qsl_forms::StateClauseKind,
     /// The operation's name, for a `pre` or `post` clause.
@@ -868,9 +1979,10 @@ fn contextual(expression: ExprRef<'_>) -> bool {
 }
 
 impl Typer<'_> {
-    /// Admit `node` where `required` is expected: identical types, an integer into
-    /// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
-    /// through a range-obligated [`NodeKind::Coerce`].
+    /// Admit `node` where `required` is expected: identical types, a record
+    /// into a record type it conforms to (FR-359), an integer into `Integer` or
+    /// a containing `Int[..]`, or an integer into another `Int[..]` through a
+    /// range-obligated [`NodeKind::Coerce`].
     pub(crate) fn coerce(
         &mut self,
         node: Node,
@@ -880,6 +1992,16 @@ impl Typer<'_> {
             return Ok(node);
         }
         match (&node.value_type, required) {
+            // FR-359 items 1 and 6: a record whose most-specific type
+            // conforms to the slot's record type is admitted as it is, with
+            // no conversion node; its own type stays on the node. A type
+            // constructor over a record is not covariant, so only the slot's
+            // own record type reaches this arm.
+            (ValueType::Composite(sub), ValueType::Composite(sup))
+                if self.scope.types.composite_conforms(*sub, *sup) =>
+            {
+                Ok(node)
+            }
             (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
             (ValueType::Int(source), ValueType::Int(target))
                 if target.lower() <= source.lower() && source.upper() <= target.upper() =>
@@ -918,7 +2040,9 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
+            complete_value: scope.complete_value,
             signatures,
+            context: None,
             limits,
             nodes,
             cancel: None,
@@ -930,7 +2054,43 @@ impl<'a> Typer<'a> {
             state: None,
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
+            populations: None,
+            named: None,
+            history: Vec::new(),
         }
+    }
+
+    /// The static range of the integer `node` computes (FR-139).
+    pub(crate) fn static_range(&self, node: &Node) -> Option<super::ir::IntegerRange> {
+        super::ir::static_integer_range((&node.kind, &node.value_type), &|id| {
+            self.body
+                .get(id)
+                .map(|found| (&found.kind, &found.value_type))
+        })
+    }
+
+    /// This pass reading the concrete populations `populations` as a
+    /// refinement row does (FR-139).
+    #[must_use]
+    pub(crate) fn with_populations(mut self, populations: PopulationScope) -> Self {
+        self.populations = Some(populations);
+        self
+    }
+
+    /// This pass typing a population position (FR-391): `M::P` names a
+    /// population of `named`.
+    #[must_use]
+    pub(crate) fn with_named_populations(mut self, named: NamedScope) -> Self {
+        self.named = Some(named);
+        self
+    }
+
+    /// This pass reading the history fields `history` as a refinement row
+    /// does (FR-138).
+    #[must_use]
+    pub(crate) fn with_history(mut self, history: Vec<ScopedHistory>) -> Self {
+        self.history = history;
+        self
     }
 
     /// This pass polling `cancel` at every node charge (FR-276). A cancelled
@@ -940,6 +2100,74 @@ impl<'a> Typer<'a> {
     pub(crate) fn with_cancel(mut self, cancel: Option<&'a Cancel>) -> Self {
         self.cancel = cancel;
         self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
+        self
+    }
+
+    /// Borrow the enclosing family's stage state for nested model checks.
+    pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
+        self.context = Some(cx);
+        self
+    }
+
+    fn model_check(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<super::state_model::Checked, CheckRefusal> {
+        use crate::family::FamilyContract;
+        use qsl_foundation::diagnostic::StageFailure;
+        let cx = self
+            .context
+            .as_mut()
+            .ok_or_else(|| super::state_model::fault(location))?;
+        super::state_model::StateModelFamily::check(
+            &super::state_model::Request {
+                form,
+                location: location.clone(),
+            },
+            cx,
+        )
+        .map(|staged| staged.into_value())
+        .map_err(|failure| match failure {
+            StageFailure::Refused(refusal) => refusal,
+            StageFailure::Limit(limit) => CheckRefusal {
+                location: location.clone(),
+                cause: super::limit_cause(&limit),
+            },
+            StageFailure::Fault(fault) => CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                    fault,
+                ))),
+            },
+            StageFailure::Cancelled(_) => super::state_model::fault(location),
+        })
+    }
+
+    fn model_node(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        match self.model_check(form, location)? {
+            super::state_model::Checked::Node(node) => Ok(*node),
+            _ => Err(super::state_model::fault(location)),
+        }
+    }
+
+    fn model_type(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<ValueType, CheckRefusal> {
+        match self.model_check(form, location)? {
+            super::state_model::Checked::Type(value_type) => Ok(value_type),
+            _ => Err(super::state_model::fault(location)),
+        }
     }
 
     /// Store `node` as an operand of the node being built, and name it.
@@ -1248,7 +2476,9 @@ impl<'a> Typer<'a> {
                     // source can trigger today. The check stays here as
                     // defense in depth, matching `Composite`/`Reference`'s
                     // own (`TypeEnvironment`-level) declaration checks.
-                    if self.scope.enum_binding_of(shape).is_none() {
+                    if self.scope.enum_binding_of(shape).is_none()
+                        && !self.scope.is_variant_shape(shape)
+                    {
                         return Err(mismatch(location));
                     }
                 }
@@ -1262,9 +2492,11 @@ impl<'a> Typer<'a> {
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
+                | ValueType::String
                 | ValueType::Composite(_)
                 | ValueType::Reference(_)
                 | ValueType::Population(_) => {}
+                ValueType::Uuid | ValueType::Timestamp => {}
             }
         }
         Ok(())
@@ -1337,7 +2569,32 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    fn name(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+    /// `protocol <target>` (FR-218): the unit's protocol declaration the
+    /// written name resolves to, once, in the unit's own scope. The
+    /// reference is typed `Boolean`, the semantic type every protocol node
+    /// carries. A name no declaration of the unit holds is `missing-name`
+    /// (an import or a qualified name offers no local protocol); a name that
+    /// resolves to a function or a type is `operator-ineligible`.
+    fn protocol_reference(&self, target: &str, location: &Location) -> Result<Node, CheckRefusal> {
+        if let Some(protocol) = self.scope.protocol_named(target) {
+            return Ok(node(
+                NodeKind::ProtocolReference { protocol },
+                ValueType::Boolean,
+                location,
+            ));
+        }
+        if self.signatures.declares(target) || self.scope.declares_type(target) {
+            return Err(ineligible(location));
+        }
+        Err(refuse(location, CheckCause::MissingName(target.to_owned())))
+    }
+
+    fn name(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         if let Some(local) = self.local(name) {
             return Ok(node(
                 NodeKind::Local(local.slot),
@@ -1353,19 +2610,13 @@ impl<'a> Typer<'a> {
                 // canonical position, never a value this site invents --
                 // `member.position()` is exactly that, verified at
                 // `AdmittedEnumDeclaration::admit_member` (`value/enumeration.rs`).
-                let rank = u32::try_from(member.position())
-                    .expect("an admitted enum has far fewer than u32::MAX members");
                 Ok(node(
-                    NodeKind::Literal(CheckedLiteral(Value::Enum(EnumMember::new(
-                        mint_variant_id(binding.declaration.key(), member.case()),
-                        rank,
-                    )))),
+                    NodeKind::Literal(CheckedLiteral(enum_value(binding, member))),
                     ValueType::Enum(binding.shape()),
                     location,
                 ))
             }
-            [] if self.signatures.declares(name) => Err(mismatch(location)),
-            [] => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
+            [] => self.variant_case(name, expected, location),
             _ => Err(refuse(
                 location,
                 CheckCause::AmbiguousName {
@@ -1376,26 +2627,77 @@ impl<'a> Typer<'a> {
         }
     }
 
-    /// `left = right` or `left != right` over its two typed operands, each
-    /// with the equality operand it compares as.
+    /// A name no local or enum binds: a case of a variant type (FR-360
+    /// item 4), a case the type does not declare, a bare case name where a
+    /// variant value is expected, which is no variant value, or a name nothing
+    /// binds.
+    fn variant_case(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        if let Some((shape, member)) = self.scope.variant_case_named(name) {
+            let rank = u32::try_from(member.position())
+                .expect("an admitted variant type has far fewer than u32::MAX members");
+            return Ok(node(
+                NodeKind::Literal(CheckedLiteral(Value::Enum(EnumMember::new(
+                    member.variant(),
+                    rank,
+                )))),
+                ValueType::Enum(shape),
+                location,
+            ));
+        }
+        let undeclared_case = name
+            .rsplit_once("::")
+            .is_some_and(|(type_name, _)| self.scope.variant_type_named(type_name).is_some());
+        if undeclared_case
+            || self.signatures.declares(name)
+            || (self.scope.is_variant_case_name(name)
+                && matches!(expected, Some(ValueType::Enum(shape)) if self.scope.is_variant_shape(shape)))
+        {
+            return Err(mismatch(location));
+        }
+        Err(refuse(location, CheckCause::MissingName(name.to_owned())))
+    }
+
+    /// `left = right` or `left != right` over its two typed operands. The
+    /// pair is first checked with the operands as written, so a conversion
+    /// is admitted or refused as such; the stored equality then compares the
+    /// operands as they are typed, a converted operand being its own
+    /// `ConvertScalar` node.
     fn equality(
         &mut self,
         operator: EqualityOperator,
-        (left, left_operand): (Node, EqualityOperand),
-        (right, right_operand): (Node, EqualityOperand),
+        left: TypedOperand,
+        right: TypedOperand,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let checked = self
-            .scope
-            .types
-            .check_equality_in(
-                &self.units,
-                operator,
-                left_operand,
-                right_operand,
-                &|shape: &EnumShape| self.scope.enum_members_of(shape),
-            )
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+        // FR-359 item 4: FR-208 gives an event type no equality, so an
+        // operand holding one is ineligible, not compared.
+        if self.scope.reaches_event(&left.node.value_type)
+            || self.scope.reaches_event(&right.node.value_type)
+        {
+            return Err(ineligible(location));
+        }
+        let check = |left: &EqualityOperand, right: &EqualityOperand| {
+            self.scope
+                .types
+                .check_equality_in(
+                    &self.units,
+                    operator,
+                    left.clone(),
+                    right.clone(),
+                    &|shape: &EnumShape| self.scope.enum_members_of(shape),
+                )
+                .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
+        };
+        let mut checked = check(&left.checked, &right.checked)?;
+        if (&left.stored, &right.stored) != (&left.checked, &right.checked) {
+            checked = check(&left.stored, &right.stored)?;
+        }
+        let (left, right) = (left.node, right.node);
         Ok(node(
             NodeKind::Equality(
                 operator,
@@ -1445,14 +2747,19 @@ impl<'a> Typer<'a> {
             }
             // FR-148 selects IEEE ordering only through the `totalOrder`
             // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), ValueType::Float(_))
+            (ValueType::Float(_), _)
+            | (_, ValueType::Float(_))
             | (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
-            | (ValueType::Reference(_), ValueType::Reference(_)) => {
-                return Err(ineligible(location))
-            }
+            | (ValueType::Reference(_), ValueType::Reference(_))
+            // FR-056 "Unit-language equality on native String, UUID and
+            // Timestamp": their key order is a representation order, not an
+            // ordering capability.
+            | (ValueType::String, ValueType::String)
+            | (ValueType::Uuid, ValueType::Uuid)
+            | (ValueType::Timestamp, ValueType::Timestamp) => return Err(ineligible(location)),
             _ => return Err(mismatch(location)),
         };
         Ok(node(
@@ -1476,23 +2783,31 @@ impl<'a> Typer<'a> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
-            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => match hint {
-                Some(ValueType::Rational(domain)) => (
-                    NodeKind::Divide {
-                        left: left_box,
-                        right: right_box,
-                        domain: domain.clone(),
-                    },
-                    ValueType::Rational(domain.clone()),
-                ),
-                Some(_) => return Err(mismatch(location)),
-                None => {
-                    return Err(CheckRefusal::ill_typed(
+            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
+                if !self.complete_value {
+                    return Err(refuse(
                         location,
-                        IllTypedCause::AmbiguousLiteral,
-                    ))
+                        CheckCause::ProfileProhibitedOperator(BinaryOperator::Divide),
+                    ));
                 }
-            },
+                match hint {
+                    Some(ValueType::Rational(domain)) => (
+                        NodeKind::Divide {
+                            left: left_box,
+                            right: right_box,
+                            domain: domain.clone(),
+                        },
+                        ValueType::Rational(domain.clone()),
+                    ),
+                    Some(_) => return Err(mismatch(location)),
+                    None => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::AmbiguousLiteral,
+                        ))
+                    }
+                }
+            }
             (l, r, _) if is_integer(l) && is_integer(r) => {
                 // `Divide` is taken by the preceding arm; naming it here keeps
                 // a later change from silently lowering `/` as `*`.
@@ -1628,13 +2943,75 @@ impl<'a> Typer<'a> {
             | ValueType::Composite(_)
             | ValueType::Collection(_)
             | ValueType::Reference(_)
-            | ValueType::Population(_) => return Err(mismatch(location)),
+            | ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::String
+            | ValueType::Timestamp => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }
 
+    /// Whether `x.name` over an `x` of `value_type` is a model read (FR-104,
+    /// FR-363) rather than a record field read. A reference is one in a state
+    /// clause, and elsewhere when `name` names a relationship end navigable
+    /// from it. An `Option`, a collection or a population of references is one
+    /// in a function body as in a state clause, which the hook refuses at the
+    /// operand (FR-363).
+    pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {
+        match value_type {
+            ValueType::Reference(object) => {
+                self.in_state_clause()
+                    || self
+                        .scope
+                        .relationships()
+                        .navigable(&self.scope.types, *object, name)
+                        .next()
+                        .is_some()
+            }
+            ValueType::Option(element) => Self::holds_references(element),
+            ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Population(_) => true,
+            ValueType::Boolean
+            | ValueType::Int(_)
+            | ValueType::Integer
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Quantity(_) => false,
+        }
+    }
+
+    fn holds_references(value_type: &ValueType) -> bool {
+        match value_type {
+            ValueType::Reference(_) => true,
+            ValueType::Option(element) => Self::holds_references(element),
+            ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Boolean
+            | ValueType::Int(_)
+            | ValueType::Integer
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Quantity(_)
+            | ValueType::Population(_) => false,
+        }
+    }
+
     /// `deref(r).f` over the typed reference `r`, read at
-    /// `operand_location` (the `deref(r)` operand's own location).
+    /// `operand_location` (the `deref(r)` operand's own location), or the
+    /// navigation `r.name` over one of its relationship ends (FR-363).
     /// `derefed` is whether the source wrote an explicit `deref(...)`
     /// (`self.f`/`r.f` inside a state clause never does; SR-750 FND-008
     /// round 2).
@@ -1646,33 +3023,62 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Reference(key) = reference.value_type else {
-            return Err(mismatch(operand_location));
-        };
-        // `f` resolves in the static type's effective attribute set,
-        // so a field `T` inherits (or redefines) resolves like its own.
-        let attribute = self
-            .scope
-            .types
-            .attribute(key, field)
-            .ok_or_else(|| mismatch(location))?;
-        let declared = attribute.field();
-        let optional = declared.presence() == Presence::Optional;
-        let value_type = if optional {
-            ValueType::option(declared.value_type().clone())
-        } else {
-            declared.value_type().clone()
-        };
-        Ok(node(
-            NodeKind::Attribute {
-                field: attribute.identity(),
-                reference: self.push(reference),
-                optional,
+        if let ValueType::Reference(object) = reference.value_type {
+            let history = self.history.iter().find(|history| {
+                history.name == field && self.scope.types.conforms(object, history.object_type)
+            });
+            if let Some(history) = history {
+                let (object_type, value_type) = (history.object_type, history.value_type.clone());
+                return Ok(node(
+                    NodeKind::History {
+                        reference: self.push(reference),
+                        object_type,
+                        field: field.to_owned(),
+                    },
+                    value_type,
+                    location,
+                ));
+            }
+        }
+        let field_reads = derefed || self.in_state_clause();
+        let value_type = reference.value_type.clone();
+        let on_self = self.state.as_ref().is_some_and(
+            |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),
+        );
+        let reference = self.push(reference);
+        let mut attribute = self.model_node(
+            super::state_model::Form::Attribute {
+                reference,
+                value_type,
+                field: field.to_owned(),
+                operand_location: operand_location.clone(),
                 derefed,
+                field_reads,
             },
-            value_type,
             location,
-        ))
+        )?;
+        // A field the writing operation narrows reads through its
+        // immediate parent's declared type and presence.
+        if on_self {
+            if let NodeKind::Attribute {
+                field, optional, ..
+            } = &mut attribute.kind
+            {
+                let projected = self
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.parent_projections.get(&*field));
+                if let Some((declared, presence)) = projected {
+                    *optional = *presence == Presence::Optional;
+                    attribute.value_type = if *optional {
+                        ValueType::option(declared.clone())
+                    } else {
+                        declared.clone()
+                    };
+                }
+            }
+        }
+        Ok(attribute)
     }
 
     /// `self` (FR-104): in a state clause, the context object,
@@ -1680,7 +3086,7 @@ impl<'a> Typer<'a> {
     /// it refuses `missing_declaration`/`missing-name`.
     fn self_reference(&self, location: &Location) -> Result<Node, CheckRefusal> {
         let Some(state) = &self.state else {
-            return Err(refuse(location, CheckCause::MissingName("self".to_owned())));
+            return Err(refuse(location, CheckCause::MissingSelf));
         };
         self.bound_slot(state.self_slot, location)
     }
@@ -1723,10 +3129,10 @@ impl<'a> Typer<'a> {
     }
 
     /// `reaches(source, target, edge)` over the typed `source` and `target`
-    /// (FR-104): both `Reference<T>` of one object type `T`, and `edge` a
-    /// field of `T`'s effective attribute set typed `Reference<T>`,
-    /// `Option<Reference<T>>` or a sequence of `Reference<T>` (QSpec
-    /// `state-contract.md`, "Finite graph extension"). Anything else,
+    /// (FR-104): for a complete model, each endpoint conforms to the
+    /// inherited edge's declaring type `T`, and the edge targets
+    /// `Reference<T>`. An absent model retains exact `Reference<T>` endpoint
+    /// typing. Anything else,
     /// a set, bag or ordered set of references included, refuses
     /// `ill_typed`/`operator-ineligible` at the `reaches`.
     fn reaches(
@@ -1736,41 +3142,20 @@ impl<'a> Typer<'a> {
         edge: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let (ValueType::Reference(object), ValueType::Reference(other)) =
-            (&source.value_type, &target.value_type)
-        else {
-            return Err(ineligible(location));
-        };
-        if object != other {
-            return Err(ineligible(location));
-        }
-        let object = *object;
-        let attribute = self
-            .scope
-            .types
-            .attribute(object, edge)
-            .ok_or_else(|| ineligible(location))?;
-        let declared = attribute.field();
-        let names_object = |value_type: &ValueType| value_type == &ValueType::Reference(object);
-        let admitted = match (declared.presence(), declared.value_type()) {
-            (_, ValueType::Reference(_)) => names_object(declared.value_type()),
-            (Presence::Required, ValueType::Collection(collection)) => {
-                collection.kind() == CollectionKind::Sequence && names_object(collection.element())
-            }
-            _ => false,
-        };
-        if !admitted {
-            return Err(ineligible(location));
-        }
-        Ok(node(
-            NodeKind::Reaches {
-                source: self.push(source),
-                target: self.push(target),
-                edge: attribute.identity(),
+        let source_type = source.value_type.clone();
+        let target_type = target.value_type.clone();
+        let source = self.push(source);
+        let target = self.push(target);
+        self.model_node(
+            super::state_model::Form::Reaches {
+                source,
+                source_type,
+                target,
+                target_type,
+                edge: edge.to_owned(),
             },
-            ValueType::Boolean,
             location,
-        ))
+        )
     }
 
     /// Whether a state clause's `pre(e)` operand contains, in its own
@@ -1853,10 +3238,9 @@ impl<'a> Typer<'a> {
         else {
             return Err(mismatch(location));
         };
-        let (index, declared) = fields
+        let declared = fields
             .iter()
-            .enumerate()
-            .find(|(_, declared)| declared.name() == field)
+            .find(|declared| declared.name() == field)
             .ok_or_else(|| mismatch(location))?;
         let optional = declared.presence() == Presence::Optional;
         let value_type = if optional {
@@ -1867,7 +3251,7 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
-                index,
+                field: RecordField::new(key, field),
                 optional,
             },
             value_type,
@@ -1878,15 +3262,12 @@ impl<'a> Typer<'a> {
     /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
     /// whether a dispatch call checks in this clause at all. It checks only
     /// inside an invariant, precondition or postcondition (TC-196 D07).
-    fn dispatch_admitted(&self, location: &Location) -> Result<(), CheckRefusal> {
-        if matches!(
-            self.clause_kind,
-            ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition
-        ) {
-            Ok(())
-        } else {
-            Err(ineligible(location))
-        }
+    fn dispatch_admitted(&mut self, location: &Location) -> Result<(), CheckRefusal> {
+        self.model_check(
+            super::state_model::Form::DispatchContext(self.clause_kind),
+            location,
+        )
+        .map(|_| ())
     }
 
     /// The dispatch-eligible operation `member` a call with `arity`
@@ -1895,31 +3276,28 @@ impl<'a> Typer<'a> {
     /// resolves statically against `T`'s exposed dispatch-eligible
     /// operations. Returns the operation's index and declaration.
     fn dispatch_operation(
-        &self,
+        &mut self,
         receiver: &Node,
         member: &str,
         arity: usize,
         location: &Location,
     ) -> Result<(usize, &'a DispatchOperation), CheckRefusal> {
-        let scope: &'a Scope = self.scope;
-        let ValueType::Reference(receiver_type) = receiver.value_type else {
-            return Err(ineligible(location));
+        let index = match self.model_check(
+            super::state_model::Form::DispatchOperation {
+                receiver_type: receiver.value_type.clone(),
+                member: member.to_owned(),
+                arity,
+            },
+            location,
+        )? {
+            super::state_model::Checked::Operation(index) => index,
+            _ => return Err(super::state_model::fault(location)),
         };
-        let Some((operation_index, operation)) =
-            scope
-                .dispatch_operations
-                .iter()
-                .enumerate()
-                .find(|(_, operation)| {
-                    operation.receiver_type == receiver_type && operation.member == member
-                })
-        else {
-            return Err(ineligible(location));
-        };
-        if operation.parameters.len() != arity {
-            return Err(mismatch(location));
-        }
-        Ok((operation_index, operation))
+        self.scope
+            .dispatch_operations
+            .get(index)
+            .map(|operation| (index, operation))
+            .ok_or_else(|| super::state_model::fault(location))
     }
 
     /// A dispatch call argument typed against its declared parameter type
@@ -1938,25 +3316,19 @@ impl<'a> Typer<'a> {
     /// `let` passes the parameter type into its branches or body, so only
     /// the value an argument's branches yield reaches this.
     fn upcast(
-        &self,
+        &mut self,
         mut typed: Node,
         required: &ValueType,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        if &typed.value_type == required {
-            Ok(typed)
-        } else if let (ValueType::Reference(actual), ValueType::Reference(expected)) =
-            (&typed.value_type, required)
-        {
-            if self.scope.types.conforms(*actual, *expected) {
-                typed.value_type = required.clone();
-                Ok(typed)
-            } else {
-                Err(mismatch(location))
-            }
-        } else {
-            Err(mismatch(location))
-        }
+        typed.value_type = self.model_type(
+            super::state_model::Form::Argument {
+                actual: typed.value_type.clone(),
+                required: required.clone(),
+            },
+            location,
+        )?;
+        Ok(typed)
     }
 
     /// The record declaration `name` a record literal builds, and its
@@ -2070,6 +3442,27 @@ impl<'a> Typer<'a> {
         Ok(target)
     }
 
+    /// FR-150: the `identity-observing-form` refusal of the `node` form at
+    /// `location` when `operand` is, or contains, a reference into a
+    /// `symmetric` population; `None` otherwise.
+    fn identity_observing(
+        &self,
+        location: &Location,
+        node: IdentityNode,
+        form: IdentityForm,
+        operand: &ValueType,
+    ) -> Option<CheckRefusal> {
+        let population = self.scope.symmetric_population_in(operand)?.clone();
+        Some(refuse(
+            location,
+            CheckCause::IdentityObservingForm(Box::new(IdentityObserving {
+                node,
+                form,
+                population,
+            })),
+        ))
+    }
+
     /// `convert<target>(e)` over the typed operand `e`.
     fn convert(
         &mut self,
@@ -2081,6 +3474,18 @@ impl<'a> Typer<'a> {
             (ValueType::Collection(source), ValueType::Collection(to)) => {
                 if source.element() != to.element() {
                     return Err(mismatch(location));
+                }
+                // A Set or Bag read as an ordered collection is read in the
+                // identity-sorted order of its elements.
+                if !source.kind().is_ordered() && to.kind().is_ordered() {
+                    if let Some(refusal) = self.identity_observing(
+                        location,
+                        IdentityNode::Convert,
+                        IdentityForm::OrderSensitiveTraversal,
+                        &operand.value_type,
+                    ) {
+                        return Err(refusal);
+                    }
                 }
                 Ok(node(
                     NodeKind::ConvertCollection {
@@ -2117,7 +3522,14 @@ impl<'a> Typer<'a> {
                 if matches!(source, ValueType::Float(_))
                     || !admits_equality_conversion(source, target, &self.units)
                 {
-                    return Err(mismatch(location));
+                    return Err(self
+                        .identity_observing(
+                            location,
+                            IdentityNode::Convert,
+                            IdentityForm::ReferenceConversion,
+                            source,
+                        )
+                        .unwrap_or_else(|| mismatch(location)));
                 }
                 let converted = EqualityOperand::converted(source.clone(), target.clone());
                 Ok(node(
@@ -2132,15 +3544,11 @@ impl<'a> Typer<'a> {
     /// The queried type `T` of `allInstances<T>(p)` or `lookup<T>(p, r)`
     /// (FR-153), resolved and checked: an object reference type.
     fn population_target(
-        &self,
+        &mut self,
         target: &qsl_forms::TypeForm,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
-        let target = self.declared_target(target, location)?;
-        if !matches!(target, ValueType::Reference(_)) {
-            return Err(mismatch(location));
-        }
-        Ok(target)
+        self.model_type(super::state_model::Form::Target(target.clone()), location)
     }
 
     /// `allInstances<T>(p)` (FR-153) over the typed population `p`: `p`'s
@@ -2153,38 +3561,32 @@ impl<'a> Typer<'a> {
         population: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        // FR-153 requires `p` to be a population binding with a declared
-        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
-        // the operand is the wrong kind, not merely the wrong type name.
-        let ValueType::Population(maximum) = population.value_type else {
-            return Err(ineligible(&population.location));
-        };
-        // A population with no declared maximum is unbounded (QSpec
-        // FR-153-AC-9), so its instance set is too (ADR-014 §2).
-        let result_bound = maximum
-            .map(|maximum| bound(0, maximum, location))
-            .transpose()?;
-        let collection_type =
-            CollectionType::new(CollectionKind::Set, target.clone(), result_bound);
-        Ok(node(
-            NodeKind::AllInstances {
-                population: self.push(population),
+        let population_type = population.value_type.clone();
+        let operand_location = population.location.clone();
+        let population = self.push(population);
+        self.model_node(
+            super::state_model::Form::AllInstances {
+                target: target.clone(),
+                population,
+                population_type,
+                operand_location,
             },
-            ValueType::collection(collection_type),
             location,
-        ))
+        )
     }
 
     /// `lookup<T>(p, r)`'s typed population operand `p`: FR-153 requires a
     /// population binding with a declared maximum, otherwise
     /// `ill_typed`/`operator-ineligible` (TC-198 L06): the operand is the
     /// wrong kind, not merely the wrong type name.
-    fn lookup_population(population: &Node) -> Result<(), CheckRefusal> {
-        if matches!(population.value_type, ValueType::Population(_)) {
-            Ok(())
-        } else {
-            Err(ineligible(&population.location))
-        }
+    fn lookup_population(&mut self, population: &Node) -> Result<(), CheckRefusal> {
+        self.model_check(
+            super::state_model::Form::Population {
+                value_type: population.value_type.clone(),
+            },
+            &population.location,
+        )
+        .map(|_| ())
     }
 
     /// `lookup<T>(p, r) absent m` (FR-153) over its typed operands. `r`'s own
@@ -2206,26 +3608,21 @@ impl<'a> Typer<'a> {
         absence: AbsenceMode,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let (ValueType::Reference(s), ValueType::Reference(t)) = (&reference.value_type, target)
-        else {
-            return Err(mismatch(&reference.location));
-        };
-        if !self.scope.types.conforms(*s, *t) {
-            return Err(mismatch(&reference.location));
-        }
-        let value_type = match absence {
-            AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(),
-            AbsenceMode::Empty => ValueType::option(target.clone()),
-        };
-        Ok(node(
-            NodeKind::Lookup {
-                population: self.push(population),
-                reference: self.push(reference),
+        let reference_type = reference.value_type.clone();
+        let reference_location = reference.location.clone();
+        let population = self.push(population);
+        let reference = self.push(reference);
+        self.model_node(
+            super::state_model::Form::Lookup {
+                target: target.clone(),
+                population,
+                reference,
+                reference_type,
+                reference_location,
                 absence,
             },
-            value_type,
             location,
-        ))
+        )
     }
 
     /// Bind a one-binder form's binder to the element type of its typed

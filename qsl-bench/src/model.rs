@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Model-layer inputs: a Semantic IR 2.0.0 document with a caller-chosen
 //! number of object types, carried through FR-154 model intake
-//! (`intake::admit` -> `intake::read_records` -> `DomainPackage::new`) into
+//! (`intake::admit` -> `intake::read_domain_package`) into
 //! normalization, population admission and `allInstances`.
 //!
 //! The document is authored in QSpec's own identity form
@@ -41,7 +41,9 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect,
 };
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::intake::{admit, meaning, read_records, PackageDocument};
+use qsl_semantics::model::intake::{
+    admit, meaning, read_domain_package, read_records, PackageDocument,
+};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
@@ -168,6 +170,7 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
     let population = node("Pop");
     let document = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": node("spec"),
             "version": VERSION,
@@ -266,11 +269,11 @@ pub fn read(document: &PackageDocument) -> Result<Vec<DomainPackageRecord>, Vec<
     read_records(PACKAGE, document)
 }
 
-/// FR-154 intake: [`admit_offer`], then [`read`], then `DomainPackage::new`.
+/// FR-154 intake: [`admit_offer`], then `read_domain_package` so the resulting
+/// package retains each declaration's original meaning and FCD provenance.
 pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
     let (selection, document) = admit_offer(offer).map_err(IntakeFailure::Admit)?;
-    let records = read(&document).map_err(IntakeFailure::Read)?;
-    Ok(DomainPackage::new(selection, records))
+    read_domain_package(selection, &document).map_err(IntakeFailure::Read)
 }
 
 /// FR-150 normalization of `domain_package` under the default limits (NFR-012). The
@@ -414,6 +417,8 @@ pub fn resolve_root_field_redefinition(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qsl_semantics::model::accounting::LimitKind;
+    use qsl_semantics::model::normalize::normalize_with_meter;
 
     #[test]
     fn smallest_shape_admits_and_queries() {
@@ -427,5 +432,111 @@ mod tests {
             admit_unchanged_invocation(&effective, &population_document(shape, 1)),
             AdmissionOutcome::Admitted(_)
         ));
+    }
+
+    #[test]
+    fn source_byte_intake_retains_original_meaning_and_origin() {
+        let package = intake(&offer(document(ModelShape { types: 1, depth: 0 })))
+            .expect("the valid source document admits");
+
+        let type_origin = package
+            .original(&key("C0"))
+            .expect("the type's original declaration is retained");
+        assert_eq!(type_origin.meaning.as_deref(), Some(meaning::OBJECT_TYPE));
+        assert_eq!(
+            type_origin.origin,
+            json!({
+                "generated": {
+                    "generatorIdentity": "ix://bench/model/C0",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://bench/model/C0"],
+                }
+            })
+        );
+        assert_eq!(type_origin.member_name, None);
+
+        let field_key = DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: "ix://bench/model/C0/flag".to_owned(),
+        };
+        let field_origin = package
+            .original(&field_key)
+            .expect("the field's original declaration is retained");
+        assert_eq!(field_origin.meaning, None);
+        assert_eq!(field_origin.member_name.as_deref(), Some("flag"));
+        assert_eq!(
+            field_origin.origin,
+            json!({
+                "generated": {
+                    "generatorIdentity": "ix://bench/model/C0/flag",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://bench/model/C0/flag"],
+                }
+            })
+        );
+
+        let population_origin = package
+            .original(&key("Pop"))
+            .expect("the population's original declaration is retained");
+        assert_eq!(
+            population_origin.meaning.as_deref(),
+            Some(meaning::POPULATION)
+        );
+        assert_eq!(
+            population_origin.origin,
+            json!({
+                "generated": {
+                    "generatorIdentity": "ix://bench/model/Pop",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://bench/model/Pop"],
+                }
+            })
+        );
+        assert_eq!(population_origin.member_name, None);
+    }
+
+    #[test]
+    fn source_byte_intake_preserves_reader_refusals() {
+        let mut value: Value = serde_json::from_slice(&document(ModelShape { types: 1, depth: 0 }))
+            .expect("the generated document is JSON");
+        value["types"][0]["fields"][0]["presence"] = json!("sometimes");
+        let offered = offer(serde_json::to_vec(&value).expect("the invalid fixture serializes"));
+
+        let package = intake(&offered)
+            .expect("intake retains typed reader refusals until normalization charges records");
+        let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+        assert_eq!(
+            meter.admission_count(),
+            3,
+            "only the type, field, and population charges precede refusal",
+        );
+        assert_eq!(
+            meter.consumed(LimitKind::DeclarationRecords),
+            3,
+            "all three source records are charged before refusal",
+        );
+        let NormalizeOutcome::Refused(refusals) = outcome else {
+            panic!("normalization reports the retained reader refusal");
+        };
+        // FR-056: a reader diagnostic is retained at its deepest identified
+        // member, and the model reader's own refusal of the same member
+        // repeats it, so one refusal names `C0/flag`.
+        assert_eq!(
+            refusals.len(),
+            1,
+            "the reader diagnostic is retained once, at the member"
+        );
+        let refusal = &refusals[0];
+        assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+        assert!(matches!(
+            &refusal.cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                ..
+            } if node == "ix://bench/model/C0/flag"
+        ));
+        assert!(refusal.detail.contains("SCHEMA_VIOLATION"));
+        assert!(refusal.detail.contains("/ir/types/0/fields/0/presence"));
+        assert!(refusal.detail.contains("presence is a closed enumeration"));
     }
 }

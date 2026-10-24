@@ -2,6 +2,7 @@
 //! FR-004: checked body-to-document byte correspondence; no Markdown or wire decoding.
 use crate::source::provenance::SourceRegion;
 use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 /// The one language tag a mapped (I3 extracted) body may declare, decoded
 /// once from the caller's fence tag (ADR-012 section 9 source-lexing edge).
@@ -13,7 +14,7 @@ pub struct NativeLanguage;
 
 impl NativeLanguage {
     /// `Some` exactly for the tag `ix:native`.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn of(tag: &str) -> Option<Self> {
         (tag == "ix:native").then_some(Self)
     }

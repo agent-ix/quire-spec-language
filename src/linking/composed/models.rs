@@ -62,7 +62,7 @@ pub enum SelectedDigest {
 
 impl FromStr for SelectedDigest {
     type Err = qsl_foundation::digest::InvalidDigest;
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text.strip_prefix("sha256-jcs:") {
             Some(hex) => {
@@ -287,6 +287,14 @@ impl Site {
                 matches!(self, Self::Relationship)
             }
             DeclarationKind::Allocation
+            | DeclarationKind::Clause
+            | DeclarationKind::Namespace
+            | DeclarationKind::EventType
+            | DeclarationKind::VariantType
+            | DeclarationKind::VariantCase
+            | DeclarationKind::StateMachine
+            | DeclarationKind::Process
+            | DeclarationKind::PersistenceInterface
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Population => false,
@@ -1103,6 +1111,8 @@ impl<'a> ModelBindings<'a> {
             NativeType::Object { role, .. } => &role.record,
             NativeType::Record { declaration, .. } => declaration.name(),
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }

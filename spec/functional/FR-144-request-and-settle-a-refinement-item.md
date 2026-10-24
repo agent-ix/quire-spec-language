@@ -25,6 +25,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-143
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-121
+    type: depends_on
 ---
 # FR-144: Request and settle a refinement item
 
@@ -52,7 +54,8 @@ beside it as a separate item.
 - A `CheckedRefinement` in the S4 package (FR-135).
 - The request's concrete subject and the abstract subject's initial
   snapshots.
-- A `RefinementOutcome` (FR-142, FR-143), and for a `Violated` half the
+- A `RefinementOutcome` (FR-142, FR-143) or the refusal `check_refinement`
+  returned, and for a `Violated` half the
   FR-072 result of replaying its counterexample (FR-145) or the
   `ReplayRefusal` that stopped it.
 
@@ -60,12 +63,18 @@ beside it as a separate item.
 
 - A requirement record (`temporal-satisfaction`, `Unbounded{domains}`)
   with `PropertyForm::Refinement{liveness: bool}` (TP-5), where `liveness`
-  is `true` exactly when `F_A` is non-empty. FR-123's `PropertyForm` gains
-  this variant.
+  is `true` exactly when `F_A` is non-empty. The variant is
+  `quire_semantic_value::fairness::PropertyForm::Refinement { liveness }`,
+  a fifth variant of QSV FR-121's `PropertyForm` (the type FR-123
+  records), encoded as the JSON object `{"refinement":{"liveness":<bool>}}`
+  and ordered after `Liveness`, `liveness: false` before `true`.
+  `RefinementFailure` (ADR-020 RC-1, FR-141) stays a QSL type: only the
+  property form crosses the semantic-value seam.
 - `InconclusiveCause::MappingUndetermined` beside FR-127's causes, written
   on the wire as cause `mapping-undetermined` (QSpec FR-379).
 - One FR-331 terminal record per refinement item, carrying the item's
-  `TerminalValue`, each half's `TerminalValue`, the method
+  `TerminalValue`, each half's `TerminalValue` (none for an item settled from a
+  refusal), the method
   `explicit-state`, its QSpec FR-360 label, QSpec FR-243
   basis and O-16 category by FR-127's table.
 
@@ -78,27 +87,29 @@ beside it as a separate item.
   TP-5 form. No other capability kind SHALL be written for it.
 - Negotiation SHALL route the record by its kind and form to the
   explicit-state engine's provider (FR-075), whose manifest advertises
-  `temporal-satisfaction`.
+  `temporal-satisfaction`; a record whose concrete subject declares
+  `time dense` routes to EN-6's provider instead (FR-430).
 - The item's obligation identity SHALL bind the refinement node, the
   concrete subject and the abstract subject's initial snapshots (ADR-013
   O-09), so its verdict holds for exactly that concrete subject against
   that abstract subject with the derived universes.
 - For FR-124's derivation the request writer SHALL count a refinement item
   as a temporal item over the concrete subject, so the request carries the
-  concrete subject's deadlock-freedom item unless the concrete model
-  declares `terminal any`. A refinement item SHALL NOT add a
+  concrete subject's deadlock-freedom item unless the concrete model's
+  package declares `terminal any` for it. A refinement item SHALL NOT add a
   deadlock-freedom item for the abstract subject (ADR-020 RS-9).
 
 ### Settlement
 
 - The item's value SHALL be:
   - the safety half's value when the safety half is not `Holds`;
-  - `Proved{basis: Exhaustive}` when the safety half holds and `liveness`
-    is `None`;
+  - `Proved{basis: Exhaustive, certification: Certified}` when the safety
+    half holds, FR-149 accepts its certificate and `liveness` is `None`;
   - the liveness half's value when it is `Checked`;
   - `Unsupported(unsupported-requested-capability)` when it is
     `Unsupported`, with the record carrying the safety half's value
-    `Proved{basis: Exhaustive}` beside it (ADR-020 AX-5).
+    `Proved{basis: Exhaustive, certification: Certified}` beside it (ADR-020
+    AX-5).
 - Each half's value SHALL come from FR-127's map, with
   `Undecided(MappingUndetermined)` settling V-6 `inconclusive`,
   `Inconclusive(MappingUndetermined)`, and an `UndefinedEvaluation`
@@ -108,13 +119,20 @@ beside it as a separate item.
   settling `reproduced-with-evaluated-witness`; a replay that settles
   `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
   `replay-parity`, QSpec FR-379), a refusal V-6 with
-  `ReplayRefused`, and a fault `failed`.
-- The record SHALL read neither model's `terminal` member; its value SHALL
+  `ReplayRefused`, and a fault `failed`. A `StepVerdict::Fault` (FR-141), from
+  an internal fault in the mapping, settles the item `failed` likewise. A
+  refusal from `check_refinement` (FR-143: an internal fault in the second
+  phase) settles the item `failed` with that fault and no half value.
+- The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
   `proved` only after FR-149's checker accepts its certificate; a rejection
-  SHALL settle V-6 `CertificateRejected{rule, state}` (ADR-018 PC-2), and a checker stopped by a limit
-  V-7 naming the limit (ADR-020 CT-3).
+  SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
+  V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
+- **Certificate identity.** Before it calls FR-149's checker, FR-144 SHALL refuse
+  `stale_dependency`/`content-mismatch` a certificate whose `concrete_package`,
+  `abstract_package` or `obligation` differs from the item's recompile (FR-098);
+  the checker compares the refinement node (FR-149 "Identity").
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
   `Certified` label when every half was certified. A `proved` with a
   liveness half, which has no core certificate checker, SHALL settle
@@ -125,12 +143,13 @@ beside it as a separate item.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-144-AC-1 | `CasRefinesCounter` writes one requirement record (`temporal-satisfaction`, `PropertyForm::Refinement{liveness: true}`); with its `ensure` row removed, `liveness: false`. The record routes to the explicit-state provider. The request carries the concrete subject's deadlock-freedom item and none for the abstract subject; with `terminal any` on `Impl::Counter` it carries none. | Test (TC-549) |
-| FR-144-AC-2 | `CasRefinesCounter` settles `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, method `explicit-state`, both halves `Proved{basis: Exhaustive}`. The divergence variant settles `refuted`, `decisive-counterexample`, after its lasso replays, with safety half `Proved{basis: Exhaustive}` and liveness half `Refuted`. | Test (TC-549) |
-| FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive}` on the record. | Test (TC-549) |
+| FR-144-AC-2 | `CasRefinesCounter` settles `proved`, `closed-scope`, `Proved{basis: Exhaustive, certification: Uncertified}`, method `explicit-state`, safety half `Proved{basis: Exhaustive, certification: Certified}` and liveness half `Proved{basis: Exhaustive, certification: Uncertified}`. The divergence variant settles `refuted`, `decisive-counterexample`, after its lasso replays, with safety half `Proved{basis: Exhaustive, certification: Certified}` and liveness half `Refuted`. | Test (TC-549) |
+| FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive, certification: Certified}` on the record. | Test (TC-549) |
 | FR-144-AC-4 | The lost-update refinement whose counterexample is replayed with its recorded failure changed to `AbstractStepRejected{position: 3, …}` settles `inconclusive`, `Inconclusive(ReplayParity)`, never `refuted`; replayed with an `initial` index of 1 over its one-snapshot subject, it settles `inconclusive`, `Inconclusive(ReplayRefused)`. | Test (TC-549) |
 | FR-144-AC-5 | Two `CasRefinesCounter` requests that differ only in the abstract subject's initial snapshots (`value` 0 and `value` 1) have different obligation identities; the second settles `refuted` with `InitialNotAbstract`. | Test (TC-549) |
 | FR-144-AC-6 | FR-140-AC-5's incomplete `items` row settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)` (wire cause `mapping-undetermined`), never `refuted`; FR-141-AC-7's undefined argument settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. | Test (TC-555) |
 | FR-144-AC-7 | `CasRefinesCounter` with its `ensure` row removed settles `proved`, `closed-scope`, `Certified`, after FR-149 accepts the certificate; with its `ensure` row it settles `proved`, `Uncertified`; with the certificate's `Taken` for the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter`, it settles `inconclusive`, `CertificateRejected`. | Test (TC-556) |
+| FR-144-AC-8 | `quire_canonical::to_vec` of `CasRefinesCounter`'s record property form gives the bytes `{"refinement":{"liveness":true}}`, and with its `ensure` row removed `{"refinement":{"liveness":false}}`; `PropertyForm::Liveness < Refinement{liveness: false} < Refinement{liveness: true}`. | Test (TC-1167) |
 
 ## Dependencies
 
@@ -143,7 +162,12 @@ beside it as a separate item.
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),
   [FR-142](FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md),
   [FR-143](FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md).
+- quire-semantic-value FR-121: the shared `PropertyForm`, which must carry
+  the `Refinement { liveness }` variant, its spelling and its order before
+  FR-144-AC-8 can pass.
 
 ## References
 
 - The QSpec half (claim kinds and the `mapping-undetermined` cause): QSpec FR-379 (Linear STD-133).
+- The quire-semantic-value half (the `Refinement { liveness }` variant of
+  QSV FR-121's `PropertyForm`): Linear STD-326.

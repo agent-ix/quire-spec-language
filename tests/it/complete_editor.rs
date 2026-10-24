@@ -7,6 +7,7 @@ use qsl_cst::{
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::{SourceIdentity, Span};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer};
 use quire_spec_language::complete::{
     self, analyze_document, format_document, DocumentBinding, SourceEdit,
 };
@@ -36,6 +37,39 @@ fn binding(revision: &str, profile: &str) -> DocumentBinding {
 fn catalog() -> (ProfileCatalog, String) {
     let selected = "quire.value.complete/v1".to_owned();
     (ProfileCatalog::new([selected.clone()]).unwrap(), selected)
+}
+
+/// The built-in header catalog admits all six lock layers, including the
+/// temporal layer, while leaving unknown identities outside the catalog.
+#[trace("FR-110-AC-13", "TC-490")]
+#[test]
+fn the_header_profile_catalog_admits_the_temporal_layer() {
+    let catalog = complete::header_profile_catalog();
+    for layer in HeaderLayer::ALL {
+        assert!(catalog.contains(layer.identity()), "missing {layer:?}");
+    }
+    assert!(!catalog.contains("test:unknown-profile"));
+    assert!(!catalog.contains(
+        DefinitionLock::pinned()
+            .entry(CatalogRole::IeeeProfile)
+            .identity
+    ));
+
+    let source = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        "record Reading { datum: Integer; }\n",
+    )
+    .as_bytes();
+    let parsed = complete::parse_with_catalog(
+        identity("temporal"),
+        "temporal.native",
+        source,
+        &catalog,
+        Limits::default(),
+    )
+    .expect("the source is readable");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
 }
 
 #[trace("QSpec-TC-223", "QSpec-FR-303-AC-1")]
@@ -348,12 +382,13 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
         },
     )
     .unwrap_err();
-    // The output byte ceiling is a `SyntaxLimit` kind the catalog
-    // admits, so it now reports `stage_limit_exceeded`.
+    // FR-277's format.output_bytes exception reports the typed
+    // resource-exhausted diagnostic while preserving the shared input-bytes
+    // limit cause.
     assert_eq!(
         (refusal.code, refusal.cause),
         (
-            CompleteCode::StageLimitExceeded,
+            CompleteCode::ResourceExhausted,
             CompleteCause::StageLimit(LimitKind::InputBytes)
         )
     );
@@ -496,7 +531,7 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
             },
         )
         .unwrap_err();
-        assert_eq!(one_short.code, CompleteCode::StageLimitExceeded);
+        assert_eq!(one_short.code, CompleteCode::ResourceExhausted);
         let expected = expected_failure_span.map_or(
             Span {
                 start: source.len(),

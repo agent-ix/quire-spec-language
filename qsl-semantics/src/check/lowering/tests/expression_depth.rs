@@ -10,7 +10,8 @@
 
 use super::*;
 use crate::check::depth_forms::{declarations, Form, FORMS};
-use crate::check::{Obligation, WrongSnapshotCause};
+use crate::check::Obligation;
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckMode;
 
 /// The stack each check runs on.

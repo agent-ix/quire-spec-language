@@ -73,7 +73,7 @@ stays unavailable, with IT-001 recording its owner gate. The only native runtime
 dependency is the reviewed Rust package. Audit dependency grants are recorded
 before adoption. No separate crate or producer implementation is justified.
 
-The [test matrix](../../tests.md) and [Plan-001](../../../plan/Plan-001-rust-fixture-audits/plan.md)
+The [Plan-001](../../../plan/Plan-001-rust-fixture-audits/plan.md)
 record the scoped implementation/test work. They do not claim all old FRs are
 covered. Readiness is satisfied for Rust audit implementation and its refusal
 mode; owner approval is still required before enabling fresh external production.

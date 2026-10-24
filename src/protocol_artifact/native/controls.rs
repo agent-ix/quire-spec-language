@@ -596,6 +596,8 @@ pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(),
         | crate::checking::NativeType::Object { .. }
         | crate::checking::NativeType::Domain(_) => Ok(()),
         crate::checking::NativeType::Boolean
+        | crate::checking::NativeType::Uuid
+        | crate::checking::NativeType::String
         | crate::checking::NativeType::Scalar { .. }
         | crate::checking::NativeType::Enumeration { .. }
         | crate::checking::NativeType::Reference { .. }

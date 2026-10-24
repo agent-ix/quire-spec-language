@@ -3,10 +3,16 @@
 //! same `it` pattern the root crate uses (`tests/it/main.rs`) --
 //! one link step per `cargo test` invocation instead of one per file.
 
+mod abstraction_declaration;
 mod complete_cst;
 mod complete_grammar;
 mod cst_identity;
 mod deep_sources;
+mod hyper_clause;
 mod limits;
+mod model_source;
 mod nesting_levels;
+mod probabilistic;
+mod protocol_memory_refinement;
 mod selection;
+mod terminal_declaration;

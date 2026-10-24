@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 
 use super::Production as P;
 
+/// The built-in time type's spelling (FR-393).
+const CLOCK: &str = "Clock";
+
 #[derive(Clone, Debug)]
 pub(super) enum Terminal {
     Exact(&'static str),
@@ -13,7 +16,31 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
+    /// A `decimal-literal`: digits, a point and digits, with no exponent.
+    DecimalLiteral,
+    /// An unsigned integer that fits `u64`: an interval bound or a
+    /// compensation's `attempts` count.
+    Bound,
+    /// The built-in `Clock` type: the unqualified word `Clock` not followed
+    /// by `::`, so `Clock::T` stays a qualified name (FR-393).
+    ClockType {
+        /// The built-in's spelling.
+        word: &'static str,
+        /// The qualifier that makes the word a qualified name instead.
+        qualifier: &'static str,
+    },
+    /// An identifier that may name a declared type: any identifier but
+    /// `Clock`, which an unqualified type position always reads as the
+    /// built-in (FR-393).
+    TypeIdentifier {
+        /// The built-in's spelling, which no declared type may take.
+        except: &'static str,
+    },
     End,
+    /// Matches without consuming when the next token is one of these
+    /// spellings: a lookahead that lets a production end where its caller
+    /// resumes.
+    Peek(&'static [&'static str]),
 }
 
 /// One declarative grammar rule. Deliberately not `Clone`: the interpreter
@@ -97,6 +124,15 @@ fn text() -> Rule {
 fn uint() -> Rule {
     Rule::Terminal(Terminal::UnsignedInteger)
 }
+fn decimal_literal() -> Rule {
+    Rule::Terminal(Terminal::DecimalLiteral)
+}
+fn bound() -> Rule {
+    Rule::Terminal(Terminal::Bound)
+}
+fn type_ident() -> Rule {
+    Rule::Terminal(Terminal::TypeIdentifier { except: CLOCK })
+}
 fn r(production: P) -> Rule {
     Rule::Production(production)
 }
@@ -135,6 +171,19 @@ fn list(item: impl Fn() -> Rule) -> Rule {
     // delimiter when it is not followed by an item so that outer grammar owns it.
     s(vec![item(), backtracking_star(s(vec![x(","), item()]))])
 }
+/// `eventually`, `always`, `once` or `historically`.
+fn temporal_unary() -> Rule {
+    c(vec![
+        x("eventually"),
+        x("always"),
+        x("once"),
+        x("historically"),
+    ])
+}
+/// `until`, `release`, `since` or `triggered`.
+fn temporal_binary() -> Rule {
+    c(vec![x("until"), x("release"), x("since"), x("triggered")])
+}
 /// `( <parameter> )`: one bracket pair around a single bound parameter.
 fn bound_parameter() -> Rule {
     s(vec![x("("), r(P::Parameter), x(")")])
@@ -147,6 +196,7 @@ pub(super) fn complete_v1() -> Grammar {
     temporal(&mut grammar);
     protocol(&mut grammar);
     analysis(&mut grammar);
+    probabilistic(&mut grammar);
     grammar
 }
 
@@ -271,17 +321,31 @@ fn source_and_types(g: &mut Grammar) {
         r(P::EnumDeclaration),
         r(P::RecordDeclaration),
         r(P::TupleDeclaration),
+        r(P::UnionDeclaration),
         r(P::AliasDeclaration),
         r(P::FunctionDeclaration),
         r(P::Predicate),
         r(P::StateClause),
+        r(P::OperationBody),
+        r(P::PopulationBound),
         r(P::TemporalClause),
+        r(P::TerminalDeclaration),
+        r(P::TimeInvariant),
+        r(P::TimeDeclaration),
+        r(P::UrgentDeclaration),
+        r(P::RandomDeclaration),
+        r(P::RewardDeclaration),
+        r(P::WorkloadDeclaration),
+        r(P::ProbabilisticClause),
+        r(P::StateGraphClaim),
         r(P::ProtocolClause),
+        r(P::Refinement),
         r(P::RelationClause),
         r(P::HyperClause),
         r(P::HybridDeclaration),
         r(P::SynthesisDeclaration),
         r(P::VerificationPlan),
+        r(P::AbstractionDeclaration),
     ];
     g.insert(P::Declaration, c(declarations));
     g.insert(
@@ -373,13 +437,21 @@ fn source_and_types(g: &mut Grammar) {
                 x("<"),
                 r(P::TypeReference),
                 x(">"),
-                x("["),
-                uint(),
-                x(","),
-                uint(),
-                x("]"),
+                opt(s(vec![x("["), uint(), x(","), uint(), x("]")])),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
+            s(vec![x("Quantity"), x("<"), r(P::QualifiedName), x(">")]),
+            s(vec![
+                x("Population"),
+                x("<"),
+                r(P::QualifiedName),
+                x(">"),
+                opt(s(vec![x("["), uint(), x("]")])),
+            ]),
+            Rule::Terminal(Terminal::ClockType {
+                word: CLOCK,
+                qualifier: "::",
+            }),
             r(P::QualifiedName),
         ]),
     );
@@ -427,7 +499,7 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             opt(x("ordered")),
             x("enum"),
-            ident(),
+            type_ident(),
             x("{"),
             list(|| r(P::EnumMember)),
             opt(x(",")),
@@ -448,7 +520,7 @@ fn source_and_types(g: &mut Grammar) {
         P::RecordDeclaration,
         s(vec![
             x("record"),
-            ident(),
+            type_ident(),
             x("{"),
             plus(r(P::Field)),
             x("}"),
@@ -458,7 +530,7 @@ fn source_and_types(g: &mut Grammar) {
         P::TupleDeclaration,
         s(vec![
             x("tuple"),
-            ident(),
+            type_ident(),
             x("("),
             list(|| r(P::TypeReference)),
             x(")"),
@@ -466,10 +538,28 @@ fn source_and_types(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::UnionDeclaration,
+        s(vec![
+            x("union"),
+            type_ident(),
+            x("{"),
+            list(|| r(P::UnionMember)),
+            opt(x(",")),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::UnionMember,
+        s(vec![
+            ident(),
+            opt(s(vec![x("("), list(|| r(P::TypeReference)), x(")")])),
+        ]),
+    );
+    g.insert(
         P::AliasDeclaration,
         s(vec![
             x("type"),
-            ident(),
+            type_ident(),
             x("="),
             r(P::TypeReference),
             x(";"),
@@ -530,6 +620,38 @@ fn source_and_types(g: &mut Grammar) {
             ]),
         ]),
     );
+    // `body <label> using <alias> on <qualified-name> ( <ident>, ... ) <block>`
+    // (QSpec Complete-V1 `operation-body`): the label and the receiver-less
+    // parameter names are plain identifiers.
+    g.insert(
+        P::OperationBody,
+        s(vec![
+            x("body"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
+            x("("),
+            opt(list(ident)),
+            x(")"),
+            r(P::Block),
+        ]),
+    );
+    // `bound <label> on <alias>::<population> [ <digits> ]` (FR-380): an
+    // authored finite maximum for a domain-package population.
+    g.insert(
+        P::PopulationBound,
+        s(vec![
+            x("bound"),
+            ident(),
+            x("on"),
+            r(P::ModelName),
+            x("["),
+            uint(),
+            x("]"),
+        ]),
+    );
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));
 }
 
@@ -586,6 +708,7 @@ fn expressions(g: &mut Grammar) {
                 x("else"),
                 r(P::Expression),
             ]),
+            r(P::CaseExpression),
             r(P::Implication),
         ]),
     );
@@ -649,7 +772,11 @@ fn expressions(g: &mut Grammar) {
         s(vec![
             r(P::Primary),
             star(c(vec![
-                s(vec![x("."), member()]),
+                s(vec![
+                    x("."),
+                    member(),
+                    opt(s(vec![x("("), opt(list(|| r(P::Expression))), x(")")])),
+                ]),
                 s(vec![x("["), r(P::Expression), x("]")]),
             ])),
         ]),
@@ -795,6 +922,45 @@ fn expressions(g: &mut Grammar) {
             ]),
         ]),
     );
+    g.insert(
+        P::PopulationBinder,
+        s(vec![
+            ident(),
+            x("in"),
+            r(P::ModelName),
+            opt(s(vec![literal("where"), r(P::Expression)])),
+        ]),
+    );
+    g.insert(
+        P::PopulationCall,
+        s(vec![
+            Rule::Terminal(Terminal::Peek(&[
+                "count", "exists", "all", "sum", "only", "seq",
+            ])),
+            population_call(),
+        ]),
+    );
+    g.insert(
+        P::CaseExpression,
+        s(vec![
+            x("case"),
+            r(P::ScrutineeExpression),
+            x("{"),
+            plus(r(P::CaseArm)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::CaseArm,
+        s(vec![
+            r(P::QualifiedName),
+            opt(s(vec![x("("), list(|| r(P::CaseBinder)), x(")")])),
+            x(":"),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(P::CaseBinder, ident());
     let args = s(vec![x("("), opt(list(|| r(P::Expression))), x(")")]);
     g.insert(
         P::Primary,
@@ -805,6 +971,8 @@ fn expressions(g: &mut Grammar) {
             x("none"),
             x("self"),
             x("result"),
+            s(vec![x("protocol"), r(P::QualifiedName)]),
+            r(P::QuantityLiteral),
             uint(),
             text(),
             r(P::ExactNumber),
@@ -828,7 +996,25 @@ fn expressions(g: &mut Grammar) {
                 r(P::Expression),
                 x(")"),
             ]),
+            r(P::PopulationCall),
             r(P::CollectionCall),
+            s(vec![
+                x("lookup"),
+                x("<"),
+                r(P::TypeReference),
+                x(">"),
+                x("("),
+                r(P::Expression),
+                x(","),
+                r(P::Expression),
+                x(")"),
+                x("absent"),
+                c(vec![
+                    literal("undefined"),
+                    literal("empty"),
+                    literal("refused"),
+                ]),
+            ]),
             s(vec![
                 x("size"),
                 opt(s(vec![x("<"), r(P::TypeReference), x(">")])),
@@ -859,6 +1045,155 @@ fn expressions(g: &mut Grammar) {
             r(P::QualifiedName),
         ]),
     );
+    scrutinee_rules(g);
+    hyper_expression_rules(g);
+}
+
+/// The three shapes of a population-valued form (FR-139), after the guard
+/// that keeps every other primary from trying them.
+fn population_call() -> Rule {
+    c(vec![
+        s(vec![
+            c(vec![x("count"), x("exists"), x("all")]),
+            x("("),
+            r(P::PopulationBinder),
+            x(")"),
+        ]),
+        s(vec![
+            c(vec![x("sum"), literal("only")]),
+            x("("),
+            r(P::PopulationBinder),
+            x(":"),
+            r(P::Expression),
+            x(")"),
+        ]),
+        s(vec![
+            literal("seq"),
+            x("("),
+            ident(),
+            x("in"),
+            r(P::Expression),
+            x(".."),
+            r(P::Expression),
+            x(":"),
+            r(P::Expression),
+            x(")"),
+        ]),
+    ])
+}
+
+/// Derive the scrutinee precedence tree from the ordinary expression rules.
+/// Only unbracketed expression edges are restricted. Primary's delimited
+/// operands (parentheses, calls, indexes and constructors) keep ordinary
+/// expressions, so their records are admitted. Separate productions preserve
+/// the interpreter's production/position memo key (FR-256).
+fn scrutinee_rules(g: &mut Grammar) {
+    const PAIRS: &[(P, P)] = &[
+        (P::Expression, P::ScrutineeExpression),
+        (P::Implication, P::ScrutineeImplication),
+        (P::Disjunction, P::ScrutineeDisjunction),
+        (P::Conjunction, P::ScrutineeConjunction),
+        (P::Comparison, P::ScrutineeComparison),
+        (P::Sum, P::ScrutineeSum),
+        (P::Product, P::ScrutineeProduct),
+        (P::Unary, P::ScrutineeUnary),
+        (P::Postfix, P::ScrutineePostfix),
+        (P::Primary, P::ScrutineePrimary),
+    ];
+    for &(base, restricted) in PAIRS {
+        let rule = g.get(&base).expect("expression rule was installed");
+        // Postfix's Primary edge is unbracketed; its later Expression
+        // operands are indexes or call arguments and remain unrestricted.
+        let restricted_rule = if base == P::Postfix {
+            let Rule::Sequence(rules) = rule else {
+                unreachable!("postfix is a sequence")
+            };
+            s(rules
+                .iter()
+                .enumerate()
+                .map(|(index, rule)| copy_rule(rule, PAIRS, index != 0, true))
+                .collect())
+        } else {
+            copy_rule(rule, PAIRS, base == P::Primary, true)
+        };
+        g.insert(restricted, restricted_rule);
+    }
+}
+
+/// Copy `rule`, replacing each reference to a base production in `pairs` by
+/// its counterpart. A `delimited` copy keeps every reference as written, and
+/// `drop_records` leaves record constructors out of a choice.
+fn copy_rule(rule: &Rule, pairs: &[(P, P)], delimited: bool, drop_records: bool) -> Rule {
+    match rule {
+        Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
+        Rule::Production(production) => r(if delimited {
+            *production
+        } else {
+            pairs
+                .iter()
+                .find_map(|(base, restricted)| (base == production).then_some(*restricted))
+                .unwrap_or(*production)
+        }),
+        Rule::Sequence(rules) => s(rules
+            .iter()
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Choice(rules) => c(rules
+            .iter()
+            .filter(|rule| !(drop_records && matches!(rule, Rule::Production(P::RecordValue))))
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Optional(rule) => opt(copy_rule(rule, pairs, delimited, drop_records)),
+        Rule::Repeat {
+            rule,
+            minimum,
+            commit_on_progress,
+        } => Rule::Repeat {
+            rule: Box::new(copy_rule(rule, pairs, delimited, drop_records)),
+            minimum: *minimum,
+            commit_on_progress: *commit_on_progress,
+        },
+    }
+}
+
+/// Derive the expression tree a `hyper` clause reads its `match` block and
+/// its `holds` conditions with. It is the ordinary expression tree with two
+/// additions: an indexed read `e @ t` binds tighter than every operator and
+/// looser than member navigation, and a step label `t.step.op` and the
+/// `stutter` label are primaries.
+/// Every reference inside the copy, including a bracketed operand, stays in
+/// the copy, so a read or label is admitted wherever the ordinary tree admits
+/// a postfix or a primary.
+fn hyper_expression_rules(g: &mut Grammar) {
+    const PAIRS: &[(P, P)] = &[
+        (P::Expression, P::HyperExpression),
+        (P::Implication, P::HyperImplication),
+        (P::Disjunction, P::HyperDisjunction),
+        (P::Conjunction, P::HyperConjunction),
+        (P::Comparison, P::HyperComparison),
+        (P::Sum, P::HyperSum),
+        (P::Product, P::HyperProduct),
+        (P::Unary, P::HyperUnary),
+        (P::Postfix, P::HyperPostfix),
+        (P::Primary, P::HyperPrimary),
+    ];
+    for &(base, hyper) in PAIRS {
+        let rule = g.get(&base).expect("expression rule was installed");
+        let copied = copy_rule(rule, PAIRS, false, false);
+        let rule = match (base, copied) {
+            (P::Unary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(alternatives.len() - 1, r(P::IndexedRead));
+                c(alternatives)
+            }
+            (P::Primary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(0, literal("stutter"));
+                alternatives.insert(0, r(P::StepLabel));
+                c(alternatives)
+            }
+            (_, copied) => copied,
+        };
+        g.insert(hyper, rule);
+    }
 }
 
 fn temporal(g: &mut Grammar) {
@@ -885,13 +1220,239 @@ fn temporal(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::Fairness,
+        s(vec![
+            x("fair"),
+            opt(c(vec![x("weak"), x("strong")])),
+            opt(c(vec![x("whole"), x("each")])),
+            r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TerminalDeclaration,
+        s(vec![
+            literal("terminal"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
+            x(";"),
+        ]),
+    );
+    // A bracketed interval uses one kind of bound at both ends (FR-393),
+    // and a step bound fits `u64` (FR-325). The grammar admits any unsigned
+    // integer and, at the upper end, the other kind's bound, so that the
+    // parser's interval check refuses each at that bound's own span
+    // (`parser::interval_bounds`), rather than wherever the ordered choice
+    // happened to stop.
+    g.insert(
+        P::StateGraphClaim,
+        c(vec![
+            s(vec![
+                x("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                x("always"),
+                x("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                opt(s(vec![
+                    x("from"),
+                    x("("),
+                    r(P::StateGraphPredicate),
+                    x(")"),
+                ])),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                x("unique"),
+                x("path"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                x("from"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+                x("to"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+                x(";"),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::StateGraphBody,
+        s(vec![
+            x("{"),
+            star(r(P::Fairness)),
+            r(P::StateGraphPredicate),
+            x("}"),
+        ]),
+    );
+    // QSpec's `graph-predicate`. A predicate that derives as an `expr` is
+    // read as that `expr` (the first alternative, taken only where the
+    // predicate ends); the `let`, `if` and graph alternatives apply to a
+    // phrase that does not. The graph levels read a temporal operator at any
+    // operand position so the checker can refuse it at its span.
+    g.insert(
+        P::StateGraphPredicate,
+        c(vec![
+            s(vec![
+                r(P::Expression),
+                Rule::Terminal(Terminal::Peek(&["}", ")", "else"])),
+            ]),
+            s(vec![
+                x("let"),
+                ident(),
+                x("="),
+                r(P::Expression),
+                x("in"),
+                r(P::StateGraphPredicate),
+            ]),
+            s(vec![
+                x("if"),
+                r(P::Expression),
+                x("then"),
+                r(P::StateGraphPredicate),
+                x("else"),
+                r(P::StateGraphPredicate),
+            ]),
+            r(P::StateGraphImplication),
+        ]),
+    );
+    g.insert(
+        P::StateGraphImplication,
+        s(vec![
+            r(P::StateGraphDisjunction),
+            opt(s(vec![x("implies"), r(P::StateGraphImplication)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphDisjunction,
+        s(vec![
+            r(P::StateGraphConjunction),
+            star(s(vec![x("or"), r(P::StateGraphConjunction)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphConjunction,
+        s(vec![
+            r(P::StateGraphRelation),
+            star(s(vec![x("and"), r(P::StateGraphRelation)])),
+        ]),
+    );
+    // At most one binary temporal operator, as `temporal-relation`.
+    g.insert(
+        P::StateGraphRelation,
+        s(vec![
+            r(P::StateGraphUnary),
+            opt(s(vec![
+                temporal_binary(),
+                opt(r(P::Interval)),
+                r(P::StateGraphUnary),
+            ])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphUnary,
+        c(vec![
+            r(P::Comparison),
+            s(vec![x("not"), r(P::StateGraphUnary)]),
+            s(vec![
+                temporal_unary(),
+                opt(r(P::Interval)),
+                r(P::StateGraphUnary),
+            ]),
+            s(vec![x("("), r(P::StateGraphPredicate), x(")")]),
+        ]),
+    );
+    g.insert(
         P::Interval,
         s(vec![
             x("["),
             uint(),
             x(","),
-            c(vec![uint(), x("*")]),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
             x("]"),
+        ]),
+    );
+    // `timed-interval = ( '[' | '(' ), quantity-literal, ',',
+    // quantity-literal, ( ']' | ')' )`. A `(` opens one only when a
+    // quantity literal follows it (the shared grammar's second-token rule).
+    g.insert(
+        P::TimedInterval,
+        s(vec![
+            c(vec![x("["), x("(")]),
+            r(P::QuantityLiteral),
+            x(","),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
+            c(vec![x("]"), x(")")]),
+        ]),
+    );
+    // `time-decl`, `time-invariant`, `clock-bound` and `urgent-decl`. The
+    // words `time`, `urgent`, `dense`, `tick` and `period` are contextual:
+    // reserved nowhere, so they stay identifiers outside these heads.
+    g.insert(
+        P::TimeDeclaration,
+        s(vec![
+            literal("time"),
+            ident(),
+            c(vec![
+                literal("dense"),
+                s(vec![
+                    literal("tick"),
+                    r(P::QualifiedName),
+                    literal("period"),
+                    r(P::QuantityLiteral),
+                ]),
+            ]),
+            x("unit"),
+            r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TimeInvariant,
+        s(vec![
+            literal("time"),
+            x("invariant"),
+            ident(),
+            x("when"),
+            r(P::Block),
+            x("{"),
+            r(P::ClockBound),
+            star(s(vec![x("and"), r(P::ClockBound)])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ClockBound,
+        s(vec![
+            r(P::Postfix),
+            c(vec![x("<"), x("<=")]),
+            r(P::QuantityLiteral),
+        ]),
+    );
+    g.insert(
+        P::UrgentDeclaration,
+        s(vec![
+            literal("urgent"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), r(P::QualifiedName)]),
+            x(";"),
         ]),
     );
     g.insert(
@@ -907,6 +1468,7 @@ fn temporal(g: &mut Grammar) {
             text(),
             r(P::Activation),
             x("{"),
+            star(r(P::Fairness)),
             star(r(P::Capture)),
             r(P::TemporalExpression),
             x("}"),
@@ -934,14 +1496,26 @@ fn temporal(g: &mut Grammar) {
             star(s(vec![x("and"), r(P::TemporalRelation)])),
         ]),
     );
+    // An operator's interval is a choice, not an option: a `(` after an
+    // operator either opens a timed interval or is its parenthesized
+    // operand, and only the whole alternative can tell (FR-393).
+    let interval = || c(vec![r(P::Interval), r(P::TimedInterval)]);
+    let binary = || c(vec![x("until"), x("release"), x("since"), x("triggered")]);
+    let unary = || {
+        c(vec![
+            x("eventually"),
+            x("always"),
+            x("once"),
+            x("historically"),
+        ])
+    };
     g.insert(
         P::TemporalRelation,
         s(vec![
             r(P::TemporalUnary),
-            opt(s(vec![
-                c(vec![x("until"), x("release"), x("since"), x("triggered")]),
-                r(P::Interval),
-                r(P::TemporalUnary),
+            opt(c(vec![
+                s(vec![binary(), interval(), r(P::TemporalUnary)]),
+                s(vec![binary(), r(P::TemporalUnary)]),
             ])),
         ]),
     );
@@ -949,16 +1523,8 @@ fn temporal(g: &mut Grammar) {
         P::TemporalUnary,
         c(vec![
             s(vec![x("not"), r(P::TemporalUnary)]),
-            s(vec![
-                c(vec![
-                    x("eventually"),
-                    x("always"),
-                    x("once"),
-                    x("historically"),
-                ]),
-                r(P::Interval),
-                r(P::TemporalUnary),
-            ]),
+            s(vec![unary(), interval(), r(P::TemporalUnary)]),
+            s(vec![unary(), r(P::TemporalUnary)]),
             r(P::TemporalPrimary),
         ]),
     );
@@ -969,6 +1535,7 @@ fn temporal(g: &mut Grammar) {
             x("false"),
             s(vec![x("("), r(P::TemporalExpression), x(")")]),
             s(vec![x("holds"), x("("), r(P::Expression), x(")")]),
+            s(vec![x("holds"), x("("), r(P::HyperExpression), x(")")]),
         ]),
     );
 }
@@ -1036,13 +1603,20 @@ fn protocol(g: &mut Grammar) {
     g.insert(
         P::Capacity,
         c(vec![
-            uint(),
+            bound(),
             s(vec![x("symbolic"), x("("), ident(), x(")")]),
         ]),
     );
     g.insert(
         P::OverflowPolicy,
-        c(vec![x("reject"), x("block"), x("loss")]),
+        c(vec![
+            x("reject"),
+            x("block"),
+            s(vec![
+                x("loss"),
+                c(vec![literal("head"), literal("tail"), literal("new")]),
+            ]),
+        ]),
     );
     g.insert(
         P::Channel,
@@ -1105,7 +1679,7 @@ fn protocol(g: &mut Grammar) {
             r(P::Interval),
             x(";"),
             x("attempts"),
-            uint(),
+            bound(),
             x("of"),
             r(P::TypeName),
             x(";"),
@@ -1126,6 +1700,18 @@ fn protocol(g: &mut Grammar) {
             x(";"),
             x("}"),
         ]),
+    );
+    g.insert(
+        P::ProtocolTerminal,
+        s(vec![
+            literal("terminal"),
+            c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ProtocolScheduling,
+        s(vec![literal("scheduling"), literal("adversarial"), x(";")]),
     );
     g.insert(
         P::Visibility,
@@ -1177,7 +1763,7 @@ fn protocol(g: &mut Grammar) {
         c(vec![
             x("all"),
             x("any"),
-            s(vec![x("quorum"), x("("), uint(), x(")")]),
+            s(vec![x("quorum"), x("("), bound(), x(")")]),
             s(vec![x("predicate"), x("("), ident(), x(")")]),
         ]),
     );
@@ -1186,6 +1772,7 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             x("parallel"),
             ident(),
+            opt(r(P::MemoryClause)),
             x("{"),
             r(P::Branch),
             r(P::Branch),
@@ -1194,7 +1781,7 @@ fn protocol(g: &mut Grammar) {
             x("join"),
             r(P::JoinPolicy),
             x("["),
-            list(ident),
+            opt(list(ident)),
             x("]"),
             opt(s(vec![
                 x("outstanding"),
@@ -1203,6 +1790,7 @@ fn protocol(g: &mut Grammar) {
             x(";"),
         ]),
     );
+    let loop_proof = || s(vec![x("invariant"), r(P::Block), x("variant"), r(P::Block)]);
     g.insert(
         P::Repetition,
         s(vec![
@@ -1211,17 +1799,24 @@ fn protocol(g: &mut Grammar) {
             x("by"),
             ident(),
             r(P::Visibility),
-            x("max"),
-            uint(),
-            x("invariant"),
-            r(P::Block),
-            x("variant"),
-            r(P::Block),
-            x("while"),
-            r(P::Block),
-            r(P::Control),
-            x("exhausted"),
-            r(P::Control),
+            c(vec![
+                s(vec![
+                    x("max"),
+                    bound(),
+                    opt(loop_proof()),
+                    x("while"),
+                    r(P::Block),
+                    r(P::Control),
+                    x("exhausted"),
+                    r(P::Control),
+                ]),
+                s(vec![
+                    opt(loop_proof()),
+                    x("while"),
+                    r(P::Block),
+                    r(P::Control),
+                ]),
+            ]),
         ]),
     );
     g.insert(
@@ -1287,6 +1882,7 @@ fn protocol(g: &mut Grammar) {
                 ident(),
                 x("on"),
                 r(P::OperationName),
+                opt(s(vec![x("ordering"), r(P::MemoryOrder)])),
                 x("contracts"),
                 x("["),
                 opt(list(ident)),
@@ -1345,6 +1941,195 @@ fn protocol(g: &mut Grammar) {
             r(P::EventNode),
             r(P::Check),
             r(P::Commit),
+            r(P::Fence),
+        ]),
+    );
+    g.insert(
+        P::MemoryClause,
+        s(vec![
+            literal("memory"),
+            c(vec![literal("sc"), literal("tso"), literal("ra")]),
+        ]),
+    );
+    g.insert(
+        P::MemoryOrder,
+        c(vec![
+            literal("relaxed"),
+            literal("acquire"),
+            x("release"),
+            literal("acq_rel"),
+            literal("seq_cst"),
+        ]),
+    );
+    g.insert(
+        P::FenceOrder,
+        c(vec![
+            literal("acquire"),
+            x("release"),
+            literal("acq_rel"),
+            literal("seq_cst"),
+        ]),
+    );
+    g.insert(
+        P::Fence,
+        s(vec![
+            literal("fence"),
+            ident(),
+            x("ordering"),
+            r(P::FenceOrder),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::Refinement,
+        s(vec![
+            literal("refinement"),
+            ident(),
+            x("using"),
+            ident(),
+            literal("abstract"),
+            ident(),
+            opt(s(vec![x("::"), member()])),
+            literal("concrete"),
+            ident(),
+            x("{"),
+            star(c(vec![
+                r(P::PopulationRow),
+                r(P::ObjectRow),
+                r(P::StepRow),
+                r(P::HistoryRow),
+                r(P::FairnessRow),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::PopulationRow,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("from"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ObjectRow,
+        s(vec![
+            literal("object"),
+            r(P::TypeName),
+            x("from"),
+            r(P::TypeName),
+            x("{"),
+            star(r(P::FieldRow)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::FieldRow,
+        s(vec![member(), x("="), r(P::Expression), x(";")]),
+    );
+    g.insert(
+        P::HistoryRow,
+        s(vec![
+            literal("history"),
+            r(P::TypeName),
+            x("."),
+            member(),
+            x(":"),
+            r(P::TypeReference),
+            x("="),
+            r(P::HistoryLiteral),
+            x("{"),
+            star(r(P::HistoryUpdate)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::HistoryUpdate,
+        s(vec![
+            x("on"),
+            r(P::OperationName),
+            x(":"),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::HistoryLiteral,
+        c(vec![
+            r(P::SignedInteger),
+            x("true"),
+            x("false"),
+            x("none"),
+            text(),
+            r(P::ExactNumber),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::FairnessRow,
+        s(vec![
+            c(vec![literal("assume"), literal("ensure")]),
+            x("fair"),
+            c(vec![x("weak"), x("strong")]),
+            opt(c(vec![x("each"), x("whole")])),
+            r(P::OperationName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::StepRow,
+        s(vec![
+            literal("step"),
+            r(P::StepSource),
+            x("->"),
+            r(P::StepTarget),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::StepSource,
+        c(vec![
+            s(vec![literal("memory"), ident()]),
+            s(vec![
+                opt(c(vec![
+                    literal("fork"),
+                    x("join"),
+                    literal("cend"),
+                    literal("duplicate"),
+                    literal("lose"),
+                    literal("spawn"),
+                    literal("retire"),
+                    x("activate"),
+                ])),
+                r(P::QualifiedName),
+            ]),
+        ]),
+    );
+    g.insert(P::StepArgument, c(vec![literal("_"), r(P::Expression)]));
+    g.insert(
+        P::StepTarget,
+        c(vec![
+            literal("stutter"),
+            x("any"),
+            s(vec![
+                literal("node"),
+                r(P::QualifiedName),
+                opt(s(vec![
+                    x("("),
+                    r(P::StepArgument),
+                    star(s(vec![x(","), r(P::StepArgument)])),
+                    x(")"),
+                ])),
+            ]),
+            s(vec![
+                r(P::OperationName),
+                x("("),
+                r(P::Expression),
+                star(s(vec![x(","), r(P::StepArgument)])),
+                x(")"),
+            ]),
         ]),
     );
     g.insert(
@@ -1374,6 +2159,7 @@ fn protocol(g: &mut Grammar) {
             star(r(P::Relationship)),
             star(r(P::Channel)),
             star(c(vec![r(P::ProtocolRequirement), r(P::Compensation)])),
+            star(c(vec![r(P::ProtocolTerminal), r(P::ProtocolScheduling)])),
             x("run"),
             r(P::Control),
             r(P::Finish),
@@ -1383,6 +2169,7 @@ fn protocol(g: &mut Grammar) {
 }
 
 fn analysis(g: &mut Grammar) {
+    abstraction(g);
     g.insert(
         P::ExecutionBinding,
         s(vec![ident(), x(":"), r(P::QualifiedName)]),
@@ -1415,9 +2202,55 @@ fn analysis(g: &mut Grammar) {
         ]),
     );
     g.insert(
-        P::Quantifier,
-        s(vec![c(vec![x("forall"), x("exists")]), x("trace"), ident()]),
+        P::BehavioursDomain,
+        s(vec![
+            literal("behaviours"),
+            opt(s(vec![
+                x("("),
+                r(P::Parameter),
+                star(s(vec![x(","), r(P::Parameter)])),
+                x(")"),
+            ])),
+        ]),
     );
+    g.insert(
+        P::Quantifier,
+        s(vec![
+            c(vec![x("forall"), x("exists")]),
+            x("trace"),
+            ident(),
+            opt(s(vec![x("of"), ident(), star(r(P::Fairness))])),
+        ]),
+    );
+    g.insert(
+        P::AlignSkip,
+        s(vec![
+            literal("align"),
+            literal("skip"),
+            x("{"),
+            opt(list(|| r(P::QualifiedName))),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::MatchBlock,
+        s(vec![x("match"), x("{"), r(P::HyperExpression), x("}")]),
+    );
+    g.insert(
+        P::StepLabel,
+        s(vec![
+            ident(),
+            x("."),
+            literal("step"),
+            x("."),
+            c(vec![
+                literal("op"),
+                literal("receiver"),
+                s(vec![r(P::QualifiedName), x("."), member()]),
+            ]),
+        ]),
+    );
+    g.insert(P::IndexedRead, s(vec![r(P::HyperPostfix), x("@"), ident()]));
     g.insert(
         P::HyperClause,
         s(vec![
@@ -1426,9 +2259,18 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            r(P::TraceDomain),
-            plus(r(P::Quantifier)),
-            r(P::Block),
+            c(vec![
+                s(vec![
+                    r(P::BehavioursDomain),
+                    plus(r(P::Quantifier)),
+                    opt(r(P::AlignSkip)),
+                    opt(r(P::MatchBlock)),
+                    x("{"),
+                    r(P::TemporalExpression),
+                    x("}"),
+                ]),
+                s(vec![r(P::TraceDomain), plus(r(P::Quantifier)), r(P::Block)]),
+            ]),
         ]),
     );
     g.insert(
@@ -1472,9 +2314,25 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("{"),
+            opt(r(P::HybridInitial)),
             plus(r(P::HybridMode)),
             x("}"),
         ]),
+    );
+    // `hybrid-initial = 'initial', '{', initial-entry, { initial-entry }, '}'`:
+    // `initial` is a keyword spelling only as the first word of this clause.
+    g.insert(
+        P::HybridInitial,
+        s(vec![
+            literal("initial"),
+            x("{"),
+            plus(r(P::InitialEntry)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::InitialEntry,
+        s(vec![x("mode"), ident(), x("when"), r(P::Block), x(";")]),
     );
     g.insert(
         P::SynthesisDeclaration,
@@ -1520,6 +2378,297 @@ fn analysis(g: &mut Grammar) {
             x("}"),
         ]),
     );
+}
+
+/// The probabilistic family: random parameters, workloads, rewards and
+/// the `probabilistic` claim (QSpec `random-decl`, `reward-decl`,
+/// `workload-decl` and `probabilistic-clause`). Every word they introduce
+/// is contextual, so no new keyword is reserved.
+fn probabilistic(g: &mut Grammar) {
+    let bound_op = || c(vec![x("<="), x(">=")]);
+    g.insert(
+        P::ExactValue,
+        c(vec![r(P::ExactNumber), decimal_literal(), uint()]),
+    );
+    g.insert(
+        P::QuantityLiteral,
+        s(vec![r(P::ExactValue), r(P::QualifiedName)]),
+    );
+    g.insert(
+        P::RandomDeclaration,
+        s(vec![
+            literal("random"),
+            r(P::QualifiedName),
+            x("("),
+            ident(),
+            x(")"),
+            x("~"),
+            x("{"),
+            list(|| r(P::WeightedValue)),
+            opt(x(",")),
+            x("}"),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WeightedValue,
+        s(vec![r(P::Expression), x(":"), r(P::ExactValue)]),
+    );
+    g.insert(
+        P::RewardDeclaration,
+        s(vec![
+            literal("reward"),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadDeclaration,
+        s(vec![
+            literal("workload"),
+            ident(),
+            x("on"),
+            ident(),
+            x("{"),
+            plus(r(P::WorkloadWeight)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadWeight,
+        s(vec![
+            literal("weight"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::ExactValue),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticClause,
+        s(vec![
+            literal("probabilistic"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            opt(s(vec![x("over"), bound_parameter()])),
+            r(P::SchedulerClause),
+            r(P::Activation),
+            opt(r(P::Confidence)),
+            x("{"),
+            r(P::ProbabilisticForm),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::SchedulerClause,
+        c(vec![
+            s(vec![
+                literal("under"),
+                literal("every"),
+                literal("scheduler"),
+                star(r(P::FairnessItem)),
+            ]),
+            s(vec![literal("under"), ident()]),
+        ]),
+    );
+    g.insert(
+        P::FairnessItem,
+        s(vec![
+            x("fair"),
+            c(vec![x("weak"), x("strong")]),
+            opt(x("each")),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::Confidence,
+        s(vec![literal("with"), list(|| r(P::ConfidenceItem))]),
+    );
+    g.insert(
+        P::ConfidenceItem,
+        s(vec![
+            c(vec![
+                literal("alpha"),
+                literal("beta"),
+                literal("indifference"),
+            ]),
+            r(P::ExactValue),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticForm,
+        c(vec![
+            s(vec![
+                literal("probability"),
+                bound_op(),
+                r(P::ExactValue),
+                x("["),
+                r(P::Event),
+                x("]"),
+            ]),
+            s(vec![
+                literal("quantile"),
+                r(P::ExactValue),
+                x("of"),
+                x("("),
+                r(P::Measure),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+            s(vec![
+                literal("mean"),
+                x("of"),
+                x("("),
+                r(P::Fraction),
+                x(")"),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("long_run_fraction"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                opt(r(P::Weighting)),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("expected"),
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("elapsed"),
+                ]),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::Event,
+        c(vec![
+            s(vec![r(P::Measure), bound_op(), r(P::Expression)]),
+            r(P::TemporalExpression),
+        ]),
+    );
+    g.insert(
+        P::Measure,
+        c(vec![
+            s(vec![
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("steps"),
+                    literal("elapsed"),
+                ]),
+                x("from"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("within"),
+                r(P::Horizon),
+            ]),
+            r(P::Fraction),
+        ]),
+    );
+    g.insert(
+        P::Fraction,
+        s(vec![
+            literal("fraction"),
+            x("holds"),
+            x("("),
+            r(P::Expression),
+            x(")"),
+            x("over"),
+            x("["),
+            literal("0"),
+            x(","),
+            r(P::Horizon),
+            x("]"),
+            opt(r(P::Weighting)),
+        ]),
+    );
+    g.insert(P::Weighting, s(vec![literal("weighted"), x("by"), ident()]));
+    g.insert(P::Horizon, c(vec![r(P::QuantityLiteral), bound()]));
+}
+
+/// QSpec FR-450's `abstraction-decl`. The four Rust positions are quoted
+/// strings, so a Rust spelling never meets this edition's lexical contract;
+/// `population`, `operation` and `receiver` are contextual words.
+fn abstraction(g: &mut Grammar) {
+    g.insert(
+        P::AbstractionDeclaration,
+        s(vec![
+            x("abstraction"),
+            ident(),
+            x("using"),
+            ident(),
+            x("{"),
+            plus(c(vec![
+                r(P::ObjectBinding),
+                r(P::PopulationBinding),
+                r(P::FrameBinding),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ObjectBinding,
+        s(vec![
+            x("type"),
+            r(P::TypeName),
+            x("to"),
+            text(),
+            opt(s(vec![x("{"), plus(r(P::FieldBinding)), x("}")])),
+            x(";"),
+        ]),
+    );
+    g.insert(P::FieldBinding, s(vec![member(), x("to"), text(), x(";")]));
+    g.insert(
+        P::PopulationBinding,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("to"),
+            text(),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::FrameBinding,
+        s(vec![
+            literal("operation"),
+            r(P::OperationName),
+            x("to"),
+            text(),
+            literal("receiver"),
+            text(),
+            x("("),
+            opt(list(|| r(P::ParameterBinding))),
+            x(")"),
+            x(";"),
+        ]),
+    );
+    g.insert(P::ParameterBinding, s(vec![member(), x("to"), text()]));
 }
 
 #[cfg(test)]

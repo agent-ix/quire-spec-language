@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: generate the named native/Markdown ConfigVersion workflow.
 
+#[path = "config-version/spine_corpus.rs"]
+mod config_version_spine;
 #[path = "config-version/fixtures.rs"]
 mod fixtures;
 
@@ -18,7 +20,7 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
-    for &case in fixtures::CASES {
+    for &case in config_version_spine::cases::CASES {
         if let Err(error) = fixtures::write(&directory.join(case.id()), &model, case) {
             eprintln!("cannot write {}: {error}", case.id());
             return std::process::ExitCode::from(2);

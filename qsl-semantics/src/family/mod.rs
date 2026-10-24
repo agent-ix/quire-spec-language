@@ -55,7 +55,6 @@
 //! value function"), which `check` keys by occurrence (ADR-012 §13.5).
 
 mod contract;
-mod evaluation;
 mod outcome;
 pub mod requirements;
 
@@ -67,10 +66,10 @@ pub use contract::{CheckContext, FamilyContract};
 pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
-pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub use outcome::CheckOutcome;
 pub use requirements::{
-    classify_domains, classify_extent, ClaimExtent, ClassifyFailure, Requirements, UnboundedDomains,
+    classify_domains, classify_extent, ClaimExtent, ClassifyFailure, Requirements,
+    UnboundedDomains, UnsupportedItem,
 };
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
@@ -120,7 +119,7 @@ impl FamilyKind {
     /// seam probe alone, since it would compile even under `--cfg
     /// seam_probe`).
     #[deny(clippy::wildcard_enum_match_arm)]
-    pub(crate) const fn catalog_code_prefix(self) -> &'static str {
+    pub const fn catalog_code_prefix(self) -> &'static str {
         match self {
             Self::Value => "value",
             Self::StateModel => "state-model",
@@ -138,7 +137,8 @@ impl FamilyKind {
             // The arm below exists only in the probe's build of the crates
             // that depend on this one (`--cfg seam_probe --cfg
             // seam_probe_downstream`): they match over this crate's probe
-            // variants (`Capability`, `WrongSnapshotCause`, `FamilyOutcome`),
+            // variants (`Capability`, `FamilyOutcome`) and over
+            // `quire_semantic_value::call::WrongSnapshotCause`'s,
             // so this crate must compile there for their `E0004`s to be
             // reported at all (one crate's failed build stops every
             // crate above it).

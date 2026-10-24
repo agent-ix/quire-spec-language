@@ -20,7 +20,7 @@ its output at any depth, and the value text's length is counted from the
 encoder's finished bytes.
 
 Scope: FR-070-AC-8, FR-070-AC-9, FR-070-AC-11, FR-070-AC-12,
-FR-070-AC-13.
+FR-070-AC-13, FR-070-AC-14, FR-070-AC-15.
 
 ## Test Procedure
 
@@ -83,11 +83,37 @@ otherwise.
 6. Take a text value of 1,000,000 `;` characters. Call `value_text_len`
    and `to_value_text`, then encode the value and read the buffers of its
    finished pieces.
+7. Decode String and Text entries. Each transcript has one `P` entry, and
+   the value text is the JCS encoding, escaped as FR-070 states:
+   - the String `a;b>>>c`, whose entry holds
+     `{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}`;
+   - the empty String `{"kind":"string","text":""}`;
+   - the String of the one scalar U+00E9 and the String of the scalars U+0065
+     U+0301, each written with its literal scalars, as JCS writes them;
+   - the String of the characters `say "hi"\x;`, whose entry holds
+     `{"kind":"string","text":"say \"hi\"\\x%3B"}`;
+   - the String `100%<`, whose entry holds
+     `{"kind":"string","text":"100%25%3C"}`;
+   - the Text `a;b>>>c`, whose entry holds
+     `{"type":"text","value":"a%3Bb%3E%3E%3Ec"}`, and the empty Text.
+
+   Then decode a transcript with entries `P` and `Q` in ascending order, each
+   holding the String `a;b>>>c`, and decode a `string` value and a `text`
+   value of the same scalars.
+8. For each malformed String entry below, decode a transcript whose `P` entry
+   holds it: `{"kind":"string"}`; `{"kind":"string","nanoseconds":"0"}`;
+   `{"extra":"y","kind":"string","text":"x"}`; `{"kind":"string","text":5}`;
+   `{"kind":"string","text":null}`; `{"kind":"String","text":"x"}`;
+   `{"kind":"blob","text":"x"}`; `{"text":"x","kind":"string"}`; a String whose
+   text is written with the escape `\u00e9` (ASCII backslash, `u`, `0`, `0`,
+   `e`, `9`); a String whose text holds the escape `\ud800`; and a String
+   whose text holds a raw `%` followed by `zz`.
 
 Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
 `#[trace("TC-905", "FR-070-AC-9")]`, `#[trace("TC-905", "FR-070-AC-11")]`,
 `#[trace("TC-905", "FR-070-AC-12")]` and
-`#[trace("TC-905", "FR-070-AC-13")]`.
+`#[trace("TC-905", "FR-070-AC-13")]`, `#[trace("TC-905", "FR-070-AC-14")]`
+and `#[trace("TC-905", "FR-070-AC-15")]`.
 
 ## Expected Results
 
@@ -116,7 +142,11 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
   of 3,000,026 bytes, and the encoding is one finished value whose buffers
   together hold at least 1,000,026 bytes, each with a capacity smaller than
   3,000,026 bytes.
-
-## Status
-
-Passed locally, `qsl-replay/src/witness/value_text/tests.rs`.
+- Step 7: each transcript parses as one assertion block and each entry decodes
+  to its String or Text exactly: `a;b>>>c` with its `;` and `>` characters,
+  the empty String (not an absent value), the two spellings of the letter as
+  two unequal Strings, the quote and the backslash kept, and the `%` kept. The
+  `P`/`Q` transcript decodes two Strings in binding order, and the `string`
+  and `text` values of the same scalars are two unequal `WitnessValue`s.
+- Step 8: each refuses `DecodeRefusal::Malformed` naming `P`, and no value is
+  returned.

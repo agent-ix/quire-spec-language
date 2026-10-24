@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-215
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-158
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-433
@@ -34,7 +36,8 @@ relationships:
 
 A counterexample over a protocol subject SHALL be ADR-018's
 `TemporalCounterexample` naming the protocol subject, with each step as its
-protocol transition identity and its post-state's state-key digest, and, for
+protocol transition identity and its post-state's state-key digest, each
+`send` step also carrying its `send_record`, and, for
 a deadlock, FR-211's blocked threads (ADR-027 PX-1). `qsl_replay::
 replay_model_trace` SHALL replay it by FR-128's rules through
 `ProtocolSystem`, check a lasso against the fairness set over FR-212's
@@ -61,6 +64,10 @@ causes, and the report counts as a refutation only then.
   `over` binding, the fairness set with each constraint's origin, `kind`,
   and for `kind: Deadlock`, `blocked`.
 
+- For a subject with an `on each` protocol, the subject's instance bound
+  `max_live_instances: Option<u64>`, the value the run used, `None` meaning
+  3 (ADR-027 AE-4).
+
 ## Outputs
 
 - An FR-072 replay result on the `ModelTrace` arm, or a typed
@@ -72,12 +79,29 @@ causes, and the report counts as a refutation only then.
   clause and the claim, re-admit the initial state, universes and bindings,
   build `ProtocolSystem` with the subject's memory models, and re-execute
   each step with FR-101 `replay`.
+- The executor SHALL re-execute each `activate` step under the subject's
+  `max_live_instances`, as the run did (FR-209). At a pre-state that already
+  holds that many live instances, `activate` is enabled but left unexpanded
+  by the bound, so no run under the bound takes it: the executor SHALL
+  refuse a step that takes it with `invalid_runtime_input`/`invalid-value`,
+  naming the step. The executor SHALL NOT otherwise compare the bound with
+  the run's.
+- The executor SHALL read such an `activate` as enabled wherever it reads
+  enabledness, the lasso fairness check included, as FR-209 reads it
+  (ADR-018 FA-2).
 - The executor SHALL read the fairness set, scheduler constraints included,
   from the recompiled clause, and SHALL refuse a payload fairness set that
   differs with `stale_dependency`/`content-mismatch`, naming both sets.
 - When a step's identity has no successor with the recorded digest, the
   executor SHALL refuse `stale_dependency`/`content-mismatch`, naming the
   step and both digests.
+- The executor SHALL recompute a `send` step's send record from its
+  pre-state and, when it differs from the recorded `send_record`, SHALL
+  refuse `stale_dependency`/`content-mismatch`, naming the step and both
+  records.
+- The executor SHALL refuse a `send` step without a `send_record`, and any
+  other step with one, before replay, with `invalid_runtime_input`/
+  `invalid-value` as a wire-shape defect of the counterexample (FR-183-AC-6).
 - When a step is not enabled at its pre-state, or a loop's last state is not
   its entry, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -86,9 +110,29 @@ causes, and the report counts as a refutation only then.
   `ProtocolSystem` at every loop state, and refuse an unfair lasso with
   `invalid_runtime_input`/`invalid-value`; it SHALL then evaluate the
   formula by FR-125 with FR-213's positions and distances.
-- For `kind: UndefinedEvaluation`, the executor SHALL evaluate the
-  claim's letters along the replayed prefix and settle by ADR-018 UE-5
-  (ADR-027 PB-5).
+- When the clause is under a bounded profile and the lasso is fair but its
+  loop has a counted step, the executor SHALL settle `inconclusive` with cause
+  `NoValue`, because the evaluator reads no such lasso (FR-329); an unfair
+  lasso of that kind SHALL refuse `invalid_runtime_input`/`invalid-value` as
+  unfair, as above.
+- For `kind: UndefinedEvaluation` whose `where.locus` names a letter of the
+  claim, the executor SHALL evaluate the claim's letters along the replayed
+  prefix and settle by ADR-018 UE-5 (ADR-027 PB-5).
+- For `kind: UndefinedEvaluation` whose `where.locus` names a state
+  constraint (FR-158), the executor SHALL replay by FR-128's
+  constraint-locus rule: it SHALL read the constraint from the locus and
+  never from the request, refuse `stale_dependency`/`content-mismatch`,
+  naming the locus, when the recompiled package has no `constraint` clause
+  there, re-execute the prefix through `ProtocolSystem`, and evaluate the
+  constraint at every replayed state in order over that state's model state
+  as FR-158 "Protocol subjects" reads it, checking no fairness and no
+  formula. The first replayed state where the constraint is `Undefined`
+  being the last one, at `where.position`, with an undefined cause equal to
+  `cause`, and the constraint holding at every earlier replayed state, SHALL
+  settle `reproduced-with-evaluated-witness` with the `UndefinedEvaluation`
+  as the arm's value; a constraint defined at the last state, `Undefined` or
+  false at an earlier state, or a different cause SHALL settle
+  `inconclusive`, `ReplayParity`.
 - For `kind: Deadlock`, the executor SHALL enumerate `ProtocolSystem`'s
   steps at the last replayed state, check that none is enabled and that the
   some protocol instance is live, evaluate the protocol's `terminal when`
@@ -110,6 +154,11 @@ causes, and the report counts as a refutation only then.
 | FR-217-AC-2 | Changing the second step's post-state digest refuses `stale_dependency`/`content-mismatch`, naming the step and both digests. Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. Replaying the same steps against the repaired `Fill` (`TwoPre: self.v <= 1`) with recorded digests from the unrepaired one refuses on the package identity by FR-098's rule. | Test (TC-662) |
 | FR-217-AC-3 | A deadlock envelope whose blocked list drops `right` settles `inconclusive`, `ReplayParity`. An envelope whose prefix runs on to s6, which holds no live instance, with `kind: Deadlock` settles `inconclusive`, `ReplayParity`. | Test (TC-662) |
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
+| FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
+| FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses `invalid_runtime_input`/`invalid-value` before replay as a wire-shape defect and runs no step. | Test (TC-662) |
+| FR-217-AC-7 | Under a bounded profile, a fair protocol lasso whose loop has one counted step replays to `inconclusive` with cause `NoValue`, and the same lasso made unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` as unfair. | Test (TC-662) |
+| FR-217-AC-8 | FR-209-AC-6's lasso, which holds one live instance at a time, replays to `reproduced-with-evaluated-witness` with `max_live_instances` 1 and with it unset (3). A hand-built prefix over FR-209-AC-1's protocol holding two `activate(Tick)` steps before any `finish` re-executes with `max_live_instances` 2, and with 1 refuses `invalid_runtime_input`/`invalid-value` at the second `activate`. FR-209-AC-7's lasso, whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, with `activate` enabled at every loop state and never taken, replays to `reproduced-with-evaluated-witness` under `max_live_instances` 1. Replay reads that `activate` as enabled, and it is in no fairness class (FR-212), so the loop is fair and is not refused as unfair. | Test (TC-1230) |
+| FR-217-AC-9 | Over ADR-025 §10's `SB` under `sc`, with `constraint Edge using v on M::Cell at current { 6 mod (1 - self.v) >= 0 }` named by the request and §10's claim, the run settles `Violated` with cause `UndefinedEvaluation`: `Edge` holds at the initial state (both cells at 0) and is undefined at the first reached state with a cell at 1, so the counterexample is one store step (`Sx` or `Sy`) with `where.locus` naming `Edge` and cause `division-by-zero`. It replays through a request that selects no reduction to `reproduced-with-evaluated-witness` with that `UndefinedEvaluation` value. The same payload with its store removed, which ends at the initial state where `Edge` holds, and with `cause` changed to another reason, each settle `inconclusive`, `ReplayParity`; the payload in an envelope over the unit where `Edge` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-662) |
 
 ## Dependencies
 

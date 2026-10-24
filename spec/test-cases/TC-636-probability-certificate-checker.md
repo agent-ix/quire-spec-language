@@ -22,7 +22,7 @@ Fixtures: §15.4's `Exact` certificate at threshold 0.95; §15.3's `LongRun` cer
 2. Check the `LongRun` certificate and its altered bias; check §15.1's `Lower` certificate.
 3. Check a `Lower` certificate with no ranking; one with a foreign identity; `FairTerminates`'s certificate with and without its fairness set.
 4. Settle a proof through the checker; run the checker with `max_states` 2.
-5. Check the `Opt` certificate for `quantile 1/2 of M >= 3`, then the even variant's certificate.
+5. Check the `Opt` certificate for `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure), then the even variant's certificate.
 
 Tag the tests `#[trace("TC-636", "FR-201-AC-n")]`.
 

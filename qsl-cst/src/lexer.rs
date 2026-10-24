@@ -134,7 +134,7 @@ pub struct DeclaredEdition {
 /// `language "ix:native" edition "<edition>"`, read from the first four
 /// significant tokens and nothing after them. `None` when the source does
 /// not open with that header; the parser that reads the source reports why.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn declared_edition(text: &str) -> Option<DeclaredEdition> {
     let mut tokens = Kind::lexer(text)
         .spanned()
@@ -199,7 +199,7 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         // invalid-syntax result rather than reclassifying them as unsupported.
         if matches!(
             kind,
-            Kind::Caret | Kind::Question | Kind::Apostrophe | Kind::Hex(_)
+            Kind::Caret | Kind::Question | Kind::Apostrophe | Kind::Tilde | Kind::Hex(_)
         ) {
             return Err(error(
                 source,

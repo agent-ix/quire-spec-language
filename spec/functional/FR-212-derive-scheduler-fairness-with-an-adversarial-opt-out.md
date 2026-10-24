@@ -36,7 +36,8 @@ steps (ADR-027 PA-2). Unless the protocol clause declares `scheduling
 adversarial`, the checker SHALL add to every infinite-trace clause over a
 protocol subject one derived `fair weak whole` **scheduler constraint** per
 `parallel` branch, the root and each compensation template, with a
-`scheduler` origin (ADR-027 PA-3).
+`scheduler` origin (ADR-027 PA-3). The scheduler constraints also apply to a
+bounded clause read over a zero-counted protocol lasso (FR-329, FR-338).
 
 ## Use case
 
@@ -80,7 +81,8 @@ know whether the claim survives a scheduler that starves a thread, they add
 - The model checker SHALL compute each constraint's class over protocol
   transition identities as QSpec FR-430 states for operations, attempt
   nodes, branches, the root and compensation templates, with channel steps,
-  `activate`, `spawn`, `retire` and memory steps in no class.
+  `activate`, `spawn`, `retire` and memory steps in no class, at an
+  instance-limited state (FR-209) as anywhere else.
 - FR-126's filter, ADR-018 FA-3's weak fairness and FA-4's SCC test SHALL
   read these classes, a class being enabled when one of its steps is
   enabled (FR-206 to FR-209) and taken by a step that belongs to it.
@@ -105,7 +107,7 @@ know whether the claim survives a scheduler that starves a thread, they add
 |----|----------|--------------|
 | FR-212-AC-1 | The `Chatter` protocol: model `Cell` with `flag: Int[0, 1]`, operation `set` (precondition true, postcondition `self.flag = 1`), universe `{k}`, `flag = 0`; a channel `ch` of capacity 2 with delivery `unknown`; `terminal any`; `run parallel Both { branch s sequence { send Tx on ch; attempt Done on set }; branch r receive Rx of Tx; } join all [s, r]`. `eventually holds(k.flag = 1)` under infinite-trace settles `proved`; its fairness set holds three `scheduler` constraints, over `s`, `r` and the root. | Test (TC-657) |
 | FR-212-AC-2 | `Chatter` with `scheduling adversarial` checks to a different package and obligation identity. The same claim settles `refuted` with a lasso whose stem is `fork(Both)`, `send(Tx)` and whose loop is `duplicate(ch, Tx)`, `lose(ch, Tx)`, with `s` resting at `Done` throughout; its fairness set is empty. | Test (TC-657) |
-| FR-212-AC-3 | Over `Chatter`, `fair weak whole s` names the branch and `fair weak each Done` the attempt node; `fair weak Missing` refuses `missing_declaration`/`missing-name`; a second `scheduling` member refuses `ambiguous_declaration`/`ambiguous-name` naming the first. In ADR-027 §7, the root's `whole` class holds `fork(Both)`, `join(Both)` and `finish`, and `left`'s holds `attempt(A)`. | Test (TC-657) |
+| FR-212-AC-3 | Over `Chatter`, `fair weak whole Chatter::Both::s` names the branch and `fair weak each Chatter::Done` the attempt node (QSpec FR-430's spelling); `fair weak Missing` refuses `missing_declaration`/`missing-name`; a second `scheduling` member refuses `ambiguous_declaration`/`ambiguous-name` naming the first. In ADR-027 §7, the root's `whole` class holds `fork(Both)`, `join(Both)` and `finish`, and `left`'s holds `attempt(A)`. | Test (TC-657) |
 | FR-212-AC-4 | The TP-1 claim `always holds(k.flag <= 1)` over `Chatter` settles `proved` with and without `scheduling adversarial`, over the same reachable states. | Test (TC-657) |
 
 ## Dependencies

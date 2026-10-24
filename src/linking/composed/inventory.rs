@@ -20,7 +20,7 @@ fn bytes(work: &mut Work, values: &[&str]) -> Result<(), Exhaustion> {
 /// Whether an inventory's declared language/edition pair is the one this
 /// linker supports (ADR-012 section 9): the one reader of those two wire
 /// fields.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_supported_selection(language: &str, edition: &str) -> bool {
     language == crate::syntax::LANGUAGE && edition == crate::syntax::composed::EDITION
 }

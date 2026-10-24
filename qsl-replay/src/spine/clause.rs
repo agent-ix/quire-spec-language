@@ -13,10 +13,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
-use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -26,7 +25,11 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, DocumentRef, FrameFacts, FrameWitness, ObservationLimits, OperationFacts,
     Provisions,
 };
-use quire_exact::{Cancel, Identifier, Meter, NodeKey, ScalarLimits, Value, ValueType};
+use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
+
+mod temporal;
+pub use temporal::{OverObject, TraceInput};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
@@ -63,7 +66,8 @@ pub struct ClauseArgument {
 }
 
 /// FR-109's selection: a state clause (FR-106's [`ClauseSelection`]), a
-/// Boolean function run as a claim, or (FR-115) an operation frame.
+/// Boolean function run as a claim, (FR-115) an operation frame, or (FR-330)
+/// a temporal clause over a supplied trace.
 #[derive(Clone, Debug)]
 pub enum ClauseRunSelection {
     /// A state clause, admitted per FR-106.
@@ -87,6 +91,16 @@ pub enum ClauseRunSelection {
         /// The `quire.state.invocation/v1` document, with its pre and post
         /// snapshots in the provision.
         invocation: DocumentRef,
+    },
+    /// FR-330: a temporal clause, run over a supplied trace.
+    Temporal {
+        /// The temporal clause's declared name.
+        name: String,
+        /// The observations the clause is run over.
+        trace: TraceInput,
+        /// The object the clause's `over` parameter names, resolved in the
+        /// observation at position 0.
+        over: OverObject,
     },
 }
 
@@ -135,17 +149,14 @@ pub enum ClauseRunSource {
     },
     /// An I3 extracted source (ADR-011 I3, `qsl-source`): the verified body
     /// `qsl_source::extract` returned. Its body, with the body's own
-    /// identity and path, is the unit `compile` reads; its original
-    /// document's identity and digest are reported as
-    /// [`ClauseRunProvenance::extraction`]. Its declared fence language
+    /// identity and path, is the unit `compile` reads. Its declared fence language
     /// must be `ix:native`, or the run reports
     /// [`ClauseDisposition::UnknownLanguage`] at stage `compile`.
     #[cfg(feature = "quire-extraction")]
     Extracted(qsl_source::ExtractedSource),
 }
 
-/// The unit a [`ClauseRunSource`] compiles, borrowed from it, and the
-/// extraction's original document when I3 was used.
+/// The unit a [`ClauseRunSource`] compiles, borrowed from it.
 struct Unit<'a> {
     identity: &'a SourceIdentity,
     path: &'a str,
@@ -153,7 +164,6 @@ struct Unit<'a> {
     /// The I3 extracted clause's declared fence language; `None` for a
     /// program source, whose language is its own header's.
     language: Option<&'a str>,
-    extraction: Option<ExtractionOrigin>,
 }
 
 impl ClauseRunSource {
@@ -168,7 +178,6 @@ impl ClauseRunSource {
                 path,
                 bytes,
                 language: None,
-                extraction: None,
             },
             #[cfg(feature = "quire-extraction")]
             Self::Extracted(extracted) => {
@@ -179,24 +188,10 @@ impl ClauseRunSource {
                     path: body.path(),
                     bytes: body.text().as_bytes(),
                     language: Some(extracted.language()),
-                    extraction: Some(ExtractionOrigin {
-                        identity: map.original().identity().clone(),
-                        digest: map.original().digest(),
-                    }),
                 }
             }
         }
     }
-}
-
-/// FR-109 Outputs: the I3 extraction's original document, "the
-/// extraction's original identity and digest when I3 was used".
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExtractionOrigin {
-    /// The original document's four FR-001 labels.
-    pub identity: SourceIdentity,
-    /// The original document's byte digest.
-    pub digest: ByteDigest,
 }
 
 /// FR-109 Inputs: one clause-run request.
@@ -215,11 +210,14 @@ pub struct ClauseRunRequest {
     pub selection: ClauseRunSelection,
     /// An optional expected `package_id` (FR-098's stale package rule).
     pub expected_package_id: Option<PackageId>,
+    /// A wire caller's lowercase hex claim, kept separate from a minted
+    /// `PackageId` until it is compared with the compiled package.
+    pub expected_package_id_claim: Option<String>,
     /// The spine's stage limits.
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The evaluation meter's accounting limits (FR-100's `work_units`).
+    /// The evaluation meter's accounting limits (FR-100's `accounting` object).
     pub accounting: ScalarLimits,
 }
 
@@ -265,7 +263,7 @@ pub enum ClauseDisposition {
     /// recompiled `package_id` differs from the request's expected one.
     StalePackage {
         /// The expected `package_id`.
-        expected: PackageId,
+        expected: String,
         /// The recompiled `package_id`.
         actual: PackageId,
     },
@@ -293,10 +291,18 @@ pub enum ClauseDisposition {
     /// frame witness, whose cause is `frame_violation`/`unauthorized-change`.
     /// A verdict that evaluated, not a refusal.
     FrameViolation(Box<FrameWitness>),
+    /// Stage `evaluate` (FR-330): the TemporalTrace evaluator's outcome for
+    /// a `Temporal` selection. Its category is the outcome's: a pending
+    /// result is `inconclusive`, a missing fairness premise `unsupported`,
+    /// and a false or undefined clause a `violation` at its position.
+    Temporal(TemporalVerdict),
+    /// Stage `evaluate`, category `refusal` (FR-330): the evaluator refused
+    /// the supplied trace (a lasso with an empty loop, for one).
+    TemporalRefusal(TemporalTraceRefusal),
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
-    EvaluateFault(qsl_foundation::diagnostic::InternalFault),
+    EvaluateFault(quire_semantic_value::catalog::InternalFault),
 }
 
 impl ClauseDisposition {
@@ -308,23 +314,25 @@ impl ClauseDisposition {
             }
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
-            Self::Evaluate(_) | Self::FrameViolation(_) | Self::EvaluateFault(_) => {
-                ClauseRunStage::Evaluate
-            }
+            Self::Evaluate(_)
+            | Self::Temporal(_)
+            | Self::TemporalRefusal(_)
+            | Self::FrameViolation(_)
+            | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
         }
     }
 
     /// FR-109 Outputs' `category` (ADR-013 O-16, `qsl_foundation::
-    /// diagnostic::Category`). A compile refusal, an argument refusal and an
+    /// quire_semantic_value::catalog::Category`). A compile refusal, an argument refusal and an
     /// admission refusal take their code's
     /// [`Code::category`](qsl_foundation::diagnostic::Code::category)
     /// (`unknown_required_feature` is unsupported); an admission
     /// `Incomplete` is incomplete and a `Fault` an internal failure. The
     /// run's exit code is this category's
-    /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
+    /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
     /// (FR-285).
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
-        use qsl_foundation::diagnostic::Category;
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
         match self {
             Self::Compile(refusal) => refusal.code().category(),
             Self::ArgumentRefusal(refusal) => refusal.category(),
@@ -338,8 +346,18 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
+            Self::Temporal(outcome) => outcome.category(),
+            // The refusal's own catalog code decides: a malformed trace is a
+            // refusal, a profile the evaluator does not read is unsupported.
+            Self::TemporalRefusal(refusal) => {
+                qsl_foundation::diagnostic::Code::from_code(refusal.catalog_code().code())
+                    .map_or(Category::InternalFailure, |code| code.category())
+            }
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
                 Category::Violation
+            }
+            Self::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
+                Category::InternalFailure
             }
             Self::Evaluate(outcome) => outcome.category(),
         }
@@ -350,33 +368,214 @@ impl ClauseDisposition {
         match self {
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(value))) => Some(*value),
             Self::FrameViolation(_) => Some(false),
+            Self::Temporal(TemporalVerdict::Holds) => Some(true),
+            Self::Temporal(TemporalVerdict::Violated { .. }) => Some(false),
             _ => None,
         }
     }
 }
 
-/// FR-109 Outputs' provenance: the compiled unit's identity, the I3
-/// extraction's original document when one was used, the selections and
-/// every admitted document's identity and digest. The unit's byte digest is
-/// [`ClauseRunReport::source_digest`].
-#[derive(Clone, Debug)]
-pub struct ClauseRunProvenance {
-    /// The compiled unit's four FR-001 labels: the program source's, or an
-    /// I3 extracted body's own.
-    pub source: SourceIdentity,
-    /// The I3 extraction's original document, when the unit is an I3
-    /// extracted source; `None` for a program source.
-    pub extraction: Option<ExtractionOrigin>,
-    /// Every model selection the compiled package resolved.
-    pub model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
-    /// The selection as given.
-    pub selection: ClauseRunSelection,
-    /// Every snapshot or invocation document admission actually read, in
-    /// read order.
-    pub documents: Vec<DocumentRef>,
-    /// FR-115: the identity of the selected operation's frame node, once a
-    /// `Frame` selection resolved it; `None` for every other selection.
-    pub frame: Option<NodeKey>,
+/// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
+/// the spine reports it (FR-100-AC-8: the spine's public surface owns its
+/// types). Positions are zero-based trace indices.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalVerdict {
+    /// `Completed(true)`: every activation evaluated true. Evidence for this
+    /// trace only (`tested`), never `proved` (ADR-014 section 8).
+    Holds,
+    /// `Completed(false)`: the first activation, in position order, that
+    /// evaluated false.
+    Violated {
+        /// The position of that activation.
+        at: u64,
+    },
+    /// The claim is not defined on the trace (ADR-018 UE-2); it does not
+    /// hold on it.
+    Undefined {
+        /// The first position at which an atom the clause reads is
+        /// undefined.
+        at: u64,
+        /// The first undefined atom at `at`, in clause-node order.
+        cause: TemporalUndefinedCause,
+    },
+    /// A finite prefix that neither shows a bad prefix nor can show more
+    /// (FR-328): O-16 inconclusive.
+    Pending,
+    /// The clause has a fairness set and the trace carries no enabledness
+    /// to check it against (FR-328, FR-329): O-16 unsupported.
+    MissingFairnessPremise {
+        /// The first constraint of the checked fairness set.
+        constraint: quire_semantic_value::fairness::FairnessConstraint,
+    },
+    /// The work budget ran out; no truth value (ADR-014 TR-5).
+    Incomplete(quire_exact::Incomplete),
+    /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
+    /// V-7); no truth value.
+    WindowLimitReached {
+        /// The limit's name, `max_window_values`.
+        limit: &'static str,
+        /// The limit's value in this run.
+        value: u64,
+        /// The setting that raises it, `monitor.max_window_values`.
+        setting: &'static str,
+    },
+}
+
+impl TemporalVerdict {
+    /// The ADR-013 O-16 category of this verdict (FR-327 "Results").
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
+        match self {
+            Self::Holds => Category::Success,
+            Self::Undefined {
+                cause: TemporalUndefinedCause::InsufficientData { .. },
+                ..
+            } => Category::Undefined,
+            Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
+            Self::Pending => Category::Inconclusive,
+            Self::MissingFairnessPremise { .. } => Category::Unsupported,
+            Self::Incomplete(_) | Self::WindowLimitReached { .. } => Category::Incomplete,
+        }
+    }
+}
+
+/// Why an atom has no value at a position (ADR-018 UE-2).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalUndefinedCause {
+    /// The kernel `Outcome::Undefined`, for example division by zero.
+    Kernel(quire_exact::Undefined),
+    /// A family's `FamilyResult::Undefined` record.
+    Family(quire_semantic_value::catalog::UndefinedRecord),
+    /// A window aggregate held fewer values than its `min_count` (ADR-024
+    /// WA-4).
+    InsufficientData {
+        /// The values the window held.
+        count: u64,
+        /// The term's `min_count`.
+        min_count: u64,
+    },
+}
+
+/// Why the temporal evaluator could not read the supplied trace at all.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalTraceRefusal {
+    /// A finite trace holds no observation (FR-327 "Inputs").
+    #[error("a finite trace holds at least one observation")]
+    EmptyTrace,
+    /// A tuple whose component count differs from the hyper clause's trace
+    /// variables (FR-175 "Inputs").
+    #[error("the tuple holds {found} traces for {expected} trace variables")]
+    TupleArity {
+        /// The clause's trace variables.
+        expected: usize,
+        /// The components supplied.
+        found: usize,
+    },
+    /// A hyper clause with `align skip` (HP-6, FR-178) handed to the lockstep
+    /// evaluator: such a clause is read over projected prefixes, never in
+    /// lockstep.
+    #[error("a clause with `align skip` is read over projected prefixes, not in lockstep")]
+    AlignSkipNotLockstep,
+    /// A clause that is not projection-aligned (HP-6) handed to the projected
+    /// prefix evaluator: a projected prefix is read for an `align skip`
+    /// clause only.
+    #[error("a projected prefix is read for a projection-aligned (HP-6) clause only")]
+    NotProjectionAligned,
+    /// A lasso with an empty loop (FR-329 "Lasso shape").
+    #[error("a lasso holds at least one loop position")]
+    EmptyLoop,
+    /// A lasso's prefix and loop together exceed `u64` positions.
+    #[error("a lasso's prefix and loop exceed u64 positions")]
+    TraceTooLong,
+    /// A lasso under a bounded profile: only the infinite-trace profile
+    /// reads one (FR-329), but for a lasso whose loop has no counted step
+    /// (ADR-027 PB-3, FR-338), which never leaves a bounded horizon. Remaining
+    /// work: STD-254 settles that exception against FR-329.
+    #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
+    LassoUnderBoundedProfile {
+        /// The clause's profile.
+        profile: qsl_semantics::check::TemporalProfile,
+    },
+    /// The profile reads timestamped instants, which a position trace does
+    /// not carry.
+    #[error("{profile:?} reads timestamped instants, which this trace does not carry")]
+    ProfileNotEvaluated {
+        /// The clause's profile.
+        profile: qsl_semantics::check::TemporalProfile,
+    },
+    /// A position is outside the represented trace (FR-327 "Positions").
+    #[error(transparent)]
+    Position(TemporalPositionRefusal),
+    /// A window aggregate cannot be read on the trace.
+    #[error(transparent)]
+    Window(TemporalWindowRefusal),
+    /// An invariant of the checked clause or the evaluator broke.
+    #[error("temporal evaluation broke invariant {0:?}")]
+    Fault(InternalFault),
+}
+
+impl TemporalTraceRefusal {
+    /// The catalog code of this refusal: `invalid_runtime_input`/`invalid-value`
+    /// for a malformed trace or position (FR-327, FR-329),
+    /// `unsupported_construct`/`expression-form` for a profile or trace shape
+    /// the evaluator does not read, and
+    /// `runtime_invariant`/`established-invariant-broken` for a fault.
+    pub fn catalog_code(&self) -> quire_semantic_value::catalog::CatalogCode {
+        use quire_semantic_value::catalog::CatalogCode;
+        match self {
+            Self::EmptyTrace
+            | Self::EmptyLoop
+            | Self::TraceTooLong
+            | Self::TupleArity { .. }
+            | Self::Position(_)
+            | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
+            Self::AlignSkipNotLockstep
+            | Self::NotProjectionAligned
+            | Self::LassoUnderBoundedProfile { .. }
+            | Self::ProfileNotEvaluated { .. } => {
+                CatalogCode::new("unsupported_construct", "expression-form")
+            }
+            Self::Fault(fault) => fault.catalog_code(),
+        }
+    }
+}
+
+/// Why a trace position descriptor is refused (FR-327 "Positions").
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalPositionRefusal {
+    /// The descriptor is empty or holds a byte that is not an ASCII digit.
+    #[error("a trace position is decimal ASCII digits")]
+    NotDecimal,
+    /// The descriptor has a leading zero.
+    #[error("a trace position has no leading zero")]
+    LeadingZero,
+    /// The descriptor exceeds `u64`.
+    #[error("a trace position exceeds u64")]
+    Overflow,
+    /// The decoded position lies outside the represented trace.
+    #[error("trace position TemporalPosition({position}) lies outside the represented trace")]
+    OutsideTrace {
+        /// The refused position.
+        position: u64,
+    },
+}
+
+/// Why a window aggregate cannot be read on the trace.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalWindowRefusal {
+    /// The position is not on the trace.
+    #[error("position {position} is outside the trace")]
+    OutsideTrace {
+        /// The refused position.
+        position: u64,
+    },
+    /// A position window on a timestamped trace, or a duration window on a
+    /// trace without time stamps.
+    #[error("the window's kind does not match the trace's profile")]
+    WindowKindMismatch,
+    /// Time stamps are not in non-decreasing order.
+    #[error("time stamps do not decrease along a trace")]
+    TimestampsDecrease,
 }
 
 /// FR-109 Outputs' usage: "the admission work and the evaluation meter
@@ -428,19 +627,14 @@ impl ClauseRunUsage {
     }
 }
 
-/// FR-109's `ClauseRunReport`: the disposition, with the source's own
-/// digest and, where compile reached it, the compiled `package_id`.
+/// FR-109's `ClauseRunReport`: the disposition, the usage and, where compile
+/// reached it, the compiled `package_id`.
 #[derive(Debug)]
 pub struct ClauseRunReport {
-    /// The compiled unit's `sha256:` digest: the program source's bytes, or
-    /// an I3 extracted body's.
-    pub source_digest: String,
     /// The compiled `package_id`, when compile completed.
     pub package_id: Option<PackageId>,
     /// The disposition.
     pub disposition: ClauseDisposition,
-    /// FR-109 Outputs' provenance.
-    pub provenance: ClauseRunProvenance,
     /// FR-109 Outputs' usage.
     pub usage: ClauseRunUsage,
     /// FR-266 (QSpec FR-243): the run's settlement basis, on every report.
@@ -455,7 +649,7 @@ pub struct ClauseRunReport {
 /// result is decided by the whole call, a `Frame` run's witness is
 /// FR-115's), `unavailable` for every other disposition.
 fn undecided_basis(disposition: &ClauseDisposition) -> SettlementBasis {
-    use qsl_foundation::diagnostic::Category;
+    use quire_semantic_value::catalog::Category;
     match (disposition.stage(), disposition.category()) {
         (ClauseRunStage::Evaluate, Category::Success | Category::Violation) => {
             SettlementBasis::ClosedScope
@@ -464,23 +658,13 @@ fn undecided_basis(disposition: &ClauseDisposition) -> SettlementBasis {
     }
 }
 
-/// The `DocumentRef`s a selection names, in read order (before any are
-/// necessarily admitted): `Current`'s or `PreCall`'s snapshot,
-/// `Invocation`'s invocation, or `Function`'s current snapshot.
-fn selection_documents(selection: &ClauseRunSelection) -> Vec<DocumentRef> {
-    match selection {
-        ClauseRunSelection::Clause(clause) => vec![clause_input_document(&clause.input).clone()],
-        ClauseRunSelection::Function { snapshot, .. } => vec![snapshot.clone()],
-        ClauseRunSelection::Frame { invocation, .. } => vec![invocation.clone()],
-    }
-}
-
 /// The one document a clause selection input names.
 fn clause_input_document(input: &ClauseSelectionInput) -> &DocumentRef {
     match input {
         ClauseSelectionInput::Current { snapshot, .. }
         | ClauseSelectionInput::PreCall { snapshot, .. } => snapshot,
-        ClauseSelectionInput::Invocation { invocation } => invocation,
+        ClauseSelectionInput::Invocation { invocation }
+        | ClauseSelectionInput::Context { invocation, .. } => invocation,
     }
 }
 
@@ -493,7 +677,8 @@ fn admitted_documents(
     observations: &AdmittedObservations,
 ) -> Vec<DocumentRef> {
     let invocation = match input {
-        ClauseSelectionInput::Invocation { invocation } => Some(invocation),
+        ClauseSelectionInput::Invocation { invocation }
+        | ClauseSelectionInput::Context { invocation, .. } => Some(invocation),
         ClauseSelectionInput::Current { .. } | ClauseSelectionInput::PreCall { .. } => None,
     };
     invocation
@@ -506,18 +691,6 @@ fn admitted_documents(
                 .map(|observation| observation.identity.clone()),
         )
         .collect()
-}
-
-/// What every report of one [`run_clause`] call carries about its unit:
-/// its byte digest, its identity and, for an I3 source, the original
-/// document.
-pub(crate) struct UnitProvenance {
-    /// The unit's `sha256:` byte digest.
-    pub(crate) digest: String,
-    /// The unit's four FR-001 labels.
-    pub(crate) source: SourceIdentity,
-    /// The I3 extraction's original document, when one was used.
-    pub(crate) extraction: Option<ExtractionOrigin>,
 }
 
 /// FR-106 admission of `selection` for `clause`, one checked state clause of
@@ -547,6 +720,8 @@ pub(crate) fn admit_clause_observations(
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: graph.scope().operations().clone(),
+        named_populations: clause.named_reads(),
     };
     admit_observations(
         graph.model_selections(),
@@ -566,44 +741,14 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     if unit.bytes.is_empty() {
         return Err(ClauseRunRefusal::EmptySource);
     }
-    let unit_provenance = UnitProvenance {
-        digest: ByteDigest::of(unit.bytes).to_string(),
-        source: unit.identity.clone(),
-        extraction: unit.extraction,
-    };
-    let selection_documents = selection_documents(&request.selection);
-    // Cloned once, up front, so `report` can hold the selection by value
-    // without borrowing `request.selection` -- `request.selection` itself is
-    // moved out below to be matched by variant.
-    let selection_for_provenance = request.selection.clone();
-    // `model_selections` is only known once compile has produced a package
-    // graph; every pre-compile disposition reports it empty. `documents` is
-    // FR-109's "every snapshot and invocation admission read" (`FR-109-run-
-    // a-state-clause-through-the-spine.md:81-84`), never merely named by
-    // the selection: every call site below passes `Vec::new()` until an
-    // admission call has actually run, and `selection_documents.clone()`
-    // from then on (FR-109-AC-2's own "no snapshot in its provenance" for
-    // a compile-stage refusal).
-    let report = |package_id,
-                  disposition: ClauseDisposition,
-                  model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
-                  documents: Vec<DocumentRef>| {
-        ClauseRunReport {
-            basis: undecided_basis(&disposition),
-            witness: None,
-            source_digest: unit_provenance.digest.clone(),
-            package_id,
-            disposition,
-            provenance: ClauseRunProvenance {
-                source: unit_provenance.source.clone(),
-                extraction: unit_provenance.extraction.clone(),
-                model_selections,
-                selection: selection_for_provenance.clone(),
-                documents,
-                frame: None,
-            },
-            usage: ClauseRunUsage::default(),
-        }
+    // Every pre-compile disposition reports no `package_id`, and the usage is
+    // empty until an evaluation meter has run.
+    let report = |package_id, disposition: ClauseDisposition| ClauseRunReport {
+        basis: undecided_basis(&disposition),
+        witness: None,
+        package_id,
+        disposition,
+        usage: ClauseRunUsage::default(),
     };
 
     if let Some(language) = unit.language {
@@ -613,8 +758,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 ClauseDisposition::UnknownLanguage {
                     language: language.to_owned(),
                 },
-                Vec::new(),
-                Vec::new(),
             ));
         }
     }
@@ -653,22 +796,23 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 Ok(refusal) => ClauseDisposition::Compile(refusal),
                 Err(fault) => ClauseDisposition::EvaluateFault(fault),
             };
-            return Ok(report(None, disposition, Vec::new(), Vec::new()));
+            return Ok(report(None, disposition));
         }
     };
     let package_id = emitted.package().package_id();
     let package = checked.package();
-    let model_selections = package.graph().model_selections().to_vec();
-    if let Some(expected) = request.expected_package_id {
-        if package_id != expected {
+    if let Some(expected) = request
+        .expected_package_id
+        .map(|id| id.hex())
+        .or_else(|| request.expected_package_id_claim.clone())
+    {
+        if package_id.hex() != expected {
             return Ok(report(
                 Some(package_id),
                 ClauseDisposition::StalePackage {
                     expected,
                     actual: package_id,
                 },
-                model_selections,
-                Vec::new(),
             ));
         }
     }
@@ -680,32 +824,25 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     sources.push(checked.source().clone());
     sources.extend(checked.libraries().iter().cloned());
 
+    let run = CompiledRun {
+        packages: &request.packages,
+        model_limits: request.limits.model,
+        provisions: Provisions {
+            snapshots: &request.snapshots,
+            invocations: &request.invocations,
+        },
+        observation_limits: request.observation_limits,
+        accounting: request.accounting,
+        package,
+        package_id,
+        sources: &sources,
+    };
     match request.selection {
         ClauseRunSelection::Clause(ref selection) => {
-            let run = CompiledRun {
-                packages: &request.packages,
-                model_limits: request.limits.model,
-                provisions: Provisions {
-                    snapshots: &request.snapshots,
-                    invocations: &request.invocations,
-                },
-                observation_limits: request.observation_limits,
-                accounting: request.accounting,
-                package,
-                package_id,
-                unit: &unit_provenance,
-                sources: &sources,
-                model_selections,
-                selection: request.selection.clone(),
-            };
             let Some(clause) = package.graph().state_clause(&selection.name) else {
-                return Ok(run.report(
-                    ClauseDisposition::MissingName {
-                        name: selection.name.clone(),
-                    },
-                    Vec::new(),
-                    None,
-                ));
+                return Ok(run.report(ClauseDisposition::MissingName {
+                    name: selection.name.clone(),
+                }));
             };
             Ok(check_clause(&run, clause, selection))
         }
@@ -713,46 +850,16 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref name,
             ref arguments,
             ref snapshot,
-        } => run_function(
-            &request.packages,
-            request.limits.model,
-            &request.snapshots,
-            request.observation_limits,
-            request.accounting,
-            package,
-            package_id,
-            name,
-            arguments,
-            snapshot,
-            &unit_provenance,
-            &sources,
-            model_selections,
-            request.selection.clone(),
-            selection_documents,
-        ),
+        } => run_function(&run, name, arguments, snapshot),
         ClauseRunSelection::Frame {
             ref operation,
             ref invocation,
-        } => Ok(run_frame(
-            &CompiledRun {
-                packages: &request.packages,
-                model_limits: request.limits.model,
-                provisions: Provisions {
-                    snapshots: &request.snapshots,
-                    invocations: &request.invocations,
-                },
-                observation_limits: request.observation_limits,
-                accounting: request.accounting,
-                package,
-                package_id,
-                unit: &unit_provenance,
-                sources: &sources,
-                model_selections,
-                selection: request.selection.clone(),
-            },
-            operation,
-            invocation,
-        )),
+        } => Ok(run_frame(&run, operation, invocation)),
+        ClauseRunSelection::Temporal {
+            ref name,
+            ref trace,
+            ref over,
+        } => Ok(temporal::run_temporal(&run, name, trace, over)),
     }
 }
 
@@ -776,37 +883,17 @@ pub(crate) struct CompiledRun<'a> {
     pub(crate) package: &'a qsl_package::CheckedPackage,
     /// The compiled `package_id`.
     pub(crate) package_id: PackageId,
-    /// The compiled unit's provenance.
-    pub(crate) unit: &'a UnitProvenance,
     /// The unit's and every resolved library's source, for loci.
     pub(crate) sources: &'a [Source],
-    /// Every model selection the compiled package resolved.
-    pub(crate) model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
-    /// The selection, as reported in provenance.
-    pub(crate) selection: ClauseRunSelection,
 }
 
 impl CompiledRun<'_> {
-    fn report(
-        &self,
-        disposition: ClauseDisposition,
-        documents: Vec<DocumentRef>,
-        frame: Option<NodeKey>,
-    ) -> ClauseRunReport {
+    fn report(&self, disposition: ClauseDisposition) -> ClauseRunReport {
         ClauseRunReport {
             basis: undecided_basis(&disposition),
             witness: None,
-            source_digest: self.unit.digest.clone(),
             package_id: Some(self.package_id),
             disposition,
-            provenance: ClauseRunProvenance {
-                source: self.unit.source.clone(),
-                extraction: self.unit.extraction.clone(),
-                model_selections: self.model_selections.clone(),
-                selection: self.selection.clone(),
-                documents,
-                frame,
-            },
             usage: ClauseRunUsage::default(),
         }
     }
@@ -831,10 +918,21 @@ pub(crate) fn check_clause(
 pub(crate) struct ClauseCheck {
     /// The report.
     pub(crate) report: ClauseRunReport,
+    /// Every snapshot or invocation document admission read, in read order.
+    pub(crate) documents: Vec<DocumentRef>,
     /// The admitted observations; `None` when admission failed.
     pub(crate) observations: Option<AdmittedObservations>,
     /// The evaluation meter, after the clause's evaluation.
     pub(crate) meter: Meter,
+}
+
+/// [`check_frame`]'s report and the documents admission read.
+pub(crate) struct FrameCheck {
+    /// The report.
+    pub(crate) report: ClauseRunReport,
+    /// Every document admission read, in read order: the invocation, then
+    /// its pre and post snapshots once admitted.
+    pub(crate) documents: Vec<DocumentRef>,
 }
 
 /// [`check_clause`], keeping the admitted observations and the meter.
@@ -843,7 +941,8 @@ pub(crate) fn check_clause_admitted(
     clause: &CheckedStateClause,
     selection: &ClauseSelection,
 ) -> ClauseCheck {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use quire_eval::CallFailure;
     use quire_semantic_value::call::InputRefusal;
 
     let graph = run.package.graph();
@@ -859,11 +958,8 @@ pub(crate) fn check_clause_admitted(
         Ok(observations) => observations,
         Err(failure) => {
             return ClauseCheck {
-                report: run.report(
-                    ClauseDisposition::Admit(failure),
-                    vec![clause_input_document(&selection.input).clone()],
-                    None,
-                ),
+                report: run.report(ClauseDisposition::Admit(failure)),
+                documents: vec![clause_input_document(&selection.input).clone()],
                 observations: None,
                 meter: Meter::new(run.accounting),
             }
@@ -873,13 +969,10 @@ pub(crate) fn check_clause_admitted(
     let mut meter = Meter::new(run.accounting);
     let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
         return ClauseCheck {
-            report: run.report(
-                ClauseDisposition::MissingName {
-                    name: selection.name.clone(),
-                },
-                documents,
-                None,
-            ),
+            report: run.report(ClauseDisposition::MissingName {
+                name: selection.name.clone(),
+            }),
+            documents,
             observations: Some(observations),
             meter,
         };
@@ -915,18 +1008,24 @@ pub(crate) fn check_clause_admitted(
             InputRefusal::UnknownFunction(_)
             | InputRefusal::Arity { .. }
             | InputRefusal::WrongValueKind { .. }
+            | InputRefusal::DuplicateClause(_)
             | InputRefusal::DanglingReference { .. } => ClauseDisposition::EvaluateFault(
                 InternalFault::new("call", "evaluate-clause-supplies-no-function-style-input"),
             ),
         },
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        Err(
+            storage @ (CallFailure::Storage { .. }
+            | CallFailure::Supplied(_)
+            | CallFailure::UnsupportedHelper(_)),
+        ) => ClauseDisposition::ArgumentRefusal(convert_call_failure(storage)),
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
             "call",
             "cancelled-without-a-handle",
         )),
     };
-    let mut report = run.report(disposition, documents, None);
+    let mut report = run.report(disposition);
     report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
     // FR-266: a `Clause` run that completed a Boolean takes FR-265's basis
     // and record; every other disposition keeps `unavailable`.
@@ -938,6 +1037,7 @@ pub(crate) fn check_clause_admitted(
     }
     ClauseCheck {
         report,
+        documents,
         observations: Some(observations),
         meter,
     }
@@ -952,19 +1052,16 @@ fn run_frame(
     invocation: &DocumentRef,
 ) -> ClauseRunReport {
     let Some((context, operation_frame)) = resolve_frame(run.package.graph(), operation) else {
-        return run.report(
-            ClauseDisposition::MissingName {
-                name: operation.to_string(),
-            },
-            Vec::new(),
-            None,
-        );
+        return run.report(ClauseDisposition::MissingName {
+            name: operation.to_string(),
+        });
     };
-    check_frame(run, context, operation_frame, invocation)
+    check_frame(run, context, operation_frame, invocation).report
 }
 
 /// FR-104's Resolution of a `Frame` selection: `M` and `T` resolve to a
-/// domain package and one of its object types, `op` names an operation of
+/// domain package and one of its operation owners (an object type, a
+/// process or a state machine), `op` names an operation of
 /// that type's effective view, and the package holds its frame node only
 /// when a clause or attempt names it (FR-105). `None` when any step
 /// resolves nothing.
@@ -989,9 +1086,10 @@ pub(crate) fn check_frame(
     context: quire_exact::EffectiveId,
     operation_frame: &qsl_semantics::check::CheckedOperationFrame,
     invocation: &DocumentRef,
-) -> ClauseRunReport {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
-    use qsl_semantics::family::FamilyOutcome;
+) -> FrameCheck {
+    use qsl_eval::value::{CheckedPackageEvaluation, FrameEvaluation};
+    use quire_eval::CallFailure;
+    use quire_eval::FamilyOutcome;
 
     let graph = run.package.graph();
     let frame = operation_frame.frame();
@@ -1015,11 +1113,10 @@ pub(crate) fn check_frame(
     ) {
         Ok(admitted) => admitted,
         Err(failure) => {
-            return run.report(
-                ClauseDisposition::Admit(failure),
-                vec![invocation.clone()],
-                Some(frame),
-            )
+            return FrameCheck {
+                report: run.report(ClauseDisposition::Admit(failure)),
+                documents: vec![invocation.clone()],
+            }
         }
     };
     let documents = vec![
@@ -1047,7 +1144,7 @@ pub(crate) fn check_frame(
         // violation.
         Ok(FrameEvaluation {
             evaluation:
-                qsl_eval::value::Evaluation {
+                quire_eval::Evaluation {
                     outcome:
                         FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(false))),
                     ..
@@ -1074,54 +1171,42 @@ pub(crate) fn check_frame(
             "frame-invocation-mismatch",
         )),
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        Err(
+            storage @ (CallFailure::Storage { .. }
+            | CallFailure::Supplied(_)
+            | CallFailure::UnsupportedHelper(_)),
+        ) => ClauseDisposition::ArgumentRefusal(convert_call_failure(storage)),
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
             "call",
             "cancelled-without-a-handle",
         )),
     };
-    let mut report = run.report(disposition, documents, Some(frame));
+    let mut report = run.report(disposition);
     report.usage = ClauseRunUsage::from_meter(&meter, admitted.usage);
-    report
+    FrameCheck { report, documents }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_function(
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    model_limits: ModelNormalizationLimits,
-    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
-    observation_limits: ObservationLimits,
-    accounting: ScalarLimits,
-    package: &qsl_package::CheckedPackage,
-    package_id: PackageId,
+    run: &CompiledRun<'_>,
     name: &str,
     arguments: &[ClauseArgument],
     snapshot: &DocumentRef,
-    unit: &UnitProvenance,
-    sources: &[Source],
-    model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
-    selection: ClauseRunSelection,
-    selection_documents: Vec<DocumentRef>,
 ) -> Result<ClauseRunReport, ClauseRunRefusal> {
     use qsl_eval::value::CheckedPackageEvaluation;
-    // Empty until `admit_current_snapshot` (below) actually reads
-    // `selection_documents`' one snapshot; FR-109's own provenance is what
-    // admission read, never merely what the selection named (FR-109-AC-2).
-    let documents_read = std::cell::RefCell::new(Vec::<DocumentRef>::new());
+    let packages = run.packages;
+    let model_limits = run.model_limits;
+    let snapshots = run.provisions.snapshots;
+    let observation_limits = run.observation_limits;
+    let accounting = run.accounting;
+    let package = run.package;
+    let package_id = run.package_id;
+    let sources = run.sources;
     let report = |disposition: ClauseDisposition| ClauseRunReport {
         basis: undecided_basis(&disposition),
         witness: None,
-        source_digest: unit.digest.clone(),
         package_id: Some(package_id),
         disposition,
-        provenance: ClauseRunProvenance {
-            source: unit.source.clone(),
-            extraction: unit.extraction.clone(),
-            model_selections: model_selections.clone(),
-            selection: selection.clone(),
-            documents: documents_read.borrow().clone(),
-            frame: None,
-        },
         usage: ClauseRunUsage::default(),
     };
 
@@ -1151,10 +1236,6 @@ fn run_function(
         }));
     }
 
-    // Admission is about to read `selection_documents`' one snapshot,
-    // whichever way it resolves -- set before the call, so both the
-    // success and failure paths report it (FR-109-AC-2).
-    *documents_read.borrow_mut() = selection_documents;
     let (environment, admission_usage) = match admit_current_snapshot(
         package.graph().model_selections(),
         package.graph().scope().types(),
@@ -1231,6 +1312,8 @@ fn run_function(
                             code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
                             cause: "wrong-role-mapping",
                             fields,
+                            path: Vec::new(),
+                            kernel: None,
                         },
                     ))));
                 };
@@ -1265,4 +1348,4 @@ fn run_function(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

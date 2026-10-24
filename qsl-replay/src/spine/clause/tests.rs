@@ -18,8 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
-use qsl_semantics::family::FamilyOutcome;
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -27,6 +26,8 @@ use qsl_semantics::model::observation::{
     AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
     ObservationLimits, Provisions, SelectedAnchor, SelectedObject,
 };
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
     ObjectReference, Outcome, UniverseId, Value,
@@ -39,7 +40,84 @@ use super::{
     admit_clause_observations, run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
 };
-use crate::spine::{compose, default_accounting, ComposedUnit, DependencyInput, SpineLimits};
+use crate::spine::{default_accounting, ComposedUnit, DependencyInput, SpineLimits};
+
+// Keep the oracle where the private fixture's actual package input is owned.
+// Original refusals remain typed refusals; only a successful public S4 emission
+// reaches the strict formatted-package comparison.
+fn compose(
+    identity: qsl_foundation::SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+) -> Result<ComposedUnit, Box<crate::spine::CompileRefusal>> {
+    let original = crate::spine::compose(
+        identity.clone(),
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+    )?;
+    let parsed = qsl_cst::parse(identity.clone(), path, bytes, limits.source)
+        .expect("the original fixture passed S1");
+    let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
+        .expect("the admitted private fixture formats");
+    let mut formatted_limits = limits;
+    formatted_limits.source.source_bytes = limits.source.source_bytes.max(formatted.len());
+    let mut formatted_identity = identity;
+    formatted_identity.revision.push_str("-formatted");
+    let reparsed = qsl_cst::parse(
+        formatted_identity.clone(),
+        path,
+        formatted.as_bytes(),
+        formatted_limits.source,
+    )
+    .expect("formatted S1 retains the owning limits");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "{path}: private fixture second-pass bytes",
+    );
+    let checked = crate::spine::compose(
+        formatted_identity,
+        path,
+        formatted.as_bytes(),
+        packages,
+        dependencies,
+        formatted_limits,
+    )
+    .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
+    assert_eq!(
+        checked.emitted.package_id(),
+        original.emitted.package_id(),
+        "{path}: private fixture formatting changed checked package identity",
+    );
+    Ok(original)
+}
+
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_clause_source_generators_keep_format_identity() {
+    for (path, (unit, packages)) in [
+        ("nodes.native", unit_and_packages()),
+        ("config.native", config_version_unit_and_packages()),
+        ("step2.native", config_version_step2_unit_and_packages()),
+        ("step3.native", config_version_step3_unit_and_packages()),
+    ] {
+        compose(
+            source(),
+            path,
+            unit.as_bytes(),
+            &packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{path}: original fixture refuses: {refusal:?}"));
+    }
+}
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
 const PLACEHOLDER_DIGEST: &str =
@@ -61,6 +139,7 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -180,7 +259,7 @@ fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          invariant NoCycle using v on M::Node at current {{ not reaches(self, self, next) }}\n\
          function isPositive using v(n: Integer): Boolean pure {{ n > 0 }}\n\
@@ -284,10 +363,10 @@ fn no_cycle_selection(label: DocumentRef, self_key: &str) -> ClauseSelection {
                 kind: qsl_semantics::model::observation::AnchorKind::Initialization,
                 name: "init".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     }
 }
@@ -348,6 +427,10 @@ fn no_cycle_observations(
         pre: None,
         post: None,
         self_object,
+        invocation: None,
+        self_kind: qsl_semantics::model::observation::SelfKind::Object,
+        receiver_pre: None,
+        receiver_post: None,
         parameters: Vec::new(),
         result: None,
         created: Vec::new(),
@@ -355,7 +438,7 @@ fn no_cycle_observations(
     }
 }
 
-fn boolean_outcome(evaluation: qsl_eval::value::Evaluation) -> bool {
+fn boolean_outcome(evaluation: quire_eval::Evaluation) -> bool {
     match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => value,
         other => panic!("expected a completed Boolean outcome, got {other:?}"),
@@ -401,7 +484,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let graph_charges: Vec<_> = meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -697,6 +780,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -726,17 +810,27 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 
 /// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
 /// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
-/// a cyclic chain to `Completed(Boolean(false))`; both carry the source
-/// digest, `package_id`, model selection, selection and the one snapshot's
-/// identity and digest in their provenance
-/// (`FR-109-run-a-state-clause-through-the-spine.md:149,81-84`).
+/// a cyclic chain to `Completed(Boolean(false))`; both carry the
+/// compiled `package_id` and the usage
+/// (`FR-109-run-a-state-clause-through-the-spine.md:149`).
 #[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
-    let (request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    // `request` compiles exactly this unit text (`request`'s own builder).
-    let (unit, _) = unit_and_packages();
-    let expected_digest = qsl_foundation::ByteDigest::of(unit.as_bytes()).to_string();
+    let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    // The package `compose` emits for this unit on its own, independent of
+    // the run.
+    let (unit, packages) = unit_and_packages();
+    let expected_package_id = compose(
+        source(),
+        "clause-run.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the unit compiles")
+    .emitted
+    .package_id();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -749,28 +843,46 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    // Provenance: source digest, package_id, model selection, selection and
-    // the one snapshot's identity and digest.
-    assert_eq!(report.source_digest, expected_digest);
-    assert!(report.package_id.is_some());
+    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
-        !report.provenance.model_selections.is_empty(),
-        "the model selection the compiled package resolved is reported"
+        report.usage.evaluation_admissions > 0,
+        "the evaluation meter's charges are reported"
     );
-    match &report.provenance.selection {
-        super::ClauseRunSelection::Clause(selection) => {
-            assert_eq!(selection.name, "NoCycle");
-        }
-        other => panic!("expected the Clause selection back, got {other:?}"),
-    }
-    assert_eq!(report.provenance.documents, [label]);
-    assert_eq!(report.provenance.source, source());
-    assert_eq!(report.provenance.extraction, None, "no I3 source was used");
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_native_argument_refusal_preserves_typed_fields() {
+    let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let mut report = run_clause(request).expect("the fixture compiles");
+    report.basis = crate::proof_result::SettlementBasis::Unavailable;
+    report.disposition =
+        ClauseDisposition::ArgumentRefusal(Box::new(crate::spine::RunRefusal::Admission {
+            position: 2,
+            refusal: qsl_semantics::model::normalize::ModelRefusal {
+                code: qsl_foundation::diagnostic::Code::ForeignReference,
+                cause: qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                    member: "w".to_owned(),
+                    type_name: qsl_semantics::model::key::DeclarationKey::fixture("foreign/W"),
+                },
+                detail: "foreign type".to_owned(),
+            },
+        }));
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["disposition"]["refusal"]["fields"],
+        serde_json::json!({
+            "position": "2",
+            "member": "w",
+            "type": "test/orders/foreign/W"
+        })
+    );
 }
 
 /// TC-468 (FR-109-AC-1): the violating-parent case (a cycle) reports
@@ -790,7 +902,7 @@ fn run_clause_reports_a_violation_over_a_cyclic_chain() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
     assert_eq!(report.disposition.category().exit_code(), 10);
@@ -806,7 +918,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     let report_one = run_clause(request_one).expect("a well-formed request always reports");
     let report_two = run_clause(request_two).expect("a well-formed request always reports");
 
-    assert_eq!(report_one.source_digest, report_two.source_digest);
     assert_eq!(report_one.package_id, report_two.package_id);
     assert_eq!(
         report_one.disposition.truth(),
@@ -819,14 +930,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     assert_eq!(
         report_one.disposition.category().exit_code(),
         report_two.disposition.category().exit_code()
-    );
-    assert_eq!(
-        report_one.provenance.documents,
-        report_two.provenance.documents
-    );
-    assert_eq!(
-        report_one.provenance.model_selections.len(),
-        report_two.provenance.model_selections.len()
     );
     assert_eq!(
         report_one.usage.evaluation_admissions,
@@ -1090,10 +1193,7 @@ fn run_clause_refuses_an_empty_source() {
 
 /// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
 /// unit's `model` declaration refuses at stage `compile`,
-/// `missing_import`/`missing-selection`, exit 20, with no snapshot in
-/// provenance (FR-109-AC-2's own worked example: a compile-stage failure
-/// never read a document, so `provenance.documents` stays empty --
-/// `FR-109-run-a-state-clause-through-the-spine.md:81-84`).
+/// `missing_import`/`missing-selection`, exit 20, with no `package_id`.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
@@ -1128,10 +1228,63 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert!(
-        report.provenance.documents.is_empty(),
-        "a compile-stage failure never read a document"
-    );
+    assert_eq!(report.package_id, None);
+}
+
+/// FR-255-AC-1 (QSL-745): a model-normalization ceiling and the intake byte
+/// limit reached while a clause run compiles are written to the native run
+/// result as `resource_exhausted` refusals with FR-255 Behavior 1's typed
+/// fields: the retained charge for the denied charge, and `kind`, `bound`,
+/// `actual`, `setting` for intake's size ceiling.
+#[trace("TC-720", "FR-255-AC-1")]
+#[test]
+fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let selection = || ClauseRunSelection::Function {
+        name: "seven".to_owned(),
+        arguments: Vec::new(),
+        snapshot: label.clone(),
+    };
+    let refusal_of = |request: ClauseRunRequest| {
+        let report = run_clause(request).unwrap();
+        let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["disposition"]["stage"], "compile");
+        value["disposition"]["refusal"].clone()
+    };
+
+    let mut starved = request(selection());
+    starved.limits.model.work_units = 1;
+    let refusal = refusal_of(starved);
+    assert_eq!(refusal["code"], "resource_exhausted");
+    assert_eq!(refusal["cause"], "insufficient-next-charge");
+    let fields = &refusal["fields"];
+    assert_eq!(fields["setting"], "model.work_units");
+    assert_eq!(fields["limit"], "1");
+    assert_eq!(fields["stage"], "model-normalization");
+    assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    assert_eq!(fields["limit_kind"], "work_units");
+    for name in ["actual", "consumed", "next_charge", "charge_point"] {
+        assert!(fields.get(name).is_some(), "`{name}` is retained");
+    }
+
+    let mut oversize = request(selection());
+    oversize.limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(1);
+    let refusal = refusal_of(oversize);
+    assert_eq!(refusal["code"], "resource_exhausted");
+    assert_eq!(refusal["cause"], "intake-limit-exceeded");
+    assert_eq!(refusal["fields"]["kind"], "input-bytes-exceeded");
+    assert_eq!(refusal["fields"]["bound"], "1");
+    assert_eq!(refusal["fields"]["setting"], "intake.input_bytes");
+    assert!(refusal["fields"]["actual"]
+        .as_str()
+        .is_some_and(|actual| actual != "1"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1426,7 +1579,7 @@ fn config_version_domain_document_with_operations(
     let parent_identity = format!("{config_version}/parent");
     let operation_identity = format!("{config_version}/attemptUpdate");
     let population = config_version_population_identity();
-    let bound = |keyword: &str, value: i64| {
+    let bound = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{version_number}/constraints/{keyword}"),
             "keyword": keyword,
@@ -1472,6 +1625,7 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -1539,7 +1693,7 @@ fn config_version_domain_document_with_operations(
                 "extensions": [],
                 "unknownPolicy": "reject",
                 "scalar": "integer",
-                "constraints": [bound("min", 0), bound("max", 1000)],
+                "constraints": [bound("min", "0"), bound("max", "1000")],
             },
             {
                 "identity": config_version,
@@ -1626,7 +1780,7 @@ fn config_version_domain_document_with_operations(
 /// at all ("Today QSL emits no `state` node",
 /// `spec/functional/FR-105-emit-state-nodes.md`). `VersionUnchanged` below
 /// is that postcondition, now reachable through `run_clause` end to end.
-fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     config_version_unit_and_packages_for(config_version_domain_document())
 }
 
@@ -1642,7 +1796,7 @@ fn config_version_unit_and_packages_for(
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
@@ -1689,6 +1843,7 @@ fn config_version_request_for(
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1778,10 +1933,10 @@ fn config_version_current_selection(
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: config_version_population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     }
 }
@@ -1914,7 +2069,7 @@ fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
         ClauseDisposition::StalePackage {
             expected, actual, ..
         } => {
-            assert_eq!(*expected, other_id);
+            assert_eq!(expected, &other_id.hex());
             assert_ne!(*actual, other_id, "the config-version package differs");
         }
         other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
@@ -2036,7 +2191,7 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(report.disposition.category().exit_code(), 22);
 }
@@ -2070,7 +2225,7 @@ fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(report.disposition.truth(), None);
     assert_eq!(report.disposition.category().exit_code(), 22);
@@ -2100,7 +2255,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert!(!boolean_disposition(&report.disposition), "root != child");
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
 
     // a = b = child -- same object, success.
@@ -2121,7 +2276,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert!(boolean_disposition(&report.disposition), "child = child");
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
 
     // b names `ghost`, no admitted object -- admit refusal, wrong-role-mapping.
@@ -2176,7 +2331,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
 
     // `n(a: Config::ConfigVersion): Integer`, selected the same way, is not
@@ -2261,9 +2416,11 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     let compiled = compiled();
     let sources = std::slice::from_ref(&compiled.source);
 
-    let checked_invariant_evaluation = qsl_eval::value::Evaluation {
+    let checked_invariant_evaluation = quire_eval::Evaluation {
         outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Refused(
-            quire_exact::Refusal::CheckedInvariant,
+            quire_exact::Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted,
+            },
         )),
         location: None,
         losses: Vec::new(),
@@ -2287,7 +2444,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::InternalFailure
+        quire_semantic_value::catalog::Category::InternalFailure
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 30);
@@ -2320,7 +2477,8 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // `package.evaluate_clause` against that fixture is still the
     // deliberate choice this test makes (disclosed above), not one forced
     // by a compile-time gap any more.
-    let call_failure_fault = qsl_foundation::diagnostic::InternalFault::new("call", "fault-kind");
+    let call_failure_fault =
+        quire_semantic_value::catalog::InternalFault::new("call", "fault-kind");
     let disposition_from_call_failure = ClauseDisposition::EvaluateFault(call_failure_fault);
     assert_eq!(
         disposition_from_call_failure.stage(),
@@ -2328,7 +2486,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     );
     assert_eq!(
         disposition_from_call_failure.category(),
-        qsl_foundation::diagnostic::Category::InternalFailure
+        quire_semantic_value::catalog::Category::InternalFailure
     );
     assert_eq!(disposition_from_call_failure.truth(), None);
     assert_eq!(disposition_from_call_failure.category().exit_code(), 30);
@@ -2339,7 +2497,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
 /// more of the general (non-internal-failure) kinds `convert_outcome`
 /// maps -- `Completed(true)`, `Completed(false)`, a kernel `Undefined`
 /// and a kernel `Incomplete` -- each built as a real
-/// `qsl_eval::value::Evaluation`, run through `super::super::
+/// `quire_eval::Evaluation`, run through `super::super::
 /// call::convert_outcome` itself (never a hand-copied expected
 /// `CallOutcome`), and only then checked against
 /// `ClauseDisposition::category`/`exit_code`'s own mapping (FR-301's exit
@@ -2351,7 +2509,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let sources = std::slice::from_ref(&compiled.source);
     let graph = compiled.package.graph();
 
-    let evaluation = |outcome| qsl_eval::value::Evaluation {
+    let evaluation = |outcome| quire_eval::Evaluation {
         outcome,
         location: None,
         losses: Vec::new(),
@@ -2369,7 +2527,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(disposition.truth(), Some(true));
     assert_eq!(disposition.category().exit_code(), 0);
@@ -2386,7 +2544,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(disposition.truth(), Some(false));
     assert_eq!(disposition.category().exit_code(), 10);
@@ -2403,7 +2561,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Undefined
+        quire_semantic_value::catalog::Category::Undefined
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 10);
@@ -2426,7 +2584,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 22);
@@ -2443,6 +2601,8 @@ fn admission_failure_exits_by_its_record_code_category() {
         code,
         cause: "any-cause",
         fields: BTreeMap::new(),
+        path: Vec::new(),
+        kernel: None,
     };
     let refused = |code| ClauseDisposition::Admit(AdmissionFailure::Refused(record(code)));
     assert_eq!(
@@ -2900,7 +3060,7 @@ fn config_version_step3_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u
     let digest = config_version_step3_model_digest_hex();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          pre ReachesTarget using v on Config::ConfigVersion::probe {{ \
@@ -3205,7 +3365,7 @@ fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
 /// Evaluates TC-466 step 3(a)'s `ReachesTarget` (`self` `a`, `target` `c`,
 /// over the chain) through real FR-106 admission, charging `meter` instead
 /// of a fresh one -- the seam sub-case (e) needs.
-fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evaluation {
+fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> quire_eval::Evaluation {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let (unit, packages) = config_version_step3_unit_and_packages();
     let compiled = compose(
@@ -3316,7 +3476,7 @@ fn step3_graph_charges(meter: &Meter) -> Vec<ChargePoint> {
     meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -3439,8 +3599,7 @@ fn tc466_step3_completes_true_when_the_denied_charge_is_never_made() {
 #[cfg(feature = "quire-extraction")]
 mod extracted {
     use super::*;
-    use crate::spine::ExtractionOrigin;
-    use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+    use qsl_foundation::{Source, SourceIdentity};
 
     const QUIRE_PACKAGE: &str = "example/clause-run";
 
@@ -3461,10 +3620,6 @@ mod extracted {
             "# Clause run document\n\n## Invariants\n\n### no_cycle\n```{language}\n{unit}```\n\n\
              ### unselected\n```ix:native\nopaque body remains unparsed\n```\n"
         )
-    }
-
-    fn original_text() -> String {
-        original_text_in("ix:native")
     }
 
     /// `qsl_source::extract`'s verified body of the `ix:native` `no_cycle`
@@ -3494,26 +3649,16 @@ mod extracted {
         .expect("the no_cycle fence extracts")
     }
 
-    fn expected_origin() -> ExtractionOrigin {
-        ExtractionOrigin {
-            identity: original_identity(),
-            digest: ByteDigest::of(original_text().as_bytes()),
-        }
-    }
-
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
-    /// `success` as the program source does; its provenance names the
-    /// body's identity and digest as the source, and the original
-    /// document's identity and digest as the extraction.
+    /// `success` as the program source does, with the body's `package_id`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
-    fn run_clause_compiles_an_extracted_body_and_reports_its_original() {
-        let (mut request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    fn run_clause_compiles_an_extracted_body() {
+        let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
         let (unit, packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
-        let body_digest = body.digest();
         assert_eq!(
             body.text(),
             unit.trim_end_matches('\n'),
@@ -3538,34 +3683,20 @@ mod extracted {
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
         assert_eq!(report.disposition.category().exit_code(), 0);
-        assert_eq!(report.source_digest, body_digest.to_string());
-        assert_eq!(report.provenance.source, body_identity());
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
-        assert_ne!(
-            report
-                .provenance
-                .extraction
-                .as_ref()
-                .map(|origin| origin.digest),
-            Some(body_digest),
-            "the original's digest is the document's, not the body's"
-        );
-        assert_eq!(report.provenance.documents, [label]);
         assert_eq!(report.package_id, Some(body_package_id));
     }
 
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
-    /// package supplied) still reports the extraction's original.
+    /// package supplied) reports stage `compile` with no `package_id`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
-    fn run_clause_reports_the_extraction_original_on_violation_and_compile_refusal() {
+    fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
         let (mut violating, _) = no_cycle_request(&[("a", Some("b")), ("b", Some("a"))]);
         violating.source = ClauseRunSource::Extracted(extracted());
         let report = run_clause(violating).expect("a well-formed request always reports");
         assert_eq!(report.disposition.truth(), Some(false));
         assert_eq!(report.disposition.category().exit_code(), 10);
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
 
         let (mut missing, _) = no_cycle_request(&[("a", None)]);
         missing.source = ClauseRunSource::Extracted(extracted());
@@ -3573,22 +3704,18 @@ mod extracted {
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
         assert_eq!(report.package_id, None);
-        assert_eq!(report.provenance.source, body_identity());
-        assert_eq!(report.provenance.extraction, Some(expected_origin()));
-        assert!(report.provenance.documents.is_empty());
     }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, with no `package_id` and the extraction's
-/// original still in provenance -- the same refusal the root crate's
+/// `unknown_language`, exit 20, with no `package_id` -- the same refusal the root crate's
 /// `mapped::compile` gives that fence.
 #[cfg(feature = "quire-extraction")]
 #[trace("TC-468", "FR-109-AC-6")]
 #[test]
 fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
-    use extracted::{body_identity, extracted_in, original_identity, original_text_in};
+    use extracted::extracted_in;
     let (mut request, _) = no_cycle_request(&[("a", None)]);
     let source = extracted_in("ix:formal");
     assert_eq!(source.language(), "ix:formal");
@@ -3601,7 +3728,7 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
     assert_eq!(report.disposition.truth(), None);
     assert_eq!(
@@ -3612,15 +3739,6 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
     assert_eq!(report.package_id, None);
-    assert_eq!(report.provenance.source, body_identity());
-    assert_eq!(
-        report.provenance.extraction,
-        Some(crate::spine::ExtractionOrigin {
-            identity: original_identity(),
-            digest: qsl_foundation::ByteDigest::of(original_text_in("ix:formal").as_bytes()),
-        })
-    );
-    assert!(report.provenance.documents.is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -3808,6 +3926,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         modifies,
         creates,
         deletes,
+        deletes_scoped,
     }) = frames[0].body()
     else {
         panic!(
@@ -3817,10 +3936,11 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     };
     assert!(creates.is_empty(), "{creates:?}");
     assert!(deletes.is_empty(), "{deletes:?}");
+    assert!(deletes_scoped.is_empty(), "{deletes_scoped:?}");
     let [only] = modifies.as_slice() else {
         panic!("exactly one modifies entry, got {modifies:?}");
     };
-    assert_eq!(only.name(), "versionNumber");
+    assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
         only.declaration().0,
         context_ref.0,
@@ -4009,11 +4129,15 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
         .expect("exactly one emitted frame node");
     assert_eq!(
         frame["body"]["modifies"],
-        json!([{"kind": "field", "declaration": expected_id, "name": "versionNumber"}]),
+        json!([{
+            "kind": "field", "declaration": expected_id, "name": "versionNumber",
+            "scope": "every-object",
+        }]),
         "the emitted frame body's modifies entry"
     );
     assert_eq!(frame["body"]["creates"], json!([]));
     assert_eq!(frame["body"]["deletes"], json!([]));
+    assert_eq!(frame["body"]["deletes_scoped"], json!([]));
     assert!(
         frame["dependencies"]
             .as_array()
@@ -4720,7 +4844,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
 /// declared name enters no key (FR-088) -- and the renamed clause's
 /// identity is `ParentOrder`'s.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_renaming_parent_order_changes_no_node_id() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4760,7 +4884,7 @@ fn s4_renaming_parent_order_changes_no_node_id() {
 /// TC-463 (FR-105-AC-4): changing `ParentOrder`'s `<` to `<=` changes its
 /// `state_clause` node id and the `package_id`, and leaves the other two
 /// clauses' node ids unchanged.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4802,7 +4926,7 @@ fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id()
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence
 /// (ordinal 1) to `ParentOrder`'s node.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4850,7 +4974,7 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
 /// adds one `state_clause` node and no second anchor or frame: the new
 /// clause anchors at the existing `operation_anchor`, which gains a second
 /// `anchor` occurrence.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4932,11 +5056,50 @@ fn config_version_domain_document_with_sub() -> Vec<u8> {
     envelope.to_string().into_bytes()
 }
 
+/// [`config_version_domain_document_with_sub`] plus `Other`, an object type
+/// declaring its own `attemptUpdate`, with `Sub`'s `supertypes` set to
+/// `[ConfigVersion, Other]`: two supertypes expose the name and neither is
+/// more derived, so `Config::Sub::attemptUpdate` is ambiguous.
+fn config_version_domain_document_with_diamond() -> Vec<u8> {
+    let config_version = config_version_type();
+    let sub = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub");
+    let other = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Other");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_sub())
+            .expect("the document is JSON");
+    let types = envelope["types"].as_array_mut().expect("types is an array");
+    let mut operation = types
+        .iter()
+        .find(|declared| declared["identity"] == json!(config_version))
+        .expect("ConfigVersion is declared")["operations"][0]
+        .clone();
+    operation["identity"] = json!(format!("{other}/attemptUpdate"));
+    operation["frame"] = json!({"modifies": [], "creates": [], "deletes": []});
+    let mut other_type = types
+        .iter()
+        .find(|declared| declared["identity"] == json!(sub))
+        .expect("Sub is declared")
+        .clone();
+    other_type["identity"] = json!(other);
+    other_type["displayName"] = json!(other);
+    other_type["origin"]["generated"]["generatorIdentity"] = json!(other);
+    other_type["origin"]["generated"]["inputIdentities"] = json!([other]);
+    other_type["supertypes"] = json!([]);
+    other_type["operations"] = json!([operation]);
+    for declared in types.iter_mut() {
+        if declared["identity"] == json!(sub) {
+            declared["supertypes"] = json!([config_version, other]);
+        }
+    }
+    types.push(other_type);
+    envelope.to_string().into_bytes()
+}
+
 /// TC-463 (FR-105-AC-4): over a package where `Sub` specializes
 /// `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and
 /// `pre B ... on Config::Sub::attemptUpdate` share one `operation_anchor`,
 /// whose context is ConfigVersion (the declaring type), never `Sub`.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version() {
     let (unit, packages) =
@@ -5025,9 +5188,19 @@ fn s4_state_package_reads_back_through_i2() {
 }
 
 mod call_site;
+mod call_site_owners;
+mod clause_paths;
+mod clause_set;
 mod frame;
 mod frame_replay;
+mod invocation_parameters;
+mod layers;
+mod link_replay;
+mod model_gate;
 mod pre_call_invocation;
+mod receiver_frames;
+mod refinement;
 mod state_clause_replay;
+mod temporal;
 mod witness;
 mod witness_member;

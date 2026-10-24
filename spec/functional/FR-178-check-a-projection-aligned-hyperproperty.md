@@ -51,7 +51,10 @@ clause is proved.
 ## Outputs
 
 - FR-126's `ModelCheckOutcome`, with `Violated` carrying a
-  `HyperCounterexample` of kind `Projected` (FR-183).
+  `HyperCounterexample` of kind `Projected` (FR-183): one finite trace per
+  variable, every trace with the same number of visible steps and the total
+  lengths free. The total lengths are equal when every trace takes the same
+  number of skipped steps, and differ otherwise.
 - From the evaluator: the three-valued value of a body over a joint
   projected prefix.
 
@@ -83,7 +86,7 @@ clause is proved.
   counterexample being the first path in breadth-first order to it, split
   into its components' steps with each step marked skipped or visible.
 - Exploration that completes with no rejecting state SHALL return
-  `Holds{Exhaustive}`, or `Holds{Reduced{…}}` under FR-174.
+  `Holds{Exhaustive}`; FR-174 names no reduction for an HP-6 item.
 - `max_depth` SHALL count moves of either kind; `max_states` product states;
   `max_transitions` moves.
 
@@ -97,9 +100,46 @@ clause is proved.
   variable, the first such product state in breadth-first order; between it
   and a rejecting monitor state, the first in that order SHALL be returned
   (ADR-023 HV-8).
+- The paths of an `Undefined` counterexample SHALL be unmarked and SHALL
+  hold every step the path took, skipped steps included, so their total
+  lengths may differ. Its `trace_position` and `where` position SHALL be the
+  projected position: the number of visible steps of the path, not its moves.
 - If `μ_U` evaluates refused or incomplete at a reachable joint visible
   step, and no refuting evidence comes first, then the engine SHALL return
   `Undecided(MatchUndetermined)` (ADR-023 HV-4).
+- If a component's contract conjunction evaluates `Undefined` at a product
+  state, then the engine SHALL return `Violated` with an `Undefined`
+  counterexample naming that component alone, ending at the state's projected position.
+- If a component's contract conjunction is refused or incomplete at a
+  product state, and no refuting evidence comes first, then the engine SHALL
+  return `Undecided(UndecidedSuccessor)`.
+
+### Ranking
+
+- A rejecting monitor state, a joint position whose letter has an atom with
+  no value, and a visible move on which `μ_U` has no value SHALL each be a
+  product state of their own, with no move following it. The engine SHALL
+  return the first of them in FR-101's breadth-first order: the fewest
+  moves of either kind, and at one depth the one discovered first. A
+  rejecting state and an undefined evaluation at one depth are therefore
+  decided by discovery order, whichever kind comes first.
+- A refused or incomplete `μ_U` is no product state: it SHALL rank at the
+  depth of the state its move would have entered, after any refuting state
+  at that depth.
+- An undefined contract conjunction is no product state: it SHALL rank as a
+  refuting finding by its state's depth in moves, in that state's discovery
+  order; the depth ranks it and is not its position.
+- A refused or incomplete contract conjunction SHALL rank at its state's
+  depth, after any refuting finding at that depth.
+
+### Vacuity
+
+- A projected clause SHALL NOT settle `VacuousMatch` (ADR-023 HM-7). Under
+  ADR-023 PA-3 the tuple of initial states with its empty projected prefix
+  counts as matched, so the matched set is never empty, and a `μ_U` that no
+  joint visible step satisfies leaves the item deciding on the position-0
+  prefix alone. A subject with no initial state still settles
+  `NoInitialState`, and a clause with no instance `NoInstance`.
 
 ### Three-valued prefix evaluation
 
@@ -113,11 +153,14 @@ clause is proved.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-178-AC-1 | ADR-023 §13's vault (`busy`, `mix`, `step` setting `l = i` and `busy` to `h = 1`), with `μ` matching the arguments of two `step` steps: the lockstep clause (HP-2) returns `Violated`; with `align skip { V::Vault::mix }` (HP-6) it returns `Holds{Exhaustive}`. | Test (TC-603) |
-| FR-178-AC-2 | §13's vault with the leaky post clause `l = (i + h) mod 2` and `align skip { V::Vault::mix }` returns `Violated` with a `Projected` counterexample whose traces have equal visible step counts, unequal total lengths, no loop entry, and each step marked skipped or visible. | Test (TC-603) |
+| FR-178-AC-2 | §13's vault with the leaky post clause `l = (i + h) mod 2`, its initial snapshots `(h, l, busy)` = `(0, 0, false)` and the secret-1 run caught mid-operation, `(1, 0, true)`, and `align skip { V::Vault::mix }` returns `Violated` with a `Projected` counterexample at `trace_position` 1 whose traces have one visible step each, total lengths 1 and 2 (the mid-operation run takes a skipped `mix` first), no loop entry, and each step marked skipped or visible. Started idle, `(1, 0, false)`, the same clause is refuted by one visible step of each trace, total lengths 1 and 1. | Test (TC-603) |
 | FR-178-AC-3 | Three-valued evaluation of `always holds(v.l @ a = v.l @ b)` over a joint projected prefix whose last projected position has unequal `l` returns `false`; over one with equal `l` throughout it returns no `false`. | Test (TC-603) |
-| FR-178-AC-4 | AC-2's request with `max_depth` 1 returns `BoundReached{depth: 1}`, counting a skip move as one move. Running AC-2's request twice gives byte-equal counterexamples. | Test (TC-603) |
+| FR-178-AC-4 | AC-2's mid-operation request with `max_depth` 1 returns `BoundReached{depth: 1}`, since its rejecting state is two moves away and a skip move counts as one move; with `max_depth` 2 it finds the counterexample. Started idle, `max_depth` 1 finds the counterexample and `max_depth` 0 returns `BoundReached{depth: 0}`. Running AC-2's request twice gives byte-equal counterexamples. | Test (TC-603) |
 | FR-178-AC-5 | AC-1's `align skip` clause with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint visible step whose `a` step is `step(0)`, returns `Violated` with an `Undefined` counterexample, one unmarked path per variable ending at the first such step in breadth-first order, cause `division-by-zero`. | Test (TC-603) |
 | FR-178-AC-6 | AC-1's `align skip` clause with a `match` conjunct that calls a function whose evaluation exhausts its meter at the first joint visible step (incomplete) returns `Undecided(MatchUndetermined)` and never `Holds`. | Test (TC-603) |
+| FR-178-AC-7 | AC-1's `align skip` clause with the added `match` conjunct `false`, which no joint visible step satisfies, returns `Holds{Exhaustive}` and never `Undecided(VacuousMatch)`. | Test (TC-603) |
+| FR-178-AC-8 | Over idle starts with the body `always holds(v.l @ a = 0)` and AC-5's `match` conjunct, `step(1)` rejects and `step(0)` is the visible move on which the conjunct has no value; `step(0)` is canonically first, so the item returns the `Undefined` counterexample. Over idle starts with `l = 1`, the body `always holds(v.l @ a = 1)` and a `match` conjunct with no value where `a`'s input is 1, `step(0)` rejects and is canonically first, so the item returns the `Projected` counterexample. | Test (TC-603) |
+| FR-178-AC-9 | AC-5's request with both runs starting mid-operation, `(1, 0, true)`, returns an `Undefined` counterexample whose unmarked paths each hold a skipped `mix` and the visible `step(0)`, with `trace_position` and the evaluation position 1, the number of visible steps, not the moves that reach it. | Test (TC-603) |
 
 ## Dependencies
 

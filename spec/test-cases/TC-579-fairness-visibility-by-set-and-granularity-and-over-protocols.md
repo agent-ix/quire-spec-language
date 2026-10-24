@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-579", "FR-157-AC-n")]`.
 
 - Step 1: ample sets `{arm}` then `{arm2}`; `Violated` with stem `arm, arm2` and loop `toggle, toggle`; unreduced `Violated` with empty stem; both replay.
 - Step 2: AC-1's visibility and verdict.
-- Step 3: `fork`, `send(S)`, `attempt(D)` visible and `duplicate`, `lose`, `join`, `finish` invisible; `Holds`, settling `Proved{Reduced{[PartialOrder{BreadthFirstRevisit}]}}`; `Violated` with `fork`, `send(S)`, loop `duplicate`, `lose`; each equal to the unreduced verdict.
+- Step 3: `fork`, `send(S)`, `attempt(D)` visible and `duplicate`, `lose`, `join`, `finish` invisible; `Holds`, settling `Proved{Reduced{[PartialOrder{BreadthFirstRevisit}]}, Uncertified}`; `Violated` with `fork`, `send(S)`, loop `duplicate`, `lose`; each equal to the unreduced verdict.

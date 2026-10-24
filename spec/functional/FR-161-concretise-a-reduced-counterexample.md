@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-151
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-152
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-153
@@ -77,9 +79,18 @@ permutation or reduction in it.
 - **Already concrete.** Under partial-order reduction or a state constraint
   alone, the engine SHALL emit the path unchanged.
 - **Length and limits.** The counterexample's length SHALL be its number of
-  concrete transitions. Building it SHALL count against the run's
-  `max_transitions` and meter; reaching either SHALL settle V-7. No length is
-  capped otherwise.
+  concrete transitions. Each concrete step the engine builds, in the stem and
+  in every pass of the loop, SHALL count one transition against the run's
+  `max_transitions`, on the same count the exploration's transitions add to,
+  and each application of a permutation to a transition identity or to a
+  state SHALL charge one `work_units` to the run's meter (FR-152 "The run's
+  meter"), so a concrete step charges two. Reaching `max_transitions` SHALL
+  return `Stopped{cause: ResourceExhausted, limit: Some({MaxTransitions,
+  value})}`, and the meter's denial `Stopped{cause: ResourceExhausted, limit:
+  Some({EvaluationMeter, value})}` (V-7), each with no counterexample. A path
+  the engine emits unchanged (partial-order reduction or a state constraint
+  alone) is not rebuilt, counts no transition and charges nothing. No length
+  is capped otherwise.
 - **Replay.** FR-128 SHALL replay a concretised counterexample unchanged,
   including the fairness re-check of every `each` identity (ADR-019 SR-8).
 - **Determinism.** The concrete counterexample SHALL be a function of the
@@ -90,9 +101,10 @@ permutation or reduction in it.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-161-AC-1 | ADR-021 §7.1 under `fair weak whole attemptUpdate`, instance `c = a`: the reduced loop `(0,0,0) -upd(b)-> (0,0,1)` (`π = (b c)`), `-upd(c)-> (0,0,2)`, `-upd(c)-> (0,0,0)` concretises to `upd(b)`, `upd(b)`, `upd(b)` through `(0,1,0)`, `(0,2,0)`, `(0,0,0)`, closing after one pass, and replays through FR-128 to `reproduced-with-evaluated-witness`. | Test (TC-585) |
-| FR-161-AC-2 | A loop that needs two passes: the `Token` unit has object type `Holder` with `tok: Boolean`, population `holders` annotated `symmetric`, universe `{a, b}`, one class `[a, b]`, initial state `a.tok` false and `b.tok` true, and `pass()` (frame `modifies tok`, pre `self.tok`, post `not self.tok and (forall o in holders: o != self implies o.tok)`). The claim `eventually holds(forall x in holders: x.tok)` has no `over` parameter. The quotient has one state with a `pass(b)` self-loop whose `π` is `(a b)`. The concretised lasso has an empty stem and the loop `pass(b)`, `pass(a)`, two passes of the quotient loop, and it replays. | Test (TC-585) |
+| FR-161-AC-2 | A loop that needs two passes: the `Token` unit (model alias `M`) has object type `Holder` with `tok: Boolean`, population `holders` annotated `symmetric`, universe `{a, b}`, one class `[a, b]`, two initial states in this order, `a.tok` false with `b.tok` true and `a.tok` true with `b.tok` false (their set is closed under `(a b)`, ADR-021 SYM-4), and `pass()` (frame `modifies tok`, pre `self.tok`, post `not self.tok and forall(o in M::holders: o != self implies o.tok)`, FR-391). The claim is `eventually holds(w = w)` over a watcher `w` of a second, unreduced population `watchers` (a temporal clause always names an `over` parameter, QSpec FR-370-AC-13), so it runs under the full group of `holders`; the run supplies the atom's letter, true exactly in the states where every `holders` object has `tok` true, and the counterexample replays under the same letter. The quotient has one state with a `pass(b)` self-loop whose `π` is `(a b)`. The concretised lasso starts at the first initial state, has an empty stem and the loop `pass(b)`, `pass(a)`, two passes of the quotient loop, and it replays. With only the first initial state, which is not closed under `(a b)`, FR-151's pre-check settles the item `inconclusive`, `SymmetryBroken{holders, InitialStatesNotClosed{0, (a b)}}` with no state expanded (FR-151-AC-3, TC-568). | Test (TC-585) |
 | FR-161-AC-3 | ADR-021 §7.1's `each` refutation (`eventually always holds(c.versionNumber != 2)` under `fair weak each attemptUpdate`, instance `c = a`) concretises to a loop from `(0,0,0)` back to `(0,0,0)` that takes `upd(a)`, `upd(b)` and `upd(c)` and passes `a.versionNumber = 2`. FR-128 replays it, confirms each `each` identity taken in the loop, and settles `reproduced-with-evaluated-witness`. | Test (TC-586) |
 | FR-161-AC-4 | FR-156-AC-3's partial-order counterexample and FR-158-AC-1's constrained counterexample are emitted unchanged and replay. No concretised counterexample in AC-1 to AC-4 holds a canonical state, a permutation or a reduction name. Each one decodes as the same `TemporalCounterexample` type as an unreduced run's. Concretising AC-1 twice gives byte-equal counterexamples. | Test (TC-586) |
+| FR-161-AC-5 | Concretising AC-1's loop counts exactly 3 transitions against `max_transitions` and charges exactly 6 `work_units`; concretising AC-2's lasso counts exactly 2 and charges exactly 4; emitting AC-4's partial-order and constrained counterexamples counts and charges nothing. With `M` the least `max_transitions` under which AC-2's run returns `Violated`, the same run under `M - 1` returns `Stopped{cause: ResourceExhausted, limit: Some({MaxTransitions, M - 1})}` with no counterexample, although its exploration completes under `M - 2`: the 2 concrete steps count. | Test (TC-586) |
 
 ## Dependencies
 

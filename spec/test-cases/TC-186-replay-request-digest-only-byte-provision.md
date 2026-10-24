@@ -29,7 +29,7 @@ constructor that admits a request whose package reference names a digest
 with no matching byte-provision entry, silently deferring the gap to
 whatever consumes the request later (#243's executor) instead of refusing
 at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7,
-FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
+FR-071-AC-9, FR-071-AC-10, FR-071-AC-11, FR-071-AC-13.
 
 ## Test Procedure
 
@@ -69,6 +69,9 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
    allocation failure of 4096 requested bytes from intake's read of such an
    entry. Decode entries holding `18446744073709551616` at `/package/count`
    and `0.1000000000000000000001` at `/a~1b/0`.
+10. Round-trip a request whose package reference and `dependencies` entry carry
+    `refinement_internals`, one with the member absent, and ones with the
+    values `{}`, `null` and `7`.
 
 ## Expected Results
 
@@ -100,3 +103,4 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
   entries refuse `noncanonical_wire`, `inexact-integer` at
   `/package/count` and `inexact-number` at `/a~1b/0`, each keeping its
   `document_pointer`.
+- Step 10: each member round-trips exactly, absent stays absent, and no value is refused at decode.

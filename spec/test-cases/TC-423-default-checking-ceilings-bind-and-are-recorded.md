@@ -59,26 +59,3 @@ Scope: NFR-011-M-1 to NFR-011-M-4.
 - Step 5: the long-name package stops with a limit of kind work budget,
   bound 16777216; the
   short-name package is admitted.
-
-## Status
-
-Backed:
-
-- Steps 1 and 2: `a_text_reachable_cluster_refuses_on_the_default_node_ceiling`.
-- Step 3: `a_checked_result_records_its_effective_limits` and
-  `new_keeps_the_default_byte_and_work_ceilings`.
-- Step 5: `long_leaf_paths_refuse_on_the_default_work_budget`.
-
-These are in `qsl-semantics/src/check/lowering/tests/leaves.rs`.
-
-- Step 4: `preimage_bytes_bind_before_the_work_budget`
-  (`qsl-semantics/src/check/lowering/tests/rows.rs`).
-
-`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
-`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
-stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
-cause's code is always `stage_limit_exceeded` and its cause the limit kind's
-(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-The tests assert `stage_limit_exceeded` with `node-count-exceeded` (step 1)
-and `work-budget-exceeded` (step 5) in `check/lowering/tests/leaves.rs`, and
-with `input-bytes-exceeded` (step 4) in `check/lowering/tests/rows.rs`.

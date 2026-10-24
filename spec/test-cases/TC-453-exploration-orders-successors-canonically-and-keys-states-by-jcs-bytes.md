@@ -79,7 +79,3 @@ public entries; `explore` is `pub(crate)` (FR-101).
   instead of aborting the process.
 
 Tag each test `#[trace("TC-453", "FR-101-AC-n")]` with its AC.
-
-## Status
-
-✅ Implemented; passes locally.

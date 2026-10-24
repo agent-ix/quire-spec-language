@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-339
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-467
+    type: references
 ---
 # FR-111: Link a complete-V1 definition bundle over a caller-supplied definition catalog
 
@@ -53,6 +55,11 @@ no stage of the S1 to S4 spine calls it.
   and the `PackageLimits` it was checked against.
 - `BundleRefusal`: the `Code`, the `ResolutionCause`, the typed
   `PackageError` and the index of the root whose closure refused.
+
+A refusal of the whole link
+(the root list's ceiling, the closed definitions' bytes, the capabilities,
+the facets, the identity) carries no root index: `BundleRefusal::root` is
+`None`.
 
 ## Behavior
 
@@ -144,27 +151,10 @@ names the field, its bound, the count reached and its setting
 ## Dependencies
 
 - QSpec FR-131 (AC-1 to AC-3), FR-339 (AC-3) and `native-diagnostics.md`.
-- QSpec FR-133: an extension definition's grammar and typed-node schema
-  members are QSpec's definition format (STD-146).
+- QSpec FR-133 and FR-467: an extension definition's grammar schema and
+  typed-node schema members are QSpec's definition format (FR-467 "Members").
+  The catalog carries them as part of the definition's bytes, so they enter
+  the bundle identity with the rest of the definition (AC-5), and FR-354 reads
+  them from the linked bundle.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §6.1, §6.2 (`complete::package` → layer-3 `library`).
 - [FR-087](FR-087-typestate-and-cross-package-node-key.md), whose AC-7 moves this capability here when `ResolvedSourcePackage` retires.
-
-## Status
-
-Specified by the 2026-09-26 ruling on QSL-234. Implemented:
-`library::bundle` (`qsl-semantics/src/library/bundle.rs`) holds
-`link_bundle` and the closure, facet, capability, limit and identity code
-moved from the retired `complete::resolve_source_package`. Its tests
-(`library::bundle_tests`, TC-491) carry the tags of the scenarios they took
-over (QSpec FR-131-AC-1 to AC-3, FR-339-AC-3), so those criteria stayed
-backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
-(the root list's ceiling, the closed definitions' bytes, the capabilities,
-the facets, the identity) carries no root index: `BundleRefusal::root` is
-`None`.
-
-Roots and edges resolve by definition identity alone; a `DefinitionRef`
-is `{authority, identity}`.
-
-QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
-typed-node schema member of an extension definition yet; FR-354 reads them
-once QSpec does.

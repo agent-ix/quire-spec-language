@@ -18,9 +18,10 @@
 //! admitted map and checks only what its own shape needs: a key maps once,
 //! to at least one region.
 
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-use std::fmt;
+use alloc::collections::btree_map::Entry;
+use alloc::collections::BTreeMap;
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::fmt;
 
 use quire_exact::{Location, Origin, Role};
 
@@ -181,20 +182,20 @@ impl PartialEq for SourceRegion {
 
 impl Eq for SourceRegion {}
 
-impl std::hash::Hash for SourceRegion {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for SourceRegion {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.key().hash(state);
     }
 }
 
 impl PartialOrd for SourceRegion {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for SourceRegion {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.key().cmp(&other.key())
     }
 }
@@ -338,6 +339,7 @@ impl PackageSourceMap {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{vec, vec::Vec};
     use ix_trace_rs::trace;
     use quire_exact::NodeKey;
 
@@ -376,7 +378,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(base, relabelled);
-        assert_eq!(base.cmp(&relabelled), std::cmp::Ordering::Equal);
+        assert_eq!(base.cmp(&relabelled), core::cmp::Ordering::Equal);
         assert_ne!(base, region(2, 4, 9));
         assert_ne!(base, region(1, 5, 9));
         assert_ne!(base, region(1, 4, 8));

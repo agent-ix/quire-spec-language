@@ -67,8 +67,8 @@ constraint.
 ### The filter
 
 - The engine SHALL compute `fair(C)` over a set of product states `C` and
-  the fairness set: decompose the subgraph induced by `C` into SCCs in
-  discovery order, and test each non-trivial SCC `S` (one with an edge) for
+  the fairness set: decompose the subgraph induced by `C` into SCCs
+  ordered by least vertex index, and test each non-trivial SCC `S` (one with an edge) for
   (a) a state of every acceptance set of the automaton, (b) for every weak
   constraint, an edge in `S` that takes it or a state of `S` where it is
   disabled, and (c) for every strong constraint, an edge in `S` that takes
@@ -80,7 +80,7 @@ constraint.
   of `B` is enabled and recurse with `fair(S \ R)`.
 - The engine SHALL run the second phase as `fair` over every retained
   product state, and SHALL take as the passing component the first passing
-  SCC in discovery order, depth-first through the refinement (ADR-019
+  SCC in least-vertex order, depth-first through the refinement (ADR-019
   FS-6).
 - The engine SHALL check its `Cancel` handle (ADR-029 FR-276) before each
   SCC decomposition of the second phase, and SHALL return
@@ -101,8 +101,9 @@ constraint.
   none does.
 - With `Holds`, the engine SHALL return FR-126's `ComponentCertificate`,
   whose component that fails (c) carries `UnfairStrong{constraints, sub}`:
-  every member of `B`, and the sub-components of `fair(S \ R)`, each with
-  its own witness (ADR-019 AM-7), which FR-339's core checker verifies;
+  every member of `B`, ascending by resolved constraint index, and the
+  sub-components of `fair(S \ R)`, each with its own witness (ADR-019 AM-7),
+  listed by FR-126's certificate order, which FR-339's core checker verifies;
   the engine and the checker both remove the states where any listed
   constraint is enabled.
 

@@ -53,7 +53,3 @@ public entries; `explore` and `sample` are `pub(crate)` (FR-101).
 - Step 6: an `Outcome` from exploration.
 
 Tag each test `#[trace("TC-455", "FR-101-AC-n")]` with its AC.
-
-## Status
-
-✅ Implemented; passes locally.

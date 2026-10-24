@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020/024: shared Serde object constraints for native artifact records.
 
+use alloc::vec::Vec;
+use core::fmt;
 use serde::{de, Deserialize, Deserializer};
-use std::fmt;
 
 /// Records stay objects even when Serde buffers them inside a tagged variant.
 /// Its default struct decoder also accepts positional arrays.
 pub fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     decoder: D,
 ) -> Result<T, D::Error> {
-    struct Object<T>(std::marker::PhantomData<T>);
+    struct Object<T>(core::marker::PhantomData<T>);
     impl<'de, T: Deserialize<'de>> de::Visitor<'de> for Object<T> {
         type Value = T;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -19,7 +20,7 @@ pub fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
             T::deserialize(de::value::MapAccessDeserializer::new(map))
         }
     }
-    decoder.deserialize_map(Object(std::marker::PhantomData))
+    decoder.deserialize_map(Object(core::marker::PhantomData))
 }
 
 /// Require object syntax when decoding a record nested in a collection or envelope.

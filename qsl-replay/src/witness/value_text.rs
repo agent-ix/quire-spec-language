@@ -475,6 +475,22 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             vec![],
         ),
         WitnessValue::Text(text) => object(vec![tag("text"), ("value", Task::Str(text))], vec![]),
+        // FR-056's closed wire objects, the one spelling of these inputs.
+        WitnessValue::Uuid(text) => object(
+            vec![("kind", Task::Str("uuid")), ("text", Task::Str(text))],
+            vec![],
+        ),
+        WitnessValue::String(text) => object(
+            vec![("kind", Task::Str("string")), ("text", Task::Str(text))],
+            vec![],
+        ),
+        WitnessValue::Timestamp(text) => object(
+            vec![
+                ("kind", Task::Str("timestamp")),
+                ("nanoseconds", Task::Str(text)),
+            ],
+            vec![],
+        ),
         WitnessValue::Rational {
             numerator,
             denominator,
@@ -653,8 +669,22 @@ impl WitnessValue {
         })
     }
 
+    /// The value a plugin's FR-331 wire writes as the JSON value `value`
+    /// (FR-290 "Assignments"): the FR-070 decode of the value's RFC 8785
+    /// encoding. The wire frame need not be written in canonical form, so
+    /// the encoding is canonicalised here rather than compared.
+    pub(crate) fn from_wire_json(value: &serde_json::Value) -> Result<Self, EntryFault> {
+        let written = serde_json::to_vec(value).map_err(|_| EntryFault::Json)?;
+        let document = read(&written, u64::MAX).map_err(|_| EntryFault::Json)?;
+        let canonical =
+            to_vec(&document.root(), Limits::new(u64::MAX)).map_err(|_| EntryFault::Json)?;
+        let value = build(document.root())?;
+        check_collections(&canonical)?;
+        Ok(value)
+    }
+
     /// The value text `escaped`, read as one value (FR-070 "Decode").
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub(crate) fn from_value_text(escaped: &str) -> Result<Self, EntryFault> {
         let bytes = unescape(escaped)?;
         let document = read(&bytes, u64::MAX).map_err(|_| EntryFault::Json)?;
@@ -1088,9 +1118,49 @@ fn build(root: NodeRef<'_>) -> Result<WitnessValue, EntryFault> {
     }
 }
 
+/// FR-056's closed native wire object at `node`: `{"kind":"uuid","text":..}`,
+/// `{"kind":"string","text":..}` or `{"kind":"timestamp","nanoseconds":..}`. The form is read; the payload
+/// text is admitted when the executor converts the argument.
+#[ix_trace_rs::string_edge]
+fn visit_native<'d>(
+    node: NodeRef<'d>,
+    mut members: impl Iterator<Item = (&'d str, NodeRef<'d>)>,
+    values: &mut Vec<WitnessValue>,
+) -> Result<(), EntryFault> {
+    let kind = members
+        .find(|(name, _)| *name == "kind")
+        .map(|(_, kind)| kind)
+        .ok_or(EntryFault::Shape)?;
+    let Node::String(kind) = kind.node() else {
+        return Err(EntryFault::Shape);
+    };
+    match kind {
+        "uuid" => {
+            let members = exact_object(node, &["kind", "text"])?;
+            values.push(WitnessValue::Uuid(
+                string_member(&members, "text")?.to_owned(),
+            ));
+        }
+        "string" => {
+            let members = exact_object(node, &["kind", "text"])?;
+            values.push(WitnessValue::String(
+                string_member(&members, "text")?.to_owned(),
+            ));
+        }
+        "timestamp" => {
+            let members = exact_object(node, &["kind", "nanoseconds"])?;
+            values.push(WitnessValue::Timestamp(
+                string_member(&members, "nanoseconds")?.to_owned(),
+            ));
+        }
+        _ => return Err(EntryFault::Shape),
+    }
+    Ok(())
+}
+
 /// Read the form at `node`: a leaf is pushed as a value, a composite pushes
 /// its parts' visits and then the step that assembles them.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn visit<'d>(
     node: NodeRef<'d>,
     pending: &mut Vec<Step<'d>>,
@@ -1099,6 +1169,11 @@ fn visit<'d>(
     let Node::Object(first) = node.node() else {
         return Err(EntryFault::Shape);
     };
+    // FR-056's closed UUID and Timestamp wire objects carry a `kind`, not a
+    // `type`; they are leaves.
+    if !first.clone().any(|(name, _)| name == "type") {
+        return visit_native(node, first.clone(), values);
+    }
     let tag = first
         .clone()
         .find(|(name, _)| *name == "type")
@@ -1277,7 +1352,7 @@ fn visit<'d>(
 
 /// Whether the object `slot` is a `{"type":"null"}` slot rather than a value.
 /// A `null`-tagged object with any other member is a shape fault.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_null_slot(slot: NodeRef<'_>) -> Result<bool, EntryFault> {
     let Some(tag) = slot.get("type") else {
         return Ok(false);

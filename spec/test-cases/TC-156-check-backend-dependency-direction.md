@@ -11,19 +11,20 @@ relationships:
 ## Description
 
 Verify that `arch-lint direction` classifies resolved packages by repository,
-reports every FB-05 edge into QSL other than CG's normal dependency, reports
+reports every FB-05 edge into QSL other than CG's normal dependency on
+`qsl-replay`, reports
 every FB-11 cycle over the combined normal+dev edge graph exactly once, and
 reports no IR → QSL edge and no QSL ⇄ IR cycle when run against
 quire-contract-ir's real current-head `cargo metadata` output, that resolving
 QSL's own manifest classifies its real edge on `quire-contract-model` as
 QSL → IR, and that the shared leaves `quire-exact` and
 `quire-semantic-value` classify as no ecosystem repository. Scope: FR-059-AC-1
-through FR-059-AC-6, FR-059-AC-8 and FR-059-AC-9.
+through FR-059-AC-6 and FR-059-AC-8 through FR-059-AC-11.
 
 ## Test Procedure
 
 1. Build a synthetic four-repository graph with only CG's normal dependency on
-   QSL and no cycle. Run the check.
+   `qsl-replay` and no cycle. Run the check.
 2. Build a graph with a normal edge from IR into QSL, then a separate graph
    with a dev edge from RT into QSL. Run the check on each.
 3. Build a graph with a dev edge from CG into QSL (no normal edge). Run the
@@ -46,6 +47,16 @@ through FR-059-AC-6, FR-059-AC-8 and FR-059-AC-9.
    `quire-semantic-value`, sourced from the `agent-ix/quire-semantic-value` git
    url, and on `qsl-semantics` and `qsl-eval`, sourced from the QSL
    repository's git url, and run the check on the resulting edges.
+9. Build a graph in which CG has normal dependencies on `qsl-replay` and
+   `qsl-eval`, sourced from the QSL repository's git url, on
+   `quire-semantic-value`, sourced from the `agent-ix/quire-semantic-value`
+   git url, and on `quire-eval` and `quire-eval-corpus`, sourced from the
+   `agent-ix/quire-eval` git url. Run the check, then run it on the same
+   graph without `qsl-eval`.
+10. Run `arch-lint direction` against real `cargo metadata` output for a
+    local checkout of quire-contract-codegen's current head, and list CG's
+    normal dependencies sourced from the QSL repository,
+    `agent-ix/quire-semantic-value` or `agent-ix/quire-eval`.
 
 ## Expected Results
 
@@ -73,6 +84,15 @@ through FR-059-AC-6, FR-059-AC-8 and FR-059-AC-9.
 - Step 8: the edges are RT → QSL via `qsl-eval` and via `qsl-semantics`, and
   the FB-05 report names exactly those two; the `quire-semantic-value`
   dependency contributes no edge.
+- Step 9: the FB-05 report names exactly the CG → QSL edge via `qsl-eval`;
+  the `qsl-replay`, `quire-semantic-value`, `quire-eval` and
+  `quire-eval-corpus` dependencies are not reported.
+  Without `qsl-eval`, the FB-05 report is empty (FR-059-AC-10).
+- Step 10: the listed dependencies are only `qsl-replay`,
+  `quire-semantic-value` and crates of `agent-ix/quire-eval`; every CG → QSL
+  normal edge is via `qsl-replay`, and the FB-05 report names no CG edge
+  (FR-059-AC-11). This output is captured for the
+  PR body as real evidence, as step 6's is.
 
 ## Metadata
 

@@ -23,9 +23,11 @@ use quire_canonical::FixedShape;
 use serde::Serialize;
 
 use qsl_forms::StateClauseKind;
+use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
@@ -70,6 +72,11 @@ pub enum Member {
         declaration: NodeKey,
         /// The end's own identifier.
         name: Identifier,
+        /// The `bounded_domain`/`model_population` node of the population a
+        /// reachability over this end walks, when the unit bounds that
+        /// population (FR-365 "The population link", FR-380). Absent from
+        /// the wire form, not `null`, when it is `None`.
+        population: Option<NodeKey>,
     },
     /// A type's named operation.
     Operation {
@@ -102,11 +109,32 @@ pub enum Member {
         /// unrepresentable, since [`StateClauseKind`] is itself a closed enum.
         clause: StateClauseKind,
     },
+    /// An interval-capable temporal operator's interval (QSpec FR-370):
+    /// `{kind: "temporal_interval", interval}`, with `interval` `null` for
+    /// an unbounded operator. Carries no `declaration`.
+    TemporalInterval {
+        /// The checked interval; `None` for an unbounded operator.
+        interval: Option<TemporalInterval>,
+    },
+    /// One member of a clause's resolved fairness set (QSpec FR-370):
+    /// `{kind: "fairness", fairness_kind, granularity, declaration, name}`,
+    /// always in its resolved form, so an unmarked constraint and its
+    /// written `weak whole` form are one member (ADR-018 FA-6).
+    Fairness {
+        /// `weak` or `strong`.
+        kind: FairnessKind,
+        /// `whole` or `each`.
+        granularity: FairnessGranularity,
+        /// The operation's declaring `model`/`object_type` node.
+        declaration: NodeKey,
+        /// The operation's own identifier.
+        name: Identifier,
+    },
 }
 
 impl Member {
-    /// The declaring node this member names, or `None` for a
-    /// [`Self::ProfileOperator`], which names none.
+    /// The declaring node this member names, or `None` for a member kind
+    /// that names none.
     pub fn declaration(&self) -> Option<NodeKey> {
         match self {
             Self::Field { declaration, .. }
@@ -114,8 +142,27 @@ impl Member {
             | Self::Element { declaration }
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
-            | Self::TypeArgument { declaration } => Some(*declaration),
-            Self::ProfileOperator { .. } | Self::StateClause { .. } => None,
+            | Self::TypeArgument { declaration }
+            | Self::Fairness { declaration, .. } => Some(*declaration),
+            Self::ProfileOperator { .. }
+            | Self::StateClause { .. }
+            | Self::TemporalInterval { .. } => None,
+        }
+    }
+
+    /// The population node this member links, when it links one.
+    pub fn population(&self) -> Option<NodeKey> {
+        match self {
+            Self::RelationshipEnd { population, .. } => *population,
+            Self::Field { .. }
+            | Self::Position { .. }
+            | Self::Element { .. }
+            | Self::Operation { .. }
+            | Self::TypeArgument { .. }
+            | Self::ProfileOperator { .. }
+            | Self::StateClause { .. }
+            | Self::TemporalInterval { .. }
+            | Self::Fairness { .. } => None,
         }
     }
 
@@ -154,9 +201,14 @@ impl Member {
             Self::Element { declaration } => MemberWire::Element {
                 declaration: declaration_wire(declaration),
             },
-            Self::RelationshipEnd { declaration, name } => MemberWire::RelationshipEnd {
+            Self::RelationshipEnd {
+                declaration,
+                name,
+                population,
+            } => MemberWire::RelationshipEnd {
                 declaration: declaration_wire(declaration),
                 name: name.as_str(),
+                population: population.as_ref().map(declaration_wire),
             },
             Self::Operation { declaration, name } => MemberWire::Operation {
                 declaration: declaration_wire(declaration),
@@ -171,8 +223,42 @@ impl Member {
             Self::StateClause { clause } => MemberWire::StateClause {
                 clause: state_clause_spelling(*clause),
             },
+            Self::TemporalInterval { interval } => MemberWire::TemporalInterval {
+                interval: interval.map(|interval| IntervalWire {
+                    lower: interval.lower().to_string(),
+                    upper: match interval.upper() {
+                        TemporalUpper::Finite(upper) => Some(upper.to_string()),
+                        TemporalUpper::Open => None,
+                    },
+                }),
+            },
+            Self::Fairness {
+                kind,
+                granularity,
+                declaration,
+                name,
+            } => MemberWire::Fairness {
+                fairness_kind: match kind {
+                    FairnessKind::Weak => "weak",
+                    FairnessKind::Strong => "strong",
+                },
+                granularity: match granularity {
+                    FairnessGranularity::Whole => "whole",
+                    FairnessGranularity::Each => "each",
+                },
+                declaration: declaration_wire(declaration),
+                name: name.as_str(),
+            },
         }
     }
+}
+
+/// A `temporal_interval` member's integer-form `interval` (QSpec FR-370):
+/// both bounds decimal strings, `upper` `null` for an `[a,*]` operator.
+#[derive(Serialize, FixedShape)]
+struct IntervalWire {
+    lower: String,
+    upper: Option<String>,
 }
 
 /// The `OperationMember` wire union, tagged by `kind`.
@@ -193,6 +279,8 @@ enum MemberWire<'a> {
     RelationshipEnd {
         declaration: DeclarationWire,
         name: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        population: Option<DeclarationWire>,
     },
     Operation {
         declaration: DeclarationWire,
@@ -206,6 +294,15 @@ enum MemberWire<'a> {
     },
     StateClause {
         clause: &'static str,
+    },
+    TemporalInterval {
+        interval: Option<IntervalWire>,
+    },
+    Fairness {
+        fairness_kind: &'static str,
+        granularity: &'static str,
+        declaration: DeclarationWire,
+        name: &'a str,
     },
 }
 
@@ -241,6 +338,8 @@ impl FixedShape for Member {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
+
     use super::*;
     use serde_json::{json, Value};
 
@@ -309,6 +408,7 @@ mod tests {
         let member = Member::RelationshipEnd {
             declaration: node(4),
             name: Identifier::new("source").unwrap(),
+            population: None,
         };
         let wire = to_wire(&member);
         assert_eq!(
@@ -319,6 +419,29 @@ mod tests {
                 "name": "source",
             })
         );
+    }
+
+    /// FR-365 "The population link": the key is present only when the member
+    /// links a population node, and then names it as `declaration` names its
+    /// node.
+    #[trace("TC-1054")]
+    #[test]
+    fn relationship_end_renders_its_population_link_only_when_it_has_one() {
+        let member = Member::RelationshipEnd {
+            declaration: node(4),
+            name: Identifier::new("source").unwrap(),
+            population: Some(node(9)),
+        };
+        assert_eq!(
+            to_wire(&member),
+            json!({
+                "kind": "relationship_end",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(4).to_string()},
+                "name": "source",
+                "population": {"domain": NODE_KEY_DOMAIN, "digest": node(9).to_string()},
+            })
+        );
+        assert_eq!(member.population(), Some(node(9)));
     }
 
     #[test]

@@ -29,7 +29,7 @@ Tag the tests `#[trace("TC-584", "FR-160-AC-n")]`.
 ## Expected Results
 
 - Step 1: each label, basis, value and category as FR-160-AC-1 states, with three records for the orbit.
-- Step 2: `Proved{Exhaustive}` with `Wide` in the method; `ConstraintReached`.
+- Step 2: `Proved{Exhaustive, Uncertified}` with `Wide` in the method; `ConstraintReached`.
 - Step 3: `inconclusive`, `unsettled`, `ReductionHorizon{max_depth: 2}`; `BoundReached{depth: 1}`.
 - Step 4: `refuted`, `decisive-counterexample`, no reduction named, byte-equal counterexamples.
 - Step 5: V-7, `incomplete`, `LimitReached{limit: max_states, value: 3, setting}`; never `failed`. Every `Reduced` proof in step 1 carries `Uncertified`.

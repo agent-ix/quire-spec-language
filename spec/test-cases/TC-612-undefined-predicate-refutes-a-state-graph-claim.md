@@ -18,11 +18,12 @@ Verify that a predicate of a state-graph claim that evaluates undefined at
 an explored node refutes the item with cause `UndefinedEvaluation`, in place
 of a witness, and that replay reproduces the undefined value at that node.
 
-Scope: FR-168-AC-5, FR-169-AC-6, FR-170-AC-5.
+Scope: FR-168-AC-5, FR-168-AC-11 to FR-168-AC-13, FR-169-AC-6, FR-170-AC-5,
+FR-170-AC-7.
 
 ## Test Procedure
 
-Fixture: ADR-022 §7.1's subject and `possible 2 / (2 - c.versionNumber) = 2`
+Fixture: ADR-022 §7.1's subject and `possible 2 div (2 - c.versionNumber) = 2`
 for `c = a`.
 
 1. Run the item through EN-1.
@@ -31,10 +32,22 @@ for `c = a`.
    and the same cause.
 3. Settle the outcome with step 2's first replay result.
 4. Run `always possible PDiv using v over (c: Config::ConfigVersion) from
-   (c.versionNumber >= 1) { 2 / (2 - c.versionNumber) = 2 }` for `c = a`;
+   (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`;
    replay its `Undefined` evidence, then the same evidence with
    `where.predicate` naming the `from` predicate `c.versionNumber >= 1`
    and the same cause.
+
+5. Run FR-168-AC-11's `ReachesTwo`, `CanReachTwo` and `ReachesThree` over the guarded
+   subject, settle each, and replay the guard evidence, then the same
+   evidence with `where.transition` naming another transition, then with its
+   stem's last step removed.
+6. Run FR-168-AC-12's `possible c.value = 3` over the `Counter` subject with
+   the undefined `terminal when` predicate, and replay its evidence.
+7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint
+   `Half`, and replay its evidence through a request that selects `Half`
+   and through one that selects no constraint; then with its stem's last
+   step removed; then with its cause changed; then in an envelope over the
+   unit declaring `Half` as an `invariant`, with that unit's `package_id`.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
 
@@ -49,3 +62,18 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
 - Step 4: `Undefined` with stem `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`
   and `where.predicate` the body; `reproduced-with-evaluated-witness`;
   then `inconclusive`, `Verdicts`.
+- Step 5: all three items `Undefined`, not `Trapped`, with stem
+  `(0) -upd(a)-> (1) -upd(a)-> (2)`, `where` the state key of `va = 2`, the
+  guard's locus and `upd(a)`'s transition identity; `va = 2` open
+  `UndecidedSuccessor`; each settles
+  `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`; the
+  replays settle `reproduced-with-evaluated-witness`, then `inconclusive`,
+  `Verdicts`, twice.
+- Step 6: `Undefined` at `value = 3` with the terminal predicate's locus and
+  neither a predicate nor a transition; the replay settles
+  `reproduced-with-evaluated-witness`.
+- Step 7: `Undefined` at `va = 2` with the constraint's locus; no
+  `ConstraintBoundary` node there; the item settles `refuted`,
+  `decisive-counterexample`, cause `UndefinedEvaluation`; both replays
+  settle `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`,
+  twice; refused `stale_dependency`/`content-mismatch` naming the locus.

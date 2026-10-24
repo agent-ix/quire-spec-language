@@ -2,7 +2,7 @@
 //! FR-010/026: the binary's bounded positional command grammar.
 
 use qsl_foundation::SourceIdentity;
-use quire_spec_language::lowering::{ProjectionTarget, UnknownProjectionTarget};
+use quire_spec_language::command::RunLimits;
 use quire_spec_language::Limits;
 use std::ffi::OsString;
 use std::path::Path;
@@ -24,26 +24,21 @@ pub(super) enum Command<'a> {
     },
     Run {
         path: &'a Path,
+        limits: RunLimits,
     },
     Compile {
         path: &'a Path,
-    },
-    Lower {
-        path: &'a Path,
-        target: ProjectionTarget,
     },
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] (limits for parse only) | quire-spec <run|compile|lower> <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
     #[error("unknown command: {0}")]
     UnknownCommand(&'a str),
-    #[error("{0}")]
-    UnknownTarget(#[from] UnknownProjectionTarget),
     #[error("usage: quire-spec {command} {operands}")]
     Arity {
         command: &'a str,
@@ -56,7 +51,7 @@ pub(super) enum UsageError<'a> {
 impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
     type Error = UsageError<'a>;
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn try_from(arguments: &'a [OsString]) -> Result<Self, Self::Error> {
         let (command, operands) = arguments.split_first().ok_or(UsageError::MissingCommand)?;
         let command = command
@@ -101,14 +96,19 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                 })
             }
             "run" => {
-                let [path] = operands else {
+                let Some((path, options)) = operands.split_first() else {
                     return Err(UsageError::Arity {
                         command,
-                        operands: "<request-file>",
+                        operands: "<request-file> [--request-bytes <n>] [--dependent-bytes <n>]",
                     });
                 };
+                let limits = run_limit_options(options).ok_or(UsageError::Arity {
+                    command,
+                    operands: "<request-file> [--request-bytes <n>] [--dependent-bytes <n>]",
+                })??;
                 Ok(Self::Run {
                     path: Path::new(path),
+                    limits,
                 })
             }
             "compile" => {
@@ -122,35 +122,42 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                     path: Path::new(path),
                 })
             }
-            "lower" => {
-                let (path, target) = match operands {
-                    [path] => (path, ProjectionTarget::BooleanOracleV1),
-                    [path, option, target] if option == "--target" => {
-                        let name = target.to_str().ok_or(UsageError::NonUtf8 {
-                            operand: "lowering target",
-                        })?;
-                        (path, name.parse()?)
-                    }
-                    _ => {
-                        return Err(UsageError::Arity {
-                            command,
-                            operands: "<request-file> [--target <target>]",
-                        })
-                    }
-                };
-                Ok(Self::Lower {
-                    path: Path::new(path),
-                    target,
-                })
-            }
             _ => Err(UsageError::UnknownCommand(command)),
         }
     }
 }
 
+/// FR-026's two caller-controlled `run` byte ceilings.
+#[ix_trace_rs::string_edge]
+fn run_limit_options(options: &[OsString]) -> Option<Result<RunLimits, UsageError<'_>>> {
+    let mut limits = RunLimits::default();
+    let mut seen_request = false;
+    let mut seen_dependent = false;
+    for pair in options.chunks(2) {
+        let [option, value] = pair else {
+            return None;
+        };
+        let option = option.to_str()?;
+        let (slot, seen) = match option {
+            "--request-bytes" => (&mut limits.request_bytes, &mut seen_request),
+            "--dependent-bytes" => (&mut limits.dependent_bytes, &mut seen_dependent),
+            _ => return None,
+        };
+        if *seen {
+            return None;
+        }
+        *seen = true;
+        match value.to_str().and_then(|text| text.parse().ok()) {
+            Some(count) => *slot = count,
+            None => return Some(Err(UsageError::LimitValue { option })),
+        }
+    }
+    Some(Ok(limits))
+}
+
 /// `--source-bytes`, `--tokens` and `--nodes`, each followed by its count;
 /// an option left out keeps its default. `None` is a malformed option list.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn limit_options(options: &[OsString]) -> Option<Result<Limits, UsageError<'_>>> {
     let mut limits = Limits::default();
     for pair in options.chunks(2) {

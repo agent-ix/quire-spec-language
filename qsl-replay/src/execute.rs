@@ -20,19 +20,32 @@
 //! settles `inconclusive` with its typed cause and is never repaired
 //! ([`crate::ReplayResult`]).
 
-use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
-use qsl_foundation::diagnostic::InternalFault;
+use qsl_eval::value::{
+    input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
+};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::check::Capability;
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
+use qsl_semantics::value::supplied::SuppliedRun;
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
-    Cancel, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
+    Cancel, CancelCause, LimitKind, Meter, NodeKey, Origin, Outcome, Role, ScalarLimits, Value,
+    ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::location::Location;
+use quire_semantic_value::supplied_stop::{
+    SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+};
 
 use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
@@ -46,18 +59,22 @@ use crate::spine::{
     self, CompileRefusal, DependencyInput, DependencyInputRefusal, ParseRequest, SpineLimits,
     SuppliedLibrary,
 };
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
 use argument::Stopped;
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::Setting;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
+use quire_semantic_value::catalog::Category;
+use std::collections::BTreeSet;
 
 mod argument;
-mod frame;
+mod object_environment;
+pub use object_environment::{ObjectEnvironmentFailure, Unresolved};
+pub(crate) mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod composite_domain;
@@ -65,10 +82,11 @@ mod composite_parity;
 mod composite_site;
 mod operator_parity;
 mod parity_identity;
+pub(crate) use parity_identity::process_provider_obligation;
 pub use parity_identity::{
     parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
-mod scalar_site;
+pub(crate) mod scalar_site;
 pub use composite_domain::ParityBoundRefusal;
 pub use composite_parity::{replay_composite_parity, settle_verified_shadow};
 pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};
@@ -90,6 +108,26 @@ pub struct LimitAboveReader {
     /// The reader limit: `replay.input_bytes`, the most bytes any admitted
     /// request can carry.
     pub reader: u64,
+}
+
+fn hex(digest: &[u8; 32]) -> WireNodeId {
+    WireNodeId::from_digest(*digest)
+}
+
+/// Why a `frame_operation` object is not the operation's declaring object
+/// (FR-116, QSpec FR-323).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum MalformedOperationReason {
+    /// The object names a declaration that is no operation owner (not an
+    /// object type, a process or a state machine: a value type, an enum, a
+    /// record). The variant keeps its name from before processes and state
+    /// machines were owners.
+    #[error("the object names a declaration that cannot declare operations")]
+    NotAnObjectType,
+    /// The object only inherits the operation; the target names the
+    /// declaring object.
+    #[error("the object only inherits the operation")]
+    OnlyInherited,
 }
 
 /// Why [`replay`] settled no verdict. Each variant is one ADR-013 O-26
@@ -165,6 +203,20 @@ pub enum ReplayRefusal {
         /// The recompiled package it was looked up in.
         package: PackageId,
     },
+    /// FR-098 "The claim a function request decides": the request's
+    /// `occurrence_key` selects no claim of the selected function. It is
+    /// neither the function's `declaration` occurrence nor the key of a
+    /// `value-validity` record the function owns (a key whose node the
+    /// package does not hold, another function's declaration, an occurrence
+    /// holding no record, a record of another kind or owner). Refused before
+    /// any call, with no charge.
+    #[error("missing_declaration/missing-name: the occurrence {key} selects no claim of the function {function}")]
+    ClaimOccurrence {
+        /// The request's occurrence key.
+        key: OccurrenceKey,
+        /// The selected function.
+        function: QualifiedName,
+    },
     /// An argument names a node that is not a parameter of the selected
     /// function.
     #[error("invalid_runtime_input: node {0} is not a parameter of the selected function")]
@@ -195,6 +247,45 @@ pub enum ReplayRefusal {
     /// `StageFailure::Refused` cause.
     #[error("{code} ({cause}): {refusal}", code = input_refusal_code(&.0).as_str(), cause = .0.cause(), refusal = .0)]
     Input(InputRefusal),
+    /// FR-056: a UUID or Timestamp argument whose payload text the kernel's
+    /// canonical constructor refuses, `invalid_runtime_input`/`invalid-value`
+    /// with the kernel's class beneath it (`refusal.cause`): noncanonical
+    /// UUID text, noncanonical Timestamp text, or a canonical Timestamp
+    /// outside the signed 128-bit domain. No value is built.
+    #[error("invalid_runtime_input (invalid-value): the argument at position {parameter} is refused: {refusal}")]
+    NativePayload {
+        /// The parameter's zero-based declared position.
+        parameter: usize,
+        /// The kernel's typed refusal.
+        refusal: quire_exact::ConstructionRefusal,
+    },
+    /// An argument's membership in its parameter's declared type was not
+    /// decided because the type environment could not reserve storage:
+    /// `resource_exhausted`, never an [`Self::Input`] wrong-value-kind
+    /// refusal.
+    #[error("the argument at position {position} was not decided: {failure:?}")]
+    Storage {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
+    /// FR-277: a supplied-value phase stopped before the call on invalid
+    /// input, the original cancellation, a failed reservation or an
+    /// unrepresentable size, with the phase context (a helper-ceiling stop
+    /// settles `inconclusive`/`NoValue` instead, see
+    /// [`ReplayResult::pre_call_limit`]). No evaluation ran.
+    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
+    Supplied(Box<SuppliedStop>),
+    /// FR-277: the supplied-value walk reached a helper family QSV has not
+    /// qualified, before that helper ran. Distinct from invalid input, a
+    /// limit, a cancellation, storage and capacity.
+    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
+    UnsupportedHelper(Box<UnsupportedHelperStop>),
+    /// The caller's [`Cancel`] stopped the evaluation (ADR-029 LC-3): no
+    /// value and no verdict.
+    #[error("the replay was cancelled: {0:?}")]
+    Cancelled(CancelCause),
     /// The selected function's declared result is not `Boolean`, so it
     /// states no property a counterexample refutes. Refused before the
     /// call, from the declaration alone.
@@ -224,11 +315,56 @@ pub enum ReplayRefusal {
     /// operand types hold more positions than the check stage allows.
     #[error("{0}")]
     ParityBound(Box<ParityBoundRefusal>),
-    /// FR-116: a frame counterexample's operation names no operation
-    /// frame of the recompiled package.
+    /// FR-098, FR-116, FR-122: the request's replay target is not the member
+    /// the entry reads (`invalid_runtime_input`/`unknown-member` at the
+    /// target member's `/replay/<member>` pointer). The code and pointer
+    /// tell it apart from QSpec FR-323's refusal of a request carrying two
+    /// targets (`invalid-value`).
+    #[error("invalid_runtime_input/unknown-member at {}: the request's target is {target}, but `{entry}` reads `{member}`", .target.member().pointer())]
+    WrongReplayTarget {
+        /// The request's replay target.
+        target: Box<ReplayTarget>,
+        /// The entry that refused it.
+        entry: ReplayEntry,
+        /// The member the entry reads.
+        member: TargetMember,
+    },
+    /// FR-116, FR-122: the envelope's replay target differs from the
+    /// request's (`stale_dependency`/`content-mismatch`), naming both.
+    #[error("stale_dependency/content-mismatch: the request's target is {request} but the envelope's is {envelope}")]
+    TargetMismatch {
+        /// The request's replay target.
+        request: Box<ReplayTarget>,
+        /// The envelope's replay target.
+        envelope: Box<ReplayTarget>,
+    },
+    /// FR-116: the request's `frame_operation` names no operation frame of
+    /// the recompiled package.
     #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
     UnknownOperation {
-        /// The payload's operation.
+        /// The request's operation.
+        operation: FrameOperation,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+    },
+    /// FR-116: the request's `frame_operation` names an object that cannot
+    /// be its operation's declaring object (`invalid_model_binding`/
+    /// `malformed-declaration`).
+    #[error("invalid_model_binding/malformed-declaration: package {} cannot select operation {operation}: {reason}", .package.hex())]
+    MalformedOperationTarget {
+        /// The request's operation.
+        operation: FrameOperation,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+        /// Why the object cannot be the declaring object.
+        reason: MalformedOperationReason,
+    },
+    /// FR-116: two supertypes of the request's `frame_operation` object
+    /// expose the operation's name (`ambiguous_declaration`/
+    /// `ambiguous-name`).
+    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {operation} through two supertypes", .package.hex())]
+    AmbiguousOperation {
+        /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
         package: PackageId,
@@ -239,12 +375,12 @@ pub enum ReplayRefusal {
     /// the payload's frame node or occurrence (refused before recompiling).
     #[error("stale_dependency/content-mismatch: {0}")]
     FrameIdentity(Box<FrameIdentityMismatch>),
-    /// FR-122: a state-clause counterexample's clause names no state clause
-    /// of the recompiled package.
-    #[error("missing_declaration/missing-name: package {} declares no state clause {}", .package.hex(), .clause.as_str())]
+    /// FR-122: the request's `state_clause` names no state clause of the
+    /// recompiled package (a function's name included).
+    #[error("missing_declaration/missing-name: package {} declares no state clause {clause}", .package.hex())]
     UnknownClause {
-        /// The payload's clause.
-        clause: Identifier,
+        /// The request's `state_clause`.
+        clause: QualifiedName,
         /// The recompiled package it was looked up in.
         package: PackageId,
     },
@@ -266,6 +402,38 @@ pub enum ReplayRefusal {
     /// failed, with its own record.
     #[error(transparent)]
     Admission(AdmissionFailure),
+    /// FR-098 step 1: the request carries an `object_environment` and no
+    /// parameter of the selected function holds a `Reference`
+    /// (`invalid_runtime_input`/`unknown-member`, naming
+    /// `object_environment`).
+    #[error("invalid_runtime_input/unknown-member: `object_environment` is supplied for a function with no Reference parameter")]
+    UnusedObjectEnvironment,
+    /// FR-098 step 2, FR-100: a reference argument's universe is not the
+    /// universe of its declared `Reference<T>`'s object type
+    /// (`foreign_reference`/`foreign-universe`).
+    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied}, not {required}", required = hex(.required), supplied = hex(.supplied))]
+    ForeignReference {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The universe of the declared object type.
+        required: [u8; 32],
+        /// The universe the reference names.
+        supplied: [u8; 32],
+    },
+    /// FR-098 steps 3 and 4: FR-106 admission of the environment document, or
+    /// FR-364's `resolve` of a reference argument, refused.
+    #[error("the object environment is refused: {0}")]
+    ObjectEnvironment(ObjectEnvironmentFailure),
+    /// FR-128: a model counterexample's replay refused.
+    #[error("{0}")]
+    ModelTrace(Box<crate::model_check::replay::ModelTraceRefusal>),
+    /// FR-128, FR-131: a model counterexample's lasso is unfair under a
+    /// constraint of the clause's fairness set, the first that fails.
+    #[error("invalid_runtime_input/invalid-value: the lasso is unfair under {constraint:?}")]
+    UnfairLasso {
+        /// The first constraint of the fairness set the loop fails.
+        constraint: quire_semantic_value::fairness::FairnessConstraint,
+    },
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -286,26 +454,40 @@ impl ReplayRefusal {
             }
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
-            Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
-                Code::MissingDeclaration
-            }
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
-                Code::StaleDependency
-            }
+            Self::UnknownFunction { .. }
+            | Self::UnknownOperation { .. }
+            | Self::ClaimOccurrence { .. } => Code::MissingDeclaration,
+            Self::WrongReplayTarget { .. } => Code::InvalidRuntimeInput,
+            Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
+            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
+            Self::FrameIdentity(_)
+            | Self::ClauseIdentity(_)
+            | Self::ScalarIdentity(_)
+            | Self::TargetMismatch { .. } => Code::StaleDependency,
             Self::UnknownClause { .. } => Code::MissingDeclaration,
+            Self::UnusedObjectEnvironment => Code::InvalidRuntimeInput,
+            Self::ForeignReference { .. } => Code::ForeignReference,
+            Self::ObjectEnvironment(failure) => failure.code(),
             Self::ParityBound(refusal) => refusal.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => record.code,
             Self::Admission(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
-            Self::UnknownParameter(_)
+            Self::UnfairLasso { .. }
+            | Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => input_refusal_code(refusal),
+            Self::NativePayload { .. } => Code::InvalidRuntimeInput,
+            Self::Storage { failure, .. } => membership_failure_code(failure),
+            Self::Supplied(stop) => supplied_stop_code(stop),
+            Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
+            Self::Cancelled(_) => Code::Cancelled,
+            Self::ModelTrace(refusal) => refusal.code(),
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -314,6 +496,7 @@ impl ReplayRefusal {
     /// or request check names one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::Request(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
@@ -322,17 +505,28 @@ impl ReplayRefusal {
             }
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
+            | Self::ClaimOccurrence { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
-                Some("content-mismatch")
-            }
+            Self::FrameIdentity(_)
+            | Self::ClauseIdentity(_)
+            | Self::ScalarIdentity(_)
+            | Self::TargetMismatch { .. } => Some("content-mismatch"),
+            Self::WrongReplayTarget { .. } => Some("unknown-member"),
+            Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
+            Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
+            Self::ModelTrace(refusal) => Some(refusal.cause()),
+            Self::UnusedObjectEnvironment => Some("unknown-member"),
+            Self::ForeignReference { .. } => Some("foreign-universe"),
+            Self::ObjectEnvironment(failure) => failure.cause(),
             Self::Input(refusal) => Some(refusal.cause()),
+            Self::NativePayload { .. } | Self::UnfairLasso { .. } => Some("invalid-value"),
+            Self::Storage { failure, .. } => membership_failure_cause(failure),
+            Self::Supplied(stop) => supplied_stop_cause(stop),
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
-            Self::Request(_)
-            | Self::LimitAboveReader(_)
+            Self::LimitAboveReader(_)
             | Self::NotASource(_)
             | Self::SourceCount(_)
             | Self::Admission(AdmissionFailure::Fault(_))
@@ -343,8 +537,36 @@ impl ReplayRefusal {
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. }
             | Self::ParityBound(_)
+            | Self::UnsupportedHelper(_)
+            | Self::Cancelled(_)
             | Self::Fault(_) => None,
         }
+    }
+
+    /// The RFC 6901 pointer of a refusal that names a request member: a
+    /// request-decode refusal's, or the `/replay/<member>` of
+    /// [`Self::WrongReplayTarget`]; `None` for every other refusal.
+    pub fn pointer(&self) -> Option<&'static str> {
+        match self {
+            Self::Request(refusal) => refusal.pointer(),
+            Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
+            _ => None,
+        }
+    }
+
+    /// The input refusal this refusal carries, whether it stopped before
+    /// any phase budget or inside the supplied-value conversion or
+    /// admission phase: the original kind and parameter either way.
+    pub fn input_refusal(&self) -> Option<&InputRefusal> {
+        if let Self::Input(refusal) = self {
+            return Some(refusal);
+        }
+        if let Self::Supplied(stop) = self {
+            if let SuppliedCause::Input { refusal, .. } = &stop.cause {
+                return Some(refusal);
+            }
+        }
+        None
     }
 }
 
@@ -387,7 +609,7 @@ pub enum DependencySelectionsCause {
 /// declarations; a name that resolves to none refuses
 /// [`ReplayRefusal::UnknownFunction`]. No entry takes a bare `&str` in its
 /// place: this request, which differs from the one after it only in its
-/// `selected_function` line, does not compile.
+/// `replay_target` line, does not compile.
 ///
 /// ```compile_fail,E0308
 /// # use qsl_replay::*;
@@ -420,8 +642,9 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = site.site.declaration.clone();
 /// let wire = ReplayRequestWire {
-///     selected_function: "small",
+///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -445,6 +668,8 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   supplied_limits: None,
+/// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -490,8 +715,9 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = site.site.declaration.clone();
 /// let wire = ReplayRequestWire {
-///     selected_function: small,
+///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -515,6 +741,8 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   supplied_limits: None,
+/// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -525,56 +753,143 @@ pub enum DependencySelectionsCause {
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
 /// ```
-#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
 ) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel(wire, replay_limits, &Cancel::new())
+}
+
+/// [`replay`] under the caller's original [`Cancel`] handle (ADR-029,
+/// FR-277). The handle reaches every supplied-value phase and the call: a
+/// cancellation observed in conversion or admission is
+/// [`ReplayRefusal::Supplied`] with the original cause and its phase
+/// context, one observed during the call [`ReplayRefusal::Cancelled`], and
+/// neither is ever read as a limit.
+///
+/// The request's `limits.supplied` ceilings bound the conversion helper work
+/// H and the final admission helper work A as two cumulative budgets across
+/// every argument. A pre-call limit (those two, the per-argument converted
+/// nodes against `work_units`, or the occurrence count against
+/// `value_occurrences`) makes no call and settles `inconclusive`/`NoValue`
+/// carrying [`ReplayResult::pre_call_limit`]: zero replay charges, no
+/// `FunctionCall` charge point.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub fn replay_with_cancel(
+    wire: ReplayRequestWire,
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
-    let compiled = recompile(&request, &limits)?;
+    let function = function_target(&request, ReplayEntry::Replay)?;
+    let caller = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
+    let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
+    let claim = function_claim(&compiled, function, request.replay_target())?;
+    let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
         package,
         &call,
         request.source(),
         request.obligation_identity(),
+        claim.unread_roots(),
     )?;
+    // FR-098 step 1, after the join and before any conversion.
+    if request.object_environment().is_some()
+        && !object_environment::holds_reference(package.graph().scope().types(), &call.types)
+    {
+        return Err(ReplayRefusal::UnusedObjectEnvironment);
+    }
     let limits = request.accounting_limits();
-    let converted = match argument::convert_arguments(package, &call.types, &joined, &limits) {
+    let mut run = SuppliedRun::new(request.supplied_limits(), cancel.clone())
+        .map_err(ReplayRefusal::Supplied)?;
+    let converted = match argument::convert_arguments(
+        package,
+        &call.types,
+        &joined,
+        &limits,
+        &mut run,
+        &compiled.reference_model(),
+    ) {
         Ok(converted) => converted,
         Err(Stopped::Refusal(refusal)) => return Err(*refusal),
-        Err(Stopped::Limit(incomplete)) => return Ok(settle_stopped(&request, *incomplete)),
+        Err(Stopped::Supplied(failure)) => return settle_supplied(&request, failure),
     };
-    if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
-        return Ok(settle_stopped(&request, incomplete));
+    // FR-098 steps 3 and 4: a request without an environment runs over
+    // unresolved references.
+    let environment = if request.object_environment().is_some() {
+        object_environment::admit(
+            &request,
+            &compiled,
+            call.identity,
+            &converted.references,
+            &caller,
+        )?
+    } else {
+        ObjectEnvironment::default().with_unresolved_references()
+    };
+    let mut meter = Meter::new(limits).with_cancel(cancel.clone());
+    let evaluation = match package.call_supplied(
+        &call.name,
+        converted.values,
+        &environment,
+        &mut meter,
+        &mut run,
+    ) {
+        Ok(evaluation) => evaluation,
+        // A supplied-phase stop is the run's full record, whatever arm the
+        // checked call gave it; anything else is the call's own failure.
+        Err(failure) => return after_call_failure(&request, &run, failure),
+    };
+    if let Some(cause) = cancel.tripped() {
+        return Err(ReplayRefusal::Cancelled(cause));
     }
-    let mut meter = Meter::new(limits);
-    let evaluation = package
-        .call(
-            &call.name,
-            converted.values,
-            &ObjectEnvironment::default().with_unresolved_references(),
-            &mut meter,
-        )
-        .map_err(call_failure_to_replay_refusal)?;
     let mut limit = None;
+    // FR-098 "Application claim: the observation": the call stopped
+    // undefined at the application step of the claim's own site. A stop
+    // inside an operand, in a nested function or at another occurrence of
+    // the node is a different location and no observation. `Location` has
+    // no frame, so in a recursive function a stop at the site may belong to
+    // a nested call of the function itself: it then settles `NoValue`, which
+    // loses a reproduction and never invents one.
+    let failed_at_site = match &claim {
+        FunctionClaim::Application(application) => {
+            !application.recursive && evaluation.location.as_ref() == Some(&application.site)
+        }
+        FunctionClaim::Predicate => false,
+    };
     let (replayed, value) = match evaluation.outcome {
-        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
-            if holds {
-                Category::Success
-            } else {
-                Category::Violation
-            },
-            Some(EvaluatedValue::Boolean(holds)),
-        ),
-        // `select` admitted only a function declared `Boolean`.
-        FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
-            return Err(ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "boolean-function-completes-a-boolean",
-            )));
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => match (&claim, value) {
+            (FunctionClaim::Predicate, Value::Boolean(holds)) => (
+                if holds {
+                    Category::Success
+                } else {
+                    Category::Violation
+                },
+                Some(EvaluatedValue::Boolean(holds)),
+            ),
+            // A completed call with no failing observation holds the claim,
+            // whether or not it evaluated the occurrence on any path. FR-098's
+            // "completes outside the record's result bound" arm is not
+            // implemented: no checked package reaches it, and omitting it
+            // fails safe (a missed reproduction, never an invented one).
+            (FunctionClaim::Application(_), _) => {
+                (Category::Success, Some(EvaluatedValue::Boolean(true)))
+            }
+            // `select` admitted only a function declared `Boolean`.
+            (FunctionClaim::Predicate, _) => {
+                return Err(ReplayRefusal::Fault(InternalFault::new(
+                    "replay",
+                    "boolean-function-completes-a-boolean",
+                )));
+            }
+        },
+        FamilyOutcome::Evaluated(Outcome::Undefined(_)) if failed_at_site => {
+            (Category::Violation, Some(EvaluatedValue::Boolean(false)))
         }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => (Category::Refusal, None),
         FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
@@ -611,55 +926,39 @@ pub fn replay(
     })
 }
 
-/// The `Incomplete` outcome of a conversion whose counts exceed a limit of
-/// the request, checked before the call (FR-098): the occurrences of each
-/// converted argument against `value_occurrences`, then the nodes converted
-/// against `work_units`, naming the counter, its configured value and the
-/// count reached. Nothing is charged to the call's meter.
-fn exceeded_before_call(
-    converted: &argument::Converted,
-    limits: &ScalarLimits,
-) -> Option<quire_exact::Incomplete> {
-    let denied = |limit_kind, limit, next_charge| quire_exact::Incomplete {
-        limit_kind,
-        limit,
-        consumed: 0,
-        next_charge,
-        charge_point: quire_exact::ChargePoint::FunctionCall,
-    };
-    if let Some(occurrences) = converted
-        .values
-        .iter()
-        .map(Value::occ)
-        .find(|occ| *occ > Integer::from(limits.value_occurrences))
-    {
-        return Some(denied(
-            LimitKind::ValueOccurrences,
-            limits.value_occurrences,
-            occurrences,
-        ));
+/// The checked call's failure, read as the run's full supplied-phase record
+/// when the run stopped (FR-277), and as the call's own failure otherwise.
+fn after_call_failure(
+    request: &ReplayRequest,
+    run: &SuppliedRun,
+    failure: CallFailure,
+) -> Result<ReplayResult, ReplayRefusal> {
+    match run.failure() {
+        Some(recorded) => settle_supplied(request, recorded.clone()),
+        None => Err(call_failure_to_replay_refusal(failure)),
     }
-    (converted.nodes > limits.work_units).then(|| {
-        denied(
-            LimitKind::WorkUnits,
-            limits.work_units,
-            Integer::from(converted.nodes),
-        )
-    })
 }
 
-/// A replay that made no call because an accounting limit stopped the
-/// conversion: it settles `inconclusive` with cause `NoValue`, carrying the
-/// outcome `Incomplete` and no charges.
-fn settle_stopped(request: &ReplayRequest, incomplete: quire_exact::Incomplete) -> ReplayResult {
-    settle(
-        request,
-        Category::Incomplete,
-        None,
-        Vec::new(),
-        charges(std::iter::empty()),
-    )
-    .with_limit(incomplete)
+/// A supplied-value phase that stopped before the call: a helper or counter
+/// ceiling settles the replay `inconclusive`/`NoValue` with the phase-marked
+/// pre-call limit; every other stop is its own typed refusal (FR-277).
+fn settle_supplied(
+    request: &ReplayRequest,
+    failure: SuppliedFailure,
+) -> Result<ReplayResult, ReplayRefusal> {
+    match failure {
+        SuppliedFailure::Stop(stop) if stop.limit().is_some() => Ok(settle(
+            request,
+            Category::Incomplete,
+            None,
+            Vec::new(),
+            charges(std::iter::empty()),
+        )
+        .with_pre_call(stop)),
+        SuppliedFailure::Stop(stop) => Err(ReplayRefusal::Supplied(stop)),
+        SuppliedFailure::Unsupported(stop) => Err(ReplayRefusal::UnsupportedHelper(stop)),
+        SuppliedFailure::Fault(fault) => Err(ReplayRefusal::Fault(fault)),
+    }
 }
 
 /// The result on the arm of the request's replay source.
@@ -705,11 +1004,13 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
-        // The replay meter holds no `Cancel` handle, so no charge is
-        // cancelled.
-        CallFailure::Cancelled(_) => {
-            ReplayRefusal::Fault(InternalFault::new("replay", "cancelled-without-a-handle"))
-        }
+        CallFailure::Storage { parameter, failure } => ReplayRefusal::Storage {
+            position: parameter,
+            failure,
+        },
+        CallFailure::Supplied(stop) => ReplayRefusal::Supplied(stop),
+        CallFailure::UnsupportedHelper(stop) => ReplayRefusal::UnsupportedHelper(stop),
+        CallFailure::Cancelled(cause) => ReplayRefusal::Cancelled(cause),
     }
 }
 
@@ -719,9 +1020,10 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
 /// entry above `replay.input_bytes` refuses before the recompile.
 pub(crate) fn request_limits(
     stage_limits: &StageLimits,
+    accounting: ScalarLimits,
     replay: ReplayLimits,
 ) -> Result<CallerLimits, ReplayRefusal> {
-    let limits = CallerLimits::for_request(stage_limits, replay);
+    let limits = CallerLimits::for_request(stage_limits, accounting, replay);
     if let Some(requested) = stage_limits.bound(Setting::S1InputBytes) {
         if requested > replay.input_bytes {
             return Err(ReplayRefusal::LimitAboveReader(LimitAboveReader {
@@ -740,6 +1042,17 @@ pub(crate) struct Recompiled {
     pub(crate) checked: spine::CheckedUnit,
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
+    /// The domain packages the recompile read, by `sha256-jcs` digest.
+    pub(crate) packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    /// The limits the models were normalized under.
+    pub(crate) model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+}
+
+impl Recompiled {
+    /// Where a reference argument's universe is read from.
+    pub(crate) fn reference_model(&self) -> argument::ReferenceModel<'_> {
+        argument::ReferenceModel::new(self.checked.package(), &self.packages, self.model_limits)
+    }
 }
 
 /// The one S1-to-E4 spine run: parse, select, check and emit `bytes` as
@@ -754,6 +1067,8 @@ pub(crate) fn run_spine(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+
     let cancel = Cancel::new();
     let refusal = |failure| match spine::refusal_or_fault(failure) {
         Ok(refusal) => ReplayRefusal::Recompile(refusal),
@@ -773,20 +1088,24 @@ pub(crate) fn run_spine(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check(
-        &parsed,
-        &models,
-        dependencies,
-        &spine::LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    // Compile and replay select the Text law implemented by the same
+    // definition catalog that supplies the emitted package's lock.
+    let text_profile = DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference();
+    let lock = spine::LockEvidence::default().with_text_profile(text_profile);
+    let checked = spine::check(&parsed, &models, dependencies, &lock, limits, &cancel)
+        .map_err(refusal)?
+        .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok(Recompiled { checked, emitted })
+    Ok(Recompiled {
+        checked,
+        emitted,
+        packages: packages.clone(),
+        model_limits: limits.model,
+    })
 }
 
 /// Recompile the request's one source unit from the byte provision against
@@ -794,7 +1113,10 @@ pub(crate) fn run_spine(
 /// package the provision carries under its `sha256-jcs` digest as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
-fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompiled, ReplayRefusal> {
+pub(crate) fn recompile(
+    request: &ReplayRequest,
+    limits: &CallerLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {
@@ -944,15 +1266,123 @@ fn labels(reference: &RawSourceRef) -> SourceIdentity {
 enum Claim {
     /// A Boolean predicate is false at the bindings ([`replay`]).
     Predicate,
+    /// An application of the function's body is undefined at the bindings
+    /// ([`replay`]); the function may declare any result type.
+    Application,
     /// The generated code's outcome equals QSL's `f(b)`
     /// ([`replay_value_parity`]).
     ValueParity,
+}
+
+/// The claim a `function` request's `occurrence_key` selects (FR-098 "The
+/// claim a function request decides").
+enum FunctionClaim {
+    /// The function's `declaration` occurrence: the function returns `true`.
+    Predicate,
+    /// A `value-validity` record the function owns: the application at the
+    /// record's occurrence is defined and within the record's result bound.
+    Application(ApplicationClaim),
+}
+
+/// An application claim: where its application is evaluated and which of
+/// the function's parameters its extent reads.
+struct ApplicationClaim {
+    /// The record's claim site, the `Location` `check` paired with its key.
+    site: Location,
+    /// The extent roots that are parameter nodes of the function.
+    roots: BTreeSet<NodeKey>,
+    /// The owning function is in a recursion group (FR-092). A stop at the
+    /// site may then be a nested call's, and `Location` carries no frame.
+    recursive: bool,
+}
+
+impl FunctionClaim {
+    /// The claim as `select` reads it.
+    fn kind(&self) -> Claim {
+        match self {
+            Self::Predicate => Claim::Predicate,
+            Self::Application(_) => Claim::Application,
+        }
+    }
+
+    /// The extent roots an application claim's replay source must bind; an
+    /// owner parameter outside them may be left unbound (FR-098 "unread
+    /// parameters"). `None` for a predicate claim, which binds every
+    /// parameter.
+    fn unread_roots(&self) -> Option<&BTreeSet<NodeKey>> {
+        match self {
+            Self::Predicate => None,
+            Self::Application(application) => Some(&application.roots),
+        }
+    }
+}
+
+/// Resolve the claim `target`'s occurrence key selects for the function
+/// `name`, after the function resolves and before the argument join: the
+/// predicate claim at the function's `declaration` occurrence, else the
+/// application claim of a `value-validity` record the function owns, else
+/// [`ReplayRefusal::ClaimOccurrence`].
+fn function_claim(
+    compiled: &Recompiled,
+    name: &QualifiedName,
+    target: &ReplayTarget,
+) -> Result<FunctionClaim, ReplayRefusal> {
+    let (segment, callable) = lookup(compiled, name)?;
+    let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
+    let key = target
+        .occurrence_key()
+        .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
+    let declaration = OccurrenceKey::new(
+        wire_id(callable.identity),
+        Origin::new(Role::new("declaration"), 0),
+    );
+    if *key == declaration {
+        return Ok(FunctionClaim::Predicate);
+    }
+    let graph = compiled.checked.package().graph();
+    let refused = || ReplayRefusal::ClaimOccurrence {
+        key: key.clone(),
+        function: name.clone(),
+    };
+    let record = graph
+        .requirements()
+        .get(key)
+        .filter(|record| {
+            record.requirements().kind() == Capability::ValueValidity
+                && record.owner() == Some(segment.as_str())
+        })
+        .ok_or_else(refused)?;
+    let semantic = graph.semantic_graph();
+    let node = semantic.resolve_wire(key.node()).ok_or_else(refused)?;
+    let site = graph
+        .occurrence(node, key.origin())
+        .cloned()
+        .ok_or_else(|| fault("requirement-record-has-a-claim-site"))?;
+    let roots = record
+        .extent_roots()
+        .iter()
+        .map(|root| {
+            semantic
+                .resolve_wire(*root)
+                .ok_or_else(|| fault("extent-root-is-a-node"))
+        })
+        .collect::<Result<_, _>>()?;
+    let recursive = semantic
+        .node(callable.identity)
+        .is_some_and(|node| node.recursion().is_some());
+    Ok(FunctionClaim::Application(ApplicationClaim {
+        site,
+        roots,
+        recursive,
+    }))
 }
 
 /// The selected function: its S6a name, and its parameter nodes and
 /// declared types in declared order.
 struct Selected {
     name: qsl_eval::value::QualifiedName,
+    /// The function's node.
+    identity: NodeKey,
     parameters: Vec<NodeKey>,
     types: Vec<ValueType>,
 }
@@ -984,6 +1414,47 @@ pub(crate) fn callable_parameter_keys(
 /// The function `name` selects in the recompiled package, by name lookup in
 /// its declarations (OQ-5): its one segment and its callable. A name that
 /// resolves to none refuses [`ReplayRefusal::UnknownFunction`].
+/// QSpec FR-323 resolution, first step: the request's `function` replay
+/// target, or the `unknown-member` refusal of `entry` for any other target
+/// (FR-098, FR-357, FR-358), made after the request decodes and before it
+/// recompiles.
+pub(crate) fn function_target(
+    request: &ReplayRequest,
+    entry: ReplayEntry,
+) -> Result<&QualifiedName, ReplayRefusal> {
+    request
+        .replay_target()
+        .as_function()
+        .ok_or_else(|| wrong_target(request.replay_target(), entry, TargetMember::Function))
+}
+
+/// `entry` reads `member`, but the request's target is `target`.
+pub(crate) fn wrong_target(
+    target: &ReplayTarget,
+    entry: ReplayEntry,
+    member: TargetMember,
+) -> ReplayRefusal {
+    ReplayRefusal::WrongReplayTarget {
+        target: Box::new(target.clone()),
+        entry,
+        member,
+    }
+}
+
+/// FR-116, FR-122 check 2: the envelope's replay target is the request's.
+pub(crate) fn check_envelope_target(
+    request: &ReplayRequest,
+    envelope: &ReplayTarget,
+) -> Result<(), ReplayRefusal> {
+    if request.replay_target() == envelope {
+        return Ok(());
+    }
+    Err(ReplayRefusal::TargetMismatch {
+        request: Box::new(request.replay_target().clone()),
+        envelope: Box::new(envelope.clone()),
+    })
+}
+
 pub(crate) fn lookup<'a>(
     compiled: &'a Recompiled,
     name: &'a QualifiedName,
@@ -1019,7 +1490,7 @@ fn select(
     let package = compiled.checked.package();
     let (segment, callable) = lookup(compiled, name)?;
     match (claim, *callable.result == ValueType::Boolean) {
-        (Claim::Predicate, true) | (Claim::ValueParity, false) => {}
+        (Claim::Predicate, true) | (Claim::ValueParity, false) | (Claim::Application, _) => {}
         (Claim::Predicate, false) => {
             return Err(ReplayRefusal::NotAPredicate {
                 selection: name.clone(),
@@ -1047,6 +1518,7 @@ fn select(
     })?;
     Ok(Selected {
         name,
+        identity: callable.identity,
         parameters,
         types,
     })
@@ -1061,7 +1533,37 @@ fn arguments(
     call: &Selected,
     source: &ReplaySource,
     obligation: ObligationIdentity,
+    roots: Option<&BTreeSet<NodeKey>>,
 ) -> Result<Vec<WitnessValue>, ReplayRefusal> {
+    // FR-098 "Application claim: unread parameters": a parameter outside the
+    // claim's extent roots, of type `Boolean` or an integer type, may be left
+    // unbound and takes its nearest-to-zero value.
+    let filled = |position: usize| -> Option<WitnessValue> {
+        let unread = roots.is_some_and(|roots| {
+            call.parameters
+                .get(position)
+                .is_some_and(|parameter| !roots.contains(parameter))
+        });
+        if !unread {
+            return None;
+        }
+        match call.types.get(position)? {
+            ValueType::Boolean => Some(WitnessValue::Boolean(false)),
+            ValueType::Integer => Some(WitnessValue::Integer(0)),
+            ValueType::Int(interval) => {
+                let nearest = if interval.contains(&quire_exact::Integer::zero()) {
+                    quire_exact::Integer::zero()
+                } else if interval.lower() > &quire_exact::Integer::zero() {
+                    interval.lower().clone()
+                } else {
+                    interval.upper().clone()
+                };
+                // A bound beyond `i128` has no `WitnessValue`; the parameter then stays unbound.
+                Some(WitnessValue::Integer(nearest.to_string().parse().ok()?))
+            }
+            _ => None,
+        }
+    };
     let values = match source {
         ReplaySource::Input(assignments) => {
             let mut values: Vec<Option<WitnessValue>> = std::iter::repeat_with(|| None)
@@ -1084,8 +1586,11 @@ fn arguments(
             values
                 .into_iter()
                 .zip(&call.parameters)
-                .map(|(value, parameter)| {
-                    value.ok_or(ReplayRefusal::UnboundParameter(wire_id(*parameter)))
+                .enumerate()
+                .map(|(position, (value, parameter))| {
+                    value
+                        .or_else(|| filled(position))
+                        .ok_or(ReplayRefusal::UnboundParameter(wire_id(*parameter)))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -1102,12 +1607,29 @@ fn arguments(
                     })
                 })
                 .collect::<Result<Vec<_>, ReplayRefusal>>()?;
-            witness
-                .decode(&bindings)
+            let decoded = witness
+                .decode_optional(&bindings, |binding| {
+                    call.parameters
+                        .iter()
+                        .position(|parameter| wire_id(*parameter) == binding.parameter)
+                        .is_some_and(|position| filled(position).is_some())
+                })
                 .map_err(|refusal| ReplayRefusal::Witness {
                     obligation,
                     refusal,
-                })?
+                })?;
+            decoded
+                .into_iter()
+                .enumerate()
+                .map(|(position, value)| {
+                    value.or_else(|| filled(position)).ok_or_else(|| {
+                        ReplayRefusal::Fault(InternalFault::new(
+                            "replay",
+                            "optional-witness-binding-is-filled",
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
         }
     };
     Ok(values)
@@ -1115,7 +1637,8 @@ fn arguments(
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
 /// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
-/// text) for every other value type. A `Population<T>` is not a value, so it
+/// text) for every other value type, the native `UUID` and `Timestamp`
+/// included. A `Population<T>` is not a value, so it
 /// has no witness form and refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
@@ -1128,12 +1651,15 @@ fn witness_type(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::String
         | ValueType::Text(_)
         | ValueType::Enum(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_) => Ok(WitnessValueType::Canonical),
+        | ValueType::Reference(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
         ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
             parameter,
         })),
@@ -1189,4 +1715,4 @@ fn charges(consumed: impl IntoIterator<Item = (LimitKind, u64)>) -> ScalarLimits
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

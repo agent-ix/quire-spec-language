@@ -187,11 +187,11 @@ uncommitted working draft before this ticket's first commit
 ever landed -- from a reader's point of view, indistinguishable
 from a symbol that was never proposed at all, which is precisely the
 "hypothetical placeholder" AC-4 forbids citing. `Requirements`,
-`CapabilityKind`, `Extent`, `Bound` and `Stage::Requirements` are recorded
-unbacked for AC-4 rather than cited as deleted (they are real deferrals --
-this document's `requirements()` note above and `qsl-semantics/src/family/mod.rs`'s own
-module doc explain why -- just not ones a git log entry can show being
-removed). `PackageRefusal`, `EvaluateRefusal::Incomplete` and
+its capability kind and the claim extent are implemented, as ADR-012 §2 and
+ADR-014 §4 state and this document's `requirements()` note above describes,
+and `Stage::Requirements` has no counterpart because no stage table exists
+(ADR-012 §2 "Contract parts with no construction"); none of them is cited
+as deleted. `PackageRefusal`, `EvaluateRefusal::Incomplete` and
 `DeclarationCause` are dropped from this list entirely: `package` was
 narrowed to take no `Result` (so it never needed a `PackageRefusal`) rather
 than have one deleted, and `EvaluateRefusal`/function-declaration's `Cause`
@@ -233,4 +233,6 @@ seam_probe.rs` (new file, this migration's seam-probe implementation).
 FR-064 (`#[string_edge]`/`xtask string-edge`) is a cross-cutting gate, part of
 `make ci`: a family's migration marks a genuine intake edge `#[string_edge]`
 or converts the string to a closed enum or typed identity, and never adds a
-branch-gating allow-list entry.
+branch-gating allow-list entry. The attribute comes from `ix-trace-rs`
+(`use ix_trace_rs::string_edge;`), which the family crate declares as a
+dependency; QSL defines no marker of its own.

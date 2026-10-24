@@ -11,14 +11,6 @@ relationships:
 ---
 # ADR-009: What a graph path witness carries
 
-## Status
-
-**Open question for the architect.** [FR-047](../functional/FR-047-evaluate-finite-object-reference-graphs.md)
-currently returns a Boolean reachability result with no path witness, by
-explicit scoping choice. This decision does not change that scope. It records
-the open question so that if and when a caller-visible path witness is
-admitted, its content is fixed once rather than re-derived per consumer.
-
 ## Context
 
 [FR-047](../functional/FR-047-evaluate-finite-object-reference-graphs.md)'s
@@ -45,6 +37,12 @@ retains the actual typed edge and snapshot identities, and that the Boolean
 reachability predicate adds no shortest-path or canonical-witness guarantee.
 Any answer has to sit inside that sentence, and the candidates below differ
 in how they do so.
+
+**Open question for the architect.** [FR-047](../functional/FR-047-evaluate-finite-object-reference-graphs.md)
+currently returns a Boolean reachability result with no path witness, by
+explicit scoping choice. This decision does not change that scope. It records
+the open question so that if and when a caller-visible path witness is
+admitted, its content is fixed once rather than re-derived per consumer.
 
 ## Question
 

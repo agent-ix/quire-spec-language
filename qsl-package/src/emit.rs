@@ -22,7 +22,9 @@
 //!   `quire.source.bytes/v1` digest.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
 //!   `capability_report` reports it available.
-//! - `profile_selections` is empty: the `Value` family selects no profile.
+//! - `profile_selections` holds one row per clause-profile law a node body
+//!   names (`protocol_profile`, FR-092); it is empty for a package of
+//!   `Value`-family nodes only.
 //! - `model_selections` is `CheckedGraph::model_selections`: each domain
 //!   package the package was checked against, by identity and
 //!   `sha256-jcs` digest (ADR-011 §2.4).
@@ -55,7 +57,20 @@
 //! an omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
 //! over the nodes a node names), `value`/`parameter` nodes and
 //! recursion-group application nodes included (IR-280, IR-242).
-//! [`Emission::omitted`] lists each omitted node and its cause.
+//! [`Emission::omitted`] lists each omitted node and its cause. A
+//! `protocol_reference` carrier whose target the wire does not write is not
+//! omitted: it refuses the emission ([`EmitRefusal::StaleProtocolReference`]).
+//!
+//! # Abstraction relation
+//!
+//! A package that carries a checked abstraction relation
+//! ([`CheckedPackage::abstraction`], FR-304) writes it as the one
+//! `correspondence`/`abstraction_relation` node of QSpec FR-451 (FR-306),
+//! with the `model`/`object_type` and `relation`/`population` nodes it
+//! names that the graph does not hold.
+//! `check` builds and keys these ([`CheckedGraph::abstraction_nodes`]); the
+//! relation node has one `declaration` occurrence per declaration, the
+//! others one `generated`, at [`AbstractionNodes::sites`].
 //!
 //! # Nominal nodes
 //!
@@ -64,40 +79,41 @@
 //! An enum member node depends on its declaration, as QSpec's
 //! `quire.enum-member-node/v1` rule requires.
 //!
-//! The wire envelope is a local struct: IR keeps its own
-//! `CheckedPackageWireV2` private (IR-238). IR's reader admits exactly its
-//! member set, so the round-trip tests fail if the two diverge.
+//! The wire envelope is written by IR's typed encoder,
+//! [`encode_checked_package_v2`]; this module defines no envelope type of its
+//! own, and IR's reader admits exactly the bytes that encoder writes.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use quire_canonical::{Encode, Sink, Writer};
 use quire_contract_model::{
-    CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
-    CheckedRational, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
-    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2,
-    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
+    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
+    CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage,
+    NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    BodyTerm, CheckedGraph, LeafTerm, NodeTag, NominalNode, Owner, SemanticNode,
+    AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, LawRole, LeafTerm, NodeTag,
+    NominalNode, OperationLaw, Owner, SemanticNode,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    Member, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
+use crate::checked_v2::CheckedTimedModel;
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -148,6 +164,19 @@ pub enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+    /// A protocol reference is bound to a key that is not the key of a node
+    /// the emitter writes (FR-218 stale target): a reference binds a key,
+    /// never a name, and a name is never looked up again.
+    #[error("protocol reference {} is bound to {}, which no written node carries", reference.digest, target.digest)]
+    StaleProtocolReference {
+        /// The reference's node.
+        reference: CheckedNodeId,
+        /// The key it is bound to.
+        target: CheckedNodeId,
+    },
+    /// The package's abstraction relation has no node to write (FR-306).
+    #[error("the abstraction relation cannot be written: {0}")]
+    Abstraction(AbstractionNodeRefusal),
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -155,6 +184,30 @@ pub enum EmitRefusal {
         /// Why the handle was cancelled.
         cause: quire_exact::CancelCause,
     },
+    /// The package declares checked random parameters, rewards or
+    /// workloads (FR-185 "Package emission"), which FR-322's v2 vocabulary
+    /// has no node for: the emitter refuses rather than write a package
+    /// without them, naming the first such declaration in source order.
+    #[error(
+        "{} `{declaration}` cannot be written to a checked-package/v2 graph yet",
+        feature.name()
+    )]
+    ProbabilisticModelNotEmitted {
+        /// The first such declaration's name: `operation(parameter)` for a
+        /// random parameter, the declared name of a reward or a workload.
+        declaration: String,
+        /// Its feature.
+        feature: qsl_semantics::check::ProbabilisticFeature,
+        /// The unit's selected header profile identity, when it selects one.
+        profile: Option<&'static str>,
+    },
+    /// The typed timed models do not describe exactly the timed nodes in the
+    /// already-admitted base package.
+    #[error("typed timed models do not match the admitted package's timed-node set")]
+    TimedModelNodeSetMismatch,
+    /// A typed timed model cannot be serialized with its available literals.
+    #[error("typed timed-model writer invariant: {0}")]
+    TimedModelWriterInvariant(&'static str),
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -171,7 +224,29 @@ impl EmitRefusal {
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. } => Code::UnsupportedProjection,
             Self::Encoding { .. } => Code::OutputFailure,
+            Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
+            Self::Abstraction(_) => Code::UnsupportedProjection,
+            Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
+            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
+            Self::TimedModelWriterInvariant(_) => Code::RuntimeInvariant,
+        }
+    }
+
+    /// The catalog cause, where the code has one (FR-010).
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::StaleProtocolReference { .. } => Some("missing-name"),
+            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::NothingToEmit { .. }
+            | Self::UnlocatedOccurrence { .. }
+            | Self::UnknownOccurrenceRole { .. }
+            | Self::Encoding { .. }
+            | Self::Abstraction(_)
+            | Self::Cancelled { .. }
+            | Self::TimedModelNodeSetMismatch
+            | Self::TimedModelWriterInvariant(_) => None,
         }
     }
 }
@@ -230,6 +305,13 @@ impl Emission {
     pub fn omitted(&self) -> &[OmittedNode] {
         &self.omitted
     }
+
+    /// The evidence IR's reader needs to read these bytes: the artifacts the
+    /// emission compiled against and its required features. A caller that
+    /// reads the bytes itself adds the domain package documents.
+    pub fn evidence(&self) -> &CheckedPackageEvidence {
+        &self.evidence
+    }
 }
 
 /// IR's closed node family for `tag`. Exhaustive: a new QSL node tag does
@@ -260,6 +342,24 @@ fn node_id(key: NodeKey) -> CheckedNodeId {
     }
 }
 
+/// The Contract IR node id of the wire node id `node`: the same id
+/// [`emit_checked`] writes for the node.
+pub fn checked_node_id(node: WireNodeId) -> CheckedNodeId {
+    CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: node.to_string().into(),
+    }
+}
+
+/// The Contract IR occurrence `origin` names, as [`emit_checked`] writes it
+/// on a node. `None` for a role FR-322 does not name.
+pub fn checked_occurrence(origin: &Origin) -> Option<CheckedOccurrence> {
+    Some(CheckedOccurrence {
+        role: crate::checked_v2::occurrence_role(origin.role().as_str())?,
+        ordinal: origin.ordinal(),
+    })
+}
+
 /// What one node body names: the FR-093 rule 1 and 2 dependencies, the
 /// type annotations (literal `type`s and application `result_type`s), and
 /// the law definitions of its applications.
@@ -267,7 +367,7 @@ fn node_id(key: NodeKey) -> CheckedNodeId {
 struct BodyNames {
     dependencies: BTreeSet<CheckedNodeId>,
     annotations: BTreeSet<CheckedNodeId>,
-    laws: Vec<DefinitionReference>,
+    laws: Vec<OperationLaw>,
 }
 
 impl BodyNames {
@@ -282,14 +382,14 @@ impl BodyNames {
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
                     names.dependencies.insert(node_id(declaration));
                 }
+                // FR-380: the population node a reachability links to.
+                if let Some(population) = operation.member().and_then(Member::population) {
+                    names.dependencies.insert(node_id(population));
+                }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
-                names.laws.extend(
-                    operation
-                        .laws()
-                        .iter()
-                        .chain(leaf_laws)
-                        .map(|law| law.definition.clone()),
-                );
+                names
+                    .laws
+                    .extend(operation.laws().iter().chain(leaf_laws).cloned());
             }
             // QSpec FR-340: every `modifies` declaration and every
             // `creates`/`deletes` entry is a declared dependency of the
@@ -300,7 +400,7 @@ impl BodyNames {
                     frame
                         .modifies
                         .iter()
-                        .map(|field| node_id(field.declaration().0)),
+                        .map(|entry| node_id(entry.declaration().0)),
                 );
                 names.dependencies.extend(
                     frame
@@ -309,6 +409,13 @@ impl BodyNames {
                         .chain(&frame.deletes)
                         .map(|node| node_id(node.0)),
                 );
+            }
+            // QSpec FR-451: `dependencies` are exactly the unique set of every
+            // `type`, `population` and `context` target of the body.
+            BodyTerm::Abstraction(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().into_iter().map(node_id));
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -331,7 +438,15 @@ impl BodyNames {
 
 /// A node's recorded occurrences, each with the location `check` recorded
 /// it at.
-type Recorded<'g> = Vec<(CheckedOccurrence, &'g Location)>;
+type Recorded<'g> = Vec<(CheckedOccurrence, RecordedLocation<'g>)>;
+
+/// Parameters retain their own source regions; expression sites use the
+/// expression-location converter. An unlocated parameter never takes its
+/// enclosing body's region.
+enum RecordedLocation<'g> {
+    Expression(&'g Location),
+    Parameter(Option<SourceRegion>),
+}
 
 /// One checked node, read for the wire.
 struct Candidate<'g> {
@@ -344,7 +459,7 @@ struct Candidate<'g> {
     /// Every node the written node names: its dependencies, its semantic
     /// type and its body's type annotations.
     names: BTreeSet<CheckedNodeId>,
-    laws: Vec<DefinitionReference>,
+    laws: Vec<OperationLaw>,
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
     occurrences: Recorded<'g>,
@@ -405,8 +520,9 @@ impl<'g> Candidate<'g> {
         }
     }
 
-    fn form_is_supported(&self) -> bool {
-        CheckedNodeKind::decode(self.tag, self.node.semantic_form()).is_some()
+    /// Whether `decodes` admits the node's (`node_tag`, `semantic_form`).
+    fn form_is_supported(&self, decodes: &dyn Fn(CheckedNodeTag, &str) -> bool) -> bool {
+        decodes(self.tag, self.node.semantic_form())
     }
 
     /// FR-322's declaration rule, as IR applies it: `declaration` is absent
@@ -610,10 +726,11 @@ fn owner_is_locked(nominal: Option<&NominalNode>, source: &RawSourceRef) -> bool
 fn omissions(
     candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
     source: &RawSourceRef,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Vec<OmittedNode> {
     let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
     for (id, candidate) in candidates {
-        let cause = if !candidate.form_is_supported() {
+        let cause = if !candidate.form_is_supported(decodes) {
             Some(OmissionCause::UnsupportedForm {
                 node_tag: candidate.node.node_tag(),
                 semantic_form: candidate.node.semantic_form(),
@@ -655,6 +772,71 @@ fn omissions(
         .into_iter()
         .map(|(node, cause)| OmittedNode { node, cause })
         .collect()
+}
+
+/// The role a clause-profile law is selected under in the lock's
+/// `profile_selections`, or `None` for a value law, which the lock selects in
+/// `definition_selections` (QSpec FR-322).
+fn profile_role(role: LawRole) -> Option<CheckedSelectionRole> {
+    match role {
+        LawRole::TemporalProfile => Some(CheckedSelectionRole::TemporalProfile),
+        LawRole::ProtocolProfile => Some(CheckedSelectionRole::ProtocolProfile),
+        LawRole::IntegerDivision | LawRole::IeeeProfile | LawRole::TextProfile => None,
+    }
+}
+
+/// The written nodes' laws: the lock's `profile_selections` rows for the
+/// clause-profile laws, each once in first-use order, and the value laws'
+/// definitions for `definition_selections`.
+fn split_laws(order: &[&Candidate<'_>]) -> (Vec<CheckedSelection>, Vec<DefinitionReference>) {
+    let mut profiles: Vec<CheckedSelection> = Vec::new();
+    let mut definitions = Vec::new();
+    for law in order.iter().flat_map(|candidate| &candidate.laws) {
+        match profile_role(law.role) {
+            Some(role) => {
+                let selection = CheckedSelection {
+                    role,
+                    definition: artifact(&law.definition),
+                };
+                if !profiles.contains(&selection) {
+                    profiles.push(selection);
+                }
+            }
+            None => definitions.push(law.definition.clone()),
+        }
+    }
+    (profiles, definitions)
+}
+
+/// FR-218: a `protocol_reference` carrier whose bound target is no node the
+/// wire writes -- absent from the graph, or omitted from it -- refuses the
+/// whole emission, never an omission: the reference binds a key, and the key
+/// names nothing.
+fn stale_protocol_reference(
+    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
+    omitted: &[OmittedNode],
+) -> Result<(), EmitRefusal> {
+    for candidate in candidates.values() {
+        let node = candidate.node;
+        let carrier = CheckedNodeKind::decode(candidate.tag, node.semantic_form())
+            == Some(CheckedNodeKind::Protocol(ProtocolForm::ProtocolReference));
+        if !carrier {
+            continue;
+        }
+        let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {
+            continue;
+        };
+        let target = node_id(target.0);
+        let written = candidates.contains_key(&target)
+            && !omitted.iter().any(|omission| omission.node == target);
+        if !written {
+            return Err(EmitRefusal::StaleProtocolReference {
+                reference: candidate.id.clone(),
+                target,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// FR-093's graph order: ascending by node id, except that a recursion
@@ -710,11 +892,20 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
     lock.entry(role)
 }
 
-/// The lock's `edition` and `definition_selections`: the catalog's edition,
-/// then its other always-selected roles in catalog order, then each law
+/// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
+/// the catalog's edition; then the header-selected layers and every layer
+/// their `requires` closure names, in the lock's row order, and no layer
+/// that requires a selected layer; then the qualification-catalog rows
+/// QSpec FR-001 selects for those layers; then the complete-model and
+/// complete-temporal lock rows when their layers are selected; then each law
 /// definition the bodies name that is not already selected.
+///
+/// A unit whose header selects no layer selects the `always` rows: the
+/// lock's `without_layer` rows are for a unit that selects layers none of
+/// which is `quire.value.complete/v1`.
 fn catalog_selections(
     lock: &DefinitionLock,
+    layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
@@ -723,16 +914,43 @@ fn catalog_selections(
         role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
     };
-    let mut definitions: Vec<CheckedArtifactRef> = lock
-        .always_roles()
+    let closure = lock.closure(layers);
+    let qualification = if layers.is_empty() {
+        lock.always_roles()
+    } else {
+        lock.qualification_roles(&closure)
+    };
+    let selected = closure
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
-        .map(|role| artifact(&catalog_entry(lock, *role).reference()))
-        .collect();
-    for law in laws {
-        let law = artifact(law);
-        if !definitions.contains(&law) {
-            definitions.push(law);
+        .map(|layer| lock.layer_reference(*layer))
+        .chain(
+            qualification
+                .iter()
+                .filter(|role| **role != CatalogRole::Edition)
+                .map(|role| catalog_entry(lock, *role).reference()),
+        )
+        // FR-361 item 3: the complete-model lock's `package_selection.always`
+        // rows, for a unit whose layers hold the model layer.
+        .chain(
+            closure
+                .contains(&HeaderLayer::ModelComplete)
+                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(
+            closure
+                .contains(&HeaderLayer::TemporalComplete)
+                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(laws.iter().cloned());
+    let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
+    for definition in selected {
+        let definition = artifact(&definition);
+        if !definitions.contains(&definition) {
+            definitions.push(definition);
         }
     }
     (edition, definitions)
@@ -748,6 +966,11 @@ fn recorded_occurrences(
         let occurrence = CheckedOccurrence {
             role: occurrence_role(key, &origin)?,
             ordinal: origin.ordinal(),
+        };
+        let location = if graph.parameter_span(key, &origin).is_some() {
+            RecordedLocation::Parameter(graph.occurrence_region(key, &origin))
+        } else {
+            RecordedLocation::Expression(location)
         };
         by_node.entry(key).or_default().push((occurrence, location));
     }
@@ -766,13 +989,16 @@ fn source_map(
         for (occurrence, location) in &candidate.occurrences {
             // FR-322 regions are non-empty half-open intervals: an empty
             // region places the occurrence nowhere.
-            let region = regions(location)
-                .filter(|region| region.start() < region.end())
-                .ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
-                    node: candidate.node.key(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                })?;
+            let region = match location {
+                RecordedLocation::Expression(location) => regions(location),
+                RecordedLocation::Parameter(region) => region.clone(),
+            }
+            .filter(|region| region.start() < region.end())
+            .ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
+                node: candidate.node.key(),
+                role: occurrence.role.clone(),
+                ordinal: occurrence.ordinal,
+            })?;
             let source = source_artifact(region.source());
             sources.insert(source.clone());
             entries.push(CheckedSourceMapEntry {
@@ -800,68 +1026,11 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
     })
 }
 
-/// The `quire.checked-package/v2` envelope. See the module doc for why it is
-/// local. Its members are IR's types, and a node body nests as deep as the
-/// expression it holds, so the envelope writes each member into
-/// `quire-canonical`'s event API ([`Encode`]) rather than through serde.
-struct WireV2<'a> {
-    contract_version: &'static str,
-    identity_preimage: &'a CheckedPackageIdentityPreimageV2,
-    package_id: CheckedSemanticId,
-    lock: &'a CheckedPackageLockV2,
-    semantic_graph: &'a CheckedSemanticGraphV2,
-    source_map: &'a [CheckedSourceMapEntry],
-    capability_report: &'a [CheckedCapability],
-    diagnostics: &'a CheckedDiagnosticsV2,
-}
-
-/// Each member writes itself through IR's own encoding: the identity
-/// preimage, the semantic graph and the diagnostics through their `Encode`,
-/// and the fixed-depth members through their derived `FixedShape`.
-impl Encode for WireV2<'_> {
-    fn encode_into<S: Sink + ?Sized>(
-        &self,
-        writer: &mut Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        writer.begin_object()?;
-        writer.name("contract_version")?;
-        writer.string(self.contract_version)?;
-        writer.name("identity_preimage")?;
-        self.identity_preimage.encode_into(writer)?;
-        writer.name("package_id")?;
-        self.package_id.encode_into(writer)?;
-        writer.name("lock")?;
-        self.lock.encode_into(writer)?;
-        writer.name("semantic_graph")?;
-        self.semantic_graph.encode_into(writer)?;
-        writer.name("source_map")?;
-        encode_array(writer, self.source_map)?;
-        writer.name("capability_report")?;
-        encode_array(writer, self.capability_report)?;
-        writer.name("diagnostics")?;
-        self.diagnostics.encode_into(writer)?;
-        writer.end_object()
-    }
-}
-
-/// `items` as one JSON array, each item writing itself.
-fn encode_array<S: Sink + ?Sized, T: Encode>(
-    writer: &mut Writer<'_, S>,
-    items: &[T],
-) -> Result<(), quire_canonical::Error> {
-    writer.begin_array()?;
-    for item in items {
-        item.encode_into(writer)?;
-    }
-    writer.end_array()
-}
-
-/// `package`'s FR-322 `dependency_selections`, in its closure's ascending
+/// `package`'s FR-322 direct `dependency_selections`, in ascending
 /// UTF-8 byte order of identity.
 fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
     package
-        .dependency_selections()
-        .iter()
+        .direct_dependency_selections()
         .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
             package_id: semantic_id(resolved.package_id),
@@ -887,30 +1056,272 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
+///
+/// A package emitted before (by this function or
+/// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
+/// package does not change, so a dependency reached again, or a caller that
+/// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return Ok(emission.clone());
+    }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Rebuild the structural identities and references of typed timed nodes
+/// after their bodies are serialized. Timed graph edges are acyclic by the
+/// closed FR-322 forms, so repeated digest passes propagate child-key changes
+/// to their parents.
+fn rekey_timed_model_nodes(
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+) -> Result<(), EmitRefusal> {
+    let timed_count = nodes
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .count();
+    for _ in 0..=timed_count.saturating_mul(timed_count).max(1) {
+        let mut changes = Vec::new();
+        for node in nodes
+            .iter_mut()
+            .filter(|node| node.node_tag.as_ref() == "timed_model")
+        {
+            node.dependencies = body_reference_targets(&node.body);
+            let old = node.node_id.clone();
+            let new = timed_model_node_id(node)?;
+            if new != old {
+                changes.push((old, new));
+            }
+        }
+        if changes.is_empty() {
+            return Ok(());
+        }
+        for (old, new) in changes {
+            for node in nodes.iter_mut() {
+                replace_node_id(node, &old, &new)?;
+            }
+            for entry in source_map.iter_mut() {
+                if entry.node_id == old {
+                    entry.node_id = new.clone();
+                }
+            }
+        }
+    }
+    Err(EmitRefusal::TimedModelWriterInvariant(
+        "timed-node identity propagation did not converge",
+    ))
+}
+
+/// FR-322's structural identity preimage for one closed timed-model node.
+fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, EmitRefusal> {
+    if node.recursion_group.is_some() {
+        return Err(EmitRefusal::TimedModelWriterInvariant(
+            "timed nodes cannot belong to a recursion group",
+        ));
+    }
+    let semantic_type = if node.semantic_type == node.node_id {
+        serde_json::Value::Null
+    } else {
+        serde_json::to_value(&node.semantic_type).map_err(encoding)?
+    };
+    let mut preimage = serde_json::json!({
+        "version": "quire.structural-node/v1",
+        "node_tag": node.node_tag,
+        "semantic_form": node.semantic_form,
+        "semantic_type": semantic_type,
+        "declaration": node.declaration,
+        "recursion": null,
+        "body": node.body,
+    });
+    if let Some(owner) = &node.owner {
+        preimage["owner"] = serde_json::to_value(owner).map_err(encoding)?;
+    }
+    let digest =
+        quire_canonical::sha256(&preimage, crate::checked::EMIT_LIMITS).map_err(encoding)?;
+    Ok(CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: digest.to_string().into(),
+    })
+}
+
+/// The unique digest-ascending reference targets directly named by a body.
+fn body_reference_targets(body: &serde_json::Value) -> Vec<CheckedNodeId> {
+    fn visit(value: &serde_json::Value, targets: &mut Vec<CheckedNodeId>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields.get("term") == Some(&serde_json::Value::String("reference".into())) {
+                    if let Ok(target) = serde_json::from_value(fields["target"].clone()) {
+                        targets.push(target);
+                    }
+                }
+                fields.values().for_each(|child| visit(child, targets));
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|child| visit(child, targets)),
+            _ => {}
+        }
+    }
+    let mut targets = Vec::new();
+    visit(body, &mut targets);
+    targets.sort_by(|left, right| left.digest.cmp(&right.digest));
+    targets.dedup();
+    targets
+}
+
+/// Replace one checked NodeId throughout a timed node's serialized fields.
+fn replace_node_id(
+    node: &mut CheckedSemanticNodeV2,
+    old: &CheckedNodeId,
+    new: &CheckedNodeId,
+) -> Result<(), EmitRefusal> {
+    let mut wire = serde_json::to_value(&*node).map_err(encoding)?;
+    fn visit(value: &mut serde_json::Value, old: &CheckedNodeId, new: &CheckedNodeId) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields.get("domain").and_then(serde_json::Value::as_str) == Some(NODE_KEY_DOMAIN)
+                    && fields.get("digest").and_then(serde_json::Value::as_str)
+                        == Some(old.digest.as_ref())
+                {
+                    *value = serde_json::to_value(new).expect("CheckedNodeId serializes");
+                    return;
+                }
+                fields.values_mut().for_each(|child| visit(child, old, new));
+            }
+            serde_json::Value::Array(items) => {
+                items.iter_mut().for_each(|child| visit(child, old, new));
+            }
+            _ => {}
+        }
+    }
+    visit(&mut wire, old, new);
+    *node = serde_json::from_value(wire).map_err(encoding)?;
+    Ok(())
+}
+
+/// Emit a complete admitted package using typed timed models for its timed
+/// nodes. The base package supplies the already-checked non-timed graph,
+/// lock, source map, capability report and diagnostics; every timed node is
+/// rewritten from `models` in its original graph position. The supplied
+/// models must cover the base package's timed-node identities exactly.
+///
+/// Timed-node identities are recomputed from their written bodies, dependent
+/// timed references and source-map entries are updated, and the package
+/// identity is recomputed before the IR encoder writes the package.
+pub fn emit_timed_models(
+    base: &CheckedPackageV2,
+    models: &[CheckedTimedModel],
+) -> Result<Emission, EmitRefusal> {
+    let expected = base
+        .graph()
+        .nodes
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .map(|node| node.node_id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut timed = BTreeMap::new();
+    for model in models {
+        let written = model
+            .write_nodes()
+            .map_err(EmitRefusal::TimedModelWriterInvariant)?;
+        for node in written {
+            if node.node_tag.as_ref() != "timed_model"
+                || timed.insert(node.node_id.clone(), node).is_some()
+            {
+                return Err(EmitRefusal::TimedModelNodeSetMismatch);
+            }
+        }
+    }
+    if expected != timed.keys().cloned().collect() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let mut nodes = base
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| {
+            if node.node_tag.as_ref() == "timed_model" {
+                timed
+                    .remove(&node.node_id)
+                    .ok_or(EmitRefusal::TimedModelNodeSetMismatch)
+            } else {
+                Ok(node.clone())
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !timed.is_empty() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let lock = base.lock().clone();
+    let mut source_map = base.source_map().to_vec();
+    rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+    let semantic_graph = CheckedSemanticGraphV2 {
+        graph_version: base.graph().graph_version.clone(),
+        nodes,
+    };
+    let identity = base.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &identity.version,
+        edition: &identity.edition,
+        profile_selections: &identity.profile_selections,
+        definition_selections: &identity.definition_selections,
+        model_selections: &identity.model_selections,
+        required_features: &identity.required_features,
+        dependency_selections: &identity.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
+    };
+    let capability_report = base.capability_report().to_vec();
+    let diagnostics = base.diagnostics().clone();
+    let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
+        encode_checked_package_v2(
+            &preimage,
+            &semantic_id(package_id),
+            &lock,
+            &semantic_graph,
+            &source_map,
+            &capability_report,
+            &diagnostics,
+            crate::checked::EMIT_LIMITS,
+        )
+        .map_err(EmitRefusal::from)
+    })?;
+    Ok(Emission {
+        package,
+        omitted: Vec::new(),
+        evidence: own_evidence(&lock),
+    })
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
 /// entry and at every node it writes (FR-276). A cancelled handle stops the
-/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes. It always
+/// emits, so every node is polled; the emission it returns is remembered for
+/// [`emit_checked`].
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(package, graph.memoized_regions(), |_| None, cancel)
+    let emission = emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+    )?;
+    package.remember_emission(&emission);
+    Ok(emission)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
-/// places each occurrence `check` recorded (see the module doc). The tests'
-/// entry point with a caller-supplied region conversion.
-#[cfg(test)]
-pub(crate) fn emit_package(
+/// places each occurrence `check` recorded (see the module doc). The entry
+/// point for a package built from forms that carry no spans, whose caller
+/// places every occurrence itself.
+pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None, &Cancel::new())
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes)
 }
 
 /// As [`emit_package`], but lets a caller force a specific node's wire
@@ -929,7 +1340,21 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, fault, &Cancel::new())
+    emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes)
+}
+
+/// As [`emit_package`], but against an IR whose v2 vocabulary `decodes`
+/// describes in place of the one this build links: a node whose tag and form
+/// it refuses is omitted with [`OmissionCause::UnsupportedForm`], together
+/// with every node that names it (FR-320-AC-2). Only this module's own tests
+/// call it.
+#[cfg(test)]
+fn emit_package_decoding(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
+) -> Result<Emission, EmitRefusal> {
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), decodes)
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
@@ -960,6 +1385,68 @@ pub fn checked_node_id_of(key: NodeKey) -> CheckedNodeId {
     node_id(key)
 }
 
+/// Whether IR's v2 vocabulary has the form `semantic_form` under `tag`.
+fn ir_decodes(tag: CheckedNodeTag, semantic_form: &str) -> bool {
+    CheckedNodeKind::decode(tag, semantic_form).is_some()
+}
+
+/// Every node of `graph` read for the wire, by its id.
+fn candidates_of<'g>(
+    graph: &'g CheckedGraph,
+    abstraction: Option<&'g AbstractionNodes>,
+) -> Result<BTreeMap<CheckedNodeId, Candidate<'g>>, EmitRefusal> {
+    let mut recorded = recorded_occurrences(graph)?;
+    let mut candidates: BTreeMap<CheckedNodeId, Candidate<'g>> = graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| {
+            let occurrences = recorded.remove(&node.key()).unwrap_or_default();
+            let candidate = Candidate::of(node, occurrences);
+            (candidate.id.clone(), candidate)
+        })
+        .collect();
+    // QSpec FR-451: the relation node has one `declaration` occurrence per
+    // declaration it was read from; the nodes it names that the graph does not
+    // hold are `generated`, at the first.
+    if let Some(nodes) = abstraction {
+        let mut add = |node: &'g SemanticNode, occurrences: Recorded<'g>| {
+            let candidate = Candidate::of(node, occurrences);
+            candidates.entry(candidate.id.clone()).or_insert(candidate);
+        };
+        let declared = (0_u64..)
+            .zip(nodes.sites())
+            .map(|(ordinal, site)| {
+                (
+                    CheckedOccurrence {
+                        role: CheckedOccurrenceRole::Declaration,
+                        ordinal,
+                    },
+                    RecordedLocation::Expression(site),
+                )
+            })
+            .collect();
+        add(nodes.relation(), declared);
+        for node in nodes.support() {
+            let generated = nodes
+                .sites()
+                .first()
+                .map(|site| {
+                    (
+                        CheckedOccurrence {
+                            role: CheckedOccurrenceRole::Generated,
+                            ordinal: 0,
+                        },
+                        RecordedLocation::Expression(site),
+                    )
+                })
+                .into_iter()
+                .collect();
+            add(node, generated);
+        }
+    }
+    Ok(candidates)
+}
+
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
 /// `fault` runs against each node's id, in graph order, just before that
 /// node would be written; every production call site is `emit_package`,
@@ -970,6 +1457,7 @@ fn emit_package_inner(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
     cancel: &Cancel,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
     let denied = || {
         cancel
@@ -982,17 +1470,23 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    let mut recorded = recorded_occurrences(graph)?;
-    let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            let candidate = Candidate::of(node, occurrences);
-            (candidate.id.clone(), candidate)
-        })
-        .collect();
-    let omitted = omissions(&candidates, graph.source());
+    let abstraction = package
+        .abstraction()
+        .map(|relation| graph.abstraction_nodes(relation))
+        .transpose()
+        .map_err(EmitRefusal::Abstraction)?;
+    if let Some((feature, declaration)) = graph.probabilistic_model().first_declaration() {
+        return Err(EmitRefusal::ProbabilisticModelNotEmitted {
+            declaration,
+            feature,
+            // The header layers ascend; the widest is the profile the unit
+            // selects its probabilistic declarations under.
+            profile: graph.header_layers().last().map(|layer| layer.identity()),
+        });
+    }
+    let candidates = candidates_of(graph, abstraction.as_ref())?;
+    let omitted = omissions(&candidates, graph.source(), decodes);
+    stale_protocol_reference(&candidates, &omitted)?;
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
     let kept: Vec<&Candidate<'_>> = candidates
         .values()
@@ -1013,13 +1507,16 @@ fn emit_package_inner(
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
-    let laws: Vec<DefinitionReference> = order
-        .iter()
-        .flat_map(|candidate| candidate.laws.iter().cloned())
-        .collect();
+    let (profile_selections, mut laws) = split_laws(&order);
+    // The IEEE trigger includes a declared float with no IEEE application.
+    // Keep the selected, admitted policy even when no node needs its law.
+    if let Some(profile) = graph.scope().ieee_profile_selection() {
+        laws.push(profile.definition().clone());
+    }
 
     let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) = catalog_selections(&catalog, &laws);
+    let (edition, definition_selections) =
+        catalog_selections(&catalog, graph.header_layers(), &laws);
     let model_selections: Vec<CheckedDomainPackageRef> = graph
         .model_selections()
         .iter()
@@ -1033,25 +1530,25 @@ fn emit_package_inner(
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
-        profile_selections: Vec::new(),
+        profile_selections: profile_selections.clone(),
         definition_selections: definition_selections.clone(),
         model_selections: model_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
-    let preimage = CheckedPackageIdentityPreimageV2 {
-        version: IDENTITY_PREIMAGE_V2.into(),
-        edition,
-        profile_selections: Vec::new(),
-        definition_selections,
-        model_selections,
-        required_features: lock.required_features.clone(),
-        dependency_selections: lock.dependency_selections.clone(),
-        identity_projection: nodes.iter().map(Into::into).collect(),
-    };
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
+    };
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: IDENTITY_PREIMAGE_V2,
+        edition: &edition,
+        profile_selections: &profile_selections,
+        definition_selections: &definition_selections,
+        model_selections: &model_selections,
+        required_features: &lock.required_features,
+        dependency_selections: &lock.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),
@@ -1062,17 +1559,17 @@ fn emit_package_inner(
         entries: Vec::new(),
     };
     let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
-        let wire = WireV2 {
-            contract_version: CHECKED_PACKAGE_V2,
-            identity_preimage: &preimage,
-            package_id: semantic_id(package_id),
-            lock: &lock,
-            semantic_graph: &semantic_graph,
-            source_map: &source_map,
-            capability_report: &capability_report,
-            diagnostics: &diagnostics,
-        };
-        quire_canonical::to_vec(&wire, crate::checked::EMIT_LIMITS).map_err(EmitRefusal::from)
+        encode_checked_package_v2(
+            &preimage,
+            &semantic_id(package_id),
+            &lock,
+            &semantic_graph,
+            &source_map,
+            &capability_report,
+            &diagnostics,
+            crate::checked::EMIT_LIMITS,
+        )
+        .map_err(EmitRefusal::from)
     })?;
     let evidence = own_evidence(&lock);
     Ok(Emission {

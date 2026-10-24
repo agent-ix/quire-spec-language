@@ -212,6 +212,10 @@ fn node_by_id<'w>(wire: &'w Value, id: &CheckedNodeId) -> &'w Value {
 /// IR's lowering of `id` with every family supported and bounds required.
 fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweringRecordV2 {
     let profile = CompleteLoweringProfileV2 {
+        reference: quire_contract_model::LoweringProfileRef {
+            authority: "test".into(),
+            identity: "qsl-extent-agreement".into(),
+        },
         supported_tags: CheckedNodeTag::ALL.iter().copied().collect(),
         require_bounds: true,
         work_limit: u64::MAX,

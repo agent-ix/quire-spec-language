@@ -4,12 +4,13 @@
 //! counterexample carried on the FR-070 envelope as
 //! `WitnessEnvelope<FrameCounterexample>`.
 //!
-//! The payload names the operation, the checked identities of its
+//! The payload names the checked identities of the operation's
 //! `state`/`operation_anchor` and `state`/`frame` nodes and the frame's
 //! `generated` occurrence (FR-104, FR-105), the invocation whose pre and
 //! post snapshots the replay admits (FR-106), and the change the
-//! counterexample claims. The replay reads it in `crate::execute`
-//! (`replay_frame`).
+//! counterexample claims. The operation itself travels once, as the request's
+//! `frame_operation` replay target (ADR-017 PF-4, G-2). The replay reads the
+//! payload in `crate::execute` (`replay_frame`).
 //!
 //! CG builds this payload from the frame witness bindings over QSL's
 //! [`super::WitnessBinding`] (ADR-013 O-25) once
@@ -24,10 +25,12 @@ use crate::identity::QualifiedName;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::observation::{DocumentRef, FrameChange, FrameWitness, SelectedObject};
+use qsl_semantics::model::observation::{
+    DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
+};
 
-/// The operation a frame counterexample refutes: its declaring object
-/// type's [`QualifiedName`] (`M::T`, the model alias then the type) and the
+/// The operation a frame counterexample refutes, QSpec FR-323's
+/// `frame_operation` replay target: its declaring object type's [`QualifiedName`] (`M::T`, the model alias then the type) and the
 /// operation's name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameOperation {
@@ -82,6 +85,17 @@ pub enum ClaimedChange {
         /// Its post most-specific type.
         post_type: DeclarationKey,
     },
+    /// A relationship instance was added or removed.
+    Link {
+        /// The relationship node's key.
+        relationship: DeclarationKey,
+        /// Whether the instance was added or removed.
+        difference: LinkDifference,
+        /// The instance's source end.
+        source: SelectedObject,
+        /// The instance's target end.
+        target: SelectedObject,
+    },
 }
 
 impl ClaimedChange {
@@ -126,6 +140,18 @@ impl ClaimedChange {
                 pre_type: pre_type.clone(),
                 post_type: post_type.clone(),
             },
+            FrameChange::Link {
+                relationship,
+                difference,
+                source,
+                target,
+                ..
+            } => Self::Link {
+                relationship: relationship.clone(),
+                difference: *difference,
+                source: source.clone(),
+                target: target.clone(),
+            },
         }
     }
 }
@@ -134,8 +160,6 @@ impl ClaimedChange {
 /// (FR-070-AC-5). Every member is typed; none is a `String`-keyed map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameCounterexample {
-    /// The operation whose frame the counterexample refutes.
-    pub operation: FrameOperation,
     /// The wire identity of the operation's `state`/`operation_anchor` node
     /// (FR-105).
     pub anchor: WireNodeId,
@@ -243,6 +267,21 @@ mod tests {
                     object: object("c2"),
                     pre_type: key("A"),
                     post_type: key("B"),
+                },
+            ),
+            (
+                FrameChange::Link {
+                    relationship: key("Pump-housing-Tank"),
+                    difference: LinkDifference::Removed,
+                    source: object("p1"),
+                    target: object("t1"),
+                    modifies: vec![key("Pump/backup")],
+                },
+                ClaimedChange::Link {
+                    relationship: key("Pump-housing-Tank"),
+                    difference: LinkDifference::Removed,
+                    source: object("p1"),
+                    target: object("t1"),
                 },
             ),
         ];

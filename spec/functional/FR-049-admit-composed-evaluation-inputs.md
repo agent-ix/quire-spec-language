@@ -40,10 +40,48 @@ The domain package admitted under
 object-type, relationship and population-declaration identity as declaration
 keys. `StaticAuthority`'s document, model, profile and configuration identity
 and digest are checked independently of that domain-package identity: each is
-a static identity paired with a `sha256` digest in the
-`filament-canonical-json-1` domain, which the evaluator's `valid_digest` check
-enforces. Moving these identities to the FR-056 domain package's `sha256-jcs`
-digests is tracked separately (refs #131). F's selected observation binding
+a static identity paired with a digest in the FR-056 `sha256-jcs` domain, which
+the evaluator checks before executing any value. One digest domain for every
+identity the language admits gives one preimage that any party recomputes from
+the selected document, so a `StaticAuthority` digest and a domain package
+digest of the same document are the same string.
+
+A `StaticAuthority` digest is spelled `sha256-jcs:` followed by 64 lowercase
+hexadecimal digits. Its preimage is the RFC 8785 (JCS) encoding, as UTF-8
+bytes, of the one parsed JSON value of the selected document, model, profile
+or configuration artifact, parsed and encoded exactly as FR-056's package
+document rule does. The preimage carries no domain-tag prefix, length prefix or
+identity: `sha256-jcs:` is the spelling of the domain and is not hashed. The
+digest is SHA-256 over those bytes. The document identity pairs with the
+document's digest, and likewise for the model, profile and configuration; no
+member's digest is computed over another member.
+
+Vectors (each source parses to the value shown; keys sort and insignificant
+whitespace drops under RFC 8785):
+
+| Member | Source text | Preimage bytes (UTF-8) | Digest |
+| --- | --- | --- | --- |
+| document | `{ "version": 1, "name": "orders" }` | `{"name":"orders","version":1}` | `sha256-jcs:17bb26d31aa70e4655fc93485f8ffd9facabf1f09becf1db75c9ebcfe470dfe5` |
+| model | `{"objects": ["Order", "Line"], "id": "orders-model"}` | `{"id":"orders-model","objects":["Order","Line"]}` | `sha256-jcs:0f987e2b9547cc4ed5e157315e4a8be8f85fc76681fe458b1caacc60b3518c87` |
+| profile | `{"limits": {"depth": 8}, "profile": "strict"}` | `{"limits":{"depth":8},"profile":"strict"}` | `sha256-jcs:aba201d44fbf1cfd79c04cf9c813ffd60db7bb5433493fa5665e180b137f338e` |
+| configuration | `{"enabled": true, "mode": "batch"}` | `{"enabled":true,"mode":"batch"}` | `sha256-jcs:07039deac03f89e3778cf7cd496733e99664000cc534995317b725f04e31de0f` |
+
+The document source text's raw bytes hash to
+`5cc151d5d5c229b536b0e36f1c2fc47ef5f5f26f36f038f129777d4c53c90200`; that
+raw-byte digest is not the document's `sha256-jcs` digest.
+
+A digest in any other domain is refused before any value executes, with the
+closed typed `Refusal::StaticAuthorityDigest` naming the member (document,
+model, profile or configuration) and one cause: `wrong-domain` for a digest
+spelled `sha256:` (the algorithm-prefixed spelling of the retired
+`filament-canonical-json-1` domain) or for any spelling other than
+`sha256-jcs:`, and `malformed` for the `sha256-jcs:` spelling with other than
+64 lowercase hexadecimal digits. The evaluator never rewrites a prefix or accepts a digest by its hexadecimal digits alone. A caller holding an identity paired with
+a `sha256:` digest re-derives the digest from the selected artifact under the
+preimage above and supplies the `sha256-jcs:` spelling; no evaluator input
+carries both spellings or converts one to the other. When several members
+carry refused digests, the refusal names the first in the order document,
+model, profile, configuration. F's selected observation binding
 and assessment-input contract supplies concrete records, occurrence
 correlation, membership, observation anchors, progress and completeness.
 That observation contract additionally
@@ -165,6 +203,8 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
 | FR-049-AC-9 | A strictly read `/2` package evaluates its exact compensation guard, retry and recovery handles through the shared state evaluator. Crossed handles and artifact/authority substitutions refuse with their existing typed causes; an unpublished compiler emission returns `Refusal::UnpublishedArtifact`; missing inputs and exhausted work remain distinct; the version-1 API remains source-compatible. | Test (TC-142) |
+| FR-049-AC-10 | A `StaticAuthority` whose four digests are the `sha256-jcs:` digests of the vectors in the `StaticAuthority` digest rule of Inputs evaluates; a digest is SHA-256 over the RFC 8785 bytes of the parsed artifact with no prefix, so the document vector's source text, key-sorted and whitespace-free, yields the listed preimage and digest and its raw bytes yield a different one. | Test (TC-136) |
+| FR-049-AC-11 | A member digest spelled `sha256:<64 hex>` refuses with `Refusal::StaticAuthorityDigest` naming that member and cause `wrong-domain`, even when its hexadecimal digits equal the correct `sha256-jcs` digest; a `sha256-jcs:` digest with 63 digits, 65 digits, uppercase digits or a non-hex digit refuses `malformed`; no value executes, and with two refused members the refusal names the earlier in document, model, profile, configuration order. | Test (TC-136) |
 
 ## Dependencies
 
@@ -184,9 +224,3 @@ The domain package is selected by identity and digest.
 version-2 entry point for compensation assessment. QSL remains the sole owner of
 native expression evaluation; the consumer neither reparses nor mirrors the
 admitted graph.
-
-## Status
-
-Remaining work (implementation): `src/state/input.rs`
-`OBSERVATION_CONTRACT_REVISION` still pins the observation contract by
-revision; the pin is deleted.

@@ -19,6 +19,10 @@ Scope: FR-351-AC-3, FR-351-AC-4.
 1. Take TC-877's corpus and set its `results` member to record `passed` for `CAP-B`'s failing vector; run.
 2. Run TC-877's corpus scoped to `CAP-A` and `CAP-E`.
 3. Run it scoped to `CAP-Z`, which the corpus does not list.
+4. Repeat step 2 with `CAP-A` supplied twice; observe vector invocation
+   counts through the runner's subject boundary as well as the report.
+5. Explicitly select only the monitor-only `CAP-F`, with recorded passing
+   results for its vectors.
 
 Tag the tests `#[trace("TC-878", "FR-351-AC-n")]`.
 
@@ -26,4 +30,7 @@ Tag the tests `#[trace("TC-878", "FR-351-AC-n")]`.
 
 - Step 1: `CAP-B` `failed`.
 - Step 2: exactly `CAP-A` `passed` and `CAP-E` `uncovered`.
+- Step 2 executes no vector of `CAP-B`, `CAP-C`, `CAP-D`, `CAP-F` or `CAP-G`.
 - Step 3: the run refuses `unknown_required_feature`/`unknown-feature` naming `CAP-Z`, and no vector runs.
+- Step 4: the same vector invocation counts and outcomes as step 2.
+- Step 5: `CAP-F` is `uncovered`; none of its vectors executes.

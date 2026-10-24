@@ -69,7 +69,8 @@ selection whose alias is `v`.
 9. Check, each in its own unit under (`a`, `u`), the recursion groups of
    FR-092's Recursion-group vectors: `f`, `record List { next: List?; }`,
    `record Tree { kids: Sequence<Tree>[0, 3]; }`, and `ping` with `pong`.
-   Check `ping` and `pong` again with `pong` declared first. Key G1's node
+   Check `ping` and `pong` again with `pong` declared first. Check
+   `function one using v(): Integer pure { 1 }`. Key G1's node
    through the key function. Read each member's preimage bytes and key and
    each group's digest.
 10. Build `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`)
@@ -79,6 +80,12 @@ selection whose alias is `v`.
     for either supplied key.
 
 Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
+
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
 
 ## Expected Results
 
@@ -100,25 +107,8 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 - Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3
   for both literals, spelled `"1/2"`.
 - Step 8: no `_` arm.
-- Step 9: G1 to G15, L5, L6 and E11 to E13, byte for byte, and the group
-  digests FR-092 lists; `pong` first gives the same keys. G9's
+- Step 9: G1 to G15, L5 and E11 to E13, byte for byte, L6 from the unit
+  whose body is `1`, and the group digests FR-092 lists; `pong` first gives the same keys. G9's
   `semantic_type` is `{term: "group_reference", ordinal: 1}`.
 - Step 10: D1 both times, the checked type node's id is D1 both times, and
   no supplied key appears.
-
-## Status
-
-Implemented (#384). The tests back steps 1 to 10
-(`qsl-semantics/src/check/lowering/tests.rs`, `lowering/tests/depth.rs`,
-`lowering/tests/differential.rs` and `check/node_key/tests.rs`), recursion
-groups and the declared record's own key included.
-
-`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
-`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
-stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
-cause's code is always `stage_limit_exceeded` and its cause the limit kind's
-(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-Step 5 is backed by `check/lowering/tests/depth.rs` and
-`check/lowering/tests/identity_depth.rs`: a 100,000-deep `Option` type keys
-on a 512 KiB stack to the keys it has on 8 MiB, and the 30-record and
-1,000-record chains check.

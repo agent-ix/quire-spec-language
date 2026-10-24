@@ -34,18 +34,6 @@ relationships:
 ---
 # ADR-024: Statistical and probabilistic properties
 
-## Status
-
-Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-FR-185 to FR-194, under US-022. §10 records the
-owner's rulings on the draft's five questions, folded into the decision
-below. The owning ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `PM-`, `PF-`, `ST-`, `WA-`, `SV-`, `RP-`, `RX-`, `DS-`,
-`QS-` and `RU-` are local to this record. Other artifacts cite them as
-`ADR-024 SV-1`. ADR-018 items are cited as `ADR-018 SM-3`.
-
 ## Context
 
 QSL states and checks Boolean properties. ADR-018 gives a temporal claim a
@@ -85,6 +73,11 @@ The question has two halves: what a probabilistic model and property mean,
 and how a verdict states that a sampled result is a measurement and not a
 proof.
 
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `PM-`, `PF-`, `ST-`, `WA-`, `SV-`, `RP-`, `RX-`, `DS-`,
+`QS-` and `RU-` are local to this record. Other artifacts cite them as
+`ADR-024 SV-1`. ADR-018 items are cited as `ADR-018 SM-3`.
+
 ## Decision
 
 ### 1. Probabilistic choice in models
@@ -118,7 +111,7 @@ or a **measure** over one behaviour.
 | PF-1 | **Events.** An event is a Boolean function of a behaviour that a finite prefix decides. It is one of: a formula under a bounded profile with activation `on origin` (ADR-018 TP-2), whose truth depends on the first `h + 1` positions, `h` its horizon (ADR-014 TR-4); or a comparison `M <= c` or `M >= c` of a bounded measure (PF-2) with a threshold `c` of the measure's type. Interval operators nest in any order inside the bounded formula (QSpec FR-091, FR-092). |
 | PF-2 | **Bounded measures.** A measure is a value computed from one behaviour over a finite window `[0, h]` of positions. **Accumulate**: `accumulate R from holds(A) until holds(B) within h` is the sum of reward `R` over the steps from the first position `a <= h` where `A` holds to the first position `b`, `a <= b <= h`, where `B` holds (the steps into positions `a + 1` to `b`). A behaviour with no such `a` is not activated; one with `a` and no such `b` is censored, and its value is `+∞`. **Steps**: `steps from holds(A) until holds(B) within h` is accumulate with reward 1 per step. **Fraction**: `fraction holds(P) over [0, h]` is the number of positions in `[0, h]` where `P` holds over `h + 1`; with `weighted by R` each position `i` counts with the reward of the step that leaves it, and the value is the weighted sum over the total weight. A window reaching a terminal state continues on its stutter steps (ADR-018 SM-4). |
 | PF-3 | **Probability bound.** `probability >= θ [E]` or `probability <= θ [E]` for an event `E` and an exact rational `θ` with `0 < θ < 1`. It holds when `Pr[s0, W]({behaviours where E is true}) >= θ` (or `<= θ`) for every `s0` and binding (PM-4). The event's truth on a behaviour is SM-1's value (ADR-018 SM-1). |
-| PF-4 | **Quantile.** `quantile q of M <= c` or `quantile q of M >= c` for a bounded accumulate or steps measure `M`, an exact rational `q` with `0 < q < 1` and a threshold `c` of `M`'s type. The distribution is that of `M` under `Pr[s0, W]` conditioned on activation. The `q`-quantile is `inf {x : Pr(M <= x) >= q}`. Since a distribution function is right-continuous, `quantile q of M <= c` holds exactly when `Pr(M <= c) >= q`, and `quantile q of M >= c` exactly when `Pr(M < c) < q`, a strict bound: `M` has finite support, so `Pr(M < c)` is attained at the largest support point below `c`, and with `M` equal to 1 or 3 with probability 1/2 each, `quantile 1/2 of M >= 3` is false (the 1/2-quantile is 1) while `Pr(M < 3) = 1/2`. Statistical tests decide the strict bound as `<= q`, since the boundary lies inside the indifference region. Each quantile claim is therefore checked as a probability bound on an event conditioned on activation. A censored behaviour counts as exceeding every finite threshold. |
+| PF-4 | **Quantile.** `quantile q of M <= c` or `quantile q of M >= c` for a bounded accumulate or steps measure `M`, an exact rational `q` with `0 < q < 1` and a threshold `c` of `M`'s type. The distribution is that of `M` under `Pr[s0, W]` conditioned on activation. The `q`-quantile is `inf {x : Pr(M <= x) >= q}`. Since a distribution function is right-continuous, `quantile q of M <= c` holds exactly when `Pr(M <= c) >= q`, and `quantile q of M >= c` exactly when `Pr(M < c) < q`, a strict bound: `M` has finite support, so `Pr(M < c)` is attained at the largest support point below `c`, and with `M` equal to 1 or 3 with probability 1/2 each, `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) is false (the 1/2-quantile is 1) while `Pr(M < 3) = 1/2`. Statistical tests decide the strict bound as `<= q`, since the boundary lies inside the indifference region. Each quantile claim is therefore checked as a probability bound on an event conditioned on activation. A censored behaviour counts as exceeding every finite threshold. |
 | PF-5 | **Mean of a fraction.** `mean of F >= θ` or `<= θ` for a fraction measure `F` and an exact rational `θ` with `0 < θ < 1`. It holds when the expectation of `F` under `Pr[s0, W]` meets the bound for every `s0` and binding. Windowed availability is this form or a probability bound on `F >= θ'`. A mean is stated over a fraction only; a latency is stated as a quantile (PF-4). |
 | PF-6 | **Long-run fraction.** `long-run fraction holds(P) >= θ` or `<= θ`, optionally `weighted by R`, for `0 < θ < 1`. On a behaviour, the long-run fraction is the limit as `n → ∞` of the fraction over `[0, n]` (PF-2). In a finite Markov chain the limit exists with probability 1 and is constant on each bottom strongly connected component. The claim holds when the expectation of the limit under `Pr[s0, W]` meets the bound. This is the steady-state reading of long-run availability. Statistical checking regenerates at returns to `s0` (ST-7). |
 | PF-7 | **Units.** A probability, a quantile level, a fraction and a mean of a fraction are dimensionless exact rationals. A threshold of an accumulate measure has the reward's dimension; comparing it with a value in another unit of that dimension follows QSpec FR-142, so the claim converts explicitly. Every estimate in a result is an exact rational, in the threshold's unit where it has one. |
@@ -137,14 +130,18 @@ or a **measure** over one behaviour.
 | ST-5 | **Sequential method (SPRT).** Wald's sequential probability ratio test, as Younes and Simmons apply it to model checking. For `>= θ` it tests `H0: p >= θ + ι` against `H1: p <= θ − ι`. Each sample adds `ln(p1/p0)` when the event holds and `ln((1 − p1)/(1 − p0))` when it does not, `p0 = θ + ι`, `p1 = θ − ι`. The test keeps two sums of rational bounds on these increments: a lower sum, each increment rounded down, and an upper sum, each rounded up. It accepts `H1` (**rejected**) only when the lower sum reaches `ln(1/α')` and `H0` (**accepted**) only when the upper sum reaches `ln(β')`, so it never decides earlier than with the true values, in either direction. With these thresholds Wald's inequalities bound the error probabilities by `α'` (rejecting when `p >= p0`) and `β'` (accepting when `p <= p1`) with no approximation; inside the indifference region either decision may come. The test ends with probability 1; the `max_samples` budget bounds its cost (ST-8). A `<= θ` bound swaps the roles. SPRT decides a probability bound or a quantile; a mean of a fraction, whose samples are not Bernoulli, is decided by ST-4. |
 | ST-6 | **Activation.** A quantile claim (PF-4) is conditioned on activation. A sample that is not activated is drawn and not counted: it advances the trace index and counts toward the `max_draws` budget, never toward `N` or the SPRT sum. |
 | ST-7 | **Regenerative method for long-run fractions.** For PF-6, EN-4 samples one long behaviour from `s0` and cuts it into regeneration cycles at each return to `s0` (equal state key). Each cycle contributes its weighted count `Y_k` of positions where `P` holds and its total weight `L_k`. The estimate is `Σ Y_k / Σ L_k`, and its interval half-width is `z · S / (L̄ · √n)` for `n` cycles, `S` the sample standard deviation of `Y_k − Â · L_k` and `z` the one-sided `1 − min(α', β')` normal quantile. The interval is asymptotic: its coverage approaches the stated level as `n` grows, by the central limit theorem for regenerative processes. The half-width uses `S² + 1/n` in place of `S²` (Chow and Robbins), so a degenerate sample with `S = 0` gives the half-width `z / (L̄ · n)`, never 0, matching QSpec FR-408: a zero-width interval never stops the run, and a degenerate sample stops only once `z / (L̄ · n) <= ι` and `min_cycles` cycles are complete. The run stops once the half-width is at most `ι` and at least `min_cycles` cycles are complete, and decides as ST-4. The result's coverage is `Asymptotic`. A run that never returns to `s0`, such as one from a transient `s0`, stops when a cycle reaches `max_cycle_steps` steps, as any budget does (SV-4): `incomplete`, `limit-reached{limit, value, setting}` (QSpec FR-408), naming `max_cycle_steps`, its value and `statistical.max_cycle_steps`. |
-| ST-8 | **Method and budgets.** The method (Okamoto, SPRT or regenerative) is a request setting, and so is the regenerative method's `min_cycles`; neither enters the obligation identity, and both are recorded in the result (SV-2). EN-4's budgets are `StatisticalLimits{max_samples, max_draws, max_cycle_steps}`, ADR-014 B-5 budgets of QSL's own provider like ADR-018's `ModelCheckLimits`, each set by the request with a published default, plus time, the clause meter and cancellation. No budget is a modelling limit: reaching one stops the run (SV-4), and the caller raises it and reruns. The number of sampled witnesses kept, `max_witnesses`, is a request setting. |
-| ST-9 | **Exact arithmetic.** Counts, estimates, interval ends and thresholds are exact rationals. Every logarithm, square root and normal quantile in ST-4 to ST-7 is replaced by a rational bound computed by QSpec's method to a fixed precision and rounded in the conservative direction: `N` rounds up, SPRT thresholds round away from zero, SPRT increments round into the lower and upper sums of ST-5, and interval half-widths round up. The decision is a function of the counts alone, identical on every platform (QS-9). |
+| ST-8 | **Method and budgets.** The method (Okamoto, SPRT, Clopper–Pearson or regenerative) is a request setting, and so is the regenerative method's `min_cycles`; neither enters the obligation identity, and both are recorded in the result (SV-2). EN-4's budgets are `StatisticalLimits{max_samples, max_draws, max_cycle_steps}`, ADR-014 B-5 budgets of QSL's own provider like ADR-018's `ModelCheckLimits`, each set by the request with a published default, plus time, the clause meter and cancellation. No budget is a modelling limit: reaching one stops the run (SV-4), and the caller raises it and reruns. The number of sampled witnesses kept, `max_witnesses`, is a request setting. |
+| ST-9 | **Exact arithmetic.** Counts, estimates, interval ends and thresholds are exact rationals. Every logarithm, square root and normal quantile in ST-4 to ST-7 is replaced by a rational bound computed by QSpec's method to a fixed precision and rounded in the conservative direction: `N` rounds up, SPRT thresholds round away from zero, SPRT increments round into the lower and upper sums of ST-5, and interval half-widths round up. ST-11's binomial tails are pairs of binary floating bounds of `96 + ⌈log2(N + 1)⌉` bits, rounded outward at every operation, so each lies within a relative `2^-90` of the true tail; a test decides only on a tail's upper bound, and its interval ends are the outward bisection bracket ends. The decision is a function of the counts alone, identical on every platform (QS-9). |
+| ST-11 | **Exact binomial method (Clopper–Pearson).** EN-4 draws ST-4's `N` counted samples and counts the `k` on which the event holds. With `G(k, p) = Pr(X >= k)` and `L(k, p) = Pr(X <= k)` for a binomial `X` of `N` trials at success probability `p`, a `>= θ` test **accepts** when `G(k, θ) <= β'`, **rejects** when `L(k, θ) <= α'`, and is **undecided** (`IndifferenceRegion`) when neither holds or both do (both only when `α' + β' > 1`); `<= θ` swaps the tails, and the strict reduced bound `< q` of a quantile `>= c` claim accepts only when `L(k, q) < β'`. Because `G` rises and `L` falls in `p`, the errors are at most `β'` and `α'` at every `p`, inside the indifference region too, so its coverage is finite-sample. The test reports the Clopper–Pearson interval of `k` in `N` at its two levels, found by 64 bisection halvings over `[0, 1]` and kept outward. It decides a probability bound or a quantile; a mean of a fraction and a long-run fraction refuse `NotStatistical` (QSpec FR-408). |
 | ST-10 | **Sample stops.** A sample whose expansion returns `ExpansionStop` (FR-101) stops the run with that cause. A contract conjunction evaluated undecided during a step (FR-120 `ContractUndetermined`) settles **undecided**, `UndecidedSuccessor` (ADR-018 V-6). A step that breaks PM-3 settles `NotMarkov`. |
 
 Okamoto's sample count depends only on the claim's `α`, `β` and `ι`; SPRT's depends on how far
 the true probability is from `θ`, and is far smaller when it is not close
 (§7). Okamoto gives an interval; SPRT gives a decision with bounded errors.
-The request picks one.
+Clopper–Pearson uses Okamoto's `N` and decides from the exact binomial tails,
+so at the same samples it decides wherever Okamoto does and also where `p̂`
+lies within `ι` of `θ` but the tail is already below the error level, and its
+interval is narrower at every `p̂`, most of all when `p̂` is near 0 or 1. The request picks one.
 
 ### 4. Window aggregates in monitors
 
@@ -157,8 +154,8 @@ minutes" needs no probability: it needs aggregate atoms.
 | WA-1 | **Aggregate terms.** An aggregate term reads values from the positions in a past window of the current position: `count`, `sum`, `min`, `max`, `fraction holds(P)` and `quantile q`, each over a value expression and an optional filter predicate. Example (illustrative spelling, QS-10): `quantile 0.95 of e.latency where holds(e is Response) over past[0, 300 s]`. An aggregate term compares with a threshold to form an atom, and the atom enters any bounded-profile formula. Aggregate terms are admitted over trace subjects; over a model subject the measures of §2 serve. |
 | WA-2 | **Windows.** Under event-position false-extension, `past[a, b]` holds the positions `j` with `i − b <= j <= i − a` and `j >= 0`. Under timestamped-event finite-window (QSpec FR-090), it holds the events whose timestamp `t_j` satisfies `t_i − b <= t_j <= t_i − a`, with `a` and `b` durations. A window never reads a future position, so an aggregate atom needs no lookahead and adds nothing to the formula's horizon (ADR-014 TR-4). |
 | WA-3 | **Values.** Values are exact: integers, exact rationals and quantities with QSpec FR-142's dimension rules. `quantile q` is the nearest-rank quantile, the `⌈q · n⌉`-th smallest of the `n` values in the window. Comparisons with the threshold follow FR-142. |
-| WA-4 | **Insufficient data.** An aggregate term declares `min_count >= 1`. A window holding fewer values evaluates the atom to the kernel's `Undefined`, with cause `InsufficientData{count, min_count}`, so the clause at that position is O-16 undefined, the existing outcome for an atom with no value, never `refuted` and never `UndefinedEvaluation`, as QSpec FR-414 states. |
-| WA-5 | **Memory.** The evaluator keeps the window's values. `max_window_values` is an ADR-014 B-2 run limit that the caller sets per run, with a published default; a window that exceeds it yields `Incomplete`, never a truth value. Evaluation charges TR-5 work per value visited. |
+| WA-4 | **Insufficient data.** An aggregate term has a `min_count`, 1 when the term omits it: at least 1 for `min`, `max`, `fraction` and `quantile`, and possibly 0 for `count` and `sum`, which are 0 over a window with no value. A window holding fewer values evaluates the atom to the kernel's `Undefined`, with cause `InsufficientData{count, min_count}`, so the clause at that position is O-16 undefined, the existing outcome for an atom with no value, never `refuted` and never `UndefinedEvaluation`, as QSpec FR-414 states. |
+| WA-5 | **Memory.** The evaluator keeps the window's values. `max_window_values` is an ADR-014 B-2 run limit that the caller sets per run, with a published default; a window that exceeds it yields `Incomplete`, never a truth value. Evaluation charges TR-5 work per window position visited, filtered out or not. |
 | WA-6 | **Meaning.** The truth of an aggregate atom at a position is a deterministic function of the trace. A monitor result over an observed trace reads by ADR-014 A-4 for a finite trace: a violation is a violation of the claim on that trace, and a holding result is `tested`, evidence for that trace only. The result carries evidence kind `Observed{trace, positions}` (SV-1). |
 | WA-7 | **Relation to tl-mltl.** An aggregate atom is evaluated at atom evaluation, before temporal evaluation, as `holds` atoms are. The temporal layer stays Boolean MLTL over derived Boolean signals, so tl-mltl consumes the derived signal unchanged and stays free of probabilistic semantics. QSL's layer-5 evaluator defines the meaning (ADR-018 SM-1); the observation layer computes the derived signal for a live system (References). |
 | WA-8 | **Relation to model claims.** A model quantile (PF-4) is over behaviours under a workload, one observation per behaviour. A window quantile is over events of one observed trace. A monitor with the same threshold as a model claim checks that the running system stays within the model's assumption; its violation is evidence that the workload does not describe the live system, and changes no verdict of the model claim. |
@@ -168,7 +165,7 @@ minutes" needs no probability: it needs aggregate atoms.
 | ID | Rule |
 | --- | --- |
 | SV-1 | **A distinct verdict family.** A statistical result is a measurement with confidence bounds. It settles as the new FR-331 result value `measured`, carried by a new `TerminalValue::Measured(StatisticalVerdict)`. It is never `proved` and never `refuted`: it is not V-1 to V-4 of ADR-018, its record carries no `ProofBasis`, and proof accounting, which reads result values, never counts it. `ProofBasis` is not extended, because every `ProofBasis` lives on `Proved`, and `Proved` counts as proof. |
-| SV-2 | **Content.** `StatisticalVerdict{decision, estimate, interval, basis, provenance, witnesses}`. `decision` is `Accepted`, `Rejected` or `Undecided(cause)`. `estimate` is the exact rational point estimate: `p̂` for a probability, the conditional probability `Pr(M <= c)` and the empirical nearest-rank quantile for a quantile claim, the sample mean of a fraction, or the regenerative ratio. `interval` is the confidence interval for ST-4 and ST-7 and absent for ST-5. `basis` is `StatisticalBasis{method, confidence, samples, draws, tests, coverage}`: the method (`Okamoto`, `Sprt`, `Regenerative{min_cycles}`), the claim's `α`, `β` and `ι`, the samples counted, the draws taken, the test count `m` with the per-test `α'` and `β'`, and `coverage` `FiniteSample` (ST-4, ST-5) or `Asymptotic` (ST-7). `provenance` is RP-1's. The result keeps one entry per test with its own decision and estimate. |
+| SV-2 | **Content.** `StatisticalVerdict{decision, estimate, quantile, interval, basis, provenance, witnesses}`. `decision` is `Accepted`, `Rejected` or `Undecided(cause)`. `estimate` is the exact rational point estimate: `p̂` for a probability, the conditional probability `Pr(M <= c)` (`Pr(M < c)` for a `>= c` claim) for a quantile claim, whose empirical nearest-rank quantile is the separate `quantile` (a value or censored; FR-192), the sample mean of a fraction, or the regenerative ratio. `interval` is the confidence interval for ST-4, ST-7 and ST-11 and absent for ST-5. `basis` is `StatisticalBasis{method, confidence, samples, draws, tests, coverage}`: the method (`Okamoto`, `Sprt`, `ClopperPearson`, `Regenerative{min_cycles}`), the claim's `α`, `β` and `ι`, the samples counted, the draws taken, the test count `m` with the per-test `α'` and `β'`, and `coverage` `FiniteSample` (ST-4, ST-5, ST-11) or `Asymptotic` (ST-7). `provenance` is RP-1's. The result keeps one entry per test with its own decision and estimate. |
 **SV-3 Decisions and categories.**
 
 | Decision | Meaning | FR-331 value | `TerminalValue` | O-16 category |
@@ -179,11 +176,11 @@ minutes" needs no probability: it needs aggregate atoms.
 
 | ID | Rule |
 | --- | --- |
-| SV-4 | **Stopped runs.** A budget (ST-8), including `max_cycle_steps` (ST-7), or an `ExpansionStop` stops the run before its method completes: `Incomplete(LimitReached{limit, value, setting})`, QSpec FR-408's `limit-reached{limit, value, setting}`, O-16 incomplete, as ADR-018 V-7; a cancelled `Cancel` handle settles `Incomplete(Cancelled)` the same way. Undecided is kept for a run that completed its method. |
-| SV-5 | **Unsupported.** `NotMarkov` (PM-3), `under every scheduler` (`EveryScheduler`, PM-8), a claim that states no confidence parameters (`MissingConfidence`, PF-10), a mean-time or expected-reward form, which only the exact engine decides (`ExactOnlyForm`, ADR-028 XF-5, QSpec FR-411), and a requested evidence kind no candidate advertises (SV-9) settle `Unsupported(cause)`, O-16 unsupported. A request naming a method the claim's form does not admit (SPRT or regeneration for a mean of a fraction, Okamoto or SPRT for a long-run fraction, regeneration for any other form) is refused `NotStatistical`. Amended by ADR-028 XF-7: EN-5 decides both kinds of claim when the item names `exact` evidence. |
+| SV-4 | **Stopped runs.** A budget (ST-8), including `max_cycle_steps` (ST-7), or an `ExpansionStop` stops the run before its method completes: `Incomplete(LimitReached{limit, value, setting})`, QSpec FR-408's `limit-reached{limit, value, setting}`, O-16 incomplete, as ADR-018 V-7; a cancelled `Cancel` handle settles `Incomplete(Cancelled{source})` the same way. Undecided is kept for a run that completed its method. |
+| SV-5 | **Unsupported.** `NotMarkov` (PM-3), `under every scheduler` (`EveryScheduler`, PM-8), a claim that states no confidence parameters (`MissingConfidence`, PF-10), a mean-time or expected-reward form, which only the exact engine decides (`ExactOnlyForm`, ADR-028 XF-5, QSpec FR-411), and a requested evidence kind no candidate advertises (SV-9) settle `Unsupported(cause)`, O-16 unsupported. A request naming a method the claim's form does not admit (SPRT, Clopper–Pearson or regeneration for a mean of a fraction, Okamoto, SPRT or Clopper–Pearson for a long-run fraction, regeneration for any other form) is refused `NotStatistical`. Amended by ADR-028 XF-7: EN-5 decides both kinds of claim when the item names `exact` evidence. |
 | SV-6 | **Counterexamples are evidence.** A **sampled witness** is a sample on the violating side of the claim's bound: for a `>= θ` bound over an event `E`, a sample on which `E` is false; for a `<= θ` bound, a sample on which `E` is true; for a quantile claim, the same for its PF-4 event; for a mean of a fraction, a sample whose fraction lies below `θ` (`>= θ`) or above it (`<= θ`). A long-run fraction keeps no witness, since no finite sample refutes a limit. A witness carries the test index, the trace index, the steps in ADR-018 CX-2's content, the drawn values, the path probability (the exact product of its step probabilities) and the event's value. The result keeps up to `max_witnesses` of them, the first in trace-index order. A sampled witness never refutes a probability bound: with `θ < 1` a bound allows behaviours where the event is false. |
-| SV-7 | **A witness refutes the qualitative claim.** A sampled witness is a behaviour of positive probability on the violating side of its bound, so it is a valid ADR-018 CX-1 counterexample for the qualitative claim of its bound direction over the same subject: "`E` on every behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a `<= θ` bound, and the fraction comparison on every behaviour for a mean of a fraction. It replays through ADR-018 CX-3 as one. |
-| SV-8 | **Witness replay.** A sampled witness replays by ADR-018 CX-3 (re-execution through `ModelSystem`, post-state digests, SM-1 evaluation), plus two checks: each random argument is in its support, and each draw recomputed from the seed, trace index, step and choice index selects the recorded scheduled identity and values. Agreement settles the witness reproduced; disagreement settles `inconclusive`, `ReplayParity`, for that witness. The item's value is unchanged either way. |
+| SV-7 | **A witness refutes the qualitative claim.** A sampled witness is a behaviour of positive probability on the violating side of its bound, so it is a valid ADR-018 CX-1 counterexample for the qualitative claim of its bound direction over the same subject: "`E` on every behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a `<= θ` bound, and the fraction comparison on every behaviour for a mean of a fraction. It replays as one by ADR-018 CX-3's steps applied to the checked subject, with no recompile (SV-8). |
+| SV-8 | **Witness replay.** A sampled witness replays by ADR-018 CX-3's steps (re-execution through `ModelSystem`, post-state digests, SM-1 evaluation), applied to the checked subject the sampler ran over, since S4 does not emit a package that holds a random parameter, a workload, a reward or a probabilistic claim (FR-185) and there is nothing to recompile, plus two checks: each random argument is in its support, and each draw recomputed from the seed, trace index, step and choice index selects the recorded scheduled identity and values. Agreement settles the witness reproduced; disagreement settles `inconclusive`, `ReplayParity`, for that witness. The item's value is unchanged either way. |
 | SV-9 | **The exact seam.** A request item for `probabilistic-satisfaction` names the evidence it accepts: `statistical` with a method (§3) or `exact`. A provider advertises the evidence kinds it produces, and negotiation routes an item only to a candidate advertising its kind and never substitutes one for the other. EN-4 advertises `statistical`. An exact backend computes the probability over the full finite subject, for a workload or for every scheduler (PM-8), and settles with ADR-018's `proved` and `refuted`, `closed-scope`, under a `ProofBasis` member that its own record defines. With no exact candidate, an `exact` item settles `unsupported-requested-capability` at negotiation. Amended by ADR-028 SP-3, XV-1: EN-5 is that backend; its `ProofBasis` members are `ExactValue` and `ValueBounds`, and every proof carries a certificate that a checker accepts before it settles. |
 | SV-10 | **A separate `measured` axis.** A statistical result is not a truth result. It carries QSpec FR-241's execution disposition (`completed` for every decision) and its own `measured` axis with the closed values `accepted`, `rejected` and `undecided`; it carries no FR-242 truth and no FR-243 settlement basis. No reader can therefore take a measurement for `satisfied` or `violated`, and FR-242's and FR-243's vocabularies keep their meaning for proof and refutation alone. A stopped or unsupported statistical run carries execution `resource-incomplete`, `failed` or `unsupported` and no `measured` value, as FR-241 states for any analysis. |
 | SV-11 | **A sampled undefined is a rejection.** ADR-018 UE-1 to UE-6 apply to every sample. When the event, the measure or its comparison evaluates undefined on a sample, the claim fails on that sample: its test decides Rejected at once, the run stops, and the claim is Rejected (SV-3), as QSpec FR-408 states. The test result carries `UndefinedEvaluation{where, cause}` with QSpec FR-408's `where` and `cause`. The sample is kept as a sampled witness (SV-6) and replays by SV-8, with ADR-018 UE-5 in place of the event's evaluation. It refutes the qualitative claim by SV-7. |
@@ -204,7 +201,7 @@ helps: it reduces the number of tests.
 
 | ID | Rule |
 | --- | --- |
-| RX-1 | **Symmetry reduces tests.** Under an admitted symmetry declaration (ADR-021 SYM-5), when the workload and every random parameter's distribution are invariant under the group `G`, every permutation in `G` preserves step probabilities, so `Pr[π(s0), W]` of a symmetric event under binding `π(o)` equals `Pr[s0, W]` under binding `o`. Workload weights are per operation, so they are invariant; a random parameter of a reference type into a symmetric population is invariant when its weights are equal within each class. EN-4 then runs one test per orbit of (initial state, binding) pairs, the least in key order, and `m` counts orbits. The verdict and the samples per test are unchanged; a smaller `m` loosens each test's `α'` and `β'`. |
+| RX-1 | **Symmetry reduces tests.** Under an admitted symmetry declaration (ADR-021 SYM-5), when the workload and every random parameter's distribution are invariant under the group `G`, every permutation in `G` preserves step probabilities, so `Pr[π(s0), W]` of a symmetric event under binding `π(o)` equals `Pr[s0, W]` under binding `o`. Workload weights are per operation, so they are invariant, and a random parameter's support value is never a reference (FR-185), so its distribution is invariant too. EN-4 then runs one test per orbit of (initial state, binding) pairs, the least in key order, and `m` counts orbits. The verdict and the samples per test are unchanged; a smaller `m` loosens each test's `α'` and `β'`. |
 **RX-2 Proposed PT-2 row.** ADR-021 PT-2 gains:
 
 | Form | Symmetry (admitted, SYM-5) | POR (C0–C3, POR-6) | State constraint |
@@ -222,11 +219,12 @@ approximate expected values, which ignore overshoot.
 
 ```text
 profile ev = "quire.temporal.event-position.false-extension/v1" …;
-model Health = "example/health" …;     // object n: Node { healthy: Bool }, initially healthy
+model Health = "example/health" …;     // object n: Node { healthy: Boolean }, initially healthy
 
-operation Node::tick(random fault: Bool ~ { true: 1, false: 9999999 })
+operation Node::tick(fault: Boolean)
   post self.healthy = (pre(self.healthy) and not fault);
 
+random Node::tick(fault) ~ { true: 1, false: 9999999 };
 workload Steady on Health { weight Node::tick = 1; }
 
 probabilistic NoFault using ev on Health under Steady on origin
@@ -260,15 +258,17 @@ model Service = "example/service" …;   // object s: Server { phase: Phase, att
 operation Server::request
   pre  self.phase = Idle
   post self.phase = Busy and self.attempts = 0;
-operation Server::attempt(random d: Quantity<Time> ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 },
-                          random outcome: Outcome ~ { Ok: 98, Fail: 2 })
+operation Server::attempt(d: Quantity<ms>, outcome: Outcome)
   pre  self.phase = Busy
   post self.attempts = pre(self.attempts) + 1 and
-       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy)
-  reward duration = d;
+       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy);
 operation Server::reset
   pre  self.phase = Done
   post self.phase = Idle;
+
+random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };
+random Server::attempt(outcome) ~ { Ok: 98, Fail: 2 };
+reward duration on Server::attempt = d;
 
 workload Steady on Service { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
 
@@ -302,24 +302,26 @@ latency is the sum of two durations.
 #### 7.3 Availability: long-run and per window
 
 ```text
-model Avail = "example/avail" …;       // object v: Server { up: Bool }, initially up
+model Avail = "example/avail" …;       // object v: Server { up: Boolean }, initially up
 
-operation Server::tick(random fail: Bool ~ { true: 1, false: 1999 })
+operation Server::tick(fail: Boolean)
   pre  self.up
   post self.up = not fail;
-operation Server::repair(random ok: Bool ~ { true: 9, false: 1 })
+operation Server::repair(ok: Boolean)
   pre  not self.up
   post self.up = ok;
 
+random Server::tick(fail) ~ { true: 1, false: 1999 };
+random Server::repair(ok) ~ { true: 9, false: 1 };
 workload Steady on Avail { weight Server::tick = 1; weight Server::repair = 1; }
 
 probabilistic LongRun using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.0002 {
-  long-run fraction holds(v.up) >= 0.999
+  long_run_fraction holds(v.up) >= 0.999
 }
 probabilistic Monthly using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.005 {
-  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= 0.999 ]
+  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= rational(999, 1000) ]
 }
 ```
 
@@ -382,10 +384,10 @@ temporal spine. Exact probabilistic checking follows its research (SV-9). Amende
 | QS-6 | FR-290 kind `probabilistic-satisfaction`; the advertised evidence kinds `statistical` and `exact`; the request item's evidence kind, method and `StatisticalLimits`; the rule that negotiation never substitutes one evidence kind for the other | QSpec FR-290, FR-331, FR-408 |
 | QS-7 | Results: the FR-331 result value `measured` and its members (SV-2), carried as SV-10 states | QSpec FR-409, FR-410, FR-331 |
 | QS-8 | Sampler: weighted selection by exact integer weights with rejection, the choice index in the preimage, the trace-index assignment `i · m + j` (RP-1), and vectors including the uniform case equal to TC-210's | `quire.simulation.sampler/v1` definition; QSpec TC-210 |
-| QS-9 | Statistical methods over the claim's `α`, `β`, `ι`: Okamoto's `N`, SPRT with the thresholds `ln(1/α')` and `ln(β')`, Bonferroni over tests, the regenerative estimator and its asymptotic interval, and the method that computes rational bounds for logarithms, square roots and normal quantiles with conservative rounding (ST-9) | QSpec FR-408 |
+| QS-9 | Statistical methods over the claim's `α`, `β`, `ι`: Okamoto's `N`, SPRT with the thresholds `ln(1/α')` and `ln(β')`, the exact binomial (Clopper–Pearson) decision and interval with their binomial tail bounds, Bonferroni over tests, the regenerative estimator and its asymptotic interval, and the method that computes rational bounds for logarithms, square roots and normal quantiles with conservative rounding (ST-9) | QSpec FR-408 |
 | QS-10 | Window aggregates (§4): grammar, windows under event-position and timestamped-event profiles, nearest-rank quantile, `min_count` and `InsufficientData` as `Undefined`, `max_window_values` | QSpec FR-414, FR-090, FR-091, FR-092 and the shared grammar |
 | QS-11 | The sampled witness wire (SV-6) and its replay checks (SV-8) | QSpec FR-410 and the counterexample contract |
-| QS-12 | Conformance vectors, each with a fixed seed so the decision and sample count are exact: (a) §7.1, its exact probability and both methods' decisions; (b) §7.2, the exact distribution function at 1, 2, 3 and 5 ms, Accepted at 5 ms, Rejected at 2 ms, and a sampled witness that replays; (c) §7.3, Accepted long-run with `Asymptotic` coverage and Rejected per window; (d) a model with residual nondeterminism settling `NotMarkov`; (e) two initial states with Bonferroni, and a symmetric pair reduced to one test (RX-1); (f) weighted sampler vectors; (g) aggregate monitors: nearest-rank quantiles, `InsufficientData`, a unit conversion, `max_window_values`; (h) witness replay refusals: a value outside the support, a draw that selects another identity | QSpec TC-350 to TC-359 and TC-366, beside TC-200 and TC-210 |
+| QS-12 | Conformance vectors, each with a fixed seed so the decision and sample count are exact: (a) §7.1, its exact probability and each method's decision, with the exact binomial method's decisions and interval at `N = 231`, `θ = 9/10`, against Okamoto's on the same counts, and its refusal for both fraction forms; (b) §7.2, the exact distribution function at 1, 2, 3 and 5 ms, Accepted at 5 ms, Rejected at 2 ms, and a sampled witness that replays; (c) §7.3, Accepted long-run with `Asymptotic` coverage and Rejected per window; (d) a model with residual nondeterminism settling `NotMarkov`; (e) two initial states with Bonferroni, and a symmetric pair reduced to one test (RX-1); (f) weighted sampler vectors; (g) aggregate monitors: nearest-rank quantiles, `InsufficientData`, a unit conversion, `max_window_values`; (h) witness replay refusals: a value outside the support, a draw that selects another identity | QSpec TC-350 to TC-359 (TC-355 SC-10 to SC-13 for the exact binomial method) and TC-366, beside TC-200 and TC-210 |
 
 ### 10. Rulings on the draft's questions
 
@@ -396,7 +398,7 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
 | RU-1 | Whether long-run fractions, checked by regeneration with asymptotic coverage, are admitted | **Admitted.** They are checked by the regenerative method, and the `measured` verdict labels their coverage `Asymptotic` | Long-run availability is the steady-state statement users mean by "available 99.9% of the time"; the label keeps its weaker guarantee visible beside finite-sample results | PF-6, ST-7, SV-2 |
 | RU-2 | Whether a Rejected decision fails the pipeline | **Rejected fails the pipeline,** gating as an O-16 violation does. The verdict is "measured: rejected", never `refuted`. Undecided is inconclusive | A bound the measurement rejects at the claim's error rates is a failed requirement for anyone running the check; keeping the value `measured` keeps it out of refutation accounting | SV-3; ADR-013 O-16, amended with this record |
 | RU-3 | Whether the mean of an accumulated measure (mean latency) is a statistical form | **Not statistical.** EN-4 states latency as a quantile; mean-time and expected-reward forms are decided only by the exact engine EN-5 (ADR-028 XF-5), and EN-4 refuses them `ExactOnlyForm`; the mean of a fraction stays | A censored sample makes a sampled mean `+∞`, and a quantile states the latency requirement without it; EN-5 computes the exact expectation, where censoring does not arise | PF-5, WA-1, SV-5 |
-| RU-4 | Where the confidence parameters live | **In the claim and its obligation identity:** `α`, `β` and the indifference half-width `ι`. The method (Okamoto, SPRT, regenerative) is a request setting | The confidence is part of what the claim asserts; the method is how a run meets it, and any method meets the same parameters | PF-10, ST-8, §7 |
+| RU-4 | Where the confidence parameters live | **In the claim and its obligation identity:** `α`, `β` and the indifference half-width `ι`. The method (Okamoto, SPRT, Clopper–Pearson, regenerative) is a request setting | The confidence is part of what the claim asserts; the method is how a run meets it, and any method meets the same parameters | PF-10, ST-8, §7 |
 | RU-5 | How QSpec encodes a statistical result | **A separate `measured` axis,** not a new FR-243 basis | FR-242 and FR-243 describe Boolean truth and its settlement; a measurement is neither, and its own axis keeps both vocabularies exact | SV-10 |
 | RU-6 | Whether a claim may omit its confidence parameters (ruled 2026-10-01) | **Confidence parameters are for statistical evidence only.** When a claim states them they stay in the claim and its obligation identity (RU-4); a claim that states none is exact-only, and statistical checking refuses it | An exact verdict decides the bound itself and reads no confidence; a measurement has no meaning without one | PF-10, SV-5 |
 
@@ -427,7 +429,7 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
   §1 `ProofBasis` paragraph: statistical results are not a `ProofBasis`
   member (SV-1).
 - ADR-014 §3 TR-1: a statistical run is identified by its provenance (RP-1).
-  TR-5: aggregate atoms charge per value visited (WA-5). TR-6: EN-4 runs
+  TR-5: aggregate atoms charge per window position visited (WA-5). TR-6: EN-4 runs
   carry a seed.
 - ADR-013 O-16 proof column: "measured: accepted" is success and never
   proof evidence; "measured: rejected" is violation, fails the pipeline as
@@ -474,9 +476,6 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
   bottom components during sampling (Younes, Clarke and Zuliani). Not
   adopted: every event and measure has a finite window (PF-8), so one sample
   decides it without graph analysis.
-- **Clopper–Pearson exact binomial intervals.** Tighter than Okamoto at the
-  same coverage. Deferred: it needs the incomplete beta function under ST-9's
-  exact arithmetic.
 - **Batch means for long-run fractions.** Rejected in favour of regeneration,
   whose cycles are independent by the Markov property; batch means relies on
   batch length to approximate independence.

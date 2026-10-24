@@ -10,8 +10,6 @@ relationships:
     type: constrains
   - target: ix://agent-ix/quire-spec-language/NFR-001
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/NFR-007
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: depends_on
 ---
@@ -28,14 +26,15 @@ charge. The ceilings are stage limits, not a caller work budget
 ## Scope
 
 One `PackageDeclarations::check` call under one `CheckingLimits`, which
-applies all three ceilings. One standalone expression check
-(`CheckedGraph::check_expression` and its clause variants) applies the node
-ceiling of its `CheckingLimits`; it encodes no declaration and charges no
-work. The ceilings are inclusive unsigned counts supplied by the
+applies its node, byte, work and rational-bit ceilings. One standalone
+expression check (`CheckedGraph::check_expression` and its clause variants)
+applies the node ceiling of its `CheckingLimits`, and the rational-bit
+ceiling to each quantity literal it types (FR-185); it encodes no
+declaration and charges no work. The ceilings are inclusive unsigned counts supplied by the
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`;
+`s3.work_units`, `s3.rational_bits`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
@@ -53,6 +52,7 @@ domain bound (NFR-001).
 | Checking node ceiling | At most the selected ceiling (default 100000 units) per checked package | 100000 units by default | negative-abuse-testing |
 | Declaration preimage bytes | At most the selected ceiling (default 16777216 bytes) per declaration | 16777216 bytes by default | negative-abuse-testing |
 | Checking work | At most the selected ceiling (default 16777216 work units) per checked package | 16777216 units by default | negative-abuse-testing |
+| Rational bits | At most the selected ceiling (default 65536 bits) in any exact value as written, and in a distribution's running weight sum | 65536 bits by default | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -68,19 +68,27 @@ domain bound (NFR-001).
   Lowering charges one unit for each node it builds and each composite a
   text-leaf walk enters. Keying a recursion group charges the group's key
   work. Each leaf a text-leaf walk appends charges its key bytes: the
-  length of each segment's key spelling (`field:<name>`, `position:<n>`,
-  `inner`) along its path, plus `recursion:<d>` for a recursion leaf.
+  length of each segment's key spelling (`field:<name>`, `member:<name>`,
+  `position:<n>`, `inner`) along its path, plus `recursion:<d>` for a
+  recursion leaf. Union entry is a composite charge under the same rule;
+  each member segment contributes its literal UTF-8 byte length.
+- **Rational bit.** FR-185's measure of an exact value as written: the
+  largest bit length among its written integers, and for a `decimal` or
+  decimal literal the bit length of `10^s`. The bound is inclusive.
 
 ## Default derivation
 
+- **Rational bits, 65536.** FR-185's rational-bits ceiling: a value of
+  2^65536 has a 19729-digit decimal expansion, ample for any written
+  exact value, and bounds the reduction and the weight sum's growth.
 - **Nodes, 100000.** Twice NFR-001's default syntax-node ceiling of 50000.
   A package checked from one source unit types at most as many expression
   nodes as that unit has syntax nodes, so the factor of two leaves room for
   at least as many FR-093 leaves as typed nodes. The checker does not split
   the budget; typed nodes and leaves draw on it in the order they are
   charged.
-- **Preimage bytes, 16777216.** NFR-007's default package byte ceiling,
-  sixteen times NFR-001's default source ceiling. A declaration's preimage
+- **Preimage bytes, 16777216.** Sixteen times NFR-001's default source
+  ceiling. A declaration's preimage
   is not linear in its source: each parameter or result typed with an enum
   writes one string per case, about 72 bytes each, so an enum reference of
   one token can write kilobytes. The ceiling bounds one declaration's
@@ -152,6 +160,10 @@ TC-423 covers the defaults:
 - A checked package and a checked expression record the default ceilings,
   and record a caller's ceilings as given, above or below the defaults.
 
+TC-620 covers the rational-bit ceiling: a value past the default refuses
+with `rational-bits-exceeded` naming `s3.rational_bits`, and a configured
+ceiling replaces the default.
+
 The refusal at a caller-selected bound is covered for nodes by TC-381 and
 FR-062-AC-7, and for preimage bytes and work by FR-062-AC-5 (TC-160). Deep
 inputs that fit the ceilings, and the setting each refusal names, are
@@ -165,5 +177,5 @@ covered by FR-258 (TC-725 to TC-727).
   defines the text-leaf walk the node ceiling bounds.
 - [NFR-001](NFR-001-bound-syntax-work.md) sets the syntax ceilings the
   defaults derive from.
-- [NFR-007](NFR-007-bound-native-packages.md) sets the package byte ceiling
-  the preimage default reuses.
+- [FR-185](../functional/FR-185-declare-random-parameters-workloads-and-rewards.md)
+  defines the rational-bit measure and refusal.

@@ -77,8 +77,9 @@ for negotiation whether the claim is bounded.
   unit's one temporal profile selection resolved by FR-110 to one of
   `quire.temporal.event-position.false-extension/v1`,
   `quire.temporal.fixed-sample.false-extension/v1`,
-  `quire.temporal.timestamped-event.finite-window/v1` and
-  `quire.temporal.infinite-trace/v1` (QSpec FR-250).
+  `quire.temporal.timestamped-event.finite-window/v1`,
+  `quire.temporal.infinite-trace/v1` and `quire.temporal.timed/v1` (QSpec
+  FR-250, FR-234).
 - When a unit holds a temporal clause and selects no temporal profile, or
   selects two, the check SHALL refuse `unknown_profile`/
   `unsupported-selection` at the clause's span, naming the selections it

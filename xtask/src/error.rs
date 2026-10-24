@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! One error type for this crate's two gates: `cargo xtask seam-probe` and
-//! `cargo xtask string-edge`.
+//! Typed errors for the workspace xtask gates.
 use std::{fmt, io, path::PathBuf};
+
+use crate::refinement::report::Verdict;
 
 /// Stable failure category, independent of message prose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12,9 +13,12 @@ pub enum Code {
     Io,
     /// The `cargo xtask seam-probe` build/comparison failed.
     SeamProbe,
-    /// The `cargo xtask string-edge` scan found an allow-list defect or an
-    /// unmarked, un-allow-listed occurrence.
+    /// The `cargo xtask string-edge` scan found an unmarked, un-allow-listed
+    /// occurrence.
     StringEdge,
+    /// The `cargo xtask string-edge` scan could not complete (FR-064-AC-9):
+    /// the scanner refused a root, rule or source.
+    StringEdgeScan,
     /// FR-068 TC-172/TC-176's resolved import-graph scan
     /// (`xtask::import_graph`) could not parse a source file.
     ImportGraph,
@@ -29,6 +33,13 @@ pub enum Code {
     CanonicalTypes,
     /// `cargo metadata` could not be run or read.
     Metadata,
+    /// The local QSpec conformance gate failed.
+    Conformance,
+    /// QSL#157: `cargo xtask test-suites` found an undeclared empty suite or
+    /// a wrong declaration, or `cargo` itself failed.
+    TestSuites,
+    /// FR-344: a refinement gate's report could not be written as JSON.
+    Refinement,
 }
 
 impl Code {
@@ -38,11 +49,15 @@ impl Code {
             Self::Io => "io",
             Self::SeamProbe => "seam-probe",
             Self::StringEdge => "string-edge",
+            Self::StringEdgeScan => "string-edge-scan",
             Self::ImportGraph => "import-graph",
             Self::RouteLint => "route-lint",
             Self::CheckedInput => "checked-input",
             Self::CanonicalTypes => "canonical-types",
             Self::Metadata => "metadata",
+            Self::Conformance => "conformance",
+            Self::TestSuites => "test-suites",
+            Self::Refinement => "refinement",
         }
     }
 }
@@ -59,6 +74,44 @@ pub enum Error {
     /// A command-line invocation was malformed.
     #[error("usage: {0}")]
     Usage(&'static str),
+    /// The QSpec checkout is absent, missing vectors, or cannot be resolved.
+    #[error("conformance: invalid QSPEC_DIR {path:?}: {reason}")]
+    ConformanceInput {
+        /// The caller's unmodified path.
+        path: PathBuf,
+        /// Why it cannot be used.
+        reason: String,
+    },
+    /// A required conformance cargo invocation could not be spawned.
+    #[error("conformance: cannot spawn cargo for {selection}: {source}")]
+    ConformanceSpawn {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A required conformance test failed or did not produce its evidence.
+    #[error("conformance: {selection}: {reason}")]
+    ConformanceCheck {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The refusal cause.
+        reason: String,
+    },
+    /// The canonicalized local CI graph could not be launched.
+    #[error("conformance: cannot launch the local CI graph: {source}")]
+    ConformanceCiSpawn {
+        /// The process spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A lane in the canonicalized local CI graph failed.
+    #[error("conformance: local CI graph exited with {status}")]
+    ConformanceCiFailed {
+        /// The child Make process status.
+        status: std::process::ExitStatus,
+    },
     /// A filesystem read or write failed.
     #[error("{path}: {source}")]
     Io {
@@ -139,31 +192,6 @@ pub enum Error {
         /// not report.
         expected_but_missing: String,
     },
-    /// A source file could not be parsed as Rust source by `syn`.
-    #[error("string-edge: cannot parse {path} as Rust source: {source}")]
-    StringEdgeParse {
-        /// The file that failed to parse.
-        path: PathBuf,
-        /// The underlying parse failure.
-        #[source]
-        source: syn::Error,
-    },
-    /// An allow-list entry names a string comparison or match that gates a
-    /// branch (feeds an `if`/`while` condition or a `match` scrutinee/
-    /// guard). FR-064-AC-5 refuses to admit such an entry to the
-    /// allow-list; the call site must be marked `#[string_edge]` instead.
-    #[error(
-        "string-edge: allow-list entry {file}:{item} gates a branch (feeds an if/while \
-         condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
-         from the allow-list and mark the call site #[string_edge] instead"
-    )]
-    StringEdgeAllowListGatesABranch {
-        /// The file containing the offending allow-list entry.
-        file: String,
-        /// The enclosing item the offending allow-list entry names
-        /// (PR #262 review, finding F8: item-keyed, not line-keyed).
-        item: String,
-    },
     /// The `string-edge` scan found one or more un-marked, un-allow-listed
     /// string comparisons or matches; `summary` lists them.
     #[error("{summary}")]
@@ -171,15 +199,10 @@ pub enum Error {
         /// The findings, formatted for display.
         summary: String,
     },
-    /// A configured `string-edge` crate root does not exist. Every listed
-    /// root is required: a crate rename or move this
-    /// scan's own root list has not caught up with must fail loudly, not
-    /// silently drop that tree's coverage.
-    #[error("string-edge: configured crate root does not exist: {path}")]
-    StringEdgeMissingRoot {
-        /// The missing root.
-        path: PathBuf,
-    },
+    /// The `qsl-string-edge` scanner could not complete: a request, rule,
+    /// read or parse failure. Never a clean result.
+    #[error(transparent)]
+    StringEdgeScan(#[from] qsl_string_edge::Error),
     /// A source file could not be parsed as Rust source by
     /// `xtask::import_graph`'s resolver (TC-172/TC-176).
     #[error("import-graph: cannot parse {path} as Rust source: {source}")]
@@ -247,6 +270,74 @@ pub enum Error {
         /// The findings, one per line.
         summary: String,
     },
+    /// `cargo xtask test-suites` named a lane `make ci` does not define.
+    #[error("test-suites: unknown lane {lane:?}; the lanes are: {known}")]
+    TestSuitesUnknownLane {
+        /// The lane named (empty when none was).
+        lane: String,
+        /// The defined lanes, comma separated.
+        known: String,
+    },
+    /// A known lane was given a different package or feature selection from
+    /// the `make ci` invocation whose empty suites it declares.
+    #[error("test-suites: lane {lane:?} requires its declared package and feature selection")]
+    TestSuitesLaneMismatch {
+        /// The named lane.
+        lane: &'static str,
+    },
+    /// `cargo xtask test-suites` could not run or read a `cargo` process.
+    #[error("test-suites: {what}: {source}")]
+    TestSuitesIo {
+        /// What was being done.
+        what: &'static str,
+        /// The underlying failure.
+        #[source]
+        source: io::Error,
+    },
+    /// `cargo test --no-run --message-format=json` printed messages the guard
+    /// cannot take suite identities from.
+    #[error("test-suites: cannot read cargo's build messages: {source}")]
+    TestSuitesArtifacts {
+        /// What was wrong with them.
+        #[source]
+        source: crate::test_suites::ArtifactError,
+    },
+    /// The cargo arguments select a run the guard cannot list the suites of.
+    #[error("test-suites: {argument} is not supported: {reason}")]
+    TestSuitesUnsupportedSelection {
+        /// The refused argument.
+        argument: String,
+        /// Why the guard cannot list that selection's suites.
+        reason: &'static str,
+    },
+    /// A `--package` names no package of the workspace.
+    #[error("test-suites: no workspace package is named {name}")]
+    TestSuitesUnknownPackage {
+        /// The name given.
+        name: String,
+    },
+    /// `cargo` exited unsuccessfully; this error exits with its status.
+    #[error("test-suites: `{step}` failed ({})", .status.map_or_else(|| "killed by a signal".to_owned(), |code| format!("exit status {code}")))]
+    TestSuitesCargoFailed {
+        /// The cargo invocation.
+        step: &'static str,
+        /// Its exit status, when it exited rather than being killed.
+        status: Option<i32>,
+    },
+    /// `cargo xtask test-suites` found one or more suite findings;
+    /// `summary` lists them.
+    #[error("{summary}")]
+    TestSuitesFound {
+        /// The findings, one per line.
+        summary: String,
+    },
+    /// FR-344: a refinement gate's report could not be encoded as JSON.
+    #[error("refinement: cannot encode the report: {source}")]
+    RefinementReport {
+        /// The encoding failure.
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl Error {
@@ -262,6 +353,11 @@ impl Error {
     pub fn code(&self) -> Code {
         match self {
             Self::Usage(_) => Code::Usage,
+            Self::ConformanceInput { .. } => Code::Usage,
+            Self::ConformanceSpawn { .. }
+            | Self::ConformanceCheck { .. }
+            | Self::ConformanceCiSpawn { .. }
+            | Self::ConformanceCiFailed { .. } => Code::Conformance,
             Self::Io { .. } => Code::Io,
             Self::SeamProbeSpawn { .. }
             | Self::SeamProbeReadSource { .. }
@@ -270,10 +366,8 @@ impl Error {
             | Self::SeamProbeNormalBuildHasE0004 { .. }
             | Self::SeamProbeBuildUnexpectedlySucceeded { .. }
             | Self::SeamProbeMismatch { .. } => Code::SeamProbe,
-            Self::StringEdgeParse { .. }
-            | Self::StringEdgeAllowListGatesABranch { .. }
-            | Self::StringEdgeFound { .. } => Code::StringEdge,
-            Self::StringEdgeMissingRoot { .. } => Code::Usage,
+            Self::StringEdgeFound { .. } => Code::StringEdge,
+            Self::StringEdgeScan(_) => Code::StringEdgeScan,
             Self::ImportGraphParse { .. } => Code::ImportGraph,
             Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
             Self::CheckedInputFound { .. } => Code::CheckedInput,
@@ -282,20 +376,44 @@ impl Error {
             | Self::CanonicalTypesCargoMetadata { .. }
             | Self::CanonicalTypesMetadataJson { .. }
             | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
+            Self::TestSuitesUnknownLane { .. }
+            | Self::TestSuitesLaneMismatch { .. }
+            | Self::TestSuitesUnsupportedSelection { .. }
+            | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
+            Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
+            Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
+            Self::RefinementReport { .. } => Code::Refinement,
         }
     }
 
     /// Distinguish usage/environment failure (2) from a genuine content
     /// finding (1).
+    ///
+    /// A failed `cargo` exits with its own status, so a failing test run is
+    /// not mistaken for a finding.
     pub fn exit_code(&self) -> u8 {
+        if let Self::TestSuitesCargoFailed {
+            status: Some(status),
+            ..
+        } = self
+        {
+            return u8::try_from(*status)
+                .ok()
+                .filter(|status| *status != 0)
+                .unwrap_or(1);
+        }
         match self.code() {
             Code::SeamProbe
             | Code::StringEdge
             | Code::ImportGraph
             | Code::RouteLint
             | Code::CheckedInput
-            | Code::CanonicalTypes => 1,
-            Code::Usage | Code::Io | Code::Metadata => 2,
+            | Code::CanonicalTypes
+            | Code::Conformance
+            | Code::TestSuites => 1,
+            Code::Usage | Code::Io | Code::Metadata | Code::StringEdgeScan => 2,
+            // QSpec FR-301's tool-failure code: the gate could not report.
+            Code::Refinement => Verdict::ToolFailure.exit_code(),
         }
     }
 }

@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-576", "FR-156-AC-n")]`.
 ## Expected Results
 
 - Step 1: the ample sets of FR-156-AC-1; 7 model states, 6 product states, `Holds`; unreduced 27 model states, `Holds`.
-- Step 2: `Violated`, `kind: Deadlock`, the six-step prefix of the table.
+- Step 2: `Violated`, `kind: Deadlock`, the six-step prefix `bump(a), bump(a), bump(b), bump(b), bump(c), bump(c)` (seed order breaks the tie).

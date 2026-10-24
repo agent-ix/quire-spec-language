@@ -6,7 +6,8 @@
 //! family-keyed dispatch entry table over the closed leading-token-kind
 //! enum, and the shared parsed-form contract — and the family form
 //! builders that have migrated onto it: the `Value` family's (`value`,
-//! FR-091, M-3b for `Value`). Each other family's own migration ticket adds
+//! FR-091, M-3b for `Value`) and the `TemporalTrace` family's
+//! (`temporal_clause`, FR-325, M-3b for `TemporalTrace`). Each other family's own migration ticket adds
 //! its production function and its variants when it migrates.
 //!
 //! The `Expression` arena, its `ExprNode` enum and their sibling
@@ -27,26 +28,74 @@
 //! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
+mod abstraction_declaration;
+mod clause_text;
 mod dispatch;
+mod hybrid_declaration;
+mod hyper_clause;
+mod probabilistic;
 mod protocol_clause;
+mod protocol_control;
+mod refinement;
 mod spans;
+mod state_graph;
+mod state_model;
+mod sum_case;
 mod syntax;
+mod temporal_clause;
+mod terminal_declaration;
+mod time_model;
 mod value;
 
+pub use abstraction_declaration::{
+    AbstractionBindingForm, AbstractionDeclarationForm, FieldBindingForm, FrameBindingForm,
+    ObjectBindingForm, ParameterBindingForm, PopulationBindingForm, RustSpelling,
+};
+pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
 };
+pub use hyper_clause::{
+    AlignSkipForm, ExecutionBindingForm, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm,
+    QuantifierForm, QuantifierKind, TraceDomainForm,
+};
+pub use protocol_control::{
+    AccessOrdering, AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
+    ChannelOverflow, FenceForm, JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm,
+    ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
+};
+pub use refinement::{
+    AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,
+    HistoryLiteralForm, HistoryRowForm, HistoryUpdateForm, ObjectRowForm, PopulationRowForm,
+    RefinementForm, RefinementRowForm, StepClassKeyword, StepRowForm, StepSourceForm,
+    StepTargetForm,
+};
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinaryOperator,
-    BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
+    Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
+    AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BoundOp, BuiltinType,
+    CaptureForm, CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockBoundForm,
+    ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
+    CompensationRetry, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    ExactNumberForm, ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder,
-    FieldInitializer, FunctionDeclaration, NameForm, ProtocolBodyForm, ProtocolConstructForm,
+    EquationForm, EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind,
+    ExpectedQuantity, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
+    FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer, FractionForm,
+    FunctionDeclaration, HorizonForm, HybridForm, HybridInitialForm, HybridModeForm,
+    InitialEntryForm, IntervalForm, IntervalUpper, MeasureForm, MeasureWindowForm, NameForm,
+    OperationBodyForm, OperatorInterval, ParameterForm, PopulationBoundForm, PopulationForm,
+    ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
-    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    QuantityForm, RandomForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm,
+    ReplicatedRoleForm, RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm,
+    ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm,
+    StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    StepLabelForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator, TemporalOperatorForm, TemporalOperatorUse, TermOperator,
+    TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm,
+    TimeSourceSyntax, TimedIntervalForm, TransitionForm, TreeRefusal, TupleForm, TypeForm,
+    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget, UsingAlias,
+    WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

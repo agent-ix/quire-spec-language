@@ -27,7 +27,7 @@ relationships:
 EN-5's cost SHALL be bounded only by `ExactProbLimits`, ADR-014 B-5 budgets
 that the request sets, each with a published default (ADR-028 LM-1 to
 LM-3). Reaching one SHALL stop the run and name the budget, its value and
-the request member that raises it. QSL SHALL settle every item routed to
+the request setting that raises it. QSL SHALL settle every item routed to
 EN-5 as exactly one FR-331 terminal record with ADR-018's verdict kinds and
 the `ProofBasis` members `ExactValue` and `ValueBounds` (XV-1 to XV-7),
 never with ADR-024's `measured`.
@@ -35,7 +35,7 @@ never with ADR-024's `measured`.
 ## Use case
 
 An operator's exact check of a large model stops at `max_states`. The result
-names `max_states`, its value and `model_check.max_states`; the operator raises
+names `max_states`, its value and `max_states`; the operator raises
 it and reruns. A run that completes settles `proved` with `ExactValue` and
 the least favourable initial state, or `refuted` after its witness replays.
 
@@ -52,7 +52,7 @@ pub struct ExactProbLimits {
     pub max_policy_iterations: u64,   // default 10_000
     pub max_witness_paths: u64,       // default 1_024
 }
-pub enum ExactProbLimit { MaxStates, MaxTransitions, MaxAutomatonStates, MaxIterations, MaxPrecisionBits, MaxRationalBits, MaxPolicyIterations, Time, ClauseMeter, Cancelled }
+pub enum ExactProbLimit { MaxStates, MaxTransitions, MaxAutomatonStates, MaxIterations, MaxPrecisionBits, MaxRationalBits, MaxPolicyIterations, Time, ClauseMeter, MaxCandidates, Cancelled }
 ```
 
 - An EN-5 outcome (FR-197 to FR-200) with its certificate check (FR-201) or
@@ -77,10 +77,12 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 ### Budgets
 
 - Each `ExactProbLimits` member SHALL be set by the request, with the
-  default above when omitted. The `model` members SHALL keep FR-126's
-  setting names and defaults; every other member's setting name SHALL be
-  `exact_probabilistic.` followed by the member name, by FR-255's
-  convention. QSpec FR-411 owns each limit and its setting name; QSL
+  default above when omitted. Every member's setting name SHALL be
+  `exact_prob.` followed by the member name, the `model` members included
+  (`exact_prob.max_states`, `exact_prob.max_transitions`,
+  `exact_prob.max_automaton_states`), as QSpec FR-411's flat limits object
+  names them (FR-255's engine table); the `model` members keep FR-126's
+  defaults. QSpec FR-411 owns each limit and its setting name; QSL
   publishes the default values. No member SHALL be fixed by the language, and none
   enters the obligation identity. The method choices the budgets drive
   SHALL be recorded in the result.
@@ -98,15 +100,46 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 
 | Outcome | FR-331 value | FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
-| Exact value on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}}` | success |
-| Sound interval on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}}` | success |
+| Exact value on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}, certification: Certified}` | success |
+| Sound interval on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}, certification: Certified}` | success |
 | Bound fails, witness replays | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | Undefined evaluation at a state of positive probability, `Undefined` path replays | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | Interval straddles at the budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(PrecisionBudget{…})` | incomplete |
 | Another limit reached | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
-| Cancelled through the `Cancel` handle | `incomplete`, `cancelled` | `unavailable` | `Incomplete(Cancelled)` (ADR-018 V-7) | incomplete |
-| Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, state})`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
+| Cancelled through the `Cancel` handle | `incomplete`, `cancelled{source}` | `unavailable` | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
+| Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
 | `NotMarkov`, `ZeroWeightComponent`, a timed cause (FR-204) | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
+
+### Build refusals and stops
+
+- EN-5 SHALL settle a stop or refusal of FR-196's product build as the
+  following table states, by the existing rules for the same kinds
+  (FR-127, FR-192):
+
+| Build result | FR-331 value | `TerminalValue` | Rule |
+| --- | --- | --- | --- |
+| `Stopped(Limit{limit, value})` for `MaxStates`, `MaxTransitions` or `MaxAutomatonStates` | `incomplete`, execution `resource-incomplete` | `Incomplete(LimitReached{limit, value, setting})` with its `exact_prob.` setting name | FR-127 V-7 |
+| `Stopped(Cancelled(cause))` | `incomplete`, `cancelled{source}` | `Incomplete(Cancelled{source})` | FR-127 V-7 |
+| `UndecidedSuccessor` | `inconclusive` | `Inconclusive(UndecidedSuccessor)` | FR-127 V-6 |
+| `Expansion(stop)` naming no limit, an internal failure | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-192 |
+| `Expansion(stop)` naming no limit, not an internal failure | `failed`, the stop's own `ExpansionStop.cause` as the one diagnostic | `Failed` carrying that diagnostic | FR-192 |
+| `Internal(fault)` | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-127 |
+| `NotMarkov` | `unsupported` | `Unsupported(NotMarkov)` | the `NotMarkov` row above |
+| `Expansion(stop)` naming `MaxCandidates` | `incomplete`, execution `resource-incomplete` | `Incomplete(LimitReached{limit, value, setting})` with `limit` written `max_candidates` (the `expansion.max_candidates` row's limit name, FR-255), `value` the request's `max_candidates` and `setting` `expansion.max_candidates` | FR-192, FR-255 |
+| `Expansion(stop)` naming `EvaluationMeter` | `incomplete`, execution `resource-incomplete` | `Incomplete(LimitReached{limit, value, setting})` for the typed `ClauseMeter`, naming the exhausted accounting counter by FR-255 Behavior 9's rule (its `limit` and `setting` the counter's name) and `value` that counter's configured bound | FR-192, FR-255 Behavior 9 |
+| `PredicateRefused(KernelRefused(r))`, `r` not `CheckedInvariant`, or `PredicateRefused(FamilyRefused(code))` | `failed`, the refusal's catalog code and cause as the one diagnostic | `Failed` carrying that diagnostic | FR-100's refusal table |
+| `PredicateRefused(Incomplete(i))` | `incomplete`, execution `resource-incomplete` | `Incomplete(LimitReached{limit, value, setting})` for the typed `ClauseMeter`, naming `i`'s counter by FR-255 Behavior 9's rule and `value` that counter's configured bound | FR-255 Behavior 9 |
+| `PredicateRefused` holding `KernelRefused(CheckedInvariant)`, `NotBoolean`, `KernelUndefined` or `FamilyUndefined` | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-127 |
+| `Translation(error)` | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-127 |
+| `Admission(failure)` or `NotSimulated(RequiresBound)` | none: a request refusal, returned to the caller | no terminal record | FR-126, FR-196 |
+
+- An undefined read is never a `PredicateRefused` (FR-196 returns
+  `ProbBuild::Undefined`), and a checked claim's predicate completes a
+  Boolean, so a `PredicateRefused` holding an undefined or non-Boolean
+  outcome, or the kernel `CheckedInvariant` refusal, is a broken invariant.
+- An automaton translation's own limit stops the build as
+  `Stopped(Limit{MaxAutomatonStates, value})`, so a `Translation` error is
+  never a reached limit.
 
 - `TerminalValue::category` SHALL map both new `ProofBasis` members to
   success, and proof accounting SHALL count them as proof.
@@ -123,11 +156,13 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-203-AC-1 | §15.2 at `5 ms` settles `proved`, `closed-scope`, `Proved{ExactValue{24233/25000}}`, success, with one entry. §15.1 with `max_rational_bits` 1,024 settles `Proved{ValueBounds{…, BackwardInduction{64}}}`. §15.4's `Deliver` settles `refuted`, `decisive-counterexample`, after FR-202's replay, with an entry marked `Min`. | Test (TC-638) |
+| FR-203-AC-1 | §15.2 at `5 ms` settles `proved`, `closed-scope`, `Proved{ExactValue{24233/25000}, Certified}`, success, with one entry. §15.1 with `max_rational_bits` 1,024 settles `Proved{ValueBounds{…, BackwardInduction{64}}, Certified}`. §15.4's `Deliver` settles `refuted`, `decisive-counterexample`, after FR-202's replay, with an entry marked `Min`. | Test (TC-638) |
 | FR-203-AC-2 | FR-197-AC-4's straddling run settles `Incomplete(PrecisionBudget{lower, upper})` with `lower < 99/100 < upper`. §15.3's per-window claim with `max_states` 1,000 stops before the product completes and no partial evidence settles it: `Incomplete(ResourceExhausted)` naming `limits.max_states` and 1,000. A request omitting every limit runs with the defaults above. | Test (TC-638) |
 | FR-203-AC-3 | FR-201-AC-1's rejected certificate settles `inconclusive`, `CertificateRejected`; FR-202-AC-2's prefix-duplicated path set settles `inconclusive`, `ReplayParity`; FR-199-AC-3's zero-weight variant settles `unsupported`, `ZeroWeightComponent`. None of these records carries a `measured` value. | Test (TC-638) |
 | FR-203-AC-4 | A request whose proof summary holds AC-1's two proofs counts 2 proved items. `P95` with and without stated confidence parameters have different obligation identities, and the same claim requested with `exact` and with a changed `precision_bits` has one obligation identity. | Test (TC-638) |
-| FR-203-AC-5 | FR-196-AC-5's refutation settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, with cause `UndefinedEvaluation{where: 1, cause: division-by-zero}`, after FR-202's replay; the claim's threshold plays no part. | Test (TC-641) |
+| FR-203-AC-5 | FR-196-AC-5's refutation settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, with cause `UndefinedEvaluation{where: 1, cause: absent-key}`, after FR-202's replay; the claim's threshold plays no part. | Test (TC-641) |
+| FR-203-AC-6 | A build stopped at `max_automaton_states` settles `incomplete`, `Incomplete(LimitReached{MaxAutomatonStates, value, exact_prob.max_automaton_states})`; a cancelled build settles `Incomplete(Cancelled{source})`; a build that meets an undecided successor settles `inconclusive`, `Inconclusive(UndecidedSuccessor)`; an expansion stop naming no limit settles `failed`, as an internal fault `runtime_invariant`/`established-invariant-broken` and otherwise with the stop's own cause; an `Internal` refusal settles `failed`. | Test (TC-638) |
+| FR-203-AC-7 | The build-result map is exhaustive over `ProductRefusal` and `ClauseOutcome` with no `_` arm. A build whose expansion stops at `max_candidates` 2 settles `incomplete`, `Incomplete(LimitReached{max_candidates, 2, expansion.max_candidates})`. A build whose `ProductRefusal`, asserted before settling, is `Expansion(stop)` naming `EvaluationMeter` (a subject whose successor expansion charges the meter before the claim reads any predicate, under an accounting bound `B` of `work_units` its first expansion exceeds) settles `Incomplete(LimitReached{work_units, B, accounting.work_units})`, naming the exhausted counter, `B` and the setting `accounting.<counter>` by FR-255 Behavior 9's rule (QSpec FR-461-AC-5); a build whose `ProductRefusal`, asserted before settling, is `PredicateRefused(Incomplete(i))` (the expansion fits under `B`, the predicate read's charge is the first one denied) settles the same way for `i`'s counter. A predicate refused `integer_out_of_domain`/`outside-domain` settles `failed` with that diagnostic; a constructed `PredicateRefused(NotBoolean)`, `PredicateRefused(KernelRefused(CheckedInvariant))` and `Translation` error each settle `failed`, `runtime_invariant`/`established-invariant-broken`; an `Admission` failure and a `RequiresBound` refusal return no terminal record. | Test (TC-1166) |
 
 ## Dependencies
 

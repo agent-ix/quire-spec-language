@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-224
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-158
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-228
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-439
@@ -55,6 +57,9 @@ happens-before computation, so a summary bug cannot produce a false race.
   models, whose steps carry memory components, and whose `kind` is
   `Formula`, `Deadlock`, `Race{location, earlier, later}` or
   `UndefinedEvaluation{where, cause}`.
+- The subject's memory bounds: `max_store_buffer: Option<u64>` and
+  `max_messages: Option<u64>`, the values the run used, each `None`
+  meaning 4 (FR-225).
 
 ## Outputs
 
@@ -66,6 +71,20 @@ happens-before computation, so a summary bug cannot produce a false race.
 - The executor SHALL build the protocol system with the envelope's resolved
   models and re-execute each step by FR-217: an attempt through the FR-120
   rule over the thread observation, a memory step by its model.
+- The executor SHALL build each `Tso` component under the subject's
+  `max_store_buffer` and each `Ra` component under its `max_messages`, as
+  the run built them (FR-225).
+- If a step takes a store that the bound cuts at its pre-state, then the
+  executor SHALL refuse it with `invalid_runtime_input`/`invalid-value`,
+  naming the step: the cut store is enabled but left unexpanded by the
+  bound, so no run under the bound takes it. The executor SHALL NOT
+  otherwise compare the bounds with the run's.
+- The executor SHALL read a cut store as enabled wherever it reads
+  enabledness, the lasso fairness check against the memory and scheduler
+  constraints included, as FR-225 does (ADR-025 MB-3). A store is a step of
+  its thread's branch, in that branch's FR-212 class, so a cut store keeps
+  its branch's class enabled; `flush` and the other memory steps are in no
+  class (ADR-025 MF-4).
 - When a step names a message or slot depth that does not exist at its
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -77,7 +96,14 @@ happens-before computation, so a summary bug cannot produce a false race.
   unfair lasso with `invalid_runtime_input`/`invalid-value`.
 - For `kind: UndefinedEvaluation`, the executor SHALL evaluate the
   claim's letters along the replayed prefix and settle by ADR-018 UE-5
-  (ADR-025 MV-1).
+  (ADR-025 MV-1) when `where.locus` names a letter of the claim, and SHALL
+  replay by FR-217's constraint-locus rule when it names a state constraint.
+  The executor SHALL evaluate the constraint at each replayed state over the
+  recomputed memory component as FR-158 "Protocol subjects" reads it: a
+  shared location of a weak `parallel` holds its memory value (under `tso`
+  the value in memory, under `ra` the value of its mo-last message), and a
+  value still in a store buffer or a message that is not mo-last is never
+  read.
 - For `kind: Race`, the executor SHALL compute happens-before over the
   replayed prefix from scratch with vector clocks over ADR-025 DR-2's
   synchronisation, independent of the race summary, and check that the
@@ -94,6 +120,9 @@ happens-before computation, so a summary bug cannot produce a false race.
 | FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`; changing a carried message view refuses `stale_dependency`/`content-mismatch`. | Test (TC-672) |
 | FR-227-AC-3 | FR-224-AC-2's race counterexample under `ra` replays to `reproduced-with-evaluated-witness`. An envelope whose `earlier` names the flag store, which is not an access to `data`, settles `inconclusive`, `ReplayParity`; so does the AC-1 shape of FR-224, whose `data` load runs only after its flag load read 1, with a `release`/`acquire` flag and a forged race on `data`. | Test (TC-672) |
 | FR-227-AC-4 | The lasso of FR-228-AC-2, in which `w`'s buffer stays `[x := 1]` through `r`'s repeated load of `x`, refuses `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s constraint. | Test (TC-672) |
+| FR-227-AC-5 | `SB`'s `tso` counterexample replays to `reproduced-with-evaluated-witness` with `max_store_buffer` unset and with 1, since no buffer holds more than one store. `SB`'s `ra` counterexample replays to `reproduced-with-evaluated-witness` with `max_messages` unset (4); with `max_messages` 1 it refuses `invalid_runtime_input`/`invalid-value` at its first store, which would add a second message to its location. | Test (TC-1230) |
+| FR-227-AC-6 | FR-228-AC-2's program under `ra` with `max_messages` 1, where `w`'s store `x := 1` is cut at every state because it would add a second message to `x`: the hand-built lasso whose stem is `fork` and whose loop is `r`'s load reading 0 refuses `invalid_runtime_input`/`invalid-value` as unfair under `w`'s scheduler constraint, since `w`'s store is enabled at every loop state and never taken. A replay that read the cut store as not enabled would find `w` with no enabled step and accept the lasso. | Test (TC-1230) |
+| FR-227-AC-7 | Over FR-217-AC-9's `SB` with `Edge` named by the request and `SB::Both` resolved to `tso`, `Sx` alone leaves `x`'s memory value 0, so `Edge` holds after it, and the run's `Violated` counterexample with cause `UndefinedEvaluation` is two steps, a store and its own thread's `flush` (`Sx`, `flush(left)` or `Sy`, `flush(right)`), ending at the first reached state where a cell's memory value is 1, with `where.locus` naming `Edge`; it replays to `reproduced-with-evaluated-witness`. The same payload with its `flush` step removed, which ends with the store still buffered and both memory values 0, settles `inconclusive`, `ReplayParity`. Resolved to `ra`, the counterexample is one store step, because the stored location's mo-last message holds 1 at once, and it replays to `reproduced-with-evaluated-witness`. | Test (TC-672) |
 
 ## Dependencies
 

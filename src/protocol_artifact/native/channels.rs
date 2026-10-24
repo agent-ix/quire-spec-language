@@ -204,6 +204,8 @@ fn endpoint(
 fn stable_equality(ty: &NativeType<'_>) -> Result<(), Error> {
     match ty {
         NativeType::Boolean
+        | NativeType::Uuid
+        | NativeType::String
         | NativeType::Scalar { .. }
         | NativeType::Enumeration { .. }
         | NativeType::Object { .. }

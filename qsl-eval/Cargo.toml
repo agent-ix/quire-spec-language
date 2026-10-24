@@ -15,13 +15,15 @@ description = "ADR-011 §6.1 layer 5: the S6a evaluator (value::expression) over
 # ADR-012 section 9 / FR-064: the `#[string_edge]` marker attribute, exempt
 # from the layer table below (it is a zero-cost marker `xtask string-edge`
 # reads, not a semantic dependency).
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
 quire-semantic-value = { workspace = true }
+# ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
+quire-eval = { workspace = true }
 # ADR-011 X-8: the simulation state key and the pinned sampler's draw
 # preimage encode through the one RFC 8785 implementation (FR-101).
 quire-canonical = { workspace = true }
@@ -32,8 +34,14 @@ serde = { version = "1.0.228", features = ["derive"] }
 # `InvalidQualifiedName`.
 thiserror = "2.0.20"
 
+[features]
+# `ProtocolTransition::carrying` and `SendRecord::with_outcome`, with which
+# a test changes or misplaces the send record a counterexample step carries
+# (FR-217-AC-5, FR-217-AC-6). Only a dev-dependency enables it; no shipped
+# build has the methods.
+test-support = []
+
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # Test-only since the deletion of qsl-eval's second v2 producer: the
 # layer-5 `quire.checked-function-package/v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
 # one shipped caller) was deleted; several `tests/it/*.rs` fixtures still

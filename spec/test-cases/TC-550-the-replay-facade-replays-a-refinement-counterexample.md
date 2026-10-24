@@ -14,7 +14,7 @@ Verify replay of refinement prefixes and lassos: recompiling both packages,
 recomputing history, mapped states and candidate sets, rerunning
 `check_step`, the parity rule and the refusals.
 
-Scope: FR-145-AC-1 to FR-145-AC-4.
+Scope: FR-145-AC-1 to FR-145-AC-4 and FR-145-AC-6.
 
 ## Test Procedure
 
@@ -27,6 +27,7 @@ Spec::Register::write`.
 2. Replay the divergence, terminal-stutter and `Pair` lassos.
 3. Replay the three parity and unfairness variants of FR-145-AC-3.
 4. Replay each refusal variant of FR-145-AC-4; replay one envelope twice.
+5. Replay a payload whose prefix reaches `HeavyEnq`'s `put(1)` step under the meter B (FR-145-AC-6).
 
 Tag the tests `#[trace("TC-550", "FR-145-AC-n")]`.
 
@@ -39,3 +40,4 @@ Tag the tests `#[trace("TC-550", "FR-145-AC-n")]`.
   refused as unfair.
 - Step 4: each refuses with FR-145-AC-4's code and subcode and no result;
   equal results.
+- Step 5: execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, never `ReplayParity`.

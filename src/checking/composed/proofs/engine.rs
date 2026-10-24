@@ -406,6 +406,8 @@ impl<'s, 'a> Builder<'s, 'a> {
             NativeType::Option(value) => self.type_work(value, at, depth + 1)?,
             NativeType::Sequence { element, .. } => self.type_work(element, at, depth + 1)?,
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }

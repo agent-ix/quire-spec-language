@@ -12,7 +12,7 @@ relationships:
 
 Verify spawning under the authored `max`, acting by a live instance, each lifetime's retirement, and the object-reference key.
 
-Scope: FR-208-AC-1 to FR-208-AC-3.
+Scope: FR-208-AC-1 to FR-208-AC-6.
 
 ## Test Procedure
 
@@ -21,6 +21,12 @@ Scope: FR-208-AC-1 to FR-208-AC-3.
 2. With `max 2`, spawn in both orders and compare keys; list `event(Work)`
    steps with two live instances.
 3. Run the `workflow` and `scope` lifetimes.
+4. Under `activation on each`, list the `spawn` and `retire` identities of
+   one object in protocol instances 0 and 1.
+5. Run a `send` on a channel `from r to c` and a `receive` on a channel
+   `from c to r` with `r` replicated, then with an empty universe.
+6. Check and run FR-208-AC-6's `until` predicate that reads `w.done` and
+   looks `j` up in `M::jobs`, and its `M::absent` variant.
 
 Tag the tests `#[trace("TC-653", "FR-208-AC-n")]`.
 
@@ -33,3 +39,11 @@ Tag the tests `#[trace("TC-653", "FR-208-AC-n")]`.
   protocol instance; under `scope`, retirement
   folded into the step that ends the region's reachability, and no
   `retire` step.
+- Step 4: the two protocol instances' `spawn` identities differ in the
+  instance ordinal, and so do their `retire` identities; none holds a
+  `thread` member.
+- Step 5: two `send` steps and two `receive` steps, naming the acting
+  instances; with an empty universe the thread waits with `NoRoleInstance{r}`.
+- Step 6: the predicate checks with no model-state refusal; `retire(w, w1)`
+  enabled exactly where `w1.done` holds and `j` is in `jobs`; `M::absent`
+  refuses `missing_declaration`/`missing-name` at `absent`.

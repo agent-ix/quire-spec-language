@@ -2,8 +2,10 @@
 //! FR-122 (ADR-013 O-25 to O-27): [`replay_state_clause`], the replay
 //! facade's entry for a state-clause counterexample.
 //!
-//! It recompiles the request's package by FR-098's rules ([`recompile`]),
-//! resolves the payload's clause by name in the recompiled package, refuses
+//! It checks the request's `state_clause` replay target against the
+//! envelope's, recompiles the request's package by FR-098's rules
+//! ([`recompile`]), resolves the target by name in the recompiled package,
+//! refuses
 //! an envelope whose clause node or `claim` occurrence is not the
 //! recompiled clause's, or whose observation form is not the clause kind's,
 //! before any admission, then admits the observation by FR-106 from the
@@ -14,19 +16,20 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::ByteDigest;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, OutOfRange,
     PostStateRange, Provisions,
 };
-use quire_exact::Identifier;
+use quire_semantic_value::catalog::InternalFault;
 
-use super::{consumed, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use super::{
+    check_envelope_target, consumed, domain_packages, one_source, recompile, wire_id, wrong_target,
+    ReplayRefusal,
+};
 use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -36,18 +39,20 @@ use crate::result::{
 };
 use crate::spine::{
     check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
-    ClauseDisposition, ClauseRunSelection, CompiledRun, UnitProvenance,
+    ClauseDisposition, CompiledRun,
 };
+use crate::target::{ReplayEntry, TargetMember};
 use crate::witness::{ReplaySource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
 use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
+    CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::Source;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::observation::AdmittedObservations;
+use quire_eval::CallFailure;
 use quire_exact::Meter;
+use quire_semantic_value::catalog::Category;
 
 /// FR-122's `stale_dependency`/`content-mismatch`: an envelope clause
 /// identity that is not the recompiled clause's, naming both.
@@ -75,8 +80,8 @@ pub enum ClauseIdentityMismatch {
 
 /// FR-122 Outputs: an FR-072 result on the envelope's arm, with the
 /// identities the replay kept: the source unit's identity and digest, the
-/// `package_id`, the payload's clause and observation (for a pre-call
-/// observation, its self object and parameter values), the envelope's
+/// `package_id`, the request's `state_clause` and the payload's observation
+/// (for a pre-call observation, its self object and parameter values), the envelope's
 /// clause node and occurrence key (each equal to the recompiled one, or the
 /// replay refused), and every document admission read.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,7 +89,7 @@ pub struct StateClauseReplayResult {
     result: ReplayResult,
     source: RawSourceRef,
     package_id: PackageId,
-    clause: Identifier,
+    clause: crate::identity::QualifiedName,
     clause_node: WireNodeId,
     occurrence_key: OccurrenceKey,
     observation: ClauseSelectionInput,
@@ -105,8 +110,8 @@ impl StateClauseReplayResult {
     pub fn package_id(&self) -> PackageId {
         self.package_id
     }
-    /// The payload's clause name.
-    pub fn clause(&self) -> &Identifier {
+    /// The request's `state_clause`.
+    pub fn clause(&self) -> &crate::identity::QualifiedName {
         &self.clause
     }
     /// The envelope's clause node.
@@ -141,14 +146,16 @@ impl StateClauseReplayResult {
 
 /// FR-122: replay `envelope`'s state-clause counterexample. `wire` is
 /// FR-098's request, supplying the package reference, byte provision and
-/// limits; its function selection and replay source are FR-098's
-/// function-replay members, which a state-clause replay does not read: its
-/// selection is the payload and its result arm the envelope's.
+/// limits and the `state_clause` replay target that selects the clause; its
+/// replay source is FR-098's function-replay member, which a state-clause
+/// replay does not read: its result arm is the envelope's.
 ///
 /// Refuses, with no partial result, when the request does not decode, then
-/// by FR-098's rules (in FR-098's order), when the recompiled `package_id`
-/// is not the envelope's, when the payload's clause names no state clause,
-/// when the envelope's clause node or occurrence key is stale, when the
+/// (before recompiling, in this order) when the request's target is not
+/// `state_clause` and when the envelope's target differs from the request's,
+/// then by FR-098's rules (in FR-098's order), when the recompiled
+/// `package_id` is not the envelope's, when the request's `state_clause`
+/// names no state clause, when the envelope's clause node or occurrence key is stale, when the
 /// observation's form is not the clause kind's (each before any
 /// admission), and when FR-106 admission fails. The counterexample refuted
 /// the clause, so the proved verdict is `violation`: `false` reproduces;
@@ -169,7 +176,19 @@ pub fn replay_state_clause(
     replay_limits: ReplayLimits,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let Some(target) = request.replay_target().as_state_clause() else {
+        return Err(wrong_target(
+            request.replay_target(),
+            ReplayEntry::ReplayStateClause,
+            TargetMember::StateClause,
+        ));
+    };
+    check_envelope_target(&request, envelope.replay_target())?;
+    let limits = super::request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
@@ -180,11 +199,15 @@ pub fn replay_state_clause(
     }
     let payload = envelope.family_payload();
     let graph = compiled.checked.package().graph();
-    let clause = graph.state_clause(payload.clause.as_str()).ok_or_else(|| {
-        ReplayRefusal::UnknownClause {
-            clause: payload.clause.clone(),
-            package: package_id,
-        }
+    // Complete-V1 declares no qualified names, so only a one-segment name
+    // can resolve (as for a function).
+    let clause = match target.segments() {
+        [name] => graph.state_clause(name.as_str()),
+        _ => None,
+    }
+    .ok_or_else(|| ReplayRefusal::UnknownClause {
+        clause: target.clone(),
+        package: package_id,
     })?;
     check_identities(envelope, clause).map_err(ReplayRefusal::ClauseIdentity)?;
     let form = payload.observation.form();
@@ -197,20 +220,6 @@ pub fn replay_state_clause(
 
     // `recompile` already required exactly one source, provided.
     let source = one_source(request.source_digests())?;
-    let bytes = request
-        .byte_provision()
-        .get(source.digest())
-        .ok_or_else(|| {
-            ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "decoded-request-byte-provision-complete",
-            ))
-        })?;
-    let unit = UnitProvenance {
-        digest: ByteDigest::of(bytes).to_string(),
-        source: labels(source),
-        extraction: None,
-    };
     let packages = domain_packages(&request);
     // FR-106 reads every document only from the byte provision, by its
     // `sha256-jcs` digest.
@@ -224,7 +233,7 @@ pub fn replay_state_clause(
     sources.push(compiled.checked.source().clone());
     sources.extend(compiled.checked.libraries().iter().cloned());
     let selection = ClauseSelection {
-        name: payload.clause.as_str().to_owned(),
+        name: clause.name().to_owned(),
         input: payload.observation.clone(),
     };
     let run = CompiledRun {
@@ -241,13 +250,11 @@ pub fn replay_state_clause(
         accounting: request.accounting_limits(),
         package: compiled.checked.package(),
         package_id,
-        unit: &unit,
         sources: &sources,
-        model_selections: graph.model_selections().to_vec(),
-        selection: ClauseRunSelection::Clause(selection.clone()),
     };
     let ClauseCheck {
         report,
+        documents: read_documents,
         observations,
         mut meter,
     } = check_clause_admitted(&run, clause, &selection);
@@ -283,6 +290,9 @@ pub fn replay_state_clause(
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Integer(_))) => {
             return fault("state-clause-completes-a-boolean")
         }
+        ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
+            return fault("state-clause-completes-a-boolean")
+        }
         ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None),
         ClauseDisposition::Evaluate(CallOutcome::Incomplete(_)) => (Category::Incomplete, None),
         // O-16's `undefined` row is not a proof category (as in FR-098).
@@ -302,6 +312,8 @@ pub fn replay_state_clause(
         | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::ArgumentRefusal(_)
+        | ClauseDisposition::Temporal(_)
+        | ClauseDisposition::TemporalRefusal(_)
         | ClauseDisposition::FrameViolation(_) => {
             return fault("clause-check-reports-admission-or-evaluation")
         }
@@ -321,11 +333,11 @@ pub fn replay_state_clause(
             result,
             source: source.clone(),
             package_id,
-            clause: payload.clause.clone(),
+            clause: target.clone(),
             clause_node: envelope.clause_node(),
             occurrence_key: envelope.occurrence_key().clone(),
             observation: payload.observation.clone(),
-            documents: report.provenance.documents,
+            documents: read_documents,
             range_violations,
         });
     }
@@ -384,11 +396,11 @@ pub fn replay_state_clause(
         result,
         source: source.clone(),
         package_id,
-        clause: payload.clause.clone(),
+        clause: target.clone(),
         clause_node: envelope.clause_node(),
         occurrence_key: envelope.occurrence_key().clone(),
         observation: payload.observation.clone(),
-        documents: report.provenance.documents,
+        documents: read_documents,
         range_violations: Vec::new(),
     })
 }
@@ -528,12 +540,23 @@ pub(crate) fn separate(
     let separation = match package.check_separation(&qualified, observations, claim, meter) {
         Ok(separation) => separation,
         Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
+        Err(CallFailure::Storage { parameter, failure }) => {
+            return Err(ReplayRefusal::Storage {
+                position: parameter,
+                failure,
+            })
+        }
         // The clause was resolved by name and admitted for that clause.
         Err(CallFailure::Input(_)) => {
             return Err(fault("separation-check-over-the-admitted-clause"))
         }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => return Err(fault("cancelled-without-a-handle")),
+        // Clause separation admits no supplied-value argument: the admission
+        // phase never runs here.
+        Err(CallFailure::Supplied(_) | CallFailure::UnsupportedHelper(_)) => {
+            return Err(fault("separation-check-runs-no-supplied-phase"))
+        }
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),
@@ -551,7 +574,7 @@ pub(crate) fn separate(
 /// fails its step; `None` for an exhausted meter, which is not a witness
 /// failure.
 pub(crate) fn stopped_reason(
-    evaluation: qsl_eval::value::Evaluation,
+    evaluation: quire_eval::Evaluation,
     graph: &CheckedGraph,
     sources: &[Source],
 ) -> Result<Option<SeparationReason>, ReplayRefusal> {

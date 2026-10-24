@@ -103,7 +103,16 @@ from the node itself.
 |---|---|---|---|
 | `ObjectTypeRecord` with no `interfaceFeatures` | `model` / `object_type` | itself | `aggregate{[]}` |
 | `ObjectTypeRecord` with `interfaceFeatures` (FR-152 Interface) | `model` / `systems_interface` | itself | `aggregate{[]}` |
+| `StateMachineRecord` | `model` / `state_machine` | itself | `aggregate{[]}` |
 | `RelationshipRecord` | `relation` / `relationship` | itself | `aggregate{[]}` |
+| `RecordValueTypeRecord` | `model` / `record_value_type` | itself | `aggregate{[]}` |
+| `EventTypeRecord` | `model` / `event_type` | itself | `aggregate{[]}` |
+
+A record value type or event type is never a `composite_type` with a source
+owner (FR-359 item 3). Its model node's key is also the declaration key under
+which the type environment declares it, so a value of the record names its
+most-specific type by that key, whatever alias a unit gives the model
+(FR-359 item 9).
 
 A record kind that no checked node names has no node: a field member, an
 operation member, a scalar type, a component, an endpoint, an allocation and
@@ -131,6 +140,16 @@ subject. A field, operation or relationship-end member has no node of
 its own; an FR-322 member names it by its declaring node and its name
 (ADR-013 O-06):
 
+A selected `RelationshipRecord` is an unconditional exception to that
+reachability rule. `check` roots every selected relationship declaration even
+when no checked value, function, frame or relationship-end member names it,
+and records one `generated` occurrence at the selected model alias's own
+declaration-site/source span. The fallback `generated_location` is never used
+for this root, and no relationship root may reach emission as an
+`UnlocatedOccurrence`. For example, the `billedTo` relationship in the
+unreferenced model fixture is emitted from the `M` alias declaration site
+even when the fixture has no function that names it.
+
 - the `field` member of an `Attribute` (`deref(r).f`) names the model node of
   `r`'s static object type `T`, the target of `r`'s `Reference<T>` type, and
   the attribute name `f`;
@@ -139,8 +158,8 @@ its own; an FR-322 member names it by its declaring node and its name
   resolves `m` statically to the one effective operation `T` exposes, so the
   member names `T`'s node even when a supertype of `T` declares `m`
   (ADR-013 O-06);
-- a `relationship_end` member names the relationship's node and the end's
-  name;
+- a `relationship_end` member of a `Navigate` (`r.name`, FR-363) names the
+  relationship's node and the end's role;
 - the `type_argument` member of `allInstances<T>` and `lookup<T>` names the
   model node of `T`.
 
@@ -189,6 +208,13 @@ A type built from these follows FR-092's table: the `lookup<T>` result under
 `absent empty` is the `Option<Reference<T>>` node, and the `allInstances<T>(p)`
 result for a population of maximum `N` is the `collection_bounds` node of
 `Set<Reference<T>>[0, N]` (FR-084).
+
+A population the domain package declares and a state clause names as `M::P`
+(FR-391) is not a `Population<T>[N]` type node. Its reference is a separate
+node keyed by the population's declaration key alone, with no `N`, whose
+`owner` is the model owner of that key (QSpec FR-322): two populations of one
+member type are two nodes, and the same population read twice is one node. QSpec FR-322 ("Population references")
+defines that node, and FR-391 states how `check` emits it.
 
 ### Clause function nodes
 
@@ -281,14 +307,45 @@ node. A declared unit `u` and the
 single-term compound unit `u^1` are different `UnitId`s (ADR-013 OQ-B), so
 they have different type nodes.
 
-A function body that divides by a quantity refuses with
+A function body that divides by a quantity literal of nonzero magnitude
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals))
+is admitted: the literal is a nonzero fact for the division. A body that
+divides by any other quantity refuses with
 `undefined_expression`/`unproved-nonzero`: a checked quantity type carries no
-value interval, so no guard proves a quantity divisor nonzero (QSpec FR-146;
-the `Quantity` divide arm of `check::facts`). A checked graph therefore
-holds a compound unit that a product forms, such as `metre^2` (U1), and
-holds no quotient unit. FR-094-AC-6 keys the quotient units U2 to U4 from
-the units `value::quantity::result_unit` forms, which is the forming `check`
-does while it types a quantity division.
+value interval, so no guard proves a divisor that is not a literal nonzero
+(QSpec FR-146; the `Quantity` divide arm of `check::facts`). A checked graph
+therefore holds the compound unit that each product forms, such as `metre^2`
+(U1), and the compound unit that each admitted quotient forms, whose terms are
+the dividend's with the divisor's exponents subtracted. FR-094-AC-6 keys the
+quotient units U2 to U4 from the units `value::quantity::result_unit` forms,
+which is the forming `check` does while it types a quantity division, and
+FR-094-AC-11 keys the quotient of a division by a literal.
+
+- **Dimension equivalence.** The unit table holds the admitted preimage of each
+  dimension equivalence the unit declares (FR-091). `check` builds one
+  `scalar_type`/`dimension_equivalence` node for each, in source order, from
+  that preimage as QSpec FR-322 spells it (FR-322-AC-118): self-typed, with no
+  `declaration`, its `nominal_identity_preimage`
+  `{version: quire.dimension-equivalence-node/v1, owner, dimension_node_ids,
+  root_scale}` with the two related dimension keys in ascending digest order
+  and the root ratio the unit table holds (FR-091 step 6) as `root_scale`, stated
+  for the node listed first, depending on
+  exactly those two dimension nodes, and carrying one `anchor` occurrence whose
+  ordinal is the declaration's place among the unit's equivalence declarations
+  and whose region is the declaration's. It builds the node whether or not a
+  quantity type names either dimension, together with the two dimension nodes
+  it depends on as the declared-unit bullet builds a dimension node, and it
+  changes no dimension node's key. The two spellings `A ~ B by x U = y V` and
+  `B ~ A by y V = x U` build one node, and so do two statements of one ratio
+  through different units.
+
+Quantity parameters, the existing quantity operations and quantity literals
+use these unit type nodes. A quantity literal in a value expression
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals))
+is a `value`/`literal` node of `value_kind` `quantity` whose `semantic_type`
+and literal `type` are its declared unit's node, so it introduces no second
+quantity type and no new type node: its unit's node is the one a
+`Quantity<u>` parameter of that unit names (QSpec FR-322-AC-79).
 
 ### Refusals
 
@@ -300,8 +357,8 @@ yield no key for the node that needs it:
 - a `DeclarationKey` whose `package` is no admitted domain package's
   identity, or whose `node` is empty;
 - a compound `UnitId` that the check stage's unit scope does not hold;
-- a declared unit, or a dimension or unit a held unit names, whose nominal
-  preimage the unit table does not hold;
+- a declared unit, or a dimension or unit a held unit names, or a dimension
+  equivalence, whose nominal preimage the unit table does not hold;
 - a domain package record kind that no checked node names.
 
 Type admission refuses an unknown `Reference` target for a source-compiled
@@ -669,6 +726,12 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. In a function body, the result type of `a * a` keys to U1. The compound units that `value::quantity::result_unit` forms for `a / t`, `a / a` and `(a * a) / a`, held in the check stage's unit scope, key to U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
+| FR-094-AC-9 | For the unreferenced `billedTo` relationship selected through model alias `M`, `check` emits its `relation`/`relationship` node and records one `generated` occurrence at `M`'s declaration-site/source span, regardless of function or frame reachability; fallback `generated_location` and `UnlocatedOccurrence` are forbidden. | Test (TC-417) |
+| FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s`, `d / rational(-3, 1) ms` and `d / -(3 ms)` have that same node, and `a / -(3 ms)` has the node of `a / 3 ms`. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
+| FR-094-AC-12 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, whose preimage is `{version: quire.dimension-equivalence-node/v1, owner: SourceOwner, dimension_node_ids: [the two package Time keys in ascending digest order], root_scale: 1/1}` (FR-091-AC-61's `bbf770ea…00d4` under QSpec's vector owner), whose `dependencies` are exactly those two keys and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same key; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` (`d707eb94…6c24`) and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same key; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes keep the keys they have with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
+
+A check with two admitted versions of one domain package
+identity refuses as an internal fault.
 
 ## Dependencies
 
@@ -696,20 +759,3 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
   The `ModelOwner` structural preimage, the `compound_unit` form, the
   `model_population` body and family, the `clause` binding and the v2
   correspondence spelling are QSL proposals (QC-25, QC-26).
-
-## Status
-
-Specified, with AC-6's quotient units corrected and the content-only
-`ModelOwner` (QSpec FR-322-AC-28). Implemented (#384):
-`qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
-`Reference`, `Population`, clause-function and quantity type nodes, and
-builds each declared unit's and dimension's nominal node, `check`
-records the model correspondence, `check::checked_dispatch_operation` gives
-each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
-scope keeps its formed units until lowering has keyed them. TC-417, TC-418
-and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there; AC-8 is backed in `qsl-package/src/emit/extent_agreement.rs`. ADR-012 §4.3
-places an operation's postconditions with `ProtocolClause`, so the clause functions
-this requirement keys are exactly the invariant, precondition and body
-functions `DeclaredClauseKind` names. AC-1's and AC-5's `2.0.0` halves
-assert the same keys as `1.0.0`. A check with two admitted versions of one domain package
-identity refuses as an internal fault.

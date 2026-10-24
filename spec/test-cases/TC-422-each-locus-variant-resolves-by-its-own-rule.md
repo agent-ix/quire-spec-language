@@ -34,7 +34,3 @@ Tag the tests `#[trace("TC-422", "FR-095-AC-n")]` with the AC each backs.
   the artifact refusal.
 - Step 2: the first four parse and keep their text; `source_map` refuses for
   a missing leading `/`; the last two refuse for the `~` at byte 2.
-
-## Status
-
-Passed locally. `qsl-foundation/src/diagnostic/locus.rs` backs both steps.

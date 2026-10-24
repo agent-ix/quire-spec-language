@@ -211,7 +211,7 @@ fn rows() -> Vec<Row> {
         row(
             function(
                 "rdiv",
-                &[("x", int_form(1, 9)), ("y", int_form(1, 9))],
+                &[("x", r19()), ("y", r19())],
                 rational_form(["-1000", "1000", "1", "1000"]),
                 None,
                 binary(BinaryOperator::Divide, name_expr("x"), name_expr("y")),

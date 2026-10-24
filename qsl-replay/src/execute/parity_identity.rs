@@ -336,6 +336,50 @@ impl Encode for ParityPreimage {
     }
 }
 
+/// FR-290: the obligation identity of a process-provider item. A process
+/// item has no CG obligation (ADR-029 PV-4 ruling 3), so QSL computes it:
+/// the SHA-256 of the RFC 8785 encoding of the item's proof bounds in O-09's
+/// parity `bounds` form, the occurrence's node and key, the obligation kind
+/// `value-validity` and the subject kind `process-provider`.
+pub(crate) fn process_provider_obligation(
+    node: WireNodeId,
+    occurrence: &Origin,
+    bounds: &BoundEntries,
+) -> Result<ObligationIdentity, IdentityEncodeError> {
+    let digest = quire_canonical::sha256(
+        &ProcessProviderPreimage {
+            node,
+            occurrence,
+            bounds,
+        },
+        Limits::new(u64::MAX),
+    )?;
+    Ok(ObligationIdentity::from_digest(*digest.as_bytes()))
+}
+
+struct ProcessProviderPreimage<'a> {
+    node: WireNodeId,
+    occurrence: &'a Origin,
+    bounds: &'a BoundEntries,
+}
+
+impl Encode for ProcessProviderPreimage<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        writer.begin_object()?;
+        writer.name("declared_domains")?;
+        domain(writer, &Domain::Bounds(self.bounds.clone()))?;
+        writer.name("node")?;
+        writer.string(&self.node.to_string())?;
+        writer.name("obligation_kind")?;
+        writer.string("value-validity")?;
+        writer.name("occurrence_key")?;
+        occurrence_key(writer, self.occurrence)?;
+        writer.name("subject_kind")?;
+        writer.string("process-provider")?;
+        writer.end_object()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

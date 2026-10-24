@@ -1,16 +1,16 @@
 ---
 id: TC-153
-title: "Admit exactly the ten capability kinds and refuse every other label"
+title: "Admit exactly the twelve capability kinds and refuse every other label"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-057
     type: verifies
 ---
-# TC-153: Admit exactly the ten capability kinds and refuse every other label
+# TC-153: Admit exactly the twelve capability kinds and refuse every other label
 
 ## Description
 
-Verify that the canonical `Capability` value type admits exactly the ten labels
+Verify that the canonical `Capability` value type admits exactly the twelve labels
 of FR-057's `quire.capability-kind/v1` table, compares kinds by label, keeps
 every requested pair at its index, refuses an absent or unknown label without
 mapping it, and that each claim form requests its FR-290 kind. Scope:

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: typed extraction provenance inside native command output.
 
-use super::{diagnostic, diagnostic_with_upstream, source, types};
-use crate::command::compilation::RunPackage;
+use super::{diagnostic, diagnostic_with_upstream, types};
 use crate::command::extraction::{ExtractionError, ExtractionMode, JoinCause, JoinFailure};
-use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity, Span};
+use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity};
 use qsl_source::{
     semantic_core_version, ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic,
     SemanticFailure, CONTRACT_VERSION,
@@ -44,51 +43,6 @@ impl<'a> From<&'a ClausesOutcome> for Outcome<'a> {
             clauses: &value.clauses,
             clause_text: &value.clause_text,
             diagnostics: &value.diagnostics,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct Segment {
-    body: Span,
-    original: Span,
-}
-
-#[derive(Serialize)]
-struct Mapping {
-    region: Span,
-    segments: Vec<Segment>,
-    drop_final_newline: bool,
-}
-
-#[derive(Serialize)]
-pub(super) struct Extracted<'a> {
-    original: types::Source<'a>,
-    outcome: Outcome<'a>,
-    mapping: Mapping,
-}
-
-pub(super) fn context<'a>(package: &'a RunPackage<'_>) -> Option<Extracted<'a>> {
-    match package {
-        RunPackage::Native(_) => None,
-        RunPackage::Extracted(value) => {
-            let mapping = value.package.mapped().mapping();
-            Some(Extracted {
-                original: source(&value.original),
-                outcome: value.package.extraction().into(),
-                mapping: Mapping {
-                    region: mapping.region(),
-                    segments: mapping
-                        .segments()
-                        .iter()
-                        .map(|segment| Segment {
-                            body: segment.body,
-                            original: segment.original,
-                        })
-                        .collect(),
-                    drop_final_newline: mapping.layout().drop_final_newline,
-                },
-            })
         }
     }
 }

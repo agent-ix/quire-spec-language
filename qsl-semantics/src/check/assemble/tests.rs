@@ -6,20 +6,35 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
-use qsl_foundation::{SourceIdentity, Span};
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
     Presence, RoundingMode, ValueType,
 };
 
-use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
-use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
-use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
+use super::{
+    admit_types_with, model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault,
+    Unmapped,
 };
+use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
+use crate::model::accounting::ModelNormalizationLimits;
+use crate::model::domain_package::{
+    ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
+    Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
+    ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, StateMachineStateRecord,
+    StateMachineTransitionRecord, ValueTypeRef,
+};
+use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::{normalize, NormalizeOutcome};
+use crate::value::layer::{HeaderLayer, LayerForm};
+use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::FieldDeclaration;
+use quire_semantic_value::declaration::{
+    CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration, RecursionEdges,
+    StorageRequest, StorageUnit, TypeEnvironmentLimits,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -48,7 +63,7 @@ fn assemble_as(
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
 }
@@ -65,6 +80,176 @@ fn errors(declarations: &str) -> (String, Vec<AssemblyError>) {
         Err(refusal) => (text, refusal.errors),
         Ok(_) => panic!("{declarations}: the assembler refuses"),
     }
+}
+
+#[test]
+fn a_state_machine_meaning_is_emitted_as_an_object_type() {
+    let machine = DeclarationKey::fixture("ix://test/orders/OrderLifecycle");
+    let draft = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Draft");
+    let placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Placed");
+    let advance = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/advance");
+    let not_yet_placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/NotYetPlaced");
+    let consistent = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Consistent");
+    let management = DeclarationKey::fixture("ix://test/orders/OrderManagement");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: machine.clone(),
+                supertypes: Vec::new(),
+                states: vec![
+                    StateMachineStateRecord {
+                        key: draft.clone(),
+                        name: "Draft".to_owned(),
+                    },
+                    StateMachineStateRecord {
+                        key: placed.clone(),
+                        name: "Placed".to_owned(),
+                    },
+                ],
+                transitions: vec![StateMachineTransitionRecord {
+                    key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/place_order"),
+                    from: draft,
+                    to: placed,
+                    trigger: advance.clone(),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: serde_json::Value::Null,
+                }],
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/status"),
+                owner: machine.clone(),
+                value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: false,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: advance,
+                owner: machine.clone(),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: not_yet_placed,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "not self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: consistent,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: management,
+                members: vec![machine.clone()],
+                vocabulary: Vec::new(),
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the state-machine domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let super::ModelTypes {
+        objects: declarations,
+        composites,
+        ..
+    } = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+    )
+    .expect("state-machine meaning is supported by the object-type seam");
+    assert!(composites.is_empty());
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name(), "M::OrderLifecycle");
+    assert_eq!(
+        declarations[0]
+            .attributes()
+            .iter()
+            .map(FieldDeclaration::name)
+            .collect::<Vec<_>>(),
+        ["status"]
+    );
+    let identity = selected
+        .view
+        .type_identities()
+        .get(&DeclarationKey::fixture("ix://test/orders/OrderLifecycle"))
+        .expect("normalization indexed the state-machine identity");
+    assert_eq!(
+        operations
+            .declared_by(*identity)
+            .iter()
+            .map(|operation| operation.name())
+            .collect::<Vec<_>>(),
+        ["advance"]
+    );
+}
+
+/// A model scalar type is a nameable type: `M::Total` carries its
+/// `Int[lower, upper]` (FR-218-AC-24, FR-381-AC-13).
+#[test]
+fn a_model_scalar_is_named_with_its_integer_interval() {
+    let total = DeclarationKey::fixture("ix://test/orders/Total");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.model-scalar-name"),
+        vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: total,
+            domain: ScalarValueDomain::Integer {
+                lower: 0,
+                upper: 1000,
+            },
+        })],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the scalar domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let types = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+    )
+    .expect("a scalar-only model is supported");
+    assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
 }
 
 /// The span of the last occurrence of `needle` in `text`.
@@ -170,6 +355,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates: candidates.clone(),
+                    native: false,
                 },
                 span: candidates[1],
             },
@@ -177,6 +363,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates,
+                    native: false,
                 },
                 span: after(&text, "(x: A)", "A"),
             },
@@ -300,11 +487,97 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
     );
 }
 
+/// FR-326: the assembler keeps each `temporal` clause's form for the
+/// `TemporalTrace` check, and records the unit's temporal profile
+/// selections; it refuses a clause whose `using` alias names no profile
+/// selection at that alias.
+#[trace("FR-326")]
+#[test]
+fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
+    let clause = |alias: &str| {
+        format!(
+            "temporal A using {alias} over (p: Boolean) clock \"s\" on origin {{ holds(true) }}"
+        )
+    };
+    let profiles = format!("{PROFILE_V}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let text = text(&profiles, &clause("t"));
+    let assembled = assemble_as("a", "u", &text).expect("the unit assembles");
+    assert_eq!(assembled.temporal_clauses.len(), 1);
+    assert_eq!(
+        assembled
+            .temporal_selections
+            .iter()
+            .map(|selection| selection.profile)
+            .collect::<Vec<_>>(),
+        [crate::check::TemporalProfile::InfiniteTrace]
+    );
+
+    let (text, found) = errors(&clause("missing"));
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
+            },
+            span: last(&text, "missing"),
+        }]
+    );
+}
+
+/// FR-124: a `terminal` declaration resolves its `using` alias and its model
+/// alias; one on an alias that names no `model` declaration refuses
+/// `missing_declaration`/`missing-name` at the alias.
+#[trace("TC-1059", "FR-382-AC-6")]
+#[test]
+fn a_terminal_declaration_on_no_model_refuses_at_the_model_alias() {
+    for declaration in [
+        "terminal Done using v on M when { true };",
+        "terminal Halt using v on M any;",
+    ] {
+        let (text, found) = errors(declaration);
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::UnresolvedTerminalModel { alias: "M".into() },
+                span: after(&text, "on", "M"),
+            }],
+            "{declaration}"
+        );
+        assert_eq!(found[0].cause.code(), Code::MissingDeclaration);
+        assert_eq!(
+            found[0].cause.catalog_code(),
+            quire_semantic_value::catalog::CatalogCode::new("missing_declaration", "missing-name")
+        );
+    }
+}
+
+/// FR-124: a `terminal` declaration's `using` alias names a profile
+/// selection of the unit.
+#[test]
+fn a_terminal_declaration_using_no_profile_refuses_at_the_alias() {
+    let (text, found) = errors("terminal Halt using missing on M any;");
+    assert!(
+        found.contains(&AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
+            },
+            span: last(&text, "missing"),
+        }),
+        "{found:?}"
+    );
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {
     let checked = |declarations: &str| {
-        let (_, assembled) = assemble(declarations);
+        // `deref` is `state.graph`'s (FR-361 item 17), so the unit selects
+        // the model profile, which holds it.
+        let text = text(
+            &PROFILE_V.replace("quire.value.complete", "quire.model.complete"),
+            declarations,
+        );
+        let assembled = assemble_as("a", "u", &text);
         let refusals = assembled
             .expect("the unit assembles")
             .check(CheckingLimits::default())
@@ -365,6 +638,7 @@ fn each_assembler_cause_has_its_catalog_code() {
             AssemblyCause::AmbiguousTypeName {
                 name: "X".into(),
                 candidates: vec![span],
+                native: false,
             },
             "ambiguous_declaration/ambiguous-name",
         ),
@@ -419,6 +693,85 @@ fn each_assembler_cause_has_its_catalog_code() {
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
+    }
+}
+
+/// FR-082-AC-10: assembler allocation refusals preserve the kernel's exact
+/// request amount and unit, including element counts that are not bytes.
+#[trace("FR-082-AC-10")]
+#[test]
+fn assembler_allocation_cause_preserves_native_request_unit() {
+    for (request, expected_unit) in [
+        (StorageRequest::new(6, StorageUnit::Bytes), "bytes"),
+        (
+            StorageRequest::new(3, StorageUnit::AdditionalElements),
+            "additional-elements",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Allocation(request)) },
+        )
+        .expect_err("injected registry allocation failure must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("registry allocation failure must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/allocation-failed"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        let fields =
+            BTreeMap::from([("requested", format!("{expected_unit}:{}", request.amount()))]);
+        assert_eq!(cause.catalog_fields(), Some(fields));
+    }
+}
+
+/// FR-082-AC-11: reservation size overflow is distinct from allocation
+/// denial and preserves the kernel's exact request amount and unit.
+#[trace("FR-082-AC-11")]
+#[test]
+fn assembler_capacity_cause_preserves_native_request_unit() {
+    for (request, expected_upstream) in [
+        (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
+        (
+            StorageRequest::new(4, StorageUnit::AdditionalElements),
+            "additional-elements:4",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Capacity(request)) },
+        )
+        .expect_err("injected reservation overflow must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("reservation overflow must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/reservation-size-overflow"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        assert_eq!(
+            cause.catalog_fields(),
+            Some(BTreeMap::from([("upstream", expected_upstream.to_owned())]))
+        );
     }
 }
 
@@ -852,6 +1205,39 @@ fn a_duplicate_type_name_is_refused_in_either_order() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "P".into(),
                     candidates: vec![first, second],
+                    native: false,
+                },
+                span: second,
+            }],
+            "{declarations}"
+        );
+    }
+}
+
+/// FR-317-AC-3 (TC-820 step 3): one unit cannot declare two types named `q`
+/// -- two unions, or a union and an enum -- so the member resolver never sees
+/// them. The assembler refuses at the second declaration.
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn two_types_named_q_are_refused_at_the_second_declaration() {
+    for declarations in [
+        "union q { m }\nunion q { m }",
+        "union q { m }\nenum q { m }",
+    ] {
+        let (text, found) = errors(declarations);
+        // The first and the last `q {` of the unit, each at its name.
+        let first = after(&text, "union q {", "q");
+        let second = Span {
+            start: text.rfind("q {").expect("the second declaration"),
+            end: text.rfind("q {").expect("the second declaration") + 1,
+        };
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "q".into(),
+                    candidates: vec![first, second],
+                    native: false,
                 },
                 span: second,
             }],
@@ -952,7 +1338,14 @@ fn model_field_of(
     let field = presence_field(multiplicity, presence);
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
-    model_field(&field, &records, &identities)
+    let meaning_handles = BTreeMap::new();
+    model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
 }
 
 fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
@@ -980,6 +1373,62 @@ fn one_one_required_gives_the_element_type() {
     let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Required).unwrap();
     assert_eq!(declaration.value_type(), &ValueType::Integer);
     assert_eq!(declaration.presence(), Presence::Required);
+}
+
+#[trace("TC-897", "FR-056-AC-17")]
+#[test]
+fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    let alias_key = DeclarationKey::fixture("ix://test/orders/Instant");
+    field.value_type = ValueTypeRef::Package(alias_key.clone());
+    let alias = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: alias_key.clone(),
+        domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+    });
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> =
+        BTreeMap::from([(&alias_key, &alias)]);
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native Timestamp is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::Timestamp);
+}
+
+/// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
+#[trace("FR-056-AC-11")]
+#[test]
+fn native_string_field_assembles_as_a_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    field.value_type = ValueTypeRef::Native(NativeValueType::String);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native String is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::String);
+    assert_ne!(
+        *declaration.value_type(),
+        ValueType::Text(
+            quire_exact::TextType::new(0, 1, quire_exact::TextProfile::UnicodeScalars,)
+                .expect("valid Text bounds")
+        )
+    );
 }
 
 /// A lower bound of `0` makes an empty collection legal; it never makes a
@@ -1276,6 +1725,7 @@ fn enum_and_type_name_errors_are_all_reported() {
                 == AssemblyCause::AmbiguousTypeName {
                     name: "F".to_owned(),
                     candidates: vec![enum_f, record_f],
+                    native: false,
                 }),
         "{found:?}"
     );
@@ -1630,7 +2080,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            crate::model::intake::SelectedModels::default(),
             Vec::new(),
             crate::check::AssemblyLimits {
                 decimal_scale: 4,
@@ -1785,6 +2235,351 @@ fn each_unit_graph_topology_error_refuses_alone() {
     }
 }
 
+const TIME_UNITS: &str = "dimension Time;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n";
+
+/// FR-091-AC-44 (TC-483 step 5): `Quantity<ms>` resolves to the type of the
+/// unit node `ms` and introduces no declaration; a dimension or an unknown
+/// name refuses `missing_declaration`/`missing-name` at the name.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
+    let accepted =
+        format!("{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}");
+    let package = assemble(&accepted).1.expect("Quantity<ms> assembles");
+    let (parameters, _) = package
+        .resolved_signatures
+        .get(0)
+        .expect("f's resolved signature");
+    let ms = match parameters.as_slice() {
+        [(name, ValueType::Quantity(unit))] if name == "d" => *unit,
+        other => panic!("d is a quantity: {other:?}"),
+    };
+    let declared = package
+        .units
+        .units()
+        .find(|unit| unit.id() == ms)
+        .expect("the type names a unit of the admitted graph");
+    assert_ne!(
+        declared.root(),
+        declared.key(),
+        "ms is the derived unit, not the root s"
+    );
+    package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+
+    for name in ["Time", "nothing"] {
+        let source =
+            format!("{TIME_UNITS}function f using v(d: Quantity<{name}>): Boolean pure {{ true }}");
+        let (text, found) = errors(&source);
+        let [error] = found.as_slice() else {
+            panic!("{name}: one error, not {found:?}")
+        };
+        assert!(
+            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name: found } if found == name),
+            "{name}: {error:?}"
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "missing_declaration/missing-name"
+        );
+        assert_eq!(error.span, last(&text, name));
+    }
+}
+
+/// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
+/// `ill_typed`/`type-mismatch`.
+#[trace("FR-091-AC-44", "FR-093-AC-34", "TC-483")]
+#[test]
+fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
+    let source = format!(
+        "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
+         function g using v(): Boolean pure {{ f(3 s) }}"
+    );
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = assemble(&source).1.expect("the unit assembles");
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a Quantity<s> argument is not a Quantity<ms>");
+    let argument = last(&text, "3 s");
+    let located = |refusal: &crate::check::CheckRefusal| {
+        regions.region(&refusal.location).is_some_and(|region| {
+            (region.start(), region.end()) == (argument.start as u64, argument.end as u64)
+        })
+    };
+    assert!(
+        refusals.iter().any(|refusal| located(refusal)
+            && refusal
+                .cause
+                .catalog_code()
+                .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
+        "the mismatch is located at the argument: {refusals:?}"
+    );
+}
+
+/// The catalog code of each refusal `check` gives `declarations` (after the
+/// shared units and `f`) under `limits`, and whether it is located at the
+/// source text `at`.
+fn quantity_refusals(declarations: &str, limits: CheckingLimits, at: &str) -> Vec<(String, bool)> {
+    let source = format!("{TIME_UNITS}{QUANTITY_F}{declarations}");
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = package.regions();
+    let span = last(&text, at);
+    package
+        .check(limits)
+        .expect_err("the quantity literal refuses")
+        .iter()
+        .map(|refusal| {
+            let located = regions.refusal_region(refusal).is_some_and(|region| {
+                (region.start(), region.end()) == (span.start as u64, span.end as u64)
+            });
+            (
+                refusal
+                    .cause
+                    .catalog_code()
+                    .map_or_else(|| format!("{:?}", refusal.cause), |code| code.to_string()),
+                located,
+            )
+        })
+        .collect()
+}
+
+const QUANTITY_F: &str = "function f using v(d: Quantity<ms>): Boolean pure { true }\n";
+
+/// FR-093-AC-33: every admitted quantity literal checks (the lowering and
+/// the strict reader are exercised in `qsl-package`).
+#[trace("FR-093-AC-33", "TC-483")]
+#[test]
+fn admitted_quantity_literals_check() {
+    for body in [
+        "function h using v(): Boolean pure { f(3 ms) }",
+        "function h2 using v(): Boolean pure { f(0.5 ms) }",
+        "function h3 using v(): Boolean pure { f(rational(2, 4) ms) }",
+        "function n using v(): Boolean pure { f(rational(-3, 1) ms) }",
+        "function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }",
+        "function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }",
+    ] {
+        let source = format!("{TIME_UNITS}{QUANTITY_F}{body}");
+        assemble(&source)
+            .1
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    }
+}
+
+/// FR-093-AC-34: each refusal, with its code and location. A refused
+/// literal yields no graph, so no literal node.
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn quantity_literal_refusals_carry_their_codes_and_locations() {
+    let ceiling = CheckingLimits::default().with_rational_bits(16);
+    let default = CheckingLimits::default();
+    let cases: [(&str, CheckingLimits, &str, &str); 9] = [
+        (
+            "function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }",
+            default,
+            "d < 3 s",
+            "ill_typed/type-mismatch",
+        ),
+        (
+            "function g2 using v(x: Integer): Boolean pure { x = 3 ms }",
+            default,
+            "x = 3 ms",
+            "ill_typed/type-mismatch",
+        ),
+        (
+            "function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }",
+            default,
+            "-3 ms",
+            "ill_typed/operator-ineligible",
+        ),
+        (
+            "function g using v(): Boolean pure { f(3 ghost) }",
+            default,
+            "3 ghost",
+            "missing_declaration/missing-name",
+        ),
+        (
+            "function g using v(): Boolean pure { f(3 Time) }",
+            default,
+            "3 Time",
+            "missing_declaration/missing-name",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 0) ms) }",
+            default,
+            "rational(1, 0) ms",
+            "undefined_expression/unproved-nonzero",
+        ),
+        (
+            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }",
+            default,
+            "d / 3 ms",
+            "undefined_expression/unproved-nonzero",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 100000) ms) }",
+            ceiling,
+            "rational(1, 100000) ms",
+            "stage_limit_exceeded/rational-bits-exceeded",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 0) ghost) }",
+            default,
+            "rational(1, 0) ghost",
+            "undefined_expression/unproved-nonzero",
+        ),
+    ];
+    for (declarations, limits, at, code) in cases {
+        let refusals = quantity_refusals(declarations, limits, at);
+        assert!(
+            refusals
+                .iter()
+                .any(|(found, located)| found == code && *located),
+            "{declarations}: expected {code} at {at:?}: {refusals:?}"
+        );
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+    }
+}
+
+/// FR-093-AC-34: the refusals name the unit name and the limit.
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn quantity_literal_refusals_name_the_name_and_the_limit() {
+    let refuse = |declarations: &str, limits| {
+        let source = format!("{TIME_UNITS}{QUANTITY_F}{declarations}");
+        let mut refusals = assemble(&source)
+            .1
+            .expect("the unit assembles")
+            .check(limits)
+            .expect_err("the quantity literal refuses");
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+        refusals.remove(0).cause
+    };
+    for name in ["ghost", "Time"] {
+        let cause = refuse(
+            &format!("function g using v(): Boolean pure {{ f(3 {name}) }}"),
+            CheckingLimits::default(),
+        );
+        assert!(
+            matches!(&cause, CheckCause::MissingName(found) if found == name),
+            "{name}: {cause:?}"
+        );
+    }
+    let cause = refuse(
+        "function g using v(): Boolean pure { f(rational(1, 100000) ms) }",
+        CheckingLimits::default().with_rational_bits(16),
+    );
+    let CheckCause::ResourceExhausted(limit) = &cause else {
+        panic!("a limit refusal: {cause:?}");
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit),
+        ("s3.rational_bits", 16)
+    );
+}
+
+/// FR-093-AC-34 order: a literal that violates several conditions gets the
+/// first in order (ceiling, zero denominator, unit name, position type).
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn a_quantity_literal_refuses_with_the_first_violated_condition_in_order() {
+    let ceiling = CheckingLimits::default().with_rational_bits(16);
+    let default = CheckingLimits::default();
+    let only = |declarations: &str, limits, at: &str| -> String {
+        let refusals = quantity_refusals(declarations, limits, at);
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+        assert!(refusals[0].1, "{declarations}: located at {at:?}");
+        refusals[0].0.clone()
+    };
+    // Over the ceiling, zero denominator, unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = rational(100000, 0) ghost }",
+            ceiling,
+            "rational(100000, 0) ghost"
+        ),
+        "stage_limit_exceeded/rational-bits-exceeded"
+    );
+    // Zero denominator, unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = rational(1, 0) ghost }",
+            default,
+            "rational(1, 0) ghost"
+        ),
+        "undefined_expression/unproved-nonzero"
+    );
+    // Unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = 3 ghost }",
+            default,
+            "3 ghost"
+        ),
+        "missing_declaration/missing-name"
+    );
+}
+
+/// FR-091-AC-44: the unit namespace is its own: a unit and a record both
+/// named `ms` check, and two units named `ms` refuse at both declarations.
+/// The strict checked-package reader refuses the emitted package of a unit
+/// and a record that share a name (`AmbiguousDeclaration`); that is
+/// Remaining work: QSL-950, so this test asserts `check` only.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
+    let both = format!(
+        "{TIME_UNITS}record ms {{ x: Boolean; }}\n\
+         function f using v(a: Quantity<ms>, r: ms): Boolean pure {{ r.x }}"
+    );
+    let package = assemble(&both)
+        .1
+        .expect("a unit and a record named ms assemble");
+    package
+        .check(CheckingLimits::default())
+        .expect("Quantity<ms> means the unit and ms the record");
+
+    let (text, found) = errors(
+        "dimension Time;\n\
+         unit ms : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1);",
+    );
+    let at = |start: usize| Span {
+        start,
+        end: start + "ms".len(),
+    };
+    let first = text.find("unit ms").expect("first") + "unit ".len();
+    let second = text.rfind("unit ms").expect("second") + "unit ".len();
+    assert!(found.iter().any(|error| matches!(
+        &error.cause,
+        AssemblyCause::DuplicateQuantityName { name, spans }
+            if name == "ms" && *spans == vec![at(first), at(second)]
+    ) && error.cause.catalog_code().to_string()
+        == "ambiguous_declaration/ambiguous-name"));
+}
+
+/// FR-091-AC-44 (QSpec FR-142-AC-13): a declaration named `Quantity` is
+/// refused at S1.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_declaration_named_quantity_is_invalid_syntax() {
+    let source = text(PROFILE_V, "record Quantity { x: Boolean; }");
+    let admissible = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .is_ok_and(|parsed| parsed.is_admissible());
+    assert!(!admissible, "`Quantity` is reserved");
+}
+
 #[trace("FR-091-AC-21", "TC-406")]
 #[test]
 fn the_dimension_and_unit_causes_have_their_catalog_codes() {
@@ -1828,4 +2623,507 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
+}
+
+fn composite_node(label: &str) -> quire_exact::NodeKey {
+    let mut digest = [0; 32];
+    digest[..label.len()].copy_from_slice(label.as_bytes());
+    quire_exact::NodeKey::from_digest(digest)
+}
+
+fn empty_record(
+    label: &str,
+    supertypes: &[&str],
+) -> quire_semantic_value::declaration::CompositeDeclaration {
+    quire_semantic_value::declaration::CompositeDeclaration::new(
+        composite_node(label),
+        label.to_owned(),
+        quire_semantic_value::declaration::CompositeShape::Record(Vec::new()),
+    )
+    .with_supertypes(
+        supertypes
+            .iter()
+            .map(|general| composite_node(general))
+            .collect(),
+    )
+}
+
+fn admit_composites(
+    declarations: Vec<quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<quire_semantic_value::declaration::TypeEnvironment, AssemblyRefusal> {
+    super::admit_types(
+        declarations,
+        &[],
+        &BTreeMap::new(),
+        TypeEnvironmentLimits::default(),
+        &Cancel::new(),
+    )
+    .map(|admitted| admitted.types)
+}
+
+/// QSL-732: a composite generalization cycle refuses with the typed cause,
+/// `ill_typed`, and the `type-mismatch` catalog cause beside the object-type
+/// cycle; it is not reported as a broken invariant.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
+    let refusal = admit_composites(vec![empty_record("A", &["B"]), empty_record("B", &["A"])])
+        .expect_err("a composite cycle refuses");
+    assert!(!refusal.errors.is_empty());
+    for error in &refusal.errors {
+        let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+            panic!("expected the typed declaration refusal: {error:?}");
+        };
+        assert!(
+            matches!(
+                invalid.cause,
+                quire_semantic_value::declaration::DeclarationCause::CompositeGeneralizationCycle { .. }
+            ),
+            "{invalid:?}"
+        );
+        assert_eq!(
+            error.cause.code(),
+            qsl_foundation::diagnostic::Code::IllTyped
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "ill_typed/type-mismatch"
+        );
+    }
+}
+
+/// QSL-732: a composite supertype naming no declaration that any round set
+/// aside is its own refusal (`UnknownDeclaration`, a broken invariant), not a
+/// silently dropped child.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_dangling_composite_supertype_is_refused_not_dropped() {
+    let refusal = admit_composites(vec![empty_record("Child", &["Missing"])])
+        .expect_err("a dangling composite supertype refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one refusal expected: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Child");
+    assert_eq!(
+        invalid.cause,
+        quire_semantic_value::declaration::DeclarationCause::UnknownDeclaration(composite_node(
+            "Missing"
+        ))
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "runtime_invariant/established-invariant-broken"
+    );
+}
+
+/// QSL-732: a child whose composite parent is itself refused is a
+/// consequence of the parent's refusal and is set aside unreported.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_child_of_a_refused_composite_parent_is_a_consequence() {
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let duplicate = || FieldDeclaration::new("x", ValueType::Integer, Presence::Required);
+    let parent = CompositeDeclaration::new(
+        composite_node("Parent"),
+        "Parent".to_owned(),
+        CompositeShape::Record(vec![duplicate(), duplicate()]),
+    );
+    let refusal = admit_composites(vec![parent, empty_record("Child", &["Parent"])])
+        .expect_err("the parent refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("only the parent is reported: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Parent");
+}
+
+/// Relaxing a widened redefinition retypes only the field that redefines the
+/// widened member (or a member it redefines), never a sibling field of the
+/// same type that redefines something else.
+#[test]
+fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
+    use quire_semantic_value::declaration::{FieldDeclaration, FieldRef, ObjectTypeDeclaration};
+    let id = |byte: u8| EffectiveId::from_digest([byte; 32]);
+    let (a, b) = (id(1), id(2));
+    let int = |upper: i64| {
+        ValueType::Int(
+            IntegerInterval::new(
+                quire_exact::Integer::from(0i64),
+                quire_exact::Integer::from(upper),
+            )
+            .expect("interval"),
+        )
+    };
+    let parent = ObjectTypeDeclaration::new(
+        a,
+        "M::A",
+        vec![
+            FieldDeclaration::new("x", int(5), Presence::Required),
+            FieldDeclaration::new("y", int(9), Presence::Required),
+        ],
+    );
+    let child = ObjectTypeDeclaration::new(
+        b,
+        "M::B",
+        vec![
+            FieldDeclaration::new("x", int(7), Presence::Required)
+                .with_redefines(FieldRef::new(a, "x")),
+            FieldDeclaration::new("y", int(3), Presence::Required)
+                .with_redefines(FieldRef::new(a, "y")),
+        ],
+    )
+    .with_supertypes(vec![a]);
+    let mut types = vec![parent, child];
+    assert!(super::relax_widening(
+        &mut types,
+        "M::B",
+        &FieldRef::new(a, "x")
+    ));
+    let fields = types[1].attributes();
+    assert_eq!(
+        fields[0].value_type(),
+        &int(5),
+        "the widened field is relaxed"
+    );
+    assert_eq!(
+        fields[1].value_type(),
+        &int(3),
+        "the sibling keeps its own type"
+    );
+}
+
+/// The composite declaration the unit declares under `name`.
+fn composite_named<'p>(
+    package: &'p PackageDeclarations,
+    name: &str,
+) -> &'p quire_semantic_value::declaration::CompositeDeclaration {
+    package
+        .types
+        .composites()
+        .find(|declaration| declaration.name() == name)
+        .unwrap_or_else(|| panic!("the unit declares {name}"))
+}
+
+/// A union's members as (name, payload types), in declared order.
+fn members_of(
+    declaration: &quire_semantic_value::declaration::CompositeDeclaration,
+) -> Vec<(String, Vec<ValueType>)> {
+    let CompositeShape::Union(members) = declaration.shape() else {
+        panic!("{} is a union", declaration.name())
+    };
+    members
+        .iter()
+        .map(|member| {
+            (
+                member.identifier().as_str().to_owned(),
+                member.positions().to_vec(),
+            )
+        })
+        .collect()
+}
+
+#[trace("FR-316-AC-1", "TC-817")]
+#[test]
+fn a_union_is_its_own_composite_in_declared_order_beside_an_enum() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+         enum Kind { Empty, Circle }",
+    );
+    let assembled = assembled.expect("the unit assembles");
+    let shape = composite_named(&assembled, "Shape");
+    assert_eq!(
+        members_of(shape),
+        [
+            ("Empty".to_owned(), vec![]),
+            ("Circle".to_owned(), vec![ValueType::Integer]),
+            (
+                "Rect".to_owned(),
+                vec![ValueType::Integer, ValueType::Integer]
+            ),
+        ]
+    );
+    let [kind] = assembled.enums.as_slice() else {
+        panic!("one enum")
+    };
+    assert_ne!(
+        ValueType::Composite(shape.key()),
+        ValueType::Enum(kind.shape()),
+        "a union and an enum with the same member names are different types"
+    );
+}
+
+/// The refusals of `declarations`, each with its recursion cycle when the
+/// cause is the recursion rule.
+fn recursion_refusals(
+    declarations: &str,
+) -> (String, Vec<(AssemblyError, RecursionEdges, Vec<String>)>) {
+    let (text, found) = errors(declarations);
+    let refusals = found
+        .into_iter()
+        .map(|error| {
+            let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+                panic!("a type declaration refusal, not {:?}", error.cause)
+            };
+            let DeclarationCause::Recursion { edges, cycle } = &invalid.cause else {
+                panic!("the recursion rule, not {:?}", invalid.cause)
+            };
+            let (edges, cycle) = (*edges, cycle.clone());
+            (error, edges, cycle)
+        })
+        .collect();
+    (text, refusals)
+}
+
+#[trace("FR-316-AC-2", "TC-817", "TC-818")]
+#[test]
+fn a_union_recurses_only_through_an_escaping_edge() {
+    let (_, tree) = assemble(
+        "union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }\n\
+         union L { Nil, Cons(Integer, Option<L>) }",
+    );
+    tree.expect("an Option payload escapes the recursion rule");
+
+    let (text, refusals) = recursion_refusals("union L { Nil, Cons(Integer, L) }");
+    let [(error, edges, cycle)] = refusals.as_slice() else {
+        panic!("one refusal, not {refusals:?}")
+    };
+    assert_eq!(*edges, RecursionEdges::NonEscaping);
+    assert_eq!(cycle, &["L", "L"]);
+    assert_eq!(error.span, after(&text, "union L", "L"));
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ill_typed/type-mismatch"
+    );
+}
+
+#[trace("FR-316-AC-2", "TC-818")]
+#[test]
+fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
+    let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    let mut spans: Vec<Span> = refusals.iter().map(|(error, ..)| error.span).collect();
+    spans.sort_by_key(|span| span.start);
+    assert_eq!(
+        spans,
+        [
+            after(&text, "record Box", "Box"),
+            after(&text, "union U", "U")
+        ]
+    );
+    for (_, edges, cycle) in &refusals {
+        assert_eq!(*edges, RecursionEdges::NonEscaping);
+        let mut named: Vec<&str> = cycle.iter().map(String::as_str).collect();
+        named.sort_unstable();
+        named.dedup();
+        assert_eq!(named, ["Box", "U"], "the cycle runs through both");
+        assert_eq!(cycle.first(), cycle.last());
+    }
+}
+
+#[trace("FR-316-AC-3", "TC-818")]
+#[test]
+fn a_union_refuses_a_repeated_member_and_an_unresolved_payload_type() {
+    let (text, found) = errors("union U { A, A(Integer) }");
+    let [error] = found.as_slice() else {
+        panic!("one refusal, not {found:?}")
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("a type declaration refusal, not {:?}", error.cause)
+    };
+    assert_eq!(invalid.declaration, "U");
+    assert_eq!(invalid.cause, DeclarationCause::DuplicateMember("A".into()));
+    assert_eq!(error.span, after(&text, "union U", "U"));
+    assert_eq!(error.cause.code(), Code::AmbiguousDeclaration);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+
+    let (text, found) = errors("union U { A(Missing) }");
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UnresolvedTypeName {
+                name: "Missing".into()
+            },
+            span: last(&text, "Missing"),
+        }]
+    );
+}
+
+#[trace("FR-316-AC-4", "TC-818")]
+#[test]
+fn a_union_is_bounded_only_by_the_configured_ceilings() {
+    let members: Vec<String> = (0..5_000).map(|member| format!("M{member}")).collect();
+    let text = text(
+        PROFILE_V,
+        &format!("union Big {{ {} }}", members.join(", ")),
+    );
+    let assemble_under = |work_units: u64| {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
+        PackageDeclarations::assemble_with_limits(
+            parsed.source().reference().clone(),
+            unit,
+            crate::model::intake::SelectedModels::default(),
+            Vec::new(),
+            crate::check::AssemblyLimits {
+                environment: TypeEnvironmentLimits {
+                    work_units,
+                    ..crate::check::AssemblyLimits::default().environment
+                },
+                ..crate::check::AssemblyLimits::default()
+            },
+        )
+    };
+    let default = crate::check::AssemblyLimits::default()
+        .environment
+        .work_units;
+    let admitted = assemble_under(default).expect("5,000 members are admitted by default");
+    assert_eq!(members_of(composite_named(&admitted, "Big")).len(), 5_000);
+    let needed = admitted.types.spent();
+    let refusal = assemble_under(needed - 1).expect_err("one unit short of the work needed");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {:?}", refusal.errors)
+    };
+    let AssemblyCause::TypeLimit(limit) = &error.cause else {
+        panic!("a type-environment limit, not {:?}", error.cause)
+    };
+    assert_eq!(limit.configured_bound(), needed - 1);
+    assert_eq!(
+        limit.setting(),
+        qsl_foundation::Setting::EnvironmentWorkUnits
+    );
+    assert!(
+        assemble_under(needed).is_ok(),
+        "the field raised by one admits it"
+    );
+
+    let nested = format!(
+        "union Deep {{ Wrap({}Integer{}) }}",
+        "Option<".repeat(1_000),
+        ">".repeat(1_000)
+    );
+    assemble(&nested)
+        .1
+        .expect("1,000 nested payload levels are admitted");
+}
+
+/// FR-313 builds `case` and FR-318 checks it, so a unit holding one
+/// assembles; the union that declares the scrutinee type is registered.
+#[trace("FR-313-AC-2", "TC-815")]
+#[test]
+fn a_case_expression_assembles_over_a_registered_union() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer) }\n\
+         function f using v(s: Shape): Integer pure { case s { Circle(r): r; Empty: 0; } }",
+    );
+    assembled.expect("the unit assembles");
+}
+
+const LAYER_PROFILES: &str = "profile c = \"quire.state.core/v1\";\n\
+                              profile q = \"quire.state.queries/v1\";\n";
+
+/// The unit holding the layer profiles `c` (state core) and `q` (state
+/// queries) and `declarations`, assembled.
+fn assemble_layers(declarations: &str) -> (String, Result<PackageDeclarations, AssemblyRefusal>) {
+    let text = text(LAYER_PROFILES, declarations);
+    let assembled = assemble_as("a", "u", &text);
+    (text, assembled)
+}
+
+/// The one error the assembler gives for `declarations`, which names layer
+/// `layer`, the form outside its set and the located text.
+fn layer_refusal(declarations: &str, located: &str) -> (HeaderLayer, LayerForm, String) {
+    let (text, assembled) = assemble_layers(declarations);
+    let refusal = assembled.expect_err("the layer refuses the form");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {refusal:?}");
+    };
+    let AssemblyCause::UnsupportedLayerForm { layer, form } = error.cause else {
+        panic!("a layer refusal, not {error:?}");
+    };
+    assert_eq!(&text[error.span.start..error.span.end], located);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        format!("unsupported_construct/{}", form.refusal_cause())
+    );
+    (layer, form, text)
+}
+
+/// FR-110-AC-8: a named predicate declared under state core refuses
+/// `unsupported_construct`/`declaration-form` at the declaration, naming the
+/// layer; the same declaration under state queries assembles.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_named_predicate_declaration_is_outside_state_core_and_inside_state_queries() {
+    let declaration = "predicate Positive using c(x: Int[0, 9]): Boolean { x > 0 }";
+    let (layer, form, _) = layer_refusal(declaration, declaration);
+    assert_eq!(layer, HeaderLayer::StateCore);
+    assert_eq!(form, LayerForm::PredicateDeclaration);
+    assemble_layers(&declaration.replace("using c", "using q"))
+        .1
+        .expect("state queries admits a named predicate declaration");
+}
+
+/// FR-110-AC-8: an expression form outside the closure refuses
+/// `unsupported_construct`/`expression-form` at the expression, and a form of
+/// a wider layer is never admitted: state queries admits `filter` over a
+/// predicate but not integer `div`, which only the value layer adds.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn an_expression_form_of_a_wider_layer_is_refused_at_its_span() {
+    let (layer, form, _) = layer_refusal(
+        "predicate Half using q(x: Int[0, 9]): Boolean { x div 2 = 1 }",
+        "x div 2",
+    );
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::ValueConstruct);
+    // The first offending form in source order is the one refused.
+    let (_, form, _) = layer_refusal(
+        "predicate Twice using q(x: Int[0, 9]): Boolean { x rem 2 = 0 and x div 2 = 1 }",
+        "x rem 2",
+    );
+    assert_eq!(form, LayerForm::ValueConstruct);
+}
+
+/// FR-110-AC-8: a named predicate call is a state-queries form. A function
+/// declaration is the value layer's, so a function using state queries
+/// refuses as a declaration, not as the call in its body.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_function_declaration_is_outside_state_queries() {
+    let declarations = "predicate Positive using q(x: Int[0, 9]): Boolean { x > 0 }\n\
+                        function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let located = "function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let (layer, form, _) = layer_refusal(declarations, located);
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::FunctionDeclaration);
+}
+
+/// FR-110-AC-8: the value layer admits what it adds to state core, and the
+/// header layers are recorded in the assembled package, ascending.
+#[trace("TC-490", "FR-110-AC-7")]
+#[test]
+fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
+    let package = assemble(
+        "function f using v(x: Int[0, 9]): Boolean pure { x div 2 = 1 }\n\
+         predicate P using v(x: Int[0, 9]): Boolean { f(x) }",
+    )
+    .1
+    .expect("the value layer admits functions, predicates and integer division");
+    assert_eq!(package.header_layers, [HeaderLayer::ValueComplete]);
 }

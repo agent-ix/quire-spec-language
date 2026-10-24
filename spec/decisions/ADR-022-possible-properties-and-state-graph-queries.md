@@ -30,27 +30,6 @@ relationships:
 ---
 # ADR-022: Possible properties and state-graph queries over a model
 
-## Status
-
-Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-020 and FR-165 to FR-170, with TC-590 to TC-595, TC-612 to TC-614, TC-618, TC-619, TC-643 and TC-644. It builds on
-ADR-018, itself a draft, and follows the owner's rulings recorded there
-(ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
-fairness granularity is `whole`; reachable deadlocks are reported by a
-derived deadlock-freedom item; and the infinite-trace profile admits interval
-operators nested under unbounded ones. It reads the strong-fairness record
-(ADR-019), the refinement record (ADR-020) and the state-space reduction
-record (ADR-021), all drafts, for their interactions (§6). §10 records the
-owner's rulings on the draft's four questions, on well-definedness
-(RU-5) and on proofs without a core certificate checker (RU-6). The owning ticket and related
-work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. "QSpec FR-360" is the infinite-trace result disposition
-vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
-`GX-`, `GR-`, `DS-`, `QS-` and `RU-` are local to this record. Other artifacts cite
-them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 ADR-018 gives a temporal claim over a model subject a verdict over every
@@ -96,6 +75,12 @@ What QSL already has that bears on them:
   never the model's state graph, and the names this record adds are distinct
   from it.
 
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. "QSpec FR-360" is the infinite-trace result disposition
+vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
+`GX-`, `GR-`, `DS-`, `QS-` and `RU-` are local to this record. Other artifacts cite
+them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
+
 ## Decision
 
 ### 1. State-graph claims: a property family beside temporal claims
@@ -105,12 +90,12 @@ What QSL already has that bears on them:
 | SG-1 | **`possible`.** `possible Name using v over (x: T) { P }` states that from every initial state of the subject some finite path reaches a state where `P` holds. `P` is a state predicate (GM-3). This is CTL `EF P` at every initial state. |
 | SG-2 | **`always possible`.** `always possible Name using v over (x: T) from (Q) { P }` states that from every reachable state where `Q` holds some finite path reaches a state where `P` holds. `from (Q)` is optional; without it `Q` is `true`. This is CTL `AG (Q implies EF P)`. |
 | SG-3 | **`unique path`.** `unique path Name using v over (x: T) from (X) to (Y)` states that from every reachable state where `X` holds there is exactly one path to `Y` (GM-5). It is the first state-graph query: a property of the graph's path structure with no CTL counterpart. |
-| SG-4 | **A family of its own.** SG-1 to SG-3 are **state-graph claims**, a property family separate from temporal claims. A state-graph claim has no temporal profile, no clock, no activation and no temporal operator in its predicates. Its form (SG-1, SG-2 or SG-3) is computed by S3 and recorded beside its requirement record, as ADR-018 §1 records a temporal form. S3 records it as `Requirements{kind: temporal-satisfaction, extent: Unbounded{domains}}`, with `domains` naming the claim, so it routes on the existing kind (ADR-014 §6), and each candidate's arm reads the form. |
-| SG-5 | **Spelling.** The keywords `possible`, `always possible`, `unique path`, `from` and `to` are illustrative; QSpec's shared grammar owns them (QS-1). The `over` binding is ADR-018 QS-5's: one claim instance per object of the universe. |
+| SG-4 | **A family of its own.** SG-1 to SG-3 are **state-graph claims**, a property family separate from temporal claims. A state-graph claim has no temporal profile, no clock, no activation and no admitted temporal operator in its predicates: S1 recognises a temporal operator wherever QSpec's `graph-predicate` admits one and S3 refuses it, while a placement `graph-predicate` does not admit is an S1 `invalid_syntax`. Its form (SG-1, SG-2 or SG-3) is computed by S3 and recorded beside its requirement record, as ADR-018 §1 records a temporal form. S3 records it as `Requirements{kind: temporal-satisfaction, extent: Unbounded{domains}}`, with `domains` naming the claim, so it routes on the existing kind (ADR-014 §6), and each candidate's arm reads the form. |
+| SG-5 | **Spelling.** The keywords `possible`, `always possible`, `unique path`, `from` and `to` are illustrative; QSpec's shared grammar owns them (QS-1). The `over` binding is ADR-018 QS-5's: one claim instance per object of the universe, made at request time (QSL FR-125), not at S3. `over` is optional in all three forms. |
 
 `P`, `Q`, `X` and `Y` are Boolean state clauses under the unit's value
 profile, as an invariant body is. A claim with no `over` parameter has one
-instance.
+instance. S1 reads each predicate through QSpec's `graph-predicate`. A temporal operator it recognises (an operand of `and`, `or`, `implies` or a binary temporal operator, a unary operator, a group, an `if` branch or a `let` body, in a body, `from` or `to`) parses and S3 refuses it at the first such operator in source order (`expression-form`, SG-4). A temporal operator in an `if` condition, a `let` binding or an operand of a primary, a fairness constraint outside the start of a body, and a second binary temporal operator in one `graph-relation` are `invalid_syntax` at S1.
 
 **Why a family and not CTL operators in the temporal grammar.** Every
 temporal formula has a truth value on one trace, which replay, monitors and
@@ -133,7 +118,7 @@ and evidence shape.
 | GM-5 | **Paths and SG-3.** A path from a node `x` to `Y` is a finite edge sequence from `x` whose last node satisfies `Y` and no earlier node does. When `x` satisfies `Y` the empty path is its only path. Two paths are distinct when their edge sequences differ, an edge being (source, transition identity, post-state). SG-3 holds when every reachable node where `X` holds has exactly one path to `Y`. A cycle on a path from `x` to `Y` gives `x` unboundedly many paths. |
 | GM-6 | **Open nodes.** A node EN-1 has not fully expanded is **open**: a node at `max_depth` (ADR-018 §3), a boundary state of a state constraint (ADR-021 SC-2), a node whose expansion evaluated a contract conjunction undecided (ADR-018 V-6 `UndecidedSuccessor`), and every discovered node not expanded when a run limit stopped the run. Its outgoing edges are not known. Every other node is **closed**: its outgoing edges are exactly its FR-120 successors. Decisive evidence (GV-2) reads only facts that open nodes cannot change. |
 | GM-7 | **Fairness plays no part.** S3 refuses a fairness constraint on a state-graph claim, `unsupported_construct`/`expression-form`. Weak and strong fairness of operations are machine-closed (ADR-018 §4, ADR-019 SF-7): every finite path from an initial state extends to a fair behaviour. So every reachable node lies on a fair behaviour, and every finite path to `P` is a prefix of one. Fairness therefore changes no state-graph verdict, and admitting it would only add a premise with no effect. |
-| GM-8 | **Terminal states and deadlocks.** A terminal state, intended or not (ADR-018 DL-1, DL-2), is a node with no outgoing edge and reads by GM-4 and GM-5 like any node. A reachable terminal state where `Q` holds and `P` does not refutes SG-2. The model's `terminal` member changes no state-graph verdict, as it changes no temporal verdict (ADR-018 DL-6). The derived deadlock-freedom item (ADR-018 DL-3) is added for each distinct model subject among a request's temporal and state-graph items, so a request whose only claims are state-graph claims still reports its subject's deadlocks. |
+| GM-8 | **Terminal states and deadlocks.** A terminal state, intended or not (ADR-018 DL-1, DL-2), is a node with no outgoing edge and reads by GM-4 and GM-5 like any node. A reachable terminal state where `Q` holds and `P` does not refutes SG-2. The model's `terminal` declaration changes no state-graph verdict, as it changes no temporal verdict (ADR-018 DL-6). The derived deadlock-freedom item (ADR-018 DL-3) is added for each distinct model subject among a request's temporal and state-graph items, so a request whose only claims are state-graph claims still reports its subject's deadlocks. |
 
 ### 3. Engines and algorithms
 
@@ -217,7 +202,7 @@ V-1 to V-8.
 | GV-2 | **V-10 Refuted by trap.** A trap node is reachable where the form requires reaching `P` (or `Y`): an initial state for SG-1, a node where `Q` holds for SG-2, a node where `X` holds for SG-3. The forward closure of the trap is closed and holds no target node, so its decision scope is complete. The item settles `refuted`, basis `closed-scope`, `TerminalValue::Refuted`, O-16 violation, with a trap counterexample (GX-1) that replays (GX-3). A trap found before a run stops settles the item. |
 | GV-3 | **V-4 for SG-3 with too many paths.** A known node where `X` holds counts 2. SG-3 settles `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted` (ADR-018 V-4), with a path-pair counterexample (GX-1): two distinct paths are enough, whatever the rest of the graph holds. |
 | GV-4 | **V-1 for SG-2 and SG-3.** Exploration completed with no open node, and every reachable node where `Q` holds is in `E(P)` (SG-2), or every reachable node where `X` holds counts exactly 1 (SG-3). The item settles `proved`, basis `closed-scope`, `Proved{basis: Exhaustive, certification: Certified}` (ADR-018 V-1) once the GC-2 checker accepts its certificate, or `Proved{basis: Reduced{…}, certification: Uncertified}` under a reduction GR-1 admits (ADR-021 RV-1, GC-4). SG-1 never needs V-1: with no open node, every initial state in `E(P)` has a witness (GV-1). |
-| GV-5 | **No decisive evidence.** When the run ends with no GV-1 to GV-4 result, ADR-018's map applies: a run a limit stopped settles V-7 `Incomplete`; a completed run with open nodes settles V-6 with `UndecidedSuccessor` when an undecided expansion is among them, else V-6 `ConstraintReached` (ADR-021 RV-4) when a boundary state is, else V-5 `BoundReached{depth: max_depth}`, or V-7 under POR (ADR-021 RV-5). A subject with no initial state settles V-6 `NoInitialState`. A selected reduction GR-1 does not admit settles V-6 `ReductionNotPreserving` (ADR-021 RV-2). |
+| GV-5 | **No decisive evidence.** When the run ends with no GV-1 to GV-4 result, ADR-018's map applies: a run a limit stopped settles V-7 `Incomplete`; a completed run with open nodes settles V-6 with `UndecidedSuccessor` when an undecided expansion is among them, else V-6 `ConstraintReached` (ADR-021 RV-4) when a boundary state is, else V-5 `BoundReached{depth: max_depth}`, or V-7 under POR (ADR-021 RV-5). A subject with no initial state settles V-6 `NoInitialState`. Amended by FR-125 and FR-169: a claim with zero instances settles V-6 `NoInstance` before any state is explored (wire cause `no-instance`, QSpec FR-331). A selected reduction GR-1 does not admit settles V-6 `ReductionNotPreserving` (ADR-021 RV-2). |
 | GV-6 | **Replay disagreement.** Evidence that fails its replay check settles V-6 `ReplayParity`, as ADR-018 SM-7 states for counterexamples. A witness proof also answers to replay: no `proved` from a witness reaches an item before GX-2 reproduces it. |
 | GV-7 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply. When a predicate of the claim (`P`, `Q`, `X` or `Y`) evaluates undefined at an explored node, the item settles `refuted`, V-4, basis `decisive-counterexample`, with cause `UndefinedEvaluation{where, cause}`, whose `where` and `cause` are QSpec FR-391's: the predicate, the node's state-key digest and the locus of the expression with no value, and the catalogued reason. Its evidence is the canonical breadth-first path to the first such node in discovery order. An undefined evaluation settles the item in place of a witness or a V-1 proof, even when every initial state has a sampled witness; between refuting evidence, the first in discovery order settles it, and a node that is both undefined and a trap or a count-2 node settles as undefined (QSpec FR-391). Because `proved` waits for a completed exploration (GV-1), an undefined evaluation at any reachable node is always found before an SG-1 item settles `proved`. |
 
@@ -243,7 +228,7 @@ returns with it, as ADR-018 PC-1 to PC-5 state for temporal proofs.
 | --- | --- |
 | GC-1 | **Certificate.** With V-9 or V-1 from an unreduced exploration, EN-1 returns a `StateGraphCertificate`: the explored model states as sorted `quire.simulation.state-key/v1` digests; for SG-1 and SG-2, each state's distance `d` to the nearest `P` node, for every state from which `P` is reachable; for SG-3, each node of `H` with its path count and its position in a reverse topological order of `H`. |
 | GC-2 | **Check.** `check_state_graph`, a layer-6 entry in `qsl-replay` beside ADR-018 PC-5's checkers, recompiles the package, re-admits the subject and recomputes with its own code. It accepts when: every initial state is in the closure and every successor of a closure state is in it (ADR-018 PC-3's closure rule, with no automaton component); no claim predicate is undefined at a closure state; for SG-1 every initial state, and for SG-2 every state where `Q` holds, has a rank, a rank 0 state satisfies `P`, and a rank `d > 0` state has a successor ranked `d - 1`; for SG-3 every edge of `H` goes to an earlier node in the order, a `Y` node counts 1, every other node counts the sum of its `H` successors saturated at 2, and every node where `X` holds counts 1. The closure holds every reachable state, so an accepted certificate also establishes well-definedness (RU-5). |
-| GC-3 | **Verdict path.** The certificate leaves S6c over ADR-018's E11 with its result, and the item settles `proved`, `Certified` only after the checker accepts. A rejection settles `inconclusive`, `CertificateRejected{rule, state}` (ADR-018 PC-2); a check a limit stops settles V-7, naming the limit. |
+| GC-3 | **Verdict path.** The certificate leaves S6c over ADR-018's E11 with its result, and the item settles `proved`, `Certified` only after the checker accepts. A rejection settles `inconclusive`, `CertificateRejected{rule, at}` (ADR-018 PC-2); a check a limit stops settles V-7, naming the limit. |
 | GC-4 | **Uncertified proofs.** A V-1 under a reduction has no core certificate checker: it settles `proved`, labelled `Uncertified` (ADR-018 PC-1, RU-6). Trap and path-pair refutations need no certificate: replay re-establishes them (GX-3, GX-4). |
 
 V-5 for a state-graph claim means: the search completed to depth `k` and
@@ -318,7 +303,7 @@ successors `upd(a)` and `upd(b)`.
 `(0, 0)` takes `upd(a)` (first in canonical order, to `d = 1`) twice:
 `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`. Instance `c = b` is the same with
 `upd(b)`. Each instance settles `proved`, `decisive-witness`,
-`Proved{basis: Witness{sources}}` (V-9), after GX-2 replays two steps and evaluates
+`Proved{basis: Witness{sources}, certification: Certified}` (V-9), once GC-2's checker accepts its certificate, after GX-2 replays two steps and evaluates
 `c.versionNumber = 2` true at the last node. With phase 0 on, as by
 default, a walk from `(0, 0)` that reaches `va = 2` is the instance's
 witness, with source `Sampled` and that walk's seed and trace index, and the
@@ -326,8 +311,8 @@ instance settles once exploration has checked all 9 nodes; the walk may be
 longer than the explored witness; with `witness_samples` 0 the source is
 `Explored`. The verdict is `proved` either way.
 
-**Well-definedness (RU-5).** The target `2 / (2 - c.versionNumber) = 2` for
-`c = a` holds at `(1, 0)`, and a sampled walk from `(0, 0)` finds that
+**Well-definedness (RU-5).** The target `2 div (2 - c.versionNumber) = 2` for
+`c = a`, under the subject's integer-division law, holds at `(1, 0)`, and a sampled walk from `(0, 0)` finds that
 witness. Exploration still runs and reaches `(2, 0)`, where the division has
 no value, so the item settles `refuted`, cause `UndefinedEvaluation` at
 `(2, 0)` (GV-7), not `proved`. `ReachesTwo` under `max_states` 2 gets its
@@ -368,7 +353,7 @@ terminal, so it is a trap. The item settles `refuted`, `closed-scope`
 the two steps, then explores the closure of `Lost`, which is `{Lost}`, and
 finds `phase = Won` false there.
 
-The model declares no `terminal` member, so the deadlock-freedom item is
+The unit declares no `terminal` declaration, so the deadlock-freedom item is
 refuted at `Lost`, the first terminal state in discovery order, with the same
 two-step prefix. A `terminal when` predicate that holds where the phase is
 `Won` or `Lost` settles the deadlock-freedom item `proved` and leaves
@@ -385,7 +370,7 @@ nodes and the claim without `from` settles `proved` (V-1).
 
 #### 7.3 `unique path`: two steps in either order
 
-Object type `Job` with `a`, `b` and `done`, all `Bool`; population `jobs`,
+Object type `Job` with `a`, `b` and `done`, all `Boolean`; population `jobs`,
 universe `{j}`, initial state all false. Operations: `stepA` (pre `not a`,
 post `a`, frame `[a]`), `stepB` (pre `not b`, post `b`, frame `[b]`) and
 `finish` (pre `a and b and not done`, post `done`, frame `[done]`). States
@@ -412,7 +397,7 @@ and 3 edges, `fff`, `tff`, `ttf`, `ttt`, and `fff` counts 1. The item settles
 `proved`, `closed-scope`, `Proved{basis: Exhaustive, certification: Certified}` (V-1), once GC-2 accepts its counts.
 
 In both models `ttt` is terminal, so the deadlock-freedom item is refuted at
-`ttt` unless the model declares `terminal when` a predicate that holds there.
+`ttt` unless the package declares `terminal when` for the model a predicate that holds there.
 
 ### 8. Downstream impact and sequencing
 
@@ -426,7 +411,7 @@ as an EN-1 counterexample does.
 | ID | Repository | Change |
 | --- | --- | --- |
 | DS-1 | QSL | S3: the three claim forms (SG-1 to SG-3) and their form record, the state-only predicate check (GM-3), the fairness refusal (GM-7). The request writer: the deadlock-freedom item for subjects of state-graph items (GM-8). Layer A `qsl-analyze`, `model_check`: node labelling, phase 0 sampling (GE-2), backward reachability, path counting, open-node tracking (GM-6), canonical evidence (§3), the GR-1 rows in the pre-check. `qsl-replay`: `ProofBasis::Witness`, `GraphEvidence`, `ReplaySource::ModelGraph` and its result arm with GX-2 to GX-4. The EN-1 manifest's state-graph forms. |
-| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}}` in the outcome map. |
+| DS-2 | CG | The EN-1 `negotiate_*` arm reads the state-graph form; an SMT arm discharges SG-1 only. `Proved{basis: Witness{sources}, certification: Certified}` in the outcome map, once `check_state_graph` accepts the certificate. |
 | DS-3 | IR | SG-1 path search in the SMT encoding (GE-3), after IR admits state nodes (ADR-018 DS-3). |
 | DS-4 | Driver | Runs a state-graph item routed to EN-1 in process and runs E9 for its evidence. |
 | DS-5 | QSpec | §9. |

@@ -2,8 +2,9 @@
 //! FR-093-AC-19 (TC-416 step 11): the emission-to-admission corpus. Every
 //! node family of IR's closed checked-package/v2 vocabulary
 //! (`CheckedNodeKind::all()`) is classified exactly once: as a family the
-//! emitter writes and IR admits (one or more rows), or as a kind QSL's
-//! lowering never writes ([`NOT_EMITTED_BY_QSL`], each with its reason).
+//! emitter or typed timed-model writer writes and IR admits (one or more
+//! rows), or as a kind QSL does not write ([`NOT_EMITTED_BY_QSL`], each with
+//! its reason).
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
@@ -23,6 +24,7 @@ use quire_contract_model::{
 };
 
 use super::super::extent_agreement::{package_declaring, records};
+use super::variant_types::fixture as variant_fixture;
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, V2Read, V2ReadRefusal};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
@@ -30,7 +32,7 @@ use qsl_foundation::diagnostic::{StageFailure, Staged};
 /// FR-108's ConfigVersion unit text and domain package (TC-469), the datum
 /// `examples/config-version/spine.rs` writes its spine files from.
 #[path = "../../../../examples/config-version/spine_unit.rs"]
-mod config_version_unit;
+pub(super) mod config_version_unit;
 
 /// An emit fixture the corpus emits. Each reuses an emit-test fixture or
 /// helper; [`FORMS_UNIT`], [`CYCLIC_EQUALITY`] and the systems-interface
@@ -54,6 +56,8 @@ enum Fixture {
     /// parameter, the form FR-093-AC-8 lowers (source text spells no
     /// `Population` type, so the function is built as a form).
     ModelPopulation,
+    /// A model selection whose domain package declares an inline relationship.
+    RelationshipModel,
     /// A `Reference` to the systems interface `S::Sensor` of
     /// `tests/fixtures/systems-interface.semantic-ir.json`.
     SystemsInterface,
@@ -77,11 +81,24 @@ enum Fixture {
     FormsUnit,
     /// [`CYCLIC_EQUALITY`].
     CyclicEquality,
+    /// A function over a model variant type, FR-360 item 12.
+    VariantType,
+    /// TC-1021: a function whose body refers to a declared protocol, under a
+    /// selected protocol profile.
+    ProtocolReference,
+    /// TC-1028: `=` and `!=` over native `String`, `UUID` and `Timestamp`
+    /// parameters.
+    NativeScalars,
+    /// TC-827: [`UNION_NODES`], a union, a construction and a `case`.
+    UnionNodes,
+    /// TC-524: ADR-018 §6's [`TEMPORAL_CLAUSE`] over the ConfigVersion
+    /// domain package.
+    TemporalClause,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 22] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -89,6 +106,7 @@ impl Fixture {
         Self::SpineCompile,
         Self::SpineModel,
         Self::ModelPopulation,
+        Self::RelationshipModel,
         Self::SystemsInterface,
         Self::ConfigVersion,
         Self::ExtentRecords,
@@ -98,6 +116,11 @@ impl Fixture {
         Self::QuantityAndT,
         Self::FormsUnit,
         Self::CyclicEquality,
+        Self::VariantType,
+        Self::ProtocolReference,
+        Self::NativeScalars,
+        Self::UnionNodes,
+        Self::TemporalClause,
     ];
 }
 
@@ -116,15 +139,64 @@ const FORMS_UNIT: &str =
      function mk using v(a: Int[0, 9]): P pure { P { x: a } }\n\
      function mt using v(a: Int[0, 9]): T pure { T(a, a) }\n";
 
+/// TC-1028: native `String`, `UUID` and `Timestamp` equality, the families
+/// IR-800 admits.
+const NATIVE_SCALARS: &str = "function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
+     function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
+     function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
+
+/// TC-827: a union, a construction of one of its members and a `case` over
+/// it, the families FR-320 emits.
+const UNION_NODES: &str =
+    "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+     function area using v(s: Shape): Integer pure { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
+     function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
+
+/// TC-524: ADR-018 §6's liveness clause under weak fairness, after the
+/// infinite-trace profile `t` and the ConfigVersion model selection: the
+/// `temporal`/`temporal_clause`, `temporal`/`formula` and
+/// `temporal`/`fairness` families FR-337 emits.
+const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
+     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {\n\
+     fair weak each Config::ConfigVersion::attemptUpdate;\n\
+     always eventually holds(c.versionNumber = 2)\n\
+     }\n";
+
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
 /// (FR-093-AC-11).
 const CYCLIC_EQUALITY: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n\
     function same using v(a: Tree, b: Tree): Boolean pure { a = b }\n";
 
+/// The FR-360 domain package, whose variant types the `VariantType` fixture
+/// names.
+static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
+    serde_json::to_vec(&variant_fixture::document()).expect("the fixture serializes")
+});
+
 /// The domain package declaring the systems interface `Sensor`.
 const SYSTEMS_DOCUMENT: &[u8] =
     include_bytes!("../../../../tests/fixtures/systems-interface.semantic-ir.json");
+
+/// The domain package used to prove relationship model nodes are emitted and
+/// admitted through IR's checked-package/v2 reader.
+const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
+    include_bytes!("../../../../tests/fixtures/spine-model-relationship.semantic-ir.json");
+
+/// The complete-V1 header shared by every model source unit below.
+const COMPLETE_V1_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+     profile v = \"quire.model.complete/v1\";\n";
+
+/// The relationship model source after [`COMPLETE_V1_HEADER`].
+const RELATIONSHIP_MODEL_UNIT: &str =
+    "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(g: M::Widget): M::Widget pure { g }\n";
+
+/// The systems-interface model source after [`COMPLETE_V1_HEADER`].
+const SYSTEMS_INTERFACE_UNIT: &str =
+    "model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
 
 /// One package of a fixture, checked, linked and emitted, with the domain
 /// package documents its read needs as evidence.
@@ -192,18 +264,33 @@ impl Fixture {
                     vec![SPINE_MODEL_DOCUMENT],
                 )
             }
+            Self::RelationshipModel => {
+                let document = RELATIONSHIP_MODEL_DOCUMENT;
+                let unit = format!(
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
             Self::SystemsInterface => {
                 let unit = format!(
-                    "language \"ix:native\" edition \"1-draft\";\n\
-                     profile v = \"quire.value.complete/v1\";\n\
-                     model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-                     function keep using v(s: S::Sensor): S::Sensor pure {{ s }}\n",
-                    document_digest(SYSTEMS_DOCUMENT)
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    SYSTEMS_INTERFACE_UNIT.replace("{}", &document_digest(SYSTEMS_DOCUMENT)),
                 );
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
                     vec![SYSTEMS_DOCUMENT],
                 )
+            }
+            Self::TemporalClause => {
+                let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}{}",
+                    TEMPORAL_CLAUSE.replace("{}", &document_digest(document))
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
@@ -221,6 +308,27 @@ impl Fixture {
             }
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
+            Self::NativeScalars => text(NATIVE_SCALARS),
+            Self::UnionNodes => text(UNION_NODES),
+            Self::VariantType => {
+                let document = VARIANT_DOCUMENT.as_slice();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}model M = {package:?} version \"1\" \
+                     digest \"sha256-jcs:{digest}\";\n\
+                     function keep using v(t: M::Tier): M::Tier pure {{ t }}\n",
+                    package = variant_fixture::PACKAGE,
+                    digest = document_digest(document),
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
+            Self::ProtocolReference => Emitted::placed(
+                modelled(
+                    &super::protocol_reference::reference_unit(),
+                    SPINE_MODEL_DOCUMENT,
+                    Vec::new(),
+                ),
+                vec![SPINE_MODEL_DOCUMENT],
+            ),
         };
         vec![one]
     }
@@ -286,6 +394,9 @@ fn rows() -> Vec<Row> {
         row(K::ScalarType(S::Float32), F::Float32Add),
         row(K::ScalarType(S::Float64), F::GoldenCases),
         row(K::ScalarType(S::Text), F::Tc416Functions),
+        row(K::ScalarType(S::String), F::NativeScalars),
+        row(K::ScalarType(S::Uuid), F::NativeScalars),
+        row(K::ScalarType(S::Timestamp), F::NativeScalars),
         row(K::ScalarType(S::Enum), F::OrderedEnum),
         row(K::ScalarType(S::Dimension), F::QuantityAndT),
         row(K::ScalarType(S::Unit), F::QuantityAndT),
@@ -297,6 +408,7 @@ fn rows() -> Vec<Row> {
         row(K::CompositeType(C::OrderedSet), F::FormsUnit),
         row(K::CompositeType(C::Record), F::Tree),
         row(K::CompositeType(C::Tuple), F::DeclaredTypes),
+        row(K::CompositeType(C::Union), F::UnionNodes),
         row(K::CompositeType(C::Reference), F::SpineModel),
         row(K::BoundedDomain(B::IntegerRange), F::RecursiveF),
         row(K::BoundedDomain(B::RationalRange), F::GoldenCases),
@@ -309,10 +421,12 @@ fn rows() -> Vec<Row> {
         row(K::Value(ValueForm::EnumValue), F::OrderedEnum),
         row(K::Value(ValueForm::RecordValue), F::FormsUnit),
         row(K::Value(ValueForm::TupleValue), F::FormsUnit),
+        row(K::Value(ValueForm::UnionValue), F::UnionNodes),
         row(K::Value(ValueForm::Parameter), F::Tc416Functions),
         row(K::Expression(E::Call), F::Tc416Functions),
         row(K::Expression(E::Unary), F::ConfigVersion),
         row(K::Expression(E::Binary), F::Tc416Functions),
+        row(K::Expression(E::Case), F::UnionNodes),
         Row {
             family: K::Expression(E::Binary),
             fixture: F::CyclicEquality,
@@ -334,17 +448,34 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
+        row(K::Model(ModelForm::VariantType), F::VariantType),
+        row(K::Model(ModelForm::RecordValueType), F::VariantType),
+        row(
+            K::Relation(RelationForm::Relationship),
+            F::RelationshipModel,
+        ),
         row(K::State(StateForm::StateClause), F::ConfigVersion),
         row(K::State(StateForm::Frame), F::ConfigVersion),
         row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
+        row(
+            K::Protocol(ProtocolForm::ProtocolClause),
+            F::ProtocolReference,
+        ),
+        row(
+            K::Protocol(ProtocolForm::ProtocolReference),
+            F::ProtocolReference,
+        ),
+        row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
+        row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
+        row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
     ]
 }
 
-/// Every IR node kind QSL's lowering never writes, each with the reason.
+/// Every IR node kind neither QSL's emitter nor typed timed-model writer writes.
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
-        "lowering's record_form maps only object types and systems interfaces to model nodes";
+        "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
     &[
         (
@@ -357,18 +488,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
              Value::Collection is refused as UnbuiltLiteral",
         ),
         (
-            K::CompositeType(CompositeTypeForm::Union),
-            "lowering builds no union type; the checker has no union type form",
-        ),
-        (
-            K::Value(ValueForm::UnionValue),
-            "lowering builds no union value; the checker has no union type form",
-        ),
-        (
-            K::Expression(ExpressionForm::Case),
-            "lowering builds no case expression; the value expression grammar has none",
-        ),
-        (
             K::Value(ValueForm::OptionValue),
             "lowering builds no option literal (UnbuiltLiteral)",
         ),
@@ -378,8 +497,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
-        (K::Model(ModelForm::VariantType), NO_RECORD_FORM),
-        (K::Model(ModelForm::RecordValueType), NO_RECORD_FORM),
         (K::Model(ModelForm::EventType), NO_RECORD_FORM),
         (K::Model(ModelForm::StateMachine), NO_RECORD_FORM),
         (K::Model(ModelForm::Process), NO_RECORD_FORM),
@@ -389,25 +506,15 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::SystemsPort), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsConnection), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsAllocation), NO_RECORD_FORM),
-        (
-            K::Relation(RelationForm::Relationship),
-            "record_form maps a relationship, but no checked construct names one: model \
-             nodes are built for object types (references, frame owners, creates and \
-             deletes), and intake refuses a relationship in a frame",
-        ),
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),
         (K::State(StateForm::Transition), NO_TAG),
         (K::State(StateForm::Snapshot), NO_TAG),
-        (K::Temporal(TemporalForm::TemporalClause), NO_TAG),
-        (K::Temporal(TemporalForm::Formula), NO_TAG),
-        (K::Temporal(TemporalForm::Fairness), NO_TAG),
         (K::Temporal(TemporalForm::Clock), NO_TAG),
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
-        (K::Protocol(ProtocolForm::ProtocolClause), NO_TAG),
         (K::Protocol(ProtocolForm::Role), NO_TAG),
         (K::Protocol(ProtocolForm::Channel), NO_TAG),
         (K::Protocol(ProtocolForm::Queue), NO_TAG),
@@ -459,7 +566,9 @@ fn families(package: &CheckedPackage) -> BTreeMap<CheckedNodeKind, Vec<CheckedNo
 fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
-        evidence.insert_domain_package_document(document_digest(document), document.to_vec());
+        evidence
+            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .expect("a fresh evidence key");
     }
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
         library(),
@@ -585,6 +694,39 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .push(format!("not emitted: {reason}"));
     }
     let all = CheckedNodeKind::all();
+    // IR does not export `ExtensionForm`, so its kinds cannot be named in
+    // `NOT_EMITTED_BY_QSL`; QSL writes no extension node until QSL-978.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::Extension(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("not emitted: QSL writes no extension node yet (QSL-978)".to_owned());
+    }
+    // IR does not export `HybridForm` either; QSL lowers no hybrid
+    // declaration to a node until QSL-900.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::Hybrid(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("not emitted: QSL lowers no hybrid declaration yet (QSL-900)".to_owned());
+    }
+    // `CheckedTimedModel::write_nodes` writes the complete closed timed-model
+    // family; its emitted-package conformance test reads the result through I2.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::TimedModel(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("admitted by the typed timed-model writer (TC-367)".to_owned());
+    }
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))
@@ -667,4 +809,287 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
         }
     }
     assert!(bodies > 0, "the corpus emits nodes");
+}
+
+/// QSL-946: the dimension and units the quantity-typed operand functions
+/// below are written over.
+const QUANTITY_UNITS: &str = "dimension Length;\n\
+     unit m : Length = rational(1, 1);\n\
+     unit km : Length = rational(1000, 1) * m;\n";
+
+/// One operation over quantity-typed operands, written in genuine source
+/// through the `Quantity<u>` type form, and the operation identity its
+/// application lowers to.
+const QUANTITY_OPERATIONS: &[(&str, &str, Option<&str>)] = &[
+    (
+        "eq",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+        Some("quire.op.quantity.eq"),
+    ),
+    (
+        "ne",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a != b }",
+        Some("quire.op.quantity.ne"),
+    ),
+    (
+        "lt",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a < b }",
+        Some("quire.op.quantity.lt"),
+    ),
+    (
+        "add",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Quantity<m> pure { a + b }",
+        Some("quire.op.quantity.add"),
+    ),
+    (
+        "convert to the same unit",
+        "function op using v(q: Quantity<m>): Quantity<m> pure { convert<Quantity<m>>(q) }",
+        // A conversion to the operand's own unit is the identity: it lowers
+        // to its operand, so no application is written.
+        None,
+    ),
+    (
+        "convert to another unit",
+        "function op using v(q: Quantity<m>): Quantity<km> pure { convert<Quantity<km>>(q) }",
+        Some("quire.op.quantity.convert"),
+    ),
+];
+
+/// FR-091-AC-44, FR-093 (QSL-946, IR-263): each operation over operands
+/// typed `Quantity<u>` in genuine source emits a package IR's strict
+/// checked-package/v2 reader admits at its `package_id`, and the package
+/// applies the operation's `quire.op.quantity.*` identity.
+#[trace("FR-091-AC-44", "FR-093-AC-19", "TC-483", "TC-416")]
+#[test]
+fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
+    let mut failures = Vec::new();
+    for (name, function, identity) in QUANTITY_OPERATIONS {
+        let (_, package) = package_from_text(&format!("{QUANTITY_UNITS}{function}\n"));
+        let emitted = Emitted::placed(package, Vec::new());
+        let outcome = Outcome {
+            families: families(&emitted.package),
+            read: read(&emitted),
+            emitted,
+        };
+        let applied = identity.is_none_or(|identity| {
+            outcome
+                .families
+                .values()
+                .flatten()
+                .any(|node| outcome.applies(node, identity))
+        });
+        // The identity conversion writes no node: the body is the parameter.
+        if identity.is_none()
+            && outcome
+                .families
+                .keys()
+                .any(|kind| matches!(kind, CheckedNodeKind::Expression(_)))
+        {
+            failures.push(format!("{name}: wrote an expression node"));
+        }
+        if !applied {
+            failures.push(format!("{name}: no application of {identity:?}"));
+        }
+        match &outcome.read {
+            Ok(read)
+                if read.package.package_id() == outcome.emitted.emission.package.package_id() => {}
+            other => failures.push(format!("{name}: not admitted: {other:?}")),
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// QSL-974: the dimension and units quantity literals are written over.
+const QUANTITY_TIME: &str = "dimension Time;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n\
+     function f using v(d: Quantity<ms>): Boolean pure { true }\n";
+
+/// The `(value, type digest)` of each `quantity` literal node of `wire`, and
+/// the digest of each unit node by name.
+fn quantity_literals(wire: &Value) -> (Vec<(String, Value)>, BTreeMap<String, Value>) {
+    let mut literals = Vec::new();
+    let mut units = BTreeMap::new();
+    for node in nodes(wire) {
+        let body = &node["body"];
+        if body["term"] == "literal" {
+            assert_eq!(node["semantic_form"], "literal");
+            // No literal of another kind is typed at a unit node.
+            if body["value_kind"] == "quantity" {
+                assert_eq!(node["semantic_type"], body["type"]);
+                literals.push((
+                    body["value"].as_str().expect("a spelled value").to_owned(),
+                    body["type"].clone(),
+                ));
+            } else {
+                assert_ne!(body["value_kind"], "rational", "{node}");
+            }
+        }
+        if node["semantic_form"] == "unit" {
+            let name = node["declaration"]["qualified_name"][0]
+                .as_str()
+                .expect("a unit name");
+            units.insert(name.to_owned(), node["node_id"].clone());
+        }
+    }
+    (literals, units)
+}
+
+/// FR-093-AC-33, FR-094, FR-322-AC-79 (TC-483 step 6): a quantity literal
+/// lowers to a `value`/`literal` node of `value_kind` `quantity` typed by its
+/// unit's node, equal literals in one unit share one node, a rational is
+/// never emitted for one, and IR's strict v2 reader admits each package.
+#[trace("FR-093-AC-33", "FR-094", "TC-483")]
+#[test]
+fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_admits() {
+    // (functions beside f, expected (value, unit) literals in order)
+    let cases: [(&str, &[(&str, &str)]); 7] = [
+        ("function h using v(): Boolean pure { f(3 ms) }", &[("3", "ms")]),
+        // `h`, `h2`, `h3` and `h4` together: `h4` shares `h`'s node, and
+        // `0.5` and `rational(2, 4)` share one `1/2` node.
+        (
+            "function h using v(): Boolean pure { f(3 ms) }\n\
+             function h2 using v(): Boolean pure { f(0.5 ms) }\n\
+             function h3 using v(): Boolean pure { f(rational(2, 4) ms) }\n\
+             function h4 using v(): Boolean pure { f(3 ms) }",
+            &[("1/2", "ms"), ("3", "ms")],
+        ),
+        (
+            "function n using v(): Boolean pure { f(rational(-3, 1) ms) }",
+            &[("-3", "ms")],
+        ),
+        (
+            "function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }",
+            &[("1/1000", "s")],
+        ),
+        (
+            "function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }",
+            &[("3", "s")],
+        ),
+        // The same magnitude in two units is two nodes.
+        (
+            "function a using v(d: Quantity<s>, e: Quantity<ms>): Boolean pure { d = 3 s and e = 3 ms }",
+            &[("3", "ms"), ("3", "s")],
+        ),
+        ("function z using v(): Boolean pure { f(0 ms) }", &[("0", "ms")]),
+    ];
+    for (functions, expected) in cases {
+        let (_, package) = package_from_text(&format!("{QUANTITY_TIME}{functions}\n"));
+        let emitted = Emitted::placed(package, Vec::new());
+        let written = wire(&emitted.emission);
+        let (mut literals, units) = quantity_literals(&written);
+        let mut want: Vec<(String, Value)> = expected
+            .iter()
+            .map(|(value, unit)| ((*value).to_owned(), units[*unit].clone()))
+            .collect();
+        literals.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
+        want.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
+        assert_eq!(literals, want, "{functions}");
+        match read(&emitted) {
+            Ok(read) if read.package.package_id() == emitted.emission.package.package_id() => {}
+            other => panic!("{functions}: not admitted: {other:?}"),
+        }
+    }
+}
+
+/// The node of `wire` keyed `id`.
+fn node_of<'a>(wire: &'a Value, id: &Value) -> &'a Value {
+    nodes(wire)
+        .iter()
+        .find(|node| &node["node_id"] == id)
+        .unwrap_or_else(|| panic!("no node {id}"))
+}
+
+/// The node a `reference` term targets.
+fn target<'a>(wire: &'a Value, term: &Value) -> &'a Value {
+    assert_eq!(term["term"], "reference", "{term}");
+    node_of(wire, &term["target"])
+}
+
+/// The root body node of function `name`.
+fn function_body<'a>(wire: &'a Value, name: &str) -> &'a Value {
+    let function = nodes(wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == name
+        })
+        .unwrap_or_else(|| panic!("no function {name}"));
+    let body = function["body"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "body")
+        .expect("a body member");
+    target(wire, &body["value"])
+}
+
+/// Whether `node` is a `quantity` literal of `value`.
+fn is_quantity_literal(node: &Value, value: &str) -> bool {
+    node["body"]["term"] == "literal"
+        && node["body"]["value_kind"] == "quantity"
+        && node["body"]["value"] == value
+}
+
+/// FR-093-AC-33 (TC-483 step 6): the call's argument references the literal
+/// node; `k`'s equality is over `[ref(d), ref(literal)]`; `c`'s conversion
+/// has `rounding` = `exact` over `d` and its equality runs over the
+/// conversion node and the `3 s` literal.
+#[trace("FR-093-AC-33", "TC-483")]
+#[test]
+fn quantity_literal_nodes_are_referenced_by_their_operations() {
+    let (_, package) = package_from_text(&format!(
+        "{QUANTITY_TIME}function h using v(): Boolean pure {{ f(3 ms) }}\n\
+         function k using v(d: Quantity<s>): Boolean pure {{ d = rational(1, 1000) s }}\n\
+         function c using v(d: Quantity<ms>): Boolean pure {{ convert<Quantity<s>>(d) = 3 s }}\n"
+    ));
+    let emitted = Emitted::placed(package, Vec::new());
+    let written = wire(&emitted.emission);
+
+    let call = function_body(&written, "h");
+    assert_eq!(
+        call["body"]["operation"]["identity"],
+        "quire.op.function.call"
+    );
+    let arguments = call["body"]["arguments"].as_array().unwrap();
+    let literal = target(&written, arguments.last().unwrap());
+    assert!(is_quantity_literal(literal, "3"), "{literal}");
+
+    let equal = function_body(&written, "k");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let parameter = target(&written, &arguments[0]);
+    assert_eq!(parameter["semantic_form"], "parameter");
+    assert!(is_quantity_literal(
+        target(&written, &arguments[1]),
+        "1/1000"
+    ));
+
+    let equal = function_body(&written, "c");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let convert = target(&written, &arguments[0]);
+    assert_eq!(
+        convert["body"]["operation"]["identity"],
+        "quire.op.quantity.convert"
+    );
+    assert_eq!(
+        convert["body"]["operation"]["mode"],
+        json!({"kind": "rounding", "value": "exact"})
+    );
+    let converted = convert["body"]["arguments"].as_array().unwrap();
+    assert_eq!(converted.len(), 1);
+    assert_eq!(
+        target(&written, &converted[0])["semantic_form"],
+        "parameter"
+    );
+    assert!(is_quantity_literal(target(&written, &arguments[1]), "3"));
+    assert!(read(&emitted).is_ok());
 }

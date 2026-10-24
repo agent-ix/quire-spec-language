@@ -11,8 +11,6 @@ relationships:
     type: verifies
   - target: "ix://agent-ix/quire-spec-language/FR-008"
     type: verifies
-  - target: "ix://agent-ix/quire-spec-language/FR-009"
-    type: verifies
 ---
 # IT-002: Run the supported native state workflow
 
@@ -64,4 +62,3 @@ Priority: High. Automation: real command/file/API execution. Status: draft integ
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
 - [FR-007](../functional/FR-007-validate-runtime-inputs.md)
 - [FR-008](../functional/FR-008-evaluate-state-reference.md)
-- [FR-009](../functional/FR-009-lower-qualified-projections.md)

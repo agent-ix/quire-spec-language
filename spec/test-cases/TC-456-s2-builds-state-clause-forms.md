@@ -13,7 +13,7 @@ relationships:
 Verify that `qsl-forms` builds a `StateClauseForm` for each of `invariant`,
 `pre` and `post`, and builds `self`, `result` and `reaches` as expressions.
 
-Scope: FR-102-AC-1, FR-102-AC-2, FR-102-AC-3.
+Scope: FR-102-AC-1, FR-102-AC-2, FR-102-AC-3, FR-102-AC-8.
 
 ## Test Procedure
 
@@ -34,6 +34,10 @@ Parse each through S1 and build through `qsl_forms::build_unit`.
    `post R using v on Config::ConfigVersion::attemptUpdate { result }`,
    then `invariant Q using v on Config::ConfigVersion at current
    { reaches(self, self, Config::ConfigVersion::parent) }`.
+4. Declare `constraint Low using v on M::Counter at current { self.v <= 1 }`
+   over a `Counter` model, then the same text with `invariant`; check the
+   `Constraint` dispatch arm with `dispatch_entry_is_a_single_thin_call`.
+
 
 Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
 
@@ -50,7 +54,6 @@ Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
   `Pre(Field(SelfRef, versionNumber))`; `Expression::Result`; and
   `FormsCause::UnrepresentedConstruct` at the qualified edge
   `Config::ConfigVersion::parent`. No other step refuses.
-
-## Status
-
-Planned. The code waits for the other lane's work in `qsl-forms`.
+- Step 4: kind `Constraint`, name `Low`, profile `v`, context `M::Counter`,
+  no operation, each body span slicing to its text; then kind `Invariant`
+  with an otherwise equal form; the `Constraint` arm makes one call.

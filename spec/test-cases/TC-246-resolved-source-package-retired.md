@@ -47,22 +47,6 @@ both successors exist"; ruling on QSL-229):
    parse, TC-491 for the closure, bundle, limits and identity, carrying the
    scenario's `QSpec-FR-131`/`QSpec-FR-339` tags).
 
-## Expected Results
-
-- Steps 1-2: no occurrence of a removed item. `xtask` arch-lint tests that
-  plant one of these names as synthetic source text are not occurrences.
-- Step 3: the workspace builds with no reachable definition of a removed
-  item under any feature combination.
-- Step 4: every scenario maps to a backing test. A scenario with none
-  fails this step.
-
-## Status
-
-Run once FR-110 was implemented. Steps 1-3 by a
-workspace search and a workspace build with `--all-features` (a search, not
-an automated scan); only `xtask`'s synthetic source text names
-`qsl_semantics::complete`. Step 4 by this mapping of the former scenarios:
-
 | Former scenario | Backing test |
 | --- | --- |
 | unknown, stale-revision, stale-digest and conflicting header profiles | `a_header_profile_resolves_only_against_the_root_row` (TC-490, `qsl-replay/src/spine.rs`) |
@@ -72,3 +56,12 @@ an automated scan); only `xtask`'s synthetic source text names
 | model selection and a `sha256:` model digest | TC-442 step 4 (`tests/it/compile_command.rs`) |
 | closure, bundle, limits, identity, causes | TC-491 (`library::bundle_tests`, carrying FR-131/FR-339 tags) |
 | source authority and span on a refusal | deleted with `SourceAuthority` (FR-087 disposition table); a bundle refusal names its root's index |
+
+## Expected Results
+
+- Steps 1-2: no occurrence of a removed item. `xtask` arch-lint tests that
+  plant one of these names as synthetic source text are not occurrences.
+- Step 3: the workspace builds with no reachable definition of a removed
+  item under any feature combination.
+- Step 4: every scenario maps to a backing test. A scenario with none
+  fails this step.

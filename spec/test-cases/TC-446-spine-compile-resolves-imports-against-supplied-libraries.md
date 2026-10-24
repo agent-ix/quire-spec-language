@@ -18,7 +18,7 @@ recomputed `package_id`, types an imported function call from the
 library's checked graph and emits it as a `dependency_reference`, and
 refuses each ADR-015 D-1 and D-2 case with no package.
 
-Scope: FR-099-AC-1 to FR-099-AC-7, FR-027-AC-10.
+Scope: FR-099-AC-1 to FR-099-AC-7, FR-099-AC-9, FR-027-AC-10, FR-027-AC-12.
 
 ## Test Procedure
 
@@ -55,7 +55,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    `g::f(3)`.
 6. Supply `test/geometry` from the `x < 6` source and compile step 5's unit
    again.
-7. Run CLI `compile` over a native-compile/1 request whose `1-draft`
+7. Call `command`'s `compile` over a native-compile/1 request whose `1-draft`
    program is step 5's unit and whose `libraries` names `test/geometry`
    by file, source digest and the labels above; then the same request with
    a `0-draft` program, with a library of an empty identity, and with a
@@ -67,6 +67,16 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    one byte below the three libraries' summed source bytes. Then compile a
    unit importing the first of a chain of 200 libraries, each importing the
    next, at the default limits.
+9. Compile a unit declaring refinement `CasTwice` with `refinement_internals`
+   `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` for
+   the unit and none for the library; then with the unit's value `null`, `{}`
+   and `7`; then a malformed value on a supplied library the unit imports and
+   on one it does not; then a well-formed value naming a refinement the
+   library does not declare, on a library the unit imports and on one it
+   does not. Read the lock of the first compile, and of a compile with the
+   value absent and with `[]`. Request
+   the `1-draft` export with the member at the top level and on a library
+   object, and a `0-draft` request with the member.
 
 Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
@@ -100,27 +110,25 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `f`'s parameter, as a local call's does.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
-- Step 7: stdout is exactly the bytes spine `compile` returns for step 5's
-  unit and library, exit 0; the `0-draft` request, a `libraries` entry
-  with an empty identity, and a `libraries` entry with a `version` member,
-  refuse with `invalid-request`, exit 20, empty stdout.
+- Step 7: the outcome's package bytes are exactly the bytes spine `compile` returns for step 5's
+  unit and library, exit 0; the `0-draft` request refuses with
+  `unknown_edition` at stage `profile`, and a `libraries` entry with an
+  empty identity and a `libraries` entry with a `version` member refuse
+  with `invalid-request`; each exits 20 with no package bytes.
 
 - Step 8: `stage_limit_exceeded` at stage `intake` at `test/b`'s import of
   `test/c`, node count, bound 2, actual 3, setting `dependency.libraries`,
   no package; at 3 the compile succeeds; edge count, bound 2, actual 3,
   setting `dependency.import_edges`; input bytes, setting
   `dependency.source_bytes`. The 200-library chain compiles.
-
-## Status
-
-Step 8 (FR-099-AC-7) is pending. Steps 1 to 6 pass locally: `qsl-replay`
-`spine::dependency_tests`, and `qsl-cst` `an_import_names_only_its_library_identity`
-for step 2's import spellings. Step 5's `g::f(3)` result was amended to
-expect the `Int[0, 9]` conversion node. Step 7
-(the CLI `libraries` member, FR-027-AC-10) passes locally:
-`tests/it/compile_command.rs`
-`a_complete_v1_request_supplies_its_libraries_to_the_spine`,
-`malformed_libraries_refuse_as_invalid_request`,
-`a_library_refusal_renders_over_the_library_source`,
-`a_cycle_inside_the_libraries_renders_over_the_library_source` and
-`sixty_four_libraries_exceed_the_file_limit`.
+- Step 9: S3 receives the unit's value unchanged and the empty list for the
+  library's refinements; `null`, `{}` and `7` are not refused by the input
+  builder and S3 reports `invalid_model_binding`/`malformed-declaration` at
+  the root pointer; the library's malformed value refuses the compilation
+  located at (that library's value, pointer) whether or not the unit imports
+  it; the value naming an undeclared refinement refuses the compilation in
+  both cases, the unimported library's refusal wrapped as
+  `CompileRefusal::Dependency`; the lock holds `refinement_internals` for the
+  first compile and no member for the absent and `[]` values; the
+  `1-draft` request carries both members and the `0-draft` request refuses
+  with `unknown_edition` at stage `profile`.

@@ -40,6 +40,10 @@ the design authority; this requirement adds no rule of its own.
 - The kernel field shapes `CollectionType.bound: Option<CardinalityBound>`
   and `ValueType::Population(Option<u64>)` (ADR-014 N-3).
 
+An unbounded population has no bound (`None`) and lowers to its own
+`model_population` node with no `max` member (FR-334), distinct from an
+unbounded `Set<Reference<T>>`.
+
 ## Inputs
 
 - A claim's argument and bound-variable types, each with the wire id of the
@@ -79,6 +83,7 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 | FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types and different v2 nodes. The checker types `map`, `flatMap`, `filter` and `flatten` over an unbounded source as unbounded, and proves no size maximum for it. | Test (TC-441) |
 | FR-097-AC-8 | A `Population<T>` with no declared maximum is unbounded: `allInstances` over it checks to an unbounded `Set<Reference<T>>` and selects every member with no cardinality refusal; a population parameter admits a binding only when their declared maxima are equal, absence included; and it lowers to its own v2 node, distinct from an unbounded `Set<Reference<T>>`. | Test (TC-441) |
 | FR-097-AC-9 | Every proof bound the request writer emits carries its domain's `DomainKind`, never none, and that kind pairs with the bound's `FiniteBound` variant per `DomainKind::finite_kind`: a `population` or `collection` domain's bound is a cardinality, an `integer` domain's an integer range, and a `recursive` domain's a depth. Each of the seven `DomainKind`s writes as its FR-331 wire spelling (`collection`, `population`, `integer`, `recursive`, `loop`, `infinite-trace`, `quantity`) and reads back to itself; a label not byte-equal to one of the seven, such as `Collection` or `infinite_trace`, is refused, not normalized. | Test (TC-436, TC-438) |
+| FR-097-AC-10 | A requirement item reads its temporal subject's proof bounds (QSpec FR-331 `temporal.subject.proof_bounds`) from `RequirementItem::temporal_proof_bounds()`: `None` unless the item is `temporal-satisfaction` over a model subject (FR-123), else the bounds the caller supplied through `with_subject_proof_bounds`, in key order, `Some(&[])` when none. The caller supplies a `FiniteBound` per `DomainKey::Population` and QSL writes the `population` kind; the supplied bounds are independent of the item's extent, its `proof_bounds()`, index and occurrence, which they leave unchanged. The method refuses an item that is not over a model subject, a key that is not a population, and a bound that is not a cardinality, each `invalid_runtime_input`/`invalid-value`. | Test (TC-438) |
 
 ## Dependencies
 
@@ -93,21 +98,3 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md) AC-3:
   the witness envelope's `run_limits` and `FiniteBound` declared domains.
 - IR's v2 lowering, the `qsl-package` dependency, for AC-6.
-
-## Status
-
-Specified and implemented. TC-436 to TC-439 and TC-441 pass
-locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
-an unbounded population its own node, lowering one refuses with
-`UnrepresentableBound` rather than writing the bare set node an unbounded
-`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 passes: every fixture agrees, including
-`Flags`, `RangedTree` and `Mixed`, which depend on IR's `requires-bound`
-being position-sensitive and requiring a bound for a recursive type. For
-`RangedTree`, IR's first unbounded node is a member of the recursion group
-of the root QSL names `Recursive`. The
-quantity fixture `Measure` is emitted with its unit and dimension nodes,
-and it agrees: QSL classifies it `Unbounded`, and IR requires a bound for
-a unit type (IR-450). FR-097-AC-6's per-application-node agreement
-(TC-440 step 4) passes: IR lowers the inner `+` of `(x + 1) + n` and
-requires a bound for the outer `+`, and the records outside the agreement
-have their extents asserted.

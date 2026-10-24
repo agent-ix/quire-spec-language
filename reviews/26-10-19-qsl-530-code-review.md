@@ -1,0 +1,68 @@
+---
+id: SR-13081
+title: "Code review (Rust lane) of QSL-530 E9 part 1 liveness SCC phase and weak fairness (PR #1024)"
+type: SpecReview
+analysis: base
+scope: "agent-ix/quire-spec-language@31912a26a; qsl-analyze/src/model_check/{liveness,check,mod}.rs, qsl-analyze/tests/it/{liveness,main,model_check}.rs, qsl-eval/src/simulation/{key,model}.rs, qsl-replay/src/{lib.rs,model_check/counterexample.rs}"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: reviews
+  - target: ix://agent-ix/quire-spec-language/TC-521
+    type: reviews
+---
+# SR-13081: Code review (Rust lane) of QSL-530 E9 part 1 liveness SCC phase and weak fairness (PR #1024)
+
+## Summary
+
+Ticket: QSL-530 (E9, PR 1 of 2). PR quire-spec-language#1024 at head 31912a26a, scoped to `git diff origin/main...HEAD` (10 files, merge base b41d0a960). The rust-review lane is folded into this file. Gates run on the worktree: `cargo test -p qsl-analyze --test it` (78 pass), `cargo test -p qsl-replay` (all pass), `cargo clippy -p qsl-analyze -p qsl-replay -p qsl-eval --all-targets -D warnings` clean, `cargo fmt --check` on the three crates clean. `make ci` was not run, per the brief. FND-001 was reproduced with a probe unit test in a scratch copy of the tree (not the worktree): /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1024-probe/repo/qsl-analyze/src/model_check/liveness.rs (the probe fails at head and passes with the one-character fix named in FND-001).
+
+The `string-edge` gate failure (qsl-cst/src/parser.rs:1603, 1607, 1612, branch-gating) is not from this PR: the PR does not touch that file, and `cargo run -p xtask -- string-edge` on an export of origin/main at 1c6ccd4fe reports the same three occurrences. They were added by #1003 (6b64fbc51, QSL-881), the last commit to touch parser.rs.
+
+## Verdict
+
+**FAIL (not mergeable as is).** FND-001 is a CX-5 conformance defect in the canonical loop, reproduced.
+
+What is sound: the refusal instead of an unsound `Holds` (a product with no passing component is refused as `ComponentCertificateNotBuilt`, never returned as a closure proof); strong fairness and a guarded `on each` are refused before exploration rather than ignored; the weak filter (FA-4) via `qsl-eval` `analyze` with enabledness read from each model state's own successor set (FA-2), the stutter edge outside every constraint, `whole`/`each` expansion (FA-1, FA-6); the `Dead` property state is never accepting (the extra all-live acceptance set keeps it out of every candidate, and a dead state can never re-enter a live one, so a passing component is all live); first-phase undefined letters and contracts are scanned for every binding before any lasso is built; terminal stutter edges and the stutter-only loop marker; the horizon (`HorizonCut` at depth >= k, second phase over the retained graph, `BoundReached` only when a state was cut); limit, meter, candidate, automaton and cancel mapping matches check.rs; determinism (BTree containers, sorted SCCs by least vertex, discovery-order state ids, canonical successor order); no shim, re-export or fallback; no `unwrap`/panic in library code. The stem is the BFS tree path to the passing component's least vertex, which is the first path in BFS order to the first passing SCC.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | CX-5 tie-break drops vertex obligations. `nearest` considers a vertex candidate only when it is popped, but stops as soon as `reached >= best`. An edge candidate of length d+1 found while expanding a depth-d vertex sets `best = d+1`, so every vertex at distance d+1 is never popped and its vertex candidate (acceptance-set state, or a state disabling a weak constraint) is discarded even when its path is canonically first. Probe: entry v0 with edge 0 to v1 (in an acceptance set) and edge 1 taking the weak constraint; CX-5 gives the walk v0-v1-v0-v2-v0, the code gives v0-v2-v0-v1-v0. The lasso is still fair and replayable, but it is not FR-126's canonical loop. Fix: break only when `reached > length` (the probe passes with that change); add a CX-5 test with a vertex obligation tying an edge obligation. | qsl-analyze/src/model_check/liveness.rs:1236-1240 |
+| FND-002 | medium | `max_states` and `max_transitions` apply per binding: each binding's `retain` gets the full `limits`, and `Totals` sums the counts. A clause over n instances can explore up to n x max_states product states and return `Violated`, `BoundReached` or the certificate refusal with `stats.product_states` above `max_states` and no V-7. FR-126 says reaching `max_states` stops the run with `Stopped{MaxStates}`, and every terminal record states whether a limit was reached. Pass each binding the remaining budget (max_states minus states so far, likewise transitions), or get the spec to say the budgets are per instance. | qsl-analyze/src/model_check/liveness.rs:715-721, 226-237 |
+| FND-003 | medium | `Dead` product states are counted as product states (stats, `max_states`) and are not states of the generalized Buchi automaton the spec's product is defined over. Over ADR-018 section 6's example for `c = b`, every q1 state stepping `upd(b)` into vb = 2 goes to `Dead`, and `Dead` then continues over all 9 model states, so the TP-4 run would report 24 product states against FR-126-AC-1 / TC-521's 15. The PR's own `proof_waits_for_the_component_certificate` shows it (8 states, one dead). Keeping the dead branch explored is needed for UE-1, so this is also a spec gap (see the gap-analysis SR); a code-side option is to read letters and contracts on dead branches without minting product states. | qsl-analyze/src/model_check/liveness.rs:262-267, 1143-1154; qsl-analyze/tests/it/liveness.rs:324 |
+| FND-004 | medium | A terminal-stutter lasso reports `len()` without its loop step. FR-126 says a counterexample's length is its number of transitions, stem and loop together, and CX-1 / SM-4 make the stutter step a transition with its own identity. `TemporalCounterexample::len` returns `prefix.len()`, and the test pins `len() == 3` for the stem of three `inc` plus the stutter loop (4 transitions). The horizon agrees with 4, not 3: `max_depth` 3 returns `BoundReached{3}`, which per EN-1 means no counterexample of length at most 3, yet the counterexample found at 4 reports length 3. Count the stutter step when `lasso.terminal_stutter`, and assert 4. | qsl-replay/src/model_check/counterexample.rs:136-138; qsl-analyze/tests/it/liveness.rs:290, 509-518 |
+| FND-005 | low | `stats.automaton_states` is summed across bindings, but every binding translates the same clause into the same automaton. With two instances that each reach 2 automaton states the run reports 4. Report the maximum (or the count of one translation), as `depth` already does. | qsl-analyze/src/model_check/liveness.rs:226-229, 732-733 |
+| FND-006 | low | `proof_waits_for_the_component_certificate` and `a_strong_constraint_is_refused_not_ignored` carry `#[trace("TC-521")]` but assert interim refusals that TC-521 and FR-126 contradict (TC-521 expects `Holds{Exhaustive}`; ADR-019 FS-2 decides strong constraints). The tag counts them as TC-521 evidence. Leave these two untagged (or tag the ticket's interim behaviour only in prose) until they are replaced in PR 2. | qsl-analyze/tests/it/liveness.rs:312-313, 580-581 |
+| FND-007 | low | The doc comment of `proof_waits_for_the_component_certificate` derives "7 states ... 3 + 3 + 1" while the body asserts 8 (value 3 in the waiting state and the dead state). The prose is wrong; fix it to 3 + 3 + 2 and name the dead state. | qsl-analyze/tests/it/liveness.rs:303-311, 324 |
+| FND-008 | low | Style note: `use qsl_eval::simulation::model::{..., ModelSystem, ModelSystem as System}` imports one type under two names, and both are used (`ModelSystem::new`, `System<'a>`). Use one name. | qsl-analyze/src/model_check/liveness.rs:45-47 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The model-only pass that replaced the `Dead` state (`dead_phase`) runs outside every run budget. It walks model states breadth-first from the dead roots with no `max_states` or `max_transitions` check, and its states count toward no total ("count toward no limit or total"). A request with `max_states` 1 over a subject whose negation dies at the first step can still read letters and expand contracts over the whole reachable model, and then return `Violated`, `Undecided` or the certificate refusal, never `Stopped{MaxStates}`. FR-126 says reaching `max_states` or `max_transitions` stops the run, and every terminal record states whether a limit was reached. Scenario: `positions_past_a_dead_automaton_are_still_read` with `max_states` 1 explores values 2 and 3 after the one product state. Charge dead-pass states and edges to the run's remaining budget (and report them), or get STD-203 to state that this pass is unbudgeted. | qsl-analyze/src/model_check/liveness.rs:967-1090 |
+| FND-010 | low | The dead pass skips any model state that a product state already covers (`examined` is seeded with every product state's model digest), even when the dead path reaches it at a smaller depth. An undefined letter or contract at such a state is then reported at the product's deeper position, with a longer prefix, not at the shallowest position UE-4 ranks first. The refutation is still valid, so this is canonical ordering only. Seed `examined` per depth (keep the shallowest depth per model state), or rank the product's hit against the dead path's depth for that state. | qsl-analyze/src/model_check/liveness.rs:977-993 |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | The model-only pass charges its states and edges against what is left of the budget, but never adds them to `Totals`. The next binding's `retain` computes its remaining `max_states` / `max_transitions` from `totals.states` / `totals.edges`, so it gets that budget back. With n instances, each binding's dead pass can spend up to the run's whole remaining budget again: up to about n x `max_states` model states without a `Stopped`, which is SR-13081 FND-002's overrun returning through the dead pass. The run's stats also omit these states. Scenario: two counters bound to `eventually holds(c.value = 1)`, each instance's negation dies at value 1, `max_states` set just above one product's size. Binding a's dead pass reads the rest of the model within budget, and binding b's product and dead pass then run on a budget that ignores it. Add the pass's charged states and edges to `Totals` (or carry `states_left` / `edges_left` across bindings), and assert it with a two-instance case. | qsl-analyze/src/model_check/liveness.rs:723, 1009-1014 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d5f75958d: `nearest` breaks on `reached > length`; unit test `a_vertex_obligation_ties_an_edge_obligation_at_the_same_distance` asserts the CX-5 walk v0 v1 v0 v2 v0. |
+| FND-002 | fixed | d5f75958d: each binding's `retain` gets the run's remaining `max_states` / `max_transitions`, and the reached limit reports the request's value; `the_state_budget_is_shared_by_every_instance` covers it. |
+| FND-003 | fixed | d5f75958d: the `Dead` property state and the extra acceptance set are removed; the product has 15 states per instance over ADR-018 section 6's example (`the_example_unit_has_a_fifteen_state_product_per_instance`). The replacement pass is FND-009/FND-010. |
+| FND-004 | fixed | d5f75958d: `len()` adds the terminal stutter step; the AC-3 test asserts `len() == 4` and `prefix.len() == 3`. |
+| FND-005 | fixed | d5f75958d: `Totals::add` keeps the maximum automaton-state count; the shared-budget test asserts two instances report the same count as one. |
+| FND-006 | fixed | d5f75958d: the `TC-521` tag is removed from both interim-refusal tests. |
+| FND-007 | fixed | d5f75958d: with no dead state the product has 7 states; the doc comment derives 3 + 3 + 1 and the test asserts 7. |
+| FND-008 | fixed | d5f75958d: the import is `ModelSystem` only, and `System` is gone. |
+| FND-009 | fixed | 35b1217aa: `dead_phase` charges each new model state and each edge against the run's remaining `max_states` / `max_transitions`, and stops with `Stopped{MaxStates}` or `Stopped{MaxTransitions}` naming the request's value; `positions_past_a_dead_automaton_are_still_read` asserts both with `max_states` 1 and `max_transitions` 0. The cross-binding remainder is FND-011. |
+| FND-010 | fixed | 35b1217aa: `Depths::reach` re-admits a model state when the pass reaches it shallower than any product state or earlier arrival, so its finding ranks at the shallowest position; unit test `a_shallower_arrival_at_a_known_model_state_is_news`. |
+| FND-011 | fixed | 0073ea587: `Totals` carries `charged_states` / `charged_edges`, `Totals::remaining` subtracts them for the next binding's product and pass, and `the_model_only_pass_spends_the_budget_the_next_instance_gets` asserts that the two-instance least budget is the sum of the single-instance ones. The charged states stay out of `product_states` by design; they are not product states. |

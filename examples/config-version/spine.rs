@@ -204,10 +204,10 @@ fn write_current(
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     };
     Ok(Written {
@@ -296,11 +296,11 @@ fn written(directory: &Path, case: Case) -> io::Result<Written> {
     }
 }
 
-/// Emits FR-108's spine files beside the native ones `fixtures::write`
-/// already wrote in `directory`: the unit, the domain package, the FR-106
-/// documents, and a `clause-run-request.json` (reproducibility only, see
-/// this module's own doc).
+/// Emits FR-108's spine files into `directory`, creating it: the unit, the
+/// domain package, the FR-106 documents, and a `clause-run-request.json`
+/// (reproducibility only, see this module's own doc).
 pub fn write(directory: &Path, case: Case) -> io::Result<()> {
+    std::fs::create_dir_all(directory)?;
     let unit = unit_text();
     write_json(directory, "spine-unit.native", unit.as_bytes())?;
     write_json(
@@ -317,6 +317,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
                 ClauseSelectionInput::Current { .. } => "current",
                 ClauseSelectionInput::PreCall { .. } => "pre-call",
                 ClauseSelectionInput::Invocation { .. } => "invocation",
+                ClauseSelectionInput::Context { .. } => "context",
             },
         }),
         ClauseRunSelection::Function {
@@ -338,6 +339,13 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
             "kind": "frame",
             "operation": operation.to_string(),
         }),
+        // FR-312's request wire has no temporal selection yet.
+        ClauseRunSelection::Temporal { .. } => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a temporal selection has no clause-run/1 wire form",
+            ))
+        }
     };
     let request = json!({"format": "clause-run/1", "request": {
         "source": {"file": "spine-unit.native", "identity": "example/config-version-spine-unit"},
@@ -399,6 +407,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         invocations: written.invocations,
         selection: written.selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);

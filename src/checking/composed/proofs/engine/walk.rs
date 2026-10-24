@@ -157,6 +157,8 @@ impl<'s, 'a> Builder<'s, 'a> {
                             )
                         }
                         NativeType::Boolean
+                        | NativeType::Uuid
+                        | NativeType::String
                         | NativeType::Scalar { .. }
                         | NativeType::Enumeration { .. }
                         | NativeType::Reference { .. }

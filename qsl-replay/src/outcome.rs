@@ -4,7 +4,9 @@
 //! serializer.
 //!
 //! A driver writes a document with a constructor over the operation's own
-//! outcome ([`OutcomeDocument::from_check`], [`OutcomeDocument::from_package`],
+//! outcome ([`OutcomeDocument::from_parse`], [`OutcomeDocument::from_format`],
+//! [`OutcomeDocument::from_check`],
+//! [`OutcomeDocument::from_package`],
 //! [`OutcomeDocument::from_replay`]), or, for the operations whose outcome
 //! types live above this crate (`prove`, `analyze`, `monitor`), with
 //! [`OutcomeDocument::settled`] over their items; [`OutcomeDocument::to_bytes`]
@@ -21,24 +23,62 @@
 //! violation; the label `undefined` appears only as the category of a
 //! non-proof evaluation outcome such as `execute`.
 
-use qsl_foundation::diagnostic::{Category, Code, Locus, StageFailure, Staged};
+use qsl_cst::format::FormatRefusal;
+use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
+use quire_semantic_value::catalog::Category;
 use serde::{Serialize, Serializer};
 
+use crate::certificate::{CertificateLocus, CertificateRule};
+use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
-    DeclineCode, InconclusiveCause, ReportedInconclusiveCause, TerminalRecord, TerminalValue,
+    Certification, DeclineCode, IncompleteCause, InconclusiveCause, InstanceBound, ProofBasis,
+    ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
+    UnavailabilityCause,
 };
 use crate::result::ReplayResult;
+use crate::spine::kernel_undefined_reason;
 use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
-    FrontEndFailure, RunRefusal, SpineStage,
+    FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
 };
+use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
+use qsl_eval::temporal::UndefinedCause;
+use quire_semantic_value::fairness::PropertyForm;
+
+/// The format refusal projection consumed by the replay outcome facade.
+///
+/// This keeps the public facade signature in the replay vocabulary while the
+/// conversion below preserves the formatter's typed diagnostic.
+#[doc(hidden)]
+pub struct FormatOutcomeRefusal {
+    category: Category,
+    diagnostic: OutcomeDiagnostic,
+}
+
+impl From<&FormatRefusal> for FormatOutcomeRefusal {
+    fn from(refusal: &FormatRefusal) -> Self {
+        let diagnostic = refusal.diagnostic();
+        Self {
+            category: diagnostic.code.category(),
+            diagnostic: OutcomeDiagnostic::new(
+                Some(diagnostic.cause.as_str()),
+                diagnostic.code.as_str(),
+                diagnostic
+                    .region
+                    .as_ref()
+                    .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
+                diagnostic.message.clone(),
+            ),
+        }
+    }
+}
 
 /// The document's `format` member.
 pub const OUTCOME_FORMAT: &str = "quire-outcome/1";
@@ -142,6 +182,9 @@ pub enum ItemLabel {
     Inconclusive,
     /// The tool failed.
     Failed,
+    /// A completed statistical run's measurement (FR-192), never proof
+    /// evidence.
+    Measured,
 }
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
@@ -166,6 +209,101 @@ pub struct ItemCause {
     code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parity: Option<ParityReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depth: Option<u64>,
+    #[serde(
+        serialize_with = "cancel_source",
+        skip_serializing_if = "Option::is_none"
+    )]
+    source: Option<CancelCause>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule: Option<CertificateRule>,
+    #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
+    certificate_at: Option<CertificateLocus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setting: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    boundary_states: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_depth: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reduction: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    form: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    population: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    initial: Option<u64>,
+    /// The generator's moved keys, each `[from, to]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generator: Option<Vec<(String, String)>>,
+    /// A `well-definedness-unchecked` cause's witness source per initial
+    /// state, in initial-state order (QSpec FR-391).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources: Option<Vec<WitnessSource>>,
+    /// The EN-4 refusal an `unsupported-requested-capability` cause names
+    /// (FR-192).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refusal: Option<&'static str>,
+    /// A `total-above-draw-range` cause's scaled total, as a decimal string
+    /// (FR-189-AC-7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total: Option<String>,
+    /// A `memory-bound-reached` or `instance-bound-reached` cause's request
+    /// member (QSpec FR-439, FR-428).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bound: Option<&'static str>,
+    /// A `memory-bound-reached` or `instance-bound-reached` cause's count of
+    /// limited states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    states: Option<u64>,
+    /// A `weak-access-shape` cause's site (QSpec FR-439).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    site: Option<String>,
+    /// A `weak-access-shape` cause's transition identity, in its canonical
+    /// text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transition: Option<String>,
+    /// A `weak-access-shape` cause's shape, in its canonical text, written
+    /// to the wire as the JSON it is.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "raw_json")]
+    shape: Option<String>,
+}
+
+/// `text`, canonical JSON, written as the JSON value it spells; text that is
+/// not JSON fails the serialization.
+fn raw_json<S: Serializer>(text: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    match text {
+        Some(text) => serde_json::value::RawValue::from_string(text.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// A property form's spelling on the outcome wire.
+fn form_str(form: PropertyForm) -> &'static str {
+    match form {
+        PropertyForm::ReachableInvariant => "reachable-invariant",
+        PropertyForm::BoundedMltl => "bounded-mltl",
+        PropertyForm::Safety => "safety",
+        PropertyForm::Liveness => "liveness",
+    }
+}
+
+fn cancel_source<S: Serializer>(
+    source: &Option<CancelCause>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match source {
+        Some(CancelCause::Requested) => serializer.serialize_str("requested"),
+        Some(CancelCause::Deadline) => serializer.serialize_str("deadline"),
+        None => serializer.serialize_none(),
+    }
 }
 
 impl ItemCause {
@@ -176,6 +314,28 @@ impl ItemCause {
             cause: None,
             code: None,
             parity: None,
+            depth: None,
+            source: None,
+            rule: None,
+            certificate_at: None,
+            limit: None,
+            value: None,
+            setting: None,
+            boundary_states: None,
+            max_depth: None,
+            reduction: None,
+            form: None,
+            population: None,
+            initial: None,
+            generator: None,
+            sources: None,
+            refusal: None,
+            total: None,
+            bound: None,
+            states: None,
+            site: None,
+            transition: None,
+            shape: None,
         }
     }
 
@@ -192,6 +352,75 @@ impl ItemCause {
     fn inconclusive(cause: &ReportedInconclusiveCause) -> Self {
         let mut item = Self::kind(cause.as_str());
         match cause {
+            ReportedInconclusiveCause::Cause(InconclusiveCause::CertificateRejected {
+                rule,
+                at,
+            }) => {
+                item.rule = Some(*rule);
+                item.certificate_at = Some(at.clone());
+            }
+            ReportedInconclusiveCause::Cause(
+                InconclusiveCause::BoundReached { depth }
+                | InconclusiveCause::InductionNotClosed { depth },
+            ) => {
+                item.depth = Some(*depth);
+            }
+            ReportedInconclusiveCause::Cause(
+                InconclusiveCause::UndecidedSuccessor
+                | InconclusiveCause::NoInitialState
+                | InconclusiveCause::NoInstance
+                | InconclusiveCause::MatchUndetermined
+                | InconclusiveCause::VacuousMatch
+                | InconclusiveCause::MappingUndetermined
+                | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::SolverInconclusive,
+            ) => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
+                reduction,
+                form,
+            }) => {
+                item.reduction = Some(reduction.as_str());
+                item.form = Some(form_str(*form));
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::SymmetryBroken {
+                population,
+                cause: SymmetryBrokenCause::InitialStatesNotClosed { initial, generator },
+            }) => {
+                item.population = Some(population.node.clone());
+                item.initial = Some(*initial);
+                item.generator = Some(
+                    generator
+                        .maps()
+                        .values()
+                        .flatten()
+                        .map(|(from, to)| (from.clone(), to.clone()))
+                        .collect(),
+                );
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ConstraintReached {
+                boundary_states,
+            }) => {
+                item.boundary_states = Some(*boundary_states);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionHorizon { max_depth }) => {
+                item.max_depth = Some(*max_depth);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::MemoryBoundReached {
+                bound,
+                states,
+            }) => {
+                item.bound = Some(bound.member.as_str());
+                item.value = Some(bound.value);
+                item.states = Some(*states);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::InstanceBoundReached {
+                bound,
+                states,
+            }) => {
+                item.bound = Some(InstanceBound::MEMBER);
+                item.value = Some(bound.value);
+                item.states = Some(*states);
+            }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
@@ -206,6 +435,11 @@ impl ItemCause {
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::WellDefinednessUnchecked {
+                sources,
+            }) => {
+                item.sources = Some(sources.clone());
+            }
         }
         item
     }
@@ -218,8 +452,59 @@ pub struct OutcomeItem {
     request_index: usize,
     result: ItemLabel,
     cause: Option<ItemCause>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    basis: Option<ProofBasis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    certification: Option<Certification>,
+    /// A `measured` item's QSpec FR-409 decision: `accepted`, `rejected` or
+    /// `undecided`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    measured: Option<&'static str>,
     #[serde(serialize_with = "category_str")]
     category: Category,
+}
+
+/// The catalogued reason of an undefined value: the kernel's own spelling,
+/// a family record's reason, or `insufficient-data` for a window.
+fn undefined_reason(cause: &UndefinedCause) -> &'static str {
+    match cause {
+        UndefinedCause::Kernel(reason) => kernel_undefined_reason(reason.clone()),
+        UndefinedCause::Family(record) => record.reason.as_str(),
+        UndefinedCause::InsufficientData(_) => "insufficient-data",
+    }
+}
+
+/// QSpec FR-409's `measured` label and FR-331 cause of a statistical
+/// verdict: `undefined-evaluation{where, cause}` for a rejection by an
+/// undefined sample, `where` naming its test, trace and position, the
+/// undecided cause for `undecided`, no cause otherwise.
+fn measured(verdict: &StatisticalVerdict) -> (&'static str, Option<ItemCause>) {
+    match verdict.decision {
+        Decision::Accepted => ("accepted", None),
+        Decision::Rejected => (
+            "rejected",
+            verdict
+                .tests
+                .iter()
+                .find_map(|test| test.undefined.as_ref())
+                .map(|undefined| {
+                    ItemCause::undefined_evaluation(
+                        format!(
+                            "test {}, trace {}, position {}",
+                            undefined.test, undefined.trace, undefined.evaluation.site.position
+                        ),
+                        undefined_reason(&undefined.evaluation.cause),
+                    )
+                }),
+        ),
+        Decision::Undecided(cause) => (
+            "undecided",
+            Some(ItemCause::kind(match cause {
+                statistical::UndecidedCause::IndifferenceRegion => "indifference-region",
+                statistical::UndecidedCause::UndecidedSuccessor => "undecided-successor",
+            })),
+        ),
+    }
 }
 
 impl OutcomeItem {
@@ -228,7 +513,11 @@ impl OutcomeItem {
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
         let (result, cause) = match value {
-            TerminalValue::Proved { success_checks: 0 } | TerminalValue::Inconclusive(_) => (
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            }
+            | TerminalValue::Inconclusive(_) => (
                 ItemLabel::Inconclusive,
                 value
                     .inconclusive_cause()
@@ -247,19 +536,99 @@ impl OutcomeItem {
                     ..ItemCause::kind(cause.as_str())
                 }),
             ),
-            TerminalValue::Unsupported(cause) => (
-                ItemLabel::Unsupported,
-                Some(ItemCause::kind(cause.as_str())),
-            ),
-            TerminalValue::Incomplete(cause) => {
-                (ItemLabel::Incomplete, Some(ItemCause::kind(cause.as_str())))
+            TerminalValue::Unsupported(cause) => {
+                let mut item = ItemCause {
+                    code: cause.code().map(str::to_owned),
+                    ..ItemCause::kind(cause.as_str())
+                };
+                match cause {
+                    UnavailabilityCause::StatisticalRequest(refusal) => {
+                        item.refusal = Some(refusal.as_str());
+                    }
+                    UnavailabilityCause::TotalAboveDrawRange { total } => {
+                        item.total = Some(total.to_string());
+                    }
+                    UnavailabilityCause::WeakAccessShape {
+                        site,
+                        transition,
+                        shape,
+                    } => {
+                        item.site = Some(site.clone());
+                        item.transition.clone_from(transition);
+                        item.shape = Some(shape.clone());
+                    }
+                    UnavailabilityCause::SolverAbsent
+                    | UnavailabilityCause::BackendAbsent
+                    | UnavailabilityCause::MissingFairnessPremise { .. }
+                    | UnavailabilityCause::UnsupportedReduction { .. }
+                    | UnavailabilityCause::HiddenFieldLiveness
+                    | UnavailabilityCause::StrongAbstractFairness
+                    | UnavailabilityCause::NotMarkov
+                    | UnavailabilityCause::ConfidenceBeyondPrecision
+                    | UnavailabilityCause::PunctualInterval { .. } => {}
+                }
+                (ItemLabel::Unsupported, Some(item))
             }
-            TerminalValue::Failed => (ItemLabel::Failed, None),
+            TerminalValue::Incomplete(cause) => {
+                let mut item = ItemCause::kind(cause.as_str());
+                match cause {
+                    IncompleteCause::Cancelled { source } => item.source = Some(*source),
+                    IncompleteCause::LimitReached { limit, value } => {
+                        item.limit = Some(limit.as_str());
+                        item.value = Some(*value);
+                        item.setting = Some(limit.setting());
+                    }
+                    IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
+                }
+                (ItemLabel::Incomplete, Some(item))
+            }
+            TerminalValue::Failed => (
+                ItemLabel::Failed,
+                record.diagnostic().map(|diagnostic| ItemCause {
+                    code: Some(diagnostic.code().to_owned()),
+                    ..ItemCause::kind(diagnostic.cause())
+                }),
+            ),
+            TerminalValue::Measured(verdict) => (ItemLabel::Measured, measured(verdict).1),
+        };
+        let (basis, certification) = match value {
+            TerminalValue::Proved {
+                basis,
+                certification,
+            } => {
+                if result == ItemLabel::Proved {
+                    (Some(basis.clone()), Some(*certification))
+                } else {
+                    (None, None)
+                }
+            }
+            TerminalValue::Tested
+            | TerminalValue::Refuted
+            | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_)
+            | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_)
+            | TerminalValue::Failed
+            | TerminalValue::Measured(_) => (None, None),
+        };
+        let measured = match value {
+            TerminalValue::Measured(verdict) => Some(measured(verdict).0),
+            TerminalValue::Proved { .. }
+            | TerminalValue::Tested
+            | TerminalValue::Refuted
+            | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_)
+            | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_)
+            | TerminalValue::Failed => None,
         };
         Self {
             request_index: record.request_index().get(),
             result,
             cause,
+            basis,
+            certification,
+            measured,
             category: value.category(),
         }
     }
@@ -275,6 +644,9 @@ impl OutcomeItem {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
             cause: Some(ItemCause::undefined_evaluation(at, cause)),
+            basis: None,
+            certification: None,
+            measured: None,
             category: Category::Violation,
         }
     }
@@ -466,6 +838,16 @@ pub enum ResultValue {
         /// The decimal digits.
         decimal: String,
     },
+    /// An exact model reference identity triple.
+    Reference {
+        /// The object universe identity.
+        universe: String,
+        /// The most-specific object type identity.
+        #[serde(rename = "type")]
+        object_type: String,
+        /// The authored object identity.
+        object_identity: String,
+    },
 }
 
 /// The evaluation result of an `execute` outcome (FR-286's `result`).
@@ -498,6 +880,7 @@ pub struct ResultLimit {
     bound: String,
     counter: String,
     field: &'static str,
+    setting: &'static str,
 }
 
 impl From<&CallIncomplete> for ResultLimit {
@@ -507,6 +890,7 @@ impl From<&CallIncomplete> for ResultLimit {
             bound: incomplete.record.limit.to_string(),
             counter: incomplete.counter().to_string(),
             field: incomplete.limits_field(),
+            setting: incomplete.setting().name(),
         }
     }
 }
@@ -607,6 +991,40 @@ impl OutcomeDocument {
         &self.diagnostics
     }
 
+    /// The document of a `parse` outcome: success at S2, with no items,
+    /// diagnostics, artifacts or evaluation result; a failure uses the
+    /// front-end's category, stage and diagnostic without running a stage.
+    pub fn from_parse(result: &Result<Staged<ParsedSource>, FrontEndFailure>) -> Self {
+        match result {
+            Ok(_) => Self::new(Operation::Parse, Some(OutcomeStage::S2), Category::Success),
+            Err(failure) => Self::from_failure(Operation::Parse, failure),
+        }
+    }
+
+    /// The document of a `format` outcome. The complete UTF-8 text stays in
+    /// the staged success value; this non-execute document has no result or
+    /// artifacts. S2 is the reporting default, not a stage run by this adapter.
+    /// Refusals retain their original typed diagnostic and catalog category;
+    /// internal failures report no stage (FR-286).
+    pub fn from_format<E>(result: &Result<Staged<String>, E>) -> Self
+    where
+        for<'a> &'a E: Into<FormatOutcomeRefusal>,
+    {
+        match result {
+            Ok(_) => Self::new(Operation::Format, Some(OutcomeStage::S2), Category::Success),
+            Err(refusal) => {
+                let refusal: FormatOutcomeRefusal = refusal.into();
+                let stage = if refusal.category == Category::InternalFailure {
+                    None
+                } else {
+                    Some(OutcomeStage::S2)
+                };
+                Self::new(Operation::Format, stage, refusal.category)
+                    .with_diagnostics(vec![refusal.diagnostic])
+            }
+        }
+    }
+
     /// The document of a `check` outcome: success at S4, which mints no
     /// identity, so no artifact; a failure names its category and one
     /// diagnostic.
@@ -674,7 +1092,7 @@ impl OutcomeDocument {
 
     /// The document of an `operation` that hit a broken internal invariant:
     /// internal failure, at no stage, with the fault's catalog code.
-    fn faulted(operation: Operation, fault: &qsl_foundation::diagnostic::InternalFault) -> Self {
+    fn faulted(operation: Operation, fault: &quire_semantic_value::catalog::InternalFault) -> Self {
         Self::new(operation, None, fault.category()).with_diagnostics(vec![OutcomeDiagnostic::new(
             Some(fault.catalog_code().cause()),
             fault.catalog_code().code(),
@@ -732,6 +1150,15 @@ impl OutcomeDocument {
                         CallValue::Integer(value) => ResultValue::Integer {
                             decimal: value.to_string(),
                         },
+                        CallValue::Reference(reference) => ResultValue::Reference {
+                            universe: qsl_semantics::model::key::hex(
+                                reference.universe().as_bytes(),
+                            ),
+                            object_type: qsl_semantics::model::key::hex(
+                                reference.object_type().as_bytes(),
+                            ),
+                            object_identity: reference.object().as_str().to_owned(),
+                        },
                     },
                 });
             }
@@ -765,12 +1192,47 @@ impl OutcomeDocument {
                 .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)]),
                 RunRefusal::Cancelled(cause) => Self::cancelled(Operation::Execute, *cause),
                 RunRefusal::Fault(fault) => Self::faulted(Operation::Execute, fault),
+                // FR-277: a supplied-phase stop is phase-marked, not a
+                // catalog record. Its category is the document's; the shared
+                // result contract has no field for the phase context yet, so
+                // nothing is invented for it here.
+                RunRefusal::Supplied(stop) => match stop.cause {
+                    quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(cause) => {
+                        Self::cancelled(Operation::Execute, cause)
+                    }
+                    quire_semantic_value::supplied_stop::SuppliedCause::Limit(_) => Self::new(
+                        Operation::Execute,
+                        Some(OutcomeStage::S6a),
+                        refusal.category(),
+                    ),
+                    quire_semantic_value::supplied_stop::SuppliedCause::Input { .. }
+                    | quire_semantic_value::supplied_stop::SuppliedCause::Storage(_)
+                    | quire_semantic_value::supplied_stop::SuppliedCause::Capacity(_) => Self::new(
+                        Operation::Execute,
+                        Some(OutcomeStage::S6a),
+                        refusal.category(),
+                    )
+                    .with_diagnostics(vec![OutcomeDiagnostic::new(
+                        qsl_eval::value::supplied_stop_cause(stop),
+                        qsl_eval::value::supplied_stop_code(stop).as_str(),
+                        None,
+                        refusal.to_string(),
+                    )]),
+                },
+                RunRefusal::UnsupportedHelper(_) => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                ),
                 RunRefusal::MissingDeclaration { .. }
                 | RunRefusal::UnsupportedResult { .. }
                 | RunRefusal::UnknownParameter { .. }
                 | RunRefusal::DuplicateArgument { .. }
                 | RunRefusal::UnboundParameter { .. }
-                | RunRefusal::WrongValueKind { .. } => Self::new(
+                | RunRefusal::WrongValueKind { .. }
+                | RunRefusal::Admission { .. }
+                | RunRefusal::Storage { .. }
+                | RunRefusal::DanglingReference { .. } => Self::new(
                     Operation::Execute,
                     Some(OutcomeStage::S6a),
                     refusal.category(),
@@ -807,20 +1269,35 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::DependencyIdentityMismatch { .. }
         | ReplayRefusal::PackageIdMismatch { .. }
         | ReplayRefusal::UnknownFunction { .. }
+        | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
+        | ReplayRefusal::WrongReplayTarget { .. }
+        | ReplayRefusal::TargetMismatch { .. }
+        | ReplayRefusal::MalformedOperationTarget { .. }
+        | ReplayRefusal::AmbiguousOperation { .. }
         | ReplayRefusal::FrameIdentity(_)
         | ReplayRefusal::ClauseIdentity(_)
         | ReplayRefusal::UnknownClause { .. }
         | ReplayRefusal::WrongObservation { .. }
         | ReplayRefusal::Admission(_)
+        | ReplayRefusal::UnusedObjectEnvironment
+        | ReplayRefusal::ForeignReference { .. }
+        | ReplayRefusal::ObjectEnvironment(_)
         | ReplayRefusal::UnknownParameter(_)
         | ReplayRefusal::DuplicateArgument(_)
         | ReplayRefusal::UnboundParameter(_)
         | ReplayRefusal::Witness { .. }
+        | ReplayRefusal::Storage { .. }
         | ReplayRefusal::NotAPredicate { .. }
         | ReplayRefusal::NotAValueFunction { .. }
         | ReplayRefusal::ScalarIdentity(_)
         | ReplayRefusal::ParityBound(_)
+        | ReplayRefusal::Supplied(_)
+        | ReplayRefusal::UnsupportedHelper(_)
+        | ReplayRefusal::Cancelled(_)
+        | ReplayRefusal::NativePayload { .. }
+        | ReplayRefusal::ModelTrace(_)
+        | ReplayRefusal::UnfairLasso { .. }
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }
@@ -834,11 +1311,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::{CatalogCode, InternalFault};
     use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
+    use quire_semantic_value::catalog::{CatalogCode, InternalFault};
     use serde_json::{json, Value};
 
     use super::*;
@@ -899,7 +1377,7 @@ mod tests {
     }
 
     fn record(index: usize, value: TerminalValue) -> OutcomeItem {
-        OutcomeItem::from_terminal(&TerminalRecord::new(RequestIndex::new(index), value))
+        OutcomeItem::from_terminal(&TerminalRecord::from_value(RequestIndex::new(index), value))
     }
 
     /// FR-286-AC-1: `check` over the spine fixture is one whole document, at
@@ -994,7 +1472,13 @@ mod tests {
                     0,
                     TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
                 ),
-                record(1, TerminalValue::Proved { success_checks: 3 }),
+                record(
+                    1,
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Checks { success_checks: 3 },
+                        certification: Certification::Certified,
+                    },
+                ),
                 record(2, TerminalValue::Refuted),
             ],
         );
@@ -1002,7 +1486,7 @@ mod tests {
             r#"{"format":"quire-outcome/1","operation":"analyze","last_stage":"S6c","#,
             r#""category":"unsupported","items":["#,
             r#"{"request_index":0,"result":"unsupported","cause":{"kind":"solver-absent"},"category":"unsupported"},"#,
-            r#"{"request_index":1,"result":"proved","cause":null,"category":"success"},"#,
+            r#"{"request_index":1,"result":"proved","cause":null,"basis":{"type":"bounded-proof","checks":3},"certification":"certified","category":"success"},"#,
             r#"{"request_index":2,"result":"refuted","cause":null,"category":"violation"}"#,
             r#"],"diagnostics":[],"artifacts":[],"result":null}"#
         );
@@ -1020,14 +1504,439 @@ mod tests {
     #[trace("TC-770", "FR-286-AC-3")]
     #[test]
     fn a_vacuous_proof_is_inconclusive_never_proved() {
-        let item = serde_json::to_value(record(4, TerminalValue::Proved { success_checks: 0 }))
-            .expect("serializes");
+        let item = serde_json::to_value(record(
+            4,
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Certified,
+            },
+        ))
+        .expect("serializes");
         assert_eq!(
             item,
             json!({
                 "request_index": 4,
                 "result": "inconclusive",
                 "cause": {"kind": "kani-vacuous-proof"},
+                "category": "inconclusive",
+            })
+        );
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+    #[test]
+    fn proof_wire_keeps_exact_basis_and_certification_only_on_proved() {
+        let bases = [
+            (
+                ProofBasis::Checks { success_checks: 3 },
+                json!({"type": "bounded-proof", "checks": 3}),
+            ),
+            (ProofBasis::Exhaustive, json!({"type": "exhaustive"})),
+            (
+                ProofBasis::BoundedComplete { depth: 5 },
+                json!({"type": "bounded-complete", "depth": 5}),
+            ),
+            (
+                ProofBasis::Inductive { depth: 2 },
+                json!({"type": "inductive", "depth": 2}),
+            ),
+        ];
+        for (basis, expected_basis) in bases {
+            for (certification, expected_certification) in [
+                (Certification::Certified, "certified"),
+                (Certification::Uncertified, "uncertified"),
+                (Certification::Trusted, "trusted"),
+            ] {
+                let document = OutcomeDocument::settled(
+                    Operation::Prove,
+                    Some(OutcomeStage::S8),
+                    vec![record(
+                        6,
+                        TerminalValue::Proved {
+                            basis: basis.clone(),
+                            certification,
+                        },
+                    )],
+                );
+                let written: Value = serde_json::from_slice(&document.to_bytes().unwrap()).unwrap();
+                assert_eq!(
+                    written["items"],
+                    json!([{
+                        "request_index": 6,
+                        "result": "proved",
+                        "cause": null,
+                        "basis": expected_basis,
+                        "certification": expected_certification,
+                        "category": "success",
+                    }])
+                );
+            }
+        }
+        for value in [
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Trusted,
+            },
+            TerminalValue::Tested,
+            TerminalValue::Refuted,
+            TerminalValue::Failed,
+        ] {
+            let written = serde_json::to_value(record(0, value)).unwrap();
+            assert!(written.get("certification").is_none(), "{written}");
+            assert!(written.get("basis").is_none(), "{written}");
+        }
+    }
+
+    /// ADR-021 RV-2 to RV-4: the reduction causes keep their payloads on the
+    /// wire: the refused reduction and form, the population, initial state
+    /// and generator, and the number of boundary states.
+    #[test]
+    fn reduction_cause_wire_keeps_its_payload() {
+        use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
+        use qsl_eval::simulation::Permutation;
+        use qsl_semantics::model::key::DeclarationKey;
+        use quire_semantic_value::fairness::PropertyForm;
+
+        let population = DeclarationKey {
+            package: "test/sym".to_owned(),
+            node: "ix://test/sym/counters".to_owned(),
+        };
+        let swap = Permutation::of(
+            &population,
+            [
+                ("a".to_owned(), "b".to_owned()),
+                ("b".to_owned(), "a".to_owned()),
+            ],
+        );
+        for (value, cause) in [
+            (
+                InconclusiveCause::ReductionNotPreserving {
+                    reduction: ReductionKind::PartialOrder,
+                    form: PropertyForm::BoundedMltl,
+                },
+                json!({"kind": "reduction-not-preserving", "reduction": "partial-order",
+                    "form": "bounded-mltl"}),
+            ),
+            (
+                InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: SymmetryBrokenCause::InitialStatesNotClosed {
+                        initial: 0,
+                        generator: swap,
+                    },
+                },
+                json!({"kind": "symmetry-broken", "population": "ix://test/sym/counters",
+                    "initial": 0, "generator": [["a", "b"], ["b", "a"]]}),
+            ),
+            (
+                InconclusiveCause::ConstraintReached {
+                    boundary_states: 12,
+                },
+                json!({"kind": "constraint-reached", "boundary_states": 12}),
+            ),
+            (
+                InconclusiveCause::ReductionHorizon { max_depth: 2 },
+                json!({"kind": "reduction-horizon", "max_depth": 2}),
+            ),
+        ] {
+            let written =
+                serde_json::to_value(record(0, TerminalValue::Inconclusive(value))).unwrap();
+            assert_eq!(written["cause"], cause, "{written}");
+        }
+    }
+
+    /// FR-169-AC-8 on the wire (QSpec FR-391): a `well-definedness-unchecked`
+    /// cause carries its witness source per initial state.
+    #[trace("TC-614", "FR-169-AC-8")]
+    #[test]
+    fn well_definedness_unchecked_wire_keeps_its_sources() {
+        use crate::model_check::state_graph::WitnessSource;
+
+        let value = TerminalValue::Inconclusive(InconclusiveCause::WellDefinednessUnchecked {
+            sources: vec![WitnessSource::Explored, WitnessSource::Explored],
+        });
+        let written = serde_json::to_value(record(0, value)).unwrap();
+        assert_eq!(
+            written["cause"],
+            json!({"kind": "well-definedness-unchecked",
+                "sources": [{"type": "explored"}, {"type": "explored"}]}),
+            "{written}"
+        );
+    }
+
+    #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-4")]
+    #[test]
+    fn temporal_cause_wire_keeps_depth_and_cancellation_source() {
+        for (value, cause, category) in [
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 1 }),
+                json!({"kind": "bound-reached", "depth": 1}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 2 }),
+                json!({"kind": "induction-not-closed", "depth": 2}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor),
+                json!({"kind": "undecided-successor"}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::NoInitialState),
+                json!({"kind": "no-initial-state"}),
+                "inconclusive",
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Requested,
+                }),
+                json!({"kind": "cancelled", "source": "requested"}),
+                "incomplete",
+            ),
+            (
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Deadline,
+                }),
+                json!({"kind": "cancelled", "source": "deadline"}),
+                "incomplete",
+            ),
+        ] {
+            let written = serde_json::to_value(record(3, value)).unwrap();
+            assert_eq!(
+                written,
+                json!({
+                    "request_index": 3,
+                    "result": category,
+                    "cause": cause,
+                    "category": category,
+                })
+            );
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-9")]
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn certificate_query_wire_keeps_every_rule_and_query_part() {
+        use crate::QueryPart;
+
+        for (rule, expected_rule) in [
+            (CertificateRule::InitialMissing, "initial-missing"),
+            (CertificateRule::SuccessorMissing, "successor-missing"),
+            (CertificateRule::BadState, "bad-state"),
+            (CertificateRule::NotPartition, "not-partition"),
+            (CertificateRule::BackwardEdge, "backward-edge"),
+            (CertificateRule::WitnessFails, "witness-fails"),
+            (CertificateRule::QueryMismatch, "query-mismatch"),
+            (CertificateRule::ShapeMismatch, "shape-mismatch"),
+            (CertificateRule::ProofStepInvalid, "proof-step-invalid"),
+            (CertificateRule::NotRefutation, "not-refutation"),
+        ] {
+            for (part, expected_part) in [
+                (QueryPart::Unrolling, "unrolling"),
+                (QueryPart::Base, "base"),
+                (QueryPart::Step, "step"),
+            ] {
+                let item = record(
+                    2,
+                    TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                        rule,
+                        at: CertificateLocus::Query { part },
+                    }),
+                );
+                let document = OutcomeDocument::settled(
+                    Operation::Analyze,
+                    Some(OutcomeStage::S6c),
+                    vec![
+                        record(
+                            0,
+                            TerminalValue::Proved {
+                                basis: ProofBasis::Exhaustive,
+                                certification: Certification::Trusted,
+                            },
+                        ),
+                        record(
+                            1,
+                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached {
+                                depth: 9,
+                            }),
+                        ),
+                        item,
+                    ],
+                );
+                let bytes = document
+                    .to_bytes()
+                    .expect("query rejection document encodes");
+                assert_eq!(document.to_bytes().unwrap(), bytes);
+                let written: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(
+                    written,
+                    json!({
+                        "format": "quire-outcome/1",
+                        "operation": "analyze",
+                        "last_stage": "S6c",
+                        "category": "inconclusive",
+                        "items": [{
+                            "request_index": 0,
+                            "result": "proved",
+                            "cause": null,
+                            "basis": {"type": "exhaustive"},
+                            "certification": "trusted",
+                            "category": "success",
+                        }, {
+                            "request_index": 1,
+                            "result": "inconclusive",
+                            "cause": {"kind": "bound-reached", "depth": 9},
+                            "category": "inconclusive",
+                        }, {
+                            "request_index": 2,
+                            "result": "inconclusive",
+                            "cause": {"kind": "certificate-rejected", "rule": expected_rule, "at": expected_part},
+                            "category": "inconclusive",
+                        }],
+                        "diagnostics": [],
+                        "artifacts": [],
+                        "result": null,
+                    })
+                );
+            }
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-9")]
+    #[trace("TC-770", "FR-286-AC-3")]
+    #[test]
+    fn proof_step_wire_preserves_each_part_and_canonical_index() {
+        use crate::QueryPart;
+
+        for (part, expected_part) in [
+            (QueryPart::Unrolling, "unrolling"),
+            (QueryPart::Base, "base"),
+            (QueryPart::Step, "step"),
+        ] {
+            for (index, expected_index) in [
+                (0, "0"),
+                (7, "7"),
+                (41, "41"),
+                (9_007_199_254_740_992, "9007199254740992"),
+                (9_223_372_036_854_775_808, "9223372036854775808"),
+                (u64::MAX, "18446744073709551615"),
+            ] {
+                let at = CertificateLocus::ProofStep { part, index };
+                let item = record(
+                    2,
+                    TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                        rule: CertificateRule::ProofStepInvalid,
+                        at: at.clone(),
+                    }),
+                );
+                assert_eq!(item.category(), Category::Inconclusive);
+                assert_eq!(
+                    item.cause.as_ref().unwrap().certificate_at,
+                    Some(at.clone())
+                );
+                let document = OutcomeDocument::settled(
+                    Operation::Analyze,
+                    Some(OutcomeStage::S6c),
+                    vec![
+                        record(
+                            0,
+                            TerminalValue::Proved {
+                                basis: ProofBasis::Exhaustive,
+                                certification: Certification::Trusted,
+                            },
+                        ),
+                        record(
+                            1,
+                            TerminalValue::Inconclusive(InconclusiveCause::BoundReached {
+                                depth: 9,
+                            }),
+                        ),
+                        item,
+                    ],
+                );
+                let bytes = document
+                    .to_bytes()
+                    .expect("proof-step rejection document encodes");
+                assert_eq!(document.to_bytes().unwrap(), bytes);
+                let written: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(
+                    written,
+                    json!({
+                        "format": "quire-outcome/1",
+                        "operation": "analyze",
+                        "last_stage": "S6c",
+                        "category": "inconclusive",
+                        "items": [{
+                            "request_index": 0,
+                            "result": "proved",
+                            "cause": null,
+                            "basis": {"type": "exhaustive"},
+                            "certification": "trusted",
+                            "category": "success",
+                        }, {
+                            "request_index": 1,
+                            "result": "inconclusive",
+                            "cause": {"kind": "bound-reached", "depth": 9},
+                            "category": "inconclusive",
+                        }, {
+                            "request_index": 2,
+                            "result": "inconclusive",
+                            "cause": {
+                                "kind": "certificate-rejected",
+                                "rule": "proof-step-invalid",
+                                "at": {"part": expected_part, "index": expected_index},
+                            },
+                            "category": "inconclusive",
+                        }],
+                        "diagnostics": [],
+                        "artifacts": [],
+                        "result": null,
+                    })
+                );
+                assert_eq!(
+                    document.items()[2].cause.as_ref().unwrap().certificate_at,
+                    Some(at)
+                );
+            }
+        }
+    }
+
+    #[trace("TC-522", "FR-127-AC-10", "FR-072-AC-2")]
+    #[test]
+    fn replay_verdict_disagreement_writes_exact_replay_parity() {
+        let proved = Verdict::from_category(Category::Violation);
+        let replayed = Verdict::from_category(Category::Success);
+        let replay = crate::WitnessArmResult::settle(
+            proved,
+            replayed,
+            Category::Success,
+            Some(EvaluatedValue::Boolean(true)),
+            WitnessCheck::Agrees(None),
+            Vec::new(),
+            default_accounting(0),
+        );
+        assert_eq!(
+            replay.disagreement(),
+            Some(&DisagreementCause::Verdicts { proved, replayed })
+        );
+        let written = serde_json::to_value(record(
+            0,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                replay.disagreement().unwrap().clone(),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            written,
+            json!({
+                "request_index": 0,
+                "result": "inconclusive",
+                "cause": {"kind": "replay-parity", "parity": {
+                    "reason": "verdicts", "proved": "violation", "replayed": "success",
+                }},
                 "category": "inconclusive",
             })
         );
@@ -1051,8 +1960,10 @@ mod tests {
                 json!({"result": "declined", "cause": {"kind": "invalid-input", "code": "ill_typed"}, "category": "refusal"}),
             ),
             (
-                TerminalValue::Incomplete(IncompleteCause::Cancelled),
-                json!({"result": "incomplete", "cause": {"kind": "cancelled"}, "category": "incomplete"}),
+                TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                    source: CancelCause::Requested,
+                }),
+                json!({"result": "incomplete", "cause": {"kind": "cancelled", "source": "requested"}, "category": "incomplete"}),
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::ResourceExhausted),
@@ -1070,8 +1981,9 @@ mod tests {
                         crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
                             obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
                             package_id: (None, String::new()),
-                            function: QualifiedName::new(vec![Identifier::new("f").unwrap()])
-                                .unwrap(),
+                            function: Some(
+                                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                            ),
                             source: crate::ReplaySource::Input(Vec::new()),
                             limits: quire_exact::ScalarLimits {
                                 integer_bits: 1,
@@ -1172,6 +2084,50 @@ mod tests {
         );
     }
 
+    /// FR-255-AC-7: `seven` under the accounting limits the settings
+    /// operation returns for `accounting.work_units=0` settles `Incomplete` naming the
+    /// counter, bound, count and setting; under `accounting.work_units=1000000` it
+    /// completes with 7.
+    #[trace("TC-921", "FR-255-AC-7")]
+    #[test]
+    fn a_reached_budget_set_by_operand_names_its_setting() {
+        let run_under = |operand: &str| {
+            let accounting = crate::CallerLimits::from_operands([operand])
+                .expect("a settings operand")
+                .accounting
+                .0;
+            let call = Call {
+                function: "seven".to_owned(),
+                arguments: Vec::new(),
+                accounting,
+                supplied: Default::default(),
+            };
+            let (_, outcome) = run(
+                SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
+                "unit.native",
+                FIXTURE.as_bytes(),
+                &BTreeMap::new(),
+                &DependencyInput::default(),
+                SpineLimits::default(),
+                &call,
+                &ObjectEnvironment::default(),
+                &Cancel::new(),
+            )
+            .expect("seven runs");
+            json_of(&OutcomeDocument::from_call(&outcome))["result"].clone()
+        };
+        assert_eq!(
+            run_under("accounting.work_units=0"),
+            json!({"kind": "incomplete", "limit": {
+                "kind": "work_units", "bound": "0", "counter": "1",
+                "field": "work_units", "setting": "accounting.work_units"}})
+        );
+        assert_eq!(
+            run_under("accounting.work_units=1000000"),
+            json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
+        );
+    }
+
     /// FR-286-AC-5: `seven` completes with integer 7 in the `result`
     /// member, and a `check` under an already cancelled handle is incomplete
     /// with no last stage and a null `result`.
@@ -1182,6 +2138,7 @@ mod tests {
             function: "seven".to_owned(),
             arguments: Vec::new(),
             accounting: default_accounting(1_000_000),
+            supplied: Default::default(),
         };
         let (_, outcome) = run(
             SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
@@ -1191,6 +2148,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &call,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1210,6 +2168,7 @@ mod tests {
 
         let starved = Call {
             accounting: default_accounting(0),
+            supplied: Default::default(),
             ..call
         };
         let (_, outcome) = run(
@@ -1220,6 +2179,7 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
             &starved,
+            &ObjectEnvironment::default(),
             &Cancel::new(),
         )
         .expect("seven runs");
@@ -1234,7 +2194,8 @@ mod tests {
                 "diagnostics": [],
                 "artifacts": [],
                 "result": {"kind": "incomplete", "limit": {
-                    "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units"}},
+                    "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units",
+                    "setting": "accounting.work_units"}},
             })
         );
 
@@ -1282,7 +2243,13 @@ mod tests {
             Operation::Prove,
             Some(OutcomeStage::S8),
             vec![
-                record(0, TerminalValue::Proved { success_checks: 1 }),
+                record(
+                    0,
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Checks { success_checks: 1 },
+                        certification: Certification::Certified,
+                    },
+                ),
                 record(1, TerminalValue::Refuted),
                 record(2, declined),
                 record(3, TerminalValue::Incomplete(IncompleteCause::TimedOut)),
@@ -1339,6 +2306,7 @@ mod tests {
             code: CatalogCode::new("ill_typed", "type-mismatch"),
             fields: BTreeMap::new(),
             locus: Some(CallLocus {
+                file: "fixture.native".to_owned(),
                 source_digest: "sha256:ab".to_owned(),
                 span,
             }),
@@ -1447,7 +2415,9 @@ mod tests {
                 function: function.to_owned(),
                 arguments: Vec::new(),
                 accounting: default_accounting(1_000_000),
+                supplied: Default::default(),
             },
+            &ObjectEnvironment::default(),
             cancel,
         )
     }

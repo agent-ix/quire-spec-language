@@ -18,6 +18,9 @@ support table in `resources/native-v1/spec/functional/FR-095-preserve-native-tl-
 never from an installed TL version, a backend report or the classifier's own
 output. Each numbered group corresponds to the matching acceptance criterion.
 
+The correspondence Contract IR FR-350 constructs from a supported QSL
+classification is verified in [TC-1240](./TC-1240-establish-the-native-to-tl-temporal-correspondence.md).
+
 Groups 1–5 execute in `tests/composed_temporal_mapping.rs` and group 6 in
 `tests/composed_temporal_mapping_v2.rs`. No TL evaluator, bridge definition or
 contract-IR predicate projection participates; the classification is a total
@@ -28,26 +31,30 @@ selector.
 ## Test Procedure
 
 1. Compile one admitted declaration per support-table row: timestamped-event
-   finite window; a bounded past operator under each of the three profiles;
+   finite window; a bounded past and a bounded future operator together under
+   each false-extension profile; a bounded past operator alone under each
+   false-extension profile;
    event-position with bounded future operators under a complete
    surrounding execution and again under an open one; fixed-sample with bounded
    future operators under each closure; and a declaration reaching no bounded
    temporal operator under each false-extension profile. Require each to return
    exactly that row's disposition and, where supported, its TL target identity —
-   `mltl.closed-trace/v1` or `mltl.online-prefix/v1`. Inspect the classifier's
+   `mltl.closed-trace/v1`, `mltl.online-prefix/v1` or
+   `mltl.origin-complete-history/v1`. Inspect the classifier's
    inputs and require that no backend capability report, installed version,
    syntax match, historical result or decision-scope closure is consulted.
 2. Require the timestamped-event request to return unsupported naming the
-   finite-window dimension, and the bounded-past request to return unsupported
-   naming the past-operator dimension. Require neither result to carry a
+   finite-window dimension, and the request reaching both a past and a future
+   operator to return unsupported naming the mixed-direction dimension. Require neither result to carry a
    substitute formula, profile or clock, and require no index conversion to appear
    for the timestamped request.
 3. Inspect each unsupported result and require it to retain the native declaration
    subject, the selected profile identity, and the activation record.
    Re-read the source declaration after classification and require it unchanged.
 4. Compile a declaration unmatched on two dimensions at once — a bounded past
-   operator under the timestamped-event profile — and require both the
-   past-operator and finite-window dimensions named, not one summary cause.
+   and a bounded future operator under the timestamped-event profile — and
+   require both the mixed-direction and finite-window dimensions named, not one
+   summary cause.
 5. Require a supported classification to name its TL target identity and its
    outstanding bridge premises —
    total Boolean predicate projection, source and clause identity, model, type and
@@ -75,7 +82,7 @@ selector.
    binding, of an index no binding can represent, and of a binding that selects
    another definition, all of which the strict reader and the declaration lookup
    make unreachable. Group 6 exercises the
-   bounded-future rows under each profile; equivalence for the past-operator and
+   bounded-future rows under each profile; equivalence for the mixed-direction, past and
    no-operator rows follows by inspection, because `/1` and `/2` share one
    selection and classification path and differ only in the retained selection.
 
@@ -87,11 +94,9 @@ and its activation record; nothing is substituted or reduced. A `/2`
 classification retains the definition selection it authenticated, and a `/1`
 classification is never mistakable for one.
 
-The emission half of the bridge — the TL formula, valuation request and
-correspondence record under
-`ix://agent-ix/quire-specification/FR-095` — is not exercised here and remains
-blocked on `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL
-capability, recorded as remaining work on compiler
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38). A supported
-classification is a statement about the table, not evidence that any mapping was
-performed.
+This case verifies QSL's classification boundary only. Contract IR FR-350 owns
+the projection and result join; its full owner-reader, past-history, identity,
+mutation and limit vectors are specified by
+[TC-1240](./TC-1240-establish-the-native-to-tl-temporal-correspondence.md).
+A supported classification is an input to that bridge and does not itself claim
+that correspondence has been produced.

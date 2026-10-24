@@ -28,6 +28,17 @@ no later stage recovers a target from a name.
 A protocol with any refusal emits no checked node (ADR-012 §4.2): an
 unresolved or ambiguous scope fails before S4, with no partial substitute.
 
+A protocol whose anchors,
+binders and attempt bindings all resolve is then checked for the rest of
+its content by FR-218 (control nodes, channels, relationships, requirements,
+decisions) and FR-381 (captures, activation, compensation), which check every
+construct FR-308 builds. Such a protocol compiles, and
+the package holds the protocol nodes FR-383 specifies for it: the
+`protocol_clause` node of its name (FR-092) and the nodes of its roles,
+channels, queues, `run` tree, `finish`, `terminal` and compensation
+templates. Each attempt's operation anchor, frame and frame record reach the
+package beside them (FR-114, ADR-012 §12.2 Package row).
+
 ## Inputs
 
 - The protocol declaration's form with its `ScopedAnchorForm`s (FR-112).
@@ -133,44 +144,3 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
   `shared-grammar.md` (binder no-shadowing), and the catalog rows for
   `missing_declaration` and `ambiguous_declaration` in
   `definitions/native-diagnostics.md`.
-- The composed lane resolves the same references today in
-  `src/linking/composed/scopes/protocol.rs` (`structural`, with
-  `WrongTargetKind` and `IncompatibleReference`), with scope issues that
-  carry no catalog code; M-6d deletes that checker once this
-  requirement's checker replaces it.
-
-## Status
-
-Specified. Anchor resolution is implemented: nested-scope resolution, missing and ambiguous refusals, and
-the wrong-kind and channel-mismatch refusals of every site. Binder no-shadowing is
-implemented (the shadowing clause of "Refusals", AC-5
-and the shadowing half of AC-6), enforced protocol-wide (QSpec
-`shared-grammar.md`: binders are "unique in their enclosing declaration"),
-over a further S2 extension (`qsl_forms::protocol_clause::BinderForm`) that
-walks every binder position FR-112 itself does not capture, including the
-protocol's own `over (p)` input and `activation on each (p)` parameters.
-FR-114's attempt binding is implemented. A protocol whose anchors,
-binders and attempt bindings all resolve is then checked for the rest of
-its content. It checks and compiles only when it consists of a `using`
-profile alias, roles written `role R on M::T`, a `run` tree of `sequence`
-controls and `attempt` nodes, and a `finish` node, with every body a bare
-Boolean literal. In that case the `using` alias, each role's object type,
-each attempt's `by` role and each binder's declared type are resolved, and
-two roles of one name refuse `ambiguous_declaration`/`ambiguous-name` at
-each. Such a protocol compiles, but nothing emits the protocol itself: the
-package holds no node for its name, roles, `run` tree or `finish`. Only
-each attempt's operation anchor, frame and frame record reach the package
-(FR-114, ADR-012 §12.2 Package row). Any
-other construct is still refused `unsupported_construct`/
-`not-yet-implemented` at the earliest occurrence, because no checker reads
-it yet:
-
-- the node kinds `send`, `receive`, `effect`, `event`, `commit`, `check`,
-  `choice`/`case`, `parallel`/`branch`, `repeat`, `await` and `compensate`;
-- channels, relationships, `requires temporal` requirements, captures,
-  `activation on each`, replicated roles (`role R each ...`) and
-  `related by` clauses;
-- any body other than a bare Boolean literal.
-
-This means every protocol that holds an anchor site (all of them are in
-refused node kinds) still refuses, whether or not its anchors resolve.

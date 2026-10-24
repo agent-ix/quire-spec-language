@@ -21,6 +21,10 @@ Every step runs the gate as `cargo run --package xtask -- qualify --corpus <dir>
 1. Run a fixture corpus whose in-scope vectors all pass, over the default scope.
 2. Change one refusal vector's expected cause and run.
 3. Restore it, remove every vector of one capability and run.
+4. Run separate one-capability corpora whose sole vector settles
+   `unsupported`, `incomplete`, and `tool-failure`, respectively, using
+   TC-876's inputs. The last corpus is valid and readable, but its vector
+   names a missing source file.
 
 Tag the tests `#[trace("TC-880", "FR-353-AC-n")]`.
 
@@ -29,3 +33,5 @@ Tag the tests `#[trace("TC-880", "FR-353-AC-n")]`.
 - Step 1: `complete-v1: qualified`, exit 0.
 - Step 2: `not-qualified` naming that capability `failed`, exit 1.
 - Step 3: `not-qualified` naming that capability `uncovered`, exit 1.
+- Step 4: each run reports `not-qualified`, names the capability's actual
+  outcome and exits 1. The missing source does not cause exit 2.

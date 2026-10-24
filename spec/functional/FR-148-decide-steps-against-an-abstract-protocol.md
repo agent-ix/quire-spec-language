@@ -46,7 +46,10 @@ often than the protocol allows, is refuted with a prefix that replays.
 - A `CheckedRefinement` with `AbstractSide::Protocol` (FR-147).
 - The abstract protocol subject's `ProtocolSystem` (ADR-027 TS-1), passed to
   FR-141 as `AbstractSystem::Protocol`, built
-  with the derived universes (ADR-020 RM-2) and the request's bindings.
+  with the derived universes (ADR-020 RM-2) and the request's bindings, from
+  the checked package that holds the clause: the declaring package, or the
+  dependency's `CheckedPackage` that `AbstractSide::Protocol::dependency`
+  names (FR-147).
 - FR-141's positions and steps.
 
 ## Outputs
@@ -62,7 +65,7 @@ often than the protocol allows, is refuted with a prefix that replays.
 
 - The **internal closure** of a set SHALL be the set together with every
   abstract protocol state reachable from a member by abstract steps whose
-  class an `internal` row names. Each closure step computed SHALL count
+  class the refinement's internal list names (`abstract_internal`). Each closure step computed SHALL count
   toward FR-101's `max_transitions`.
 
 ### Initial states (PR-3)
@@ -78,7 +81,8 @@ often than the protocol allows, is refuted with a prefix that replays.
   **visible** with that target's observation label: for an operation, any
   `attempt` or `cattempt` step of that operation with the row's receiver
   and arguments (and the concrete result when bound); for a node, a step of
-  that node whose binder record equals the row's expressions.
+  that node whose binder record agrees with the row's expressions on every
+  field the row gives.
 - A visible step SHALL pass when some member of the pre set has an enabled
   abstract step with its label whose post-state's visible fields equal the
   post mapped state. The post set SHALL be the internal closure of all such

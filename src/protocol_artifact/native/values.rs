@@ -171,6 +171,8 @@ impl ValueBuilder<'_> {
                             });
                         }
                         NativeType::Boolean
+                        | NativeType::Uuid
+                        | NativeType::String
                         | NativeType::Scalar { .. }
                         | NativeType::Enumeration { .. }
                         | NativeType::Reference { .. }
@@ -292,6 +294,8 @@ impl ValueBuilder<'_> {
                         NativeType::Object { model, role }
                         | NativeType::Reference { model, role } => (*model, *role),
                         NativeType::Boolean
+                        | NativeType::Uuid
+                        | NativeType::String
                         | NativeType::Scalar { .. }
                         | NativeType::Enumeration { .. }
                         | NativeType::Record { .. }

@@ -13,9 +13,9 @@
 //! wire's raw hex) from the same already-admitted preimage and asserts that
 //! mint agrees with IR's own already-verified `package_id.digest`, refusing
 //! if it does not (M-4 L2: defense against this reader's own
-//! canonicalization ever diverging from IR's -- e.g. if IR's `digest_json`
-//! were to switch to a real JCS encoder -- not a second, independent
-//! admission decision). What remains this layer's own job:
+//! encoding of the preimage and graph projection ever diverging from IR's
+//! (a different projection or byte ceiling, say) -- not a second,
+//! independent admission decision). What remains this layer's own job:
 //!
 //! - minting the package's own typed `PackageId` from the admitted identity
 //!   preimage via [`qsl_semantics::library::PackageId::of_preimage`] -- the only
@@ -71,14 +71,14 @@ use std::sync::Arc;
 
 use quire_contract_model::{
     read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageIncomplete,
+    CheckedPackageLimit, CheckedPackageReadLimits, CheckedPackageRefusal,
+    CheckedPackageRefusalCode, CheckedPackageV2, CheckedSourceMapEntry, CheckedSourceRef,
+    CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, Locus,
-    RefusalRecord, StageFailure, Staged,
+    Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
@@ -90,13 +90,23 @@ use qsl_semantics::library::{
     PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_semantics::model::key::hex;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
+mod clause_root;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
+mod timed_model;
+
+pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
+pub use timed_model::{
+    CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
+    CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep, ClockSlotSelector,
+    ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+};
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
 /// `Result` unpacked so a test matches every arm by pattern.
@@ -111,6 +121,10 @@ pub(crate) enum Read {
         source_map: PackageSourceMap,
         /// See [`V2Read::effective_limits`].
         effective_limits: V2ReadLimits,
+        /// The complete IR-admitted graph retained by the reader.
+        admitted: Arc<CheckedPackageV2>,
+        /// Typed timed-model projections reconstructed from the admitted graph.
+        timed_models: Vec<CheckedTimedModel>,
     },
     /// `StageFailure::Refused`.
     Refused(V2ReadRefusal),
@@ -119,7 +133,7 @@ pub(crate) enum Read {
     /// `StageFailure::Cancelled`.
     Cancelled(quire_exact::CancelCause),
     /// `StageFailure::Fault`.
-    Fault(qsl_foundation::diagnostic::InternalFault),
+    Fault(quire_semantic_value::catalog::InternalFault),
 }
 
 /// [`read_checked_package_v2`], viewed as a [`Read`].
@@ -137,12 +151,15 @@ pub(crate) fn read_v2(
                 package,
                 source_map,
                 effective_limits,
-                ..
+                admitted,
+                timed_models,
             } = staged.into_value();
             Read::Verified {
                 package,
                 source_map,
                 effective_limits,
+                admitted,
+                timed_models,
             }
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
@@ -459,7 +476,7 @@ impl V2ReadRefusal {
     pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
         match self {
             Self::UnsupportedVersion { wire, locus } => {
-                wire.refusal_record(Some((**locus).clone()))
+                qsl_foundation::diagnostic::refusal_record(wire, Some((**locus).clone()))
             }
             _ => None,
         }
@@ -610,6 +627,8 @@ pub(crate) struct V2Read {
     /// IR's admitted package, supplied to a later read whose
     /// `dependency_selections` name it.
     pub(crate) admitted: Arc<CheckedPackageV2>,
+    /// Typed timed-model projections reconstructed from the admitted graph.
+    pub(crate) timed_models: Vec<CheckedTimedModel>,
 }
 
 /// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified
@@ -622,15 +641,29 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
     Err(StageFailure::Refused(refusal))
 }
 
-/// `preimage`'s RFC 8785 bytes, encoded by `quire-canonical` (ADR-013 §2,
-/// ADR-013:113) under a byte ceiling of the reader's own `artifact_bytes`.
-/// Refuses with the encoder's reason.
+/// The package-identity preimage's RFC 8785 bytes, encoded by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113) under a byte ceiling of the
+/// reader's own `artifact_bytes`. The wire carries only the seven selections
+/// (FR-322 `identity_preimage`); the hashed preimage adds the
+/// `identity_projection` derived from the admitted `semantic_graph`, through
+/// IR's borrowed producer view. Refuses with the encoder's reason.
 fn canonical_preimage(
-    preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
+    package: &CheckedPackageV2,
     artifact_bytes: usize,
 ) -> Result<Vec<u8>, String> {
+    let selections = package.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &selections.version,
+        edition: &selections.edition,
+        profile_selections: &selections.profile_selections,
+        definition_selections: &selections.definition_selections,
+        model_selections: &selections.model_selections,
+        required_features: &selections.required_features,
+        dependency_selections: &selections.dependency_selections,
+        identity_projection: &package.graph().nodes,
+    };
     let limits = quire_canonical::Limits::new(u64::try_from(artifact_bytes).unwrap_or(u64::MAX));
-    quire_canonical::to_vec(preimage, limits).map_err(|error| error.to_string())
+    quire_canonical::to_vec(&preimage, limits).map_err(|error| error.to_string())
 }
 
 /// Read and verify `bytes` as a `quire.checked-package/v2` artifact claiming
@@ -662,24 +695,29 @@ pub(crate) fn read_checked_package_v2(
     }
     match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
+            let timed_models = match CheckedTimedModel::from_admitted(&package) {
+                Ok(models) => models,
+                Err(invariant) => {
+                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
+                }
+            };
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
             // §2, ADR-013:113: the one RFC 8785 implementation), encoded
-            // straight from IR's typed preimage: the encoder orders members
-            // itself. They are a canonical substring of the wire IR just
-            // admitted, so they fit its byte ceiling.
-            let preimage_bytes =
-                match canonical_preimage(package.identity_preimage(), limits.artifact_bytes) {
-                    Ok(bytes) => bytes,
-                    Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
-                };
+            // straight from IR's typed preimage and the admitted graph: the
+            // encoder orders members itself. IR hashed the same projection
+            // under the same byte ceiling when it admitted the wire.
+            let preimage_bytes = match canonical_preimage(&package, limits.artifact_bytes) {
+                Ok(bytes) => bytes,
+                Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
+            };
             let package_id = PackageId::of_preimage(&preimage_bytes);
             // L2: cross-check this reader's own recompute against IR's
             // already-verified `package_id.digest` (see the module doc).
             // `verify_package` below re-recomputes from the same
             // `preimage_bytes` this `package_id` was itself minted from, so
-            // it cannot by itself catch this reader's canonicalization ever
-            // diverging from IR's own -- only this comparison, against a
-            // value IR derived independently, can.
+            // it cannot by itself catch this reader's encoding of the
+            // preimage and graph projection diverging from IR's own -- only
+            // this comparison, against the digest IR verified, can.
             let ir_digest = package.package_id().digest.as_ref();
             if package_id.hex() != ir_digest {
                 return refused(V2ReadRefusal::Structural(Box::new(
@@ -726,6 +764,7 @@ pub(crate) fn read_checked_package_v2(
                     source_map,
                     effective_limits: limits,
                     admitted: Arc::from(package),
+                    timed_models,
                 })),
                 Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
             }
@@ -786,6 +825,15 @@ pub enum ImportViewRefusal {
         /// The closure entry's identity.
         identity: LibraryName,
     },
+    /// Evidence supplied for `package` conflicts with evidence already held
+    /// under the same key.
+    #[error("the evidence for {package} conflicts: {conflict}")]
+    Evidence {
+        /// The library identity whose evidence conflicted.
+        package: LibraryName,
+        /// The typed conflict, naming the exact key.
+        conflict: quire_contract_model::CheckedPackageEvidenceInsertionError,
+    },
     /// The I2 read of the package, or of a package of its closure, refused
     /// or reached a ceiling.
     #[error("the I2 read of {package} refused: {}", read_message(refusal))]
@@ -818,7 +866,7 @@ impl ImportViewRefusal {
                 ..
             } => refusal.code(),
             Self::Emission { refusal: None, .. } => Code::UnsupportedProjection,
-            Self::UnheldDependency { .. } => Code::RuntimeInvariant,
+            Self::UnheldDependency { .. } | Self::Evidence { .. } => Code::RuntimeInvariant,
             Self::Read {
                 refusal: StageFailure::Refused(refusal),
                 ..
@@ -889,22 +937,30 @@ pub fn read_import_view(
 #[derive(Debug, Default)]
 pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
 
+impl AdmittedPackages {
+    /// The package a [`read_import_view`] call admitted at `package_id`.
+    pub fn package(&self, package_id: &PackageId) -> Option<&CheckedPackageV2> {
+        self.0.get(package_id).map(Arc::as_ref)
+    }
+}
+
 /// Supply `evidence` with the admitted package of every entry of
 /// `package`'s `dependency_selections`, each read as [`read_import_view`]
-/// reads it: for a caller that reads `package`'s own bytes itself.
-#[cfg(test)]
-pub(crate) fn supply_closure(
+/// reads it under `limits`, with the supplied `domain_packages`: for a caller
+/// that reads `package`'s own bytes itself.
+pub fn supply_closure(
     package: &CheckedPackage,
+    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: V2ReadLimits,
     evidence: &mut CheckedPackageEvidence,
 ) -> Result<(), ImportViewRefusal> {
-    let domain_packages = BTreeMap::new();
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     ClosureReader {
         held,
-        domain_packages: &domain_packages,
+        domain_packages,
         admitted: BTreeMap::new(),
-        limits: V2ReadLimits::default(),
+        limits,
     }
     .supply(package, evidence)
 }
@@ -965,7 +1021,12 @@ impl ClosureReader<'_> {
         }
         let mut evidence = emission.evidence.clone();
         for (digest, document) in self.domain_packages {
-            evidence.insert_domain_package_document(hex(digest), document.as_slice());
+            evidence
+                .insert_domain_package_document(hex(digest), document.as_slice())
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: identity.clone(),
+                    conflict,
+                })?;
         }
         self.supply(package, &mut evidence)?;
         let pinned = PinnedRequest::single(identity.clone(), emission.package.package_id());
@@ -983,21 +1044,26 @@ impl ClosureReader<'_> {
         })
     }
 
-    /// Supply `evidence` with the admitted package of every entry of
-    /// `package`'s `dependency_selections`.
+    /// Supply `evidence` with the admitted package of every direct selection
+    /// in `package`'s lock.
     fn supply(
         &mut self,
         package: &CheckedPackage,
         evidence: &mut CheckedPackageEvidence,
     ) -> Result<(), ImportViewRefusal> {
         self.admit_closure(package)?;
-        for (dependency, resolved) in package.dependency_selections() {
+        for (dependency, resolved) in package.direct_dependency_selections() {
             let admitted = self.admitted.get(&resolved.package_id).ok_or_else(|| {
                 ImportViewRefusal::UnheldDependency {
                     identity: dependency.clone(),
                 }
             })?;
-            evidence.insert_dependency_package(dependency.as_str(), Arc::clone(admitted));
+            evidence
+                .insert_dependency_package(dependency.as_str(), Arc::clone(admitted))
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: dependency.clone(),
+                    conflict,
+                })?;
         }
         Ok(())
     }
@@ -1009,8 +1075,7 @@ impl ClosureReader<'_> {
     fn admit_closure(&mut self, package: &CheckedPackage) -> Result<(), ImportViewRefusal> {
         // (library identity, package id, whether its dependencies are queued)
         let mut pending: Vec<(LibraryName, PackageId, bool)> = package
-            .dependency_selections()
-            .iter()
+            .direct_dependency_selections()
             .rev()
             .map(|(identity, resolved)| (identity.clone(), resolved.package_id, false))
             .collect();
@@ -1026,7 +1091,7 @@ impl ClosureReader<'_> {
                 })?;
             if !expanded {
                 pending.push((identity, id, true));
-                for (dependency, resolved) in held.dependency_selections().iter().rev() {
+                for (dependency, resolved) in held.direct_dependency_selections().rev() {
                     if !self.admitted.contains_key(&resolved.package_id) {
                         pending.push((dependency.clone(), resolved.package_id, false));
                     }

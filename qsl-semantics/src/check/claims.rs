@@ -42,14 +42,15 @@ use std::ops::ControlFlow;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::InternalFault;
-use quire_exact::{IntegerInterval, NodeKey, Origin, ValueType};
+use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
 };
 use super::lowering::SemanticGraph;
 use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
+use super::references::{read_object, ModelReferences};
 use super::refusal::KeyFault;
 use super::{
     family::{OccurrenceMap, OccurrenceRole},
@@ -57,7 +58,7 @@ use super::{
 };
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
 use qsl_foundation::bound::DomainKind;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment, UnionMemberDeclaration};
 use quire_semantic_value::location::{Location, Origin as CheckOrigin};
 
 /// The fault stage name this module reports.
@@ -101,7 +102,7 @@ enum OperationRole {
 /// is the one place these identity strings are compared to decide
 /// narrow/scalar status; it is called once per site, not resolved once for
 /// the whole checked graph.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn operation_role(identity: &str) -> OperationRole {
     if identity == NARROW {
         OperationRole::Narrow
@@ -198,9 +199,25 @@ impl ClaimSite {
 pub struct ValueClaim {
     site: ClaimSite,
     domains: BTreeMap<(BinderSite, Vec<u32>), DomainKind>,
+    /// FR-062 "Extent": every extent root of the claim, whether or not its
+    /// type adds an unbounded domain.
+    roots: Vec<BinderSite>,
+    /// ADR-017 AR-4: the object types the claim's operands and guards read
+    /// model members of.
+    objects: BTreeSet<EffectiveId>,
+    /// FR-062 "Owner": the `Value` function declaration whose body holds the
+    /// site, set by `check` from the function it was checking.
+    owner: Option<String>,
 }
 
 impl ValueClaim {
+    /// The claim owned by the function `owner` (FR-062 "Owner").
+    #[must_use]
+    pub(crate) fn owned_by(mut self, owner: &str) -> Self {
+        self.owner = Some(owner.to_owned());
+        self
+    }
+
     /// The site the claim covers.
     pub fn site(&self) -> &ClaimSite {
         &self.site
@@ -264,10 +281,35 @@ impl PathGuard {
 pub struct RequirementRecord {
     requirements: Requirements,
     result_bound: ResultBound,
+    conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
+    references: ModelReferences,
+    /// FR-062 "Owner": the name of the `Value` function declaration whose
+    /// body holds the claim site; `None` for a record no function holds.
+    owner: Option<String>,
+    /// FR-062 "Extent": the parameter and binder nodes the claim's extent
+    /// is rooted at, including roots whose type adds no unbounded domain.
+    extent_roots: BTreeSet<WireNodeId>,
 }
 
 impl RequirementRecord {
+    /// The record with its owner replaced: the seam a test uses to build a
+    /// record map with a missing or unknown owner (FR-395-AC-10).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_owner(mut self, owner: Option<String>) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    /// FR-062 "Owner": the name of the `Value` function declaration whose
+    /// body holds this record's claim site, as the checked graph holds that
+    /// name. `None` for an `operation-contract` or `temporal-satisfaction`
+    /// record, which no function holds.
+    pub fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
+    }
+
     /// An unguarded record of an item whose result is a `value_type` typed
     /// at the type node `node`: a state clause's or an operation frame's
     /// `operation-contract` record (FR-104), which has no path condition.
@@ -275,12 +317,29 @@ impl RequirementRecord {
         requirements: Requirements,
         value_type: ValueType,
         node: WireNodeId,
+        references: ModelReferences,
     ) -> Self {
         Self {
             requirements,
             result_bound: ResultBound { value_type, node },
+            conversion_context: None,
             path_condition: Vec::new(),
+            references,
+            owner: None,
+            extent_roots: BTreeSet::new(),
         }
+    }
+
+    /// The model elements the record's claim references (ADR-017 AR-4).
+    pub(crate) fn references(&self) -> &ModelReferences {
+        &self.references
+    }
+
+    /// FR-062 "Extent": the nodes of the claim's extent roots. A function
+    /// parameter outside this set is read nowhere by the application or by
+    /// the guards of its path condition (FR-098 "unread parameters").
+    pub fn extent_roots(&self) -> &BTreeSet<WireNodeId> {
+        &self.extent_roots
     }
 
     /// The claim's capability kind and extent, each unbounded domain keyed
@@ -294,6 +353,14 @@ impl RequirementRecord {
         &self.result_bound
     }
 
+    /// The direct narrow occurrence that supplies this scalar application's
+    /// result bound, or `None` when the bound is the application's own type.
+    /// This context belongs to this requirement occurrence, not only to its
+    /// shared scalar node.
+    pub fn conversion_context(&self) -> Option<&OccurrenceKey> {
+        self.conversion_context.as_ref()
+    }
+
     /// The path condition, outermost guard first.
     pub fn path_condition(&self) -> &[PathGuard] {
         &self.path_condition
@@ -305,6 +372,7 @@ impl RequirementRecord {
 fn is_scalar_application(node: CheckedNode<'_>) -> bool {
     match node.kind() {
         NodeKind::Arithmetic(..)
+        | NodeKind::IntegerDivision { .. }
         | NodeKind::Negate(_)
         | NodeKind::Divide { .. }
         | NodeKind::Rational { .. }
@@ -329,11 +397,14 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Not(_)
         | NodeKind::Field { .. }
         | NodeKind::Attribute { .. }
+        | NodeKind::History { .. }
+        | NodeKind::Navigate { .. }
         | NodeKind::Present(_)
         | NodeKind::Value(_)
         | NodeKind::Call { .. }
         | NodeKind::ImportedCall { .. }
         | NodeKind::Tuple { .. }
+        | NodeKind::UnionValue { .. }
         | NodeKind::Record { .. }
         | NodeKind::Collection { .. }
         | NodeKind::ConvertCollection { .. }
@@ -346,15 +417,21 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Lookup { .. }
         | NodeKind::Dispatch { .. }
         | NodeKind::Pre(_)
-        | NodeKind::Reaches { .. } => false,
+        | NodeKind::Reaches { .. }
+        | NodeKind::ReachesEnd { .. }
+        | NodeKind::ProtocolReference { .. }
+        | NodeKind::PopulationObjects { .. }
+        | NodeKind::NamedPopulation { .. }
+        | NodeKind::Seq { .. }
+        | NodeKind::Case { .. } => false,
         #[cfg(seam_probe)]
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
     }
 }
 
 /// Whether an equality over `compared` operands is in a scalar family
-/// (FR-093 `Equality` row): Boolean, reference and structural equality are
-/// not.
+/// (FR-093 `Equality` row): Boolean, reference, structural and native
+/// scalar equality are not.
 fn scalar_equality(compared: &ValueType) -> bool {
     match compared {
         ValueType::Integer
@@ -370,7 +447,13 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Float(_)
-        | ValueType::Population(_) => false,
+        | ValueType::Population(_)
+        // The native scalar families (`quire.op.string.*`, `.uuid.*`,
+        // `.timestamp.*`) are not claim families (`SCALAR_FAMILIES`): their
+        // equality carries no bound to prove.
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp => false,
     }
 }
 
@@ -379,6 +462,8 @@ struct Guard {
     location: Location,
     holds: bool,
     reads: BTreeSet<BinderSite>,
+    /// The object types the guard's condition reads model members of.
+    objects: BTreeSet<EffectiveId>,
     outer: Option<usize>,
 }
 
@@ -398,6 +483,10 @@ struct Frame<'n> {
     /// The binders the first child reads, once it is finished: an `if`'s
     /// condition, a connective's left operand, a `let`'s bound value.
     first_reads: BTreeSet<BinderSite>,
+    /// The object types the node's subtree reads model members of.
+    objects: BTreeSet<EffectiveId>,
+    /// The object types the first child's subtree reads model members of.
+    first_objects: BTreeSet<EffectiveId>,
     /// Where a binder this node binds is located: its own location, or an
     /// enclosing `flatten`'s, whose `flat_map` node binds it (FR-093).
     binding: Location,
@@ -411,6 +500,9 @@ struct Roots {
     /// The roots a read of each slot contributes: a root binder's slot
     /// itself, a `let` slot the roots its bound value reads.
     slots: BTreeMap<Slot, BTreeSet<BinderSite>>,
+    /// The object types a `let` slot's bound value reads model members of,
+    /// which a read of the slot references too.
+    slot_objects: BTreeMap<Slot, BTreeSet<EffectiveId>>,
 }
 
 impl Roots {
@@ -440,6 +532,10 @@ fn bound_by(node: CheckedNode<'_>, binding: &Location) -> Vec<BinderSite> {
             binder,
             ..
         } => vec![site(*accumulator), site(*binder)],
+        NodeKind::Case { arms, .. } => arms
+            .iter()
+            .flat_map(|arm| arm.binders.iter().map(|slot| site(*slot)))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -526,11 +622,15 @@ impl<'n> ClaimsWalk<'n, '_> {
         };
         let node = frame.node;
         let mut guard = frame.guard;
-        let mut guard_on = |location: &Location, holds: bool, reads: &BTreeSet<BinderSite>| {
+        let mut guard_on = |location: &Location,
+                            holds: bool,
+                            reads: &BTreeSet<BinderSite>,
+                            objects: &BTreeSet<EffectiveId>| {
             self.guards.push(Guard {
                 location: location.clone(),
                 holds,
                 reads: reads.clone(),
+                objects: objects.clone(),
                 outer: frame.guard,
             });
             guard = Some(self.guards.len() - 1);
@@ -541,18 +641,53 @@ impl<'n> ClaimsWalk<'n, '_> {
                     node.at(*condition).location(),
                     index == 1,
                     &frame.first_reads,
+                    &frame.first_objects,
                 );
             }
             (NodeKind::Connective(connective, left, _), 1) => {
                 let holds = !matches!(connective, super::ir::Connective::Or);
-                guard_on(node.at(*left).location(), holds, &frame.first_reads);
+                guard_on(
+                    node.at(*left).location(),
+                    holds,
+                    &frame.first_reads,
+                    &frame.first_objects,
+                );
             }
             (NodeKind::Let { slot, .. }, 1) => {
                 self.roots.slots.insert(*slot, frame.first_reads.clone());
+                self.roots
+                    .slot_objects
+                    .insert(*slot, frame.first_objects.clone());
             }
             (NodeKind::Query { slot, source, .. }, 1) => {
                 self.roots
                     .bind(*slot, &frame.binding, element_type(node.at(*source))?);
+            }
+            // Child `index` of a `case` is the arm body of arm `index - 1`:
+            // its payload binders are roots typed by the member's payload.
+            (
+                NodeKind::Case {
+                    declaration, arms, ..
+                },
+                1..,
+            ) => {
+                let payload = self
+                    .types
+                    .composite(*declaration)
+                    .and_then(|union| match union.shape() {
+                        CompositeShape::Union(members) => members.get(arms.get(index - 1)?.member),
+                        CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+                    })
+                    .map(UnionMemberDeclaration::positions);
+                let (Some(arm), Some(payload)) = (arms.get(index - 1), payload) else {
+                    return Err(ClassifyFailure::Fault(InternalFault::new(
+                        STAGE,
+                        "case-arm-payload",
+                    )));
+                };
+                for (slot, value_type) in arm.binders.iter().zip(payload) {
+                    self.roots.bind(*slot, &frame.binding, value_type);
+                }
             }
             (
                 NodeKind::Fold {
@@ -581,6 +716,8 @@ impl<'n> ClaimsWalk<'n, '_> {
             return Ok(());
         };
         let mut reads = frame.reads;
+        let mut objects = frame.objects;
+        objects.extend(read_object(frame.node));
         if let NodeKind::Local(slot) = frame.node.kind() {
             let Some(read) = self.roots.slots.get(slot) else {
                 return Err(ClassifyFailure::Fault(InternalFault::new(
@@ -589,6 +726,9 @@ impl<'n> ClaimsWalk<'n, '_> {
                 )));
             };
             reads.extend(read.iter().cloned());
+            if let Some(read_objects) = self.roots.slot_objects.get(slot) {
+                objects.extend(read_objects.iter().copied());
+            }
         }
         if is_scalar_application(frame.node) {
             let narrow = self
@@ -612,7 +752,7 @@ impl<'n> ClaimsWalk<'n, '_> {
                 position_limit: self.position_limit,
             };
             self.claims
-                .push(walk.claim(frame.node, narrow, frame.guard, &reads)?);
+                .push(walk.claim(frame.node, narrow, frame.guard, &reads, &objects)?);
         }
         for bound in bound_by(frame.node, &frame.binding) {
             reads.remove(&bound);
@@ -620,9 +760,11 @@ impl<'n> ClaimsWalk<'n, '_> {
         if let Some(parent) = self.frames.last_mut() {
             if parent.left == 0 {
                 parent.first_reads.clone_from(&reads);
+                parent.first_objects.clone_from(&objects);
             }
             parent.left += 1;
             parent.reads.extend(reads);
+            parent.objects.extend(objects);
         }
         Ok(())
     }
@@ -679,6 +821,8 @@ impl<'n> quire_walk::Walk for ClaimsWalk<'n, '_> {
             child_guard: guard,
             reads: BTreeSet::new(),
             first_reads: BTreeSet::new(),
+            objects: BTreeSet::new(),
+            first_objects: BTreeSet::new(),
             binding,
         });
         for (index, child) in kids.into_iter().enumerate() {
@@ -709,9 +853,11 @@ impl Classify<'_> {
         narrow: Option<&IntegerInterval>,
         guard: Option<usize>,
         reads: &BTreeSet<BinderSite>,
+        operand_objects: &BTreeSet<EffectiveId>,
     ) -> Result<ValueClaim, ClassifyFailure> {
         let fault = |invariant| ClassifyFailure::Fault(InternalFault::new(STAGE, invariant));
         let mut roots = reads.clone();
+        let mut objects = operand_objects.clone();
         let mut path_condition = Vec::new();
         let mut at = guard;
         while let Some(index) = at {
@@ -720,6 +866,7 @@ impl Classify<'_> {
                 .get(index)
                 .ok_or_else(|| fault("guard-in-arena"))?;
             roots.extend(guard.reads.iter().cloned());
+            objects.extend(guard.objects.iter().copied());
             path_condition.push(SiteGuard {
                 location: guard.location.clone(),
                 holds: guard.holds,
@@ -754,6 +901,9 @@ impl Classify<'_> {
                 path_condition,
             },
             domains,
+            roots,
+            objects,
+            owner: None,
         })
     }
 }
@@ -761,6 +911,29 @@ impl Classify<'_> {
 /// The wire id of lowered node `key`.
 pub(crate) fn wire(key: NodeKey) -> WireNodeId {
     WireNodeId::from_digest(*key.as_bytes())
+}
+
+/// Select the sole candidate narrow that directly references `scalar`.
+/// The predicate examines the candidate's lowered operation and operand;
+/// enclosing narrows are excluded because they reference another narrow.
+fn unique_direct_narrow(
+    candidates: &[(NodeKey, Origin)],
+    scalar: NodeKey,
+    graph: &SemanticGraph,
+) -> Result<(NodeKey, Origin), KeyFault> {
+    let mut matches = candidates.iter().filter(|(candidate, _)| {
+        matches!(
+            graph.node(*candidate).map(|node| node.body()),
+            Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
+                if operation_role(operation.identity()) == OperationRole::Narrow
+                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
+        )
+    });
+    let (node, origin) = matches.next().ok_or(KeyFault::UnkeyableRequirements)?;
+    if matches.next().is_some() {
+        return Err(KeyFault::UnkeyableRequirements);
+    }
+    Ok((*node, origin.clone()))
 }
 
 /// Key each claim of `claims` by the `expression` occurrence of its scalar
@@ -815,37 +988,32 @@ pub(crate) fn key_claims(
     let mut records = BTreeMap::new();
     for claim in claims {
         let site = claim.site;
+        // FR-062 "Owner": a claim `check` found in a function body always
+        // carries that function; one without is an unkeyable requirement.
+        let owner = claim.owner.ok_or_else(unkeyable)?;
         let here = at.get(&site.location).map_or(&[][..], Vec::as_slice);
         let mut applications = here.iter().filter(|(key, _)| scalar(*key));
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
-        let bound_type = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            here.iter()
-                .find(|(narrow, _)| {
-                    // The `operation_role(..) == Narrow` compare is not
-                    // distinguished by any fixture today: every application
-                    // at a shared location whose sole argument is a
-                    // `Reference` to `key` is, in fact, the narrow lowering
-                    // inserted over that key (SR-758 FND-006 mutation-tested
-                    // this and found no fixture that depends on it). It is
-                    // kept because the `Reference`-shape match alone is not
-                    // selective — a future scalar-family member taking one
-                    // `Reference` argument (for example a unary identity or
-                    // cast op) would match that shape too, and without this
-                    // compare `find` would take whichever one is ordered
-                    // first in `here`, silently reporting the wrong result
-                    // bound instead of failing closed.
-                    application(*narrow).is_some_and(|(identity, arguments)| {
-                        operation_role(identity) == OperationRole::Narrow
-                            && matches!(arguments, [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == *key)
-                    })
-                })
-                .and_then(|(narrow, _)| graph.node(*narrow)?.semantic_type())
+        let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
+            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, graph)?;
+            (
+                graph
+                    .node(narrow)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                Some(OccurrenceKey::new(wire(narrow), narrow_origin)),
+            )
         } else {
-            graph.node(*key).and_then(|node| node.semantic_type())
-        }
-        .ok_or_else(unkeyable)?;
+            (
+                graph
+                    .node(*key)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                None,
+            )
+        };
         let mut path_condition = Vec::with_capacity(site.path_condition.len());
         for guard in &site.path_condition {
             let here = at.get(&guard.location).map_or(&[][..], Vec::as_slice);
@@ -866,6 +1034,10 @@ pub(crate) fn key_claims(
                 kind,
             );
         }
+        let mut extent_roots = BTreeSet::new();
+        for root in &claim.roots {
+            extent_roots.insert(wire(*binders.get(root).ok_or_else(unkeyable)?));
+        }
         let record = RequirementRecord {
             requirements: Requirements::new(
                 Capability::ValueValidity,
@@ -875,7 +1047,11 @@ pub(crate) fn key_claims(
                 value_type: site.result_bound(),
                 node: wire(bound_type),
             },
+            conversion_context,
             path_condition,
+            references: ModelReferences::new(claim.objects, [], None),
+            owner: Some(owner),
+            extent_roots,
         };
         if records
             .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)

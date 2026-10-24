@@ -17,6 +17,8 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/FR-251
+    type: relates_to
   - target: ix://agent-ix/quire-specification/FR-090
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-142
@@ -41,28 +43,6 @@ relationships:
     type: depends_on
 ---
 # ADR-026: Dense time: clocks, timed behaviours and the model-time clock binding
-
-## Status
-
-Proposed, 2026-10-01. Design draft. §1 records the owner's rulings: QSL
-specifies dense time, for robots and embedded real-time systems; model-claim
-intervals count time units through a clock binding, with both bindings kept;
-a non-local time-lock reuses ADR-022's trap evidence; stochastic delays
-are specified with statistical checking; the engine is a native zone engine
-with checkable certificates; hybrid dynamics go to QSpec FR-193's solvers;
-schedulability is a native closed-form analysis with WCET as a premise; and
-monitors run on integer ticks. This record designs clocks, constraints, timed
-semantics, time divergence, the clock binding, stochastic delays, the zone
-engine and its certificates, task sets and schedulability, the hybrid
-boundary, embedded monitors and Kani obligations, and the seam into ADR-018.
-A native hybrid engine stays a research question (§13). It adds no
-requirement. The owning ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `RU-`, `CK-`, `TS-`, `TD-`, `CB-`, `DF-`, `TV-`, `CT-`,
-`EZ-`, `CF-`, `DC-`, `SD-`, `SS-`, `RT-`, `HY-`, `MN-`, `KG-` and `OV-` are local to this record. Other artifacts cite
-them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`, and the
-sibling drafts ADR-022 and ADR-024 likewise.
 
 ## Context
 
@@ -95,6 +75,12 @@ integer time (§9 example).
 selected sound solver contract and names no solver. Clocks are the hybrid
 variables whose rate is 1 everywhere; other rates are hybrid dynamics (§13).
 
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `RU-`, `CK-`, `TS-`, `TD-`, `CB-`, `DF-`, `TV-`, `CT-`,
+`EZ-`, `CF-`, `DC-`, `SD-`, `SS-`, `RT-`, `HY-`, `MN-`, `KG-` and `OV-` are local to this record. Other artifacts cite
+them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`, and the
+sibling drafts ADR-022 and ADR-024 likewise.
+
 ## Decision
 
 ### 1. Rulings
@@ -107,7 +93,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§13).
 | RU-4 | **A non-local time-lock reuses ADR-022's trap evidence.** `TimeLock` stays its own counterexample kind | TD-3, TV-1 |
 | RU-5 | **Stochastic delays are specified now, with statistical checking.** ADR-024's engine samples the delays. Exact probabilistic checking is the native engine EN-5, specified in ADR-028; over a timed model it covers probabilistic timed automata through digital clocks | §10, SS-7 |
 | RU-6 | **The engine is native.** A zone engine in Rust, EN-6, with zone certificates so a proof is checked without trusting the search. TChecker is a test oracle only; UPPAAL and nuXmv are excluded by their licences | §8, §8.1 |
-| RU-7 | **Hybrid dynamics go to QSpec FR-193's external solvers only.** The native engine stops at rate-1 clocks. A solver result is `proved` only where its method is sound, otherwise `inconclusive`, never `refuted`. A native hybrid engine is a research question | §13 |
+| RU-7 | **Hybrid dynamics go to QSpec FR-193's external solvers only.** The native engine stops at rate-1 clocks. A solver result is `proved` only where its method is sound for its outcome and its proof covers the claim, its horizon and its jump bound together holding every state the claim reads, otherwise `inconclusive`; it is `refuted` only when QSL replays the solver's trace exactly (HY-2), never on the solver's word. QSL ships no built-in hybrid solver, and a native hybrid engine is a research question | §13 |
 | RU-8 | **Schedulability is a native closed-form analysis.** Fixed-priority response-time analysis, the EDF demand test and AMC mixed criticality. WCET is a stated premise of the claim with no provenance record. Undecidable preemptive task-automaton cases settle `unsupported` | §12 |
 | RU-9 | **Monitors run on integer ticks,** with sound rounding and memory bounded by a caller-set event rate. Kani proves monitor and evaluator agreement and tick arithmetic; elapsed-time and WCET obligations settle `unsupported` | §14 |
 
@@ -116,7 +102,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§13).
 | ID | Rule |
 | --- | --- |
 | CK-1 | **Time declaration.** A state model declares its time source with one `time` member: `time dense unit u` for real-valued clocks, or `time tick O period p unit u` for digital time counted by occurrences of operation `O` (CB-2). `u` is a unit of QSpec FR-142's time dimension and `p` a positive exact rational quantity of it. A model with a `time` member is a **timed model**; its subject is a **timed subject** (TS-1). Spelling is illustrative; QSpec's shared grammar owns it (OV-7). |
-| CK-2 | **Clock fields.** Under `time dense`, an object type may declare fields of type `Clock`. Each object of a universe has its own clock per clock field, so the number of clocks is the universe's objects times the clock fields, finite for a finite universe. A clock's value is a non-negative real in unit `u`; every clock is 0 in every initial state, and an FR-106 snapshot carries no clock value. Within EN-6's fragment a model's clocks are its only real-valued state; a continuous variable with any other rate takes HY-1's solver route. |
+| CK-2 | **Clock fields.** Under `time dense`, an object type may declare fields of type `Clock`. Each object of a universe has its own clock per clock field, so the number of clocks outside collections is the universe's objects times the clock fields, finite for a finite universe; a clock collection adds a clock place for each element it holds, bounded by its declared maximum. A clock's value is a non-negative real in unit `u`; every clock is 0 in every initial state, and an FR-106 snapshot carries no clock value. `Clock` also types a parameter, a result, a record or tuple field, an alias the argument of `Option` and the element of a collection, each denoting clock places, a collection one place for each element it holds (QSpec FR-415 "Clock places" and "Clock collections", QSL FR-230). Within EN-6's fragment a model's clocks are its only real-valued state; a continuous variable with any other rate takes HY-1's solver route. |
 | CK-3 | **Reset.** An operation's postcondition may reset a clock of its frame to an exact non-negative rational constant: `self.x = 0` or `self.x = c`. A clock in the frame that is not reset keeps its value. Reset is the one write to a clock. |
 | CK-4 | **Clock constraints.** An atomic clock constraint is `x ~ c` with `~` one of `<`, `<=`, `=`, `>=`, `>` and `c` an exact non-negative rational quantity of the time dimension, converted exactly to `u` (QSpec FR-142, FR-205). Strict and non-strict comparisons are both admitted. A clock is read only inside an atomic clock constraint: S3 refuses a clock read anywhere else, such as copying a clock into a data field or comparing two clocks, so clocks never reach the value kernel. |
 | CK-5 | **Guards.** An operation's precondition is a Boolean combination of data predicates and atomic clock constraints. Its clock part is the guard. A disjunction in a guard is a union of convex constraints, which every engine handles by splitting. |
@@ -212,7 +198,7 @@ Herbreteau and van de Pol for Büchi emptiness).
 | CF-1 | **Reachability certificate.** For a safety form (TT-1, TT-2, TT-3, the deadlock-freedom item) the certificate is a finite set of nodes, each `(s, q, Z)` with `Z` a canonical DBM, and for each node and each transition identity enabled from it a named target node. It states three facts: the initial symbolic state is covered by a node of `s0`; each node's successor by each identity (EZ-3) is covered, under EZ-4's aLU simulation, by its named target; and no node is bad (a rejecting automaton state, a deadlocked valuation for the deadlock item), except a node marked `locked`: the violating part of a symbolic state whose violating points have no time-divergent continuation (EZ-5), listed as its own node, from which no quiescent node and no node of a component with a cycle of positive total delay is reachable over certificate edges. It also carries a divergence witness for TD-6: a path of certificate edges from a node covering the initial state to a quiescent node or to a node of a component with a cycle of positive total delay. The LU bounds the simulation uses are part of the certificate. |
 | CF-2 | **Büchi emptiness certificate.** For TT-4 and the time-lock-freedom item the certificate adds to CF-1's nodes a numbering of components: each node carries a component index, every certificate edge goes to a node of equal or greater index, so every cycle stays inside one component; and each component states why it holds no fair time-divergent accepting cycle: it lacks a node of some acceptance set (the divergence set of EZ-6 included), or some weak fairness constraint is enabled at every valuation of every node in it and taken by no edge inside it. A strong fairness constraint (ADR-019) states its reason by a nested numbering of the component with the nodes that enable it removed. For the time-lock-freedom item the certificate states, per node, that some divergent target is reachable: a quiescent node, or a component that does not fail for want of the divergence set. |
 | CF-3 | **The checker.** `check_zone_certificate`, a layer-6 facade entry beside `replay_model_trace`, lives in the qualified core, as the owner ruled for certificate checkers (ADR-029 CB-2). It recompiles the package (FR-098), recomputes every successor of every node with its own DBM code in exact arithmetic, checks every coverage by the aLU test, checks the initial coverage and the badness of every node, checks that edges respect the component numbering, checks each component's stated reason, and re-traces the divergence witness. It reads no output of the search beyond the certificate. Its cost is linear in the certificate's edges times the DBM operations, far smaller than the search, and it runs under the request's B-5 budgets. |
-| CF-4 | **Verdict fit.** An EN-6 `proved` leaves S6c with its certificate over ADR-018's E11, as a refutation leaves with its counterexample, and settles only after the checker accepts it: V-1, basis `closed-scope`, `TerminalValue::Proved{basis: ZoneCertified}`. A certificate the checker rejects settles `inconclusive`, `CertificateRejected` (V-6). A checker stopped by a budget settles V-7. A proof on the digital-clock route (EZ-10) settles by ADR-028 with its certificate; a proof by EN-1 over an untimed subject keeps `Proved{basis: Exhaustive}`, the engine's closed-scope fact. A proof carries ADR-018 PC-1's label: `Certified` from EN-6 and EN-7, `Uncertified` from a hybrid solver (HY-2). The basis therefore states which kind of proof each verdict is. |
+| CF-4 | **Verdict fit.** An EN-6 `proved` leaves S6c with its certificate over ADR-018's E11, as a refutation leaves with its counterexample, and settles only after the checker accepts it: V-1, basis `closed-scope`, `TerminalValue::Proved{basis: ZoneCertified, certification: Certified}`. A certificate the checker rejects settles `inconclusive`, `CertificateRejected` (V-6). A checker stopped by a budget settles V-7. A proof on the digital-clock route (EZ-10) settles by ADR-028 with its certificate; a proof by EN-1 over an untimed subject keeps `Proved{basis: Exhaustive, certification: Certified}`, the engine's closed-scope fact. A proof carries ADR-018 PC-1's label: `Certified` from EN-6 and EN-7 and for a `ClosedForm` proof whose evidence the core recomputed (RT-7), `Uncertified` from a hybrid solver (HY-2). The basis therefore states which kind of proof each verdict is. |
 | CF-5 | **Identity.** A certificate carries the obligation identity of the item it proves (ADR-013 O-09), the canonical identity digest that binds the proof to the exact subject and claim it proved. The checker refuses a certificate whose identity differs from the item's. |
 | CF-6 | **A small trusted base.** The checker's DBM operations are separate code from EN-6's and are kept small; Kani harnesses check them for overflow freedom and for agreement with a reference implementation on bounded dimensions. Muntac, the Isabelle-verified checker for such certificates, is the reference design. |
 
@@ -249,11 +235,11 @@ its probabilistic claims by sampling timed runs.
 | SD-4 | **Stochastic conditions.** A timed state where an identity with an unbounded window has `uniform`, or where no identity races and delay is bounded, has no defined race; the item settles `unsupported`, `NotStochastic{state, identity}`, ADR-024 SV-5, as `NotMarkov` does. Statistical checking samples given delays only: a free delay that races settles a statistical item `unsupported`, `NotStochastic{state, identity}`, at the first state where it races (SS-2). ADR-024 PM-3's Markov condition holds per winning identity and drawn arguments. A quiescent state where no identity races takes TS-5's idle tail. |
 | SD-5 | **Measure.** For an initial state `s0` and a workload `W` under which every racing delay is given, the race defines the probability measure `Pr[s0, W]` on timed behaviours, extending ADR-024 PM-4. A probabilistic claim over a timed subject holds when it holds under that measure for every `s0` and `over` binding. When a free delay races, the claim holds when its bound holds for the minimum (`>= θ`) or maximum (`<= θ`) over the free delays' choices. ADR-018 claims and ADR-026's TT forms read a stochastic model as a timed one and ignore distributions, as ADR-024 PM-6 states for weights. |
 | SS-1 | **Events and measures in time.** Under the timed profile, an ADR-024 PF-1 event is a TT-2 bounded-window formula with activation `on origin`, decided by the positions with time stamp up to its time horizon. An ADR-024 PF-2 measure with `within h` under `model-time` takes `h` as a time quantity. `elapsed from holds(A) until holds(B) within h` is the time-stamp difference between the two positions, which PF-4's quantile reads as a latency. `weighted by delay` weights each position by the delay of the step that leaves it, so PF-6's long-run fraction becomes the fraction of time `P` holds. |
-| SS-2 | **Sampling timed runs.** EN-4 (ADR-024 ST-1) samples a timed run by repeating SD-3 from the initial state; every racing delay is given (SD-4). Each delay draw and each tie-break is one more choice in ADR-024 ST-2's step, with its own choice index in the sampler preimage (OV-8). A `discrete` draw selects by exact integer weights as ST-2 does. A `uniform`, `uniform[a, b]` or `exponential` draw takes a uniform value `u` on a grid of `2^-q` from the generator and returns the conditioned inverse distribution function at `u`, computed by ADR-024 ST-9's rational method and rounded up, so every sampled delay is an exact rational and the run is a timed behaviour that replays by CT-3. `q` is a method parameter of the request, recorded in the result's basis (SS-3). A sample ends when its next position's time stamp passes the event's or measure's time horizon, or at an idle tail. |
+| SS-2 | **Sampling timed runs.** EN-4 (ADR-024 ST-1) samples a timed run by repeating SD-3 from the initial state; every racing delay is given (SD-4). Each delay draw and each tie-break is one more choice in ADR-024 ST-2's step, with its own choice index in the sampler preimage (OV-8). A `discrete` draw selects by exact integer weights as ST-2 does. A `uniform`, `uniform[a, b]` or `exponential` draw takes a uniform value `u` on a grid of `2^-q` from the generator and returns the conditioned inverse distribution function at `u`, computed by ADR-024 ST-9's rational method and rounded up, so every sampled delay is an exact rational and the run is a timed behaviour; a sampled witness of it replays through `replay_sampled_witness` by CT-3's timed steps (SS-6). `q` is a method parameter of the request, recorded in the result's basis (SS-3). A sample ends when its next position's time stamp passes the event's or measure's time horizon, or at an idle tail. |
 | SS-3 | **What a timed measurement means.** A sampled delay is the declared distribution quantised to the grid of `2^-q` in the uniform value, which changes each draw's distribution function by at most `2^-q`. The `measured` verdict (ADR-024 SV-1) is a measurement of the quantised model, and its basis records `q` beside ADR-024 SV-2's method and confidence. |
 | SS-4 | **Stops and budgets.** A sample that takes more steps than the request's per-sample step budget before passing its horizon stops the run, ADR-024 SV-4; it is how a Zeno-prone model shows up under sampling. The budget (`max_sample_steps`), `q`, `max_draws` and the other ADR-024 ST-8 values are caller-set B-5 values with published defaults. |
 | SS-5 | **Regeneration.** ADR-024 ST-7's regenerative method cuts a timed run at each return to `(s0, 0)`, the initial discrete state with every clock 0, which a step that resets every clock produces. A model that never returns there stops at `max_cycle_steps` and settles `incomplete`, `limit-reached{limit, value, setting}`, as ST-7 does. |
-| SS-6 | **Witnesses.** An ADR-024 SV-6 sampled witness over a timed subject carries the delays of its steps (CT-1). It replays by CT-3, plus ADR-024 SV-8's draw recomputation, which recomputes each delay from the seed, trace index, step, choice index and `q`. It refutes the qualitative claim as ADR-024 SV-7 states. |
+| SS-6 | **Witnesses.** An ADR-024 SV-6 sampled witness over a timed subject carries the delays of its steps (CT-1). It replays through `replay_sampled_witness` (FR-193) over the checked subject the sampler ran over, with no recompile since S4 does not emit a package that holds a workload (ADR-024 SV-8), by CT-3's timed steps (delay admissibility, enabledness, successor selection, resets, time invariants and exact arithmetic), plus ADR-024 SV-8's draw recomputation, which recomputes each delay from the seed, trace index, step, choice index and `q`. It refutes the qualitative claim as ADR-024 SV-7 states. |
 | SS-7 | **Exact checking.** ADR-024 SV-9's `exact` evidence for a probabilistic claim over a timed subject routes to EN-5, specified in ADR-028. EN-5 reads a timed model whose constraints are all closed through digital clocks, as a probabilistic timed automaton (Kwiatkowska, Norman, Parker and Sproston): free delays are the scheduler's choice, decided by their minimum or maximum, and under a workload a `discrete` delay is drawn on the grid (ADR-028 TA-1, TA-1a). On that route a strict constraint, a `uniform`, `uniform[a, b]` or `exponential` delay, and any `delay` distribution under every scheduler settle `unsupported`; distributions over real delays are checked statistically by EN-4. ADR-028 owns EN-5's design. |
 
 ### 11. Worked example: a timeout racing a reply
@@ -262,8 +248,8 @@ A client sends a request and times out at `T`; the server replies at least
 1 ms after the request. Spelling is illustrative, as in ADR-018 §6.
 
 ```text
-model Rpc = "example/rpc" …;      // object Call { phase: Phase, inflight: Bool, late: Bool, x: Clock }
-time dense unit ms;
+model Rpc = "example/rpc" …;      // object Call { phase: Phase, inflight: Boolean, late: Boolean, x: Clock }
+time t dense unit ms;
 
 operation Call::send
   pre  self.phase = Idle
@@ -279,8 +265,8 @@ operation Call::reset
   pre  not self.inflight and (self.phase = Replied or self.phase = TimedOut)
   post self.phase = Idle;
 
-time invariant when self.inflight            { self.x <= 3 ms }   // server deadline
-time invariant when self.phase = Waiting     { self.x <= T }      // client deadline
+time invariant ServerDeadline when { self.inflight }        { self.x <= 3 ms }   // server deadline
+time invariant ClientDeadline when { self.phase = Waiting } { self.x <= 3 ms }   // client deadline x <= T: 3 ms here, 4 ms in the T = 4 ms instance
 
 temporal NoLateReply using inf over (k: Rpc::Call) clock "model-steps" on origin {
   always holds(not k.late)
@@ -368,7 +354,7 @@ With `reply` under `uniform` instead, the draw is 3 ms with probability 0,
 the event's probability is 0 and EN-4 settles `measured`, `Accepted`, while
 the qualitative `NoLateReply` stays `refuted` (V-4): the late reply is a
 behaviour of the model of probability 0. Every draw is an exact rational
-(SS-2), and each sample replays by CT-3.
+(SS-2), and each sampled witness replays through `replay_sampled_witness` (SS-6).
 
 ### 12. Embedded real time: task sets and schedulability
 
@@ -380,27 +366,27 @@ analysis, which QSL runs natively as engine EN-7.
 | --- | --- |
 | RT-1 | **Task sets.** A package declares a task set for one preemptive uniprocessor: `taskset S { task τ … }`. Each task declares its arrival, periodic with period `T` or sporadic with minimum inter-arrival time `T`; its relative deadline `D`; its WCET `C`; its priority, under fixed-priority scheduling; and its criticality, `LO` or `HI`, with budgets `C(LO) <= C(HI)` for a `HI` task, the dual-criticality model of Vestal. Optional members are release jitter `J` and a blocking term `B`. Every value is an exact rational time quantity (QSpec FR-142). Spelling is illustrative; QSpec's shared grammar owns it (OV-10). |
 | RT-2 | **Premises.** `C`, `C(LO)`, `C(HI)`, `B` and `J` are stated premises of the claim. They are part of the task set, so part of the subject and its obligation identity (ADR-013 O-09), and a verdict holds for exactly those values. |
-| RT-3 | **Claims and engine.** A schedulability claim names a task set and a policy: `schedulable S under fixed-priority`, `under edf` or `under amc`. A response claim bounds one task's worst-case response time: `response S.τ <= d under fixed-priority`. EN-7 lives in QSL layer A, crate `qsl-analyze`, module `schedulability`, runs in stage S6c, and is placed by negotiation under a new QSpec FR-290 capability kind, `schedulability` (OV-10). |
+| RT-3 | **Claims and engine.** A schedulability claim names a task set and a policy: `schedulable N on S under fixed_priority;`, `under edf` or `under amc`, `N` the claim's name. A response claim bounds one task's worst-case response time: `response N on S.τ <= d under fixed_priority;`. EN-7 lives in QSL layer A, crate `qsl-analyze`, module `schedulability`, runs in stage S6c, and is placed by negotiation under a new QSpec FR-290 capability kind, `schedulability` (OV-10). |
 | RT-4 | **Fixed priority.** EN-7 computes each task's worst-case response time by response-time analysis (Joseph and Pandya; Audsley et al.): the least fixpoint of `R = C_i + B_i + Σ_{j ∈ hp(i)} ⌈(R + J_j) / T_j⌉ · C_j`, iterated from `C_i + B_i` in exact rationals, and the response time is `R + J_i`. The iteration stops at the fixpoint or as soon as `R + J_i` exceeds `D_i`, so it terminates with no iteration cap. Deadlines beyond the period use the busy-period extension (Lehoczky). |
 | RT-5 | **EDF.** EN-7 runs the processor-demand test (Baruah, Rosier and Howell) with Quick Processor-demand Analysis (Zhang and Burns): utilization above 1 fails, and otherwise the demand bound `dbf(t) = Σ_i max(0, ⌊(t − D_i) / T_i⌋ + 1) · C_i` must not exceed `t` at any absolute deadline up to the synchronous busy-period length. |
 | RT-6 | **Mixed criticality.** EN-7 runs AMC-rtb (Baruah, Burns and Davis): low-mode response times with `C(LO)`, high-mode response times with `C(HI)` over higher-priority `HI` tasks, and the mode-change bound that charges higher-priority `LO` tasks only up to the low-mode response time. A low-mode miss is a miss. AMC-rtb is sufficient and not necessary, so a high-mode criterion that fails settles `inconclusive`, `SufficientTestFailed` (V-6). |
-| RT-7 | **Verdicts and evidence.** A schedulable result settles `proved`, V-1, basis `closed-scope`, `TerminalValue::Proved{basis: ClosedForm{analysis}}`, with evidence: each task's fixpoint for RT-4 and RT-6, the busy-period length and QPA's check sequence for RT-5. A miss settles `refuted`, V-4, with evidence: for fixed priority, the task, the job `q` of its level-`i` busy period (0 when `D_i <= T_i` and the busy period ends with the first job), and the RT-4 iterates for that job up to the first whose response time `R + J_i − q · T_i` exceeds `D_i`; the iteration rises monotonically to the fixpoint, so that iterate proves the miss, with jitter, blocking and the busy-period extension included; for EDF, a `t` with `dbf(t) > t`, or the utilization above 1. `check_closed_form`, a layer-6 facade entry in `qsl-replay`, recompiles the package, checks the outcome's obligation identity against the recompiled item's as CF-5 does, reads the task set from the recompiled package, and recomputes the evidence in exact rationals before the verdict settles, including, for a job `q > 0`, that every earlier job keeps the level-`i` busy period open, as CF-3 checks a certificate; a disagreement settles `inconclusive`, `ReplayParity`. Every verdict is conditional on RT-2's premises, which the subject carries. |
+| RT-7 | **Verdicts and evidence.** A schedulable result settles `proved`, V-1, basis `closed-scope`, `TerminalValue::Proved{basis: ClosedForm{analysis}, certification: Certified}`, with evidence: each task's fixpoint for RT-4 and RT-6, the busy-period length and QPA's check sequence for RT-5. A miss settles `refuted`, V-4, with evidence: for fixed priority, the task, the job `q` of its level-`i` busy period (0 when `D_i <= T_i` and the busy period ends with the first job), and the RT-4 iterates for that job up to the first whose response time `R + J_i − q · T_i` exceeds `D_i`; the iteration rises monotonically to the fixpoint, so that iterate proves the miss, with jitter, blocking and the busy-period extension included; for EDF, a `t` with `dbf(t) > t`, or the utilization above 1. `check_closed_form`, a layer-6 facade entry in `qsl-replay`, recompiles the package, checks the outcome's obligation identity against the recompiled item's as CF-5 does, reads the task set from the recompiled package, and recomputes the evidence in exact rationals before the verdict settles, including, for a job `q > 0`, that every earlier job keeps the level-`i` busy period open, as CF-3 checks a certificate; a disagreement settles `inconclusive`, `ReplayParity`. Every verdict is conditional on RT-2's premises, which the subject carries. |
 | RT-8 | **Task automata.** A timed model whose operations release tasks of a task set (`releases τ`) is a task automaton (Fersman, Krcal, Pettersson and Yi). For the decidable class, every combination except interval execution times together with completion feedback to the automaton and preemption, S3 lowers the model and its scheduling policy to a timed subject by that encoding, with the bounded clock subtraction it needs internal to the lowering, and EN-6 checks the invariant "no task misses its deadline" as TT-1. The queue length that encoding bounds is derived from the task set, not a cap. A model in the undecidable class needs stopwatches and settles `unsupported`, `StopwatchRequired` (V-8). |
 
 **Example.** Task set `Ctl` under fixed priority, priorities by period, with
 `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms. RT-4 gives response
-times 1, 3 and 12 (the third iterates 5, 9, 12, 12), so `schedulable Ctl`
+times 1, 3 and 12 (the third iterates 5, 9, 12, 12), so `schedulable CtlFp on Ctl under fixed_priority;`
 settles `proved` with the fixpoints `(1, 3, 12)` as evidence; utilization is
-exactly 1, and `under edf` is also `proved`. With `C = 6` for the third task,
+exactly 1, and `schedulable CtlEdf on Ctl under edf;` is also `proved`. With `C = 6` for the third task,
 its RT-4 iterates are 6, 10 and 13, and 13 exceeds its deadline 12, so the claim settles `refuted` with job 0 and those iterates as evidence; under EDF the utilization is 13/12 and the claim is `refuted`.
 
 ### 13. Hybrid dynamics
 
 | ID | Rule |
 | --- | --- |
-| HY-1 | **The line.** EN-6 checks clocks, the continuous variables whose rate is 1 everywhere, with clock drift stated by DC-4. Every variable with another rate, and every flow, belongs to QSpec FR-193's external solver contract. A model's continuous variables, flows, guards and resets are declared in the form QSpec FR-193 admits (OV-11), and CG negotiation routes the claim to a registered solver: Flow*, CORA, JuliaReach, SpaceEx, dReach and dReal, or KeYmaera X, each a back-end lowering item. With no candidate the claim settles `unsupported` (V-8). |
-| HY-2 | **Verdicts.** A solver result settles `proved` only where its method is sound for the claim: for example a dReal `unsat` for bounded unreachability, or a flowpipe enclosure computed with outward rounding. The verdict is V-1, basis `closed-scope`, `TerminalValue::Proved{basis: BoundedSolver{method, horizon, jumps}}`, and holds for the claim within that time horizon and jump bound. Every other result, `δ-sat`, a flowpipe meeting the unsafe set, `unknown`, or a method without sound rounding, settles `inconclusive`, `SolverInconclusive` (V-6). A solver result never settles `refuted`. A stopped solver settles V-7. A solver QSL runs is a native engine with no core certificate checker, so its `proved` carries the label `uncertified` (ADR-018 PC-1), as an SMT proof does, until a core checker verifies the solver's proof certificate. QSL decides whether a method is sound for its outcome from the method kind, by QSpec FR-193's classification, and reads no soundness claim the provider makes about itself. |
-| HY-3 | **Seam.** A native hybrid engine is a research question (References). It would be one more negotiated backend whose verdicts take HY-2's map, and it may add a refutation path once its witnesses replay exactly. |
+| HY-1 | **The line.** EN-6 checks clocks, the continuous variables whose rate is 1 everywhere, with clock drift stated by DC-4. Every variable with another rate, and every flow, belongs to QSpec FR-193's external solver contract. A model's continuous variables, flows, guards and resets are declared in the form QSpec FR-193 admits (OV-11), and CG negotiation routes the claim to a registered solver: Flow*, CORA, JuliaReach, SpaceEx, dReach and dReal, or KeYmaera X, each a back-end lowering item. The claim's item carries the hybrid-dynamics requirement, and only a backend whose descriptor `dynamics` holds `hybrid` is its candidate (QSpec FR-193 "Routing a hybrid item", FR-075), so EN-6 is never one. With no candidate the claim settles `unsupported` (V-8). |
+| HY-2 | **Verdicts.** A solver result settles `proved` only where its method kind is sound for its outcome by QSpec FR-193's closed method table and its proof covers the claim (QSpec FR-193 "Proof coverage"): for example a dReal `unsat` for bounded unreachability, or a flowpipe enclosure computed with outward rounding, whose proof region holds every state the claim reads: under `model-time` its horizon reaches the claim's horizon in seconds and the solver established that no behaviour exceeds its jump bound by then, and under `model-steps` its jump bound reaches the claim's horizon in positions and the solver established that every one of those jumps occurs by its horizon. The verdict is V-1, basis `closed-scope`, `TerminalValue::Proved{basis: BoundedSolver{method, horizon, jumps, exhaustive}, certification: Uncertified}`, and holds for the claim, every state it reads lying within that time horizon and jump bound; an inductive enclosure settles `Proved{basis: InductiveSolver{method}, certification: Uncertified}` and holds at every time and jump count, the one proof of a claim with no horizon. A sound bounded proof that does not cover the claim settles `inconclusive`, `InsufficientHorizon{horizon, jumps, exhaustive}`. Every other result, `δ-sat`, a flowpipe meeting the unsafe set, `unknown`, or a method without sound rounding, settles `inconclusive`, `SolverInconclusive` (V-6). A solver result settles `refuted` only when QSL replays its trace exactly, a point trace through modes with polynomial flows reproducing the violation (FR-450, QSpec FR-193 "Trace replay"); every other trace QSL replays statically and keeps on the `inconclusive` record. A stopped solver settles V-7. A solver QSL runs has no core certificate checker, so its `proved` carries `Uncertified` (ADR-018 PC-1). QSL decides whether a method is sound for its outcome from the method kind, by QSpec FR-193's classification, and reads no soundness claim the provider makes about itself. |
+| HY-3 | **Seam.** QSL has no built-in hybrid solver: every hybrid solver is a registered backend that publishes its own solver budget defaults in its descriptor `bounds` (FR-250). A native hybrid engine is a research question (References). It would be one more negotiated backend whose verdicts take HY-2's map, its refutations replayed as HY-2 states. |
 
 ### 14. Embedded monitors and Kani obligations
 
@@ -408,16 +394,27 @@ A timed claim reaches an embedded target as a runtime monitor, built by the
 runtime repository, and as code obligations, built by CG. This section fixes
 what QSL hands them.
 
+QSL-685 chooses a plan that carries executable topology. The normative
+shape and falsifying controls are in
+[FR-251](../functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md).
+Its checked payload follows the existing E5/S5 generation path; this choice
+does not add an RT dependency on QSL's checker or a separate temporal
+interpreter in RT. The driver and IR admit the complete plan before RT's
+`build(plan)` creates fresh monitor state.
+
 | ID | Rule |
 | --- | --- |
 | MN-1 | **Tick-based monitors.** On a target a timed claim is monitored under the timestamped-event profile (DC-2): positions are observed events, and time stamps are integer ticks of a declared unit read from a monotonic hardware counter. The monitor's clock binding names the counter, its unit and its width (QSpec FR-252). |
 | MN-2 | **Sound rounding.** Each dense constant of the claim converts to ticks, and each observed instant is the closed interval its tick covers, widened by the declared clock uncertainty (QSpec FR-160). An interval bound decides true or false only when every instant in those intervals agrees; otherwise the obligation stays three-valued, pending or indeterminate as QSpec FR-160 states. Rounding never turns an uncertain boundary into a decided one. |
 | MN-3 | **Memory from an event rate.** A past-time or bounded-future interval operator keeps the events inside its window (Basin, Klaedtke and Zălinescu; Ho, Ouaknine and Worrell). The monitor's buffer capacity is computed statically from the formula and a caller-set maximum event rate per unit: for each buffered subformula, the rate times the window length plus one. The rate is a B-2 run limit of the monitor (ADR-014) that the caller sets, with a published default of one event per microsecond; the buffer size follows from it. |
-| MN-4 | **Overflow and faults.** An event that would exceed a buffer is never dropped: the obligations it affects settle `Incomplete(LimitReached{limit, value, setting})` naming the event-rate limit, V-7. Tick differences are computed modulo the counter's width, against a caller-stated maximum gap between consecutive readings below `2^width` ticks, so wraparound is decided; a target whose maximum gap is not below `2^width` is refused, `GapExceedsWidth`. A difference above the maximum gap, from a reading that runs backwards or a missed reading, is a monitor fault, `Failed`, `ReadingGapExceeded`, and never a verdict. |
+| MN-4 | **Overflow and faults.** An event that would exceed a buffer is never dropped: the obligations it affects settle `Incomplete(LimitReached{limit, value, setting})` naming the event-buffer limit and the `monitor.max_event_rate` setting that raises it (FR-251), V-7. Tick differences are computed modulo the counter's width, against a caller-stated maximum gap between consecutive readings below `2^width` ticks, so wraparound is decided; a target whose maximum gap is not below `2^width` is refused, `GapExceedsWidth`. A difference above the maximum gap, from a reading that runs backwards or a missed reading, is a monitor fault, `Failed`, `ReadingGapExceeded`, and never a verdict. |
+| MN-5 | **Executable plan.** The plan owns its exact checked clause subject, activation/captures, atom bodies, ordered operator/subformula topology, typed state and complete initialization/event/watermark transition bodies, plus intervals, buffers, clock binding, uncertainty, rate and maximum gap. QSL determines their temporal meaning. IR/CG lower or generate the prescribed bodies through E5/S5; RT executes them without deriving operator updates from graph tags, names or resource tables. Unsupported executable content is disposed before build and yields no partial monitor. |
+| MN-6 | **Build and identity.** `build(plan)` receives one admitted immutable executable plan and no additional clause or evaluator callback. The driver binds admission to its independently selected checked package/clause and target; RT owns or retains the complete plan and allocates isolated mutable state. Atom/subformula IDs are subject-scoped, results retain obligation origins and the target premises, and live state cannot be rebound. FR-252's `PlanId` selects the complete immutable plan within driver ownership, including its program and premises. |
+| MN-7 | **Fault ownership.** Incomplete or inconsistent program/target bindings fail admission before initialization. RT allocation/initialization failures yield no usable monitor; invalid event/progress inputs leave state unchanged. Executor invariant failure is `Failed`, never a property verdict, and terminates the monitor. QSL owns disagreement between the prescribed program and its reference evaluator; RT/CG own incorrect execution of that program. Ordinary counter polling creates neither an event position nor a watermark; progress is admitted under QSpec FR-094/FR-160. |
 | KG-1 | **Monitor agreement.** QSL writes a monitor-agreement obligation, handed to CG (OV-13), that the monitor's step function agrees with the layer-5 reference evaluator (SM-1) on every trace of up to `k` events with symbolic integer time stamps, `k` the obligation's stated horizon, a method parameter of the request with a published default of 8; the discharged obligation holds for traces up to that length. |
 | KG-2 | **Tick arithmetic.** QSL writes obligations, handed to CG, that tick arithmetic never panics or overflows, that modular differences are correct across wraparound, and that no buffer exceeds MN-3's capacity under the declared rate. |
 | KG-3 | **Timestamp contracts.** For a contract that relates timestamp parameters, such as "when `now − start > d` the timeout branch is taken", QSL writes an obligation over symbolic integers, handed to CG. |
-| KG-4 | **What Kani does not settle.** Elapsed real time, WCET, preemption and interrupt timing are outside Kani's model, so QSL disposes an obligation of that kind `unsupported` (V-8) and hands none to CG. A Kani result for an obligation QSL hands over settles by CG's C-09 map, not by QSL. Schedulability goes to EN-7 (§12), and WCET enters as an RT-2 premise. |
+| KG-4 | **What Kani does not settle.** Elapsed real time and WCET are outside Kani's model, so QSL disposes an obligation of that kind `unsupported` (V-8) and hands none to CG; preemption and interrupt timing have no authored form, so QSL writes no obligation for them (FR-252). A Kani result for an obligation QSL hands over settles by CG's C-09 map, not by QSL. Schedulability goes to EN-7 (§12), and WCET enters as an RT-2 premise. |
 
 ### 15. Interactions with the sibling records
 
@@ -455,7 +452,7 @@ what QSL hands them.
 | OV-10 | Task sets and schedulability: the `taskset` grammar (RT-1), the `schedulable` and `response` claims (RT-3), the QSpec FR-290 capability kind `schedulability`, and the closed-form evidence wire (RT-7) | QSpec FR-419 |
 | OV-11 | QSpec FR-193: the source form of continuous variables and flows that QSL lowers, and HY-2's verdict map with `BoundedSolver` and `SolverInconclusive` | QSpec FR-193 |
 | OV-12 | The zone certificate wire (CF-1, CF-2) and its place in QSpec FR-331; ADR-011's E11 carrying a certificate to S8 as it carries a counterexample (CF-4) | QSpec FR-418; ADR-011 when requirements follow |
-| OV-13 | The monitor contract handed to the runtime repository (MN-1 to MN-4) and the CG obligation shapes (KG-1 to KG-4) | runtime and CG repositories |
+| OV-13 | FR-251's complete executable monitor plan, build inputs, identity and fault boundary (MN-1 to MN-7), and CG obligation shapes (KG-1 to KG-4). QSL owns checked temporal meaning; the driver admits the selected package/clause/target, IR/CG lower or generate its program through E5/S5, and RT builds from that plan without inferring semantics. | QSL FR-251 (QSL-685); runtime IR-519 and CG repositories |
 | OV-14 | ADR-018 §1 `ProofBasis` and `InconclusiveCause`: `ZoneCertified`, `ClosedForm`, `BoundedSolver`, and the causes `NoAdmittedBehaviour`, `LassoNotConcretized`, `CertificateRejected`, `SufficientTestFailed` and `SolverInconclusive` | QSL, amended here |
 
 ## Consequences
@@ -478,8 +475,9 @@ what QSL hands them.
   by a certificate checker that does not trust the search.
 - Schedulability claims over task sets get exact closed-form verdicts whose
   evidence is recomputed before they settle, conditional on stated WCETs.
-- Continuous robot dynamics are proved only by sound external solvers and
-  are never refuted by them.
+- Continuous robot dynamics are proved only by sound external solvers whose
+  proofs cover the claim, and are refuted only when QSL replays a solver's
+  trace exactly.
 - Embedded monitors run on integer ticks with sound rounding and statically
   sized buffers, and Kani checks their agreement with the evaluator.
 - Exact probabilistic checking over timed models goes to EN-5 (ADR-028), and
@@ -528,10 +526,17 @@ Each amended text carries an "Amended by ADR-026" note.
   carries a certificate the checker verifies (CF-4).
 - **WCET with a provenance record.** Not taken (RU-8). WCET is a premise of
   the claim, and the verdict holds for the stated values.
-- **Refutation by a hybrid solver.** Not taken (RU-7). No solver witness
-  replays exactly.
+- **Refutation on a hybrid solver's word.** Not taken (RU-7). A solver's
+  `δ-sat` or a flowpipe meeting the unsafe set is an enclosure, not a
+  witness, so it refutes nothing until QSL replays its trace exactly
+  (HY-2, FR-450).
 - **Floating-point delay sampling.** Not taken. Every sampled delay is an
   exact rational from a recorded grid (SS-2), so a sample replays exactly.
+- **Resource-only monitor plan plus a separately supplied checked clause.**
+  Not taken for MN-5 to MN-7: the plan carries the closed executable
+  program and its checked subject so RT build has one admitted input and
+  no formula-to-transition inference step. The driver retains the existing
+  independently selected package/clause binding at admission.
 
 ## References
 

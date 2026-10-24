@@ -50,10 +50,29 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
+        | DeclarationForm::Abstraction(_)
         | DeclarationForm::StateClause(_)
-        | DeclarationForm::Protocol(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::OperationBody(_)
+        | DeclarationForm::PopulationBound(_)
+        | DeclarationForm::Protocol(_)
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -90,9 +109,17 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::Quantity(quantity) => {
+            format!(
+                "quantity({} {})",
+                quantity.magnitude.first, quantity.unit.name
+            )
+        }
+        ExprNode::String(text) => format!("string({text:?})"),
         ExprNode::Name(spelling) => spelling.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
         ExprNode::If { .. } => "If".into(),
+        ExprNode::Case(_) => "Case".into(),
         ExprNode::Binary { operator, .. } => format!("{operator:?}"),
         ExprNode::Negate(_) => "Negate".into(),
         ExprNode::Not(_) => "Not".into(),
@@ -132,6 +159,13 @@ fn show(expression: ExprRef<'_>) -> String {
             binder,
             ..
         } => format!("Sum[{result_type},{binder}]"),
+        ExprNode::Population {
+            form,
+            binder,
+            population,
+            ..
+        } => format!("Population[{form:?},{binder},{population}]"),
+        ExprNode::Seq { binder, .. } => format!("Seq[{binder}]"),
         ExprNode::Size(_) => "Size".into(),
         ExprNode::Contains { .. } => "Contains".into(),
         ExprNode::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
@@ -141,6 +175,10 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::SelfRef => "SelfRef".into(),
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+        ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
+        ExprNode::Stutter => "Stutter".into(),
     };
     if children.is_empty() {
         head
@@ -182,10 +220,29 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Record(_) => "record",
             DeclarationForm::Tuple(_) => "tuple",
             DeclarationForm::Enum(_) => "enum",
+            DeclarationForm::Union(_) => "union",
             DeclarationForm::Dimension(_) => "dimension",
             DeclarationForm::Unit(_) => "unit",
+            DeclarationForm::Abstraction(_) => "abstraction",
             DeclarationForm::StateClause(_) => "state_clause",
+            DeclarationForm::OperationBody(_) => "operation_body",
+            DeclarationForm::PopulationBound(_) => "population_bound",
             DeclarationForm::Protocol(_) => "protocol",
+            DeclarationForm::Temporal(_) => "temporal",
+            DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::Refinement(_) => "refinement",
+            DeclarationForm::TimeSource(_) => "time",
+            DeclarationForm::TimeInvariant(_) => "time invariant",
+            DeclarationForm::Urgent(_) => "urgent",
+            DeclarationForm::HyperBehaviours(_) => "hyper_behaviours",
+            DeclarationForm::HyperFinite(_) => "hyper_finite",
+            DeclarationForm::ModelRelation(_) => "model_relation",
+            DeclarationForm::Random(_) => "random",
+            DeclarationForm::Reward(_) => "reward",
+            DeclarationForm::Workload(_) => "workload",
+            DeclarationForm::Probabilistic(_) => "probabilistic",
+            DeclarationForm::StateGraphClaim(_) => "state-graph",
+            DeclarationForm::Hybrid(_) => "hybrid",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);
@@ -285,6 +342,9 @@ fn each_expression_construct_maps_to_its_variant() {
         ("a - b", "Subtract(a, b)"),
         ("a * b", "Multiply(a, b)"),
         ("a / b", "Divide(a, b)"),
+        ("a div b", "IntegerDiv(a, b)"),
+        ("a rem b", "IntegerRem(a, b)"),
+        ("a mod b", "IntegerMod(a, b)"),
         ("not a", "Not(a)"),
         ("-a", "Negate(a)"),
         ("a.f", "Field[f](a)"),
@@ -388,12 +448,40 @@ fn grouping_and_associativity_come_from_the_cst() {
         ("a implies b implies c", "Implies(a, Implies(b, c))"),
         ("(a + b) * c", "Multiply(Add(a, b), c)"),
         ("a + b * c - d", "Subtract(Add(a, Multiply(b, c)), d)"),
+        ("1 + a div b * 2", "Add(1, Multiply(IntegerDiv(a, b), 2))"),
+        (
+            "if true then 1 else a mod b",
+            "If(true, 1, IntegerMod(a, b))",
+        ),
         ("a + b + c + d", "Add(Add(Add(a, b), c), d)"),
         ("not not a", "Not(Not(a))"),
     ];
     for (source, expected) in cases {
         let (_, declaration) = body(source);
         assert_eq!(show(declaration.body.root()), expected, "{source}");
+    }
+}
+
+#[trace("FR-091-AC-39", "TC-394")]
+#[test]
+fn integer_operator_forms_retain_operand_spans_in_dead_branches() {
+    for (source, operator) in [
+        ("a div b", BinaryOperator::IntegerDiv),
+        ("a rem b", BinaryOperator::IntegerRem),
+        ("a mod b", BinaryOperator::IntegerMod),
+    ] {
+        let (text, declaration) = body(&format!("if true then 1 else {source}"));
+        let spans = &declaration.spans().unwrap().body;
+        assert_eq!(spans.at(&[2]), Some(span_of(&text, source)));
+        assert_eq!(spans.at(&[2, 0]), Some(span_of(&text, "a")));
+        assert_eq!(spans.at(&[2, 1]), Some(span_of(&text, "b")));
+        let ExprNode::If { otherwise, .. } = declaration.body.root_node() else {
+            panic!("the outer conditional");
+        };
+        assert!(matches!(
+            declaration.body.at(*otherwise).node(),
+            ExprNode::Binary { operator: actual, .. } if *actual == operator
+        ));
     }
 }
 
@@ -447,9 +535,7 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
 #[test]
 fn a_construct_no_variant_represents_refuses_the_unit() {
     let cases = [
-        ("\"text\"", Production::Primary, "\"text\""),
         ("decimal(1, 2)", Production::ExactNumber, "decimal(1, 2)"),
-        ("a mod b", Production::Product, "a mod b"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         ("none", Production::Primary, "none"),
         // FR-102: a single-segment `reaches` edge now builds
@@ -457,15 +543,12 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         // multi-segment edge still refuses, but at the qualified edge
         // itself, not the whole construct (FR-102-AC-3).
         ("reaches(a, b, M::R)", Production::QualifiedName, "M::R"),
-        ("if a then b else a mod b", Production::Product, "a mod b"),
         (
             "size<Int[0, 1]>(c)",
             Production::Primary,
             "size<Int[0, 1]>(c)",
         ),
-        ("a div b", Production::Product, "a div b"),
         ("null", Production::Primary, "null"),
-        ("a rem b", Production::Product, "a rem b"),
         (
             "float32(bits: 0x00000000)",
             Production::FloatValue,
@@ -489,6 +572,25 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         assert_eq!(cause.catalog_code(), Code::UnsupportedConstruct);
         assert_eq!(span, Some(span_of(&text, construct)), "{source}");
     }
+}
+
+/// TC-1046 C14 (FR-365 Inputs): a qualified third argument stays refused at
+/// the form's build, at the qualified name itself, in a state clause.
+#[trace("TC-1046", "FR-102-AC-3")]
+#[test]
+fn a_qualified_reachability_end_is_refused_at_the_form_build() {
+    let edge = "M::Order::next";
+    let (text, cause, span) = refusal(&format!(
+        "invariant I using v on M::Order at current {{ reaches(self, self, {edge}) }}"
+    ));
+    assert_eq!(
+        cause,
+        FormsCause::UnrepresentedConstruct {
+            production: Production::QualifiedName
+        }
+    );
+    assert_eq!(cause.catalog_code(), Code::UnsupportedConstruct);
+    assert_eq!(span, Some(span_of(&text, edge)));
 }
 
 #[trace("FR-091-AC-8", "TC-396")]
@@ -680,6 +782,27 @@ fn record_and_tuple_forms_carry_their_names_and_members() {
         &tuple.elements[1].arguments[0].head,
         TypeFormHead::Name(name) if name == "M::T"
     ));
+}
+
+/// FR-091-AC-44: S1 parses `d: Quantity<ms>` and S2 builds a `Quantity`
+/// type form over the qualified name `ms`.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_quantity_type_form_names_its_unit() {
+    let (text, unit) = build("function f using v(d: Quantity<ms>): Boolean pure { true }");
+    let DeclarationForm::Function(function) = unit.forms()[0].form() else {
+        panic!("a function");
+    };
+    let form = &function.parameters[0].1;
+    assert!(matches!(
+        form.head,
+        TypeFormHead::Builtin(BuiltinType::Quantity)
+    ));
+    let [unit_name] = form.arguments.as_slice() else {
+        panic!("one argument")
+    };
+    assert!(matches!(&unit_name.head, TypeFormHead::Name(name) if name == "ms"));
+    assert_eq!(&text[unit_name.span.start..unit_name.span.end], "ms");
 }
 
 #[trace("FR-091-AC-23", "TC-405")]
@@ -1025,4 +1148,84 @@ fn a_deep_parameter_type_builds_clones_compares_formats_and_drops_on_a_small_sta
         .expect("spawn a 512 KiB thread")
         .join()
         .expect("S2 and the type form's traits do not overflow a 512 KiB stack");
+}
+
+/// The root expression of the body `text`, as the S2 form.
+fn body_root(text: &str) -> ExprNode {
+    let (_, function) = body(text);
+    function.body.root_node().clone()
+}
+
+/// FR-091-AC-41, TC-1052 step 1: a quoted literal builds one
+/// `ExprNode::String` holding the decoded scalar sequence, exactly.
+#[trace("FR-091-AC-41", "TC-1052")]
+#[test]
+fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
+    let scalars = |text: &str| ExprNode::String(text.to_owned());
+    for (source, expected) in [
+        (r#""abc""#, "abc"),
+        (r#""""#, ""),
+        (r#""é""#, "\u{e9}"),
+        ("\"\u{e9}\"", "\u{e9}"),
+        (r#""é""#, "e\u{301}"),
+        (r#""a\nb""#, "a\nb"),
+        (r#""😀""#, "\u{1f600}"),
+        (r#""\u0000""#, "\u{0}"),
+        (r#""a\"b\\c\/d""#, "a\"b\\c/d"),
+    ] {
+        assert_eq!(body_root(source), scalars(expected), "{source}");
+    }
+    assert_ne!(body_root(r#""é""#), body_root(r#""é""#), "no normalization");
+}
+
+/// FR-091-AC-41, TC-1052 step 1: `UUID("...")` and `Timestamp(n)` build the
+/// ordinary `Call` and add no expression kind.
+#[trace("FR-091-AC-41", "TC-1052")]
+#[test]
+fn uuid_and_timestamp_literals_build_ordinary_calls() {
+    let (_, function) = body(r#"UUID("00112233-4455-6677-8899-aabbccddeeff")"#);
+    let ExprNode::Call { name, arguments } = function.body.root_node() else {
+        panic!("a call");
+    };
+    assert_eq!(name, "UUID");
+    assert_eq!(
+        function.body.at(arguments[0]).node(),
+        &ExprNode::String("00112233-4455-6677-8899-aabbccddeeff".to_owned())
+    );
+    let (_, function) = body("Timestamp(-1)");
+    let ExprNode::Call { name, arguments } = function.body.root_node() else {
+        panic!("a call");
+    };
+    assert_eq!(name, "Timestamp");
+    let ExprNode::Negate(operand) = function.body.at(arguments[0]).node() else {
+        panic!("a negated count");
+    };
+    assert_eq!(
+        function.body.at(*operand).node(),
+        &ExprNode::Integer(Integer::from(1_i64))
+    );
+}
+
+/// FR-091-AC-42, TC-1052 step 2: a malformed escape is `invalid-escape`; an
+/// unterminated literal, a raw line feed and a leading-zero count are
+/// `invalid-token`, all `invalid_syntax`, with no form.
+#[trace("FR-091-AC-42", "TC-1052")]
+#[test]
+fn malformed_literals_refuse_at_the_lexer() {
+    use qsl_cst::{CompleteCause, CompleteCode};
+    for (body, cause) in [
+        (r#""\ud800""#, CompleteCause::InvalidEscape),
+        (r#""\q""#, CompleteCause::InvalidEscape),
+        (r#""abc"#, CompleteCause::InvalidToken),
+        ("\"a\nb\"", CompleteCause::InvalidToken),
+        ("Timestamp(007)", CompleteCause::InvalidToken),
+    ] {
+        let (_, parsed) = parse(&format!("function f using v(): Boolean pure {{ {body} }}"));
+        let first = parsed.diagnostics().first().expect("a diagnostic");
+        assert_eq!(
+            (first.code, first.cause),
+            (CompleteCode::InvalidSyntax, cause),
+            "{body}"
+        );
+    }
 }

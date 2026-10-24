@@ -186,6 +186,8 @@ impl<'s, 'm> Collector<'s, 'm> {
                 // population input of the declaration covering it.
                 NativeType::Domain(ty) => return self.domain(ty, anchor, span, work),
                 NativeType::Boolean
+                | NativeType::Uuid
+                | NativeType::String
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. } => return Ok(()),
             }
@@ -215,6 +217,8 @@ impl<'s, 'm> Collector<'s, 'm> {
                 }
                 NativeType::Record { declaration, .. } => declaration.name(),
                 NativeType::Boolean
+                | NativeType::Uuid
+                | NativeType::String
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. }
                 | NativeType::Option(_)

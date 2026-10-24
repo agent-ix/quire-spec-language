@@ -2,13 +2,16 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use super::lowering::AuthoredBound;
+use super::navigation::EndSide;
+use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::RoundingMode;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
-use quire_exact::{CollectionKind, CollectionType, IntegerInterval, RationalDomain};
+use quire_exact::{CollectionKind, CollectionType, Integer, IntegerInterval, RationalDomain};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::{
     CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
@@ -22,19 +25,35 @@ use std::ops::ControlFlow;
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
 
-/// The state a model read in a state clause observes (FR-104
-/// "Observations of reads"): `current` in an invariant, `pre` in a
-/// precondition and `post` in a postcondition, except inside `pre(e)`,
-/// where reads of `self` and reads through references obtained inside `e`
-/// observe `pre`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Observation {
-    /// An invariant's `at current` state.
-    Current,
-    /// The operation's pre-state.
-    Pre,
-    /// The operation's post-state.
-    Post,
+/// The identity of a record field a checked read names (FR-359 item 2): the
+/// declaration key of the record the read is typed at, and the field's name
+/// there. It carries no position: the value read may be a child of that
+/// record, whose own fields are not a positional prefix of the record's, so
+/// the slot is found in the value's own declaration by this identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordField {
+    declaration: NodeKey,
+    name: String,
+}
+
+impl RecordField {
+    /// The field `name` of the record declared as `declaration`.
+    pub fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+        Self {
+            declaration,
+            name: name.into(),
+        }
+    }
+
+    /// The record the read is typed at.
+    pub fn declaration(&self) -> NodeKey {
+        self.declaration
+    }
+
+    /// The field's name in that record.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 /// The typed index of one node of a [`CheckedBody`]: its position there.
@@ -119,6 +138,68 @@ pub struct CheckedBody {
 }
 
 impl CheckedBody {
+    /// A malformed checked-state fixture for producer tests, never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(
+        operands: Vec<ValueType>,
+        kind: impl FnOnce(&[NodeId]) -> NodeKind,
+        result: ValueType,
+    ) -> Self {
+        let ids: Vec<_> = (0..operands.len()).map(NodeId).collect();
+        let mut nodes: Vec<_> = operands
+            .into_iter()
+            .map(|value_type| Node {
+                kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                value_type,
+                location: Location::root(quire_semantic_value::location::Origin::Expression),
+            })
+            .collect();
+        nodes.push(Node {
+            kind: kind(&ids),
+            value_type: result,
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+        });
+        Self { nodes }
+    }
+
+    /// Link the relationship-end reachability `id` to the authored bound of
+    /// the population it walks (FR-380). A node that is no such
+    /// reachability is left as it is.
+    pub(in crate::check) fn link_population(&mut self, id: NodeId, bound: AuthoredBound) {
+        if let Some(Node {
+            kind: NodeKind::ReachesEnd { population, .. },
+            ..
+        }) = self.nodes.get_mut(id.0)
+        {
+            *population = Some(bound);
+        }
+    }
+
+    /// A body of `nodes`, each stored after the nodes it names, the last the
+    /// root, for evaluator tests of node kinds no checked package can hold
+    /// yet. A node names an operand by the [`NodeId`] of its position in
+    /// `nodes`, so a test builds operands first. Never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_nodes(nodes: Vec<(NodeKind, ValueType)>) -> Self {
+        assert!(!nodes.is_empty(), "a body holds its root");
+        Self {
+            nodes: nodes
+                .into_iter()
+                .map(|(kind, value_type)| Node {
+                    kind,
+                    value_type,
+                    location: Location::root(quire_semantic_value::location::Origin::Expression),
+                })
+                .collect(),
+        }
+    }
+
+    /// The id of the node at `index` of [`Self::from_nodes`]'s input.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn id_at(index: usize) -> NodeId {
+        NodeId(index)
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {
@@ -145,6 +226,35 @@ impl CheckedBody {
     /// Whether the body stores no node: never, since it holds its root.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
+    }
+
+    /// Whether a node of the body reads the local slot `slot`: for a slot
+    /// below the body's parameter count, whether it reads that parameter.
+    pub fn reads_local(&self, slot: Slot) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.kind, NodeKind::Local(read) if read == slot))
+    }
+
+    /// The evaluation frame this body needs when its first `bound` slots
+    /// are its parameters: `bound`, or one past the highest slot a node of
+    /// the body reads or binds, whichever is larger.
+    pub fn frame_slots(&self, bound: usize) -> usize {
+        self.nodes
+            .iter()
+            .flat_map(|node| match &node.kind {
+                NodeKind::Local(slot) | NodeKind::Let { slot, .. } => vec![*slot],
+                NodeKind::Query { slot, .. } | NodeKind::Seq { slot, .. } => vec![*slot],
+                NodeKind::Fold {
+                    accumulator,
+                    binder,
+                    ..
+                } => vec![*accumulator, *binder],
+                // Every other kind reads and binds no local slot.
+                _ => Vec::new(),
+            })
+            .map(|slot| slot.saturating_add(1))
+            .fold(bound, usize::max)
     }
 }
 
@@ -337,6 +447,18 @@ pub enum Arithmetic {
     Multiply,
 }
 
+/// Integer operations whose result uses the selected division law or the
+/// independent Euclidean modulus law.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntegerDivisionOperator {
+    /// Quotient under the selected law.
+    Div,
+    /// Remainder under the selected law.
+    Rem,
+    /// Euclidean remainder, independent of the selected law.
+    Mod,
+}
+
 /// Which values an ordering compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderedKind {
@@ -450,6 +572,19 @@ pub enum RecordSlot {
     Present(NodeId),
 }
 
+/// One arm of a checked [`NodeKind::Case`] (FR-318): the member it selects,
+/// the slots its payload binds positionally, and its body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseArm {
+    /// The selected member's position in the union's declared member order.
+    pub member: usize,
+    /// One slot per payload position, in payload order; a nullary member
+    /// binds none.
+    pub binders: Vec<Slot>,
+    /// The arm body, checked under the binders.
+    pub body: NodeId,
+}
+
 /// A one-binder query that visits every occurrence or stops early.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Visit {
@@ -465,6 +600,9 @@ pub enum Visit {
     Count,
     /// `sum<N>` over integer summands.
     Sum,
+    /// `only` (FR-139): the body's value at the one occurrence; undefined
+    /// when there is none or several.
+    Only,
 }
 
 /// A collection property a kind conversion can discard.
@@ -642,6 +780,17 @@ pub enum NodeKind {
     },
     /// Integer arithmetic.
     Arithmetic(Arithmetic, NodeId, NodeId),
+    /// An integer division member, with its admitted law for `div`/`rem`.
+    IntegerDivision {
+        /// The source operator.
+        operator: IntegerDivisionOperator,
+        /// The package's admitted law, absent only for `mod`.
+        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
+        /// The dividend.
+        left: NodeId,
+        /// The divisor.
+        right: NodeId,
+    },
     /// Unary integer `-`.
     Negate(NodeId),
     /// Integer `/` producing `Rational[..]`.
@@ -699,8 +848,8 @@ pub enum NodeKind {
     Field {
         /// The record.
         operand: NodeId,
-        /// The field's declaration-order slot.
-        index: usize,
+        /// The field read, by identity (FR-359 item 2).
+        field: RecordField,
         /// Whether the field is optional.
         optional: bool,
     },
@@ -720,6 +869,24 @@ pub enum NodeKind {
         /// bare `self.f`/`r.f` read, though both give this same node kind
         /// (SR-750 FND-008 round 2).
         derefed: bool,
+    },
+    /// `r.name` over a relationship end of the reference's static object type
+    /// (FR-363). The node's own `value_type` is the destination end's typed
+    /// result (`Reference<U>`, `Option<Reference<U>>`, `Set<..>` or `Bag<..>`).
+    Navigate {
+        /// The object reference navigated from.
+        reference: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the reference, which the source named.
+        role: String,
+        /// The relationship end nearest the reference: `Source` reads the
+        /// relationship's targets, `Target` its sources (FR-364).
+        near: EndSide,
+        /// Whether the destination end is `unique: true`: the collection kind
+        /// a single-valued end's cardinality refusal retains, `Set` when
+        /// unique and `Bag` otherwise (FR-364-AC-6).
+        unique: bool,
     },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
@@ -862,11 +1029,198 @@ pub enum NodeKind {
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
+    /// `reaches(source, target, name)` where `name` is a relationship end of
+    /// the operands' object type (FR-365): whether `target` is reachable from
+    /// `source` by one or more links of the relationship, read from the state
+    /// clause's own observation. Both operands are `Reference<S>` with `S`
+    /// conforming to the near end's type; the destination end is
+    /// single-valued and of the near end's own type.
+    ReachesEnd {
+        /// The source reference.
+        source: NodeId,
+        /// The target reference.
+        target: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the operands, which the source named.
+        role: String,
+        /// The relationship end nearest the operands.
+        near: EndSide,
+        /// The authored bound (FR-380) of the population this reachability
+        /// walks, when the unit bounds it. The typer leaves it `None`; the
+        /// state clause check sets it once the walked population resolves.
+        population: Option<AuthoredBound>,
+    },
+    /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
+    /// `protocol`-th protocol declaration, resolved once at S3 and typed
+    /// `Boolean`, the semantic type the protocol's node carries. Its value is
+    /// the value of that protocol clause.
+    ProtocolReference {
+        /// The target's index in the unit's protocol declarations.
+        protocol: usize,
+    },
+    /// `case scrutinee { ... }` over a declared union (FR-318): one arm per
+    /// member of the union, in the union's declared member order, so the
+    /// arm order in the source does not reach the node.
+    Case {
+        /// The union-typed scrutinee.
+        scrutinee: NodeId,
+        /// The scrutinee's union declaration.
+        declaration: NodeKey,
+        /// The arms, one per member, in declared member order.
+        arms: Vec<CaseArm>,
+    },
+    /// A construction of a union member (FR-317): `U::m` or `U::m(a, b)`.
+    UnionValue {
+        /// The union's declaration.
+        declaration: NodeKey,
+        /// The member's position in the union's declared member order.
+        member: usize,
+        /// The payload arguments, in the member's declared position order.
+        arguments: Vec<NodeId>,
+    },
+    /// A concrete population's objects in the observed state (FR-139): the
+    /// objects of `population` in ascending key order, typed
+    /// `Set<Reference<T>>` with the universe size left symbolic. Only a
+    /// refinement row's expression contains one.
+    PopulationObjects {
+        /// The concrete population.
+        population: DeclarationKey,
+    },
+    /// A domain-package population named `M::P` in a population position
+    /// (FR-391): the population operand of `allInstances` or `lookup`,
+    /// typed `Population<U>[N]`, carrying the population's declaration key.
+    /// It is never evaluated on its own: its parent reads the population
+    /// from the snapshot of the clause's observation.
+    NamedPopulation {
+        /// The population's declaration.
+        population: DeclarationKey,
+        /// The population's declared member types, which a queried type
+        /// must be covered by (FR-084).
+        members: Vec<EffectiveId>,
+    },
+    /// `r.f` of a refinement's history field `f` (FR-138): the value the
+    /// refinement keeps for the object `reference` names, which the
+    /// object's concrete type does not declare. Only a refinement row's
+    /// expression contains one.
+    History {
+        /// The object reference.
+        reference: NodeId,
+        /// The concrete object type the refinement adds the field to.
+        object_type: EffectiveId,
+        /// The history field's name.
+        field: String,
+    },
+    /// `seq(i in low .. high: body)` (FR-139): the sequence of `body` for
+    /// each integer `slot` takes from `low` to `high`, empty when `high <
+    /// low`.
+    Seq {
+        /// The slot the integer binds.
+        slot: Slot,
+        /// The first integer.
+        low: NodeId,
+        /// The last integer.
+        high: NodeId,
+        /// The element expression.
+        body: NodeId,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
     #[cfg(seam_probe)]
     __SeamProbe,
+}
+
+/// The inclusive range of an integer: its lower and upper bound.
+pub(crate) type IntegerRange = (Integer, Integer);
+
+/// The static range of the integer a node computes (FR-139; QSpec FR-376's
+/// "declared bounds" of a `seq` bound or a `sum` summand): the interval of an
+/// `Int[..]` node, the value of a literal, and the interval arithmetic of
+/// `+`, `-`, `*` and negation over those. `None` when a node on the way has
+/// no static range. `node` names the operands of `root`.
+///
+/// The walk keeps its pending nodes on a heap stack, so no depth of checked
+/// expression is a limit (ADR-030 D-1).
+pub(crate) fn static_integer_range<'n>(
+    root: (&'n NodeKind, &'n ValueType),
+    node: &dyn Fn(NodeId) -> Option<(&'n NodeKind, &'n ValueType)>,
+) -> Option<IntegerRange> {
+    enum Work<'n> {
+        Enter((&'n NodeKind, &'n ValueType)),
+        Exit(&'n NodeKind),
+    }
+    let mut work = vec![Work::Enter(root)];
+    let mut ranges: Vec<(Integer, Integer)> = Vec::new();
+    while let Some(step) = work.pop() {
+        match step {
+            Work::Enter((kind, value_type)) => {
+                if let ValueType::Int(interval) = value_type {
+                    ranges.push((interval.lower().clone(), interval.upper().clone()));
+                    continue;
+                }
+                match kind {
+                    NodeKind::Literal(CheckedLiteral(Value::Integer(value))) => {
+                        ranges.push((value.clone(), value.clone()));
+                    }
+                    NodeKind::Arithmetic(_, left, right) => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*right)?));
+                        work.push(Work::Enter(node(*left)?));
+                    }
+                    NodeKind::Negate(operand) => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*operand)?));
+                    }
+                    // Either branch: the range spans both.
+                    NodeKind::If {
+                        then, otherwise, ..
+                    } => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*otherwise)?));
+                        work.push(Work::Enter(node(*then)?));
+                    }
+                    _ => return None,
+                }
+            }
+            Work::Exit(NodeKind::Negate(_)) => {
+                let (lower, upper) = ranges.pop()?;
+                ranges.push((upper.neg(), lower.neg()));
+            }
+            Work::Exit(NodeKind::If { .. }) => {
+                let (otherwise_lower, otherwise_upper) = ranges.pop()?;
+                let (then_lower, then_upper) = ranges.pop()?;
+                ranges.push((
+                    then_lower.min(otherwise_lower),
+                    then_upper.max(otherwise_upper),
+                ));
+            }
+            Work::Exit(NodeKind::Arithmetic(operator, _, _)) => {
+                let (right_lower, right_upper) = ranges.pop()?;
+                let (left_lower, left_upper) = ranges.pop()?;
+                ranges.push(match operator {
+                    Arithmetic::Add => (left_lower.add(&right_lower), left_upper.add(&right_upper)),
+                    Arithmetic::Subtract => {
+                        (left_lower.sub(&right_upper), left_upper.sub(&right_lower))
+                    }
+                    Arithmetic::Multiply => {
+                        let products = [
+                            left_lower.mul(&right_lower),
+                            left_lower.mul(&right_upper),
+                            left_upper.mul(&right_lower),
+                            left_upper.mul(&right_upper),
+                        ];
+                        let lowest = products.iter().min()?.clone();
+                        let highest = products.iter().max()?.clone();
+                        (lowest, highest)
+                    }
+                });
+            }
+            Work::Exit(_) => return None,
+        }
+    }
+    let range = ranges.pop()?;
+    ranges.is_empty().then_some(range)
 }
 
 /// Whether FR-093 lowers a [`NodeKind::Coerce`] of an `operand`-typed node
@@ -892,12 +1246,25 @@ impl NodeKind {
     /// Direct operands in evaluation order.
     pub fn children(&self) -> Vec<NodeId> {
         match self {
-            NodeKind::Literal(_) | NodeKind::Local(_) => Vec::new(),
+            NodeKind::Literal(_)
+            | NodeKind::Local(_)
+            | NodeKind::ProtocolReference { .. }
+            | NodeKind::PopulationObjects { .. }
+            | NodeKind::NamedPopulation { .. } => Vec::new(),
+            NodeKind::Seq {
+                low, high, body, ..
+            } => vec![*low, *high, *body],
             NodeKind::Coerce(operand, _)
             | NodeKind::Negate(operand)
             | NodeKind::Not(operand)
             | NodeKind::Field { operand, .. }
             | NodeKind::Attribute {
+                reference: operand, ..
+            }
+            | NodeKind::History {
+                reference: operand, ..
+            }
+            | NodeKind::Navigate {
                 reference: operand, ..
             }
             | NodeKind::Present(operand)
@@ -918,6 +1285,7 @@ impl NodeKind {
                 otherwise,
             } => vec![*condition, *then, *otherwise],
             NodeKind::Arithmetic(_, left, right)
+            | NodeKind::IntegerDivision { left, right, .. }
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
             | NodeKind::Decimal { left, right, .. }
@@ -931,10 +1299,16 @@ impl NodeKind {
                 source: left,
                 target: right,
                 ..
+            }
+            | NodeKind::ReachesEnd {
+                source: left,
+                target: right,
+                ..
             } => vec![*left, *right],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
-            | NodeKind::Tuple { arguments, .. } => arguments.clone(),
+            | NodeKind::Tuple { arguments, .. }
+            | NodeKind::UnionValue { arguments, .. } => arguments.clone(),
             NodeKind::Record { slots, .. } => slots
                 .iter()
                 .filter_map(|slot| match slot {
@@ -956,6 +1330,11 @@ impl NodeKind {
                 children
             }
             NodeKind::AllInstances { population } => vec![*population],
+            NodeKind::Case {
+                scrutinee, arms, ..
+            } => std::iter::once(*scrutinee)
+                .chain(arms.iter().map(|arm| arm.body))
+                .collect(),
             NodeKind::Lookup {
                 population,
                 reference,

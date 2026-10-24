@@ -17,6 +17,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-301
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-330
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-031
+    type: references
 ---
 # FR-312: Read a clause-run request and run it through run_clause
 
@@ -35,7 +39,7 @@ a `ClauseRunRequest` any other way.
 FR-100's clause runner is this requirement's reader plus `run_clause`
 (FR-109); every artifact names the change that lands it as "the change that
 lands FR-100's clause runner". That change is ADR-011 M-6c's deletion of
-native `run` (FR-026 to FR-032) and `native-run-result/1` (ADR-031 R-1).
+native `run` and `native-run-result/1` (ADR-031 R-1).
 
 ## Inputs
 
@@ -44,18 +48,40 @@ envelope, source selections and intake limits) that carries `clause` in
 place of `call`. `clause` is a closed object:
 
 - `selection`: exactly one of
-  - `{"clause": {"name": N, "observation": O}}`, FR-106's
+  - `{"clause": {"name": N, "observation": O, ...}}`, FR-106's
     `ClauseSelection`, where `O` names the snapshot or invocation the clause
-    reads by its key in `observations`;
+    reads by its key in `observations`. The permitted member sets are exactly
+    `{name, observation, anchor}` and optionally `self` for a current
+    snapshot, `{name, observation, parameters}` and optionally `self` for a
+    pre snapshot, and `{name, observation}` for an invocation. `self` is
+    FR-106's `ObjectRef`; it is absent when the clause's receiver is a state
+    machine, which has no object identity, and an object receiver whose
+    request omits it is refused by FR-106 check 2, not by the reader.
+    `anchor` is FR-106's `{kind, name}`, and `parameters` is FR-106's
+    parameter map (including `{}` when empty). An invocation document
+    carries its own `self` and call context;
   - `{"frame": {"operation": Op, "invocation": K}}`, FR-115's frame
     selection;
   - `{"function": {"name": N, "arguments": A, "snapshot": K}}`, FR-109's
     `Function` selection, with `A` as FR-109 states;
+  - `{"temporal": {"name": N, "trace": T, "over": R}}`, FR-330's
+    `Temporal` selection. `T` is exactly one of `{"finite": [K, ...]}`
+    (`TraceInput::Finite`) and `{"lasso": {"prefix": [K, ...], "loop":
+    [K, ...]}}` (`TraceInput::Lasso`), each `K` an `observations` key, in
+    position order. `R` is FR-330's `{"reference": {"population": P,
+    "key": K}}`, with `P` the population's declaration identity text and
+    `K` the object's key. The permitted member sets are exactly
+    `{name, trace, over}`, `{finite}` or `{lasso}` for `trace`, and
+    `{prefix, loop}` for `lasso`;
 - `observations`: an object mapping each key to the file of a
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
 - `package_id`: optional, the expected `package_id`, lowercase hex;
-- `work_units`: optional, FR-100's evaluation budget;
+- `accounting`: optional, a closed object whose members are any subset of
+  the ten `quire.value.accounting/v1` counter names, each a JSON integer
+  from 0 to `u64::MAX`, with the same defaults as FR-100's
+  `call.accounting`; a counter supplied here overrides only that counter's
+  default. A direct `work_units` member of `clause` is not accepted;
 - `observation_limits`: optional, FR-106's `ObservationLimits` overrides.
 
 The request's `models` and `libraries` are FR-100's and give FR-109's
@@ -65,23 +91,64 @@ package and dependency inputs.
 
 - `read_clause_run_request` returns `Result<ClauseRunRequest,
   ClauseRunRequestRefusal>`.
-- The `run` command and the driver write the report as one
-  `native-run-result/2` clause-run document (FR-267) on stdout and exit with
-  FR-285's exit code of the disposition's category (FR-109, QSpec FR-301).
+- `command`'s `run` returns the report as one `native-run-result/2`
+  clause-run result document (FR-267), with FR-285's exit code of the
+  disposition's category (FR-109, QSpec FR-301), and writes nothing to the
+  process streams; the driver writes that document to stdout (FR-287,
+  Overlap).
 
 ## Behavior
 
+- The clause request reader SHALL retain the three existing selection
+  shapes and FR-109's Boolean `function` claim semantics. FR-100's shared
+  Value carriers are in-process carriers, not additional JSON argument
+  variants of this reader. A Reference-result function belongs to the
+  existing public Value `run` boundary; this reader SHALL NOT select it as
+  a Boolean claim, invent a Population wire payload, or form a default
+  model context to stand in for admission. The driver's TC-792 typed call
+  requires actual consumer integration with that reviewed Rust boundary.
 - The reader SHALL decode `clause` under FR-100's closed-envelope rules:
   unknown and duplicate members and positional record arrays refuse
   `invalid-request` at stage `request`, naming the member.
 - If a `1-draft` request carries both `call` and `clause`, or neither, then
   the reader SHALL refuse `invalid-request` at stage `request`.
+- When `qsl-replay` is built with `quire-extraction` and the request's
+  `program` carries `extraction`, the reader SHALL decode `extraction` and
+  `clauses`, check the request's mode, build and validate the clause-only
+  Quire context, extract the body through FR-030 and put the extracted
+  source in the `ClauseRunRequest` as its unit, as FR-031 states. Its mode,
+  context and extraction refusals are FR-031's. When `qsl-replay` is built
+  without that feature, the reader SHALL refuse `extraction` as an unknown
+  member.
 - If `selection` holds no variant, more than one, or a variant whose
   members are not the closed set above, then the reader SHALL refuse
   `invalid-request` at stage `request`, naming the member.
 - If a selection names an observation key `observations` does not hold,
   then the reader SHALL refuse `invalid-request` at stage `request`, naming
   the key.
+- For a clause selection, the reader SHALL inspect the named document's
+  format and observation role. From a current snapshot it SHALL construct
+  FR-106 `Current` with the request's `self` and `anchor`; FR-106 checks the
+  anchor against the snapshot. From a pre snapshot it SHALL construct
+  `PreCall` with the request's `self` and `parameters`. From an invocation
+  it SHALL construct `Invocation` using the document reference; FR-106 reads
+  `self` and parameters from that invocation. A directly selected post
+  snapshot, an unrecognized document format or observation role, a missing
+  required member, or a member outside that role's permitted set SHALL
+  refuse `invalid-request` at stage `request`, naming `observation` for an
+  unsupported document or role and the member for a member defect, before
+  `run_clause`.
+- For a temporal selection, the reader SHALL construct FR-330's
+  `Temporal{name, trace, over}` with one FR-106 `DocumentRef` per trace
+  key, in the order the request lists the keys; a key listed twice names
+  the same document at both positions. Each key SHALL name a
+  `quire.state.snapshot/v1` document whose observation role is `current`;
+  an invocation document or another role refuses `invalid-request` at
+  stage `request`, naming `trace`. A `trace` variant other than `finite`
+  and `lasso` (a model trace, FR-330's `TraceInput::Model`, is built in
+  process only) refuses `invalid-request` at stage `request`, naming
+  `trace`. The reader checks no trace length: an empty `finite` array or
+  an empty `loop` reaches FR-330, which refuses it at stage `evaluate`.
 - The reader SHALL read each observation file once, under FR-100's
   `dependent_bytes` limit and relative to the request file's directory.
 - The reader SHALL pass every byte it read into the `ClauseRunRequest`;
@@ -91,18 +158,24 @@ package and dependency inputs.
 - The run command SHALL write every compile, selection, admission or
   evaluation result as the report FR-109 gives, never as a command-error
   envelope.
-- If the reader refuses a request, then the run command SHALL write FR-267's
-  command-error envelope to stderr, write nothing to stdout, and exit with
-  the refusal code's exit status.
+- If the reader refuses a request, then the run command SHALL return an
+  outcome carrying FR-267's command-error envelope as its refusal envelope
+  and no result document, with the refusal code's exit code.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-312-AC-1 | Through `run`, FR-108's healthy-parent case as a clause-run request (`ParentOrder` over its current snapshot) writes one `native-run-result/2` document with `success`, `truth: true` and `basis`, exit 0; violating-parent writes `violation`, exit 10. The same request file passed to the driver's run entry gives byte-identical stdout and the same exit. | Test (TC-891) |
-| FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, empty stdout, naming the member or key. | Test (TC-891) |
-| FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test (TC-891) |
-| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test (TC-891) |
+| FR-312-AC-1 | Through `run`, FR-108's healthy-parent case as a clause-run request (`ParentOrder` over its current snapshot) returns one `native-run-result/2` result document with `success`, `truth: true` and `basis`, exit 0; violating-parent returns `violation`, exit 10. | Test |
+| FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, no result document, naming the member or key. | Test |
+| FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test |
+| FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
+| FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `parameters` and, for an object receiver, `self` constructs `PreCall`; a current or pre request without `self` constructs the selection with no `self`, and admission refuses it as `wrong-observation` at stage `admit` when the receiver is an object; a pre request without `self` for a state machine's precondition admits, and a state machine's invariant selected by `Current` is refused by FR-106-AC-46 (it is selected by `Context`); an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting `anchor` from a current request or `parameters` from a pre request, or adding a role-forbidden member, refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
+| FR-312-AC-6 | A clause request's `accounting` object accepts all ten counter names and passes their values unchanged to `ClauseRunRequest.accounting`; omitted `accounting` uses the FR-100 defaults. A direct `work_units` member of `clause` refuses `invalid-request` at stage `request`, exit 20, no result document. | Test (TC-891) |
+| FR-312-AC-7 | Through `run`, a request selecting `{"temporal": {"name": "Reaches", "trace": {"lasso": {"prefix": [], "loop": ["s0", "s1"]}}, "over": {"reference": {"population": P, "key": "c1"}}}}` over FR-330-AC-2's `Counter` snapshots `s0` (`c.value` 0), `s1` (1) and `s2` (2) returns the `/2` document FR-267-AC-13 states, exit 10; with loop `["s0", "s1", "s2"]` it returns `success`, exit 0, byte-identical to the report of the same `ClauseRunRequest` built in process. A trace key naming an invocation document or a pre snapshot, a `trace` of `{"model": {}}`, a `trace` holding both `finite` and `lasso`, and an unknown member in `temporal` each refuse `invalid-request` at stage `request`, exit 20, no result document, naming `trace` or the member. A `finite` array of zero keys reaches FR-330 and reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1160) |
+
+The existing AC-1 through AC-5 test-case association remains TC-891;
+method-only Verification cells do not replace the existing trace tags.
 
 ## Dependencies
 
@@ -113,14 +186,20 @@ package and dependency inputs.
   `run` command.
 - [FR-106](FR-106-admit-snapshots-and-invocations.md): observation documents
   and `ObservationLimits`; FR-115 for the frame selection.
+- [FR-330](FR-330-run-a-temporal-clause-through-the-spine.md): the
+  `Temporal` selection, its trace input and `over` binding.
 - [FR-267](FR-267-write-run-results-as-native-run-result-2.md): the `/2`
   clause-run document and the command-error envelope.
 - QSpec FR-301 (exit codes).
 
 ## Status
 
-Specified; not yet implemented -- TC-891 planned. Lands with the deletion of
-native `run` (ADR-031 R-1). That change also deletes the per-file `sha256:`
+QSL-665's typed-call clarification is proposed; its consumer qualification
+is UNRUN. The accounting setting member is owned by QSL-656; this
+clarification does not duplicate that contract or define a compatibility
+member.
+
+The deletion of native `run` (ADR-031 R-1) also removes the per-file `sha256:`
 digests the native-v1 request selections carry and their checks (FR-026,
 FR-027, FR-100): a request names its files, and the command reads their
 bytes as they are.

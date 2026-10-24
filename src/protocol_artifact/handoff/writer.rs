@@ -856,7 +856,7 @@ struct WorkflowApply<'a>(&'a crate::native_model::OperationRole);
 impl<'a> TryFrom<&'a crate::native_model::OperationRole> for WorkflowApply<'a> {
     type Error = Error;
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn try_from(operation: &'a crate::native_model::OperationRole) -> Result<Self, Error> {
         if operation.context.as_str() == "Workflow" && operation.name.as_str() == "apply" {
             Ok(Self(operation))

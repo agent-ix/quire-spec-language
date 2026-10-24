@@ -2,7 +2,7 @@
 //! `qsl-foundation`: the ADR-011 §6.1 layer **F** foundation crate
 //! (ADR-011 §7.3 X-2).
 //!
-//! Module order, per ADR-011 §6.1's F row: [`absence`] < [`json_number`] <
+//! Module order, per ADR-011 §6.1's F row: [`absence`] < [`backend`] < [`json_number`] <
 //! [`serde_object`] < [`setting`] < [`digest`] < [`wire_format`] < [`source`] (with
 //! [`source_map`]) < [`selection`] < [`bound`] < [`diagnostic`]. Every module here depends only on
 //! `quire-exact` (K) and external crates -- no module imports the QSL root
@@ -16,14 +16,19 @@
 //! crate's own ADR-011 §7.1/§7.3 extraction note).
 
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 pub mod absence;
+pub mod backend;
 pub mod bound;
 pub mod diagnostic;
 pub mod digest;
 pub mod identity_limits;
 pub mod intake_limits;
 pub mod json_number;
+pub mod memory;
 pub mod request_index;
 pub mod selection;
 pub mod serde_object;
@@ -33,13 +38,14 @@ pub mod source_map;
 pub mod wire_format;
 pub mod witness;
 
-pub use diagnostic::{
-    CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, SyntaxLimit,
-    UndefinedCoded, UndefinedReason, UndefinedRecord,
-};
+pub use backend::{BackendId, EmptyBackendIdentity};
+pub use diagnostic::{Code, Diagnostic, Phase, SyntaxLimit};
 pub use digest::ByteDigest;
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
 pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES};
+pub use memory::MemoryModelName;
 pub use request_index::RequestIndex;
-pub use setting::{Setting, SettingLimits, UsageCause, UsageRefusal};
+pub use setting::{
+    AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,
+};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, SourceLabel, Span, Spanned};

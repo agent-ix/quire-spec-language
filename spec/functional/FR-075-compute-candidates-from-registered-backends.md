@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-193
+    type: depends_on
 ---
 # FR-075: Compute lowering-target candidates from a registered-backend registry
 
@@ -23,46 +25,63 @@ relationships:
 QSL SHALL provide a registry, the layer-R `route` module's `Registry`
 (ADR-011 §6.1), that backends populate by registering a `BackendDescriptor`
 under one contract. QSL SHALL compute each requested item's candidate set
-from that registry's current contents, matching on capability kind alone
-(ADR-012 §7.1, §7.2).
+from that registry's current contents, matching on capability kind, for
+`probabilistic-satisfaction` the item's exact evidence kind (ADR-012 §7.1,
+§7.2; FR-290, "Evidence kinds"), and for `temporal-satisfaction` the item's
+dynamics (QSpec FR-193 "Routing a hybrid item").
 
-The registry sits alongside the fixed `ProjectionTarget` catalog at
-`src/lowering/target.rs` (the `targets!` macro block), which remains the
-lowering-target selector. Resolving a backend by `BackendId` in `route` is
-this requirement's work (#185). The catalog is deleted with
-`lowering` in ADR-011 §7.3 M-6a, once the skeleton spine is green (ADR-011
-§6.2, the `lowering` row).
+Resolving a backend by `BackendId` in `route` is this requirement's work
+(#185). The native `lowering` module and its fixed `ProjectionTarget` catalog
+are deleted.
 The registry SHALL define no local capability-kind type. The registry SHALL
 consume the canonical `Capability` value type
 ([quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)),
-whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
+whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
 
 ## Inputs
 
-- A `BackendDescriptor { id: BackendId, advertises: set of (Capability, mode) }`
-  per registration, where `mode` is `bounded` or `unbounded` (ADR-012 §7.1).
-  `BackendId` is the backend identity alone (ADR-013 O-19). The registry's
+- A `BackendDescriptor` per registration, with backend identity, provider
+  origin, advertised `(Capability, mode)` pairs, retained
+  `domains` (present or absent), the admitted `evidence_kinds` set
+  supplied when it advertises `probabilistic-satisfaction`, and, when it
+  advertises `temporal-satisfaction`, its `dynamics` set, a nonempty subset
+  of {`discrete`, `hybrid`} that reads `{discrete}` when the descriptor
+  supplies none. `mode` is
+  `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
+  identity alone (ADR-013 O-19); origin, pairs, domains and evidence kinds
+  are descriptor members, not identity components (FR-288-AC-5/6). The
+  manifest digest is a descriptor member that counts in equality (QSpec
+  FR-290-AC-9, FR-290-AC-10), and keys the `duplicate-backend` refusals.
+  The registry's
   uniqueness key is `BackendId` (FR-290 "Candidate set and negotiation": "a
   backend identity is unique within a registry"), so a second registration
   under an already-held `BackendId` is judged against the held descriptor:
-  when the two descriptors are equal (same identity and advertised
-  pairs), the repeat is one registration and is not refused (FR-075-AC-7);
-  when they differ in any member, the identity conflicts (FR-290 "Candidate
-  set and negotiation"): the registry refuses the identity once, withdraws
-  the held registration, and the identity is permanently unregistered
-  (FR-075-AC-4).
+  when the equality-compared members are equal, the repeat is one
+  registration and is not refused
+  (FR-075-AC-7);
+  when they differ in any equality-compared member, the identity conflicts
+  (FR-290 "Candidate set and negotiation"): the registry refuses the
+  identity once, withdraws the held registration, and the identity is
+  permanently unregistered (FR-075-AC-4).
 - A requested item's capability kind (the `Capability` value FR-057's
-  admission recorded for it) and, optionally, a named `BackendId`.
+  admission recorded for it), its evidence kind when its capability is
+  `probabilistic-satisfaction`, its requirements (`hybrid-dynamics` for the
+  item of a hybrid claim, FR-447 "The provider request"; none otherwise),
+  and, optionally, a named `BackendId`.
 - For the request builder: a checked package's requirement records
-  (FR-062-AC-13) and, optionally, one named `BackendId` for the request.
+  (FR-062-AC-13), optionally one named `BackendId` for the request, and
+  optionally the request's evidence selection for probabilistic records:
+  one evidence kind, or both.
 - The registry's current contents at the moment candidates are computed.
 
 ## Outputs
 
 - From the request builder: one `RequirementItem` per requirement record,
-  in record key order, each with its request index, occurrence key, node,
-  kind, extent classification, unbounded domains, result bound and
-  candidate outcome.
+  in record key order, followed, when the request names both evidence
+  kinds, by one second-kind item per `probabilistic-satisfaction` record,
+  in record key order; each with its request index, occurrence key, node,
+  kind, extent classification, unbounded domains, result bound, direct
+  conversion context and candidate outcome.
 - A candidate set per item: zero, one or more `BackendId`s, ordered
   bytewise by identity (FR-290 "Candidate set and negotiation").
 - A distinct unknown-backend marker, carrying the named identity, when the
@@ -75,20 +94,43 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
 
 ## Behavior
 
-### Candidate computation matches on capability kind alone
+### Candidate computation matches probabilistic evidence exactly
 
 For each requested item, the registry SHALL compute the candidate set as
-follows, matching a registration to an item only by capability kind and
-never by mode, display name or registration order:
+follows, matching a registration to the item's capability kind and, when that
+kind is `probabilistic-satisfaction`, the item's evidence kind. A probabilistic
+registration is a candidate only when its admitted evidence-kind set contains
+the item's exact evidence-kind label. `statistical` SHALL NOT substitute for
+`exact`, nor `exact` for `statistical`. If a probabilistic item has no evidence
+kind or a label other than `statistical` or `exact`, this stage SHALL produce
+no candidates and SHALL preserve the item evidence value for the downstream
+negotiation stage to refuse as `absent-evidence-kind` or
+`unknown-evidence-kind` (FR-290, "Evidence kinds"); it SHALL NOT convert that
+invalid request into a supported candidate.
 
-- When the request names a registered `BackendId`, the set SHALL be that
-  backend when its `advertises` set contains the item's capability kind, and
-  SHALL be empty otherwise.
+For a `temporal-satisfaction` item, a registration SHALL be a candidate only
+when its `dynamics` set holds `hybrid` for an item carrying the
+`hybrid-dynamics` requirement, and `discrete` for an item carrying none
+(QSpec FR-193 "Routing a hybrid item", QSpec FR-290 "Candidate set and
+negotiation"). So EN-6, whose descriptor supplies no `dynamics`, is never a
+candidate for a hybrid item, a hybrid provider whose `dynamics` is `{hybrid}`
+is never a candidate for a temporal item without hybrid dynamics, and a
+registration with `{discrete, hybrid}` is a candidate for both. An item of
+any other kind carries no requirement, and its candidates do not read
+`dynamics`.
+
+For other items, matching remains by capability kind alone. In every case,
+candidate matching SHALL NOT use mode, display name or registration order. A
+registration *matches* an item when it advertises the item's capability kind
+and meets the evidence-kind and dynamics rules above:
+
+- When the request names a registered `BackendId`, the set SHALL contain that
+  backend only when it matches the item; otherwise the set is empty.
 - When the request names a `BackendId` the registry does not hold, the
   result SHALL be the unknown-backend marker carrying that identity, and
   SHALL NOT be reported as an empty candidate set.
 - When the request names no backend, the set SHALL be every registered
-  backend whose `advertises` set contains the item's capability kind.
+  backend that matches the item.
 
 Mode (`bounded`/`unbounded`) SHALL NOT affect which backends are candidates;
 comparing a candidate's advertised mode against the item's extent is
@@ -101,11 +143,15 @@ comparing a candidate's advertised mode against the item's extent is
 `qsl_route::request::items_from_requirements`; the implementing ticket
 chooses the Rust spelling) SHALL take a checked package's requirement
 records (`CheckedPackage::graph().requirements()`, FR-062-AC-13), the
-registry, and at most one `BackendId` the request names. It SHALL return
+registry, at most one `BackendId` the request names, and the request's
+evidence selection for probabilistic records, when it names one. It SHALL
+return
 one `RequirementItem` (design name) per record, in the records' bytewise
-occurrence-key order. Each `RequirementItem` SHALL carry:
+occurrence-key order, followed by the second-kind items of "Evidence kind
+of a probabilistic item" when the request names both evidence kinds. Each `RequirementItem` SHALL carry:
 
-- its request index, its position in that order (ADR-012 §13.5);
+- its request index, its position in that order (ADR-012 §13.5); a
+  second-kind item's index is past the last record's (below);
 - the record's occurrence key, and that key's node (`WireNodeId`);
 - the record's capability kind;
 - its extent classification, as `RequestWriter::item` computes it from the
@@ -113,14 +159,84 @@ occurrence-key order. Each `RequirementItem` SHALL carry:
 - its unbounded domains: the `DomainKey` and kind of each domain of an
   `Unbounded` extent, in key order, and none for a `Bounded` one;
 - the record's result bound, as the `WireNodeId` of its FR-092 type node;
-- its candidate outcome, `Registry::candidates(kind, named backend)` by this
-  requirement's candidate rules.
+- its direct conversion context, as `Option<OccurrenceKey>`: the canonical
+  `OccurrenceKey` of the `expression` occurrence for the narrow that
+  directly wraps this record's scalar application, or `None` when the
+  record's result bound is the application's own result type;
+- the record's path condition, as the same ordered sequence of canonical
+  `PathGuard` values returned by `RequirementRecord::path_condition()`;
+- for a `probabilistic-satisfaction` record, its evidence kind, by the
+  rule of "Evidence kind of a probabilistic item" below;
+- its requirements: `hybrid-dynamics` for a `temporal-satisfaction` record
+  whose claim is a hybrid claim (FR-447), none for every other record;
+- its candidate outcome, `Registry::candidates(kind, evidence kind when
+  probabilistic, requirements, named backend)` by this requirement's
+  candidate rules.
+
+#### Evidence kind of a probabilistic item
+
+- When the request names no evidence selection, the request builder SHALL
+  write one item for a `probabilistic-satisfaction` record, carrying the
+  record's evidence kind (FR-195: `exact` for an exact-only claim,
+  `statistical` otherwise).
+- When the request names one evidence kind, the request builder SHALL
+  write one item for each `probabilistic-satisfaction` record, carrying
+  that kind, whatever the record's evidence kind.
+- When the request names both evidence kinds, the request builder SHALL
+  write each `probabilistic-satisfaction` record's item at the record's own
+  request index carrying the record's evidence kind, and SHALL then append,
+  after the item of the last record, one second-kind item per such record
+  in record key order, carrying the other evidence kind, the record's
+  occurrence key and node, and the next request index (QSpec FR-290: "One
+  claim may be requested twice, once per evidence kind"). With `n` records
+  and the `j`-th probabilistic record (from 0) in key order, its
+  second-kind item's request index is `n + j`. The two items of one claim
+  settle separately.
+- The evidence selection SHALL leave the request index of every record's
+  item unchanged: the item at index `i` is the item of the record at
+  position `i` in key order under every selection, so FR-395's pairing key
+  names the same item whichever evidence kinds a request names.
+- The request builder SHALL write no evidence kind on an item of any other
+  capability kind, and the evidence selection SHALL leave those items
+  unchanged.
+- An item the request builder writes SHALL always carry exactly one of the
+  labels `statistical` and `exact`; the absent and unknown evidence-kind
+  refusals of FR-290 arise only for an item a caller builds without the
+  request builder.
 
 An item whose candidate set is empty or whose extent is unbounded is
 written like any other and settles at negotiation (`unsupported` or
 `requires-bound`). Two records at one node (two occurrences of one
 application) are two items with their own request indices and occurrence
 keys.
+
+An item's request index is its position in the package order; a
+second-kind item's index follows every record's (see "Evidence kind of a
+probabilistic item"). FR-395's call
+association names an item by the package's `package_id` and this request
+index (FR-395, "Pairing key"), and the item written at that index carries the member's key.
+
+The path condition is the record's guard sequence, outermost first. Each
+guard is the canonical `PathGuard` value: the guard expression's
+`OccurrenceKey` and the required Boolean outcome (`holds`).
+`RequirementItem::path_condition()` SHALL expose that sequence as
+`&[PathGuard]`, preserving its order and members without translating it,
+deduplicating it, or deriving a second guard representation. An unguarded
+requirement record yields an empty sequence.
+
+`RequirementItem::conversion_context()` SHALL expose the record's direct
+conversion context as `Option<&OccurrenceKey>`. This value is carried once
+per requirement occurrence, independently of the `WireNodeId` shared by the
+scalar application. For each item, the driver SHALL associate the context
+with the item by its occurrence key/request index; it SHALL NOT select a
+conversion by expression node alone. A record whose result bound comes from
+the application's own result type yields `None`. A record whose result bound
+comes from a narrow carries exactly the direct (innermost) narrow's
+occurrence key; no outer conversion replaces it. The narrow is context only
+and does not add a requested item, routed item or claim. The driver's mapping
+passes that occurrence's conversion context to IR together with the item's
+root. A bare `lower([add])` call remains governed by the Contract IR API and
+this requirement does not make QSL discover a reverse narrow for it.
 
 The orchestrating driver (T-13) reads nothing else about items from QSL. It
 writes each item's kind, extent classification, named backend and
@@ -153,6 +269,62 @@ and the capability kind a requested item carries, from the one canonical
 registry module or elsewhere in `#185`'s scope, whose variants name FR-290's
 capability-kind labels.
 
+### Probabilistic evidence kinds are checked at descriptor admission
+
+When a `BackendDescriptor` advertises `probabilistic-satisfaction`,
+`descriptor_from_manifest` (and `BackendDescriptor::new` for already-typed
+input) SHALL require a nonempty evidence-kind set whose
+members are each byte-equal to `statistical` or `exact` (FR-290, "Evidence
+kinds"). If the set is absent or empty, or any member is not one of those two
+labels, `descriptor_from_manifest` SHALL refuse the registration with
+`invalid_capability`/`unknown-evidence-kind`, keyed by the descriptor's
+`BackendId`. This check SHALL finish before the descriptor is inserted into the
+registry or used for candidate computation. The refused descriptor contributes
+no registration, and any registration already held under that identity stands.
+
+`descriptor_from_manifest` SHALL judge the evidence-kind labels after every
+advertised pair, `domains` and `fairness_kinds`, so a registration with an
+earlier defect and an evidence defect refuses with the earlier cause. It SHALL
+ignore evidence-kind labels supplied for a backend that advertises no
+`probabilistic-satisfaction` kind, so the descriptor holds none, defective or
+not. It SHALL read a label repeated within the labels as one member, because
+QSpec FR-290 states the evidence kinds as a set; this differs from `domains`
+and `fairness_kinds`, whose repeat FR-057 and FR-134 refuse.
+
+A descriptor that advertises no `probabilistic-satisfaction` kind SHALL NOT
+require evidence-kind labels for admission. QSL SHALL preserve the accepted
+labels on the admitted descriptor for the registered backend contract; this
+requirement assigns no new evidence-kind vocabulary or alias.
+
+### Dynamics are checked at descriptor admission
+
+When a `BackendDescriptor` advertises `temporal-satisfaction` and supplies
+`dynamics`, `descriptor_from_manifest` (and `BackendDescriptor::new`) SHALL
+refuse the registration with `invalid_capability`/`invalid-dynamics`, keyed
+by the descriptor's `BackendId`, when the member is not a list
+(`not-a-list`), is empty (`empty`), holds a label other than `discrete` and
+`hybrid` (`unknown-label`), repeats a label (`duplicate-label`), or holds
+`hybrid` while the descriptor's `bounds` lack `max_solver_steps` or
+`max_solver_time` (`missing-bounds`, naming the first absent limit in that
+order), reporting the first defect in that order (QSpec FR-193 "Routing a
+hybrid item"). It SHALL judge `dynamics` after every advertised pair,
+`domains`, `fairness_kinds` and the evidence kinds, so a registration with an
+earlier defect refuses with the earlier cause, and SHALL ignore a `dynamics`
+supplied for a backend that advertises no `temporal-satisfaction`, so the
+descriptor holds none. The check SHALL finish before the descriptor is
+inserted into the registry; the refused descriptor contributes no
+registration, and any registration already held under that identity stands.
+An admitted descriptor SHALL keep `dynamics` exactly as supplied: a
+descriptor that supplies none holds none, and every FR-331 manifest QSL
+writes from it carries no `dynamics` member, so EN-6's descriptor bytes, its
+manifest digest and the request identity and cache key (QSpec FR-306) of
+every temporal request over it are those it has without this member.
+`{discrete}` is only how candidate computation reads an absent member. A
+descriptor that supplies `["discrete"]` explicitly has other descriptor
+bytes and another manifest digest, so two registrations of one identity
+that differ only in absent and explicit `["discrete"]` conflict as
+FR-075-AC-4 states.
+
 ### Reading a `backend` member
 
 A candidate's wire form is ADR-013 O-19's `backend` member, the backend
@@ -166,12 +338,16 @@ candidate.
 ### A repeated identity is idempotent when identical, and conflicts otherwise
 
 If a registration names a `BackendId` the registry already holds, the
-registry SHALL compare the new descriptor with the held one:
+registry SHALL compare identity, provider origin, manifest digest, advertised
+pairs, retained `domains`, the evidence-kind set and the `dynamics` member as supplied. Two registrations that
+differ only in their manifest digest are unequal and conflict (QSpec
+FR-290-AC-10, TC-282). A different identity is a different registry key and is
+not a duplicate-registration conflict:
 
-- If the two are equal (same identity and advertised pairs), the
+- If the two are equal in every equality-compared member, the
   repeat SHALL be treated as one registration and SHALL NOT be refused
   (FR-075-AC-7).
-- If the two differ in any member, the registry SHALL refuse the identity
+- If the two differ in any equality-compared member, the registry SHALL refuse the identity
   once with `invalid_capability`/`duplicate-backend`, keyed by the identity,
   SHALL withdraw the held registration, and SHALL treat the identity as permanently
   unregistered: a later registration of it, even one identical to an earlier
@@ -215,14 +391,26 @@ were added.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-075-AC-1 | Given a registry holding one backend that advertises the requested item's capability kind, and no named backend in the request, the candidate set is exactly that backend. Given a registry holding a backend that does not advertise the item's kind, the candidate set is empty. | Test (TC-193) |
-| FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, they report the same registration refusals in the same order, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item -- including a set that contains an identical repeat of one identity's descriptor and a conflicting pair under another. | Test (TC-194) |
-| FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises only from a registered backend that does not advertise the item's kind, or from no registrant advertising the kind at all). | Test (TC-195) |
+| FR-075-AC-1 | For a non-probabilistic item, given a registry holding one backend that advertises the item's capability kind and no named backend, the candidate set is exactly that backend; a backend not advertising the kind is excluded. For `probabilistic-satisfaction`, a backend is a candidate only when it advertises both the kind and the item's exact evidence kind; neither `statistical` nor `exact` substitutes for the other. | Test (TC-193) |
+| FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, they report the same registration refusals in the same order, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item -- including probabilistic items and a set that contains an identical repeat of one identity's complete descriptor and a conflicting pair under another. | Test (TC-194) |
+| FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises when a registered backend does not advertise the item's kind or exact probabilistic evidence kind, or no registrant advertises that required combination). | Test (TC-195) |
 | FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, the identity is refused once with `invalid_capability`/`duplicate-backend`, keyed by the identity; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, an identity with leading and trailing spaces is kept verbatim, and an empty identity refuses. | Test (TC-433) |
-| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-447, TC-448) |
+| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with equal identity, provider origin, manifest digest, advertised pairs, retained `domains`, and evidence-kind set, the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. A repeat differing only in any of those compared members is unequal and follows FR-075-AC-4, a difference in manifest digest alone included. A different identity is a different registry key. | Test (TC-447, TC-448, TC-982) |
 | FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
+| FR-075-AC-9 | For the checked function `function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }`, the two `x + 1` requirement records have the same application node and distinct occurrence keys, and the builder returns two items in occurrence-key order. Each item's `path_condition()` equals its own record's canonical path-condition sequence: both contain the `if p` guard occurrence, with `holds` true for the then occurrence and false for the else occurrence. Neither sequence is replaced by the other, flattened, or deduplicated. An unguarded record's item carries an empty path condition. | Test |
+| FR-075-AC-10 | A descriptor advertising `probabilistic-satisfaction` with evidence kinds `{statistical}`, `{exact}` or `{statistical, exact}` is admitted and retains exactly the supplied set on the descriptor. | Test |
+| FR-075-AC-11 | A descriptor advertising `probabilistic-satisfaction` with an absent evidence-kind set, an empty set, or any member other than the exact labels `statistical` and `exact` is refused by `descriptor_from_manifest` with `invalid_capability`/`unknown-evidence-kind`, keyed by `BackendId`, before registry insertion; it contributes no candidate and leaves any earlier registration under that identity standing. The same conversion judges the labels after every advertised pair, `domains` and `fairness_kinds` (a registration with an earlier defect refuses with the earlier cause), ignores labels supplied for a backend advertising no probabilistic kind, and reads a repeated label as one member. | Test |
+| FR-075-AC-12 | A descriptor that advertises no `probabilistic-satisfaction` kind is admitted without evidence-kind labels, and its admission is unaffected by whether it advertises any of the other eleven kinds. | Test |
+| FR-075-AC-13 | For a probabilistic item naming `statistical` or `exact`, the candidate set contains exactly registrations advertising that same evidence kind; a registration advertising only the other evidence kind is excluded, including when it is the only registration. Missing or unknown evidence remains available to downstream negotiation for the corresponding invalid-request refusal and is not substituted. | Test (TC-980, TC-983) |
+| FR-075-AC-14 | Two registrations identical in every descriptor member except that their evidence-kind sets differ are conflicting descriptors: the registry refuses the identity with `invalid_capability`/`duplicate-backend`, withdraws its registration, and reports no candidate for it; equal complete descriptors remain idempotent under FR-075-AC-7. A request naming a registered backend with the nonmatching evidence kind has an empty candidate set. | Test (TC-981, TC-983) |
+| FR-075-AC-15 | For every request item, `conversion_context()` returns the record's direct conversion context as `Option<&OccurrenceKey>`, separate from `result_bound()`. In FR-062 RR-16, the two requirement records share the `+` node but have distinct occurrence keys and directly wrapping narrow occurrence keys; the builder returns two items in occurrence-key order, and each item's `conversion_context()` equals its own record's narrow occurrence key while its `result_bound()` is respectively `Int[0, 10]` or `Int[0, 20]`. A record with no directly wrapping narrow returns `None`; when the same application node occurs multiple times, each item retains its own site's context and no context is selected by the shared expression node key. The two narrow contexts add no `RequirementItem`, routed item or claim. | Test (TC-449) |
+| FR-075-AC-16 | For `function f using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }`, the driver's IR call includes roots `[item.node(), conversion_context.node()]` (or the equivalent contextual entry point), with context paired to the item by request index and occurrence key. For RR-16, the driver makes this mapping independently for both items, which share the `+` node but have different request indices and conversion contexts: each item passes its own narrow context root, and neither context is swapped or selected by node key. In both vectors, the narrow is context only; it creates no additional requirement item, routed item or claim, and the routed claim remains the scalar application occurrence. A bare `lower([add])` call still returns the behavior specified by Contract IR and is not changed by this criterion. | Test (TC-449) |
+| FR-075-AC-17 | For every `CallRequirement` of FR-395 over fixture K, `items_from_requirements` over the package's records yields at the member's request index an item whose `occurrence()` equals the member's key. | Test (TC-1089) |
+| FR-075-AC-18 | Over a registry holding one registration advertising `probabilistic-satisfaction` with `{statistical}` (EN-4's manifest) and one with `{exact}` (EN-5's), and a package whose records in key order are FR-186's `P95` claim (index 0, record evidence kind `statistical`), FR-195's `FairTerminates` (index 1, record evidence kind `exact`) and a `value-validity` record (index 2): with no evidence selection the builder writes three items, `P95`'s naming `statistical` with candidates the EN-4 registration only and `FairTerminates`'s naming `exact` with candidates the EN-5 registration only; with the selection `exact` it writes three items, `P95`'s and `FairTerminates`'s each naming `exact` with candidates the EN-5 registration only, `statistical` never substituting; with both kinds it writes five items, indices 0 to 2 equal to the no-selection items, index 3 `P95`'s `exact` item (EN-5 only) and index 4 `FairTerminates`'s `statistical` item (EN-4 only), each with its record's occurrence key. The `value-validity` item is at index 2 and carries no evidence kind under every selection, and no written item settles `absent-evidence-kind` or `unknown-evidence-kind`. Each probabilistic item's unbounded domains are its record's, naming its claim, under every selection. | Test (TC-1163) |
+| FR-075-AC-19 | Over a registry holding EN-6's `qsl-model-check` registration, advertising `temporal-satisfaction` with no `dynamics`, and a fixture hybrid registration `hybrid-fixture` advertising it with `dynamics` `{hybrid}` and `bounds` `{max_solver_steps: 1000000, max_solver_time: 60}`, the item of FR-447's `SlowEnough`, carrying `hybrid-dynamics`, has the candidate set `[hybrid-fixture]`, and the item of a temporal clause over a model without hybrid dynamics `[qsl-model-check]`; with `hybrid-fixture`'s `dynamics` `{discrete, hybrid}` the second item's set is `[hybrid-fixture, qsl-model-check]`; with only `qsl-model-check` registered the hybrid item's set is empty; naming `qsl-model-check`, the hybrid item's set is empty; a `value-validity` item's set is unchanged by every `dynamics`. Two registries built from these registrations in either order compute equal sets. | Test (TC-193) |
+| FR-075-AC-20 | `descriptor_from_manifest` refuses a `temporal-satisfaction` descriptor whose `dynamics` is `[]`, `["hybrid", "hybrid"]`, `["continuous"]`, `"hybrid"`, or `["hybrid"]` with `bounds` lacking `max_solver_time`, with `invalid_capability`/`invalid-dynamics` keyed by `BackendId`, retaining `empty`, `duplicate-label`, `unknown-label`, `not-a-list` and `missing-bounds` naming `max_solver_time`, before insertion and leaving an earlier registration of that identity standing; one with a `fairness_kinds` defect as well refuses `invalid-fairness-kinds`; a `dynamics` on a descriptor advertising only `value-validity` is ignored and the descriptor is admitted holding none; a descriptor with no `dynamics` is admitted holding none and is read as `{discrete}` for candidates, and the manifest QSL writes from EN-6's `qsl-model-check` descriptor carries no `dynamics` key, its RFC 8785 bytes and manifest digest equal to those of the same descriptor written without the member, so a temporal request over it keeps its request identity and cache key bytes; an EN-6 registration supplying `dynamics` `["discrete"]` beside one supplying none is refused `duplicate-backend`. Two registrations of one identity differing only in `dynamics` conflict as FR-075-AC-4 states. | Test (TC-193) |
 
 ## Dependencies
 
@@ -231,12 +419,12 @@ were added.
   an argument) and the candidate-computation algorithm this requirement
   implements; §5.2 lists the explicit registry failure cases FR-075-AC-3 and
   FR-075-AC-4 verify.
-- [FR-057](FR-057-admit-shared-capability-kinds.md) admits the ten FR-290
+- [FR-057](FR-057-admit-shared-capability-kinds.md) admits the twelve FR-290
   capability-kind labels into QSL and states the same candidate-set rule from
   the composed-linker admission side; this requirement implements it at the
   registry.
 - [FR-290](ix://agent-ix/quire-specification/FR-290) (quire-specification)
-  is the normative source for the ten capability-kind labels, the
+  is the normative source for the twelve capability-kind labels, the
   `(kind, mode)` advertisement shape, and the candidate-set ordering rule
   this requirement's Outputs section restates. Its "Candidate set and
   negotiation" section (FR-290-AC-9, FR-290-AC-10) is also the normative
@@ -247,12 +435,12 @@ were added.
   taking the `protocol` family's six members (FR-290's `Families` table, the
   set FR-060 dispatches independently) as the whole vocabulary. That phrase
   is stale: FR-290's "Vocabulary authority" section states verbatim that its
-  ten labels, not six, "are the single capability-kind vocabulary of the
+  twelve labels, not six, "are the single capability-kind vocabulary of the
   Quire ecosystem," from which "`quire-spec-language`'s `Capability` type,
   the backend descriptors registered in its registry... take their
   members." FR-290 governs; this requirement and FR-057 specify against the
-  ten-label vocabulary throughout, and #213's `Capability` type is expected
-  to carry all ten.
+  twelve-label vocabulary throughout, and #213's `Capability` type is expected
+  to carry all twelve.
 - The canonical `Capability` value type and its outcome constructors are
   owned by [quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213);
   this requirement consumes that type and specifies no shape for it.
@@ -260,56 +448,3 @@ were added.
   property test (FR-075-AC-2, evidenced by TC-194) as part of the ADR-012
   §5.3 registry evidence obligations, and the `cargo-deny`/lint gates that
   enforce FR-075-CON-1.
-
-## Status
-
-Specified under
-[quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Implemented over the canonical `Capability` type (`qsl-semantics/src/check/capability.rs`). Since ADR-011
-§7.3 X-9 it is the crate `qsl-route` (`qsl-route/src/lib.rs`).
-`src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
-the lowering-target selector; it is deleted with `lowering` in ADR-011
-§7.3 M-6a (Description).
-
-By Acceptance Criterion:
-- FR-075-AC-1: backed (`TC-193`):
-  `candidate_set_matches_registered_backends_advertising_the_requested_kind`
-  (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-2: backed (`TC-194`):
-  `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`,
-  `all_120_orderings_of_five_descriptors_agree` and
-  `permutation_invariance_holds_with_repeats_and_conflicts_in_the_multiset`
-  (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-3: backed (`TC-195`):
-  `unregistered_named_backend_yields_a_distinct_unknown_backend_marker`
-  (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-4: backed (`TC-196`, `TC-447`):
-  `conflicting_backend_identity_registration_refuses_both_under_either_order`
-  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`),
-  `tc_282_duplicate_backend_identity::db_03`, `db_04`, `db_05`, `db_06` and
-  `db_08`, and `three_way_conflict_reports_one_refusal_per_distinct_digest`
-  (`qsl-route/tests/it/route_registry.rs`), mirroring quire-specification
-  TC-282's DB-01..DB-08 vectors under every registration order. `db_07`
-  (a malformed advertised mode, never a `duplicate-backend` conflict) is
-  cited under FR-057-AC-8 instead.
-- FR-075-AC-5: backed for its matching half (`TC-193`):
-  `advertises_kind_matches_only_the_exact_capability` (`qsl-route/src/lib.rs`)
-  shows candidate matching goes through `Capability` and tells two kinds
-  apart. Its second half, that no other enum in scope carries FR-290
-  capability-kind variants, holds by inspection: `route` imports
-  `qsl_semantics::check::Capability` and defines no capability-kind type.
-- FR-075-AC-6: backed (`TC-433`):
-  `backend_member_is_the_identity_string_alone` and
-  `an_empty_backend_member_refuses` (`qsl-route/src/lib.rs`,
-  `BackendId::from_wire`). `qsl_replay::Backend`, the replay request and the
-  witness carry the identity string alone and refuse an empty one
-  (`ReplayRequestRefusal::EmptyBackendIdentity`,
-  `WitnessRefusal::EmptyBackendIdentity`); the digest stays in `qsl-route` as
-  the key for one `duplicate-backend` refusal per distinct manifest
-  (FR-290).
-- FR-075-AC-7: backed (`TC-447`, `TC-448`):
-  `identical_repeat_registration_is_not_refused`
-  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
-  `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
-  (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-8: backed (`TC-449`): `tests/it/request_builder.rs`.

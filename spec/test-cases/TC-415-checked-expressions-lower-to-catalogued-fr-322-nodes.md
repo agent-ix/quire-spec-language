@@ -26,7 +26,8 @@ walk that runs a recursive composite past its first reentry, and an
 optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
-FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-CON-1.
+FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
+FR-093-AC-32, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -99,8 +100,24 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `let v = x in ((let w = x in w) + (let u = x in v + u))`. Check
     `if a then value(o) else 0`, `if a then 0 else value(o)` and
     `if present(o) then value(o) else 0`.
+12. Over `x: Int[0, 9]` and `a: Boolean`, check `x + 1`, `1 + x`, `x - 1`,
+    `x * 2`, `-5`, `x == 1`, `2 * (x + 1)`, `x > 0` and `a == true`, over
+    `x: Integer` check `x == 1` and `1 != x`, and check the function whose
+    body is `1`.
+13. Lower the converted equalities of FR-093-AC-31, read the convert and
+    equality nodes and their argument positions, read each package back
+    through IR's v2 reader, and evaluate each equality. Check the guards of
+    FR-093-AC-32.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
+
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
+`stage_limit_exceeded`/`node-count-exceeded` directly.
 
 ## Expected Results
 
@@ -138,25 +155,15 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
   unguarded `value(o)` bodies each refuse with
   `undefined_expression`/`unproved-presence` alone; the guarded one checks.
-
-## Status
-
-Implemented (#384). The tests back steps 1 to 11, step 4's nested `fm`
-and the recursive text-leaf steps 8 and 9 included, except step 6's first
-half, which needs the QSpec `complete-value-lock.json` accessor (ADR-011
-§2.4). Steps 10 and 11 cover the case where a debug build once aborted at
-20 nested `a and (…)`.
-
-`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
-`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
-stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
-cause's code is always `stage_limit_exceeded` and its cause the limit kind's
-(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
-`stage_limit_exceeded`/`node-count-exceeded` directly. Step 10 is backed by
-`every_nested_form_checks_at_1000_levels_as_at_2_on_a_small_stack`
-(`check/lowering/tests/expression_depth.rs`,
-`check/lowering/model/tests/expression_depth.rs`), which compares the
-outcome at 1,000 levels with the outcome at 2, and by
-`the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults`
-(`qsl-package/src/emit/tests/deep_bodies.rs`) for the longest `and` chain.
+- Step 12: each arithmetic body and each equality over `Integer` holds its integer
+  literal as an inline `literal` term of the application's `arguments`,
+  typed at the builtin `Integer` node, with no node for the literal; in
+  `2 * (x + 1)` each literal is inline in its own application; over
+  `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow`
+  application of the literal's node, a `graph_child` operand under
+  FR-358 step 6; `x > 0` and `a == true` reference
+  their literal nodes; the body `1` gives L6.
+- Step 13: each converted equality lowers a convert node and the equality of
+  the converted type with the convert node at the converted operand's
+  position, each package reads back Verified, and each evaluation equals the
+  comparison of the converted values. The conversion guards check.

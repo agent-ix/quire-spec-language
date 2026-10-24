@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
+members = [".", "xtask", "tools/arch-lint", "qsl-walk-grow", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench", "qsl-string-edge"]
 resolver = "2"
 # A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
 exclude = ["fuzz"]
@@ -16,6 +16,9 @@ quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
 quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }
+# ADR-011 §6.1 layer E: the shared evaluation-core interface (FR-262, FR-401),
+# its own repository so RT and CG depend on it without the QSL repo.
+quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
 
 [package]
 name = "quire-spec-language"
@@ -38,6 +41,11 @@ quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction", "qsl-replay
 # embeds the authored `examples/protocol-handoff/` recipe inputs, so the
 # default build leaves it out. It adds no dependency.
 handoff-writer = []
+# `population_fixtures`, the writer of the `Population<T>[N]` Contract IR v2
+# packages the admission corpus emits (QSL-771). It embeds the spine-model
+# fixtures under `tests/fixtures/`, so the default build leaves it out. It adds
+# no dependency.
+population-fixtures = []
 
 [dependencies]
 # ADR-013 O-05: only `model` calls the kernel `EffectiveId` constructor,
@@ -86,9 +94,10 @@ unicode-normalization = "0.1.25"
 # so an identical spec in every dependent unifies to one lockfile entry
 # instead of pinning independently per repo.
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
-qsl-attrs = { path = "qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
+serde_json_canonicalizer = "0.3.2"
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
 # unit and integration tests. Only this dev-dependency may enable
@@ -106,7 +115,6 @@ qsl-route = { path = "qsl-route" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
 # whole-crate `syn` scanner instead of a second, byte-identical copy; a
 # workspace path dependency, dev-only, so it adds no edge to any shipped
@@ -134,6 +142,11 @@ name = "native_protocol_v2_handoff"
 required-features = ["handoff-writer"]
 test = true
 
+[[example]]
+name = "population_v2_fixtures"
+required-features = ["population-fixtures"]
+test = false
+
 [[bin]]
 name = "quire-spec"
 path = "src/main.rs"
@@ -160,3 +173,17 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"
+
+# The 100,000-level formatter identity cases (`make test-deep-format`) spend
+# their time hashing and canonically encoding packages. These dependencies are
+# compiled optimized once and cached; the checks themselves are unchanged.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.quire-canonical]
+opt-level = 3
+[profile.dev.package.quire-contract-model]
+opt-level = 3
+[profile.dev.package.quire-semantic-value]
+opt-level = 3

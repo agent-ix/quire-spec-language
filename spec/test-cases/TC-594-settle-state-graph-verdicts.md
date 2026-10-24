@@ -24,7 +24,9 @@ Scope: FR-169-AC-1 to FR-169-AC-5.
    0; settle `ReachesThree`.
 3. Settle §7.2's `CanStillWin` and its `from` variant; §7.3's `InOneWay`.
 4. Settle FR-168-AC-4's two outcomes; a run stopped by `max_states`; a run
-   with an undecided node and no decisive evidence; a subject with no
+   with an undecided node and no decisive evidence, `ReachesThree` over
+   TC-592's undecided subject (an undecided postcondition, not an undefined
+   guard); a subject with no
    initial state.
 5. Settle a `Witnessed` outcome whose replay settles `inconclusive`, and a
    `Trapped` outcome whose replay a limit stops.
@@ -34,7 +36,7 @@ Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 ## Expected Results
 
 - Step 1: each row's `TerminalValue`, label, basis and category as FR-169's
-  table states; `Proved{Witness{…}}` maps to success.
+  table states; `Proved{Witness{…}, Certified}` maps to success.
 - Step 2: `proved`, `decisive-witness`, `Witness{[Sampled(…)]}`, `Certified`, success,
   with seed and trace index in the record; the same with `[Explored]` and a
   record naming exploration; `refuted`, `closed-scope`.

@@ -22,13 +22,14 @@ mod persistent;
 use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
-    OrderedKind, Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, OrderedKind,
+    RecordField, Slot, Visit,
 };
 use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Obligation, ProvedInterval,
 };
+use crate::model::clause_observation::Observation;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
@@ -38,9 +39,10 @@ use quire_semantic_value::location::Location;
 /// One step of a stable path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Step {
-    Field(usize),
+    Field(RecordField),
     Value,
-    /// A model attribute read in a state clause (FR-104), with the
+    /// A model attribute read in a state clause (FR-104), or in a function
+    /// body an integer range fact only (`range_path`), with the
     /// observation it reads at: a fact about one observation of a path
     /// never discharges an obligation at another.
     Attribute(FieldRef, Observation),
@@ -437,6 +439,17 @@ impl<'a> Definedness<'a> {
         self.walk(root, Facts::default())
     }
 
+    /// Admit the body and retain its true-outcome closure on this same
+    /// definedness checker. Only an admitted body can produce this value.
+    pub(crate) fn check_and_retain(
+        &mut self,
+        root: CheckedNode<'_>,
+    ) -> Result<CheckedFacts, CheckRefusal> {
+        self.check(root)?;
+        let (when_true, _) = self.outcomes(root, &Rc::new(Facts::default()));
+        Ok(CheckedFacts { when_true })
+    }
+
     /// The stable path `node` reads under `facts`, if it reads one: the
     /// projection chain is followed to its root on a loop, then its steps
     /// are applied root first.
@@ -447,8 +460,8 @@ impl<'a> Definedness<'a> {
         let root = loop {
             match current.kind() {
                 NodeKind::Local(slot) => break *slot,
-                NodeKind::Field { operand, index, .. } => {
-                    steps.push(PathStep::Field(*index));
+                NodeKind::Field { operand, field, .. } => {
+                    steps.push(PathStep::Field(field.clone()));
                     current = current.at(*operand);
                 }
                 NodeKind::Value(operand) => {
@@ -481,7 +494,7 @@ impl<'a> Definedness<'a> {
         });
         for step in steps.into_iter().rev() {
             match step {
-                PathStep::Field(index) => path.steps.push(Step::Field(index)),
+                PathStep::Field(field) => path.steps.push(Step::Field(field)),
                 PathStep::Value => {
                     if !facts.present.contains(&path) {
                         return None;
@@ -494,6 +507,29 @@ impl<'a> Definedness<'a> {
         Some(path)
     }
 
+    /// The path an integer range fact is keyed on: the stable path `node`
+    /// reads or, in a function body, a model attribute `deref(r).f` of a
+    /// stable reference `r` (QSL-907). A function is pure and reads one
+    /// fixed model state, so the single `Current` observation keys it. This
+    /// feeds interval facts only: presence, nonzero, `let` aliasing and
+    /// termination shapes keep reading [`Self::stable_path`], which takes a
+    /// model read only in a state clause (FR-104).
+    fn range_path(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<StablePath> {
+        if let (
+            None,
+            NodeKind::Attribute {
+                reference, field, ..
+            },
+        ) = (self.observations, node.kind())
+        {
+            let mut path = self.stable_path(node.at(*reference), facts)?;
+            path.steps
+                .push(Step::Attribute(field.clone(), Observation::Current));
+            return Some(path);
+        }
+        self.stable_path(node, facts)
+    }
+
     fn subject(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<Subject> {
         let mut node = node;
         while let NodeKind::Coerce(operand, _) = node.kind() {
@@ -504,7 +540,7 @@ impl<'a> Definedness<'a> {
                 .stable_path(node.at(*operand), facts)
                 .map(Subject::Size),
             _ if matches!(node.value_type(), ValueType::Integer | ValueType::Int(_)) => {
-                self.stable_path(node, facts).map(Subject::Value)
+                self.range_path(node, facts).map(Subject::Value)
             }
             _ => None,
         }
@@ -598,6 +634,27 @@ impl<'a> Definedness<'a> {
         Some(Rc::new(facts))
     }
 
+    /// `node` read through a chain of `convert<..>` forms down to an
+    /// integer-typed operand, when `node` is itself integer-typed. A
+    /// `ConvertScalar` is exact wherever it is defined (a rounding
+    /// conversion is a `ConvertDecimal`), so such a chain denotes the same
+    /// integer as its innermost operand. A chain whose end is not an
+    /// integer has no integer subject and is left as it is.
+    fn through_conversion(node: CheckedNode<'_>) -> CheckedNode<'_> {
+        if !is_integer(node) {
+            return node;
+        }
+        let mut inner = node;
+        while let NodeKind::ConvertScalar(_, operand) = inner.kind() {
+            inner = inner.at(*operand);
+        }
+        if is_integer(inner) {
+            inner
+        } else {
+            node
+        }
+    }
+
     fn comparison(
         &self,
         left: CheckedNode<'_>,
@@ -605,6 +662,10 @@ impl<'a> Definedness<'a> {
         relation: Relation,
         facts: &Rc<Facts>,
     ) -> Outcomes {
+        let (left, right) = (
+            Self::through_conversion(left),
+            Self::through_conversion(right),
+        );
         let (subject, relation, literal) = match (Self::literal(left), Self::literal(right)) {
             (None, Some(literal)) => (left, relation, literal),
             (Some(literal), None) => (right, relation.flipped(), literal),
@@ -1163,7 +1224,7 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
                     None => bound,
                 }
             }
-            _ => match definedness.stable_path(node, facts) {
+            _ => match definedness.range_path(node, facts) {
                 Some(path) => fact(Subject::Value(path), declared(node.value_type())),
                 None => declared(node.value_type()),
             },
@@ -1296,7 +1357,7 @@ impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
 /// One step of a stable path, before the facts it is checked against are
 /// applied root first.
 enum PathStep {
-    Field(usize),
+    Field(RecordField),
     Value,
     Attribute(Step),
 }
@@ -1306,12 +1367,9 @@ fn is_integer(node: CheckedNode<'_>) -> bool {
     matches!(node.value_type(), ValueType::Integer | ValueType::Int(_))
 }
 
-/// What a guard's true outcome establishes about a field, as
-/// [`established_field_fact`] reports it to `crate::model`'s FR-151
-/// refinement-obligation check. Both facts are carried together — a
-/// conjunction of clauses can establish presence and an interval at once —
-/// rather than an either/or shape that would force a caller folding several
-/// clauses into one guard to pick only one of them.
+/// What a genuinely checked clause establishes about one exact field.
+/// Presence and interval facts remain independent and can both contribute
+/// to the exposed writer's refinement obligations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Established {
     /// Whether `present(self.<field>)` held on the true outcome.
@@ -1321,35 +1379,66 @@ pub(crate) struct Established {
     pub(crate) interval: Option<ProvedInterval>,
 }
 
-/// Derives the facts `condition`'s true outcome establishes about
-/// `self.<field>` (`self` bound at `self_slot`, `field` projected at stable
-/// path step zero), by running the exact guard-fact propagation `walk`
-/// itself uses (`outcomes`), not a bespoke re-implementation. Both the
-/// presence and interval facts are read from the one resulting [`Facts`],
-/// so a caller that folds several clauses into one `condition` (an `AND`
-/// tree) gets everything that conjunction actually proves, not only
-/// whichever fact form happened to be checked first. The default
-/// (`Established::default()`, i.e. neither fact) when the true outcome is
-/// unreachable or proves nothing about that path.
-///
-/// `crate::model` has no FR-146 expression parser, so `condition` is not
-/// parsed from producer-supplied source; the caller
-/// (`crate::model::conformance`) builds the small typed guard tree the
-/// accepted `PostconditionClause` forms describe and hands it here, so what
-/// they actually prove is decided by this same arithmetic a real checked
-/// postcondition already runs, never restated from a clause's own literal.
-pub(crate) fn established_field_fact(condition: CheckedNode<'_>, self_slot: Slot) -> Established {
-    let checker = Definedness::new(self_slot + 1, &[], &[]);
-    let (when_true, _) = checker.outcomes(condition, &Rc::new(Facts::default()));
-    let Some(facts) = when_true else {
-        return Established::default();
-    };
-    let path = StablePath {
-        root: self_slot,
-        steps: vec![Step::Field(0)],
-    };
-    Established {
-        presence: facts.present.contains(&path),
-        interval: facts.intervals.get(&Subject::Value(path)).cloned(),
+/// The actual FR-146 closure of an admitted clause. Its constructor and
+/// underlying facts are private to the checker; callers can only query a
+/// model attribute at its exact root and observation.
+pub(crate) struct CheckedFacts {
+    when_true: Option<Rc<Facts>>,
+}
+
+impl std::fmt::Debug for CheckedFacts {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CheckedFacts")
+            .field("reachable", &self.when_true.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl CheckedFacts {
+    pub(crate) fn attribute(
+        &self,
+        root: Slot,
+        field: &FieldRef,
+        observation: Observation,
+    ) -> Established {
+        let Some(facts) = &self.when_true else {
+            return Established::default();
+        };
+        let path = StablePath {
+            root,
+            steps: vec![Step::Attribute(field.clone(), observation)],
+        };
+        let presence = facts.present.contains(&path);
+        let direct = facts.intervals.get(&Subject::Value(path.clone())).cloned();
+        let mut value_path = path;
+        value_path.steps.push(Step::Value);
+        Established {
+            presence,
+            interval: direct.or_else(|| facts.intervals.get(&Subject::Value(value_path)).cloned()),
+        }
+    }
+}
+
+impl Established {
+    /// Separate admitted postconditions are conjunctive. Presence and each
+    /// interval end are combined independently, so neither proof form
+    /// suppresses the other.
+    pub(crate) fn conjoin(&mut self, other: Self) {
+        self.presence |= other.presence;
+        match (&mut self.interval, other.interval) {
+            (None, interval) => self.interval = interval,
+            (Some(current), Some(next)) => {
+                current.lower = match (current.lower.take(), next.lower) {
+                    (Some(left), Some(right)) => Some(left.max(right)),
+                    (left, right) => left.or(right),
+                };
+                current.upper = match (current.upper.take(), next.upper) {
+                    (Some(left), Some(right)) => Some(left.min(right)),
+                    (left, right) => left.or(right),
+                };
+            }
+            (Some(_), None) => {}
+        }
     }
 }

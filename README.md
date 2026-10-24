@@ -1,370 +1,364 @@
-# quire-spec-language
+# Quire Specification Language
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
-`complete` exposes the edition `1-draft` authoring boundary. Its declarative
-grammar table and one bounded interpreter produce a byte-exact CST with typed
-token kinds, named production nodes and a separate recovery stream. The module
-also provides revision-checked incremental edits, deterministic formatting and
-editor snapshots, the closed 176-capability complete bundle, canonical package
-identity and located diagnostics over the crate's existing code type. These APIs
-establish source and package admission only; the authority-bound diagnostic
-catalog and typed causes, checked extension compatibility, checked-package
-manifests, later checking, runtime and backend stages remain separate typed
-operations.
-Public source/editor calls receive only an exact-reference `ProfileCatalog`.
-Typed definition/model construction additionally requires a constructor-private
-`ReaderAuthority`; Task-054 owns issuance from the concrete checked reader, so
-raw bytes or caller-asserted capabilities cannot mint package authority here.
+QSL (Quire Specification Language) is a formal language for rules about a
+system's data and behavior. This repository contains its compiler, `quire-spec`,
+and its reference evaluator.
 
-`parse_native` and `parse_native_source` select the authored edition and return
-either a historical unit or a typed, source-located `1-draft` syntax unit.
-The composed path extends the existing Logos recognizer and Pratt parser across
-predicates, state, temporal and choreography forms. [Issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
-tracks this work under [FR-035](spec/functional/FR-035-parse-composed-native-units.md);
-[package linking](spec/functional/FR-036-link-composed-native-packages.md) continues
-with `linking::composed::admit_namespace`: exact source inventory, package-wide
-native names, typed declaration references and cycle/dependent refusals under
-explicit work limits. `linking::composed::binding::bind` then resolves exact
-supplied definition/rule closures, native model exports, lexical/capture scopes
-and protocol structural references, preserving dependency-local refusals and
-unfinished work. Its `NamesResolved` result precedes expression/profile checking
-and complete runtime-role derivation. `checking::composed::admit_types` now checks
-shared values across predicates, state, temporal and protocol declarations. It
-retains exact nominal types, profiles, query shapes, capture provenance and
-dependency-local refusals, with pending proof/runtime obligations. Its `Typed`
-disposition establishes type admission only; exact authored formal sources supply
-the existing IR rational normalizer. `checking::composed::proofs::discharge`
-then checks supported guarded values through the existing IR prover and exact
-authored `CheckBindings`, preserving actual goals and dependent refusals.
-Ordered queries retain their original binder, collection and body through
-definedness and native emission. Sum admission checks every prefix in supported
-integer or denominator-one rational domains; broader rational sum transfer
-remains explicitly unsupported. General family admission and runtime validation
-remain open. Existing `parse`, format, CLI and checked-package APIs retain their
-historical profile; parsing alone grants no semantic admission or execution.
+The compiler checks a rule against a domain model and writes a checked package.
+The evaluator runs a checked rule against data and returns one of five
+outcomes: holds, violated, refused, unsupported or incomplete. Proof and
+code-generation backends read the same checked package.
 
-Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
+  <img alt="A rule written in QSL, either in a .native file or in a fenced block inside a Markdown spec, is compiled against a domain model into a checked package, then evaluated against data. The result is one of: holds, violated, refused, unsupported or incomplete." src="docs/images/hero-light.svg">
+</picture>
 
-The `protocol_artifact` library module supplies typed wire records, a bounded
-canonical encoder and a parser-free reader under
-[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40).
-`read` checks independently selected artifact/source/dependency references,
-actual admitted model exports, typed local handles and structural control edges.
-`encode_candidate` returns transport bytes; its result and reader admission
-remain separate from native compilation authority. `protocol_artifact::native::admit`
-consumes the actual composed proof report and independently selected source,
-definition and model inputs. It derives a constructor-private
-`FamilyAdmission` from supported complete native families;
-`native::emit` accepts only that authority and returns canonical bytes.
-See the
-[wire contract](docs/compiled-protocol-v1.md) for the exact encoding, identity
-domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
-uses tagged canonical decimal strings for signed-64 integers and reduced
-rationals, with typed validation errors. Real source-to-reader tests exercise
-native predicate, state, temporal and protocol emission, including static
-compensation registration, activation, retries and full/partial recovery
-requirements. The [Rust producer recipe](examples/protocol-handoff/README.md)
-combines four source units, queries, population/reference roles and actual model
-operations, recording the producer's own source identity as a digest over its
-own source text and retaining independently derived selectors.
-`protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
-`/1` handoff directly from the crate. Version-explicit member constants
-name its offer, external reference and `Selection` record;
-consumers need no environment variable, producer execution or repository-layout
-guess. Its `Service` and `Provider` roles retain distinct admitted model
-authorities so a strict consumer linker can enforce duplicate-authority refusal
-without rejecting the positive corpus. The existing unversioned
-`PUBLISHED_HANDOFF` family continues to address the unchanged `/2` corpus.
-General dynamic choice/progress proofs, first-class relationship exports,
-runtime recovery and B's public consumer acceptance remain open; the supported
-boundary is stated in the wire contract.
+> **Status: public prerelease.** The language, its editions and every API here
+> are still changing. No crate is published yet. Expect breaking changes.
 
-Private native compiler for `ix:native`, edition `0-draft`, profile
-`state-finite/0-draft`. It parses and formats source with located diagnostics.
-The library links exact imports and scoped names against supplied Contract IR
-formal environments. Its native checker establishes contextual types and guarded
-definedness through the existing IR prover under explicit runtime input obligations.
+## A first rule
 
-The native model admission API now checks explicit scalar, object and operation
-roles against supplied IR declarations and exact source coordinates, then emits
-a bounded deterministic model artifact. Its source-derived Rust fixture uses
-original parsed JSON occurrences. `link_native` now selects those artifacts,
-resolves explicit references and operations, and rejects conflicting model
-inventory identities. `LinkedPackage::binding_profile`,
-`LinkedModel::native_model` and `LinkedClause::operation` expose that
-correspondence. Model admission and linkage are qualified under Task-008.
+This unit states three rules about the `ConfigVersion` objects of the domain
+model `example/config-version`:
 
-`model_source::read(formal_source, model_source::FORMAT, limits)` now exposes the
-existing rule-model frontend to library callers. It derives located IR declarations
-and native roles from `native-rule-model/1` source; `ModelDraft::admit` then runs
-the existing model checks. Errors retain the original source and typed cause.
-The [example model](tests/fixtures/native-rule-model.json) shows the admitted source
-shape. Run `cargo test --test it model_source::` for fixed-artifact, failure and
-runtime cases. Test helpers now call this production frontend.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-rule-dark.svg">
+  <img alt="An annotated QSL unit: (1) the header names the language and edition, (2) the profile says which part of the language the rules use, (3) the model line imports a domain package by exact identity and digest, (4) invariants must hold for every object, (5) a post rule compares a value after an operation with its value before." src="docs/images/first-rule-light.svg">
+</picture>
 
-Explicit `model_source::FORMAT_V2` selects `native-rule-model/2` and admits exact
-rational domains through `native-state-model/2`, retaining the actual IR bounds,
-units and source locations. Composed model exports consume these types; historical
-linking refuses a selected `/2` model. This supplies the model prerequisite for
-[composed value checking](spec/functional/FR-040-check-composed-values.md), whose
-type admission and supported guarded proofs are available through the composed
-checker. Complete runtime obligations remain open.
+```
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:…";
 
-`checking::check` consumes a native linked package, exact `CheckBindings` and
-caller-lowered `CheckLimits`. It returns the original source/AST with native
-types, authored clause identities, discharged proof goals and required input
-populations, observations and operation frames. Stable and lexical guard keys
-preserve captured pre/post values; bounded proof expansion precedes actual IR
-checks. The 24 checker tests qualify Task-009. The public library contract is in
-[native-model-checking.md](docs/native-model-checking.md); review and handoff
-are tracked in [Plan-005](plan/Plan-005-native-checking/index.md).
+invariant ParentOrder using v on Config::ConfigVersion at current {
+  present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber
+}
 
-`runtime::Snapshot::new` and `runtime::Invocation::new` now construct immutable
-inputs with exact bytes/digests, distinct reference types, structured errors
-and caller-lowered byte/node/entry/depth limits. Flat arenas preserve duplicate
-entries and shared values for later model-aware diagnosis. Twenty-one public
-API tests and a role-separation compile-fail doctest cover construction; its
-qualification is tracked in [Plan-006](plan/Plan-006-native-runtime/index.md).
-See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
+invariant NoCycle using v on Config::ConfigVersion at current {
+  not reaches(self, self, parent)
+}
 
-`runtime::validate` now checks exact artifact/clause/model bindings, supplied
-typed values, finite reference closure, operation captures, population deltas
-and immutable frames. Its constructor-private context retains the checked
-package and immutable input; failed reports retain located defects and fresh
-budget usage. Task-013 is qualified by SR-097 with 35 public API tests.
-See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
-
-`runtime::evaluate` executes the original native AST over a borrowed validated
-context. Reports retain concrete truth or an explicit incomplete/invariant-failure
-outcome, exact reference costs and original implication events. Borrowed values
-preserve pre/post captures, ordered sequence occurrences and object identities.
-Twenty-nine public tests and two private invariant controls cover reference
-execution, including all small functional graphs and independent budget vectors.
-See [native-runtime-evaluation.md](docs/native-runtime-evaluation.md).
-
-Five public pipeline tests now exercise healthy, violating, refused and incomplete
-parent/aggregate cases, operation captures/frames and immutable retries through
-actual model admission, parsing, linking, checking, construction, validation and
-evaluation. SR-099 records their passing review, and Plan-006 records the
-completed qualification/handoff with its final SR-100 gap audit. Backend projection
-and Quire integration remain downstream work. Construction establishes structure and byte
-correspondence; checking establishes static judgments conditional on valid input;
-validation establishes input conditions before predicate execution.
-
-`package::NativePackage::new` now exports a checked package's complete selected
-models, authored clauses, resolutions, runtime obligations and projection
-dispositions with separate byte and native static identities. Serde owns JSON
-encoding, with independently measured derivation/canonical/output passes.
-Task-016 is qualified by SR-111, with fixed canonical/artifact vectors,
-complete correspondence/capture controls, static dependency mutations and
-runtime-independent identity checks. `NativePackage::read_verified` now verifies
-selected bytes, closed JSON and external bindings, then repeats actual
-parse/link/check before comparing every serialized claim. Reconstructed packages
-execute the existing parent, aggregate and operation workflows, preserving
-refusal, incomplete outcomes and fresh retry budgets. Qualification is tracked in
-[Plan-007](plan/Plan-007-native-packages/index.md).
-See [the package contract](docs/native-linked-packages.md).
-
-`lowering::lower` derives complete Boolean executable projections through the
-existing strict IR binder, retaining original native authority and explicit
-model/read/observation correspondence. Object and graph expressions refuse.
-`lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
-bounded integer arithmetic and comparisons accepted by the strict IR binder.
-Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
-codegen emits executable numeric Rust for obligation-free comparisons.
-The `standalone_fixtures`
-example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
-Their native runs return true and false; both export the same integer projection.
-`ProjectionTarget::StateScalarIrV1` additionally projects primitive self fields
-and `pre` expressions. `NativeProjection::inputs` supplies their actual values
-from a context validated against that exact checked package, retaining snapshot,
-invocation and object provenance. For the concrete update example, run
-`quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
-This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
-inputs; native population and frame validation still precedes materialization.
-Object/graph expressions refuse at the earliest source-owned boundary without a
-substitute IR expression. Tests that compose these projections with the code
-generator (generated Rust, strategies, Kani and native parity:
-[IT-008](ix://agent-ix/quire-integration/IT-008),
-[IT-010](ix://agent-ix/quire-integration/IT-010) and
-[TC-094](ix://agent-ix/quire-integration/TC-094)) live in
-`agent-ix/quire-integration`. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
-
-CLI command and source identity/revision labels must be UTF-8; invalid encoding
-returns usage exit 20. File operands remain OS paths. JSON paths are display text,
-which may contain replacement characters; exact labels and the actual byte
-digest carry the separate source correspondence. See the
-[native diagnostic catalog](docs/native-error-codes.md) for stable outcomes.
-
-Library callers can use `format::format_with_limit(unit, output_bytes)` to lower
-the inclusive 1 MiB output-content ceiling. It counts every emitted byte,
-including the final newline, and refuses before an append would exceed the
-limit. Existing `format::format(unit)` retains the default ceiling. Allocator
-capacity is not an exact content-byte accounting promise.
-
-## Run and check
-
-The [ConfigVersion example](examples/config-version/README.md) supplies the named
-parent-order, cycle, identity and recorded-update workflow, with 13 native and
-Markdown request sets and explicit refused/incomplete cases.
-
-The native CLI needs no Node or JVM. Default native commands need no optional features;
-the Quire consumer is enabled explicitly with `quire-extraction`.
-Use `--target-dir target` where a machine config points Cargo outside the checkout.
-
-On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
-`-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds
-before starting and reuse existing worktree target caches. Do not start another
-phase until the previous command has completed.
-
-```sh
-cargo run --locked --target-dir target -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
-cargo run --locked --target-dir target -- format agent-ix test:value-format fixture fixture:1 tests/fixtures/value-format.native
+post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {
+  self.versionNumber = pre(self.versionNumber)
+}
 ```
 
-Run the full local gate with `make ci`: the committed-binary and index-completeness
-checks, formatting, clippy and `cargo test` under default features and
-`--all-features`, a clean no-default-features build and the parse example above, `cargo doc`, `seam-probe`, `string-edge`,
-`route-lint`, `cargo-deny-bans` and `arch-lint-canonical-encoder`. See `Makefile`
-for each step.
+- **`language … edition`** sets the language version of the file.
+- **`profile`** selects the part of the language the rules may use.
+  `quire.value.complete/v1` covers values, records and expressions. The line
+  binds it to the name `v`, and each rule says `using v`.
+- **`model`** imports the domain model by identity, version and content digest.
+  A rule is always checked against that exact model.
+- **`invariant … at current`** must hold for every `ConfigVersion` in the data.
+  `ParentOrder`: a parent, when present, has a lower version number.
+  `self.parent` is an optional reference; `present` tests it, `value` unwraps
+  it and `deref` follows it. `NoCycle`: following `parent` links never returns
+  to the start.
+- **`post … on …::attemptUpdate`** is checked around an operation. `pre(x)` is
+  the value of `x` before the operation. `VersionUnchanged`: an update attempt
+  keeps the version number.
 
-Run these checks locally while the repository stabilizes. Hosted CI exposes
-only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
-opening a pull request does not request CI; hosted execution requires a separate
-explicit dispatch.
-Tests fetch the `agent-ix/ix-trace-rs` Git dependency from its `main` branch.
+### Rules in Markdown specs
 
-CLI arguments are `parse|format`, source identity, source revision, and file path.
-`parse` emits JSON with status `parsed`; `format` writes source to stdout and
-preserves comments/token spellings while normalizing whitespace to LF. Neither
-command changes a file. Callers must assign the formatted document its appropriate
-new revision before binding it into evidence. Diagnostics contain original byte,
-line and Unicode scalar column positions. Exit 0 is success, 1 refusal, 2 usage/I/O
-failure and 3 resource exhaustion (incomplete). These are local syntax outcomes,
-not the portable verification result envelope.
+A rule can also sit in an `ix:native` fenced block in a Quire Markdown spec,
+under the prose it formalizes:
 
-The library returns immutable ParsedUnit syntax or a boxed Diagnostic. Source
-identity/revision are opaque diagnostic labels; they do not implement the future
-interchange source reference or numeric IR revision mapping. Source::read_verified
-checks a selected byte digest; parse_source retains that verified immutable source. Source byte spans are half-open; located lines/columns are one-based.
+````markdown
+### ParentOrder
 
-Default ceilings are 1 MiB source, 100,000 tokens, 50,000 syntax nodes and 64
-nested delimiters/parser frames. Callers can lower these ceilings. Formatting
-also bounds output to 1 MiB and can return incomplete if expansion exceeds it.
-Long flat expressions use an arena; grouping and all original source bytes are
-retained. Balanced reserved forms refuse as unsupported; malformed tokens and
-delimiters are syntax errors. No recovery manufactures a successful partial unit.
+A version's parent, when it has one, always has a lower version number.
 
-The [source correspondence API](docs/source-correspondence.md) checks exact
-body-to-original segments with explicit layout transformations and returns
-original document locations. Maps preserve all corresponding byte regions and
-refuse changed bytes, foreign source bindings, malformed segments and budget
-exhaustion. Wire decoding and existing-repository extraction remain separate.
+```ix:native
+invariant ParentOrder using v on Config::ConfigVersion at current {
+  present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber
+}
+```
+````
 
-`mapped::compile` carries a verified map and one authored `ClauseBinding` through
-the existing parse/link/check/package stages. Its immutable `MappedPackage`
-exposes the native package for validation, evaluation and lowering while keeping
-the original document available for source locations. Failures preserve the
-native diagnostic or package path; the API does not manufacture source wrappers
-or change extraction availability. Run `cargo test --test it mapped::` for the
-mapped parent workflow and stage refusals.
+The optional `quire-extraction` feature reads the block's bytes from the
+Markdown file, using [quire-rs](https://github.com/agent-ix/quire-rs), and keeps
+a source map to the document. Errors are reported at their line and column in
+the Markdown file. This is a library API; the `run` command does not yet accept
+Markdown for `1-draft` rules.
 
-With `quire-extraction`, `qsl_source::extract(original, context, selection,
-limits)` from the `qsl-source` crate calls Quire's actual Rust extractor
-and returns an `ExtractedSource`: the verified native body in its document
-source map, the clause's declared language and Quire's unchanged result. Supply
-a digest-verified original Source, a loaded Quire SemanticContext (the `run`
-command uses `qsl_source::clause_context`) and a `Selection` of the authored
-clause ID, package and body identity. The adapter checks source coordinates and
-exact bytes, including Quire's omitted final LF on CRLF input, before building
-the source map. It does not compile. The `run` command's extraction path
-(`command::extraction`) compiles the extracted body with `mapped::compile`. Both
-retain Quire's original clause population, availability and diagnostics on
-success and on refusal. Input is bounded to 1 MiB and 4096 lines before
-extraction. Extraction cases run with
-`cargo test -p qsl-source --features quire-extraction`;
-[the tests](qsl-source/tests/it/quire_source.rs) show context and selection construction.
-C's existing-repository CLI/wire adoption remains separate from this working
-compiler-side Rust integration.
+## Outcomes
 
-The standalone `run` command can select Markdown with `--features quire-extraction`.
-Its optional `program.extraction.body` record supplies `identity`, `revision`,
-`document` and `formal_revision` for the derived native body; `program.source`
-selects the original Markdown bytes and exactly one clause binding selects its
-heading. This uses a validated clause-only Quire context for the selected package,
-with no installed archetype schemas. The result's `extraction` member retains
-original identity, producer observations and verified byte-map segments; ordinary
-source, diagnostic and event coordinates refer to the native body.
+Every check ends in one outcome, and the process exit code matches it:
 
-Generate runnable Markdown fixtures with the existing `standalone_fixtures`
-example, then run `cargo run --locked --features quire-extraction -- run
-/tmp/native-workflow/markdown-healthy/request.json`. The sibling
-`markdown-violating` and `markdown-refused` requests reproduce false and frame
-refusal. These requests support source compilation through `run`; combining them
-with selected-package execution or `compile`/`lower` export refuses explicitly.
-Default builds reject the extraction field; ordinary native requests are unchanged.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/outcomes-dark.svg">
+  <img alt="Every QSL check ends in exactly one outcome with its own exit code: success 0; violation or undefined 10; refused 20; unsupported 21; incomplete or inconclusive 22; internal failure 30. Only success and violation are answers about the rule; the others say why no answer was given." src="docs/images/outcomes-light.svg">
+</picture>
 
-`runtime::execute(package, input, selection, limits, poll)` now runs native
-validation and evaluation in one call. The returned report retains the exact
-package and offered artifacts even on validation failure; `truth()` returns a
-Boolean only after completed evaluation. `outcome()` preserves the original
-stage diagnostics, measured work and implication events. The existing separate
-`validate` and `evaluate` APIs remain available. Run
-`cargo test --test it runtime_execution::` for aggregate, operation and
-stopped/retried requests. The standalone `quire-spec run <request-file>` command now reads selected
-model/program/runtime files and calls these same APIs. See
-[the runnable workflow](docs/native-standalone.md) for healthy, violating,
-operation and refused examples, JSON results and exit codes.
+| Outcome | Exit | Meaning |
+| --- | --- | --- |
+| success | 0 | The check completed and the rule holds. |
+| violation, undefined | 10 | The check completed and the rule is broken, or the rule asked for a value that is not defined. |
+| refused | 20 | The input was rejected before any rule ran: bad syntax, a wrong model digest, a malformed request. |
+| unsupported | 21 | The construct is valid QSL, but the selected profile or backend cannot check it. |
+| incomplete, inconclusive | 22 | Data was missing or the work budget ran out. |
+| internal failure | 30 | A bug in QSL. |
 
-`Snapshot::read_verified` and `Invocation::read_verified` now read selected
-`native-state-input/1` bytes through closed Serde decoding and the existing
-structural constructors. They preserve original bytes/digests and refuse stale
-selections, incompatible envelopes, malformed fields and exhausted budgets.
-Run `cargo test --test it runtime_reading::` for round trips and actual
-execution of reread inputs. Model-aware validation still occurs during `runtime::execute`.
+Only success and violation carry a truth value. Refused and incomplete results
+have no truth field in their output. Every result names the source, model and
+input it was computed from.
 
-The [formal source bridge](docs/formal-source-binding.md) retains exact native
-source under an explicitly supplied Contract IR source identity. Its forward
-and reverse mappings check byte, line and scalar-column correspondence,
-including constructor-valid IR spans whose coordinates disagree with the bytes.
-Native revision labels remain opaque. This API supplies location correspondence
-for later checking; the caller owns assigning the formal identity.
+## Language
 
-## Design and status
+Each unit declares its profiles. Each profile enables one family of rules. All
+of the families below are in the `1-draft` edition. In the excerpts, `G`, `T`
+and `P` are profiles and `M` is a model, declared at the top of the unit as in
+the first example.
 
-The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
-catalog artifacts. These requirements are drafts. The owner adopted specification PR8 for internal
-LC02 implementation.
-[LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
-planned type checking. The new
-[formal linker API](docs/formal-environment-linking.md) owns the exact parsed
-source and borrows immutable models; CLI parse/format still perform syntax work
-only. Accepted Contract IR ADR-0054 closes #54 and removes the former
-Filament-reader prerequisite: generic compilation uses the existing public
-DeclarationEnvironment/check_expression and executable binder APIs. A concrete
-archetype projection is specified only for a clause that needs its semantics.
+**Values and functions.** Bounded integers, exact rationals, records, unions
+and pure functions. There is no floating point.
 
-See [architecture review](docs/architecture-review.md) for concrete fixes and
-remaining linking/identity work. The current parser uses declarative Logos tokens
-and a Pratt expression parser; JSON escapes use serde_json. Binding/lowering will
-remain modules and use the existing model/IR authorities. No second domain model,
-backend binder or Markdown expression parser is created here.
+```
+type Digit = Int[0, 9];
+record Point { x: Digit; y: Digit; }
+function px using v(p: Point): Digit pure { if p.x > p.y then p.x else p.y }
+```
 
-New implementation and newly authored implementation fixtures use
-[AGPL-3.0-or-later](LICENSE); dependencies keep their own declared grants.
-[License decision](LICENSE-DECISION.md) records owner approval
-and deferred standard-artifact terms. No public release is authorized.
+**State.** Invariants over the current objects, `pre`/`post` rules around
+operations, and sums and sizes over collections.
 
-Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),
-[compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
-The shared contracts and LC02–LC05 work are tracked separately, in their own issues.
+```
+invariant Healthy using G on M::Workflow at current {
+    size<M::Tally>(self.receipts) <= 5
+    and sum<M::Total>(receipt in self.receipts: receipt) <= self.total
+}
+```
 
-New tests use the shared `ix_trace_rs::trace` macro with canonical attributes
-such as `#[trace("TC-156", "FR-059-AC-1")]`. Quire's declared grammar binds the
-IDs; the macro checks argument shape. `#[cfg(test)]` controls compilation.
-Read [license decision](LICENSE-DECISION.md) before adding code or normative artifacts. Publication requires a fresh review; do not flip private history public.
+**Time.** Temporal rules over a sequence of events, with explicit clocks and
+bounded windows. This one says the ratio stays allowed for the 30 events after
+the origin:
 
-## Implementation language — owner directive
+```
+temporal Due using T over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}
+```
 
-Executable implementation, including production and qualification tools/tests, is Rust. New TypeScript choices require explicit owner approval; surface all other executable languages. Quoin remains in its current implementation for now: contain its spread through versioned structured interfaces, do not rewrite it wholesale. Filament changes are excluded. See AGENTS.md and the language gate on the owning issue. Normative prose/schema need not be executable Rust.
+**Protocols.** Choreographies between services: roles, channels with ordering
+and delivery bounds, sequences, choices, parallel branches, retries, timeouts
+and compensation. An excerpt:
+
+```
+protocol Orders using P over (view: M::WorkflowView) on each (started: M::StartView) when (started.ready) {
+  role OrdersService on M::OrderService;
+  role PaymentsService on M::PaymentService;
+  channel Requests from OrdersService to PaymentsService carries M::ChargeRequest
+    ordering fifo by (message: M::ChargeRequest) { message.key } delivery [0,3];
+  run sequence Main {
+    send Sent via Requests as (sent: M::SendView) { sent.amount = requested };
+    receive Received via Requests of Sent as (received: M::ReceiptView) { received.ok };
+    commit Committed by OrdersService as (committed: M::CommitView) { committed.ok };
+  }
+}
+```
+
+The full example, with compensation, retries and timeouts, is
+[`tests/fixtures/composed-choreography.native`](tests/fixtures/composed-choreography.native).
+
+| Profile | Family |
+| --- | --- |
+| `quire.value.complete/v1` | values, records, functions, predicates |
+| `quire.state.graph/v1` | invariants, `pre`/`post`, reachability over object graphs |
+| `quire.temporal.event-position.false-extension/v1` | temporal rules over event positions |
+| `quire.temporal.timestamped-event.finite-window/v1` | temporal rules over timestamped events in a finite window |
+| `quire.temporal.fixed-sample.false-extension/v1` | temporal rules over fixed-rate samples |
+| `quire.temporal.infinite-trace/v1` | temporal rules over unbounded traces (model checking) |
+| `quire.protocol.finite-global/v1` | protocols between roles |
+
+The `1-draft` language is a closed list of capabilities in nine families. QSL
+checks every package against that list.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/capabilities-dark.svg">
+  <img alt="The complete 1-draft language is a closed list of capabilities in nine families: source, types, expressions, temporal, protocol, runtime, backend, evidence and tooling." src="docs/images/capabilities-light.svg">
+</picture>
+
+**Editions.** This README covers the `1-draft` edition, the complete version-1
+language. The older `0-draft` edition remains for historical fixtures and is
+being removed. Do not write new rules in it.
+
+## Compiler stages
+
+QSL compiles in stages. Each stage consumes the previous stage's output type
+and produces a new one. Unchecked and checked rules are different Rust types,
+so unchecked input cannot reach an evaluator or backend.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg">
+  <img alt="QSL compiles source through a lossless syntax tree and parsed forms into a checked graph, resolving names against domain models and dependency packages, then links a checked package. The package goes three ways: to the reference evaluator, to native model checking, or as checked-package/v2 bytes to Contract IR and proof backends. A counterexample from any engine is replayed through the same compiler and evaluator to confirm it." src="docs/images/pipeline-light.svg">
+</picture>
+
+| Stage | Guarantees |
+| --- | --- |
+| **Source** | Exact bytes with an identity: authority, id and revision. Markdown fences enter here. |
+| **Syntax tree** | A byte-exact tree of the source, including comments and spacing. The formatter works from it. A file that parses is not yet checked. |
+| **Parsed forms** | One unchecked form per declaration, each with its source span. |
+| **Checked graph** | Every name is resolved against the imported domain model and dependency packages. Every expression is typed. Every partial operation, such as a division or a dereference, is proved defined or becomes an explicit runtime obligation. |
+| **Checked package** | The checked rules and their dependencies' checked rules, with a package identity and a source map. It can be written as `quire.checked-package/v2` bytes. |
+| **Reference evaluation** | Deterministic, side-effect-free execution against supplied data. Ends in one of the outcomes above. |
+| **Model checking** | In-process engines for temporal and protocol rules: model checking, timed-zone search, schedulability and probabilistic analysis. |
+| **Proof backends** | [Contract IR](https://github.com/agent-ix/quire-contract-ir) reads the v2 bytes. [Contract codegen](https://github.com/agent-ix/quire-contract-codegen) generates code, property tests and bounded proofs from it. |
+| **Replay** | A counterexample from any engine is recompiled from its source and re-run on the reference evaluator. A backend's "violated" result is accepted only if the reference evaluator returns the same outcome. |
+
+## Usage
+
+Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) pins the toolchain,
+and `rustup` installs it automatically. No other tools or services are needed.
+
+```sh
+git clone https://github.com/agent-ix/quire-spec-language
+cd quire-spec-language
+cargo build --locked --bin quire-spec
+```
+
+**Format.** `format` prints the formatted source and leaves the file unchanged.
+The four arguments before the path are the source identity (authority, id,
+revision namespace, revision). Every diagnostic carries them.
+
+```sh
+target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
+```
+
+**Run a rule against data.** The ConfigVersion example writes one directory per
+case, holding the unit from [A first rule](#a-first-rule), its domain model and
+a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json` request
+that checks one rule for the object keyed `child`:
+
+```sh
+cargo run --locked --example config_version_fixtures -- /tmp/config-version
+for case in healthy-parent violating-parent dangling-parent incomplete-population; do
+  examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
+  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
+done
+```
+
+| Case | Data | Outcome | Exit |
+| --- | --- | --- | --- |
+| `healthy-parent` | parent version 1, child version 2 | the rule holds | 0 |
+| `violating-parent` | parent version 3, child version 2 | the rule is broken | 10 |
+| `dangling-parent` | the parent is not in the snapshot | refused | 20 |
+| `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
+
+`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant; the
+`cycle` case breaks it (exit 10). Each result is one JSON document on stdout
+that names its source, model and snapshot.
+
+**Compile a package.** `requests.sh` also writes `compile.json`. `compile`
+prints the checked package as `quire.checked-package/v2` JSON:
+
+```sh
+target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
+```
+
+The [ConfigVersion example](examples/config-version/README.md) lists all
+seventeen cases: parents, cycles, object identity, operation frames, and refused
+and incomplete runs. `run` can also evaluate one pure function;
+[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that request.
+
+**Optional features.**
+
+| Feature | Adds |
+| --- | --- |
+| `quire-extraction` | Reads rules from Quire Markdown spec artifacts, with locations mapped to the document. |
+| `handoff-writer` | Writes the compiled-protocol handoff files that protocol tools consume. |
+| `population-fixtures` | Writes the population fixtures used by the admission tests. |
+
+`quire-spec` is the compiler's own command line. The planned main entry point
+is `quire` from quire-driver (private), which runs QSL, Contract IR and the
+backends as one tool.
+
+## The Quire ecosystem
+
+The standard defines the language. QSL compiles rules into checked packages.
+Contract IR turns them into contracts for code generation, the runtime and the
+analyzers. The driver runs the chain. All of them use a set of shared `no_std` libraries.
+
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
+  <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
+</picture>
+
+| Repository | Role | Relation to QSL |
+| --- | --- | --- |
+| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
+| [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
+| [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
+| [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
+| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785), hashed while it is written. | QSL depends on it. |
+| [quire-contract-ir](https://github.com/agent-ix/quire-contract-ir) | The target-neutral contract model that backends use. | QSL depends on its model crate; IR reads QSL's checked packages. |
+| [quire-contract-codegen](https://github.com/agent-ix/quire-contract-codegen) | Generates Rust, property tests, bounded proofs and evidence from contracts. | Depends on QSL to replay counterexamples. |
+| [quire-contract-runtime](https://github.com/agent-ix/quire-contract-runtime) | The `no_std` runtime for generated checks. | Used by codegen's output. |
+| [quire-analyze](https://github.com/agent-ix/quire-analyze) | SMT-based consistency and implication checks across contracts. | Works on Contract IR. |
+| [quire-verification-contracts](https://github.com/agent-ix/quire-verification-contracts) | The verification record types the tools exchange. | Used by IR, codegen and the standard. |
+| [quire-observation](https://github.com/agent-ix/quire-observation) | Turns raw signals into qualified observations for rule evaluation. | Supplies data for temporal checks. |
+| [quire-mltl](https://github.com/agent-ix/quire-mltl) | Connects the MLTL temporal-logic engine to quire-observation. | No direct dependency. |
+| quire-protocol (private) | Checks running systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
+| quire-verification (private) | Selects verification techniques and plans for each requirement. | No direct dependency. |
+| quire-driver (private) | The `quire` command line that runs the whole chain. | Depends on QSL. |
+| quire-integration (private) | Pins a working set of versions and tests the chain together. | Depends on QSL. |
+
+## Crates
+
+The compiler is a Cargo workspace in strict layers. A crate depends only on
+layers below it; `make arch-lint` enforces this.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/layers-dark.svg">
+  <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-spec command line." src="docs/images/layers-light.svg">
+</picture>
+
+| Crate | Contents |
+| --- | --- |
+| `qsl-foundation` | Source identity, source maps, diagnostics and exit codes, wire-format names. |
+| `qsl-cst` | Lexer, grammar, the lossless syntax tree and the formatter. |
+| `qsl-forms` | Parsed, unchecked forms for each declaration family. |
+| `qsl-semantics` | Model intake, name resolution, type checking and definedness proofs. The largest crate. |
+| `qsl-package` | Checked packages and the `quire.checked-package/v2` writer and reader. |
+| `qsl-eval` | The reference evaluator, including temporal automata and finite simulation. |
+| `qsl-route` | Matches a package's requirements to the backends that can check it. |
+| `qsl-analyze` | In-process model checking, timed zones and schedulability. |
+| `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
+| `qsl-source` | Reads rules from Quire Markdown (feature `quire-extraction`). |
+| `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
+| `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
+| root crate | The `quire-spec` binary and the library facade. |
+| `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
+
+Other directories:
+
+- [`spec/`](spec/): requirements. Each requirement, acceptance criterion and
+  test case is a Markdown file. Tests are tagged with the criteria they check.
+- [`spec/decisions/`](spec/decisions/): architecture decisions, including the
+  stage design.
+- [`docs/`](docs/): reference pages, including the
+  [library notes](docs/library-notes.md),
+  [diagnostic codes](docs/native-error-codes.md),
+  [run and compile requests](docs/native-standalone.md) and the
+  [compiled protocol wire format](docs/compiled-protocol-v2.md).
+
+## Contributing
+
+`make ci` is the local gate: formatting, clippy, tests across feature
+combinations, docs and the architecture lints. It reads the standard's test
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
+native compiler CI runs only on manual dispatch, so run the gate before opening
+a pull request. The separate pull request language-boundary check
+reports only whether new executable paths respect the Rust containment rule.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+
+Contributions require the [CLA](CLA.md).
+
+## License
+
+QSL is licensed under [AGPL-3.0-or-later](LICENSE). Fixtures keep their
+`AGPL-3.0-only` headers. See [LICENSE-DECISION.md](LICENSE-DECISION.md).

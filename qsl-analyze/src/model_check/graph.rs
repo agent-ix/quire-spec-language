@@ -1,0 +1,422 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! ADR-018 EN-1: canonical breadth-first discovery retaining all explored edges.
+//!
+//! Under a symmetry group (ADR-021 EI-2, EI-3) every initial state and every
+//! successor is canonicalised through the system's `canonical` hook before
+//! it is keyed, and each retained edge keeps the permutation its target was
+//! canonicalised by: the annotated quotient (AQ-1).
+
+use std::collections::{BTreeMap, VecDeque};
+
+use qsl_eval::simulation::{
+    ExpansionStop, Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
+};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::{ByteDigest, IdentityLimits};
+use quire_canonical::Encode;
+use quire_semantic_value::catalog::CatalogCode;
+
+/// The successors a state is expanded through under partial-order reduction.
+pub enum Choice<T> {
+    /// Every successor: the state is fully expanded.
+    All,
+    /// The successors reached through these transitions: an ample set.
+    Only(Vec<T>),
+}
+
+/// ADR-021 EI-2 and POR-6: the choice of an ample set at one state of a
+/// system, made by the caller that knows the system's footprints and the
+/// item's visibility.
+pub trait Ample<S: TransitionSystem> {
+    /// The transitions to expand `state` through. `findings` are the
+    /// expansion's, and `successors` its canonical successors in
+    /// exploration order, each with the transition that reaches it and
+    /// whether its target is a state not yet discovered (C3).
+    ///
+    /// # Errors
+    ///
+    /// The [`ExpansionStop`] that ends the run when no choice can be made.
+    fn choose(
+        &self,
+        state: &S::State,
+        findings: &[S::Finding],
+        successors: &[(&S::TransitionId, bool)],
+    ) -> Result<Choice<S::TransitionId>, ExpansionStop>;
+}
+
+/// A state handle in one retained graph, assigned in discovery order.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProductStateId(pub(super) usize);
+
+impl ProductStateId {
+    /// Zero-based discovery index; meaningful only within its graph.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// `runtime_invariant`/`established-invariant-broken`: a system asked to
+/// canonicalise under a group it does not offer symmetry for.
+const NOT_OFFERED: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
+
+/// Every explored edge, including incoming, back, self and parallel edges.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetainedEdge<T> {
+    /// Source state handle.
+    pub source: ProductStateId,
+    /// Actual transition identity, never a formatted display surrogate.
+    pub transition: T,
+    /// Coalesced target state handle.
+    pub target: ProductStateId,
+    /// The permutation `π` the target was canonicalised by: the target is
+    /// `π(t(source))` (ADR-021 AQ-1). The identity under the trivial group.
+    pub permutation: Permutation,
+}
+
+/// A discovered state with its original payload and canonical identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetainedState<S, F> {
+    /// Original state; a product payload keeps both components.
+    pub state: S,
+    /// Full RFC 8785 bytes used for coalescing, not merely a digest.
+    pub key: Vec<u8>,
+    /// FR-101 state-key digest.
+    pub digest: DigestRecord,
+    /// Shortest breadth-first depth.
+    pub depth: usize,
+    /// Findings, only when every successor was processed.
+    pub findings: Vec<F>,
+    /// Whether all successors were processed; false on a partial expansion.
+    pub expanded: bool,
+}
+
+/// An immutable retained graph, possibly partial when exploration stopped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetainedGraph<S, T, F> {
+    pub(super) states: Vec<RetainedState<S, F>>,
+    pub(super) edges: Vec<RetainedEdge<T>>,
+    pub(super) outgoing: Vec<Vec<usize>>,
+    initial: Vec<ProductStateId>,
+}
+
+impl<S, T, F> RetainedGraph<S, T, F> {
+    /// States in canonical breadth-first discovery order.
+    pub fn states(&self) -> &[RetainedState<S, F>] {
+        &self.states
+    }
+    /// Edges in exploration order, including repeated edges.
+    pub fn edges(&self) -> &[RetainedEdge<T>] {
+        &self.edges
+    }
+    /// Distinct admitted initial states, in canonical key order.
+    pub fn initial(&self) -> &[ProductStateId] {
+        &self.initial
+    }
+    /// Look up a handle; a handle from another graph may be out of range.
+    pub fn state(&self, id: ProductStateId) -> Option<&RetainedState<S, F>> {
+        self.states.get(id.0)
+    }
+    /// Retained outgoing edges of a handle, in canonical successor order.
+    pub fn outgoing(&self, id: ProductStateId) -> impl Iterator<Item = &RetainedEdge<T>> {
+        self.outgoing
+            .get(id.0)
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.edges.get(*index))
+    }
+
+    fn insert(&mut self, state: S, key: Vec<u8>, depth: usize) -> ProductStateId {
+        let id = ProductStateId(self.states.len());
+        let digest = digest(&key);
+        self.states.push(RetainedState {
+            state,
+            key,
+            digest,
+            depth,
+            findings: Vec::new(),
+            expanded: false,
+        });
+        self.outgoing.push(Vec::new());
+        id
+    }
+
+    fn stats(&self, transitions: usize) -> Stats {
+        Stats {
+            states: self.states.len(),
+            transitions,
+            depth: self
+                .states
+                .iter()
+                .map(|state| state.depth)
+                .max()
+                .unwrap_or(0),
+        }
+    }
+
+    fn frontier(
+        &self,
+        head: ProductStateId,
+        queue: &VecDeque<ProductStateId>,
+    ) -> Vec<DigestRecord> {
+        std::iter::once(head)
+            .chain(queue.iter().copied())
+            .map(|id| self.states[id.0].digest)
+            .collect()
+    }
+}
+
+/// FR-101 exploration outcome together with the graph it actually retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphExploration<S, T, F> {
+    /// Retained states and edges; incomplete runs keep their explored prefix.
+    pub graph: RetainedGraph<S, T, F>,
+    /// Exploration status, not a temporal verdict or certificate.
+    pub outcome: Outcome,
+}
+
+type RetainResult<S> = Result<
+    GraphExploration<
+        <S as TransitionSystem>::State,
+        <S as TransitionSystem>::TransitionId,
+        <S as TransitionSystem>::Finding,
+    >,
+    quire_canonical::Error,
+>;
+
+fn encode(
+    value: &impl Encode,
+    identity: IdentityLimits,
+) -> Result<Vec<u8>, quire_canonical::Error> {
+    quire_canonical::to_vec(value, quire_canonical::Limits::new(identity.input_bytes))
+}
+
+fn digest(key: &[u8]) -> DigestRecord {
+    DigestRecord::mint(
+        DigestDomain::SimulationStateKeyV1,
+        ByteDigest::of(key).as_bytes(),
+    )
+}
+
+/// Retain the reachable graph in FR-101's canonical breadth-first order.
+///
+/// This low-level graph primitive accepts an already selected system; domain
+/// admission and temporal settlement belong to its caller. Limits are inclusive.
+/// A depth horizon leaves states at that depth unexpanded. Cancellation polls
+/// before each expansion. Coalescing full keys never discards an explored edge.
+/// `Stats::transitions` counts examined transitions, including the transition
+/// whose new target could not be admitted at the state cap; that edge is not
+/// retained because it has no admitted target. Findings require a full expansion.
+///
+/// # Errors
+/// The shared encoder's typed error when a state or transition identity has no
+/// canonical encoding, exceeds `identity.input_bytes`, or allocation fails.
+pub fn retain<S: TransitionSystem>(
+    system: &S,
+    limits: Limits,
+    identity: IdentityLimits,
+    max_depth: Option<usize>,
+    poll: impl FnMut() -> bool,
+) -> RetainResult<S> {
+    retain_reduced(
+        system,
+        &SymmetryGroup::default(),
+        None,
+        limits,
+        identity,
+        max_depth,
+        poll,
+    )
+}
+
+/// `state` canonicalised under `group` by `system`'s hook, with the
+/// permutation that maps it there: `state` and the identity under the
+/// trivial group.
+fn canonical<S: TransitionSystem>(
+    system: &S,
+    group: &SymmetryGroup,
+    state: S::State,
+) -> Result<(S::State, Permutation), CatalogCode> {
+    if group.is_trivial() {
+        return Ok((state, Permutation::identity()));
+    }
+    match system.canonical(&state, group) {
+        Some(Ok(canonical)) => Ok(canonical),
+        Some(Err(stop)) => Err(stop.cause),
+        None => Err(NOT_OFFERED),
+    }
+}
+
+/// [`retain`] over the quotient by `group` (ADR-021 EI-2, EI-3): every
+/// initial state and successor is replaced by its canonical form before it
+/// is keyed, so states coalesce by canonical key, and each edge keeps the
+/// permutation of its target. A canonicalisation that stops ends the run
+/// `Stopped` with its cause, as an expansion stop does; a system that offers
+/// no symmetry stops it with `runtime_invariant`. With `ample`, each state
+/// is expanded through the successors it chooses (ADR-021 POR-6): the
+/// canonical successors are judged against the states discovered so far,
+/// and the edges to the rest are never retained.
+///
+/// # Errors
+/// As [`retain`].
+pub fn retain_reduced<S: TransitionSystem>(
+    system: &S,
+    group: &SymmetryGroup,
+    ample: Option<&dyn Ample<S>>,
+    limits: Limits,
+    identity: IdentityLimits,
+    max_depth: Option<usize>,
+    mut poll: impl FnMut() -> bool,
+) -> RetainResult<S> {
+    let mut graph = RetainedGraph {
+        states: Vec::new(),
+        edges: Vec::new(),
+        outgoing: Vec::new(),
+        initial: Vec::new(),
+    };
+    let mut initial = Vec::new();
+    for state in system.initial() {
+        let state = match canonical(system, group, state) {
+            Ok((state, _)) => state,
+            Err(cause) => {
+                let outcome = Outcome::Stopped {
+                    stats: graph.stats(0),
+                    frontier: Vec::new(),
+                    cause,
+                };
+                return Ok(GraphExploration { graph, outcome });
+            }
+        };
+        initial.push((encode(&system.key(&state), identity)?, state));
+    }
+    initial.sort_by(|(a, _), (b, _)| a.cmp(b));
+    initial.dedup_by(|(a, _), (b, _)| a == b);
+    let initial_frontier = initial.iter().map(|(key, _)| digest(key)).collect();
+    let mut known = BTreeMap::new();
+    let too_many_initial = initial.len() > limits.max_states;
+    for (key, state) in initial.into_iter().take(limits.max_states) {
+        let id = graph.insert(state, key.clone(), 0);
+        known.insert(key, id);
+        graph.initial.push(id);
+    }
+    if too_many_initial {
+        let outcome = Outcome::Bounded {
+            stats: graph.stats(0),
+            frontier: initial_frontier,
+            limit: Limit::States(limits.max_states),
+        };
+        return Ok(GraphExploration { graph, outcome });
+    }
+    let mut queue: VecDeque<_> = graph.initial.iter().copied().collect();
+    let mut transitions = 0;
+    let outcome = 'run: loop {
+        let Some(source) = queue.pop_front() else {
+            break Outcome::Exhaustive(graph.stats(transitions));
+        };
+        let depth = graph.states[source.0].depth;
+        if let Some(horizon) = max_depth.filter(|horizon| depth >= *horizon) {
+            break Outcome::BoundReached {
+                stats: graph.stats(transitions),
+                depth: horizon,
+                frontier: graph.frontier(source, &queue),
+            };
+        }
+        if poll() {
+            break Outcome::Cancelled {
+                stats: graph.stats(transitions),
+                frontier: graph.frontier(source, &queue),
+                cause: CatalogCode::new("cancelled", "caller-cancelled"),
+            };
+        }
+        let expansion = match system.successors(&graph.states[source.0].state) {
+            Ok(expansion) => expansion,
+            Err(stop) => {
+                break Outcome::Stopped {
+                    stats: graph.stats(transitions),
+                    frontier: graph.frontier(source, &queue),
+                    cause: stop.cause,
+                }
+            }
+        };
+        let mut successors = Vec::with_capacity(expansion.successors.len());
+        for (transition, state) in expansion.successors {
+            let (state, permutation) = match canonical(system, group, state) {
+                Ok(canonical) => canonical,
+                Err(cause) => {
+                    break 'run Outcome::Stopped {
+                        stats: graph.stats(transitions),
+                        frontier: graph.frontier(source, &queue),
+                        cause,
+                    }
+                }
+            };
+            let order = encode(&transition, identity)?;
+            let key = encode(&system.key(&state), identity)?;
+            successors.push((order, key, transition, state, permutation));
+        }
+        successors.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        if let Some(ample) = ample {
+            let candidates: Vec<_> = successors
+                .iter()
+                .map(|(_, key, transition, ..)| (transition, !known.contains_key(key)))
+                .collect();
+            let choice = ample.choose(
+                &graph.states[source.0].state,
+                &expansion.findings,
+                &candidates,
+            );
+            match choice {
+                Ok(Choice::All) => {}
+                Ok(Choice::Only(chosen)) => {
+                    successors.retain(|(_, _, transition, ..)| chosen.contains(transition));
+                }
+                Err(stop) => {
+                    break 'run Outcome::Stopped {
+                        stats: graph.stats(transitions),
+                        frontier: graph.frontier(source, &queue),
+                        cause: stop.cause,
+                    }
+                }
+            }
+        }
+        for (_, key, transition, state, permutation) in successors {
+            if transitions >= limits.max_transitions {
+                break 'run Outcome::Bounded {
+                    stats: graph.stats(transitions),
+                    frontier: graph.frontier(source, &queue),
+                    limit: Limit::Transitions(limits.max_transitions),
+                };
+            }
+            transitions += 1;
+            let target = if let Some(id) = known.get(&key) {
+                *id
+            } else {
+                if graph.states.len() >= limits.max_states {
+                    let mut frontier = graph.frontier(source, &queue);
+                    frontier.push(digest(&key));
+                    break 'run Outcome::Bounded {
+                        stats: graph.stats(transitions),
+                        frontier,
+                        limit: Limit::States(limits.max_states),
+                    };
+                }
+                // A new state always requires an edge from an existing depth,
+                // so depth is bounded by the number of allocated state records.
+                let id = graph.insert(state, key.clone(), depth.saturating_add(1));
+                known.insert(key, id);
+                queue.push_back(id);
+                id
+            };
+            graph.outgoing[source.0].push(graph.edges.len());
+            graph.edges.push(RetainedEdge {
+                source,
+                transition,
+                target,
+                permutation,
+            });
+        }
+        graph.states[source.0].findings = expansion.findings;
+        graph.states[source.0].expanded = true;
+    };
+    Ok(GraphExploration { graph, outcome })
+}

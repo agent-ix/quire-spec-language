@@ -43,7 +43,3 @@ Tag each test `#[trace("TC-826", "<AC id>")]`.
 - Step 4: `true`, `false`, `false`; the cross-union comparison is refused by
   type checking.
 - Step 5: TC-262's verdicts.
-
-## Status
-
-Planned.

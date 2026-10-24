@@ -12,7 +12,7 @@ relationships:
 
 Verify HP-2 checking on ADR-023 §8.1, without `match`, with a vacuous match, with per-variable fairness, with terminal stutter, the pre-check, an undefined `match`, and determinism.
 
-Scope: FR-176-AC-1 to FR-176-AC-4.
+Scope: FR-176-AC-1 to FR-176-AC-5.
 
 ## Test Procedure
 
@@ -22,12 +22,14 @@ Fixtures: §8.1's vaults; the vault with `reset` (FR-176-AC-3); a subject where 
 2. The clause without `match` over secure; the vacuous `match`.
 3. The one-variable liveness clause with and without `fair { weak V::Vault::reset }`; the stutter-matching two-variable clause.
 4. The over-limit subject; the undefined-`match` model; step 1's leaky request twice.
+5. FR-176-AC-5's guarded secure vault with the undefined body, then with `NonInterference`'s body; replay the first counterexample.
 
 Tag the tests `#[trace("TC-601", "FR-176-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: 14 states, `Violated` with the §8.1 `Lockstep` shape; 8 states, `Holds{Exhaustive}`.
+- Step 1: 10 states, `Violated` with the §8.1 `Lockstep` shape; 8 states, `Holds{Exhaustive}`.
 - Step 2: `Violated`; `Undecided(VacuousMatch)`.
 - Step 3: `Holds` and `Violated` with a `step(1)` loop; `a`'s stutter pairs only with `b`'s stutter.
 - Step 4: `Stopped(ResourceExhausted, MaxStates)` before the product; `Violated` with an `Undefined` counterexample (QSpec FR-400), a path for `a` and for `b` ending at the first joint step whose `a` step is `step(0)`, cause `division-by-zero`; byte-equal counterexamples.
+- Step 5: an `Undefined` counterexample at `trace_position` 0 whose locus is the body atom, which replays to `reproduced-with-evaluated-witness`; then one at the same tuple whose locus is `G` with `b`'s transition, naming `b` only.

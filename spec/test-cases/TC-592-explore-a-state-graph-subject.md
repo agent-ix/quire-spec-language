@@ -19,14 +19,18 @@ Scope: FR-167-AC-1 to FR-167-AC-5.
 
 ## Test Procedure
 
-Fixtures: ADR-022 §7.1, §7.2 and §7.3's units; a subject with an undecided
-contract conjunction at one reachable node; a subject with no initial
+Fixtures: ADR-022 §7.1, §7.2 and §7.3's units; the undecided subject,
+§7.1's subject with universe `{a}` and the postcondition clause `post Half
+using v on Config::ConfigVersion::attemptUpdate { 2 div (2 -
+self.versionNumber) >= 0 }`, undecided at the expansion of `va = 1`,
+whose candidate post-state has `va = 2`; an
+undefined guard is not this fixture, because it refutes (FR-168); a subject with no initial
 state; a subject with an unbounded population root.
 
 1. Explore each §7 subject; request `ReachesTwo`, `ReachesThree` and the
    deadlock-freedom item over §7.1 together.
 2. §7.1 with `max_depth` 1, and with `max_states` 3; the undecided subject.
-3. The deadlock-freedom item over §7.2 with no `terminal` member; the
+3. The deadlock-freedom item over §7.2 with no `terminal` declaration; the
    subject with no initial state; the unbounded subject.
 4. `possible`, `always possible` and `unique path` items over one subject
    with partial-order reduction selected; a `unique path` item with

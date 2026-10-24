@@ -59,8 +59,21 @@ FR-109's `ClauseRunRequest`, with the selection
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
 the usage. Its `category` adds `inconclusive` (a pending result)
-and `unsupported` (a missing fairness premise), and its `disposition` for a
-`violation` carries the failing `TemporalPosition`.
+and `unsupported` (a missing fairness premise). Its `disposition` for a
+`violation` (`Completed(false)` or an `Undefined` that is a violation)
+carries the failing `TemporalPosition` and the refutation's
+`TemporalCounterexample`, QSpec FR-364's observed arm, which the entry
+builds from what it ran: one `{document}` step per represented position
+from the `sha256-jcs` digests of the trace's `DocumentRef`s (the `Finite`
+trace as `prefix` with an empty `loop`, or the `Lasso`'s `prefix` and
+`loop`; for an `Undefined` result, the positions 0 to the failing position
+as `prefix` and an empty `loop`), the checked clause's fairness set, the
+interval of its first interval-carrying operator in pre-order (`null` when
+it has none, and for an `Undefined` result), the trace position, and for
+an `Undefined` result the undefined-evaluation envelope whose `where`
+carries the position, that position's document digest and the undefined
+atom's locus. A refused condition's disposition carries its position. The
+FR-267 writer writes these as the report holds them and derives none.
 
 ## Behavior
 
@@ -81,13 +94,23 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
   FR-329 for an infinite-trace clause over `Lasso` or `Model`. A
   bounded-profile clause over `Lasso` or `Model` SHALL report stage
   `admit`, `invalid_runtime_input`/`invalid-value`: a bounded profile reads
-  a closed finite trace.
+  a closed finite trace here; the zero-counted protocol lasso FR-329
+  reads under a bounded profile is not an input of this entry.
+- A refused `holds` condition (FR-327 "Refused condition") SHALL report
+  stage `evaluate` with FR-100's `refused` outcome for its evaluation (the
+  record's code, cause, fields and the atom's locus), its position, and
+  the category and exit of the record's code; its kernel
+  `Refusal::CheckedInvariant` reports `internal-failure`, as FR-100 maps
+  it. It is not reported as an internal fault or as `undefined`.
 - A refusal of FR-329 (malformed or unfair lasso) SHALL report stage
   `evaluate`, category `refusal`, with its record.
 - The entry SHALL map `Completed(true)` to `success` (exit 0);
   `Completed(false)` to `violation` with the failing position; `Undefined`
   to `violation` with its position and its `UndefinedEvaluation` cause, as
   FR-109 reports a state clause that evaluates undefined;
+  `InsufficientData` to `undefined` (exit 10, FR-285) with its position,
+  `count` and `min_count`, no `truth` and no counterexample, as the trace
+  lacks the data to decide the claim (QSpec FR-414);
   `Pending` to `inconclusive` (exit 0, completed without violation);
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
@@ -103,8 +126,10 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
 | FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `inconclusive`, exit 0, with no `truth`; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
-| FR-330-AC-5 | From source, FR-327-AC-5's first clause over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
+| FR-330-AC-5 | From source, FR-327-AC-5's first clause, `always[0,2] holds(3 mod (2 - c.value) >= 0)` in the `Counter` unit, which compiles, over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
+| FR-330-AC-7 | From source, the `Counter` clause `always[0,1] holds(InUnit(c.value))` under event-position false-extension with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
+| FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, category `undefined`, exit 10, position 2, `count` 0 and `min_count` 1, and no `truth`, no counterexample and no `UndefinedEvaluation`. | Test (TC-847) |
 
 ## Dependencies
 

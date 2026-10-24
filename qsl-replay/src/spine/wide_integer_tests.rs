@@ -216,9 +216,19 @@ fn a_directly_negated_two_pow_127_is_one_literal() {
         has_negate(&compiled),
         "a negation of 2^127 - 1 stays a Negate"
     );
-    assert!(integer_literals(&compiled)
-        .iter()
-        .any(|(value, _)| value == I128_MAX));
+    // The negated literal is an inline literal term of the `Negate`
+    // application's argument, not a node (FR-358, ADR-013 O-09).
+    assert!(compiled
+        .package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .filter_map(|node| serde_json::from_slice::<serde_json::Value>(node.preimage()).ok())
+        .filter(|json| json["body"]["operation"]["identity"] == "quire.op.integer.negate")
+        .any(|json| {
+            json["body"]["arguments"][0]["term"] == "literal"
+                && json["body"]["arguments"][0]["value"] == I128_MAX
+        }));
 }
 
 /// FR-091-AC-38 (TC-909 step 6): every other integer outside i128 refuses

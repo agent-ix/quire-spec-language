@@ -123,7 +123,9 @@ FR-063-AC-6 names -- and step 8 below exercises each of the five in turn.
 10. Inspect the definitions of `FamilyKind`, the parsed form enum
     (`Expression`), the checked node enum (`NodeKind`), `CheckCause` (the
     S4 cause-bearing type) and `WrongSnapshotCause` (the
-    S4-shaped, not family-`Cause`, type) for `#[non_exhaustive]`.
+    S4-shaped, not family-`Cause`, type; defined in `quire-semantic-value`'s
+    `call` module, read from the dependency `cargo metadata` resolves) for
+    `#[non_exhaustive]`.
 
 ## Expected Results
 

@@ -25,7 +25,8 @@ stop (not the form's depth or the host's available stack), that the S4 v2 emitte
 all-or-nothing over the nodes a node names, and that every evaluation hook reads only checked input.
 The `Relation` half of FR-062-AC-6 (no `Relation` hook and no `Relation`
 S6a input) is verified by TC-385.
-Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13, and
+Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9, FR-062-AC-13 and
+FR-062-AC-15, and
 FR-057-AC-10's value-function row.
 
 ## Test Procedure
@@ -95,6 +96,21 @@ FR-057-AC-10's value-function row.
     at a location holding no occurrence; no claim, beside a scalar
     application occurrence in a function body; and two sites of the one `+`
     node at two locations, in both claim orders.
+12. For conversion-context keying, provide hand-built checked sites and
+    occurrence maps with the expected `OccurrenceKey`s fixed in the fixture
+    before calling `key_claims`: (a) `SiteBound::Own` and no direct narrow;
+    (b) `SiteBound::Narrowed` with exactly one typed narrow application whose
+    sole reference targets the scalar application; (c) `SiteBound::Narrowed`
+    with no direct match, while an unrelated narrow is present; (d)
+    `SiteBound::Narrowed` with two narrow applications whose sole references
+    both target that scalar application; and (e) a nested direct/outer case
+    where the inner narrow references the scalar application and the outer
+    narrow references the inner narrow. Give each narrow a distinct,
+    independently specified occurrence key.
+13. Read `RequirementRecord::extent_roots()` for each record FR-062-AC-15
+    names: RR-3, RR-7, RR-8, RR-11 and RR-14, the `u` unit
+    `10 mod x` over `x, y: Int[0, 9]`, step 10's `size` unit, and a state
+    clause's `operation-contract` record.
 
 ## Expected Results
 
@@ -139,8 +155,10 @@ FR-057-AC-10's value-function row.
   the binder `v`, not by `s`; RR-17's one record is at the body's
   occurrence, not the measure's. Where one node has two records (RR-5,
   RR-15, RR-16), the keys differ only in ordinal in source order, and each
-  record carries its own occurrence's extent, result bound and guards: in
-  RR-15 the `Bounded` extent is at the `t * 2` occurrence inside the
+  record carries its own occurrence's extent, result bound, direct
+  conversion context and guards: in RR-16, each narrow occurrence key is
+  distinct even though the `+` node key is shared; in RR-15 the `Bounded`
+  extent is at the `t * 2` occurrence inside the
   `x + 1` binding and the `Unbounded` one inside the `n + 1` binding, in
   both orders of the operands; in RR-16 `Int[0, 10]` is at ordinal 0 and
   `Int[0, 20]` at ordinal 1. RR-5's second check gives an equal map, and
@@ -157,3 +175,17 @@ FR-057-AC-10's value-function row.
   map; the two sites of one node key to that node's two occurrences by
   location, differing only in ordinal, whichever order the claims come
   in.
+- Step 12: (a) the `SiteBound::Own` record carries no conversion context;
+  (b) the narrowed record carries exactly the independently specified key of
+  the sole narrow that directly references its scalar application; (c) zero
+  direct matches and (d) two direct matches each return the typed
+  `KeyFault::UnkeyableRequirements` and produce no checked package; (e) the
+  context is the independently specified inner-narrow key, not the outer
+  narrow key. The outer narrow is excluded because it references the inner
+  node rather than the scalar application. The expected key is fixed before
+  keying, not derived by reusing the production selection logic.
+- Step 13: each set is the one FR-062-AC-15 states: RR-3 `{x, y}` with a
+  `Bounded` extent; RR-7 `{x}`; RR-8 empty; RR-11's `integer.le` `{n}`;
+  RR-14 `{v}` for both records; `u`'s `mod` `{x}`; the `size` unit's `>`
+  `{v}` and `+` `{s}`; the `operation-contract` record empty. Each root is
+  the `WireNodeId` of its parameter or binder node.

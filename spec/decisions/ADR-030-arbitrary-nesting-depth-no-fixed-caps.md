@@ -36,16 +36,6 @@ relationships:
 ---
 # ADR-030: Arbitrary nesting depth: resource limits only, no fixed depth caps
 
-## Status
-
-Draft, 2026-10-01. Design only: this record makes the decisions. The QSL
-requirements that carry them are FR-255 to FR-264 and FR-356 (US-027, TC-720
-to TC-739 and TC-902; the walker toolkit's own TC-898 and TC-899 are in
-`agent-ix/quire-walk`), with the D-5 deletions applied in place. The QSpec requirements for
-D-1 and D-2 follow as separate work. No code changes
-with this record. The owner's rulings on the draft's questions are
-recorded in D-9.
-
 ## Context
 
 The owner ruled that deep nesting must be supported, and that a known depth
@@ -215,7 +205,7 @@ under a larger limit.
 6. **Catalogs.** The `stage_limit_exceeded` row of the native diagnostics
    catalog carries the setting name with the limit kind and bound (overlap
    item O-5). An `incomplete` outcome names its accounting counter, which is
-   already its setting under `quire.value.accounting/v1`.
+   its setting at every entry point (FR-255, QSpec FR-461 Behavior 6).
 
 ### D-4. Components in QSL's lane
 
@@ -441,9 +431,9 @@ requirements work that follows this record.
   a `case` or a node key by `MAX_CHECKING_DEPTH`, `DepthAboveMaximum` or a
   nesting-depth limit kind now bound it by the node, preimage-byte and work
   limits.
-- **No native limit is clamped and none bounds depth.** NFR-007, NFR-008 and
-  the native-profile requirements (FR-002, FR-003, FR-009, FR-013, FR-015,
-  FR-016, FR-024, FR-025, FR-033, FR-034, FR-036, FR-040, FR-041, FR-042,
+- **No native limit is clamped and none bounds depth.** NFR-008 and
+  the native-profile requirements (FR-002, FR-003, FR-013, FR-015,
+  FR-016, FR-024, FR-025, FR-036, FR-040, FR-041, FR-042,
   FR-051, FR-052) take each caller limit as
   given, with a published default the caller may raise, and bound nesting by
   bytes, nodes, entries and work.
@@ -555,8 +545,7 @@ D-2.
 - **O-6 `quire-canonical`.** The capabilities D-4.5 names (byte-only
   canonical encoding, an event API driven from the caller's stack, the
   shared non-recursive JSON reader, and a serde path for fixed-depth types
-  only) are `quire-canonical`'s to design and deliver, a `quire-canonical`
-  follow-up. QSL's slice 2 waits on them.
+  only) are `quire-canonical`'s to design and deliver. QSL's slice 2 waits on them.
 
 ### D-9. Rulings on the draft's questions
 

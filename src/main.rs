@@ -3,11 +3,12 @@
 mod cli;
 
 use cli::{Command, SyntaxCommand};
+use qsl_cst::format::format;
 use qsl_cst::CompleteDiagnostic;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::{render_offered, IdentityCauseFields, SourceReadCause};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
-use quire_spec_language::{format::format, parse, Limits};
+use quire_semantic_value::catalog::Category;
+use quire_spec_language::{parse, Limits};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -182,8 +183,13 @@ enum Output {
     Artifact(Vec<u8>),
 }
 
-fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
-    match error.value() {
+fn command_error(error: &quire_spec_language::command::RunError, artifact: bool) -> (u8, String) {
+    let value = if artifact {
+        error.artifact_value()
+    } else {
+        error.value()
+    };
+    match value {
         Ok(value) => (error.category().exit_code(), value.to_string()),
         // Serializing the outcome is an internal failure, distinct from the
         // request-level disposition it failed to encode.
@@ -203,15 +209,14 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
             limits,
         } => syntax(kind, source, path, limits)
             .map(|text| (Category::Success.exit_code(), Output::Line(text))),
-        Command::Run { path } => quire_spec_language::command::run(path)
-            .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
-            .map_err(|error| command_error(&error)),
+        Command::Run { path, limits } => {
+            quire_spec_language::command::run_with_limits(path, limits)
+                .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
+                .map_err(|error| command_error(&error, false))
+        }
         Command::Compile { path } => quire_spec_language::command::compile(path)
             .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
-            .map_err(|error| command_error(&error)),
-        Command::Lower { path, target } => quire_spec_language::command::lower_for(path, target)
-            .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
-            .map_err(|error| command_error(&error)),
+            .map_err(|error| command_error(&error, true)),
     }
 }
 
@@ -221,17 +226,7 @@ fn main() -> ExitCode {
     // arguments without collecting an unbounded process argument list.
     let arguments: Vec<_> = std::env::args_os().skip(1).take(13).collect();
     let outcome = Command::try_from(arguments.as_slice())
-        .map_err(|error| {
-            // An unrecognized lowering target names a real, catalogued
-            // capability this build does not implement (unsupported);
-            // every other usage failure is invalid input (refusal).
-            let category = if matches!(error, cli::UsageError::UnknownTarget(_)) {
-                Category::Unsupported
-            } else {
-                Category::Refusal
-            };
-            (category.exit_code(), error.to_string())
-        })
+        .map_err(|error| (Category::Refusal.exit_code(), error.to_string()))
         .and_then(execute);
     let (code, result) = match outcome {
         Ok((code, output)) => {

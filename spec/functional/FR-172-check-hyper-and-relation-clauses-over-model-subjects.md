@@ -5,6 +5,8 @@ type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-021
     type: implements
+  - target: ix://agent-ix/quire-spec-language/FR-125
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-013
@@ -90,7 +92,9 @@ pub struct CheckedModelRelation {
 - S3 SHALL resolve each object parameter `v: V::T` to a population of alias
   `V`'s model whose element type is `T`. The clause SHALL check to one
   instance per key of each parameter's universe, and to the product of the
-  universes for parameters over several aliases (ADR-023 HS-3).
+  universes for parameters over several aliases (ADR-023 HS-3). A clause
+  one of whose parameters has an empty universe has zero instances and is
+  reported `NoInstance` by FR-125 Instancing, the same as a temporal clause or state-graph claim.
 - If an object parameter names a population of an alias the clause does not
   bind, then S3 SHALL refuse `ill_typed` at the parameter (QSpec FR-395).
 
@@ -113,6 +117,19 @@ pub struct CheckedModelRelation {
 - S3 SHALL flatten `μ` into its top-level conjuncts and place each conjunct
   that reads only universal variables in `mu_universal` and every other
   conjunct in `mu_existential` (ADR-023 HM-3).
+- Inside `match`, S3 SHALL check a qualified name that resolves to an
+  operation `O` of the model alias bound to trace variable `t`, written as
+  an operand of `=` or `!=` whose other operand is `t.step.op`, as the label
+  constant `O` of `t.step.op`'s type, not as a state read. The comparison
+  holds at a step exactly when the step is an `O` step; it is false at the
+  terminal stutter step, which only `stutter` matches.
+- If such a qualified name names an operation of a model alias other than
+  the alias bound to the compared `t`, or appears anywhere other than as an
+  operand of an `=` or `!=` with a `t.step.op` label, then S3 SHALL refuse
+  `ill_typed`/`type-mismatch` at the qualified name.
+- A qualified name in `match` that resolves to no operation and no member
+  SHALL refuse `missing_declaration`/`missing-name` at the name; one that
+  resolves to a model member SHALL keep the state-read refusal above.
 
 ### Fairness and profile
 
@@ -145,6 +162,22 @@ pub struct CheckedModelRelation {
   `x`, its arguments `x.p`, its receiver's pre-state `pre(x.self.f)`,
   post-state `x.self.f` and result `x.result` (ADR-023 HS-8).
 
+### Body expressions
+
+- S3 SHALL type every expression of a `hyper` body or a `relation` body
+  that is not an indexed atom, a step label or an execution read under the
+  value typer's rules: expected types, literal typing, and the range and
+  definedness obligations a value clause body carries. An expression the
+  value typer refuses in a value clause body SHALL refuse in a `hyper` or
+  `relation` body with the same code and cause, located at the same
+  expression; a `let` that shadows an enclosing `let` is refused at the
+  inner `let`, as the value typer refuses it.
+- If a `let` in a `hyper` body or a `relation` body binds the name of one of
+  the clause's trace variables, object parameters or execution variables,
+  then S3 SHALL refuse `ambiguous_declaration`/`ambiguous-name` at that
+  `let`, naming the trace variable, object parameter or execution
+  variable.
+
 ### Identity
 
 - The checked clause's identity SHALL bind every subject alias in order,
@@ -160,6 +193,8 @@ pub struct CheckedModelRelation {
 | FR-172-AC-2 | Refusals at the named span: `forall trace a` with no `of` in a `behaviours` clause (`unsupported_construct`, the quantifier); `of V` in a finite trace domain clause (the quantifier); `of W` naming no model (`missing_declaration`, the alias); `v.l` with no trace variable and `d.used @ n` with `d: S::Device` (`ill_typed`, the read); a `match` conjunct reading `v.l @ a` (`unsupported_construct`/`expression-form`, the read); an object parameter `d: S::Device` in a clause that binds only `V` (`ill_typed`, the parameter); `fair weak N::Device::tick` on a variable of `S` (`missing_declaration`). | Test (TC-597) |
 | FR-172-AC-3 | §13's clause with `align skip { V::Vault::mix }` checks with `align_skip` holding `mix`; `align skip { }`, `align skip { V::Vault::mix, V::Vault::mix }`, `align skip { N::Device::tick }` in a clause over `V` alone, and `align skip` with `fair weak V::Vault::step` each refuse `unsupported_construct`/`expression-form`. | Test (TC-597) |
 | FR-172-AC-4 | FR-171-AC-3's `Det` checks with two model execution bindings to `step`. `NonInterference` and the same clause with its quantifiers' fairness sets swapped between `a` and `b` (one empty, one `weak step`) have different node identities, as do the clause and the same clause with an extra `match` conjunct. | Test (TC-597) |
+| FR-172-AC-5 | In a unit that declares alias `V` (the vault model, object type `Vault` with fields `h` and `l` and operation `step`) and alias `N` (the device model, object type `Device` with operation `tick`), `NonInterference` over `V` with `match { a.step.op = V::Vault::step and b.step.op = stutter }` checks with both conjuncts in `mu_universal`. `match { V::Vault::step != a.step.op }` checks with its one conjunct in `mu_universal` and holds at exactly the joint steps at which `match { a.step.op != V::Vault::step }` holds. Refusals at the qualified name: `a.step.op = N::Device::tick` with `a` of `V` (`ill_typed`/`type-mismatch`); `a.step.receiver = V::Vault::step` and a bare conjunct `V::Vault::step` (`ill_typed`/`type-mismatch`); `a.step.op = V::Vault::nope` (`missing_declaration`/`missing-name`); `a.step.op = V::Vault::l`, naming a field of `Vault` (`unsupported_construct`/`expression-form`, the state-read refusal). | Test (TC-597) |
+| FR-172-AC-6 | FR-171-AC-3's `Det` with body `half(x.i) < rational(3, 4)`, for a function `half` over `x.i`'s type whose declared result is `Rational[0, 1; 1, 2]`, refuses `undefined_expression`/`unproved-range` at `rational(3, 4)`, as a value clause over a parameter `x` of a record type with one field `i` of `x.i`'s type refuses the same body. `Det` with body `rational(1, 2) < rational(3, 4)`, and `NonInterference` with that comparison in its body, each refuse `ill_typed`/`ambiguous-literal` at the literal a value clause with that body is refused at. `NonInterference` with `let a = 1 in a = 1` in its body refuses `ambiguous_declaration`/`ambiguous-name` at that `let`, naming trace variable `a`; with `let v = 1 in v = 1` it refuses the same at that `let`, naming object parameter `v`. `Det` with body `let x = 1 in x = 1` refuses the same at that `let`, naming execution variable `x`. | Test (TC-597) |
 
 ## Dependencies
 

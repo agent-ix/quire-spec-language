@@ -13,6 +13,7 @@
 //! and nothing else. Every bound is used as given, with no ceiling.
 
 use crate::diagnostic::LimitKind;
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
 
 /// Declares [`Setting`] and its table from one list, so a name, its stage and
 /// its limit kind are written once.
@@ -66,6 +67,7 @@ settings! {
     S3Nodes => "s3.nodes", "S3", NodeCount;
     S3InputBytes => "s3.input_bytes", "S3", InputBytes;
     S3WorkUnits => "s3.work_units", "S3", WorkBudget;
+    S3RationalBits => "s3.rational_bits", "S3", RationalBits;
     S3DecimalScale => "s3.decimal_scale", "S3 assembly", WorkBudget;
     EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", EdgeCount;
     EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", WorkBudget;
@@ -93,6 +95,10 @@ settings! {
     IntakeInputBytes => "intake.input_bytes", "I1 semantic-IR intake", InputBytes;
     IdentityInputBytes => "identity.input_bytes", "identity encoding", InputBytes;
     ReplayInputBytes => "replay.input_bytes", "replay envelope readers", InputBytes;
+    FormatOutputBytes => "format.output_bytes", "format", InputBytes;
+    RenderOutputBytes => "render.output_bytes", "render", InputBytes;
+    PrepareCompileWorkUnits => "prepare.compile_work_units", "execution-backend prepare", WorkBudget;
+    PrepareCodeBytes => "prepare.code_bytes", "execution-backend prepare", InputBytes;
     I2InputBytes => "i2.input_bytes", "I2 v2 reader", InputBytes;
     I2Nodes => "i2.nodes", "I2 v2 reader", NodeCount;
     I2Edges => "i2.edges", "I2 v2 reader", EdgeCount;
@@ -114,9 +120,139 @@ impl Setting {
     }
 }
 
-impl std::fmt::Display for Setting {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Setting {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.name())
+    }
+}
+
+/// The ten accounting budgets of a call (`quire.value.accounting/v1`
+/// counters), each named `accounting.<counter>` (FR-255's accounting
+/// table, Behavior 9). They are settings but not stage limits: a reached budget settles
+/// `Incomplete`, so they have no [`LimitKind`] and are not [`Setting`]s,
+/// which keeps every `stage_limit_exceeded` producer total over its kind.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccountingSetting {
+    /// `integer_bits`.
+    IntegerBits,
+    /// `decimal_digits`.
+    DecimalDigits,
+    /// `scale_expansion`.
+    ScaleExpansion,
+    /// `text_input_bytes`.
+    TextInputBytes,
+    /// `text_scalars`.
+    TextScalars,
+    /// `normalized_scalars`.
+    NormalizedScalars,
+    /// `unit_edges`.
+    UnitEdges,
+    /// `value_occurrences`.
+    ValueOccurrences,
+    /// `work_units`.
+    WorkUnits,
+    /// `result_units`.
+    ResultUnits,
+}
+
+impl AccountingSetting {
+    /// Every accounting setting, in FR-255's accounting-table order.
+    pub const ALL: [Self; 10] = [
+        Self::IntegerBits,
+        Self::DecimalDigits,
+        Self::ScaleExpansion,
+        Self::TextInputBytes,
+        Self::TextScalars,
+        Self::NormalizedScalars,
+        Self::UnitEdges,
+        Self::ValueOccurrences,
+        Self::WorkUnits,
+        Self::ResultUnits,
+    ];
+
+    /// The setting name, `accounting.<counter>`, such as `accounting.work_units`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::IntegerBits => "accounting.integer_bits",
+            Self::DecimalDigits => "accounting.decimal_digits",
+            Self::ScaleExpansion => "accounting.scale_expansion",
+            Self::TextInputBytes => "accounting.text_input_bytes",
+            Self::TextScalars => "accounting.text_scalars",
+            Self::NormalizedScalars => "accounting.normalized_scalars",
+            Self::UnitEdges => "accounting.unit_edges",
+            Self::ValueOccurrences => "accounting.value_occurrences",
+            Self::WorkUnits => "accounting.work_units",
+            Self::ResultUnits => "accounting.result_units",
+        }
+    }
+
+    /// The counter's bare `quire.value.accounting/v1` member name, such as
+    /// `work_units`: the key a call's `accounting` object uses, which is no
+    /// setting name.
+    #[must_use]
+    pub const fn counter(self) -> &'static str {
+        match self {
+            Self::IntegerBits => "integer_bits",
+            Self::DecimalDigits => "decimal_digits",
+            Self::ScaleExpansion => "scale_expansion",
+            Self::TextInputBytes => "text_input_bytes",
+            Self::TextScalars => "text_scalars",
+            Self::NormalizedScalars => "normalized_scalars",
+            Self::UnitEdges => "unit_edges",
+            Self::ValueOccurrences => "value_occurrences",
+            Self::WorkUnits => "work_units",
+            Self::ResultUnits => "result_units",
+        }
+    }
+
+    /// The setting of the counter whose member name is `counter`, or `None`.
+    #[must_use]
+    pub fn from_counter(counter: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|setting| setting.counter() == counter)
+    }
+}
+
+impl core::fmt::Display for AccountingSetting {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+/// Any name the settings operation and a request's `stage_limits` accept:
+/// a stage [`Setting`] or an [`AccountingSetting`]. A stage name holds a
+/// `.` and an accounting name holds none, so no name is both.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SettingName {
+    /// A stage limit.
+    Stage(Setting),
+    /// An accounting budget.
+    Accounting(AccountingSetting),
+}
+
+impl SettingName {
+    /// The setting named `name` in either table, or `None`.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Setting::from_name(name).map(Self::Stage).or_else(|| {
+            AccountingSetting::ALL
+                .iter()
+                .copied()
+                .find(|setting| setting.name() == name)
+                .map(Self::Accounting)
+        })
+    }
+
+    /// The setting's name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Stage(setting) => setting.name(),
+            Self::Accounting(setting) => setting.name(),
+        }
     }
 }
 
@@ -156,8 +292,8 @@ pub struct UsageRefusal {
     pub cause: UsageCause,
 }
 
-/// Parse the `<name>=<value>` operands of the settings operation into
-/// settings and bounds, in operand order.
+/// Parse the `<name>=<value>` operands of the settings operation (a name of
+/// either FR-255 table) into settings and bounds, in operand order.
 ///
 /// # Errors
 ///
@@ -166,8 +302,8 @@ pub struct UsageRefusal {
 /// of at most `u64::MAX`, or names a setting an earlier operand named.
 pub fn parse_operands<'a>(
     operands: impl IntoIterator<Item = &'a str>,
-) -> Result<Vec<(Setting, u64)>, UsageRefusal> {
-    let mut parsed: Vec<(Setting, u64)> = Vec::new();
+) -> Result<Vec<(SettingName, u64)>, UsageRefusal> {
+    let mut parsed: Vec<(SettingName, u64)> = Vec::new();
     for operand in operands {
         let refuse = |cause| UsageRefusal {
             operand: operand.to_owned(),
@@ -176,7 +312,8 @@ pub fn parse_operands<'a>(
         let (name, value) = operand
             .split_once('=')
             .ok_or_else(|| refuse(UsageCause::NotAnAssignment))?;
-        let setting = Setting::from_name(name).ok_or_else(|| refuse(UsageCause::UnknownSetting))?;
+        let setting =
+            SettingName::from_name(name).ok_or_else(|| refuse(UsageCause::UnknownSetting))?;
         let bound = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
             value
                 .parse::<u64>()
@@ -194,7 +331,8 @@ pub fn parse_operands<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_operands, Setting, UsageCause};
+    use super::{parse_operands, AccountingSetting, Setting, SettingName, UsageCause};
+    use alloc::vec;
 
     #[test]
     fn names_are_distinct_and_round_trip() {
@@ -209,11 +347,36 @@ mod tests {
         }
     }
 
+    #[ix_trace_rs::trace("FR-255-AC-3")]
+    #[test]
+    fn accounting_names_are_prefixed_counters_in_neither_stage_table_nor_bare() {
+        for counter in AccountingSetting::ALL {
+            let bare = counter
+                .name()
+                .strip_prefix("accounting.")
+                .expect("an accounting setting is `accounting.<counter>`");
+            assert_eq!(Setting::from_name(counter.name()), None, "{counter}");
+            assert_eq!(
+                SettingName::from_name(counter.name()),
+                Some(SettingName::Accounting(counter))
+            );
+            assert_eq!(SettingName::from_name(bare), None, "bare counter {bare}");
+            assert_eq!(counter.counter(), bare);
+            assert_eq!(AccountingSetting::from_counter(bare), Some(counter));
+        }
+        assert!(Setting::ALL
+            .iter()
+            .all(|setting| !setting.name().starts_with("accounting.")));
+    }
+
     #[test]
     fn operands_parse_in_order_and_refuse_the_first_bad_one() {
         assert_eq!(
             parse_operands(["s3.nodes=5", "s1.tokens=0"]),
-            Ok(vec![(Setting::S3Nodes, 5), (Setting::S1Tokens, 0)])
+            Ok(vec![
+                (SettingName::Stage(Setting::S3Nodes), 5),
+                (SettingName::Stage(Setting::S1Tokens), 0)
+            ])
         );
         for (operand, cause) in [
             ("s9.nodes=1", UsageCause::UnknownSetting),

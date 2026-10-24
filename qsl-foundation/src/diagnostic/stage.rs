@@ -10,10 +10,12 @@
 //! `quire.native.diagnostics/v1`. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
+use alloc::{borrow::ToOwned, boxed::Box, collections::BTreeMap, string::String, string::ToString};
 use quire_exact::CancelCause;
 
-use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
+use super::{Code, Locus};
 use crate::setting::Setting;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category, InternalFault};
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1`. Nesting depth is not a kind: no stage refuses on depth
@@ -41,11 +43,14 @@ pub enum LimitKind {
     DiagnosticCount,
     /// Work budget: a stage's cumulative work units.
     WorkBudget,
+    /// Rational bits: the bit length of an exact rational's numerator or
+    /// denominator.
+    RationalBits,
 }
 
 impl LimitKind {
     /// Every kind, in the catalog row's order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::InputBytes,
         Self::TokenCount,
         Self::NodeCount,
@@ -53,6 +58,7 @@ impl LimitKind {
         Self::OccurrenceCount,
         Self::DiagnosticCount,
         Self::WorkBudget,
+        Self::RationalBits,
     ];
 
     /// The catalog's own cause tag for this kind, exactly
@@ -66,6 +72,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence-count-exceeded",
             Self::DiagnosticCount => "diagnostic-count-exceeded",
             Self::WorkBudget => "work-budget-exceeded",
+            Self::RationalBits => "rational-bits-exceeded",
         }
     }
 
@@ -80,6 +87,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence",
             Self::DiagnosticCount => "diagnostic",
             Self::WorkBudget => "work",
+            Self::RationalBits => "rational bit",
         }
     }
 }
@@ -92,7 +100,7 @@ impl LimitKind {
 /// where no producer can know one: a position in a tree not read from a
 /// source unit, the I2 reader's own artifact byte ceiling, and an IR limit
 /// IR reports no position for.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LimitExceeded {
     setting: Setting,
     configured_bound: u64,
@@ -167,8 +175,8 @@ impl CatalogCoded for LimitExceeded {
     /// The catalog row's payload: the exceeded limit kind (its cause tag),
     /// the configured bound, the actual counter and the setting that raises
     /// the limit (FR-096, FR-255). Its position is its locus.
-    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
-        Some(std::collections::BTreeMap::from([
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([
             ("kind", self.kind().catalog_cause().to_owned()),
             ("bound", self.configured_bound.to_string()),
             ("actual", self.actual.to_string()),
@@ -180,8 +188,8 @@ impl CatalogCoded for LimitExceeded {
 /// FR-255 Behavior 3, QSpec FR-461's rendering: the stage and counter, the
 /// configured bound, the count reached, the locus where known, and the
 /// setting that raises the limit at each entry point.
-impl std::fmt::Display for LimitExceeded {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for LimitExceeded {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             formatter,
             "{} {} limit {} reached ({})",
@@ -203,13 +211,18 @@ impl std::fmt::Display for LimitExceeded {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{
+        borrow::ToOwned, collections::BTreeMap, string::String, string::ToString, vec::Vec,
+    };
     use ix_trace_rs::trace;
 
     use quire_exact::CancelCause;
 
-    use super::{CatalogCoded, LimitExceeded, StageFailure};
-    use crate::diagnostic::{category_of, CatalogCode, Category};
+    use super::{LimitExceeded, StageFailure};
+    use crate::diagnostic::category_of;
     use crate::setting::Setting;
+    use quire_semantic_value::catalog::CatalogCoded;
+    use quire_semantic_value::catalog::{CatalogCode, Category};
 
     /// A stage cause with one fixed catalog code.
     #[derive(Debug)]
@@ -220,7 +233,7 @@ mod tests {
             CatalogCode::new(self.0, "cause")
         }
 
-        fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
             None
         }
     }
@@ -251,7 +264,7 @@ mod tests {
     #[test]
     fn a_stage_fault_is_an_internal_failure() {
         let failure: StageFailure<Cause> =
-            StageFailure::Fault(crate::diagnostic::InternalFault::new("S3", "x"));
+            StageFailure::Fault(quire_semantic_value::catalog::InternalFault::new("S3", "x"));
         assert_eq!(failure.category(), Category::InternalFailure);
     }
 

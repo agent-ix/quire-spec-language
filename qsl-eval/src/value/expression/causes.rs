@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The family-owned evaluation-time causes S6a returns in
-//! [`qsl_semantics::family::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
+//! [`quire_eval::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
 //! beside the evaluator that raises them. Layer 5 `value::expression` holds
 //! every family's evaluator (ADR-011 §6.1), so the module path does not
 //! decide the owning family: [`ProtocolClauseSnapshot`] is `ProtocolClause`'s,
@@ -9,19 +9,20 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{
+use quire_exact::ObjectReference;
+use quire_semantic_value::catalog::{
     CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
-use quire_exact::ObjectReference;
 
-use qsl_semantics::check::WrongSnapshotCause;
+use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
+use quire_semantic_value::call::WrongSnapshotCause;
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the
 /// receiver reference and the call locus. The call locus is the evaluator's
-/// own [`crate::value::Evaluation::location`], not repeated here. Moved from
+/// own [`quire_eval::Evaluation::location`], not repeated here. Moved from
 /// the now-deleted `value::outcome`: not a kernel type
 /// (ADR-013 T-6 -- FR-151 dispatch resolution is QSL `model`/`check`
 /// vocabulary), and narrowed to `pub(crate)` since its only consumers are
@@ -169,6 +170,113 @@ impl CatalogCoded for ProtocolClauseUnsupported {
     }
 }
 
+/// FR-364 "Runtime navigation reads only the extent of its relationship":
+/// the refusals a navigation decides itself, each retaining the relationship
+/// by its declaration key and the receiver or target reference by its object
+/// identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NavigationRefusal {
+    /// `incomplete_population`/`incomplete-scope`: the relationship's extent
+    /// is unlisted or incomplete, so it states nothing about the receiver's
+    /// links.
+    ExtentIncomplete {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The receiver reference.
+        receiver: ObjectReference,
+    },
+    /// `incomplete_population`/`incomplete-scope`: a selected target is
+    /// missing and the manifest cannot decide whether it is dangling.
+    TargetUndecidable {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The first selected reference that is not present.
+        reference: ObjectReference,
+    },
+    /// `dangling_reference`/`absent-target-in-complete-population`: a
+    /// selected target is missing from populations the manifest closes.
+    TargetDangling {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The first selected reference that is not present.
+        reference: ObjectReference,
+    },
+}
+
+impl CatalogCoded for NavigationRefusal {
+    fn catalog_code(&self) -> CatalogCode {
+        match self {
+            Self::ExtentIncomplete { .. } | Self::TargetUndecidable { .. } => {
+                CatalogCode::new("incomplete_population", "incomplete-scope")
+            }
+            Self::TargetDangling { .. } => {
+                CatalogCode::new("dangling_reference", "absent-target-in-complete-population")
+            }
+        }
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        let (relationship, name, object) = match self {
+            Self::ExtentIncomplete {
+                relationship,
+                receiver,
+            } => (relationship, "receiver", receiver),
+            Self::TargetUndecidable {
+                relationship,
+                reference,
+            }
+            | Self::TargetDangling {
+                relationship,
+                reference,
+            } => (relationship, "reference", reference),
+        };
+        Some(BTreeMap::from([
+            ("relationship", relationship.node.clone()),
+            (name, identity_string(object.object().as_str().as_bytes())),
+        ]))
+    }
+}
+
+/// A protocol reference expression (FR-308) reached evaluation. Its value is
+/// the value of the protocol clause it names, and no stage evaluates a
+/// protocol clause: S6a evaluates state clauses only. It refuses, typed,
+/// rather than answer with a value no clause computed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ProtocolReferenceUnsupported;
+
+impl CatalogCoded for ProtocolReferenceUnsupported {
+    /// `unknown_required_feature`/`unsupported-feature`, naming the
+    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
+    /// gap.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("unknown_required_feature", "unsupported-feature")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("construct", "protocol".to_owned())]))
+    }
+}
+
+/// FR-391 "Evaluation": a clause or a `holds` atom names a population the
+/// observation's snapshot does not list `complete`. FR-106 requires every
+/// population a clause names, so the read stops `incomplete_population`/
+/// `incomplete-scope` naming it, whichever path admitted the snapshot.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct NamedPopulationIncomplete {
+    /// The population's declaration identity.
+    pub(crate) population: String,
+}
+
+impl CatalogCoded for NamedPopulationIncomplete {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("incomplete_population", "incomplete-scope")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("population", self.population.clone())]))
+    }
+}
+
 /// A read through a `Reference<T>` over an object environment that holds no
 /// object: a replay (FR-098) admits a reference argument by its identity, and
 /// a call that dereferences it completes no value.
@@ -185,6 +293,27 @@ impl CatalogCoded for ReferenceUnresolved {
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
         Some(BTreeMap::from([("construct", "dereference".to_owned())]))
+    }
+}
+
+/// A read of a history field (FR-138) that holds no value at the instant the
+/// read observes: the update of the step that reached the instant failed, so
+/// the value is not known and a row must not read a stand-in. The read is
+/// undetermined, naming the field.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct HistoryUnresolved {
+    /// The history field's name.
+    pub(crate) field: String,
+}
+
+impl CatalogCoded for HistoryUnresolved {
+    /// `missing_declaration`/`missing-name`, naming the history field.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("missing_declaration", "missing-name")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("history", self.field.clone())]))
     }
 }
 
@@ -237,7 +366,9 @@ impl From<ModelRefusal> for ModelQueryRefusal {
 
 impl CatalogCoded for ModelQueryRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        self.cause.catalog_code()
+        self.cause
+            .catalog_code()
+            .with_prefix(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
     }
 
     /// FR-096's key table rows for this cause (`absent-key` and
@@ -261,7 +392,7 @@ pub(crate) fn identity_string(identity: &[u8]) -> String {
 /// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
 /// (FR-090-AC-11, AC-12). ADR-012 assigns dispatch, dispatch preconditions
 /// and population lookup to `StateModel` (§1, §3, §4.3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum StateModelUndefined {
     /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
     /// selected method's effective precondition evaluated to `false`.
@@ -276,9 +407,39 @@ pub(crate) enum StateModelUndefined {
         /// [`identity_string`].
         key: String,
     },
+    /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
+    /// result because no declared population member type covers the queried
+    /// type by reflexive conformance.
+    IncompleteClosure {
+        /// The queried effective type's canonical node name.
+        queried_type: String,
+        /// The queried type as the minimal uncovered-subtype witness.
+        uncovered_subtypes: Vec<String>,
+    },
+    /// FR-139: an `only(x in P where c: e)` form found no object of the
+    /// population satisfying `c`, or several.
+    OnlyNotOne {
+        /// The population's declaration identity.
+        population: String,
+        /// How many objects satisfied the condition.
+        found: u64,
+    },
+}
+
+impl std::fmt::Debug for StateModelUndefined {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StateModelUndefined")
+            .field("catalog_code", &self.catalog_code())
+            .field("record", &self.undefined_record())
+            .finish()
+    }
 }
 
 impl UndefinedCoded for StateModelUndefined {
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        Some(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
+    }
     fn undefined_record(&self) -> UndefinedRecord {
         match self {
             Self::PreconditionFalse(failure) => UndefinedRecord {
@@ -296,6 +457,24 @@ impl UndefinedCoded for StateModelUndefined {
                 reason: UndefinedReason::AbsentKey,
                 fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
             },
+            Self::IncompleteClosure {
+                queried_type,
+                uncovered_subtypes,
+            } => UndefinedRecord {
+                reason: UndefinedReason::IncompleteClosure,
+                fields: BTreeMap::from([
+                    ("closure", "subtype".to_owned()),
+                    ("queried_type", queried_type.clone()),
+                    ("uncovered_subtypes", uncovered_subtypes.join(", ")),
+                ]),
+            },
+            Self::OnlyNotOne { population, found } => UndefinedRecord {
+                reason: UndefinedReason::OnlyNotOne,
+                fields: BTreeMap::from([
+                    ("population", population.clone()),
+                    ("found", found.to_string()),
+                ]),
+            },
         }
     }
 }
@@ -304,8 +483,9 @@ impl UndefinedCoded for StateModelUndefined {
 mod tests {
     use super::{identity_string, ModelQueryRefusal, ProtocolClauseSnapshot};
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::{category_of, CatalogCode, CatalogCoded, Category, Code};
+    use qsl_foundation::diagnostic::{category_of, Code};
     use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+    use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
     fn wrong_anchor() -> ProtocolClauseSnapshot {
         ProtocolClauseSnapshot::WrongAnchor {
@@ -372,7 +552,10 @@ mod tests {
             detail: String::new(),
         };
         assert_eq!(mismatch.catalog_fields(), None);
-        assert_eq!(mismatch.refusal_record(None), None);
+        assert_eq!(
+            qsl_foundation::diagnostic::refusal_record(&mismatch, None),
+            None
+        );
     }
 
     /// TC-387 (FR-090-AC-6): each `WrongSnapshotCause` maps to
@@ -418,9 +601,16 @@ mod tests {
                 };
             assert_eq!(category_of(&code), Some(expected), "{cause:?} -> {code}");
             // The catalog code is a native code spelling, and the cause tag
-            // is the cause's own.
+            // is the cause's own, except that a walk ceiling is a denied
+            // charge (QSpec FR-150-AC-11).
             assert!(Code::from_code(code.code()).is_some(), "{code}");
-            assert_eq!(code.cause(), cause.as_str());
+            let tag = match cause {
+                ModelRefusalCause::AncestorSteps { .. } | ModelRefusalCause::FamilySteps { .. } => {
+                    "insufficient-next-charge"
+                }
+                _ => cause.as_str(),
+            };
+            assert_eq!(code.cause(), tag);
         }
     }
 
@@ -442,6 +632,7 @@ mod tests {
         let expected = refusal.catalog_code();
         let carried = ModelQueryRefusal::from(refusal);
         assert_eq!(carried.catalog_code(), expected);
+        assert_eq!(carried.catalog_code().prefix(), Some("state-model"));
         assert_eq!(
             expected,
             CatalogCode::new("cardinality_out_of_bound", "above-maximum")

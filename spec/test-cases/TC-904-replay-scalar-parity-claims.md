@@ -14,13 +14,19 @@ Verify `qsl_replay::replay_operator_parity` and
 `qsl_replay::replay_value_parity` settle each outcome of FR-357, and that the
 predicate arm of `replay` still refuses a non-`Boolean` function.
 
-Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-19.
+Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-20.
 
 ## Test Procedure
 
 Function level, over `inc(x: Int[0, 9]): Integer { x + 1 }`,
 `inv(x: Int[1, 9]): Rational[0, 1; 1, 9] { 1 / x }` and the
-predicate `small`:
+predicate `small`, each request built from the `call_site` `FunctionSite`
+of the function it selects, so it carries that function's `declaration`
+occurrence and its `value_parity.obligation_identity` (FR-484) and passes
+the occurrence and identity checks before the argument join (step 4's
+assignment naming `inv`'s parameter node therefore reaches the join and
+refuses `UnknownParameter`; step 5's `small` has no `value_parity` and its
+request carries `inc`'s identity, refusing `NotAValueFunction` first):
 
 1. Replay `inc(3)` against generated 5, `inc(3)` against out-of-range and
    `inv(2)` against generated 1/3.
@@ -71,6 +77,9 @@ Claim identity, at both levels:
 18. Digest ADR-013 O-09's worked example (the argument entry and the whole
     preimage) through `parity_obligation`, and order and refuse harness
     bounds.
+19. Replay a function request and an operator request with the replay
+    target replaced by `frame_operation` (`Config::ConfigVersion`,
+    `attemptUpdate`), and by `state_clause` (`VersionUnchanged`).
 
 Read an envelope carrying a `ScalarAgrees` cause, and one whose cause is over
 the encoded-size bound.
@@ -102,8 +111,4 @@ the encoded-size bound.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
 - Step 18: the digest `4c36290f8830ff25cbb3915fa955b093f802fb801de2074415a6c4884fc9659f` for the entry; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
-
-## Status
-
-Implemented. The tests are in `qsl-replay` (`execute/tests.rs`, `scalar.rs`,
-`proof_result.rs`).
+- Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

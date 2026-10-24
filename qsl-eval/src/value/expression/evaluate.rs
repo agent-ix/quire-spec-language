@@ -12,27 +12,33 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    ProtocolClauseUnsupported, ReferenceUnresolved, StateModelUndefined,
+    identity_string, HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete,
+    NavigationRefusal, PreconditionFailure, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
-    locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
-    WitnessClaim,
+    locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
+    SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
-use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
+use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
+use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind,
-    Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
+    Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
+    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
+    RecordSlot, Scope, Slot, Visit,
 };
-use qsl_semantics::family::FamilyOutcome;
-use qsl_semantics::family::FamilyResult;
-use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
+use quire_eval::Evaluation;
+use quire_eval::FamilyOutcome;
+use quire_eval::FamilyResult;
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
-    CompositeValue, FieldValue, ObjectReference, OptionValue, Value, ValueType,
+    CompositeValue, FieldValue, ObjectReference, OptionValue, UnionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -41,14 +47,17 @@ use quire_exact::{
     OrderingOperator, RationalArithmetic,
 };
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeExactTarget, IeeeFlags, IeeeOperation};
+use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
-    PopulationId,
+    BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
+    IntegerInterval, LimitKind, Meter, PopulationId,
 };
+use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, EqualityOperator, FieldRef,
+    operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
+    EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -56,55 +65,40 @@ use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
+use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
-/// A completed, undefined, refused, incomplete or family-owned evaluation
-/// result, located at the expression where a non-completed outcome
-/// originated (FR-090, ruling on FR-090-OQ-3). No `Clone`: `FamilyOutcome`'s
-/// `FamilyEvaluated` arm holds a `Box<dyn CatalogCoded>` or
-/// `Box<dyn UndefinedCoded>`, neither `Clone`.
+/// FR-096, ADR-013 O-17: `evaluation`'s refusal as an O-17 [`RefusalRecord`]:
+/// the family cause's code and catalog fields, and, as its locus, the
+/// evaluation's location resolved by `resolve`. The locus is absent when the
+/// location is `None` or `resolve` names no region for it (a tree not read
+/// from a source unit).
 ///
-/// quire:canonical
-#[derive(Debug)]
-pub struct Evaluation {
-    /// The outcome.
-    pub outcome: FamilyOutcome<Value>,
-    /// Where a non-completed outcome originated; `None` when completed.
-    pub location: Option<Location>,
-    /// The loss records of the operations a completed evaluation performed,
-    /// in evaluation order; empty unless completed.
-    pub losses: Vec<LocatedLoss>,
-}
-
-impl Evaluation {
-    /// FR-096, ADR-013 O-17: this evaluation's refusal as an O-17
-    /// [`RefusalRecord`]: the family cause's code and catalog fields, and,
-    /// as its locus, [`Self::location`] resolved by `graph`, the checked
-    /// package the evaluation ran. The locus is absent when the location is
-    /// `None` or names a tree not read from a source unit.
-    ///
-    /// `graph` must be the checked package this evaluation ran: a location
-    /// is a position in that package's declarations, and another graph
-    /// resolves it to another package's region.
-    ///
-    /// `None` when no record exists: the outcome is no refusal, a family
-    /// cause has no FR-096 key-table row, or a kernel refusal has no
-    /// catalog code (FR-096-AC-8, [`kernel_refusal_record`]).
-    pub fn refusal_record(&self, graph: &CheckedGraph) -> Option<RefusalRecord> {
-        let locus = self
-            .location
-            .as_ref()
-            .and_then(|location| graph.region(location))
-            .map(Locus::Region);
-        match &self.outcome {
-            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
-                cause.refusal_record(locus)
-            }
-            FamilyOutcome::Evaluated(Outcome::Refused(refusal)) => {
-                kernel_refusal_record(refusal, locus)
-            }
-            _ => None,
+/// `resolve` must be the region resolver of the checked package the
+/// evaluation ran (`CheckedGraph::region`): a location is a position in that
+/// package's declarations, and another package resolves it to another
+/// region.
+///
+/// `None` when no record exists: the outcome is no refusal, a family cause
+/// has no FR-096 key-table row, or a kernel refusal has no catalog code
+/// (FR-096-AC-8, [`kernel_refusal_record`]).
+pub fn refusal_record(
+    evaluation: &Evaluation,
+    resolve: impl Fn(&Location) -> Option<SourceRegion>,
+) -> Option<RefusalRecord> {
+    let locus = evaluation
+        .location
+        .as_ref()
+        .and_then(resolve)
+        .map(Locus::Region);
+    match &evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+            qsl_foundation::diagnostic::refusal_record(cause.as_ref(), locus)
         }
+        FamilyOutcome::Evaluated(Outcome::Refused(refusal)) => {
+            kernel_refusal_record(refusal, locus)
+        }
+        _ => None,
     }
 }
 
@@ -146,6 +140,36 @@ struct LocatedStop {
     location: Location,
 }
 
+/// Which composite constructor refused.
+#[derive(Clone, Copy)]
+enum ConstructionSite {
+    Tuple,
+    Record,
+}
+
+/// A refused tuple or record construction as the fault it is: a storage
+/// failure of the admission worklist has its own identifier and is never read
+/// as a rejected construction.
+fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> Halt {
+    use ConstructionCause::{StorageCapacity, StorageDenied};
+    invariant(match (site, &refusal.cause) {
+        (ConstructionSite::Tuple, StorageDenied(_)) => {
+            "tuple-construction-admission-allocation-denied"
+        }
+        (ConstructionSite::Tuple, StorageCapacity(_)) => {
+            "tuple-construction-admission-capacity-overflow"
+        }
+        (ConstructionSite::Record, StorageDenied(_)) => {
+            "record-construction-admission-allocation-denied"
+        }
+        (ConstructionSite::Record, StorageCapacity(_)) => {
+            "record-construction-admission-capacity-overflow"
+        }
+        (ConstructionSite::Tuple, _) => "tuple-construction-rejected",
+        (ConstructionSite::Record, _) => "record-construction-rejected",
+    })
+}
+
 /// A quantity whose `UnitId` neither the package's unit table nor this
 /// evaluation's formed units resolve. Checking resolves every quantity type
 /// and admission matches every argument's unit id to its parameter's, so this
@@ -174,6 +198,7 @@ impl From<Incomplete> for Halt {
 impl From<ModelQueryHalt> for Halt {
     fn from(halt: ModelQueryHalt) -> Self {
         match halt {
+            ModelQueryHalt::Fault(fault) => Self::Fault(fault),
             ModelQueryHalt::Stop(stop) => Self::Stop(stop),
             ModelQueryHalt::Refused(refusal) => Self::Family(FamilyResult::Refused(Box::new(
                 ModelQueryRefusal::from(*refusal),
@@ -184,6 +209,15 @@ impl From<ModelQueryHalt> for Halt {
                     key: identity_string(&key),
                 }),
             )),
+            ModelQueryHalt::IncompleteClosure {
+                queried_type,
+                uncovered_subtypes,
+            } => Self::Family(FamilyResult::Undefined(Box::new(
+                StateModelUndefined::IncompleteClosure {
+                    queried_type,
+                    uncovered_subtypes,
+                },
+            ))),
         }
     }
 }
@@ -230,16 +264,87 @@ fn completed(evaluation: Evaluation) -> Result<Value, Box<Evaluation>> {
     }
 }
 
-/// The real `Stop` a checked-invariant break constructs -- shared by
-/// [`invariant`] (for a `Halt`-returning `Machine` method) and
-/// [`Machine::run`]'s own no-value fallback (which calls [`Machine::stopped`]
-/// directly, needing a bare `Stop`, never a `Halt`).
-fn checked_invariant() -> Stop {
-    Stop::Refused(Refusal::CheckedInvariant)
+/// A QSL-owned invariant at its detecting producer (FR-090).
+fn invariant(identifier: &'static str) -> Halt {
+    Halt::Fault(InternalFault::new("S6a", identifier))
 }
 
-fn invariant() -> Halt {
-    Halt::Stop(checked_invariant())
+/// The one target of a single-valued navigation end `[lower, upper]` (FR-364
+/// step 4): the count is decided with no charge, and a count outside the
+/// bound is the kernel's `cardinality_out_of_bound` refusal, whose
+/// collection kind is `Set` for a `unique` end and `Bag` otherwise, with a
+/// repeated instance of a non-unique end counted once per instance.
+fn single_target(
+    mut elements: Vec<Value>,
+    lower: u64,
+    upper: u64,
+    unique: bool,
+) -> Result<Option<Value>, Halt> {
+    let count = u64::try_from(elements.len()).unwrap_or(u64::MAX);
+    let violation = if count < lower {
+        Some(BoundViolation::BelowMinimum)
+    } else if count > upper {
+        Some(BoundViolation::AboveMaximum)
+    } else {
+        None
+    };
+    if let Some(violation) = violation {
+        let bound = CardinalityBound::new(lower, upper)
+            .map_err(|_| invariant("navigate-single-valued-bound-invalid"))?;
+        return Err(Halt::Stop(Stop::Refused(Refusal::CardinalityOutOfBound {
+            violation,
+            kind: if unique {
+                CollectionKind::Set
+            } else {
+                CollectionKind::Bag
+            },
+            bound,
+            count,
+        })));
+    }
+    Ok(elements.pop())
+}
+
+/// FR-380: `objects` lists no more objects of the population `bound` limits
+/// than its authored maximum; otherwise `cardinality_out_of_bound`/
+/// `above-maximum` naming the maximum and the count, as an unbounded
+/// reading of a population with a declared maximum refuses (FR-084).
+fn check_authored_bound(objects: &ObjectEnvironment, bound: &AuthoredBound) -> Result<(), Halt> {
+    match authored_bound_refusal(objects, bound).map_err(Halt::Fault)? {
+        Some(refusal) => Err(Halt::Stop(Stop::Refused(refusal))),
+        None => Ok(()),
+    }
+}
+
+/// The evaluation that refuses with `refusal` and originates nowhere.
+pub(super) fn refused_evaluation(refusal: Refusal) -> Evaluation {
+    Evaluation {
+        outcome: FamilyOutcome::Evaluated(Outcome::Refused(refusal)),
+        location: None,
+        losses: Vec::new(),
+    }
+}
+
+/// The refusal [`check_authored_bound`] gives, when `objects` lists more
+/// objects of the population than `bound` allows.
+pub(super) fn authored_bound_refusal(
+    objects: &ObjectEnvironment,
+    bound: &AuthoredBound,
+) -> Result<Option<Refusal>, InternalFault> {
+    let Some(count) = objects
+        .population_size(&bound.population.node)
+        .filter(|count| *count > bound.maximum)
+    else {
+        return Ok(None);
+    };
+    let maximum = CardinalityBound::new(0, bound.maximum)
+        .map_err(|_| InternalFault::new("S6a", "authored-population-bound-invalid"))?;
+    Ok(Some(Refusal::CardinalityOutOfBound {
+        violation: BoundViolation::AboveMaximum,
+        kind: CollectionKind::Set,
+        bound: maximum,
+        count,
+    }))
 }
 
 /// `function.call`: one work unit per checked call.
@@ -247,9 +352,32 @@ fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::FunctionCall))?)
 }
 
+/// The declaration identity of the concrete population a refinement row's
+/// `only` ranges over, for the undefined cause's payload: the population
+/// under any `where` filter of `source`.
+fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
+    let mut node = source;
+    loop {
+        match node.kind() {
+            NodeKind::PopulationObjects { population } => return Ok(population.node.clone()),
+            NodeKind::Query {
+                visit: Visit::Filter,
+                source,
+                ..
+            } => node = node.at(*source),
+            _ => return Err(invariant("only-source-is-a-population")),
+        }
+    }
+}
+
 /// A visit: one `collection.visit` work unit.
 fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionVisit))?)
+}
+
+/// Whether `node` is a named population operand (FR-391).
+fn is_named(node: CheckedNode<'_>) -> bool {
+    matches!(node.kind(), NodeKind::NamedPopulation { .. })
 }
 
 /// One `collection.element` before a literal element.
@@ -262,6 +390,26 @@ fn charge_element(meter: &mut Meter) -> Result<(), Stop> {
 /// `graph.result-retain`).
 fn charge_named(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(point))?)
+}
+
+/// The `discovered`th `graph.expand` of one `reaches` walk (`value-accounting.md`:
+/// `value_occurrences=k`, the distinct nodes discovered including this one;
+/// one work unit).
+fn charge_graph_expand(meter: &mut Meter, discovered: u64) -> Result<(), Stop> {
+    Ok(meter.charge(
+        Charge::new(ChargePoint::GraphExpand).size(LimitKind::ValueOccurrences, discovered),
+    )?)
+}
+
+/// The number of nodes a walk has discovered, as a charge size.
+fn discovered_count(discovered: &BTreeSet<ObjectReference>) -> u64 {
+    u64::try_from(discovered.len()).unwrap_or(u64::MAX)
+}
+
+/// `graph.result-retain`: the walk's Boolean (`value-accounting.md`: one work
+/// unit and one result unit).
+fn charge_graph_result_retain(meter: &mut Meter) -> Result<(), Stop> {
+    Ok(meter.charge(Charge::new(ChargePoint::GraphResultRetain).results(1))?)
 }
 
 /// `dispatch.select`: one dispatched `receiver.member(args)` call, sized by
@@ -306,11 +454,16 @@ enum Task<'a> {
     Apply(CheckedNode<'a>),
     Branch(CheckedNode<'a>),
     Short(CheckedNode<'a>),
+    /// FR-322: the `case` at this node has evaluated its scrutinee; select
+    /// the arm of its active member and evaluate only that arm's body.
+    Select(CheckedNode<'a>),
     Retain(CheckedNode<'a>),
     Bind(Slot),
     ChargeElement(CheckedNode<'a>),
     Return,
     Iterate(Box<Iteration<'a>>),
+    /// FR-139: a `seq(i in low .. high: e)` in progress.
+    IterateSeq(Box<SeqIteration<'a>>),
     /// FR-151 (TC-196 D06): the pushed frame's own effective-precondition
     /// body has just evaluated; decide it, then continue to the selected
     /// candidate's own body.
@@ -378,6 +531,26 @@ struct Iteration<'a> {
     count: Integer,
 }
 
+/// A `seq(i in low .. high: e)` in progress (FR-139).
+struct SeqIteration<'a> {
+    node: CheckedNode<'a>,
+    /// The integer the next element binds.
+    next: Integer,
+    /// The last integer.
+    high: Integer,
+    awaiting: bool,
+    results: Vec<Value>,
+}
+
+/// The selection a recorded read evaluated (FR-107 "Read paths").
+#[derive(Clone, Copy)]
+enum ReadStep<'s> {
+    /// A record value's field.
+    Field(&'s str),
+    /// A model object's attribute.
+    Attribute(&'s str),
+}
+
 /// Which value family a [`Machine`] evaluates (SR-750 FND-011 round 2):
 /// set once by the constructor, never inferred from `reads.is_some()` at
 /// each call to [`Machine::is_protocol_clause`].
@@ -406,7 +579,12 @@ pub(crate) struct Machine<'a, 'm> {
     /// location (`CheckedStateClause::reads`), consulted only at an
     /// `Attribute` node to choose `objects` or `pre_objects`. Empty for the
     /// `Value` family.
-    reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+    reads: Option<
+        &'a std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        >,
+    >,
     /// Which family this `Machine` evaluates (SR-750 FND-011 round 2): set
     /// once, explicitly, by whichever constructor built it, rather than
     /// inferred from `reads.is_some()`. [`Self::new`] always builds
@@ -482,7 +660,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         graph: &'a CheckedGraph,
         objects: &'a ObjectEnvironment,
         pre_objects: Option<&'a ObjectEnvironment>,
-        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        reads: Option<
+            &'a std::collections::BTreeMap<
+                Location,
+                qsl_semantics::model::clause_observation::Observation,
+            >,
+        >,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
@@ -504,7 +687,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         graph: &'a CheckedGraph,
         objects: &'a ObjectEnvironment,
         pre_objects: Option<&'a ObjectEnvironment>,
-        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        reads: Option<
+            &'a std::collections::BTreeMap<
+                Location,
+                qsl_semantics::model::clause_observation::Observation,
+            >,
+        >,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
         family: EvaluationFamily,
@@ -583,7 +771,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `CheckedPackage::evaluate` -- and this loop matches `Stop::Fault` out
     /// the moment a task fails, before `Self::stopped` ever converts the
     /// remaining `Stop` shapes into an `Outcome`; and a kernel
-    /// `Stop::Refused(Refusal::CheckedInvariant)`, which `Self::stopped`
+    /// `Stop::Refused(Refusal::CheckedInvariant { .. })`, which `Self::stopped`
     /// itself turns into `Err(InternalFault)` rather than an `Outcome`
     /// (FR-096-AC-15).
     pub(crate) fn run(
@@ -593,6 +781,18 @@ impl<'a, 'm> Machine<'a, 'm> {
         arguments: Vec<Value>,
     ) -> Result<Evaluation, InternalFault> {
         self.enter_frame(slots, arguments);
+        self.drive(root)
+    }
+
+    /// [`Self::run`] over a frame given slot by slot: `frame[i]` is local
+    /// slot `i`, `None` for a slot the body may bind but is not given
+    /// (ADR-027 ST-1: a protocol slot reads only the binders bound at it).
+    pub(crate) fn run_frame(
+        mut self,
+        root: CheckedNode<'a>,
+        frame: Vec<Option<Value>>,
+    ) -> Result<Evaluation, InternalFault> {
+        self.frames.push(frame);
         self.drive(root)
     }
 
@@ -634,9 +834,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Apply(node)
                 | Task::Branch(node)
                 | Task::Short(node)
+                | Task::Select(node)
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
+                Task::IterateSeq(iteration) => iteration.node,
                 Task::DispatchGuard(guard) => guard.node,
                 Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
                     root
@@ -653,13 +855,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                         location: Some(located.location().clone()),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Self::stopped(stop, located.location()),
+                    Halt::Stop(stop) => Self::stopped(stop, Some(located.location())),
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        self.imported
-                            .first()
-                            .map_or(&at.location, |call| call.location()),
+                        Some(
+                            self.imported
+                                .first()
+                                .map_or(&at.location, |call| call.location()),
+                        ),
                     ),
                 };
             }
@@ -670,7 +874,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 location: None,
                 losses: std::mem::take(&mut self.losses),
             }),
-            _ => Self::stopped(checked_invariant(), root.location()),
+            _ => Err(InternalFault::new("S6a", "evaluation-result-stack-invalid")),
         }
     }
 
@@ -735,7 +939,9 @@ impl<'a, 'm> Machine<'a, 'm> {
             Ok(Value::Boolean(holds)) => match visit {
                 Visit::Forall => !holds,
                 Visit::Exists => holds,
-                Visit::Map | Visit::Filter | Visit::Count | Visit::Sum => return Err(fault()),
+                Visit::Map | Visit::Filter | Visit::Count | Visit::Sum | Visit::Only => {
+                    return Err(fault())
+                }
             },
             Ok(_) => return Err(fault()),
             Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Body, stopped)),
@@ -768,60 +974,70 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
     /// S6a invariant break, an `InternalFault` and never a refusal record
-    /// (FR-096-AC-15, observed through
+    /// (FR-096-AC-19, observed through
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
-    fn stopped(stop: Stop, location: &Location) -> Result<Evaluation, InternalFault> {
-        if matches!(stop, Stop::Refused(Refusal::CheckedInvariant)) {
-            return Err(InternalFault::new("S6a", "checked-program-invariant"));
+    fn stopped(stop: Stop, location: Option<&Location>) -> Result<Evaluation, InternalFault> {
+        if let Stop::Refused(Refusal::CheckedInvariant { cause }) = stop {
+            return Err(InternalFault::from_kernel(
+                "S6a",
+                "checked-program-invariant",
+                cause,
+            ));
         }
         Ok(Evaluation {
             outcome: FamilyOutcome::Evaluated(outcome_from_stop(Err(stop))),
-            location: Some(location.clone()),
+            location: location.cloned(),
             losses: Vec::new(),
         })
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
-        self.values.pop().ok_or_else(invariant)
+        self.values
+            .pop()
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))
     }
 
     fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
-        let start = self.values.len().checked_sub(count).ok_or_else(invariant)?;
+        let start = self
+            .values
+            .len()
+            .checked_sub(count)
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
         Ok(self.values.split_off(start))
     }
 
     fn pop_integer(&mut self) -> Result<Integer, Halt> {
         match self.pop()? {
             Value::Integer(value) => Ok(value),
-            _ => Err(invariant()),
+            _ => Err(invariant("integer-value-expected")),
         }
     }
 
     fn pop_boolean(&mut self) -> Result<bool, Halt> {
         match self.pop()? {
             Value::Boolean(value) => Ok(value),
-            _ => Err(invariant()),
+            _ => Err(invariant("boolean-value-expected")),
         }
     }
 
     fn pop_collection(&mut self) -> Result<Arc<CollectionValue>, Halt> {
         match self.pop()? {
             Value::Collection(collection) => Ok(collection),
-            _ => Err(invariant()),
+            _ => Err(invariant("collection-value-expected")),
         }
     }
 
     fn pop_rational(&mut self) -> Result<Rational, Halt> {
         match self.pop()? {
             Value::Rational(value) => Ok(value),
-            _ => Err(invariant()),
+            _ => Err(invariant("rational-value-expected")),
         }
     }
 
     fn pop_decimal(&mut self) -> Result<Decimal, Halt> {
         match self.pop()? {
             Value::Decimal(value) => Ok(value),
-            _ => Err(invariant()),
+            _ => Err(invariant("decimal-value-expected")),
         }
     }
 
@@ -846,11 +1062,54 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(Value::Decimal(result.value().clone()))
     }
 
+    /// Bind `value` to `slot` in the current frame.
+    fn bind(&mut self, slot: Slot, value: Value) -> Result<(), Halt> {
+        if let Some(trail) = self.trail.as_mut() {
+            trail.element_paths.remove(&slot);
+        }
+        *self.slot(slot)? = Some(value);
+        Ok(())
+    }
+
+    /// FR-322: select the one arm of the `case` at `node` whose member is the
+    /// scrutinee's active member, bind its payload positionally and queue only
+    /// that arm's body. Selecting and binding charge nothing. A scrutinee that
+    /// matches no arm broke an invariant admission (FR-321) and
+    /// exhaustiveness (FR-318) establish.
+    fn select_arm(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+        let NodeKind::Case {
+            declaration, arms, ..
+        } = node.kind()
+        else {
+            return Err(invariant("evaluation-case-node-expected"));
+        };
+        let Value::Union(scrutinee) = self.pop()? else {
+            return Err(invariant("case-scrutinee-union-expected"));
+        };
+        let (position, _) = self
+            .scope
+            .types()
+            .union_member(*declaration, scrutinee.variant())
+            .ok_or_else(|| invariant("case-scrutinee-member-unresolved"))?;
+        let arm = arms
+            .iter()
+            .find(|arm| arm.member == position)
+            .ok_or_else(|| invariant("case-arm-unmatched"))?;
+        if arm.binders.len() != scrutinee.payload().len() {
+            return Err(invariant("case-arm-binder-arity"));
+        }
+        for (slot, value) in arm.binders.iter().zip(scrutinee.payload()) {
+            self.bind(*slot, value.clone())?;
+        }
+        self.tasks.push(Task::Eval(node.at(arm.body)));
+        Ok(())
+    }
+
     fn slot(&mut self, slot: Slot) -> Result<&mut Option<Value>, Halt> {
         self.frames
             .last_mut()
             .and_then(|frame| frame.get_mut(slot))
-            .ok_or_else(invariant)
+            .ok_or_else(|| invariant("evaluation-local-slot-unresolved"))
     }
 
     /// FR-153: the population `allInstances`/`lookup` reads for `binding` at
@@ -948,7 +1207,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     then, otherwise, ..
                 } = node.kind()
                 else {
-                    return Err(invariant());
+                    return Err(invariant("evaluation-branch-node-expected"));
                 };
                 let condition = self.pop_boolean()?;
                 self.decide(node, condition);
@@ -958,7 +1217,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             Task::Short(node) => {
                 let NodeKind::Connective(connective, _, right) = node.kind() else {
-                    return Err(invariant());
+                    return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
                 self.decide(node, left);
@@ -986,12 +1245,14 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             Task::Bind(slot) => {
                 let value = self.pop()?;
-                *self.slot(slot)? = Some(value);
-                Ok(())
+                self.bind(slot, value)
             }
+            Task::Select(node) => self.select_arm(node),
             Task::ChargeElement(_) => charge_element(self.meter).map_err(Into::into),
             Task::Return => {
-                self.frames.pop().ok_or_else(invariant)?;
+                self.frames
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
                 Ok(())
             }
             Task::DispatchGuard(guard) => {
@@ -1002,7 +1263,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     node: _,
                 } = *guard;
                 let holds = self.pop_boolean()?;
-                self.frames.pop().ok_or_else(invariant)?;
+                self.frames
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
                 if !holds {
                     // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
                     // undefined result.
@@ -1013,7 +1276,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let callable = self
                     .graph
                     .function_state(body_function)
-                    .ok_or_else(invariant)?;
+                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
@@ -1023,6 +1286,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
+            Task::IterateSeq(iteration) => self.iterate_seq(iteration),
             Task::RestoreAnchor(previous) => {
                 self.anchor = previous;
                 Ok(())
@@ -1042,7 +1306,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Ok(());
             }
             NodeKind::Local(slot) => {
-                let value = self.slot(*slot)?.clone().ok_or_else(invariant)?;
+                let value = self
+                    .slot(*slot)?
+                    .clone()
+                    .ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
                 self.values.push(value);
                 return Ok(());
             }
@@ -1075,6 +1342,21 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*source)));
                 return Ok(());
             }
+            // FR-139: only the bounds are children to evaluate now; the
+            // body is reached once per integer through `Task::IterateSeq`.
+            NodeKind::Seq { low, high, .. } => {
+                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Eval(node.at(*high)));
+                self.tasks.push(Task::Eval(node.at(*low)));
+                return Ok(());
+            }
+            // FR-322: only the scrutinee is a child to evaluate now; the arm
+            // bodies are reached through `Task::Select`.
+            NodeKind::Case { scrutinee, .. } => {
+                self.tasks.push(Task::Select(node));
+                self.tasks.push(Task::Eval(node.at(*scrutinee)));
+                return Ok(());
+            }
             NodeKind::Fold {
                 source, identity, ..
             } => {
@@ -1083,6 +1365,21 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.tasks.push(Task::Eval(node.at(*identity)));
                 }
                 self.tasks.push(Task::Eval(node.at(*source)));
+                return Ok(());
+            }
+            // FR-391: a named population is read from the snapshot by its
+            // parent, never evaluated as an operand.
+            NodeKind::AllInstances { population } if is_named(node.at(*population)) => {
+                self.tasks.push(Task::Apply(node));
+                return Ok(());
+            }
+            NodeKind::Lookup {
+                population,
+                reference,
+                ..
+            } if is_named(node.at(*population)) => {
+                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Eval(node.at(*reference)));
                 return Ok(());
             }
             NodeKind::Pre(operand) => {
@@ -1120,17 +1417,81 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::Let { .. }
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
-            | NodeKind::Pre(_) => return Err(invariant()),
+            | NodeKind::Pre(_) => return Err(invariant("evaluation-apply-node-invalid")),
+            // FR-322: `eval` queues a `case` through `Task::Select`, never
+            // `Task::Apply`.
+            NodeKind::Case { .. } => return Err(invariant("evaluation-apply-node-invalid")),
+            // FR-322: the payload arguments are evaluated and on the stack in
+            // position order; the first stopped one never reaches here. Type
+            // checking proved each payload against its position (FR-317), so
+            // the member is only resolved and its arity confirmed -- a
+            // re-admission of each payload would walk every nested union again
+            // and make a depth-n construction chain quadratic. One
+            // `composite.result-retain` follows the arguments.
+            NodeKind::UnionValue {
+                declaration,
+                member,
+                arguments,
+            } => {
+                let payload = self.pop_many(arguments.len())?;
+                let binding = match self
+                    .scope
+                    .types()
+                    .composite(*declaration)
+                    .map(|union| union.shape())
+                {
+                    Some(CompositeShape::Union(members)) => members
+                        .get(*member)
+                        .filter(|declared| declared.positions().len() == payload.len())
+                        .and_then(|declared| declared.member()),
+                    _ => None,
+                }
+                .ok_or_else(|| invariant("union-member-unresolved"))?;
+                outcome_into_stop(retain_composite(
+                    UnionValue::from_admitted(binding.clone(), payload),
+                    self.meter,
+                ))?
+            }
             // FR-107: `reaches(source, target, edge)`, checked
             // only inside a state clause.
             NodeKind::Reaches { edge, .. } => {
                 let Value::Reference(target) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("reaches-reference-value-expected"));
                 };
                 let Value::Reference(source) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("reaches-reference-value-expected"));
                 };
                 Value::Boolean(self.evaluate_reaches(node, &source, &target, edge)?)
+            }
+            // FR-365: `reaches(source, target, name)` over a relationship end,
+            // read from the clause observation's extent of the relationship.
+            NodeKind::ReachesEnd {
+                relationship,
+                near,
+                population,
+                ..
+            } => {
+                let Value::Reference(target) = self.pop()? else {
+                    return Err(invariant("reaches-reference-value-expected"));
+                };
+                let Value::Reference(source) = self.pop()? else {
+                    return Err(invariant("reaches-reference-value-expected"));
+                };
+                Value::Boolean(self.evaluate_reaches_end(
+                    node,
+                    &source,
+                    &target,
+                    relationship,
+                    *near,
+                    population.as_ref(),
+                )?)
+            }
+            // FR-308: the value of a protocol reference is the value of its
+            // protocol clause, which nothing evaluates.
+            NodeKind::ProtocolReference { .. } => {
+                return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                    ProtocolReferenceUnsupported,
+                ))))
             }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
@@ -1139,7 +1500,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             // depends on this crate, so it must compile there for the root
             // crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]
-            NodeKind::__SeamProbe => return Err(invariant()),
+            NodeKind::__SeamProbe => return Err(invariant("compile-only-seam-probe")),
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {
@@ -1161,6 +1522,40 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
                     operation, None, self.meter,
                 ))?)
+            }
+            NodeKind::IntegerDivision {
+                operator,
+                selection,
+                ..
+            } => {
+                let right = self.pop_integer()?;
+                let left = self.pop_integer()?;
+                let outcome = match operator {
+                    IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                        let selection = selection
+                            .as_ref()
+                            .ok_or_else(|| invariant("integer-division-selection-missing"))?;
+                        let member = match operator {
+                            IntegerDivisionOperator::Div => DivisionMember::Quotient,
+                            IntegerDivisionOperator::Rem => DivisionMember::Remainder,
+                            IntegerDivisionOperator::Mod => {
+                                return Err(invariant("integer-division-member-mismatch"))
+                            }
+                        };
+                        integer_divide(
+                            selection,
+                            member,
+                            &left,
+                            &right,
+                            &IntegerDomain::Mathematical,
+                            self.meter,
+                        )
+                    }
+                    IntegerDivisionOperator::Mod => {
+                        integer_modulo(&left, &right, &IntegerDomain::Mathematical, self.meter)
+                    }
+                };
+                Value::Integer(outcome_into_stop(outcome)?)
             }
             NodeKind::Negate(_) => {
                 let operand = self.pop_integer()?;
@@ -1239,11 +1634,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                         target,
                     )?
                 }
-                _ => return Err(invariant()),
+                _ => return Err(invariant("decimal-conversion-operand-invalid")),
             },
             NodeKind::Ieee(operator, rounding, _, _) => {
                 let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
-                    return Err(invariant());
+                    return Err(invariant("ieee-float-value-expected"));
                 };
                 let operation = match operator {
                     ArithmeticOperator::Add => IeeeOperation::Add(left, right),
@@ -1252,10 +1647,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Divide => IeeeOperation::Divide(left, right),
                 };
                 if self.scope.ieee_profile().is_none() {
-                    return Err(invariant());
+                    return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
-                    evaluate_ieee(operation, *rounding, self.meter).map_err(|_| invariant())?,
+                    evaluate_ieee(operation, *rounding, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()));
@@ -1265,7 +1661,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Quantity(operator, _, _) => {
                 let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)
                 else {
-                    return Err(invariant());
+                    return Err(invariant("quantity-value-expected"));
                 };
                 let (Some(l), Some(r)) = (self.units.resolve(&left), self.units.resolve(&right))
                 else {
@@ -1277,8 +1673,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Multiply => QuantityOperation::Multiply(l, r),
                     ArithmeticOperator::Divide => QuantityOperation::Divide(l, r),
                 };
-                let (outcome, unit) =
-                    evaluate_quantity_unit(operation, self.meter).map_err(|_| invariant())?;
+                let (outcome, unit) = evaluate_quantity_unit(operation, self.meter)
+                    .map_err(|_| invariant("quantity-operation-rejected"))?;
                 let quantity = outcome_into_stop(outcome)?;
                 // A later operation reads this result's unit by its id; the
                 // scope keeps one entry per distinct unit.
@@ -1311,9 +1707,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     {
                         Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
                     }
-                    _ => Value::Boolean(outcome_into_stop(
-                        checked.evaluate(&left, &right, self.meter),
-                    )?),
+                    _ => Value::Boolean(outcome_into_stop(checked.evaluate(
+                        self.scope.types(),
+                        &left,
+                        &right,
+                        self.meter,
+                    ))?),
                 }
             }
             NodeKind::Not(_) => {
@@ -1324,24 +1723,44 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ))?)
             }
             NodeKind::Field {
-                index, optional, ..
+                operand,
+                field,
+                optional,
             } => {
                 let Value::Composite(composite) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("field-composite-value-expected"));
                 };
-                let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                let value = Self::project(slot, *optional, node.value_type(), false)?;
-                self.note_field(&composite, *index, &value);
+                // FR-359 item 2: the slot is found in the value's own
+                // declaration by the field's identity. The value may be a
+                // child of the record the read is typed at, whose own fields
+                // are not a positional prefix of that record's.
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration(), field)
+                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
+                let slot = composite
+                    .slots()
+                    .get(index)
+                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    false,
+                )?;
+                self.note_field(&composite, index, &value);
+                self.note_read(node, *operand, ReadStep::Field(field.name()), None);
                 value
             }
             NodeKind::Attribute {
+                reference: operand,
                 field,
                 optional,
                 derefed,
-                ..
             } => {
                 let Value::Reference(reference) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("attribute-reference-value-expected"));
                 };
                 // FR-107's own model.deref/model.navigate charges are an
                 // S6a accounting rule (`value-accounting.md`, cited by
@@ -1359,6 +1778,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
+                let read_reference = reference.clone();
+                let reference = if self.reads.is_some_and(|reads| {
+                    reads.get(node.location())
+                        == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
+                }) {
+                    self.trail
+                        .as_ref()
+                        .and_then(|trail| {
+                            (trail.receiver.as_ref() == Some(&reference))
+                                .then(|| trail.receiver_pre.clone())
+                                .flatten()
+                        })
+                        .unwrap_or(reference)
+                } else {
+                    reference
+                };
                 let objects = self.objects_for(node)?;
                 // A replay's references are unresolved: there is no object to
                 // read, so the read completes no value.
@@ -1370,26 +1805,55 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let slot = objects
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
-                    .ok_or_else(invariant)?;
+                    .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                self.log_field_read(node, objects, &reference, field)?;
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
                 } else {
                     self.witnessed_reads.remove(node.location());
                 }
-                let value = Self::project(slot, *optional, node.value_type(), witnessed)?;
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    witnessed,
+                )?;
                 self.note_member(node, &reference, &field.name, &value);
+                self.note_read(
+                    node,
+                    *operand,
+                    ReadStep::Attribute(&field.name),
+                    Some(&read_reference),
+                );
                 value
+            }
+            NodeKind::History { field, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("history-reference-value-expected"));
+                };
+                // FR-138: a history field is the refinement's, kept beside
+                // the observation; `pre(..)` reads the pre-state's.
+                // A failed update leaves no value to read: undetermined.
+                self.objects_for(node)?
+                    .history(&reference, field)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Halt::Family(FamilyResult::Refused(Box::new(HistoryUnresolved {
+                            field: field.clone(),
+                        })))
+                    })?
             }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("option-value-expected"));
                 };
                 Value::Boolean(option.payload().is_some())
             }
             NodeKind::Value(_) => {
                 let Value::Option(option) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("option-value-expected"));
                 };
                 let payload = option
                     .payload()
@@ -1402,7 +1866,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let callable = self.graph.function_state(*function).ok_or_else(invariant)?;
+                let callable = self
+                    .graph
+                    .function_state(*function)
+                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1433,8 +1900,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .graph
                     .scope()
                     .imported_graph(callee.package)
-                    .ok_or_else(invariant)?;
-                let callable = library.function_state(*function).ok_or_else(invariant)?;
+                    .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
+                let callable = library
+                    .function_state(*function)
+                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1464,7 +1933,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope
                     .types()
                     .tuple(*declaration, arguments)
-                    .map_err(|_| invariant())?;
+                    .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Record { declaration, slots } => {
@@ -1479,16 +1948,18 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .composite(*declaration)
                     .map(|declaration| declaration.shape())
                 else {
-                    return Err(invariant());
+                    return Err(invariant("record-declaration-unresolved"));
                 };
                 let mut fields = Vec::with_capacity(slots.len());
                 for (slot, field) in slots.iter().zip(declared) {
                     let value = match slot {
                         RecordSlot::Absent => FieldValue::Absent,
                         RecordSlot::Null => FieldValue::Null,
-                        RecordSlot::Present(_) => {
-                            FieldValue::Present(values.next().ok_or_else(invariant)?)
-                        }
+                        RecordSlot::Present(_) => FieldValue::Present(
+                            values
+                                .next()
+                                .ok_or_else(|| invariant("record-present-value-missing"))?,
+                        ),
                     };
                     fields.push((field.name(), value));
                 }
@@ -1496,7 +1967,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope
                     .types()
                     .record(*declaration, fields)
-                    .map_err(|_| invariant())?;
+                    .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Collection {
@@ -1540,19 +2011,16 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
-                operand_value(operand, &value, &self.units, self.meter)?
+                operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("ieee-conversion-float-value-expected"));
                 };
                 if self.scope.ieee_profile().is_none() {
-                    return Err(invariant());
+                    return Err(invariant("ieee-profile-unresolved"));
                 }
-                let exact = outcome_into_stop(
-                    ieee_to_exact(value, IeeeExactTarget::Rational(domain), self.meter)
-                        .map_err(|_| invariant())?,
-                )?;
+                let exact = outcome_into_stop(ieee_to_exact(value, domain, self.meter))?;
                 if let Some(loss) = exact.loss() {
                     self.record(node, ValueLoss::IeeeExact(loss));
                 }
@@ -1561,16 +2029,20 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Query { .. } | NodeKind::Fold { .. } => {
                 return self.start_iteration(node);
             }
+            NodeKind::Seq { .. } => return self.start_seq(node),
+            NodeKind::PopulationObjects { population } => {
+                self.population_objects(node, population)?
+            }
             NodeKind::Flatten(_) => {
                 let ValueType::Collection(result_type) = node.value_type() else {
-                    return Err(invariant());
+                    return Err(invariant("flatten-collection-result-expected"));
                 };
                 let outer = self.pop_collection()?;
                 let mut produced = Vec::new();
                 for inner in outer.elements() {
                     charge_visit(self.meter)?;
                     let Value::Collection(inner) = inner else {
-                        return Err(invariant());
+                        return Err(invariant("flatten-inner-collection-expected"));
                     };
                     for element in inner.elements() {
                         charge_visit(self.meter)?;
@@ -1608,6 +2080,35 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
+            NodeKind::Navigate {
+                relationship,
+                near,
+                unique,
+                ..
+            } => self.navigate(node, relationship, *near, *unique)?,
+            NodeKind::NamedPopulation { .. } => {
+                return Err(invariant("named-population-is-read-by-its-parent"))
+            }
+            NodeKind::AllInstances { population }
+                if let NodeKind::NamedPopulation {
+                    population,
+                    members,
+                } = node.at(*population).kind() =>
+            {
+                self.named_all_instances(node, population, members)?
+            }
+            NodeKind::Lookup {
+                population,
+                absence,
+                ..
+            } if let NodeKind::NamedPopulation {
+                population,
+                members,
+            } = node.at(*population).kind() =>
+            {
+                let reference = self.pop()?;
+                self.named_lookup(node, population, members, *absence, reference)?
+            }
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {
                     return Err(Halt::Family(FamilyResult::Refused(Box::new(
@@ -1615,16 +2116,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ))));
                 }
                 let Value::Population(population_id) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("query-population-value-expected"));
                 };
                 let ValueType::Population(maximum) = node.at(*population).value_type() else {
-                    return Err(invariant());
+                    return Err(invariant("query-population-type-expected"));
                 };
                 let ValueType::Collection(collection_type) = node.value_type() else {
-                    return Err(invariant());
+                    return Err(invariant("all-instances-collection-result-expected"));
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
                 let binding = self.select_anchor(binding)?;
+                self.log_membership_read(binding, None);
                 evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
@@ -1639,14 +2141,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 let reference_value = self.pop()?;
                 let Value::Population(population_id) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("query-population-value-expected"));
                 };
                 let ValueType::Population(maximum) = node.at(*population).value_type() else {
-                    return Err(invariant());
+                    return Err(invariant("query-population-type-expected"));
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
                 let ValueType::Reference(static_key) = node.at(*reference).value_type() else {
-                    return Err(invariant());
+                    return Err(invariant("lookup-reference-type-expected"));
                 };
                 // Not the FR-063 seam: both matches below are over
                 // `ValueType` (checking already fixed this node's own type
@@ -1658,11 +2160,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ValueType::Reference(key) => *key,
                     ValueType::Option(payload) => match &**payload {
                         ValueType::Reference(key) => *key,
-                        _ => return Err(invariant()),
+                        _ => return Err(invariant("lookup-reference-result-expected")),
                     },
-                    _ => return Err(invariant()),
+                    _ => return Err(invariant("lookup-reference-result-expected")),
                 };
                 let binding = self.select_anchor(binding)?;
+                let looked_up = if let Value::Reference(looked_up) = &reference_value {
+                    Some(looked_up.clone())
+                } else {
+                    None
+                };
+                self.log_membership_read(binding, looked_up);
                 evaluate_lookup(
                     binding,
                     target_key,
@@ -1681,7 +2189,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             } => {
                 let arguments = self.pop_many(arguments.len())?;
                 let Value::Reference(reference) = self.pop()? else {
-                    return Err(invariant());
+                    return Err(invariant("dispatch-reference-value-expected"));
                 };
                 let subtype = reference.object_type();
                 // The exact call site that produced this node (`check.rs`'s
@@ -1694,12 +2202,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope
                     .dispatch_operations()
                     .get(*operation)
-                    .ok_or_else(invariant)?;
-                let table_ref = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
+                    .ok_or_else(|| invariant("dispatch-operation-unresolved"))?;
+                let table_ref = self
+                    .dispatch_tables
+                    .get(*table)
+                    .ok_or_else(|| invariant("dispatch-table-unresolved"))?;
                 charge_dispatch_select(self.meter, table_ref.candidate_count())?;
                 let candidate = table_ref
                     .linked_for(&subtype)
-                    .ok_or_else(invariant)?
+                    .ok_or_else(|| invariant("dispatch-candidate-unresolved"))?
                     .clone();
                 let mut full_arguments = Vec::with_capacity(arguments.len() + 1);
                 full_arguments.push(Value::Reference(reference.clone()));
@@ -1709,11 +2220,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                         let callable = self
                             .graph
                             .function_state(precondition_function)
-                            .ok_or_else(invariant)?;
+                            .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                         let selected = self
                             .graph
                             .function_state(candidate.body)
-                            .ok_or_else(invariant)?
+                            .ok_or_else(|| invariant("evaluation-callable-unresolved"))?
                             .name
                             .to_owned();
                         let mut frame: Vec<Option<Value>> =
@@ -1737,7 +2248,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         let callable = self
                             .graph
                             .function_state(candidate.body)
-                            .ok_or_else(invariant)?;
+                            .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                         charge_call(self.meter)?;
                         let mut frame: Vec<Option<Value>> =
                             full_arguments.into_iter().map(Some).collect();
@@ -1773,7 +2284,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn objects_for(&self, node: CheckedNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
         match self.reads {
             Some(reads)
-                if reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre) =>
+                if reads.get(node.location())
+                    == Some(&qsl_semantics::model::clause_observation::Observation::Pre) =>
             {
                 self.pre_objects.ok_or_else(|| {
                     Halt::Family(FamilyResult::Refused(Box::new(
@@ -1785,6 +2297,387 @@ impl<'a, 'm> Machine<'a, 'm> {
                 })
             }
             _ => Ok(self.objects),
+        }
+    }
+
+    /// Records the read of `reference`'s `field` in `objects`' read log,
+    /// when it keeps one, under the instant the attribute node observes.
+    fn log_field_read(
+        &self,
+        node: CheckedNode<'_>,
+        objects: &ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> Result<(), Halt> {
+        let Some(log) = objects.read_log() else {
+            return Ok(());
+        };
+        let attribute = self
+            .scope
+            .types()
+            .attributes(reference.object_type())
+            .and_then(|attributes| {
+                attributes
+                    .iter()
+                    .find(|attribute| attribute.stands_for(field))
+            })
+            .ok_or_else(|| invariant("logged-attribute-unresolved"))?;
+        let observation = self
+            .reads
+            .and_then(|reads| reads.get(node.location()).copied())
+            .unwrap_or(qsl_semantics::model::clause_observation::Observation::Current);
+        log.record(ObservedRead::Field {
+            observation,
+            object: reference.clone(),
+            owner: attribute.owner(),
+            name: attribute.field().name().to_owned(),
+        });
+        Ok(())
+    }
+
+    /// Records the read of `binding`'s population, at the anchor the
+    /// evaluation selected, in the read log of the evaluation's objects.
+    fn log_membership_read(&self, binding: &PopulationBinding, object: Option<ObjectReference>) {
+        self.log_membership_of(binding.population_key(), object);
+    }
+
+    /// Records the read of the population `key`'s membership, at the anchor
+    /// the evaluation selected.
+    fn log_membership_of(&self, key: &DeclarationKey, object: Option<ObjectReference>) {
+        let Some(log) = self.objects.read_log() else {
+            return;
+        };
+        log.record(ObservedRead::Membership {
+            observation: match self.anchor {
+                Anchor::Pre => qsl_semantics::model::clause_observation::Observation::Pre,
+                Anchor::Post => qsl_semantics::model::clause_observation::Observation::Post,
+            },
+            population: key.clone(),
+            object,
+        });
+    }
+
+    /// FR-139: the objects of the concrete population `population` in the
+    /// observed state, in ascending key order, as the set a refinement row
+    /// reads.
+    fn population_objects(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+    ) -> Result<Value, Halt> {
+        let objects = self.objects_for(node)?;
+        let members = objects
+            .population_members(&population.node)
+            .ok_or_else(|| invariant("population-members-unobserved"))?;
+        let ValueType::Collection(result_type) = node.value_type() else {
+            return Err(invariant("population-objects-collection-result-expected"));
+        };
+        self.log_membership_of(population, None);
+        let elements = members.iter().cloned().map(Value::Reference).collect();
+        Ok(outcome_into_stop(form(result_type, elements, self.meter))?)
+    }
+
+    /// FR-391: `allInstances<T>(M::P)`, and a named population read as a
+    /// domain, over the population the snapshot of the node's observation
+    /// lists: every member whose type conforms to `T`, one `population.visit`
+    /// charge per member, FR-084's typed incomplete result when no declared
+    /// member type covers `T`.
+    fn named_all_instances(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+        members: &[quire_exact::EffectiveId],
+    ) -> Result<Value, Halt> {
+        let ValueType::Collection(result_type) = node.value_type() else {
+            return Err(invariant("all-instances-collection-result-expected"));
+        };
+        let ValueType::Reference(target) = result_type.element() else {
+            return Err(invariant("all-instances-reference-element-expected"));
+        };
+        self.named_covers(members, *target)?;
+        let types = self.scope.types();
+        let listed = self.named_members(node, population)?;
+        let mut selected = Vec::new();
+        for reference in listed {
+            charge_named(self.meter, ChargePoint::PopulationVisit)?;
+            if types.conforms(reference.object_type(), *target) {
+                selected.push(Value::Reference(reference.clone()));
+            }
+        }
+        let count = u64::try_from(selected.len()).unwrap_or(u64::MAX);
+        self.meter.charge(
+            Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
+        )?;
+        self.log_membership_of(population, None);
+        Ok(outcome_into_stop(form(result_type, selected, self.meter))?)
+    }
+
+    /// FR-084's coverage check for a named population (FR-391 "Typing"):
+    /// FR-084's typed incomplete result when no declared member type of the
+    /// population covers `target`. It charges nothing.
+    fn named_covers(
+        &self,
+        members: &[quire_exact::EffectiveId],
+        target: quire_exact::EffectiveId,
+    ) -> Result<(), Halt> {
+        let types = self.scope.types();
+        if members.iter().any(|member| types.conforms(target, *member)) {
+            return Ok(());
+        }
+        let queried = self
+            .graph
+            .object_type_key(target)
+            .ok_or_else(|| invariant("named-queried-type-declared"))?
+            .node
+            .clone();
+        Err(ModelQueryHalt::IncompleteClosure {
+            queried_type: queried.clone(),
+            uncovered_subtypes: vec![queried],
+        }
+        .into())
+    }
+
+    /// The objects the snapshot of `node`'s observation lists for
+    /// `population` (FR-391 "Evaluation"): a population that snapshot does
+    /// not list `complete` stops `incomplete_population`/`incomplete-scope`,
+    /// whichever path admitted it.
+    fn named_members(
+        &self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+    ) -> Result<&'a [ObjectReference], Halt> {
+        let objects = self.objects_for(node)?;
+        if !objects.population_complete(&population.node) {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                NamedPopulationIncomplete {
+                    population: population.node.clone(),
+                },
+            ))));
+        }
+        objects
+            .population_members(&population.node)
+            .ok_or_else(|| invariant("named-population-unobserved"))
+    }
+
+    /// FR-391: `lookup<T>(M::P, r) absent m` over the population the snapshot
+    /// of the node's observation lists, with FR-084's coverage check of `T`
+    /// and `lookup`'s conformance of the reference to `T`.
+    fn named_lookup(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+        members: &[quire_exact::EffectiveId],
+        absence: qsl_foundation::absence::AbsenceMode,
+        reference: Value,
+    ) -> Result<Value, Halt> {
+        use qsl_foundation::absence::AbsenceMode;
+        let Value::Reference(reference) = reference else {
+            return Err(invariant("lookup-reference-value-expected"));
+        };
+        let target = match node.value_type() {
+            ValueType::Option(payload) => &**payload,
+            other => other,
+        };
+        let ValueType::Reference(target) = target else {
+            return Err(invariant("lookup-reference-result-expected"));
+        };
+        self.named_covers(members, *target)?;
+        if !self
+            .scope
+            .types()
+            .conforms(reference.object_type(), *target)
+        {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(
+                    qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
+                        self.graph
+                            .object_type_key(reference.object_type())
+                            .ok_or_else(|| invariant("named-reference-type-declared"))?
+                            .node
+                            .clone(),
+                        self.graph
+                            .object_type_key(*target)
+                            .ok_or_else(|| invariant("named-queried-type-declared"))?
+                            .node
+                            .clone(),
+                    ),
+                ),
+            ))));
+        }
+        self.meter
+            .charge(Charge::new(ChargePoint::LookupKey).size(LimitKind::ValueOccurrences, 1))?;
+        let present = self.named_members(node, population)?.contains(&reference);
+        self.log_membership_of(population, Some(reference.clone()));
+        let retain = |meter: &mut Meter, occurrences: u64| -> Result<(), Halt> {
+            Ok(meter.charge(
+                Charge::new(ChargePoint::LookupResultRetain)
+                    .size(LimitKind::ValueOccurrences, occurrences)
+                    .results(occurrences),
+            )?)
+        };
+        let payload = || match node.value_type() {
+            ValueType::Option(payload) => Ok((**payload).clone()),
+            _ => Err(invariant("lookup-option-result-expected")),
+        };
+        let key = identity_string(reference.object().as_str().as_bytes());
+        match (present, absence) {
+            (true, AbsenceMode::Empty) => {
+                retain(self.meter, 2)?;
+                Ok(OptionValue::from_admitted(
+                    payload()?,
+                    Some(Value::Reference(reference)),
+                ))
+            }
+            (true, AbsenceMode::Undefined | AbsenceMode::Refused) => {
+                retain(self.meter, 1)?;
+                Ok(Value::Reference(reference))
+            }
+            (false, AbsenceMode::Empty) => {
+                retain(self.meter, 1)?;
+                Ok(OptionValue::from_admitted(payload()?, None))
+            }
+            (false, AbsenceMode::Undefined) => Err(Halt::Family(FamilyResult::Undefined(
+                Box::new(StateModelUndefined::AbsentKey {
+                    binding: population.node.clone(),
+                    key,
+                }),
+            ))),
+            (false, AbsenceMode::Refused) => Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(qsl_semantics::model::normalize::ModelRefusal::absent_key(
+                    population.node.clone(),
+                    reference.object().as_str().as_bytes().to_vec(),
+                )),
+            )))),
+        }
+    }
+
+    /// FR-139: start `seq(i in low .. high: e)` over its evaluated bounds.
+    fn start_seq(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+        let (Value::Integer(high), Value::Integer(low)) = (self.pop()?, self.pop()?) else {
+            return Err(invariant("seq-integer-bounds-expected"));
+        };
+        self.iterations = self.iterations.saturating_add(1);
+        self.iterate_seq(Box::new(SeqIteration {
+            node,
+            next: low,
+            high,
+            awaiting: false,
+            results: Vec::new(),
+        }))
+    }
+
+    /// FR-139: bind the next integer and evaluate the element, charging one
+    /// work unit per element; the sequence is empty when `high < low`.
+    fn iterate_seq(&mut self, mut iteration: Box<SeqIteration<'a>>) -> Result<(), Halt> {
+        let node = iteration.node;
+        let NodeKind::Seq { slot, body, .. } = node.kind() else {
+            return Err(invariant("seq-node-expected"));
+        };
+        if iteration.awaiting {
+            iteration.awaiting = false;
+            let element = self.pop()?;
+            iteration.results.push(element);
+        }
+        if iteration.next > iteration.high {
+            self.iterations = self.iterations.saturating_sub(1);
+            let ValueType::Collection(result_type) = node.value_type() else {
+                return Err(invariant("seq-collection-result-expected"));
+            };
+            let value = outcome_into_stop(form(result_type, iteration.results, self.meter))?;
+            self.values.push(value);
+            return Ok(());
+        }
+        charge_visit(self.meter)?;
+        *self.slot(*slot)? = Some(Value::Integer(iteration.next.clone()));
+        iteration.next = iteration.next.add(&Integer::one());
+        iteration.awaiting = true;
+        self.tasks.push(Task::IterateSeq(iteration));
+        self.tasks.push(Task::Eval(node.at(*body)));
+        Ok(())
+    }
+
+    /// FR-364 "Runtime navigation reads only the extent of its relationship":
+    /// `r.role` over the relationship end nearest `r` (`near`), stopping at
+    /// the first outcome. Charges `model.navigate`; an extent that is not
+    /// complete is `incomplete_population`/`incomplete-scope` with no further
+    /// charge; each selected reference, in reference-key order, is decided
+    /// by `resolve` (present, dangling or undecidable, over the observation's
+    /// own manifest and closure) before its `collection.visit`, so a missing
+    /// target decides before the count bound; then the multiplicity-
+    /// determined value is bounded and retained.
+    fn navigate(
+        &mut self,
+        node: CheckedNode<'_>,
+        relationship: &DeclarationKey,
+        near: EndSide,
+        unique: bool,
+    ) -> Result<Value, Halt> {
+        let Value::Reference(receiver) = self.pop()? else {
+            return Err(invariant("navigate-reference-value-expected"));
+        };
+        charge_named(self.meter, ChargePoint::ModelNavigate)?;
+        let objects = self.objects_for(node)?;
+        let refuse =
+            |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
+        let Some(extents) = objects
+            .extents()
+            .filter(|extents| extents.complete(relationship))
+        else {
+            return Err(refuse(NavigationRefusal::ExtentIncomplete {
+                relationship: relationship.clone(),
+                receiver,
+            }));
+        };
+        let selected: Vec<&ObjectReference> = match near {
+            EndSide::Source => extents.targets(relationship, &receiver).collect(),
+            EndSide::Target => extents.sources(relationship, &receiver).collect(),
+        };
+        let types = self.scope.types();
+        let manifest = extents
+            .manifest(types)
+            .map_err(|_| invariant("navigate-manifest-unavailable"))?;
+        let multi_valued = matches!(node.value_type(), ValueType::Collection(_));
+        let mut elements = Vec::with_capacity(selected.len());
+        for target in selected {
+            match objects.objects().resolve(target, types, &manifest) {
+                Resolution::Present => {}
+                Resolution::Dangling => {
+                    return Err(refuse(NavigationRefusal::TargetDangling {
+                        relationship: relationship.clone(),
+                        reference: target.clone(),
+                    }));
+                }
+                Resolution::Undecidable => {
+                    return Err(refuse(NavigationRefusal::TargetUndecidable {
+                        relationship: relationship.clone(),
+                        reference: target.clone(),
+                    }));
+                }
+            }
+            if multi_valued {
+                charge_visit(self.meter)?;
+            }
+            elements.push(Value::Reference(target.clone()));
+        }
+        match node.value_type() {
+            ValueType::Collection(collection_type) => Ok(outcome_into_stop(form_grouped(
+                collection_type,
+                elements,
+                self.meter,
+            ))?),
+            ValueType::Reference(_) => {
+                let reference = single_target(elements, 1, 1, unique)?;
+                reference.ok_or_else(|| invariant("navigate-required-target-absent"))
+            }
+            ValueType::Option(payload) => {
+                let target = single_target(elements, 0, 1, unique)?;
+                Ok(OptionValue::from_admitted((**payload).clone(), target))
+            }
+            // The checker types a navigation to exactly the three shapes
+            // above (`state_model::navigation`); any other type is an
+            // invariant break, not a closed enum's missing arm.
+            #[allow(clippy::wildcard_enum_match_arm)]
+            _ => Err(invariant("navigate-result-type-unexpected")),
         }
     }
 
@@ -1837,6 +2730,90 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(found)
     }
 
+    /// FR-365 "Evaluation": `reaches(source, target, name)` over the extent of
+    /// `relationship` in the clause's observation, reading only `complete`,
+    /// `targets` (a forward role) or `sources` (an inverse role) and
+    /// `resolve`, stopping at the first outcome. `source` is decided by
+    /// `resolve` with no charge; `graph.expand` is charged for it; an extent
+    /// that is not complete is `incomplete_population`/`incomplete-scope`; each
+    /// dequeued node's neighbours, in the order the read returns them, are
+    /// decided by `resolve` before their `graph.edge`; the target is compared
+    /// by whole-key identity and need not be held; `graph.result-retain` is
+    /// charged last. No neighbour count is compared with a multiplicity.
+    fn evaluate_reaches_end(
+        &mut self,
+        node: CheckedNode<'a>,
+        source: &ObjectReference,
+        target: &ObjectReference,
+        relationship: &DeclarationKey,
+        near: EndSide,
+        population: Option<&AuthoredBound>,
+    ) -> Result<bool, Halt> {
+        let objects = self.objects_for(node)?;
+        // FR-380: a population with an authored bound holds at most that
+        // many objects; more refuses `cardinality_out_of_bound` before any
+        // charge, and is no resource outcome (ADR-014 B-1).
+        if let Some(bound) = population {
+            check_authored_bound(objects, bound)?;
+        }
+        let refuse =
+            |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
+        let extents = objects.extents();
+        let types = self.scope.types();
+        let manifest = extents
+            .map(|extents| extents.manifest(types))
+            .transpose()
+            .map_err(|_| invariant("reaches-manifest-unavailable"))?;
+        // A neighbour or the start decided as `navigate` decides a target.
+        let decide = |reference: &ObjectReference| match &manifest {
+            Some(manifest) => match objects.objects().resolve(reference, types, manifest) {
+                Resolution::Present => Ok(()),
+                Resolution::Dangling => Err(refuse(NavigationRefusal::TargetDangling {
+                    relationship: relationship.clone(),
+                    reference: reference.clone(),
+                })),
+                Resolution::Undecidable => Err(refuse(NavigationRefusal::TargetUndecidable {
+                    relationship: relationship.clone(),
+                    reference: reference.clone(),
+                })),
+            },
+            None => Ok(()),
+        };
+        decide(source)?;
+        charge_graph_expand(self.meter, 1)?;
+        let Some(extents) = extents.filter(|extents| extents.complete(relationship)) else {
+            return Err(refuse(NavigationRefusal::ExtentIncomplete {
+                relationship: relationship.clone(),
+                receiver: source.clone(),
+            }));
+        };
+        let mut discovered: BTreeSet<ObjectReference> = BTreeSet::new();
+        discovered.insert(source.clone());
+        let mut queue: VecDeque<ObjectReference> = VecDeque::new();
+        queue.push_back(source.clone());
+        let mut found = false;
+        'walk: while let Some(current) = queue.pop_front() {
+            let neighbours: Vec<&ObjectReference> = match near {
+                EndSide::Source => extents.targets(relationship, &current).collect(),
+                EndSide::Target => extents.sources(relationship, &current).collect(),
+            };
+            for next in neighbours {
+                decide(next)?;
+                charge_named(self.meter, ChargePoint::GraphEdge)?;
+                if next == target {
+                    found = true;
+                    break 'walk;
+                }
+                if discovered.insert(next.clone()) {
+                    charge_graph_expand(self.meter, discovered_count(&discovered))?;
+                    queue.push_back(next.clone());
+                }
+            }
+        }
+        charge_graph_result_retain(self.meter)?;
+        Ok(found)
+    }
+
     /// The targets `edge` names on `current`, in the edge's own order: one
     /// for a required `Reference<T>` field, zero or one for an optional
     /// one, and each element in sequence order for a required sequence of
@@ -1864,17 +2841,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             .scope
             .types()
             .attributes(current.object_type())
-            .ok_or_else(invariant)?;
+            .ok_or_else(|| invariant("edge-attribute-declarations-unresolved"))?;
         let attribute = declared
             .iter()
             .find(|attribute| attribute.stands_for(edge))
-            .ok_or_else(invariant)?;
+            .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
         let slot = self
             .objects_for(node)?
             .objects()
             .attribute(self.scope.types(), current, edge)
-            .ok_or_else(invariant)?;
+            .ok_or_else(|| invariant("edge-slot-unresolved"))?;
         match field.value_type() {
             ValueType::Reference(_) => match (slot, field.presence()) {
                 (FieldValue::Present(Value::Reference(reference)), _) => {
@@ -1883,7 +2860,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 (FieldValue::Absent | FieldValue::Null, quire_exact::Presence::Optional) => {
                     Ok(Vec::new())
                 }
-                _ => Err(invariant()),
+                _ => Err(invariant("edge-reference-slot-invalid")),
             },
             ValueType::Collection(collection) if collection.kind() == CollectionKind::Sequence => {
                 match slot {
@@ -1892,13 +2869,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                         .iter()
                         .map(|element| match element {
                             Value::Reference(reference) => Ok(reference.clone()),
-                            _ => Err(invariant()),
+                            _ => Err(invariant("edge-reference-element-expected")),
                         })
                         .collect(),
-                    _ => Err(invariant()),
+                    _ => Err(invariant("edge-sequence-slot-invalid")),
                 }
             }
-            _ => Err(invariant()),
+            _ => Err(invariant("edge-field-type-invalid")),
         }
     }
 
@@ -1906,6 +2883,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// outside its declared range, which an optional slot's checked
     /// construction would refuse. Every other slot is checked as before.
     fn project(
+        types: &TypeEnvironment,
         slot: &FieldValue,
         optional: bool,
         value_type: &ValueType,
@@ -1916,13 +2894,34 @@ impl<'a, 'm> Machine<'a, 'm> {
             (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
                 OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
             ),
+            // FR-359 item 5: the payload is admitted by conformance under the
+            // type environment, so a child of the payload's record keeps its
+            // own identity in the `Option`. `OptionValue::present` is exact.
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                OptionValue::present((**payload).clone(), value.clone()).map_err(|_| invariant())
+                // The evaluator's stop channel is the kernel `Stop`, which has no
+                // storage variant, so an undecided admission is its own fault
+                // identifier and is never read as "rejected".
+                match types.admits(payload, value) {
+                    Ok(true) => Ok(OptionValue::from_admitted(
+                        (**payload).clone(),
+                        Some(value.clone()),
+                    )),
+                    Ok(false) => Err(invariant("field-option-payload-rejected")),
+                    Err(EnvironmentFailure::Allocation(_)) => Err(invariant(
+                        "field-option-payload-admission-allocation-denied",
+                    )),
+                    Err(EnvironmentFailure::Capacity(_)) => Err(invariant(
+                        "field-option-payload-admission-capacity-overflow",
+                    )),
+                    Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
+                        Err(invariant("field-option-payload-admission-contract-broken"))
+                    }
+                }
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))
             }
-            _ => Err(invariant()),
+            _ => Err(invariant("field-projection-shape-invalid")),
         }
     }
 
@@ -1959,18 +2958,18 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.enum_members.resolve(l.variant()),
                     self.enum_members.resolve(r.variant()),
                 ) else {
-                    return Err(invariant());
+                    return Err(invariant("ordered-enumeration-variant-unresolved"));
                 };
                 return outcome_into_stop(
                     compare_enum(comparison(operator), l, r, self.meter)
-                        .map_err(|_| invariant())?,
+                        .map_err(|_| invariant("ordered-enumeration-comparison-rejected"))?,
                 )
                 .map_err(Into::into);
             }
             (OrderedKind::Texts, Value::Text(l), Value::Text(r)) => {
                 return outcome_into_stop(
                     compare_text(comparison(operator), l, r, self.meter)
-                        .map_err(|_| invariant())?,
+                        .map_err(|_| invariant("ordered-text-comparison-rejected"))?,
                 )
                 .map_err(Into::into);
             }
@@ -1980,11 +2979,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 return outcome_into_stop(
                     compare_quantity(comparison(operator), l, r, self.meter)
-                        .map_err(|_| invariant())?,
+                        .map_err(|_| invariant("ordered-quantity-comparison-rejected"))?,
                 )
                 .map_err(Into::into);
             }
-            _ => return Err(invariant()),
+            _ => return Err(invariant("ordered-operand-kind-invalid")),
         };
         outcome_into_stop(order_numbers(operator, operands, self.meter)).map_err(Into::into)
     }
@@ -1999,9 +2998,30 @@ impl<'a, 'm> Machine<'a, 'm> {
                 },
                 identity.is_none(),
             ),
-            _ => (None, false),
+            NodeKind::Query { .. } => (None, false),
+            _ => return Err(invariant("iteration-node-invalid")),
         };
         let source = self.pop_collection()?;
+        if let NodeKind::Query {
+            visit: Visit::Only,
+            source: operand,
+            ..
+        } = node.kind()
+        {
+            // FR-139: `only` is `e` for the one object satisfying the
+            // condition, and undefined for none or several, before `e`
+            // reads any object.
+            let found = u64::try_from(source.elements().len()).unwrap_or(u64::MAX);
+            if found != 1 {
+                self.iterations = self.iterations.saturating_sub(1);
+                return Err(Halt::Family(FamilyResult::Undefined(Box::new(
+                    StateModelUndefined::OnlyNotOne {
+                        population: population_of(node.at(*operand))?,
+                        found,
+                    },
+                ))));
+            }
+        }
         let mut iteration = Box::new(Iteration {
             node,
             source,
@@ -2036,7 +3056,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 .checked_sub(1)
                 .and_then(|index| iteration.source.elements().get(index))
                 .cloned()
-                .ok_or_else(invariant)?;
+                .ok_or_else(|| invariant("iteration-source-position-invalid"))?;
             let stop_early = match node.kind() {
                 NodeKind::Query { visit, body, .. } => match (visit, result) {
                     (Visit::Map, value) => {
@@ -2087,7 +3107,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                                         other => other?,
                                     }
                                 }
-                                Some(_) => return Err(invariant()),
+                                Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
                             }));
                         false
                     }
@@ -2097,13 +3117,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                         }
                         false
                     }
-                    _ => return Err(invariant()),
+                    (Visit::Only, value) => {
+                        iteration.results.push(value);
+                        false
+                    }
+                    _ => return Err(invariant("query-body-value-invalid")),
                 },
                 NodeKind::Fold { .. } => {
                     iteration.accumulator = Some(result);
                     false
                 }
-                _ => return Err(invariant()),
+                _ => return Err(invariant("iteration-node-invalid")),
             };
             if stop_early {
                 self.iterations = self.iterations.saturating_sub(1);
@@ -2123,10 +3147,22 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Some(element) = iteration.source.elements().get(iteration.next).cloned() else {
             return self.finish(*iteration);
         };
-        charge_visit(self.meter)?;
+        // An `only` over a `where` filter already visited the one object that
+        // passed it (FR-139).
+        if !matches!(
+            node.kind(),
+            NodeKind::Query { visit: Visit::Only, source, .. }
+                if matches!(node.at(*source).kind(), NodeKind::Query { visit: Visit::Filter, .. })
+        ) {
+            charge_visit(self.meter)?;
+        }
         iteration.next = iteration.next.saturating_add(1);
+        let position = iteration.next.saturating_sub(1);
         let body = match node.kind() {
-            NodeKind::Query { slot, body, .. } => {
+            NodeKind::Query {
+                slot, body, source, ..
+            } => {
+                self.note_element(node.at(*source), &iteration.source, *slot, position);
                 *self.slot(*slot)? = Some(element);
                 body
             }
@@ -2136,12 +3172,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                 step,
                 ..
             } => {
-                let current = iteration.accumulator.clone().ok_or_else(invariant)?;
+                let current = iteration
+                    .accumulator
+                    .clone()
+                    .ok_or_else(|| invariant("fold-accumulator-missing"))?;
+                if let Some(trail) = self.trail.as_mut() {
+                    trail.element_paths.remove(accumulator);
+                    trail.element_paths.remove(binder);
+                }
                 *self.slot(*accumulator)? = Some(current);
                 *self.slot(*binder)? = Some(element);
                 step
             }
-            _ => return Err(invariant()),
+            _ => return Err(invariant("iteration-node-invalid")),
         };
         iteration.awaiting = true;
         self.tasks.push(Task::Iterate(iteration));
@@ -2193,15 +3236,210 @@ impl<'a, 'm> Machine<'a, 'm> {
             return;
         }
         let pre = self.reads.is_some_and(|reads| {
-            reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+            reads.get(node.location())
+                == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
         });
         if let Some(trail) = self.trail.as_mut() {
+            if trail.receiver_unlocated
+                && (trail.receiver.as_ref() == Some(object)
+                    || trail.receiver_pre.as_ref() == Some(object))
+            {
+                return;
+            }
             let observation = match (&trail.pre, pre) {
                 (Some(observation), true) => observation.clone(),
                 _ => trail.observation.clone(),
             };
-            let provenance = Provenance::member(observation, object.clone(), member.to_owned());
+            let provenance = match trail.receiver_invocation.as_ref() {
+                Some(invocation)
+                    if trail.receiver.as_ref() == Some(object)
+                        || trail.receiver_pre.as_ref() == Some(object) =>
+                {
+                    Provenance::receiver_field(observation, invocation.clone(), member.to_owned())
+                }
+                _ => Provenance::member(observation, object.clone(), member.to_owned()),
+            };
             trail.record(value, provenance);
+        }
+    }
+
+    /// FR-107 "Read paths": record the field or member selection at `node`,
+    /// whose operand is `operand`, after its charge was met and its value
+    /// read. `reference` is the object an attribute selection read from.
+    fn note_read(
+        &mut self,
+        node: CheckedNode<'_>,
+        operand: NodeId,
+        step: ReadStep<'_>,
+        reference: Option<&ObjectReference>,
+    ) {
+        if self.trail.is_none() {
+            return;
+        }
+        let path = self.read_path(node, operand, step, reference);
+        if let Some(trail) = self.trail.as_mut() {
+            trail.read(node.location(), path);
+        }
+    }
+
+    /// The runtime value path (QSpec FR-207) of the selection at `node`: its
+    /// operand's path extended by the selection's step, or none when the
+    /// operand has no location or the selection is not in the clause's own
+    /// frame.
+    fn read_path(
+        &self,
+        node: CheckedNode<'_>,
+        operand: NodeId,
+        step: ReadStep<'_>,
+        reference: Option<&ObjectReference>,
+    ) -> Option<RuntimeValuePath> {
+        let trail = self.trail.as_ref()?;
+        if self.frames.len() != 1 || !self.imported.is_empty() {
+            return None;
+        }
+        let operand = node.at(operand);
+        let mut path = if matches!(step, ReadStep::Attribute(_)) && Self::navigated(operand) {
+            // FR-107 "Read paths": a selection on a navigation's result is
+            // located at the referenced object's declared identity.
+            RuntimeValuePath {
+                observation: trail.observation.clone(),
+                subject: ValuePathSubject::Object(reference?.clone()),
+                steps: Vec::new(),
+            }
+        } else {
+            self.located(operand)?
+        };
+        let under_pre = self.reads.is_some_and(|reads| {
+            reads.get(node.location())
+                == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
+        });
+        if let (true, Some(pre)) = (under_pre, trail.pre.as_ref()) {
+            path.observation = pre.clone();
+        }
+        match step {
+            ReadStep::Field(name) => path.steps.push(ValuePathStep::Field(name.to_owned())),
+            ReadStep::Attribute(name) => {
+                let at_root = path.steps.is_empty();
+                let receiver_binding = at_root
+                    && matches!(
+                        &path.subject,
+                        ValuePathSubject::Invocation {
+                            binding: InvocationBinding::Receiver,
+                            ..
+                        }
+                    );
+                if receiver_binding {
+                    path.steps.push(ValuePathStep::Field(name.to_owned()));
+                } else {
+                    let declared = at_root
+                        && matches!(&path.subject, ValuePathSubject::Object(object)
+                            if Some(object) == reference);
+                    if !declared {
+                        path.steps
+                            .push(ValuePathStep::Reference(reference?.clone()));
+                    }
+                    path.steps.push(ValuePathStep::Member(name.to_owned()));
+                }
+            }
+        }
+        Some(path)
+    }
+
+    /// Whether `node` is a relationship navigation, possibly under `value`,
+    /// `pre` or a coercion.
+    fn navigated(node: CheckedNode<'_>) -> bool {
+        match node.kind() {
+            NodeKind::Navigate { .. } => true,
+            NodeKind::Value(operand) | NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
+                Self::navigated(node.at(*operand))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `node` is a field or member selection.
+    fn selected(node: CheckedNode<'_>) -> bool {
+        matches!(
+            node.kind(),
+            NodeKind::Attribute { .. } | NodeKind::Field { .. }
+        )
+    }
+
+    /// The path of the value `node` evaluated to, when it has one: a clause
+    /// binding, a quantifier element, a selection or the payload of an
+    /// optional value read from one.
+    fn located(&self, node: CheckedNode<'_>) -> Option<RuntimeValuePath> {
+        let trail = self.trail.as_ref()?;
+        match node.kind() {
+            NodeKind::Local(slot) => trail.element_paths.get(slot).cloned().or_else(|| {
+                let subject = trail.bindings.get(*slot)?.clone()?;
+                Some(RuntimeValuePath {
+                    observation: trail.observation.clone(),
+                    subject,
+                    steps: Vec::new(),
+                })
+            }),
+            NodeKind::Attribute { .. } | NodeKind::Field { .. } => {
+                trail.selection_path(node.location()).cloned()
+            }
+            NodeKind::Value(operand) => {
+                let mut path = self.located(node.at(*operand))?;
+                path.steps.push(ValuePathStep::OptionValue);
+                Some(path)
+            }
+            NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
+                self.located(node.at(*operand))
+            }
+            _ => None,
+        }
+    }
+
+    /// FR-107 "Read paths": the quantifier element at `position` of
+    /// `domain`, bound to `slot`, is located where FR-265 locates it.
+    fn note_element(
+        &mut self,
+        source: CheckedNode<'_>,
+        domain: &Arc<CollectionValue>,
+        slot: Slot,
+        position: usize,
+    ) {
+        if self.trail.is_none() || self.frames.len() != 1 || !self.imported.is_empty() {
+            return;
+        }
+        let Some(trail) = self.trail.as_ref() else {
+            return;
+        };
+        let path = if Self::navigated(source) {
+            // An element of a navigation's result is located at its own
+            // declared identity.
+            match domain.elements().get(position) {
+                Some(Value::Reference(object)) => Some(RuntimeValuePath {
+                    observation: trail.observation.clone(),
+                    subject: ValuePathSubject::Object(object.clone()),
+                    steps: Vec::new(),
+                }),
+                _ => None,
+            }
+        } else if Self::selected(source)
+            && trail
+                .provenance(&Value::Collection(Arc::clone(domain)))
+                .is_none()
+        {
+            // A collection read from an owner with no location has none.
+            None
+        } else {
+            self.provenance_of(domain, source)
+                .and_then(|provenance| provenance.position(position).map(|at| provenance.path(at)))
+        };
+        if let Some(trail) = self.trail.as_mut() {
+            match path {
+                Some(path) => {
+                    trail.element_paths.insert(slot, path);
+                }
+                None => {
+                    trail.element_paths.remove(&slot);
+                }
+            }
         }
     }
 
@@ -2331,15 +3569,18 @@ impl<'a, 'm> Machine<'a, 'm> {
             return Ok(());
         }
         let NodeKind::Query { source, .. } = iteration.node.kind() else {
-            return Err(invariant());
+            return Err(invariant("query-stop-node-expected"));
         };
-        let position = iteration.next.checked_sub(1).ok_or_else(invariant)?;
+        let position = iteration
+            .next
+            .checked_sub(1)
+            .ok_or_else(|| invariant("query-stop-position-invalid"))?;
         let element = iteration
             .source
             .elements()
             .get(position)
             .cloned()
-            .ok_or_else(invariant)?;
+            .ok_or_else(|| invariant("query-stop-position-invalid"))?;
         let quantifier = occurrence_at(
             self.graph,
             iteration.node.location(),
@@ -2349,7 +3590,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         let provenance = self
             .provenance_of(&iteration.source, iteration.node.at(*source))
             .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "domain-has-an-occurrence")))?;
-        let index = provenance.position(position).ok_or_else(invariant)?;
+        let index = provenance
+            .position(position)
+            .ok_or_else(|| invariant("query-stop-provenance-position-invalid"))?;
         let report = StopReport {
             quantifier,
             index,
@@ -2369,7 +3612,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Query { visit, source, .. } => match visit {
                 Visit::Map | Visit::Filter => {
                     let ValueType::Collection(result_type) = node.value_type() else {
-                        return Err(invariant());
+                        return Err(invariant("query-collection-result-expected"));
                     };
                     let produced = self
                         .on_claim_level()
@@ -2406,10 +3649,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                             zero
                         }
                         Some(Value::Integer(total)) => total,
-                        Some(_) => return Err(invariant()),
+                        Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
                     };
                     retain_scalar(Value::Integer(total), self.meter)?
                 }
+                Visit::Only => iteration
+                    .results
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| invariant("only-element-missing"))?,
                 Visit::Count => {
                     if let ValueType::Int(domain) = node.value_type() {
                         if !domain.contains(&iteration.count) {
@@ -2423,10 +3671,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             },
             NodeKind::Fold { .. } => {
-                let accumulator = iteration.accumulator.ok_or_else(invariant)?;
+                let accumulator = iteration
+                    .accumulator
+                    .ok_or_else(|| invariant("fold-accumulator-missing"))?;
                 retain_accumulator(accumulator, self.meter)?
             }
-            _ => return Err(invariant()),
+            _ => return Err(invariant("iteration-node-invalid")),
         };
         self.values.push(value);
         Ok(())
@@ -2434,12 +3684,72 @@ impl<'a, 'm> Machine<'a, 'm> {
 }
 
 #[cfg(test)]
+mod invariants;
+
+#[cfg(test)]
+mod union_case;
+
+#[cfg(test)]
 mod tests {
+    use quire_semantic_value::declaration::{Component, StorageRequest, StorageUnit};
+
+    fn fault_identifier(site: ConstructionSite, cause: ConstructionCause) -> &'static str {
+        let refusal = ConstructionRefusal {
+            component: Component::Value,
+            cause,
+        };
+        match construction_fault(site, &refusal) {
+            Halt::Fault(fault) => fault.invariant(),
+            _ => "not-a-fault",
+        }
+    }
+
+    /// A storage failure of tuple or record construction keeps its own fault
+    /// identifier; every other cause stays `*-construction-rejected`.
+    #[test]
+    fn construction_storage_causes_have_their_own_fault_identifiers() {
+        let request = StorageRequest::new(4, StorageUnit::AdditionalElements);
+        let cases = [
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::StorageDenied(request),
+                "tuple-construction-admission-allocation-denied",
+            ),
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::StorageCapacity(request),
+                "tuple-construction-admission-capacity-overflow",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::StorageDenied(request),
+                "record-construction-admission-allocation-denied",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::StorageCapacity(request),
+                "record-construction-admission-capacity-overflow",
+            ),
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::TypeMismatch,
+                "tuple-construction-rejected",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::MissingField,
+                "record-construction-rejected",
+            ),
+        ];
+        for (site, cause, expected) in cases {
+            assert_eq!(fault_identifier(site, cause), expected);
+        }
+    }
+
     use super::super::s6a::ReferenceEvaluation;
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
-    use qsl_foundation::diagnostic::Category;
     use qsl_semantics::check::PackageDeclarations;
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -2453,11 +3763,155 @@ mod tests {
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+    #[trace("QSpec-TC-235", "QSpec-FR-208-AC-11", "QSpec-FR-207-AC-8")]
+    #[test]
+    fn context_pre_reads_remap_the_receiver_and_emit_invocation_field_paths() {
+        use super::super::s6a::separation::{
+            InvocationBinding, ObservationIdentity, RuntimeValuePath, ValuePathStep,
+            ValuePathSubject,
+        };
+        use quire_semantic_value::declaration::{
+            FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+        };
+        use std::collections::BTreeMap;
+        let context_type = quire_exact::EffectiveId::from_digest([12; 32]);
+        let collection_type =
+            quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new(
+                [],
+                [ObjectTypeDeclaration::new(
+                    context_type,
+                    "Context",
+                    vec![FieldDeclaration::new(
+                        "items",
+                        ValueType::collection(collection_type.clone()),
+                        quire_exact::Presence::Required,
+                    )],
+                )],
+            )
+            .unwrap(),
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap();
+        let package = qsl_package::CheckedPackage::link(graph);
+        let field = || Expression::field(Expression::deref(Expression::name("self")), "items");
+        let checked = package
+            .graph()
+            .check_clause_expression(
+                vec![("self".to_owned(), ValueType::Reference(context_type))],
+                &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
+                None,
+                qsl_forms::ClauseKind::Postcondition,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let NodeKind::Equality(_, _, left, _) = checked.root().kind() else {
+            panic!("checked equality");
+        };
+        let reads = BTreeMap::from([(
+            checked.root().at(*left).location().clone(),
+            qsl_semantics::model::clause_observation::Observation::Pre,
+        )]);
+        let reference = |universe| {
+            ObjectReference::new(
+                quire_exact::UniverseId::from_digest([universe; 32]),
+                context_type,
+                quire_exact::ObjectId::new("i1").unwrap(),
+            )
+        };
+        let pre_receiver = reference(1);
+        let receiver = reference(2);
+        let pre_items = quire_exact::from_admitted(
+            collection_type.clone(),
+            vec![Value::Integer(Integer::from(0_i64))],
+        );
+        let post_items =
+            quire_exact::from_admitted(collection_type, vec![Value::Integer(Integer::from(1_i64))]);
+        let objects = |reference, items: Value| {
+            ObjectEnvironment::new(
+                ObjectClosure::new(
+                    package.graph().scope().types(),
+                    [(reference, vec![("items", FieldValue::Present(items))])],
+                    &[],
+                )
+                .unwrap(),
+            )
+        };
+        let pre = objects(pre_receiver.clone(), pre_items.clone());
+        let post = objects(receiver.clone(), post_items.clone());
+        let identity = |name: &str| ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "tc235".to_owned(),
+            revision: "1".to_owned(),
+        };
+        for context in [true, false] {
+            let mut trail = Trail::new(identity("q1"), Some(identity("p1")));
+            trail.receiver = Some(receiver.clone());
+            trail.receiver_pre = Some(pre_receiver.clone());
+            trail.receiver_invocation = context.then(|| identity("i1"));
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let (result, trail) = Machine::with_pre(
+                package.graph().scope(),
+                package.graph(),
+                &post,
+                Some(&pre),
+                Some(&reads),
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![Value::Reference(receiver.clone())],
+            )
+            .unwrap();
+            assert!(matches!(
+                result.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+            ));
+            for (observation, object, value) in [
+                ("p1", &pre_receiver, &pre_items),
+                ("q1", &receiver, &post_items),
+            ] {
+                let subject = if context {
+                    ValuePathSubject::Invocation {
+                        invocation: identity("i1"),
+                        binding: InvocationBinding::Receiver,
+                    }
+                } else {
+                    ValuePathSubject::Object(object.clone())
+                };
+                let step = if context {
+                    ValuePathStep::Field("items".to_owned())
+                } else {
+                    ValuePathStep::Member("items".to_owned())
+                };
+                assert_eq!(
+                    trail.provenance(value).unwrap().path(0),
+                    RuntimeValuePath {
+                        observation: identity(observation),
+                        subject,
+                        steps: vec![step],
+                    }
+                );
+            }
+        }
+    }
 
     /// The shared minimal one-type (`model.A`), one-population
     /// (`model.pop.p1`) domain package [`population_binding`] and
@@ -2482,6 +3936,7 @@ mod tests {
                     key: DeclarationKey::fixture("model.pop.p1"),
                     member_types: vec![DeclarationKey::fixture("model.A")],
                     extent: Extent::Closed,
+                    symmetric: false,
                 }),
             ],
         )
@@ -2489,7 +3944,7 @@ mod tests {
 
     /// One admitted binding over [`domain_package`], for
     /// [`Machine::resolve_population`]'s own fault tests below.
-    fn population_binding(declared_maximum: Option<u64>) -> PopulationBinding {
+    pub(super) fn population_binding(declared_maximum: Option<u64>) -> PopulationBinding {
         let domain_package = domain_package("bundle.qsl174-ac10");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -2523,7 +3978,8 @@ mod tests {
     /// package and `F`'s checked identity, so a test can call
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
-    fn population_function_package() -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
+    pub(super) fn population_function_package(
+    ) -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
         let domain_package = domain_package("bundle.qsl174-ac10-seam");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -2677,8 +4133,10 @@ mod tests {
             )
             .expect("allInstances<M::A>(p) checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
         let evaluation = Machine::with_pre(
@@ -2756,8 +4214,10 @@ mod tests {
             )
             .expect("lookup<M::A>(p, r) absent Refused checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![
             Value::Population(PopulationId::from_digest([9; 32])),
@@ -2872,11 +4332,13 @@ mod tests {
         // `pre_objects` (below) is `None` -- exactly the caller-input
         // defect `objects_for` must now refuse rather than silently read
         // `objects` (the post/current environment) for.
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::from([(
-                expression.root().location().clone(),
-                qsl_semantics::check::Observation::Pre,
-            )]);
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::from([(
+            expression.root().location().clone(),
+            qsl_semantics::model::clause_observation::Observation::Pre,
+        )]);
         let objects = ObjectEnvironment::default();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Reference(ObjectReference::new(
@@ -2980,11 +4442,13 @@ mod tests {
         // Marking this location `Current` (never `Pre`) makes `reads.is_some()`
         // true (`is_protocol_clause`) while `objects_for` reads `objects`
         // itself, no `pre_objects` needed.
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::from([(
-                expression.root().location().clone(),
-                qsl_semantics::check::Observation::Current,
-            )]);
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::from([(
+            expression.root().location().clone(),
+            qsl_semantics::model::clause_observation::Observation::Current,
+        )]);
         let reference = ObjectReference::new(
             quire_exact::UniverseId::from_digest([9; 32]),
             a,
@@ -3026,7 +4490,7 @@ mod tests {
         let charges: Vec<_> = meter
             .admitted_charges()
             .iter()
-            .copied()
+            .map(|charge| charge.point)
             .filter(|point| matches!(point, ChargePoint::ModelDeref | ChargePoint::ModelNavigate))
             .collect();
         assert_eq!(
@@ -3161,10 +4625,26 @@ mod tests {
         );
         let optional = ValueType::option(range);
         let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
-        assert!(Machine::project(&outside, true, &optional, true).is_ok());
-        assert!(Machine::project(&outside, true, &optional, false).is_err());
+        assert!(
+            Machine::project(&TypeEnvironment::default(), &outside, true, &optional, true).is_ok()
+        );
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &outside,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
         let wrong_kind = FieldValue::Present(Value::Boolean(true));
-        assert!(Machine::project(&wrong_kind, true, &optional, false).is_err());
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &wrong_kind,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
     }
     /// FR-106 check 6.5: an equality compares an out-of-type integer by
     /// value only when the operand reads a witnessed slot. Two integers
@@ -3194,8 +4674,10 @@ mod tests {
             )
             .expect("x = y checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let outside = Value::Integer(Integer::from(-1_i64));
         let fault = Machine::with_pre(
@@ -3214,5 +4696,9 @@ mod tests {
         )
         .expect_err("operands outside their type with no witnessed read fault");
         assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(
+            fault.kernel_cause(),
+            Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
+        );
     }
 }

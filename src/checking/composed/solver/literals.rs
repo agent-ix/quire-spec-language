@@ -60,6 +60,8 @@ impl Solver<'_, '_, '_, '_> {
                                 }
                             },
                             NativeType::Boolean
+                            | NativeType::Uuid
+                            | NativeType::String
                             | NativeType::Enumeration { .. }
                             | NativeType::Record { .. }
                             | NativeType::Object { .. }

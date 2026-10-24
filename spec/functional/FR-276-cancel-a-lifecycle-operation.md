@@ -56,6 +56,12 @@ Every cancelled outcome is O-16 category incomplete, which exits 22
   `CancelCause`.
 - When an operation is called with a handle that is already cancelled, the
   operation shall return its cancelled failure before its first charge.
+- When a charge of the evaluation meter is denied because the handle is
+  cancelled, the evaluator beneath the operation (`call`, `evaluate` and the
+  FR-262 session) shall return that charge's located `incomplete` result, with
+  `limit_kind: work_units` and `limit` equal to `consumed`, and the operation
+  that holds the handle shall read the handle's `tripped()` cause and return
+  its cancelled failure with that cause and no value.
 - When an operation is cancelled, the operation shall return no output
   artifact and no partial artifact.
 - When the handle is cancelled during `analyze`, the operation shall settle
@@ -73,6 +79,7 @@ Every cancelled outcome is O-16 category incomplete, which exits 22
 | FR-276-AC-3 | An `execute` of a function whose evaluation charges more than 10,000,000 work units, run with every accounting limit at `u64::MAX` and cancelled from a second thread after the observer has seen 1,000 charges, returns `CallFailure::Cancelled(Requested)` and no value. | Test (TC-757) |
 | FR-276-AC-4 | An `analyze` request of two items, where the test engine settles the first and then blocks on the second until the handle is cancelled, returns the first item's record unchanged and the second settled `incomplete` with cause cancelled. | Test (TC-757) |
 | FR-276-AC-5 | The category of `StageFailure::Cancelled` of each cause and of `CallFailure::Cancelled` is incomplete, and its exit code is 22. | Test (TC-757) |
+| FR-276-AC-6 | `call` of FR-262-AC-1's `count` with `3`, over a meter whose installed handle is already cancelled with `Requested`, returns an evaluation whose outcome is `incomplete` at the `function.call` charge with `limit_kind: work_units` and `limit` equal to `consumed`, with no admitted charge, and the handle's `tripped()` returns `Requested`. `execute` of the same function with the same handle returns `CallFailure::Cancelled(Requested)` and no value. | Test (TC-757) |
 
 ## Dependencies
 

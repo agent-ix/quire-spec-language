@@ -249,6 +249,11 @@ impl SyntaxNamespace {
         &self.declarations
     }
 
+    /// Every declaration handle of this namespace, in `declarations()` order.
+    pub fn declaration_ids(&self) -> impl Iterator<Item = DeclarationId> {
+        (0..self.declarations.len()).map(DeclarationId)
+    }
+
     /// Inspect a declaration using a handle from this namespace.
     pub fn declaration(&self, id: DeclarationId) -> Option<&DeclarationEntry> {
         self.declarations.get(id.0)

@@ -14,3 +14,5 @@ target-*/
 # config names absolute paths and would rewrite everyone else's build.
 /.cargo/config.toml
 /.cargo/Cargo.lock.pre-local
+__pycache__/
+*.pyc

@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-189
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-280
+    type: references
 ---
 # FR-192: Settle a statistical result on the measured axis
 
@@ -45,6 +47,8 @@ counts none of the three as proved.
 
 - A `StatisticalOutcome` (FR-189, FR-190) or a `StatisticalRefusal`
   (FR-189).
+- The request's FR-120 limits (the evaluation meter budget and `max_candidates`),
+  from which a `Stopped` by an expansion takes its value.
 
 ## Outputs
 
@@ -53,8 +57,9 @@ counts none of the three as proved.
 //   Measured(StatisticalVerdict)
 pub struct StatisticalVerdict {
     pub decision: Decision,                 // FR-189
-    pub estimate: Rational,
+    pub estimate: Option<Rational>,         // the least favourable test's (FR-189); None when it has none
     pub interval: Option<(Rational, Rational)>,
+    pub quantile: Option<MeasureValue>,     // the least favourable test's (FR-189); a quantile claim's nearest-rank quantile; None for every other form
     pub basis: StatisticalBasis,
     pub provenance: StatisticalProvenance,  // FR-191
     pub tests: Vec<TestResult>,             // FR-189
@@ -68,21 +73,20 @@ pub struct StatisticalBasis {
     pub coverage: Coverage,
 }
 pub enum Coverage { FiniteSample, Asymptotic }
-// UnsupportedCause gains: NotMarkov{…}, EveryScheduler, MissingConfidence, ExactOnlyForm
+// UnsupportedCause gains: NotMarkov{…}, TotalAboveDrawRange{total}, EveryScheduler, MissingConfidence, ExactOnlyForm, ConfidenceBeyondPrecision
 ```
 
 ## Behavior
 
 ### EN-4's capability and refusals
 
-- EN-4's provider manifest SHALL advertise (`probabilistic-satisfaction`,
-  `statistical`) only. Routing an item by its evidence kind, and never
+- EN-4's provider manifest SHALL be the one FR-280 states, which lists the evidence
+  kind `statistical` only. Routing an item by its evidence kind, and never
   substituting one kind for the other, is QSpec FR-290's negotiation rule,
   which QSL does not restate.
-- When `check_statistical` receives a claim `under every scheduler`, one
-  with no confidence parameters, or a mean-time or expected-reward form, it
-  SHALL refuse it `EveryScheduler`, `MissingConfidence` or `ExactOnlyForm`
-  (FR-189) with no sample drawn, and the map SHALL settle the refusal
+- When EN-4's negotiation gate refuses a claim (FR-195, which owns the
+  claims it refuses and the order of the causes `EveryScheduler`,
+  `ExactOnlyForm`, `MissingConfidence`), the map SHALL settle the refusal
   `unsupported` with that cause.
 
 ### The map
@@ -97,18 +101,36 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` by a limit | `incomplete` | `limit-reached{limit, value, setting}` | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
-| `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled` | none | `Incomplete(Cancelled)` (ADR-018 V-7) | incomplete |
-| `Unsupported`; an EN-4 refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
+| `Stopped` by `AutomatonStates{value}` | `incomplete` | `limit-reached{limit: max_automaton_states, value}` (FR-126 `ResourceExhausted`) | none | `Incomplete(LimitReached{limit, value})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion (`Expansion(ExpansionStop)`) that names a limit (`EvaluationMeter` or `MaxCandidates`, FR-126) | `incomplete` | `limit-reached{limit, value, setting}`, written as FR-203 writes the same stop for EN-5 (FR-255 Behavior 9, QSpec FR-461 Behavior 6): for an `EvaluationMeter` stop, `limit` the `quire.value.accounting/v1` name of the counter the stop names as exhausted (FR-120: an `EvaluationMeter` stop carries that counter), `value` that counter's configured bound in the request's evaluation meter budget, and `setting` that counter's FR-255 accounting setting name; for a `MaxCandidates` stop, `limit` `max_candidates`, `value` the request's `max_candidates` and `setting` `expansion.max_candidates`, its FR-255 engine-table setting. `EvaluationMeter` and `MaxCandidates` are the stop's labels and are not written as `limit`. The map receives the configured bounds with the outcome, because the stop carries its cause, its limit and, for the meter, the counter, but no bound. No setting is spelled `meter` or bare `max_candidates`: the setting is the name the settings operation and a replay request accept to raise the bound | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion that names no limit and is an internal failure (`ExpansionStop::is_internal_failure`) | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |
+| `Stopped` by a sample expansion that names no limit and is not an internal failure (for example a state-constraint family that evaluation refuses) | `failed` | the stop's own `ExpansionStop.cause` (QSL FR-120), as the one diagnostic (QSpec FR-331, FR-408 "stops the run with that cause") | none | `Failed` carrying that diagnostic | failed |
+| `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled{source}` | none | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
+| `Unsupported` outcome | `unsupported` | cause `not-markov{…}` or `total-above-draw-range{total}` | none | `Unsupported(cause)` | unsupported |
+| `GeneratorMismatch`, `TooManyTests`, `TraceIndexRange` or `FractionForEvent` refusal | `unsupported` | diagnostic `unsupported_projection`/`unsupported-requested-capability` naming the refusal | none | `Unsupported(diagnostic)` | unsupported |
+| `ConfidenceBeyondPrecision` refusal | `unsupported` | the cause `confidence-beyond-precision` (QSpec FR-331, FR-408 Admission) | none | `Unsupported(cause)` | unsupported |
+| `EveryScheduler`, `MissingConfidence` or `ExactOnlyForm` refusal | `unsupported` | the cause `every-scheduler`, `missing-confidence` or `exact-only-form` | none | `Unsupported(cause)` | unsupported |
+| `Admission` or `RequiresBound` refusal | none: the refusal is the caller's to report (FR-106 admission failure, ADR-016 EX-8 disposition) | none | none | no terminal result | none |
+| `PredicateRefused(KernelRefused(r))`, `r` not `CheckedInvariant`, or `PredicateRefused(FamilyRefused(code))` | `failed` | the refusal's catalog code and cause as the one diagnostic (FR-100's refusal table) | none | `Failed` carrying that diagnostic | failed |
+| `PredicateRefused(Incomplete(i))` | `incomplete` | `limit-reached{limit, value, setting}` naming `i`'s counter by FR-255 Behavior 9's rule, `value` that counter's configured bound (QSpec FR-408: a clause-meter exhaustion stops the run `incomplete`) | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `PredicateRefused` holding `KernelRefused(CheckedInvariant)`, `NotBoolean`, `KernelUndefined` or `FamilyUndefined` | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |
+| `Symmetry` refusal (a malformed symmetry declaration, FR-151) | none: the refusal is the caller's `invalid_runtime_input`/`invalid-value` | none | none | no terminal result | none |
+| `NotStatistical` refusal | none: a negotiation outcome, `invalid-request` | diagnostic `invalid_capability`/`not-statistical` (QSpec FR-408 Admission, FR-331) | none | no terminal result | none |
+| `NoTest` refusal | `inconclusive` | `no-initial-state` | none | `Inconclusive(NoInitialState)` (ADR-018 V-6) | inconclusive |
+| `Internal` refusal | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |
 
 - The record SHALL carry no FR-242 truth value and no FR-243 settlement
   basis for any of these rows.
-- `estimate` SHALL be `p̂` for a probability bound, `Pr(M <= c | activated)`
-  for a quantile claim with the empirical nearest-rank quantile of the
-  counted samples beside it, the sample mean for a mean of a fraction, and
+- `estimate` SHALL be absent when the least favourable test has none, and otherwise `p̂` for a probability bound, `Pr(M <= c | activated)`
+  for `quantile q of M <= c`, `Pr(M < c | activated)` for `quantile q of M >= c`, the sample mean for a mean of a fraction, and
   the ratio estimate for a long-run fraction; for several tests it is the
-  least favourable test's. `interval` SHALL be present for Okamoto and the
-  regenerative method and absent for SPRT. `coverage` SHALL be
+  least favourable test's (FR-189). `interval` SHALL be present for Okamoto, Clopper–Pearson and
+  the regenerative method and absent for SPRT. `coverage` SHALL be
   `Asymptotic` for the regenerative method and `FiniteSample` otherwise.
+- `quantile` SHALL be the least favourable test's `quantile` (FR-189): the
+  empirical nearest-rank quantile of a quantile claim's counted samples, or
+  `Censored` when its rank lies among the censored samples, and absent for
+  every other claim form or when the least favourable test has none.
 - `TerminalValue::category` SHALL map `Measured{Accepted}` to success,
   `Measured{Rejected}` to violation and `Measured{Undecided}` to
   inconclusive.
@@ -121,11 +143,13 @@ pub enum Coverage { FiniteSample, Asymptotic }
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; `Unsupported(NotMarkov)`. None of the five records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
+| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`, `no-initial-state`; a `ConfidenceBeyondPrecision` refusal settling `unsupported`, `confidence-beyond-precision`; an `Internal` refusal settling `failed`; a `Stopped` by an expansion naming `EvaluationMeter` with exhausted counter `work_units`, under a meter budget whose `work_units` is 4096, settling `incomplete`, `limit-reached` with limit `work_units`, value 4096 and setting the `work_units` counter's FR-255 accounting setting name, and one naming `value_occurrences` under a budget whose `value_occurrences` is 7 settling with limit `value_occurrences`, value 7 and that counter's setting name, and one naming `MaxCandidates` under `max_candidates` 2 settling with limit `max_candidates`, value 2 and setting `expansion.max_candidates`, each equal to the record FR-203 writes for the same stop (each the name FR-255 registers for it, which the settings operation accepts to raise that bound; no setting `meter` and no bare `max_candidates`), one by an internal-failure expansion naming no limit settling `failed`, `runtime_invariant`/`established-invariant-broken`, and one by a non-internal expansion naming no limit settling `failed` with the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic. None of the measured, stopped and unsupported records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
-| FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). `check_statistical` given a claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
+| FR-192-AC-4 | EN-4's manifest is the one FR-280-AC-4 fixes. EN-4's gate given a checked claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
 | FR-192-AC-5 | FR-189-AC-6's result settles `measured`, `rejected`, category violation, with the test's `UndefinedEvaluation` in the record, and fails the pipeline gate as a violation does. | Test (TC-640) |
+| FR-192-AC-6 | A quantile claim's verdict over two tests whose least favourable test (FR-189-AC-10) has `quantile` `Value(2)` carries `Value(2)`, and one whose least favourable test has `Censored` carries `Censored`. A quantile claim whose least favourable test has no estimate carries no `quantile`. The verdicts of `P95`, a mean of a fraction and `LongRun` carry no `quantile`. For `quantile 1/2 of (M) >= 3` over tests with estimates `2/5` and `9/20` the verdict's `estimate` is `9/20`, the value of `Pr(M < 3 | activated)`. | Test (TC-627) |
+| FR-192-AC-7 | EN-4 settles `PredicateRefused` as EN-5 does (FR-203): a sampled predicate refused `integer_out_of_domain`/`outside-domain` settles `failed` with that diagnostic; a predicate read whose meter charge is the first one denied settles `incomplete`, `limit-reached` naming the exhausted counter and its bound by FR-255 Behavior 9's rule; a constructed `PredicateRefused(NotBoolean)` and `PredicateRefused(KernelRefused(CheckedInvariant))` settle `failed`, `runtime_invariant`/`established-invariant-broken`; an `Admission` failure and a `RequiresBound` refusal still return no terminal result. | Test (TC-1166) |
 
 ## Dependencies
 
@@ -135,7 +159,9 @@ pub enum Coverage { FiniteSample, Asymptotic }
   and category map), [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the same terminal record for temporal items),
-  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md).
+  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md),
+  [FR-280](FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md)
+  (EN-4's provider manifest).
 
 ## References
 

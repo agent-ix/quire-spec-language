@@ -28,6 +28,12 @@ this union. Scope: FR-088-AC-8.
    that record a field's type for a domain-model declaration) and confirm
    each one is typed as `ValueTypeRef`, never as a bare `NodeKey` or a raw
    `String`/`&str` naming a type.
+   The automated scan covers struct fields and enum variant fields under
+   `model` whose name contains `type`. Three raw wire views of a snapshot
+   document's `record` member (`RawRecord`, `RawNode`, and the reader's `Open`,
+   each with a `type_identity` string) are outside this step: they hold the
+   wire `type` string until a checked declaration resolves it by lookup, and
+   the scan names them. A field type under another name is not covered.
 4. Adverse test: attempt to represent a package-declared field type using
    a bare `NodeKey` directly (bypassing `ValueTypeRef::Package`) and
    confirm no code path in the crate accepts this form as a model field

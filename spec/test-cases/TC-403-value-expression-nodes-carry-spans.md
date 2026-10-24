@@ -39,7 +39,3 @@ Tag the test `#[trace("FR-091-AC-10", "TC-403")]`.
 - `Multiply` covers `(a + b) * c`. `Add` covers `a + b`, without the
   parentheses.
 - Every node carries a span, and each span lies inside its parent's.
-
-## Status
-
-Steps 1 and 2 are backed by `qsl-forms/tests/it/value_forms.rs`: `every_expression_node_carries_its_span`. Step 3 is backed by `every_expression_span_lies_inside_its_parents` (same file), which walks every node of both bodies and asserts each span lies inside its parent's.

@@ -23,16 +23,16 @@ Scope: FR-125-AC-6, FR-126-AC-9.
 
 Use the `Counter` subject of FR-124-AC-1 (universe `{c}`, initial value 0).
 
-1. Evaluate the letters of `always holds(6 / (2 - c.value) >= 0)` under
+1. Evaluate the letters of `always holds(6 mod (2 - c.value) >= 0)` under
    infinite-trace at positions 0, 1 and 2 of the subject's behaviour.
-2. Evaluate `eventually[0,1] holds(6 / (2 - c.value) = 6)` under
+2. Evaluate `eventually[0,1] holds(6 mod (2 - c.value) = 0 and c.value = 1)` under
    event-position false-extension, `on origin`, over the same behaviour.
-3. With no `terminal` member, run `check_model` on
-   `always holds(6 / (2 - c.value) >= 0)` under infinite-trace, then on
-   `always eventually holds(6 / (2 - c.value) = 6)`, then on
-   `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))`, then
+3. With no `terminal` declaration, run `check_model` on
+   `always holds(6 mod (2 - c.value) >= 0)` under infinite-trace, then on
+   `always eventually holds(6 mod (2 - c.value) = 0 and c.value = 1)`, then on
+   `always (holds(c.value <= 0) and holds(6 mod (2 - c.value) >= 0))`, then
    on the bounded claim of step 2.
-4. With a `terminal when 6 / (3 - c.value) = 0` member, run `check_model`
+4. With a `terminal when 6 mod (3 - c.value) = 0` member, run `check_model`
    on the `DeadlockFreedom` item.
 
 Tag the tests `#[trace("TC-537", "FR-125-AC-6")]` and

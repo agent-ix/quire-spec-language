@@ -77,7 +77,8 @@ footprints that the engine enforces on every step.
 ### US-019-EX-2: An identity-observing clause is refused while authoring
 
 - **Given** the same unit with a post clause that folds over a set of
-  `ConfigVersion` references.
+  `ConfigVersion` references with a step outside FR-145's catalog (it chooses
+  an element).
 - **When** the operator checks the unit.
 - **Then** S3 refuses it at the `fold`, naming `config_history`.
 

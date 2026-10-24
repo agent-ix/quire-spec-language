@@ -32,11 +32,25 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod abstraction;
 mod admission_corpus;
+mod child_composite;
+mod converted_equality;
 mod deep_bodies;
+mod envelope_adoption;
 mod golden;
 mod identity_depth;
+mod navigation;
 mod owners;
+mod population_bound;
+mod population_reference;
+mod probabilistic;
+mod protocol_reference;
+mod reachability;
+mod receiver_frames;
+mod temporal_clause;
+mod union_nodes;
+mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
@@ -247,6 +261,28 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
+/// The small checked producer's canonical envelope and identity are fixed by
+/// the owned-projection emission, then admitted by the independent V2 reader.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_preserves_the_owned_projection_golden() {
+    let emission = emit(&package(vec![f()]));
+    assert_eq!(
+        emission.package.bytes(),
+        include_bytes!("tests/fixtures/owned_projection_wire.json")
+    );
+    assert_eq!(
+        emission.package.package_id().hex(),
+        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+    );
+    match read_back(&emission) {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+        }
+        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
+    }
+}
+
 pub(super) fn nodes(wire: &Value) -> &[Value] {
     wire["semantic_graph"]["nodes"].as_array().unwrap()
 }
@@ -421,11 +457,26 @@ pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
 }
 
+/// The digest of a node's structural preimage, even for node families whose
+/// normal key is derived from an application preimage.
+pub(crate) fn rebuilt_structural_key(node: &Value, group: &[&Value]) -> String {
+    sha256_hex(&jcs(&rebuilt_preimage_as(node, group, true, Some(false))))
+}
+
 /// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
 /// group member's preimage omits `recursion.group`: its group-local form,
 /// whose digests the group label hashes. The owner is read from the wire
 /// node's own `owner` member, never from the owner the checked unit carries.
 pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
+    rebuilt_preimage_as(node, group, labelled, None)
+}
+
+fn rebuilt_preimage_as(
+    node: &Value,
+    group: &[&Value],
+    labelled: bool,
+    application_override: Option<bool>,
+) -> Value {
     let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
     let in_group = |term: &Value| -> Value {
         fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
@@ -452,9 +503,12 @@ pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -
         walk(term, &ordinal)
     };
     let body = in_group(&node["body"]);
-    let application = serde_json::to_string(&body)
-        .unwrap()
-        .contains("\"application\"");
+    let application = application_override.unwrap_or_else(|| {
+        (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+            || serde_json::to_string(&body)
+                .unwrap()
+                .contains("\"application\"")
+    });
     let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
     let recursion = node.get("recursion_group").map(|label| {
         let position = ordinal(&node["node_id"]).unwrap();
@@ -592,7 +646,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
     for (package, label) in [
         (
             recursive_f(),
-            Some("0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50"),
+            Some("d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6"),
         ),
         (tree(), None),
     ] {
@@ -627,7 +681,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
-/// test-side walker: body reference targets, operation member declarations,
+/// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     fn walk(term: &Value, found: &mut BTreeSet<String>) {
@@ -636,12 +690,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                 if members.get("term") == Some(&json!("reference")) {
                     found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
                 }
-                if let Some(declaration) = members
-                    .get("operation")
-                    .and_then(|operation| operation.get("member"))
-                    .and_then(|member| member.get("declaration"))
-                {
-                    found.insert(declaration["digest"].as_str().unwrap().to_owned());
+                for key in ["declaration", "population"] {
+                    if let Some(named) = members
+                        .get("operation")
+                        .and_then(|operation| operation.get("member"))
+                        .and_then(|member| member.get(key))
+                    {
+                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                    }
                 }
                 members.values().for_each(|value| walk(value, found));
             }
@@ -916,7 +972,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
             (candidate.id.clone(), candidate)
         })
         .collect();
-    let omitted = omissions(&candidates, graph.source());
+    let omitted = omissions(&candidates, graph.source(), &ir_decodes);
     assert_eq!(
         omitted,
         [OmittedNode {
@@ -1306,6 +1362,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         UnlocatedOccurrence,
         UnknownOccurrenceRole,
         Encoding,
+        TimedModelNodeSetMismatch,
+        TimedModelWriterInvariant,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1316,7 +1374,18 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnlocatedOccurrence { .. }) => Seen::UnlocatedOccurrence,
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
+            Err(EmitRefusal::TimedModelNodeSetMismatch) => Seen::TimedModelNodeSetMismatch,
+            Err(EmitRefusal::TimedModelWriterInvariant(_)) => Seen::TimedModelWriterInvariant,
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
+            Err(EmitRefusal::StaleProtocolReference { .. }) => {
+                panic!("the fixture set holds no protocol reference")
+            }
+            Err(EmitRefusal::Abstraction(_)) => {
+                panic!("the fixture set binds no abstraction relation")
+            }
+            Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
+                panic!("the fixture set declares no random parameter, reward or workload")
+            }
         }
     }
     assert_eq!(
@@ -1733,7 +1802,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
 /// A unit with a declared record, an `Integer` function and a function with
 /// parameters, the FR-091 round trip's source.
 const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"quire.model.complete/v1\";\n\
     record Point { x: Integer; y: Integer; }\n\
     function one using v(): Integer pure { 1 + 0 }\n\
     function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n";
@@ -1746,7 +1815,14 @@ const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 /// parameter's occurrences at regions of `both`, every occurrence at a
 /// region of the unit, and (FR-341-AC-10) every occurrence of a
 /// `value`/`parameter` node has role `expression`.
-#[trace("FR-091-AC-10", "FR-096-AC-1", "QSpec-FR-341-AC-10", "TC-426")]
+#[trace(
+    "FR-091-AC-10",
+    "FR-096-AC-1",
+    "QSpec-FR-341-AC-10",
+    "TC-426",
+    "TC-1111",
+    "NFR-015-AC-6"
+)]
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let parsed = qsl_cst::parse(
@@ -2170,11 +2246,6 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         .unwrap()
         .iter_mut()
         .for_each(strip);
-    wire["identity_preimage"]["identity_projection"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .for_each(strip);
     let mut re_roled = 0;
     for entry in wire["source_map"].as_array_mut().unwrap() {
         if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
@@ -2183,7 +2254,7 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         }
     }
     assert_eq!(re_roled, 1, "Status had one declaration entry");
-    let package_id = PackageId::of_preimage(&jcs(&wire["identity_preimage"]));
+    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     wire["package_id"]["digest"] = json!(package_id.hex());
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
@@ -2330,7 +2401,8 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT);
+        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT)
+        .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
         library(),
@@ -2613,10 +2685,13 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         ),
         "{limited:?}"
     );
+    // The ceiling is `ModelNormalizationLimitsV1`, the caller's budget
+    // (ADR-014 section 1, FR-255 Behavior 1).
     assert_eq!(
         limited.cause.code(),
-        qsl_foundation::Code::StageLimitExceeded
+        qsl_foundation::Code::ResourceExhausted
     );
+    assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
     assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
@@ -2684,12 +2759,18 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
 }
 
 /// QSL's I2 read of `package`, a package with a dependency closure, admits
-/// it: `read_import_view` supplies IR's reader the admitted package of every
-/// closure entry (QSpec FR-322-AC-36).
+/// it: `read_import_view` supplies IR's reader each directly selected package
+/// after recursively admitting its own dependencies (QSpec FR-322-AC-36).
 fn read_linked(package: &CheckedPackage) {
     let emission = emit(package);
     let mut evidence = read_evidence(&emission);
-    crate::checked_v2::supply_closure(package, &mut evidence).expect("each dependency reads back");
+    crate::checked_v2::supply_closure(
+        package,
+        &std::collections::BTreeMap::new(),
+        crate::V2ReadLimits::default(),
+        &mut evidence,
+    )
+    .expect("each dependency reads back");
     let outcome = read_with(&emission, &evidence);
     assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
 }
@@ -2699,7 +2780,13 @@ fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<Library
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path.clone()))
+        .map(|(identity, resolved)| {
+            (
+                identity.clone(),
+                resolved.package_id,
+                resolved.path(identity),
+            )
+        })
         .collect()
 }
 
@@ -2707,16 +2794,12 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
     identities.iter().map(|identity| lib(identity)).collect()
 }
 
-/// FR-322 `dependency_selections`, FR-307, ADR-011 §2.4: the E4
-/// closure is written as one `{identity, package_id}` entry per
-/// library identity, in ascending UTF-8 byte order, identically in the lock
-/// and the identity preimage. The package reads back Verified through IR's
-/// reader, and the entries enter its `package_id`. A dependency's own
-/// selections join the closure, through a chain of any depth, each with the
-/// path that reached it.
+/// Direct imports enter the lock and identity preimage; the recursive
+/// closure remains available for linking and replay.
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
-fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
+fn the_lock_records_direct_imports_and_derives_the_closure() {
     let d = emitted_id(&dependency());
     let unlinked = emit(&CheckedPackage::link(root_graph()));
     let linked_root = CheckedPackage::link_with(
@@ -2747,8 +2830,23 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
 
     // A chain four packages deep: root -> b -> c -> units.
     let c = linked(vec![import("test/units", dependency())]);
+    assert_eq!(
+        wire(&emit(&c))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
     let c_id = emitted_id(&c);
     let b = linked(vec![import("test/c", c)]);
+    assert_eq!(
+        wire(&emit(&b))["lock"]["dependency_selections"][0]["identity"],
+        "test/c"
+    );
+    assert_eq!(
+        wire(&emit(&b))["lock"]["dependency_selections"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     let b_id = emitted_id(&b);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("the root links through b and c");
@@ -2765,14 +2863,41 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
         ]
     );
     let emission = emit(&root);
-    read_linked(&root);
+    // Check the producer's canonical direct-only form separately from the
+    // reader, which cannot distinguish direct from over-listed entries.
+    let written = wire(&emission);
     assert_eq!(
-        wire(&emission)["lock"]["dependency_selections"]
+        written["lock"]["dependency_selections"]
             .as_array()
             .unwrap()
             .len(),
-        3
+        1
     );
+    assert_eq!(
+        written["lock"]["dependency_selections"][0]["identity"],
+        "test/b"
+    );
+    assert!(written["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(
+            |selection| selection["identity"] != "test/c" && selection["identity"] != "test/units"
+        ));
+    assert_eq!(
+        written["identity_preimage"]["dependency_selections"],
+        written["lock"]["dependency_selections"]
+    );
+}
+
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
+#[test]
+fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
+    let c = linked(vec![import("test/units", dependency())]);
+    let b = linked(vec![import("test/c", c)]);
+    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
+        .expect("A links through B and C");
+    read_linked(&root);
 }
 
 /// FR-307's diamond rule, admitted side: `test/units` reached by two paths
@@ -2790,8 +2915,31 @@ fn a_diamond_selecting_one_package_unifies() {
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.package_id, d);
-    assert_eq!(units.path, path(&["test/units"]));
+    assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
     read_linked(&root);
+}
+
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
+#[test]
+fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
+    let mid = linked(vec![import("test/units", dependency())]);
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/mid", mid), import("test/units", dependency())],
+    )
+    .expect("equal direct and transitive paths unify");
+    assert_eq!(
+        root.dependency_selections()[&lib("test/units")].path(&lib("test/units")),
+        path(&["test/mid", "test/units"])
+    );
+    let written = wire(&emit(&root));
+    let identities = written["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["identity"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(identities, ["test/mid", "test/units"]);
 }
 
 /// FR-322 orders `dependency_selections` by UTF-8 bytes. `test/\u{FF61}`
@@ -2826,6 +2974,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
 #[trace("FR-087-AC-14", "TC-253")]
+#[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {
     let d = emitted_id(&dependency());
@@ -2837,6 +2986,14 @@ fn e4_refuses_a_conflicting_diamond() {
     assert_ne!(another_id, d);
     let mid = linked(vec![import("test/units", dependency())]);
     let mid2 = linked(vec![import("test/units", another)]);
+    assert_eq!(
+        wire(&emit(&mid))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
+    assert_eq!(
+        wire(&emit(&mid2))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
     let split = CheckedPackage::link_with(
         root_graph(),
         vec![import("test/mid", mid), import("test/mid2", mid2)],
@@ -2851,9 +3008,15 @@ fn e4_refuses_a_conflicting_diamond() {
     };
     assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].package_id, d);
-    assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
+    assert_eq!(
+        selections[0].path(identity),
+        path(&["test/mid", "test/units"])
+    );
     assert_eq!(selections[1].package_id, another_id);
-    assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
+    assert_eq!(
+        selections[1].path(identity),
+        path(&["test/mid2", "test/units"])
+    );
 
     // A dependency whose occurrences have no source region does not emit,
     // so its `package_id` cannot be recomputed.
@@ -2936,8 +3099,10 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
                 modifies: vec![key("ConfigVersion/versionNumber")],
                 creates: Vec::new(),
                 deletes: Vec::new(),
+                ..Default::default()
             },
-            own_postcondition_clauses: Vec::new(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
             has_body: false,
             redefines: None,
         }),
@@ -2967,6 +3132,8 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         alias: "Config".to_owned(),
         span: SPAN,
         view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     }
 }
 
@@ -2977,7 +3144,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
 fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
          {declarations}\n\
@@ -3002,8 +3169,16 @@ fn check_attempt_unit(
     unit: &str,
     with_sub: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
+    check_attempt_unit_revision(unit, with_sub, "fixture:1")
+}
+
+fn check_attempt_unit_revision(
+    unit: &str,
+    with_sub: bool,
+    revision: &str,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", revision),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3052,6 +3227,46 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the original attempt passed S1");
+    let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
+        .expect("the admitted attempt formats");
+    let reparsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:qsl-309",
+            "fixture",
+            "fixture:1-formatted",
+        ),
+        "program.native",
+        formatted.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the formatted attempt parses");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "attempt second-pass bytes"
+    );
+    let formatted_graph = check_attempt_unit_revision(&formatted, with_sub, "fixture:1-formatted")
+        .unwrap_or_else(|refusals| panic!("formatted attempt refuses: {refusals:?}"));
+    let formatted_emission = emit_checked(&CheckedPackage::link(formatted_graph))
+        .expect("the formatted attempt emits through public S4");
+    assert_eq!(
+        formatted_emission.omitted,
+        [],
+        "formatted attempt S4 omissions"
+    );
+    assert_eq!(
+        formatted_emission.package().package_id(),
+        emission.package().package_id(),
+        "attempt formatting changed checked package identity"
+    );
     AttemptEmission {
         attempt,
         clauses,
@@ -3084,7 +3299,7 @@ fn digest_of(key: quire_exact::NodeKey) -> String {
 /// frame's `modifies` exactly `versionNumber` -- and exactly one
 /// `operation-contract` record for the frame. The "emit.rs needs no
 /// new code" claim, exercised against real nodes rather than their absence.
-#[trace("TC-513", "FR-114-AC-1")]
+#[trace("TC-513", "FR-114-AC-1", "FR-003-AC-9")]
 #[test]
 fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     let emitted = emit_attempt_unit(
@@ -3128,7 +3343,7 @@ fn assert_frame_modifies_version_number(frame: &Value) {
 /// one anchor node, one frame node and one frame record for it. The
 /// attempt's own occurrences are the only ones placing these nodes, so this
 /// fails if an attempt's generated occurrences have no enclosing region.
-#[trace("TC-513", "FR-114-AC-2")]
+#[trace("TC-513", "FR-114-AC-2", "FR-003-AC-9")]
 #[test]
 fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     let emitted = emit_attempt_unit(
@@ -3153,7 +3368,7 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
 /// and a `post` on `Config::ConfigVersion::attemptUpdate` share one anchor
 /// node and one frame node, whose context is `ConfigVersion`'s own object
 /// node -- the same one the unit without `Sub` binds.
-#[trace("TC-513", "FR-114-AC-4")]
+#[trace("TC-513", "FR-114-AC-4", "FR-003-AC-9")]
 #[test]
 fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     let emitted = emit_attempt_unit(
@@ -3192,16 +3407,16 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 }
 
 /// SR-770 FND-001 (the reviewer's own probe): a unit with a function and a
-/// protocol whose content no checker reads -- undeclared types
-/// (`Nope::Input`, `Nope::Actor`, `Undeclared`), a `send` via an undeclared
-/// channel and ill-typed bodies (`1 + true`) -- refuses at check, rather
-/// than checking and emitting a package the protocol is silently missing
-/// from.
+/// protocol whose content is garbage -- undeclared types (`Nope::Input`,
+/// `Nope::Actor`, `Undeclared`), a `send` via an undeclared channel and
+/// ill-typed bodies (`1 + true`) -- refuses at check, at the undeclared
+/// names, rather than checking and emitting a package the protocol is
+/// silently missing from.
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"quire.model.complete/v1\";\n\
         model Config = \"example/config-version\" version \"1\" digest \
         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
         function f using v (): Boolean pure { true }\n\
@@ -3215,27 +3430,29 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let refusals = check_attempt_unit(unit, false)
         .map(|_| ())
         .expect_err("a protocol with unchecked content must not check");
+    assert!(!refusals.is_empty());
     assert!(
         refusals
             .iter()
-            .any(|refusal| refusal.cause.code().as_str() == "unsupported_construct"),
+            .all(|refusal| refusal.cause.code().as_str() == "missing_declaration"),
         "{refusals:?}"
     );
 }
 
 /// SR-770 FND-001/SR-771 FND-005 (probe C): the same garbage beside a
 /// valid, resolving attempt still refuses at check. Each part is refused on
-/// its own: an ill-typed body as not yet implemented, and an undeclared
-/// role or binder type as a missing name. SR-773 FND-002 adds the rest of
+/// its own: an ill-typed body by the clause checker, and an undeclared role
+/// or binder type as a missing name. SR-773 FND-002 adds the rest of
 /// the content `protocol_clause::content` checks rather than refuses (a
 /// `using` naming no profile, a `by` naming no role, two roles of one name)
-/// and the one refused construct no other test writes (`relationship`).
+/// and a `relationship` naming an object type, which refuses as a wrong
+/// export (FR-218 "Relationships").
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_valid_attempt_does_not_let_garbage_content_through() {
     let valid = attempt_frame_unit("", "Config::ConfigVersion::attemptUpdate", "");
     for (from, to, code) in [
-        ("{ true };\n}", "{ 1 + true };\n}", "unsupported_construct"),
+        ("{ true };\n}", "{ 1 + true };\n}", "ill_typed"),
         (
             "role R on Config::ConfigVersion;",
             "role R on Nope::Actor;",
@@ -3269,7 +3486,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
         (
             "role R on Config::ConfigVersion;",
             "role R on Config::ConfigVersion;\nrelationship rel = Config::ConfigVersion;",
-            "unsupported_construct",
+            "invalid_model_binding",
         ),
     ] {
         let unit = valid.replacen(from, to, 1);
@@ -3290,7 +3507,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
 /// one `anchor` occurrence per clause or attempt naming it, ordinals in
 /// source order -- whichever is written first, the protocol's attempt or
 /// the `post` clause, gets ordinal 0.
-#[trace("TC-513", "FR-114")]
+#[trace("TC-513", "FR-114", "FR-003-AC-9")]
 #[test]
 fn anchor_occurrence_ordinals_follow_source_order() {
     let protocol = attempt_frame_unit(
@@ -3353,10 +3570,10 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
 /// `declarations` after the complete-V1 profile header, run S1, S2, the
 /// assembler, check and link as spine `compile` runs them: the unit's text
 /// and the linked package.
-fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
+pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          {declarations}"
     );
     let parsed = qsl_cst::parse(
@@ -3374,6 +3591,78 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
         .check(CheckingLimits::default())
         .expect("the package checks");
     (text, CheckedPackage::link(graph))
+}
+
+#[trace("TC-416", "FR-093-AC-9")]
+#[test]
+fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
+    let (text, package) = package_from_text(
+        "function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n\
+         function other using v(a: Boolean, b: Boolean): Boolean pure { not a and b }\n",
+    );
+    let emission = emit_checked(&package).expect("source parameters have real regions");
+    let wire = wire(&emission);
+    let parameters: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "parameter")
+        .map(|node| &node["node_id"])
+        .collect();
+    assert_eq!(
+        parameters.len(),
+        2,
+        "equal parameter content shares a key across functions"
+    );
+    let mut slices = Vec::new();
+    let mut ranges = Vec::new();
+    for entry in wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| parameters.contains(&&entry["node_id"]))
+    {
+        assert_eq!(entry["role"], "expression");
+        let regions = entry["regions"].as_array().unwrap();
+        assert_eq!(regions.len(), 1);
+        let region = &regions[0];
+        assert_eq!(
+            region["source"],
+            serde_json::to_value(source_artifact(package.graph().source())).unwrap()
+        );
+        let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+        let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+        slices.push(&text[start..end]);
+        ranges.push((start, end));
+    }
+    slices.sort();
+    assert_eq!(
+        slices,
+        [
+            "a",
+            "a",
+            "a: Boolean",
+            "a: Boolean",
+            "b",
+            "b",
+            "b: Boolean",
+            "b: Boolean"
+        ]
+    );
+    let mut expected_ranges = Vec::new();
+    for declaration in ["a: Boolean", "b: Boolean"] {
+        expected_ranges.extend(
+            text.match_indices(declaration)
+                .map(|(start, matched)| (start, start + matched.len())),
+        );
+    }
+    for (body, offsets) in [("{ a and b }", [2, 8]), ("{ not a and b }", [6, 12])] {
+        let start = text.find(body).unwrap();
+        expected_ranges.extend(offsets.map(|offset| (start + offset, start + offset + 1)));
+    }
+    ranges.sort();
+    expected_ranges.sort();
+    assert_eq!(ranges, expected_ranges);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }
 
 /// The source text each `generated` source-map entry of `node` covers.
@@ -3509,7 +3798,7 @@ fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
 /// a declared type no function names also reaches it, though a type name
 /// sorts before a state clause. `VersionUnchanged`'s body `1 < 2` and
 /// `record R { x: Int[0, 9]; }` both reach the `Integer` scalar node.
-#[trace("FR-093-AC-18", "TC-416")]
+#[trace("FR-093-AC-18", "TC-416", "FR-003-AC-9")]
 #[test]
 fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
     const CLAUSE: &str =
@@ -3529,4 +3818,42 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
         generated_texts(&emitted.wire, &unit, &integer["node_id"]),
         ["1 < 2"]
     );
+}
+
+/// ADR-013 O-02: the emission a package remembers is the emitter's own, and a
+/// repeat emit and a `link_with` reuse it rather than emitting again.
+#[test]
+fn a_package_remembers_its_emission_and_link_with_reuses_it() {
+    let shared = Arc::new(dependency());
+    assert!(shared.remembered_emission().is_none());
+    let first = emit_checked(&shared).expect("the dependency emits");
+    let remembered = shared
+        .remembered_emission()
+        .expect("the emit remembers its emission");
+    assert_eq!(remembered.package(), first.package());
+    let again = emit_checked(&shared).expect("a repeat emit");
+    assert_eq!(again.package(), first.package());
+    let linked = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&shared),
+        }],
+    )
+    .expect("the root links");
+    assert_eq!(
+        linked.dependency_selections()[&lib("test/units")].package_id,
+        first.package().package_id()
+    );
+
+    let unemitted = Arc::new(dependency());
+    CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&unemitted),
+        }],
+    )
+    .expect("the root links");
+    assert!(unemitted.remembered_emission().is_some());
 }

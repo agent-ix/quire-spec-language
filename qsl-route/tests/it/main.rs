@@ -3,6 +3,9 @@
 //! layer R, moved from the root crate's `tests/it/`. One binary,
 //! the same shape as the root crate's `it` target.
 
+mod evidence_kinds;
+mod fairness_kinds;
+mod memory_models;
 mod provider_origin;
 mod route_registry;
 mod routing;

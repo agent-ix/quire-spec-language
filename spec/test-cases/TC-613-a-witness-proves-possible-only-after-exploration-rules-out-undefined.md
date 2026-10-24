@@ -27,7 +27,7 @@ Scope: FR-166-AC-5, FR-168-AC-7, FR-169-AC-7.
 Fixture: ADR-022 §7.1's subject with default limits (`witness_samples` 64,
 seed 0).
 
-1. Run `possible 2 / (2 - c.versionNumber) = 2` for `c = a` through EN-1,
+1. Run `possible 2 div (2 - c.versionNumber) = 2` for `c = a` through EN-1,
    recording phase 0's witnesses and the outcome.
 2. Settle step 1's outcome with its replay result.
 3. Run `ReachesTwo` through EN-1, recording the run's end, its open nodes
@@ -44,5 +44,5 @@ Tag the tests `#[trace("TC-613", "<AC id>")]`.
 - Step 2: `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`.
 - Step 3: `Witnessed` with `Sampled` sources; `end` `Completed`, no open
   node, 9 explored nodes.
-- Step 4: `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}}`,
+- Step 4: `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}, certification: Certified}`,
   and the record names a completed exploration.

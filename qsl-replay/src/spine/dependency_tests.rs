@@ -12,6 +12,7 @@ use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view};
+use qsl_semantics::check::CheckRefusal;
 use qsl_semantics::library::{LibraryName, PackageId};
 use serde_json::Value;
 
@@ -678,6 +679,40 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
     assert!(source[start..].starts_with("import \"test/other\""));
 }
 
+/// FR-317-AC-3 (TC-820): when a union `g` declares `f` and the import alias
+/// `g` exports `f`, `g::f(1)` refuses `ambiguous_declaration`/`ambiguous-name`
+/// naming both candidates, at the call.
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn a_union_and_an_import_alias_sharing_a_member_name_are_ambiguous() {
+    use qsl_semantics::check::{CheckCause, QualifiedCandidate};
+    let geometry = library("test/geometry", "geometry", F);
+    let source = unit(&format!(
+        "{}union g {{ f(Integer) }}\nfunction h using v(): g pure {{ g::f(1) }}\n",
+        import("test/geometry", "g"),
+    ));
+    let refusal = compile_as("u", &source, &input(vec![geometry]))
+        .expect_err("g::f has a union and an import candidate");
+    assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
+    assert_eq!(refusal.cause(), Some("ambiguous-name"));
+    assert_eq!(covered(&source, &refusal), "g::f(1)");
+    let CompileRefusal::Check { refusals, .. } = &*refusal else {
+        panic!("a check refusal, not {refusal:?}")
+    };
+    let [CheckRefusal {
+        cause: CheckCause::AmbiguousQualified(ambiguous),
+        ..
+    }] = refusals.as_slice()
+    else {
+        panic!("one ambiguity, not {refusals:?}")
+    };
+    assert_eq!(ambiguous.name, "g::f");
+    assert!(matches!(
+        ambiguous.candidates.as_slice(),
+        [QualifiedCandidate::Union(_), QualifiedCandidate::Import(alias)] if alias == "g"
+    ));
+}
+
 /// The `node_id` digest of the function `name` in `compiled`'s wire.
 fn function_node(compiled: &ComposedUnit, name: &str) -> String {
     let identity = compiled
@@ -943,8 +978,8 @@ fn a_changed_library_function_changes_the_calling_node_id() {
 #[test]
 fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::FamilyOutcome;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
 
     let geometry = library(
@@ -1040,8 +1075,8 @@ fn e3_resolves_an_imported_name_only_through_its_qualifier() {
 #[test]
 fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::FamilyOutcome;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
     use quire_semantic_value::location::{Location, Origin};
 

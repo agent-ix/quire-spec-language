@@ -1,0 +1,47 @@
+---
+id: TC-1171
+title: "Snapshots and invocations carry set, bag and ordered-set values"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-106
+    type: verifies
+---
+# TC-1171: Snapshots and invocations carry set, bag and ordered-set values
+
+## Description
+
+Verify that admission reads `set`, `bag` and `ordered-set` values by QSpec FR-144's supplied-collection rules, writes sets and bags in the order of their elements' native encoding, decides frame changes by collection equality, witnesses out-of-range elements and counts elements toward `observation.values`; and that a Decimal value keeps its supplied coefficient and scale outside a set or bag, is normalized as the element of a set or bag, compares by value and is checked for membership by value; that a Rational is normalized wherever it stands, a Float keeps its exact bits and is a member by bit identity, a Quantity keeps its exact magnitude and unit, and a String element keeps its exact scalar sequence, each in a scalar slot and as the element of a set, bag or ordered set.
+
+Scope: FR-106-AC-50, FR-106-AC-51, FR-106-AC-52, FR-106-AC-53, FR-106-AC-54, FR-106-AC-55, FR-106-AC-56, FR-106-AC-57, FR-106-AC-58, FR-106-AC-59, FR-106-AC-60.
+
+## Test Procedure
+
+Fixture: a package with object type `Tagged` (fields `ids: Set<UUID>[0, 3]`, `counts: Bag<Int[0, 9]>[0, 4]`, `order: OrderedSet<Int[0, 9]>[0, 3]`, `stamps: OrderedSet<Timestamp>[0, 2]`, `peers: Set<Reference<Tagged>>[0, 2]`), populations `ix://test/tagged/T` of `Tagged` holding `t1` and `z1` and `ix://test/tagged/U` of `Tagged` holding `a1`, and an operation `retag` whose frame grants no field. In every snapshot, `z1` and `a1` hold an empty value of each of the five fields (`{"set": []}`, `{"bag": []}`, `{"ordered-set": []}`).
+
+Decimal fixture: the same package with `Tagged` also declaring `price: Decimal[0, 10000; 2, 2]`, `rates: Set<Decimal[0, 10000; 2, 2]>[0, 3]`, `tallies: Bag<Decimal[0, 10000; 2, 2]>[0, 3]`, `steps: OrderedSet<Decimal[0, 10000; 2, 2]>[0, 2]`, `opts: Set<Option<Decimal[0, 10000; 2, 2]>>[0, 2]` and `runs: Bag<Sequence<Decimal[0, 10000; 2, 2]>[0, 2]>[0, 2]`; `z1` and `a1` hold `price` `{"kind":"decimal","coefficient":"0","scale":"0"}` and an empty value of each Decimal collection.
+
+1. Admit the current snapshot FR-106-AC-50 writes and read the written order of `peers`; then the same document with the `ids`, `counts` and `peers` elements reversed, and with the `order` elements reversed. Compare the typed observations and the document digests.
+2. Admit each FR-106-AC-51 mutation of that snapshot, then the same mutations in a `retag` parameter of the same type and in a state-machine context field.
+3. Admit `retag` invocations whose post snapshot reorders `ids` and `counts`, drops one `2` from `counts`, and writes `order` as `1, 3`; admit the `counts` post value `10` under `PostStateRange::Witness`; admit the document under `observation.values` at its exact count and one less.
+4. Over the decimal fixture, admit the current snapshot FR-106-AC-53 writes and read the written `price`, `rates`, `tallies`, `steps`, `opts` and `runs`; admit `price` `1.000`; admit the two `retag` invocations FR-106-AC-53 lists.
+5. Over the decimal fixture, admit each FR-106-AC-54 mutation, and the `100.01` post `price` under `PostStateRange::Witness`.
+6. Over the numeric fixture, admit the current snapshots FR-106-AC-55, FR-106-AC-57, FR-106-AC-59 and FR-106-AC-60 write and read the written `ratio`, `ratios`, `weights`, `gain`, `levels`, `taps`, `reach`, `spans`, `loads`, `names`, `notes` and `lines`; admit the `retag` invocations those criteria list.
+7. Over the numeric fixture, admit each FR-106-AC-56 mutation, and the `11`/`1` post `ratio` under `PostStateRange::Witness`.
+8. Over the numeric fixture, admit each FR-106-AC-58 mutation, and a signalling-NaN `gain` post value under `PostStateRange::Witness`.
+9. Over the numeric fixture, admit each FR-106-AC-59 refusal mutation and each FR-106-AC-60 refusal mutation, including the five-element `names`.
+
+Numeric fixture: the same package with `Tagged` also declaring `ratio: Rational[-10, 10; 1, 12]`, `ratios: Set<Rational[-10, 10; 1, 12]>[0, 3]`, `weights: Bag<Rational[-10, 10; 1, 12]>[0, 3]`, `lane: OrderedSet<Rational[-10, 10; 1, 12]>[0, 2]`, `gain: Float64`, `levels: Set<Float64>[0, 6]`, `taps: Bag<Float32>[0, 3]`, `reach: Quantity<Units::metre>`, `spans: Set<Quantity<Units::metre>>[0, 3]`, `loads: Bag<Quantity<Units::metre>>[0, 3]`, `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`, over the unit `Units::metre` and its second unit `Units::second`; `z1` and `a1` hold `ratio` `0`/`1`, `gain` with bits `0000000000000000`, `reach` `0` metre and an empty value of each collection.
+
+Tag the tests `#[trace("TC-1171", "FR-106-AC-n")]`.
+
+## Expected Results
+
+- Step 1: admitted with the members, multiplicities and orders FR-106-AC-50 lists, `peers` written `a1` of `U` before `z1` of `T`; the reversed `ids`/`counts`/`peers` document gives an equal typed observation and a different document digest; the reversed `order` document gives an unequal typed observation.
+- Step 2: each refusal FR-106-AC-51 names, with its code, cause and path, rooted at the parameter or context field for the second pass.
+- Step 3: the reorderings admit as no change; the dropped element and the reordered ordered set refuse `frame_violation`/`unauthorized-change`; the witness run admits with one `OutOfRange` at index 1, the supplied array index; the exact limit admits and one less refuses `stage_limit_exceeded`/`node-count-exceeded`.
+- Step 4: `price` coefficient `150`, scale `2`; `rates` written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"2","kind":"decimal","scale":"0"}]`; `tallies` one member `1.5` (coefficient `15`, scale `1`) with multiplicity 2, written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"15","kind":"decimal","scale":"1"}]`; `opts` written `[{"absent":{}},{"present":{"coefficient":"15","kind":"decimal","scale":"1"}}]`; `runs` written `[{"sequence":[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"1","kind":"decimal","scale":"0"}]}]`; `steps` in order `1.50, 1`, first element coefficient `150`, scale `2`; `1.000` admits; the `1.5` post `price` is no change, and the `1.51` post `price` refuses `frame_violation`/`unauthorized-change` naming `t1` and `price`.
+- Step 5: each refusal FR-106-AC-54 names, with its code, cause and member; the witness run refuses `invalid-value` with no `OutOfRange`.
+- Step 6: `ratio` `1`/`2` for every spelling FR-106-AC-55 lists; `ratios` written `-3`/`1`, `1`/`2`, `1`/`3` in JCS byte order; `weights` one member `1`/`2` with multiplicity 2; `gain` the bits written; `levels` written in the bit-pattern byte order FR-106-AC-57 lists, with `+0` and `-0` two members and `7ff8000000000001`, `7ff8000000000002` two members; `taps` one member of multiplicity 2; `reach` and the Decimal-magnitude spelling the same value `1`/`2` metre; `loads` one member of multiplicity 2; `names` four members in the written order FR-106-AC-60 lists; `notes` `[absent, present "x"]`; the no-change and change invocations as the criteria state.
+- Step 7: each refusal FR-106-AC-56 names, with its code, cause, path and member or type; the witness run refuses `invalid-value` with no `OutOfRange`.
+- Step 8: each refusal FR-106-AC-58 names; every bit pattern admits and a Float is never reported `OutOfRange`.
+- Step 9: each refusal FR-106-AC-59 and FR-106-AC-60 names, with its code, cause, path and member; the Decimal magnitude outside any `Decimal[..]` domain admits.

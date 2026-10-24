@@ -1,0 +1,60 @@
+---
+id: TC-1086
+title: "The refinement mapping reports an unmapped type, a wrong system and the first failure, and never drops an object"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-140
+    type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-120
+    type: verifies
+---
+# TC-1086: The refinement mapping reports an unmapped type, a wrong system and the first failure, and never drops an object
+
+## Description
+
+Verify the rules of `map_state` that TC-545 and TC-555 do not reach: an
+unmapped concrete type reached through an object and through a reference,
+the two `ModelSystem` arguments and the `over_model` refusal, the order in
+which failures are returned, the `only-not-one` reason, and a mapped state
+with no relationship extent.
+
+Scope: FR-140-AC-6 to FR-140-AC-14, FR-120-AC-14.
+
+## Test Procedure
+
+Fixtures: `RingIsQueue` (FR-139) with the variants FR-140-AC-6 and AC-9
+describe; `CasRefinesCounter` (ADR-020 §8) with the `SubCounter` subtype of
+FR-140-AC-7.
+
+1. Map the FR-140-AC-6 variant with `q` of type `SubRing`, then with `q` of
+   type `Ring`.
+2. Map the FR-140-AC-7 state, in which `c` has type `SubCounter`.
+3. Map with the two systems of FR-140-AC-1, then with them swapped and with a
+   system over a third model.
+4. Map the FR-140-AC-9 variants.
+5. Map the ring state of FR-140-AC-2 and read its relationship extents.
+6. Call `ModelSystem::over_model` over `example/not-selected`, and over each
+   of the unit's selected models.
+7. Map the ring state of FR-140-AC-2 under the FR-140-AC-12 variant.
+8. Map `head = 1`, `size = 2` and then `head = 0`, `size = 0` under the FR-140-AC-11 variants, as `head: Int[0, 1]?` and as `head: Option<Int[0, 1]>`.
+9. Map AC-9's variant with its rows written in another source order; map it with a fault injected into the evaluator after an undefined row.
+
+Tag the tests `#[trace("TC-1086", "<AC id>")]`.
+
+## Expected Results
+
+- Step 1: `Undetermined` naming the `next` row and object `a`, with
+  `UnmappedType(SubRing)`; then `a.next` maps to the `Queue` reference `q`.
+- Step 2: `Undetermined` naming `Object` for `SubCounter` and `c`, with
+  `UnmappedType(SubCounter)`; no object dropped.
+- Step 3: a state whose key is the abstract system's; then `WrongSystem` with
+  `invalid_runtime_input`/`wrong-role-mapping` for each, with no row read.
+- Step 4: `Undefined` whose `UndefinedRecord` reason is `only-not-one`;
+  `Undefined` also when a `SubRing` sorts first; `Undetermined` for `SubRing`
+  with the original `items` row.
+- Step 5: no relationship extent.
+- Step 6: `invalid_runtime_input`/`wrong-role-mapping`; then a system that
+  reports its model.
+- Step 7: `cells` holds the `Cell` references `s0` and `s1`, in key order.
+- Step 8: at `head = 1`, `size = 2` the mapped `head` is 1; at `size = 0` it is unset and not hidden (`?`), or an explicit `none` (`Option<T>`).
+- Step 9: the same reported row and object; then `Fault` with the catalog code.

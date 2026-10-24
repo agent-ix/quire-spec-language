@@ -3,13 +3,19 @@
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
+use alloc::{
+    borrow::ToOwned, boxed::Box, collections::BTreeMap, format, string::String, string::ToString,
+    vec::Vec,
+};
 
+mod budget;
 mod locus;
 mod stage;
+pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
 
-use std::collections::BTreeMap;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,13 +74,10 @@ pub enum Code {
     InvalidIdentifier,
     /// A typed command result could not be serialized.
     OutputFailure,
-    /// A real, admitted capability this build does not implement yet:
-    /// checked native expressions outside the selected executable
-    /// projection (`lowering`), or a `quire.checked-package/v2` emission
-    /// path (`qsl-package`'s `emit`) not yet built.
+    /// A real, admitted capability this build does not implement yet: a
+    /// `quire.checked-package/v2` emission path (`qsl-package`'s `emit`) not
+    /// yet built.
     UnsupportedProjection,
-    /// The existing IR rejected an executable derivation.
-    ProjectionBinding,
     /// Checked native correspondence could not be preserved in the projection.
     InvalidProjectionCorrespondence,
     /// Source-only export cannot use extracted Markdown.
@@ -123,6 +126,9 @@ pub enum Code {
     AmbiguousDeclaration,
     /// A required formal or lexical declaration is absent.
     MissingDeclaration,
+    /// Two declarations that must be unique resolve to one identity (FR-302:
+    /// two unit `operation-body` declarations resolving to one operation).
+    ConflictingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
     /// Native runtime artifact structure or selected runtime data is invalid.
@@ -173,6 +179,12 @@ pub enum Code {
     /// Distinct from [`Self::UnsupportedConstruct`], a source form the
     /// selected profile prohibits. Category unsupported, exit 21.
     UnimplementedCapability,
+    /// QSpec FR-405, FR-407: a random parameter, reward, workload or
+    /// `probabilistic` claim that breaks the rule its cause names.
+    InvalidProbabilisticModel,
+    /// QSpec FR-415, FR-416: a timed model, clock binding or timed interval
+    /// that breaks the rule its cause names.
+    InvalidTimedModel,
 }
 
 impl Code {
@@ -185,7 +197,6 @@ impl Code {
             Self::InvalidIdentifier => "invalid-identifier",
             Self::OutputFailure => "output-failure",
             Self::UnsupportedProjection => "unsupported_projection",
-            Self::ProjectionBinding => "projection_binding",
             Self::InvalidProjectionCorrespondence => "invalid_projection_correspondence",
             Self::ExtractionRequiresRun => "extraction-requires-run",
             Self::ExtractionPackageConflict => "extraction-package-conflict",
@@ -209,6 +220,7 @@ impl Code {
             Self::StaleDependency => "stale_dependency",
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
+            Self::ConflictingDeclaration => "conflicting_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
             Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
@@ -228,6 +240,8 @@ impl Code {
             Self::StageLimitExceeded => "stage_limit_exceeded",
             Self::NoncanonicalWire => "noncanonical_wire",
             Self::UnimplementedCapability => "unimplemented_capability",
+            Self::InvalidProbabilisticModel => "invalid_probabilistic_model",
+            Self::InvalidTimedModel => "invalid_timed_model",
         }
     }
 
@@ -240,7 +254,6 @@ impl Code {
             Self::InvalidIdentifier,
             Self::OutputFailure,
             Self::UnsupportedProjection,
-            Self::ProjectionBinding,
             Self::InvalidProjectionCorrespondence,
             Self::ExtractionRequiresRun,
             Self::ExtractionPackageConflict,
@@ -264,6 +277,7 @@ impl Code {
             Self::StaleDependency,
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
+            Self::ConflictingDeclaration,
             Self::InvalidModelBinding,
             Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
@@ -283,6 +297,8 @@ impl Code {
             Self::StageLimitExceeded,
             Self::NoncanonicalWire,
             Self::UnimplementedCapability,
+            Self::InvalidProbabilisticModel,
+            Self::InvalidTimedModel,
         ]
     }
 
@@ -343,8 +359,8 @@ impl Code {
     }
 }
 
-impl std::fmt::Display for Code {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Code {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -403,8 +419,8 @@ pub enum SyntaxLimit {
     },
 }
 
-impl std::fmt::Display for SyntaxLimit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SyntaxLimit {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
             Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
@@ -450,13 +466,13 @@ pub fn resource_exhausted(
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
 // carries source identity. Preserve the API and implement standard traits.
-impl std::fmt::Display for Diagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)
     }
 }
 
-impl std::error::Error for Diagnostic {}
+impl core::error::Error for Diagnostic {}
 
 impl Diagnostic {
     /// The resource ceiling a `resource_exhausted` refusal names; `None`
@@ -660,154 +676,6 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // its position by T-5's `Locus`. `stage_limit_exceeded` has one cause per
 // `LimitKind`.
 
-/// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
-/// result maps into. Exactly the eight values ADR-013 §3 O-16's category
-/// table names in its first column; not a kernel type (`quire-exact` carries
-/// no category), and this crate is its only owner. Category-mapping
-/// functions from each family's own outcome (C-08, C-09, C-23) match this
-/// enum exhaustively with no `_` arm, so a ninth category fails every one of
-/// them to compile rather than silently falling into an existing row.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum Category {
-    /// A completed value, or a claim's `Completed(false)` (a violation is
-    /// its own, separate category below).
-    Success,
-    /// A claim's `Completed(false)`: a false predicate, not a refusal.
-    Violation,
-    /// The operation has no mathematical value (kernel `Undefined`).
-    Undefined,
-    /// The operation is defined but its result, or the request itself, is
-    /// not admitted.
-    Refusal,
-    /// A well-formed request naming a real, catalogued capability this
-    /// build, backend or solver does not supply.
-    Unsupported,
-    /// A named charge was unavailable and no partial value exists: timeout,
-    /// cancellation or bound exhaustion.
-    Incomplete,
-    /// Neither proved nor refuted -- including a vacuous proof and a replay
-    /// parity disagreement.
-    Inconclusive,
-    /// A runtime, evaluator or mapping invariant broke; never a `Refusal`.
-    InternalFailure,
-}
-
-impl Category {
-    /// Every value, in the ADR-013 O-16 category table's row order.
-    pub const ALL: [Self; 8] = [
-        Self::Success,
-        Self::Violation,
-        Self::Undefined,
-        Self::Refusal,
-        Self::Unsupported,
-        Self::Incomplete,
-        Self::Inconclusive,
-        Self::InternalFailure,
-    ];
-
-    /// A stable display spelling. ADR-013 O-16 fixes the eight values and
-    /// states that category values "compare lexically on their wire
-    /// strings", but names no QSpec wire contract for this QSL-internal
-    /// type, so this spelling is QSL's own and carries no QSpec authority.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Success => "success",
-            Self::Violation => "violation",
-            Self::Undefined => "undefined",
-            Self::Refusal => "refusal",
-            Self::Unsupported => "unsupported",
-            Self::Incomplete => "incomplete",
-            Self::Inconclusive => "inconclusive",
-            Self::InternalFailure => "internal-failure",
-        }
-    }
-
-    /// FR-285 (ADR-029 CB-4): the one exit function, QSpec FR-301's code
-    /// for an item of this category. Undefined folds to 10 with violation;
-    /// inconclusive is a proof or `analyze` item's, which did not settle
-    /// its claim and so is incomplete (22). A supplied-trace clause still
-    /// pending at the trace's end takes [`Self::trace_exit_code`] instead.
-    pub const fn exit_code(self) -> u8 {
-        match self {
-            Self::Success => 0,
-            Self::Violation | Self::Undefined => 10,
-            Self::Refusal => 20,
-            Self::Unsupported => 21,
-            Self::Incomplete | Self::Inconclusive => 22,
-            Self::InternalFailure => 30,
-        }
-    }
-
-    /// FR-285's row for a supplied-trace clause (FR-283): one still pending
-    /// when the trace ends is inconclusive but observed no violation, so it
-    /// exits 0. Every other category exits as [`Self::exit_code`] states.
-    pub const fn trace_exit_code(self) -> u8 {
-        match self {
-            Self::Inconclusive => 0,
-            other => other.exit_code(),
-        }
-    }
-
-    /// FR-285's severity fold: the most severe of `codes` under QSpec
-    /// FR-301's order 30, 20, 21, 22, 10, 0, or `None` when `codes` is
-    /// empty. A code outside that set ranks most severe, so it is never
-    /// hidden behind a known one.
-    pub fn most_severe(codes: impl IntoIterator<Item = u8>) -> Option<u8> {
-        const ORDER: [u8; 6] = [30, 20, 21, 22, 10, 0];
-        codes.into_iter().min_by_key(|code| {
-            ORDER
-                .iter()
-                .position(|known| known == code)
-                .map_or(0, |rank| rank + 1)
-        })
-    }
-}
-
-impl std::fmt::Display for Category {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// ADR-013 O-17: one `quire.native.diagnostics/v1` code and cause, exactly as
-/// the `quire.native.diagnostics/v1` catalog spells them. Every
-/// `catalog_code()` across every stage returns this same
-/// type (C-15); there is no conversion back to a typed cause, and no
-/// consumer reads the catalog's message -- only the code, the cause and the
-/// structured fields the catalog defines for that pair. Equality is lexical
-/// on both fields, matching ADR-013 O-17's stated equality kind.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct CatalogCode {
-    code: &'static str,
-    cause: &'static str,
-}
-
-impl CatalogCode {
-    /// Construct a code/cause pair. Callers name codes and causes exactly as
-    /// the catalog spells them (ADR-013 R-07: a typed-cause-to-code
-    /// conversion never invents a code the catalog does not define).
-    pub const fn new(code: &'static str, cause: &'static str) -> Self {
-        Self { code, cause }
-    }
-
-    /// The catalog's top-level code, e.g. `"runtime_invariant"`.
-    pub const fn code(&self) -> &'static str {
-        self.code
-    }
-
-    /// The catalog's cause under that code, e.g.
-    /// `"established-invariant-broken"`.
-    pub const fn cause(&self) -> &'static str {
-        self.cause
-    }
-}
-
-impl std::fmt::Display for CatalogCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.code, self.cause)
-    }
-}
-
 /// FR-259 B6: `quire-canonical` could not reserve memory for a read or an
 /// encoding. Intake, observation digest admission and the library package
 /// identity read each report this one outcome, carrying the size in bytes of
@@ -816,55 +684,17 @@ impl std::fmt::Display for CatalogCode {
 pub const ALLOCATION_FAILED: CatalogCode =
     CatalogCode::new("resource_exhausted", "allocation-failed");
 
-/// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
-/// from a compiler stage, the I2 reader, `replay` or `route` (and, for
-/// evaluation, `CheckedPackage::call`). Names the stage and the violated
-/// invariant, each by a stable identifier -- not a display string (ADR-013
-/// R-05) and not itself a closed enum: T-4 gives `LimitKind` alone the
-/// "closed enum" qualifier, and the set of stages and invariants that can
-/// raise a fault is expected to grow as later slices add stages, without
-/// widening this type. `InternalFault` maps to exactly one catalog code
-/// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
-/// catalog's revision `1-draft.6` note) and exactly one category
-/// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct InternalFault {
-    stage: &'static str,
-    invariant: &'static str,
-}
-
-impl InternalFault {
-    /// `stage` and `invariant` are stable identifiers the raising site
-    /// names, never derived from a display string or message (ADR-013 R-05).
-    pub const fn new(stage: &'static str, invariant: &'static str) -> Self {
-        Self { stage, invariant }
-    }
-
-    /// The stage, reader or module that raised this fault.
-    pub const fn stage(&self) -> &'static str {
-        self.stage
-    }
-
-    /// The stable identifier of the violated invariant.
-    pub const fn invariant(&self) -> &'static str {
-        self.invariant
-    }
-
-    /// Always `runtime_invariant`/`established-invariant-broken` (ADR-013
-    /// T-4): an internal fault is never a `Refusal` and never any other
-    /// catalog code.
-    pub fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("runtime_invariant", "established-invariant-broken")
-    }
-
-    /// Always `Category::InternalFailure` (ADR-013 O-16).
-    pub fn category(&self) -> Category {
-        Category::InternalFailure
-    }
-}
+/// FR-082-AC-11: the shared type registry could not represent or compute the
+/// requested reservation size. The payload carries the original amount and
+/// unit, distinct from a denied allocator request.
+pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
+    CatalogCode::new("resource_exhausted", "reservation-size-overflow");
 
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+/// One row has no catalog row yet: `conflicting_declaration`, which QSpec
+/// FR-151 requires but QSpec's native-diagnostics catalog (FR-271, FR-272)
+/// does not list.
 ///
 /// This is the refusal-record map: the category a code has when a refusal
 /// record carries it (O-17: each cause type has a fixed category). Every
@@ -875,7 +705,7 @@ impl InternalFault {
 /// `incomplete` row names (FR-106, ADR-012's admission table) and
 /// [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
-/// `insufficient-next-charge`; a semantic maximum is not a work budget). It
+/// `insufficient-next-charge`; a maximum fixed by the language is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
 /// ceiling row). When a denied charge stops a run instead, the outcome is
 /// incomplete and still carries `resource_exhausted` (ADR-014 B-2; FR-101's
@@ -890,7 +720,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -900,6 +730,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("unknown_required_feature", Category::Refusal),
     ("missing_import", Category::Refusal),
     ("missing_declaration", Category::Refusal),
+    ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
     ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),
@@ -932,9 +763,9 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("duplicate_selection", Category::Refusal),
     ("stage_limit_exceeded", Category::Incomplete),
     ("noncanonical_wire", Category::Refusal),
+    ("invalid_probabilistic_model", Category::Refusal),
     ("unsupported_projection", Category::Refusal),
     ("invalid_capability", Category::Refusal),
-    ("projection_binding", Category::Refusal),
     ("invalid_projection_correspondence", Category::Refusal),
     ("extraction-requires-run", Category::Refusal),
     ("extraction-package-conflict", Category::Refusal),
@@ -960,40 +791,15 @@ pub fn catalog_category(code: &str) -> Option<Category> {
         .map(|&(_, category)| category)
 }
 
-/// ADR-013 O-16/O-17: a family-owned evaluation-time refusal
-/// cause, held only through this trait so the layer-3 `check` core and this
-/// crate itself never name the concrete cause type -- "a cause belongs to
-/// the family whose construct produces it" (ADR-013 O-16). The supertraits
-/// make a `FamilyResult`/`FamilyOutcome` built from a `Box<dyn CatalogCoded>`
-/// `Debug`, able to cross a thread, and free of any borrow (ADR-013 O-16
-/// "Representation").
-pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
-    /// This cause's catalog code (O-17's method); its O-16 category is
-    /// always `Category::Refusal`.
-    fn catalog_code(&self) -> CatalogCode;
-
-    /// The structured payload the catalog row requires for the cause
-    /// [`Self::catalog_code`] names (ADR-013 O-17, FR-096), with the same
-    /// map shape as [`UndefinedRecord::fields`]: one entry for each required
-    /// payload item other than a location, valued by the item's rendering.
-    /// A location item is the record's [`Locus`], not a field. Read from the
-    /// cause's own variant, never from a message.
-    ///
-    /// `None` for a cause FR-096's key table has no row for: it has no
-    /// fields to give, and an empty map would pass for a cause whose row
-    /// requires none.
-    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>>;
-
-    /// This cause as O-17's [`RefusalRecord`], raised at `locus`: its code,
-    /// its fields, and category refusal. `None` when
-    /// [`Self::catalog_fields`] is.
-    fn refusal_record(&self, locus: Option<Locus>) -> Option<RefusalRecord> {
-        Some(RefusalRecord::new(
-            self.catalog_code(),
-            self.catalog_fields()?,
-            locus,
-        ))
-    }
+/// ADR-013 O-17: `cause` as a [`RefusalRecord`] raised at `locus`: its code,
+/// its fields and category refusal. `None` when
+/// [`CatalogCoded::catalog_fields`] is.
+pub fn refusal_record(cause: &dyn CatalogCoded, locus: Option<Locus>) -> Option<RefusalRecord> {
+    Some(RefusalRecord::new(
+        cause.catalog_code(),
+        cause.catalog_fields()?,
+        locus,
+    ))
 }
 
 /// FR-096-AC-8: a kernel [`quire_exact::Refusal`] as O-17's
@@ -1005,7 +811,7 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
 /// value refusal carries what its record renders"), and
 /// `CardinalityOutOfBound`/`ForeignReference` keep their own fields.
 ///
-/// `None` for `CheckedInvariant`: it is an [`InternalFault`], never a
+/// `None` for `CheckedInvariant`: it is an [`quire_semantic_value::catalog::InternalFault`], never a
 /// refusal record (a record is always category refusal).
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn kernel_refusal_record(
@@ -1078,18 +884,18 @@ pub fn kernel_refusal_record(
             ("expected", target.as_str().to_owned()),
             ("actual", source.as_str().to_owned()),
         ]),
-        Refusal::CheckedInvariant => return None,
+        Refusal::CheckedInvariant { .. } => return None,
     };
     Some(RefusalRecord::new(code, fields, locus))
 }
 
 /// `Int[lo, hi]`, each bound as QSpec FR-038 writes an integer.
-fn spell_int(interval: &quire_exact::IntegerInterval) -> String {
+pub fn spell_int(interval: &quire_exact::IntegerInterval) -> String {
     format!("Int[{}, {}]", interval.lower(), interval.upper())
 }
 
 /// `Decimal[lo, hi; smin, smax]`; no rounding mode is written.
-fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
+pub fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
     format!(
         "Decimal[{}, {}; {}, {}]",
         decimal.lower(),
@@ -1100,7 +906,7 @@ fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
 }
 
 /// `Rational[lo, hi; dmin, dmax]`.
-fn spell_rational(domain: &quire_exact::RationalDomain) -> String {
+pub fn spell_rational(domain: &quire_exact::RationalDomain) -> String {
     let (numerator, denominator) = (domain.numerator(), domain.denominator());
     format!(
         "Rational[{}, {}; {}, {}]",
@@ -1162,70 +968,16 @@ impl RefusalRecord {
     }
 }
 
-/// ADR-013 O-16: a family-owned evaluation-time undefined cause,
-/// held only through this trait -- the undefined-category counterpart of
-/// [`CatalogCoded`].
-pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
-    /// This cause's [`UndefinedRecord`]; its O-16 category is always
-    /// `Category::Undefined`.
-    fn undefined_record(&self) -> UndefinedRecord;
-}
-
-/// ADR-013 O-16: the closed reason set of the
-/// `quire.native.diagnostics/v1` "Undefined reasons" table -- the catalog
-/// states this is not a refusal code or cause. Grows by one variant each
-/// time a family adds a new evaluation-time undefined result, the same way
-/// a family-dispatch cause set grows.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum UndefinedReason {
-    /// FR-151 dispatch: an FR-151 dispatched call's selected method's
-    /// effective precondition evaluated to `false`.
-    PreconditionFalse,
-    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
-    /// names no member of the population bound to `p`.
-    AbsentKey,
-}
-
-impl UndefinedReason {
-    /// The catalog's own reason spelling.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::PreconditionFalse => "precondition-false",
-            Self::AbsentKey => "absent-key",
-        }
-    }
-}
-
-impl std::fmt::Display for UndefinedReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// ADR-013 O-16: the undefined-side counterpart of O-17's
-/// `RefusalRecord` (held back for #213 S-5b): `reason` plus the catalog's
-/// own structured payload for that reason. [`UndefinedCoded::undefined_record`]
-/// returns this record, not the bare reason, because the catalog requires
-/// the payload and a consumer outside the producing family holds only the
-/// trait object -- without the record it could reach the payload only by
-/// downcasting to the family's own cause type.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UndefinedRecord {
-    /// The catalog's closed undefined reason.
-    pub reason: UndefinedReason,
-    /// The catalog's structured payload for `reason`, keyed by the
-    /// catalog's own field names.
-    pub fields: std::collections::BTreeMap<&'static str, String>,
-}
-
 #[cfg(test)]
 mod foundation_tests {
+    use alloc::{string::ToString, vec, vec::Vec};
 
     use super::{
-        category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
-        SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
+        category_of, resource_exhausted, Code, Phase, Source, SourceIdentity, Span, SyntaxLimit,
+        CATALOG_CATEGORIES,
     };
     use ix_trace_rs::trace;
+    use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 
     /// FR-285-AC-1 (TC-769 step 1): each of the nine table rows maps to its
     /// code, with undefined folding to 10 beside violation, an inconclusive
@@ -1283,7 +1035,7 @@ mod foundation_tests {
                 "{codes:?} reversed"
             );
         }
-        assert_eq!(Category::most_severe(std::iter::empty()), None);
+        assert_eq!(Category::most_severe(core::iter::empty()), None);
     }
 
     /// `Code::from_code` is the typed reverse lookup of `Code::as_str`,
