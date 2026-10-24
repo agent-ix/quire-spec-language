@@ -47,7 +47,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
-use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 use crate::fairness::{Constraint, Identity};
 use crate::model_subject::{ModelInstance, ProtocolSubject};
@@ -56,7 +56,8 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
 use crate::simulation::model::{
-    verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
+    verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
+    BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::progress::ZeroProgressError;
@@ -1410,10 +1411,13 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                                 model: self.protocol.name.clone(),
                                 cause,
                             }
-                        } else if let Some(cause) = outcome.incomplete_code() {
+                        } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
                             return Err(ExpansionStop {
-                                cause,
-                                limit: Some(ExpansionLimit::EvaluationMeter),
+                                cause: CatalogCode::new(
+                                    "resource_exhausted",
+                                    "insufficient-next-charge",
+                                ),
+                                limit: Some(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)),
                             });
                         } else {
                             TerminalClass::Undecided {

@@ -46,8 +46,8 @@ impl Checker {
 /// The budgets a check's expansion and predicate stops name.
 #[derive(Clone, Copy)]
 pub(super) struct Budgets {
-    /// The evaluation meter's work units.
-    pub(super) meter: u64,
+    /// The evaluation meter's configured counters.
+    pub(super) meter: quire_exact::ScalarLimits,
     /// The expansion's candidate bound.
     pub(super) max_candidates: u64,
 }
@@ -56,7 +56,7 @@ impl Budgets {
     /// The budgets of `simulation`.
     pub(super) fn of(simulation: &ModelSimulationRequest<'_>) -> Self {
         Self {
-            meter: simulation.meter.work_units,
+            meter: simulation.meter,
             max_candidates: simulation.expansion.max_candidates,
         }
     }
@@ -130,9 +130,10 @@ pub(super) fn poll(cancel: &Cancel) -> Step<()> {
 /// limit, and a broken invariant is `checker`'s fault.
 pub(super) fn expansion_halt(stop: &ExpansionStop, budgets: Budgets, checker: Checker) -> Halt {
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => {
-            stopped(ModelCheckLimit::EvaluationMeter, budgets.meter)
-        }
+        Some(ExpansionLimit::EvaluationMeter(counter)) => stopped(
+            ModelCheckLimit::EvaluationMeter { counter },
+            crate::model_check::limits::meter_bound(&budgets.meter, counter),
+        ),
         Some(ExpansionLimit::MaxCandidates) => {
             stopped(ModelCheckLimit::MaxCandidates, budgets.max_candidates)
         }

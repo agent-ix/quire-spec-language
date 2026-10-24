@@ -742,7 +742,7 @@ enum Halt {
     /// A model expansion stopped.
     Expansion(ExpansionStop),
     /// An atom's evaluation exhausted the meter.
-    Meter,
+    Meter(quire_exact::LimitKind),
     /// The caller cancelled the run.
     Cancelled(CancelCause),
     /// The automaton reached `max_automaton_states`.
@@ -856,7 +856,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             let value = self
                 .letters
                 .atom(*atom, self.binding, state, &mut meter)
-                .map_err(|_| self.record(Halt::Meter))?;
+                .map_err(|incomplete| self.record(Halt::Meter(incomplete.limit_kind)))?;
             match value {
                 AtomReading::True => {
                     let atom = Atom::new(index)
@@ -1612,17 +1612,17 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             )
         };
         Ok(match halt {
-            Halt::Meter => reached(
-                ModelCheckLimit::EvaluationMeter,
-                self.request.meter.work_units,
+            Halt::Meter(counter) => reached(
+                ModelCheckLimit::EvaluationMeter { counter },
+                qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             Halt::Cancelled(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None),
             Halt::Automaton(limit) => reached(ModelCheckLimit::MaxAutomatonStates, limit),
             Halt::Refusal(refusal) => return Err(refusal),
             Halt::Expansion(stop) => match stop.limit {
-                Some(ExpansionLimit::EvaluationMeter) => reached(
-                    ModelCheckLimit::EvaluationMeter,
-                    self.request.meter.work_units,
+                Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+                    ModelCheckLimit::EvaluationMeter { counter },
+                    qsl_replay::meter_bound(&self.request.meter, counter),
                 ),
                 Some(ExpansionLimit::MaxCandidates) => {
                     reached(ModelCheckLimit::MaxCandidates, self.request.max_candidates)
@@ -2143,11 +2143,11 @@ impl<'r, S: LiveSubject> Run<'r, S> {
     /// naming it (FR-153 "Limits").
     fn quotient_stop(&self, stop: QuotientStop) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
         match stop {
-            QuotientStop::Meter => Ok(Second::Stopped(
+            QuotientStop::Meter(counter) => Ok(Second::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter,
-                    value: self.request.meter.work_units,
+                    limit: ModelCheckLimit::EvaluationMeter { counter },
+                    value: qsl_replay::meter_bound(&self.request.meter, counter),
                 }),
             )),
             QuotientStop::Cancelled => self.cancelled(),
@@ -2375,8 +2375,8 @@ impl<'a> Run<'_, ModelSystem<'a>> {
             let mut queue: VecDeque<ModelTransition> = identities.iter().cloned().collect();
             while let Some(identity) = queue.pop_front() {
                 for (_, generator) in &generators {
-                    if meter.charge(Charge::new(ChargePoint::GraphExpand)).is_err() {
-                        return Ok(Err(QuotientStop::Meter));
+                    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::GraphExpand)) {
+                        return Ok(Err(QuotientStop::Meter(incomplete.limit_kind)));
                     }
                     let image = match self.system.permute_transition(&identity, generator) {
                         Ok(image) => image,
