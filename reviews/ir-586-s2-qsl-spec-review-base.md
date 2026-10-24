@@ -45,3 +45,12 @@ other, with FR-400 and with the code. Row 48 and AC-48 match the
 | --- | --- | --- | --- | --- |
 | FND-001 | low | FR-400-AC-1 says "TC-390's table check asserts that `qsl-semantics` is the only crate that enables `quire-checked`'s `construct` feature", and the PR's new tests carry `#[trace("FR-400-AC-1", "TC-390")]`. TC-390 has no step and no expected result for that check, and its `relationships` verify only FR-090. The test case does not describe the test now bound to it. Fix: add a TC-390 step and expected result for the `construct` table check and its fixture case, with an FR-400 `verifies` edge. | spec/test-cases/TC-390-family-outcome-and-refusal-layering.md:5-7,57-77; spec/functional/FR-400-separate-checked-terms-from-the-checker.md:342 | correct-requirement-no-evidence |
 | FND-002 | low | ADR-013 O-03's Owner row still reads "QSL `model::key`, intake stage", but its Public type row now names `quire_checked::key::DeclarationKey` in the `agent-ix/quire-eval` repository. R-01 asks for one repository, one stage and one public type per owner, so a reader cannot tell which repository owns the key. O-04 shows the established wording ("QSL, check stage ... The type lives in the `quire-exact` kernel"). Fix: reword O-03's Owner the same way: QSL, intake stage, with `model::key` keeping the preimage encoding, and the type living in `quire-checked`. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:167-169 | wrong-requirement |
+
+## Dispositions
+
+Disposition pass 1 at `65d4950ca1da122411926b393e58fadde9758958`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-390 gains an FR-400 `verifies` edge, step 5 (the `construct` table check over every workspace member and a fixture in which `qsl-eval` enables the feature), its expected result, and the `#[trace("FR-400-AC-1", "TC-390")]` tag line. |
+| FND-002 | fixed | ADR-013 O-03's Owner row now reads "QSL, intake stage: `model::key` keeps the preimage encoding. The type lives in `quire-checked` (`agent-ix/quire-eval`, ADR-011 layer C)." |

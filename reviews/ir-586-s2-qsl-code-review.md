@@ -84,3 +84,12 @@ Disposition pass 1, checked against the fix commits `c026ca16f`, `8c21ae8e8`, `9
 | FND-003 | fixed | `no_shipped_dependency_enables_test_support` pushes `quire-checked` into the guarded set, and the matcher row `quire-checked/test-support` was added. |
 | FND-004 | still-open | Fixed in `qsl-eval`, `qsl-package`, `qsl-replay` and `qsl-semantics`. Still misplaced in three places. Root `Cargo.toml:61-63`: `quire-checked` still sits under the "layer SV" comment. Root `Cargo.toml:107-117`: the new FR-400-AC-9 comment is stacked above the `qsl-semantics` comment, so that comment now heads the `quire-checked` line. `qsl-analyze/Cargo.toml:29` and `qsl-bench/Cargo.toml:25` have no layer-C comment. |
 | FND-005 | fixed | Fixed in FR-273 rows 36 and 48, FR-273-AC-48, and ADR-013 O-03 (Public type, the `linking::DeclarationKey` note and DA-01). |
+
+Disposition pass 2, checked against fix commit `65d4950ca1da122411926b393e58fadde9758958`. That commit is a merge of main `dc267af55` (which includes #1413) plus the fixes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | Root `Cargo.toml` now has its own layer-C comment above `quire-checked`, and the "layer SV" comment heads `quire-semantic-value` again. The FR-400-AC-9 dev-dependency comment now sits directly above its own `quire-checked` line. `qsl-analyze` and `qsl-bench` have layer-C comments. |
+| FND-006 | fixed | T12-G now resolves references by parsing: `constructor_violation_lines` uses `CrateAliases` and `ConstructorReferences` over `use_leaves` and paths, and falls back to a token run for macro arguments. `tc_arch_lint_api_surface_031` covers alias, nested group, glob, module import, rename and macro arguments. It passes, as does the live-tree test `_030`. |
+| FND-007 | fixed | `Rule::constructors` is a per-constructor allow-list: `library` may reach only `package_id` and `value::definition` only `admitted_integer_division`. `check` keeps whole-module access. A module or glob import names no single constructor, so only `check` may make one. Covered by `_029` (a `library` call fails) and `_031`. |
+| FND-008 | fixed | The doctests now read `compile_fail,E0603` (`model::key`) and `compile_fail,E0432` (both `value` paths). All five doctests pass. |

@@ -65,3 +65,9 @@ Disposition pass 1 at head `182875cb5810b62451c4be2643bcda0e8893810b`.
 | --- | --- | --- |
 | FND-001 | fixed | FR-400-AC-1: `only_qsl_semantics_enables_the_construct_feature` and `a_crate_other_than_qsl_semantics_enabling_construct_is_named` (tests/it/family_outcome_layering.rs). FR-400-AC-3: `tc_arch_lint_api_surface_029`/`_030`, `tc_arch_lint_direction_010` and `tc_arch_lint_metadata_010`. All pass locally. AC-3's `PackageId`-from-`model` clause waits for the `PackageId` move, which is a later X-13 item. |
 | FND-002 | fixed | `no_shipped_dependency_enables_test_support` now guards `quire-checked` and carries `FR-400-AC-9`. It passes locally. |
+
+Disposition pass 2 at `65d4950ca1da122411926b393e58fadde9758958`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | `FR-400-AC-5` is dropped from the xtask test's `#[trace]`. New test `moved_item_paths::the_moved_item_paths_are_pinned_as_unresolvable_with_a_compiling_new_owner` carries `#[trace("FR-400-AC-5")]`. It fails if either `compile_fail` doctest loses its pinned code or its `no_run` pair, and it passes. `quire matrix` now binds FR-400-AC-5 only to `qsl-semantics/tests/it/moved_item_paths.rs:43`. |
