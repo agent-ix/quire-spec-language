@@ -30,8 +30,9 @@ pub(crate) enum DomainField<'a> {
     /// The type declares no field of that name.
     Missing,
     /// The field's value type or multiplicity has no native type here: a
-    /// native value type other than `Boolean`, a domain value type, or a
-    /// multiplicity other than `1`, `0..1` or `0..n`.
+    /// native value type other than `Boolean`, a domain value type, a unit
+    /// typeRef (`ix://quire/unit/...`), or a multiplicity other than `1`,
+    /// `0..1` or `0..n`.
     Unrepresented,
 }
 
@@ -106,8 +107,9 @@ impl<'a> DomainType<'a> {
 
 /// The native type of a domain value typed `value_type` with `multiplicity`,
 /// or `None` when it has none here: a native value type other than
-/// `Boolean`, a domain value type, or a multiplicity other than `[1,1]`
-/// or a bounded, ordered, non-unique `[0,n]` collection. Field presence is
+/// `Boolean`, a domain value type, a unit typeRef (`ix://quire/unit/...`),
+/// or a multiplicity other than `[1,1]` or a bounded, ordered, non-unique
+/// `[0,n]` collection. Field presence is
 /// applied separately by [`DomainType::field`].
 pub(crate) fn domain_value_type<'a>(
     package: &'a AdmittedPackage,
@@ -159,6 +161,10 @@ fn domain_leaf_type<'a>(
             | NativeValueType::Text
             | NativeValueType::Timestamp,
         ) => return None,
+        // A unit type names a unit of the compiling QSL unit, not a native
+        // scalar leaf or a package node, so the domain checker leaves it
+        // unmapped.
+        ValueTypeRef::Unit(_) => return None,
         ValueTypeRef::Package(key) => {
             NativeType::Domain(DomainType::new(package, package.declaration_by_key(key)?)?)
         }
@@ -809,5 +815,22 @@ mod profile_tests {
         assert!(string.integer().is_none());
         assert!(!uuid.dimensionless());
         assert!(!string.dimensionless());
+    }
+
+    /// Covers only the leaf mapping; the end-to-end refusal of a unit-typed
+    /// parameter is not asserted here, so this test carries no criterion tag.
+    #[test]
+    fn unit_value_type_is_not_a_domain_leaf() {
+        let package = qsl_semantics::model::admitted::AdmittedPackage::admit(
+            qsl_semantics::model::domain_package::DomainPackage::new(
+                qsl_semantics::model::domain_package::DomainPackageRef::fixture("unit-leaf"),
+                Vec::new(),
+            ),
+            &mut qsl_semantics::model::accounting::Meter::new(
+                qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            ),
+        )
+        .expect("an empty synthetic package supplies the context");
+        assert!(domain_leaf_type(&package, &ValueTypeRef::Unit("ms".into())).is_none());
     }
 }
