@@ -60,6 +60,7 @@ mod certificate;
 mod composite;
 mod execute;
 mod hybrid;
+mod hybrid_replay;
 mod identity;
 mod limits;
 mod model_check;
@@ -132,6 +133,13 @@ pub use execute::{
 };
 pub use hybrid::{
     NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
+pub use hybrid_replay::{
+    admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
+    ExactReal, ExactReplay, ExpansionGap, ExpressionLocus, ExpressionSite, HybridCounterexample,
+    HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal, HybridTrace, JsonPointer,
+    Root, StaticCheck, StaticReplay, TermLocus, TraceBefore, TraceFault, TraceJump, TraceRefusal,
+    TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
