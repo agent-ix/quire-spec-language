@@ -315,7 +315,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "quire-exact",
                 "quire-semantic-value",
             ][..],
-            // Its optional normal `serde_json` edge supplies tests through `std`.
             &["qsl-cst", "qsl-forms"][..],
         ),
         (
@@ -397,8 +396,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // RFC 8785 encoder, for the `package_id` preimage),
             // and `thiserror`; the last three and `quire-exact` are optional,
             // enabled by `std` (NFR-015).
-            // `serde_json` is part of the std-gated v2 wire and supplies tests;
-            // `sha2` is test-only. `ix-trace-rs`
+            // `serde_json` and `sha2` are used by its tests only. `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
             // zero-cost attribute `xtask string-edge` reads, not a semantic
@@ -415,7 +413,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-contract-model",
                     "quire-exact",
                     "quire-semantic-value",
-                    "serde_json",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
