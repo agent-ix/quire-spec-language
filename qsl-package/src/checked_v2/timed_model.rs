@@ -67,7 +67,7 @@ pub struct TimedLiteralTypes {
     /// Text literal type.
     pub text: CheckedNodeId,
     /// Integer literal type.
-    pub integer: CheckedNodeId,
+    pub integer: Option<CheckedNodeId>,
 }
 
 /// One checked guard or time invariant.
@@ -252,8 +252,7 @@ impl CheckedTimedModel {
         }
         let literal_types = TimedLiteralTypes {
             text: find_literal_type(&nodes, "text").ok_or("timed nodes lack a text type")?,
-            integer: find_literal_type(&nodes, "integer")
-                .ok_or("timed nodes lack an integer type")?,
+            integer: find_literal_type(&nodes, "integer"),
         };
         roots
             .into_iter()
@@ -263,7 +262,7 @@ impl CheckedTimedModel {
 
     /// Write all timed nodes from this typed model in FR-322 graph order.
     #[must_use]
-    pub fn write_nodes(&self) -> Vec<CheckedSemanticNodeV2> {
+    pub fn write_nodes(&self) -> Result<Vec<CheckedSemanticNodeV2>, &'static str> {
         let mut nodes = Vec::with_capacity(
             1 + self.clock_places.len()
                 + self.resets.len()
@@ -276,7 +275,8 @@ impl CheckedTimedModel {
         nodes.extend(
             self.clock_places
                 .iter()
-                .map(|place| write_place(place, &self.literal_types)),
+                .map(|place| write_place(place, &self.literal_types))
+                .collect::<Result<Vec<_>, _>>()?,
         );
         nodes.extend(self.resets.iter().map(write_reset));
         nodes.extend(
@@ -298,7 +298,7 @@ impl CheckedTimedModel {
                 .map(|constraint| write_constraint(constraint, &self.literal_types)),
         );
         nodes.push(write_root(self));
-        nodes
+        Ok(nodes)
     }
 }
 
@@ -358,53 +358,58 @@ fn write_source(source: &CheckedTimeSource, types: &TimedLiteralTypes) -> Checke
     source.metadata.node("time_source", aggregate_term(fields))
 }
 
-fn write_place(place: &CheckedClockPlace, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
+fn write_place(
+    place: &CheckedClockPlace,
+    types: &TimedLiteralTypes,
+) -> Result<CheckedSemanticNodeV2, &'static str> {
     let path = place
         .path
         .iter()
-        .map(|step| match step {
-            ClockPathStep::Field(name) => aggregate_term(vec![
-                binding_term("kind", text_literal(&types.text, "field")),
-                binding_term("name", text_literal(&types.text, name)),
-            ]),
-            ClockPathStep::Tuple(index) => aggregate_term(vec![
-                binding_term("kind", text_literal(&types.text, "tuple")),
-                binding_term("index", integer_literal(&types.integer, *index)),
-            ]),
-            ClockPathStep::Union(case) => aggregate_term(vec![
-                binding_term("kind", text_literal(&types.text, "union")),
-                binding_term("case", text_literal(&types.text, case)),
-            ]),
-            ClockPathStep::Slot {
-                collection,
-                selector,
-                minimum,
-                maximum,
-            } => {
-                let selector = match selector {
-                    ClockSlotSelector::Key(key) => reference_term(key),
-                    ClockSlotSelector::Index(index) => integer_literal(&types.integer, *index),
-                };
-                let maximum = maximum.map_or_else(
-                    || text_literal(&types.text, "unbounded"),
-                    |value| integer_literal(&types.integer, value),
-                );
-                aggregate_term(vec![
-                    binding_term("kind", text_literal(&types.text, "slot")),
-                    binding_term("collection", text_literal(&types.text, collection)),
-                    binding_term("selector", selector),
-                    binding_term("minimum", integer_literal(&types.integer, *minimum)),
-                    binding_term("maximum", maximum),
-                ])
-            }
+        .map(|step| -> Result<Value, &'static str> {
+            Ok(match step {
+                ClockPathStep::Field(name) => aggregate_term(vec![
+                    binding_term("kind", text_literal(&types.text, "field")),
+                    binding_term("name", text_literal(&types.text, name)),
+                ]),
+                ClockPathStep::Tuple(index) => aggregate_term(vec![
+                    binding_term("kind", text_literal(&types.text, "tuple")),
+                    binding_term("index", integer_literal(types, *index)?),
+                ]),
+                ClockPathStep::Union(case) => aggregate_term(vec![
+                    binding_term("kind", text_literal(&types.text, "union")),
+                    binding_term("case", text_literal(&types.text, case)),
+                ]),
+                ClockPathStep::Slot {
+                    collection,
+                    selector,
+                    minimum,
+                    maximum,
+                } => {
+                    let selector = match selector {
+                        ClockSlotSelector::Key(key) => reference_term(key),
+                        ClockSlotSelector::Index(index) => integer_literal(types, *index)?,
+                    };
+                    let maximum = match maximum {
+                        Some(value) => integer_literal(types, *value)?,
+                        None => text_literal(&types.text, "unbounded"),
+                    };
+                    aggregate_term(vec![
+                        binding_term("kind", text_literal(&types.text, "slot")),
+                        binding_term("collection", text_literal(&types.text, collection)),
+                        binding_term("selector", selector),
+                        binding_term("minimum", integer_literal(types, *minimum)?),
+                        binding_term("maximum", maximum),
+                    ])
+                }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let resolved_path = place
         .resolved_path
         .iter()
-        .map(|step| {
-            aggregate_term(vec![
-                binding_term("path_step", integer_literal(&types.integer, step.path_step)),
+        .map(|step| -> Result<Value, &'static str> {
+            Ok(aggregate_term(vec![
+                binding_term("path_step", integer_literal(types, step.path_step)?),
                 binding_term(
                     "declaring_type",
                     text_literal(&types.text, &step.declaring_type),
@@ -420,10 +425,10 @@ fn write_place(place: &CheckedClockPlace, types: &TimedLiteralTypes) -> CheckedS
                 ),
                 binding_term("minimum", text_literal(&types.text, &step.minimum)),
                 binding_term("maximum", text_literal(&types.text, &step.maximum)),
-            ])
+            ]))
         })
-        .collect();
-    place.metadata.node(
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(place.metadata.node(
         "clock_place",
         aggregate_term(vec![
             binding_term("model", reference_term(&place.model)),
@@ -431,7 +436,7 @@ fn write_place(place: &CheckedClockPlace, types: &TimedLiteralTypes) -> CheckedS
             binding_term("resolved_path", aggregate_term(resolved_path)),
             binding_term("guards", reference_terms(&place.guards)),
         ]),
-    )
+    ))
 }
 
 fn write_reset(reset: &CheckedClockReset) -> CheckedSemanticNodeV2 {
@@ -616,13 +621,17 @@ fn typed_string_literal(type_id: &CheckedNodeId, kind: &str, value: &str) -> Val
     })
 }
 
-fn integer_literal(type_id: &CheckedNodeId, value: u64) -> Value {
-    serde_json::json!({
+fn integer_literal(types: &TimedLiteralTypes, value: u64) -> Result<Value, &'static str> {
+    let type_id = types
+        .integer
+        .as_ref()
+        .ok_or("timed model needs an integer literal type to write this clock path")?;
+    Ok(serde_json::json!({
         "term": "literal",
         "type": type_id,
         "value_kind": "integer",
         "value": value,
-    })
+    }))
 }
 
 fn project_root(

@@ -1939,7 +1939,9 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
         panic!("one typed timed model is reconstructed");
     };
 
-    let emitted_nodes = timed.write_nodes();
+    let emitted_nodes = timed
+        .write_nodes()
+        .expect("fixture has integer literal type");
     assert_eq!(emitted_nodes.len(), 9);
     assert_eq!(
         emitted_nodes
@@ -1975,6 +1977,340 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
         matches!(writer_outcome, Read::Verified { .. }),
         "QSL typed timed-model writer output is admitted as a complete package: {writer_outcome:?}"
     );
+}
+
+/// FR-322-AC-120: a dense timed model with no clock places reconstructs and
+/// re-emits even though its timed nodes contain no integer literals.
+#[trace("TC-367", "FR-322-AC-120", "FR-415-AC-17")]
+#[test]
+fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let mut envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let mut timed_indices = Vec::new();
+    let mut source_index = None;
+    let mut root_index = None;
+    for (index, node) in nodes.iter_mut().enumerate() {
+        if node["node_tag"] != "timed_model" {
+            continue;
+        }
+        timed_indices.push(index);
+        match node["semantic_form"].as_str().unwrap() {
+            "time_source" => source_index = Some(index),
+            "timed_model" => root_index = Some(index),
+            _ => {}
+        }
+    }
+    let source_index = source_index.unwrap();
+    let root_index = root_index.unwrap();
+    nodes[source_index]["body"]["members"][0]["value"]["value"] = json!("dense");
+    nodes[source_index]["body"]["members"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(2);
+    for binding in nodes[root_index]["body"]["members"].as_array_mut().unwrap() {
+        if matches!(
+            binding["name"].as_str(),
+            Some("clock_places" | "resets" | "guards" | "invariants" | "urgencies" | "constraints")
+        ) {
+            binding["value"]["members"] = json!([]);
+        }
+    }
+    let keep = [source_index, root_index]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+    let removed_ids = timed_indices
+        .into_iter()
+        .filter(|index| !keep.contains(index))
+        .map(|index| {
+            nodes[index]["node_id"]["digest"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    nodes.retain(|node| {
+        node["node_tag"] != "timed_model"
+            || matches!(
+                node["semantic_form"].as_str(),
+                Some("time_source" | "timed_model")
+            )
+    });
+    let retained_ids = nodes
+        .iter()
+        .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    envelope["source_map"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| {
+            let digest = entry["node_id"]["digest"].as_str().unwrap_or_default();
+            !removed_ids.iter().any(|removed| removed == digest) && retained_ids.contains(digest)
+        });
+
+    fn targets(body: &Value) -> Vec<Value> {
+        fn walk(value: &Value, output: &mut Vec<Value>) {
+            match value {
+                Value::Object(fields) => {
+                    if fields.get("term") == Some(&json!("reference")) {
+                        output.push(fields["target"].clone());
+                    }
+                    fields.values().for_each(|child| walk(child, output));
+                }
+                Value::Array(items) => items.iter().for_each(|child| walk(child, output)),
+                _ => {}
+            }
+        }
+        let mut output = Vec::new();
+        walk(body, &mut output);
+        output.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+        output.dedup();
+        output
+    }
+    for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
+        if node["node_tag"] == "timed_model" {
+            node["dependencies"] = json!(targets(&node["body"]));
+        }
+    }
+    rekey_stale(&mut envelope);
+
+    let (_, outcome) = read_fixture_wire(&envelope);
+    let Read::Verified {
+        admitted,
+        timed_models,
+        ..
+    } = outcome
+    else {
+        panic!("the dense no-clock timed model is admitted: {outcome:?}");
+    };
+    let [timed] = timed_models.as_slice() else {
+        panic!("one no-clock model reconstructs");
+    };
+    assert_eq!(timed.source.kind, "dense");
+    assert!(timed.clock_places.is_empty());
+    assert!(timed.literal_types.integer.is_none());
+
+    let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
+        .expect("a no-clock model writes without an integer literal type");
+    let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
+    let (_, round_trip) = read_fixture_wire(&emitted);
+    let Read::Verified {
+        timed_models: reread,
+        ..
+    } = round_trip
+    else {
+        panic!("the emitted dense no-clock model is read back: {round_trip:?}");
+    };
+    assert_eq!(reread.len(), 1);
+    assert_eq!(reread[0].source.kind, "dense");
+    assert!(reread[0].clock_places.is_empty());
+}
+
+/// FR-415-AC-17: changes to each typed time-source, clock-place and
+/// constraint input change the relevant node key and survive I2 read-back.
+#[trace("TC-367", "FR-415-AC-17", "FR-322-AC-122")]
+#[test]
+fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let mut base_wire = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+
+    // Add a second unit with the same time dimension so the unit mutation is
+    // a valid selected-time-unit change, not a deliberately ill-typed edge.
+    let alternate_unit = {
+        let nodes = base_wire["semantic_graph"]["nodes"].as_array_mut().unwrap();
+        let unit_index = nodes
+            .iter()
+            .position(|node| node["semantic_form"] == "unit")
+            .expect("time unit");
+        let original = nodes[unit_index].clone();
+        let mut alternate = original.clone();
+        let original_id = original["node_id"].clone();
+        alternate["declaration"]["qualified_name"][1] = json!("ms");
+        alternate["nominal_identity_preimage"]["qualified_declaration"][1] = json!("ms");
+        alternate["nominal_identity_preimage"]["target_unit_node_id"] = original_id.clone();
+        alternate["nominal_identity_preimage"]["scale"] = json!({
+            "numerator": "1",
+            "denominator": "1000"
+        });
+        alternate["dependencies"] =
+            json!([original["dependencies"][0].clone(), original_id.clone()]);
+        alternate["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+        alternate["node_id"]["digest"] =
+            json!(package_id_digest(&alternate["nominal_identity_preimage"]));
+        alternate["occurrences"][0]["ordinal"] = json!(1);
+        let alternate_id = alternate["node_id"].clone();
+        nodes.push(alternate);
+        let map = base_wire["source_map"].as_array_mut().unwrap();
+        let mut alternate_map = map
+            .iter()
+            .find(|entry| entry["node_id"] == original_id)
+            .expect("unit source-map entry")
+            .clone();
+        alternate_map["node_id"] = alternate_id.clone();
+        alternate_map["ordinal"] = json!(1);
+        map.push(alternate_map);
+        alternate_id
+    };
+    rekey_stale(&mut base_wire);
+    let (base_id, base_outcome) = read_fixture_wire(&base_wire);
+    let Read::Verified {
+        admitted,
+        timed_models,
+        ..
+    } = base_outcome
+    else {
+        panic!("fixture with another same-dimension time unit admits: {base_outcome:?}");
+    };
+    let [original] = timed_models.as_slice() else {
+        panic!("one timed model reconstructs");
+    };
+
+    let mut cases = Vec::new();
+    let mut changed_unit = original.clone();
+    changed_unit.source.unit = serde_json::from_value(alternate_unit.clone()).unwrap();
+    for reset in &mut changed_unit.resets {
+        reset.value_type = changed_unit.source.unit.clone();
+    }
+    for constraint in &mut changed_unit.normalized_constraints {
+        constraint.unit = changed_unit.source.unit.clone();
+        constraint.bound_type = changed_unit.source.unit.clone();
+    }
+    cases.push(("unit", changed_unit));
+
+    let mut changed_period = original.clone();
+    changed_period.source.period = Some("3/2".to_owned());
+    cases.push(("period", changed_period));
+
+    let mut changed_path = original.clone();
+    let audit_key = admitted
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| {
+            node.node_tag.as_ref() == "value"
+                && node.semantic_form.as_ref() == "literal"
+                && node.body.to_string().contains("audit")
+        })
+        .expect("fixture text key value")
+        .node_id
+        .clone();
+    let super::timed_model::ClockPathStep::Slot {
+        selector: super::timed_model::ClockSlotSelector::Key(selector),
+        ..
+    } = &mut changed_path.clock_places[0].path[1]
+    else {
+        panic!("fixture clock path has a map key selector");
+    };
+    *selector = audit_key;
+    cases.push(("path", changed_path));
+
+    let mut changed_bound = original.clone();
+    changed_bound.normalized_constraints[0].bound = "7/2".to_owned();
+    cases.push(("bound", changed_bound));
+
+    let id_for = |package: &quire_contract_model::CheckedPackageV2, form: &str| {
+        package
+            .graph()
+            .nodes
+            .iter()
+            .find(|node| {
+                node.node_tag.as_ref() == "timed_model" && node.semantic_form.as_ref() == form
+            })
+            .expect("timed node form")
+            .node_id
+            .clone()
+    };
+    for (case, mut expected) in cases {
+        let emission = crate::emit::emit_timed_models(&admitted, &[expected.clone()])
+            .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
+        let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
+        assert_ne!(
+            wire["package_id"]["digest"],
+            json!(base_id.hex()),
+            "{case} changes package identity"
+        );
+        let (_, outcome) = read_fixture_wire(&wire);
+        let Read::Verified {
+            admitted: reread_package,
+            timed_models: reread,
+            ..
+        } = outcome
+        else {
+            panic!("{case} mutation is read back by I2: {outcome:?}");
+        };
+        let [actual] = reread.as_slice() else {
+            panic!("{case} mutation leaves one timed model");
+        };
+        let changed_form = match case {
+            "unit" | "period" => "time_source",
+            "path" => "clock_place",
+            "bound" => "clock_constraint",
+            _ => unreachable!(),
+        };
+        assert_ne!(
+            id_for(&reread_package, changed_form),
+            id_for(&admitted, changed_form),
+            "{case} changes its node key"
+        );
+        if case == "path" || case == "bound" || case == "unit" {
+            assert_ne!(
+                id_for(&reread_package, "timed_model"),
+                id_for(&admitted, "timed_model"),
+                "{case} propagates to the root key"
+            );
+        }
+
+        expected.metadata = actual.metadata.clone();
+        expected.source.metadata = actual.source.metadata.clone();
+        for (expected, actual) in expected.clock_places.iter_mut().zip(&actual.clock_places) {
+            expected.metadata = actual.metadata.clone();
+        }
+        for (expected, actual) in expected.resets.iter_mut().zip(&actual.resets) {
+            expected.metadata = actual.metadata.clone();
+            expected.place = actual.place.clone();
+        }
+        for (expected, actual) in expected.guards.iter_mut().zip(&actual.guards) {
+            expected.metadata = actual.metadata.clone();
+        }
+        for (expected, actual) in expected.invariants.iter_mut().zip(&actual.invariants) {
+            expected.metadata = actual.metadata.clone();
+        }
+        for (expected, actual) in expected.urgencies.iter_mut().zip(&actual.urgencies) {
+            match (expected, actual) {
+                (
+                    super::timed_model::CheckedUrgency::When { metadata, .. },
+                    super::timed_model::CheckedUrgency::When {
+                        metadata: actual, ..
+                    },
+                )
+                | (
+                    super::timed_model::CheckedUrgency::Operation { metadata, .. },
+                    super::timed_model::CheckedUrgency::Operation {
+                        metadata: actual, ..
+                    },
+                ) => *metadata = actual.clone(),
+                _ => panic!("urgency form is unchanged"),
+            }
+        }
+        for (expected, actual) in expected
+            .normalized_constraints
+            .iter_mut()
+            .zip(&actual.normalized_constraints)
+        {
+            expected.metadata = actual.metadata.clone();
+            expected.place = actual.place.clone();
+        }
+        assert_eq!(actual, &expected, "{case} typed content reads back exactly");
+    }
 }
 
 /// FR-322-AC-120 and AC-124: positive hybrid and timed graph references all
