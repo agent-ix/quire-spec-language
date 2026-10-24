@@ -4,10 +4,10 @@
 //! instantiated attempt in it is, and the access shapes the pre-check
 //! settles `WeakAccessShape`.
 //!
-//! EN-1 instantiates each attempt's read and write footprints per FR-120
-//! transition identity, over every receiver of its receiver type and every
-//! argument vector (FR-155 "State-free"), with the clauses its `contracts`
-//! select (ADR-027 FT-1). A location is shared in an outermost weak
+//! EN-1 instantiates each attempt's read and write footprints per admitted
+//! FR-120 application, over the receivers and argument vectors whose
+//! selected effective preconditions hold, with the clauses its `contracts`
+//! select (ADR-025 MA-1; ADR-027 FT-1). A location is shared in an outermost weak
 //! `parallel` when two attempts in different branches of one `parallel` of
 //! its subtree touch it and one of them writes it, a write meeting what the
 //! other touches (FR-155's `affects`); every other location an attempt
@@ -409,11 +409,13 @@ pub(crate) fn classify(
             name: &attempt.operation,
             receiver: attempt.receiver,
         };
-        let mut instances = Vec::new();
-        for transition in model
-            .attempt_identities(initial, &operation)
-            .map_err(unlisted)?
-        {
+        let selected = |clause| attempt.contracts.contains(&clause);
+        let applications = model
+            .apply_operation(initial, &operation, &selected, &mut model.budget())
+            .map_err(unlisted)?;
+        let mut instances = BTreeMap::new();
+        for applied in applications.successors {
+            let transition = applied.transition;
             let footprint = model
                 .footprint_selecting(&transition, Some(&attempt.contracts))
                 .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;
@@ -423,13 +425,15 @@ pub(crate) fn classify(
                     .filter(|location| !matches!(location, Location::Protocol(_)))
                     .collect()
             };
-            instances.push(Footprinted {
-                transition,
-                reads: model_only(footprint.reads),
-                writes: model_only(footprint.writes),
-            });
+            instances
+                .entry(transition.clone())
+                .or_insert_with(|| Footprinted {
+                    transition,
+                    reads: model_only(footprint.reads),
+                    writes: model_only(footprint.writes),
+                });
         }
-        footprints.insert(*node, instances);
+        footprints.insert(*node, instances.into_values().collect());
     }
 
     // MA-1: two touches in different branches of one `parallel` conflict

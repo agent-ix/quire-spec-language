@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-025 MA-1, MA-5 and TSO-1: what a memory model reads of the model
-//! state. Every application identity of one attempt's operation, state-free
-//! (FR-155), for EN-1's instantiated footprints; and the one cell a field
-//! location names, read and written in place, for a memory model that keeps
-//! a shared location's value apart from the model state.
+//! ADR-025 MA-5 and TSO-1: the one cell a field location names, read and
+//! written in place, for a memory model that keeps a shared location's value
+//! apart from the model state.
 
-use quire_checked::key::DeclarationKey;
-use quire_exact::Value;
-use quire_semantic_value::model_transition::ModelTransition;
-
-use super::application::OperationRef;
-use super::walk::{absent_rows, rows_of, walk_of, Budget, Row};
-use super::{frames, ModelSimState, ModelSystem};
+use super::walk::{absent_rows, rows_of, Row};
+use super::{ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Location;
+use quire_checked::key::DeclarationKey;
+use quire_exact::Value;
 
 /// One field of one object of a model state: the population and key that
 /// hold the object, and the field's declaration key and name.
@@ -64,34 +59,6 @@ impl ModelSimState {
 }
 
 impl ModelSystem<'_> {
-    /// Every FR-120 transition identity of `operation` at `state`, enabled
-    /// or not (FR-155 "State-free"): its application to every object of the
-    /// receiver type the state holds and every one a universe key could name
-    /// that it does not hold yet, to every argument vector.
-    ///
-    /// # Errors
-    ///
-    /// An [`ExpansionStop`] when the state cannot be walked or the identities
-    /// exceed the candidate bound.
-    pub(crate) fn attempt_identities(
-        &self,
-        state: &ModelSimState,
-        operation: &OperationRef<'_>,
-    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
-        let mut walk = walk_of(self, state, None)?;
-        walk.rows.extend(absent_rows(self, state));
-        let mut budget = Budget::new(self.limits.max_candidates);
-        let mut found = Vec::new();
-        for row in &walk.rows {
-            if let Some(application) = self.application_at(row, operation) {
-                frames::identities(&walk, row, application, &mut budget, &mut found)?;
-            }
-        }
-        found.sort();
-        found.dedup();
-        Ok(found)
-    }
-
     /// The cell the field location `location` names at `state`: the object
     /// the state holds, or a universe key could name, with that reference.
     /// `None` for a location that is not one object's field, or whose object

@@ -106,6 +106,14 @@ impl Case {
         }
     }
 
+    /// The unit with `body`, `SB` over one of `x`, `y` or `z` in the cells
+    /// population.
+    fn over_cells(body: &str, object: &str) -> Self {
+        let mut case = Self::over_object(body, "cells", object, false);
+        case.documents = Documents::with_cells(&["x", "y", "z"]);
+        case
+    }
+
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
         let mut subject = self.documents.subject(&self.checked, "SB", selection);
         if let Some(over) = &self.over {
@@ -818,12 +826,8 @@ fn sb_with_event(event: &str) -> String {
 /// `z.v` is admitted under `tso`, and so is a `finish` that reads `x.v`
 /// after the `join`.
 ///
-/// The AC's unaccessed `z` is "a `Cell` `z` that no attempt accesses". Under
-/// EN-1 instantiation every `Cell::set` attempt is instantiated on every
-/// `Cell` of the universe, so a `Cell` `z` is always written and shared.
-/// This test realises the AC's intent, a reader of a location nothing
-/// writes is admitted, with a `Spare` object `z` that no attempt's operation
-/// touches, not its letter. QSL-1040 asks for the spec ruling.
+/// The `Cell` `z` has an immutable `id` no selected attempt precondition
+/// admits, so its field is not part of any enabled attempt footprint.
 #[trace("TC-665", "FR-220-AC-15")]
 #[test]
 fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
@@ -885,13 +889,9 @@ fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
         .collect();
     assert_eq!(shared, BTreeSet::from([name("x", "v")]));
 
-    // A cell no attempt accesses is not shared with the reader.
-    let read_z = Case::over_object(
-        &object_unit("Spare", &sb_with_event(SEEN), "{ d }"),
-        "spares",
-        "z",
-        true,
-    );
+    // The actual `Cell` z that no selected attempt accesses is not shared
+    // with the reader.
+    let read_z = Case::over_cells(&object_unit("Cell", &sb_with_event(SEEN), "{ d }"), "z");
     assert!(read_z
         .accesses(&tso)
         .node_reads("Both/right/R/Seen")
