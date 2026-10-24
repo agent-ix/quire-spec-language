@@ -34,6 +34,7 @@ use qsl_replay::{check_closure, CertificateRequest, ClosureCertificate, ClosureR
 use qsl_replay::{CounterexampleKind, ModelCheckItem, ModelCheckLimits};
 use qsl_replay::{ModelCheckOutcome, UndecidedCause};
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
+use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
 use qsl_semantics::model::key::hex;
@@ -828,6 +829,25 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
         ],
     );
     let bounded = || universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
+    // S3 admits the clause with both overlapping populations: it checks, and
+    // its requirement record names each population as a domain.
+    let package = world.formula("Dog", "always holds(true)");
+    assert_eq!(package.graph().temporal_clauses().len(), 1);
+    let populations = package
+        .graph()
+        .requirements()
+        .values()
+        .filter_map(|record| match record.requirements().extent() {
+            ClaimExtent::Unbounded(domains) => Some(
+                domains
+                    .iter()
+                    .filter(|(_, kind)| *kind == DomainKind::Population)
+                    .count(),
+            ),
+            ClaimExtent::Bounded => None,
+        })
+        .sum::<usize>();
+    assert_eq!(populations, 2);
     let instances = world.instances("Dog", bounded()).expect("bounded");
     assert_eq!(
         instances,
@@ -926,6 +946,12 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
         cats.instances("Dog", only()).expect("bounded"),
         vec![instance("animals", "t")]
     );
+    // The run settles on the instance's undefined read, never `NoInstance`.
+    assert!(matches!(
+        cats.run_formula("Dog", "always holds(x.age >= 0)", only())
+            .expect("checked"),
+        ModelCheckOutcome::Violated { .. }
+    ));
 }
 
 /// `ModelSystem::clause_letters` refuses a clause whose `over` parameter is

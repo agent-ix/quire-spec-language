@@ -37,6 +37,10 @@ pub enum LettersRefusal {
     /// clause has no instance (FR-125 Instancing).
     #[error("the clause's `over` parameter is not an object reference")]
     OverNotReference,
+    /// The `over` parameter's object type is declared by no model of the
+    /// subject, so no reference to an object of it can be formed.
+    #[error("the clause's `over` object type is declared by no model of the subject")]
+    OverTypeUndeclared,
 }
 
 /// The `holds` atoms of one checked temporal clause, read at the states of a
@@ -55,6 +59,8 @@ pub struct ClauseLetters<'s, 'a> {
     system: &'s ModelSystem<'a>,
     node: &'s TemporalClauseNode,
     parameter: EffectiveId,
+    /// The declaration key of the parameter's object type.
+    type_key: DeclarationKey,
     overlapping: BTreeSet<DeclarationKey>,
 }
 
@@ -67,7 +73,9 @@ impl<'a> ModelSystem<'a> {
     /// # Errors
     ///
     /// [`LettersRefusal::OverNotReference`] when the clause's `over`
-    /// parameter is not an object reference. An emitted clause activates
+    /// parameter is not an object reference, and
+    /// [`LettersRefusal::OverTypeUndeclared`] when no model of the subject
+    /// declares its type. An emitted clause activates
     /// `on origin` (FR-337), so it has no `when` condition to read
     /// (Remaining work: QSL-898).
     pub fn clause_letters<'s>(
@@ -77,10 +85,16 @@ impl<'a> ModelSystem<'a> {
         let ValueType::Reference(parameter) = node.clause().over().1 else {
             return Err(LettersRefusal::OverNotReference);
         };
+        let type_key = self
+            .model
+            .type_key(parameter)
+            .cloned()
+            .ok_or(LettersRefusal::OverTypeUndeclared)?;
         Ok(ClauseLetters {
             system: self,
             node,
             parameter,
+            type_key,
             overlapping: self
                 .populations
                 .iter()
@@ -129,17 +143,18 @@ impl ClauseLetters<'_, '_> {
 impl ClauseLetters<'_, '_> {
     /// The reference of the parameter's type under `instance`'s key, which no
     /// object of the state need hold.
+    ///
+    /// # Panics
+    ///
+    /// When the model refuses a reference under the key (an empty key), which
+    /// the subject's admission refuses before it forms an instance.
     fn key_reference(&self, instance: &ModelInstance) -> ObjectReference {
         self.system
             .model
-            .type_key(self.parameter)
-            .and_then(|type_key| {
-                self.system
-                    .model
-                    .object_reference(type_key, &instance.key)
-                    .ok()
+            .object_reference(&self.type_key, &instance.key)
+            .unwrap_or_else(|refusal| {
+                panic!("QSL-1039: an instance's key names a reference: {refusal:?}")
             })
-            .unwrap_or_else(|| panic!("QSL-1039: the parameter's type is an object type"))
     }
 }
 
@@ -147,7 +162,8 @@ impl ModelLetters for ClauseLetters<'_, '_> {
     /// # Panics
     ///
     /// When `atom` is no `holds` atom of the clause, when `state` is no
-    /// state of the system, or when the evaluation faults, is refused or
+    /// state of the system, when `instance` is no instance of the system
+    /// (its key names no reference), or when the evaluation faults, is refused or
     /// completes no Boolean: the seam has no channel for them (QSL-1039),
     /// and none is a reading.
     fn atom(

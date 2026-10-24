@@ -354,6 +354,10 @@ impl TemporalClaim {
     /// maximum, in ascending declaration order (FR-125 Instancing: several may
     /// cover the type). The key of each is
     /// [`CheckedGraph::population_key`](crate::check::CheckedGraph::population_key).
+    ///
+    /// A population whose member type is a subtype of the `over` type
+    /// overlaps it but is not listed here (a QSL-1038 review follow-up
+    /// ticket owns that gap).
     pub fn populations(&self) -> &[PopulationDomain] {
         &self.populations
     }

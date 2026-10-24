@@ -635,9 +635,10 @@ pub(crate) struct Machine<'a, 'm> {
     /// read through it is `absent-key` undefined, except the reference
     /// operand of a `lookup` (the guard).
     absent_parameter: Option<AbsentParameter>,
-    /// The `lookup` reference operands that read the absent parameter as the
-    /// guard, by location.
-    guard_operands: std::collections::BTreeSet<Location>,
+    /// The claim body's `lookup` reference operands that read the absent
+    /// parameter as the guard, by node id. A guard reached through a `let`
+    /// alias or a helper is not recognised (QSL-1038 follow-up tickets).
+    guard_operands: std::collections::BTreeSet<NodeId>,
 }
 
 /// The `over` parameter of a claim at a key with no conforming object.
@@ -1330,10 +1331,12 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
-        if let NodeKind::Lookup { reference, .. } = node.kind() {
+        if let (NodeKind::Lookup { reference, .. }, 1, true) =
+            (node.kind(), self.frames.len(), self.imported.is_empty())
+        {
             let operand = node.at(*reference);
             if matches!(operand.kind(), NodeKind::Local(_)) {
-                self.guard_operands.insert(operand.location().clone());
+                self.guard_operands.insert(operand.id());
             }
         }
         match node.kind() {
@@ -1349,7 +1352,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 {
                     if absent_slot == *slot
                         && self.frames.len() == 1
-                        && !self.guard_operands.contains(node.location())
+                        && !self.guard_operands.contains(&node.id())
                     {
                         let key = match self.slot(*slot)?.as_ref() {
                             Some(Value::Reference(reference)) => {

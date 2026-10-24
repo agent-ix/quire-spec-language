@@ -169,6 +169,22 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
         })
         .collect();
     assert_eq!(claim.populations().len(), 2);
+    // The production record the checker keys for the clause names each
+    // population as its own domain.
+    let [production] = graph
+        .requirements()
+        .values()
+        .filter(|record| record.requirements().kind() == Capability::TemporalSatisfaction)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap_or_else(|records: Vec<_>| panic!("one clause record: {}", records.len()));
+    let ClaimExtent::Unbounded(produced) = production.requirements().extent() else {
+        panic!("unbounded: {:?}", production.requirements().extent());
+    };
+    for key in &keys {
+        assert_eq!(produced.kind(key), Some(DomainKind::Population));
+    }
+    assert_ne!(keys[0], keys[1]);
     let record = claim
         .requirements(
             WireNodeId::from_digest([1; 32]),
