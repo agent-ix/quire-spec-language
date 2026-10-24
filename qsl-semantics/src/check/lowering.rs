@@ -4835,11 +4835,13 @@ fn takes_inline_integer_literals(identity: &str) -> bool {
     )
 }
 
-#[cfg(test)]
-mod tests;
-
-/// `#[string_edge]`: whether written source text is a `::`-qualified name.
+/// Whether written source text spells a `::`-qualified name. `#[string_edge]`:
+/// the qualified spelling is read from source text here until the typed name
+/// form of QSL-1042 replaces it.
 #[ix_trace_rs::string_edge]
-pub(in crate::check) fn is_qualified_name(name: &str) -> bool {
+pub(in crate::check) fn is_qualified_spelling(name: &str) -> bool {
     name.contains("::")
 }
+
+#[cfg(test)]
+mod tests;
