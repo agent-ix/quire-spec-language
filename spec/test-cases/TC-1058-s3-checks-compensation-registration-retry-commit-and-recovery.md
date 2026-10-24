@@ -58,6 +58,7 @@ members.
 | 19b | row 19a with `join any [a, b]` | checks: the `join any [a, b]` requires neither branch, so the `parallel` passes no commit |
 | 19c | row 19a with `join any [a]` and with `quorum(2) [a, b]` | each refuses as row 19a: the join requires `a` |
 | 19d | row 19a with `quorum(1) [a, b]` | checks: the join requires neither branch |
+| 19f | row 19a with `function P using v(a: Boolean, b: Boolean): Boolean pure { a or b }` in the unit and `join predicate(P) [a, b]` | checks: `P` can settle when `b` completes without `a`, so the commit in branch `a` does not dominate the later effect |
 | 19e | `attempt Tried`, then `repeat Again by Service visible (attempted.ready) max 2 while { attempted.ready } sequence Body { commit Committed by Service as (committed: M::Flag) { committed.ready }; event Beat by Service as (beat: M::Flag) { true }; } exhausted check Out using P { true };`, then `effect Applied` after the repeat; the template's `commit` is `Main::Again::Body::Committed` | checks: S3 treats every `repeat` as skippable whatever its guard, so the guard `attempted.ready`, which is not constant, is not what admits it |
 | 20 | the commit in `parallel` branch `a` and the effect in branch `b` | checks: no `sequence` orders the two branches |
 | 20a | `choice Pick` with the effect after the `choice`, `Pick` holding `case yes` holding `commit Committed` and `case no` holding a `check` | checks: the commit lies in one case and does not dominate the effect |

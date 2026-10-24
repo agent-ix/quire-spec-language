@@ -88,7 +88,7 @@ fn policy_holds(policy: &CheckedJoinPolicy, joined: usize, completed: usize) -> 
             u64::try_from(completed).is_ok_and(|done| done >= *count)
         }
         // Refused before any state is built.
-        CheckedJoinPolicy::Predicate => false,
+        CheckedJoinPolicy::Predicate { .. } => false,
     }
 }
 
