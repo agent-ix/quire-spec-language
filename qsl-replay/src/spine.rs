@@ -719,6 +719,30 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `{site}` names a `{actual}`, not {}",
                     admitted.join(" or ")
                 ),
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel, function, ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, but no function declaration resolves"
+                ),
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel,
+                    function,
+                    kind,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, which resolves to a `{kind}`, not a function"
+                ),
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel,
+                    function,
+                    expected_parameters,
+                    actual_parameters,
+                    expected_result,
+                    actual_result,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}` with signature {actual_parameters:?} -> {actual_result:?}; expected {expected_parameters:?} -> {expected_result:?}"
+                ),
                 ProtocolAnchorCause::ChannelMismatch {
                     receive_channel,
                     send_channel,
@@ -1586,12 +1610,64 @@ mod wide_integer_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
+    use super::{
+        check_message, compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits,
+        SpineStage,
+    };
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
+    use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolAnchorCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::ValueType;
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    #[trace("TC-1065", "FR-218-AC-31")]
+    #[test]
+    fn predicate_join_refusal_messages_name_each_function_failure() {
+        let span = super::Span { start: 0, end: 0 };
+        let cases = [
+            (
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, but no function declaration resolves",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    kind: "predicate",
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, which resolves to a `predicate`, not a function",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    expected_parameters: vec![ValueType::Boolean, ValueType::Boolean].into_boxed_slice(),
+                    actual_parameters: Vec::new().into_boxed_slice(),
+                    expected_result: Box::new(ValueType::Boolean),
+                    actual_result: Box::new(ValueType::Boolean),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done` with signature [] -> Boolean; expected [Boolean, Boolean] -> Boolean",
+            ),
+        ];
+
+        for (cause, expected) in cases {
+            let refusal = CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::ProtocolAnchor(Box::new(cause)),
+            };
+            let message = check_message(&[refusal]);
+            assert!(message.ends_with(expected), "{message}");
+        }
+    }
 
     /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on
     /// `not not not true`, after `g`'s one node, under a node limit of 4

@@ -2982,10 +2982,7 @@ impl PackageDeclarations {
         );
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
-        for protocol_index in 0..self.protocols.len() {
-            let Some(checked_index) = protocol_places[protocol_index] else {
-                continue;
-            };
+        for checked_index in protocol_places.iter().flatten().copied() {
             let Some(checked) = checked_protocols.get_mut(checked_index) else {
                 return Err(vec![CheckRefusal {
                     location: root(Origin::Expression),
