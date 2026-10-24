@@ -207,10 +207,10 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
     *package_input([document]).keys().next().expect("one model")
 }
 
-/// The contracts: `IsX`/`IsY` select a cell, `StoreOne` stores 1,
+/// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreOne` stores 1,
 /// `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
-/// `BothOne` stores 1 to `v` and `w`; `ReadsX<n>`/`ReadsY<n>` select the cell
+/// `BothOne` stores 1 to `v` and `w`; `ReadsX<n>`/`ReadsY<n>`/`ReadsZ<n>` select the cell
 /// register `n` loads, `Read<n>` loads its `v` and `ReadW` loads `w`.
 pub(crate) fn contracts() -> String {
     let mut text = String::from(
@@ -219,6 +219,7 @@ pub(crate) fn contracts() -> String {
          post StoreOne using v on M::Cell::set { self.v = 1 }\n\
          post StoreTwo using v on M::Cell::set { self.v = 2 }\n\
          post StoreThree using v on M::Cell::set { self.v = 3 }\n\
+         pre IsZ using v on M::Cell::set { self.id = 2 }\n\
          pre IsXw using v on M::Cell::setw { self.id = 0 }\n\
          post FlagOne using v on M::Cell::setw { self.w = 1 }\n\
          pre AddX using v on M::Cell::add { self.id = 0 and self.v < 3 }\n\
@@ -230,6 +231,7 @@ pub(crate) fn contracts() -> String {
         text.push_str(&format!(
             "pre ReadsX{register} using v on M::Core::read{register} {{ c.id = 0 }}\n\
              pre ReadsY{register} using v on M::Core::read{register} {{ c.id = 1 }}\n\
+             pre ReadsZ{register} using v on M::Core::read{register} {{ c.id = 2 }}\n\
              post Read{register} using v on M::Core::read{register} {{ self.r{register} = pre(c.v) }}\n\
              post ReadFlag{register} using v on M::Core::read{register} {{ self.r{register} = pre(c.w) }}\n"
         ));
@@ -357,6 +359,7 @@ pub(crate) fn sb_unit(run: &str) -> String {
 
 /// A subject's documents: the domain package and the snapshot.
 pub(crate) struct Documents {
+    pub(crate) cells: Vec<&'static str>,
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: DocumentRef,
@@ -368,24 +371,33 @@ impl Documents {
     /// Cells `x` (`id` 0) and `y` (`id` 1) at `v = w = 0`, and `core` with
     /// every register at 3, "not yet read".
     pub(crate) fn new() -> Self {
-        Self::build(false)
+        Self::build(&["x", "y"], false)
+    }
+
+    /// [`Self::new`] with the cells `cells` (`x`, `y`, `z` in `id` order 0, 1, 2).
+    pub(crate) fn with_cells(cells: &[&'static str]) -> Self {
+        Self::build(cells, false)
     }
 
     /// [`Self::new`] with the `Spare` object `z`, which no operation touches,
     /// in the universe.
     pub(crate) fn with_spare_cell() -> Self {
-        Self::build(true)
+        Self::build(&["x", "y"], true)
     }
 
-    fn build(spare: bool) -> Self {
+    fn build(cells: &[&'static str], spare: bool) -> Self {
         let int = |value: i64| json!({"integer": value.to_string()});
         let cell = |key: &str, id: i64| {
             json!({"key": key, "type": ident("Cell"),
                 "fields": {"id": int(id), "v": int(0), "w": int(0)}})
         };
+        let objects: Vec<Json> = cells
+            .iter()
+            .zip(0..)
+            .map(|(name, id)| cell(name, id))
+            .collect();
         let header = json!({"identity": PACKAGE, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&document_digest(&document())))});
-        let cells = vec![cell("x", 0), cell("y", 1)];
         let spares: Vec<Json> = if spare {
             vec![json!({"key": "z", "type": ident("Spare"),
                 "fields": {"v": int(0)}})]
@@ -401,7 +413,7 @@ impl Documents {
             "populations": [
                 {"population": ident("spares"), "complete": true, "objects": spares},
                 {"population": ident("cells"), "complete": true,
-                    "objects": cells},
+                    "objects": objects},
                 {"population": ident("cores"), "complete": true,
                     "objects": [{"key": "core", "type": ident("Core"),
                         "fields": {"r1": int(3), "r2": int(3), "r3": int(3),
@@ -414,6 +426,7 @@ impl Documents {
             .expect("canonical fixture")
             .as_bytes();
         Self {
+            cells: cells.to_vec(),
             packages: package_input([document().as_slice()]),
             snapshots: BTreeMap::from([(digest, bytes)]),
             initial: DocumentRef {
@@ -427,20 +440,17 @@ impl Documents {
         }
     }
 
-    /// The universes: `cells` `{x, y}`, `cores` `{core}`.
-    pub(crate) fn universes() -> Vec<PopulationUniverse> {
-        Self::universes_of(false)
-    }
-
-    fn universes_of(spare: bool) -> Vec<PopulationUniverse> {
+    /// The universes: `cells` the cells of the snapshot, `spares` the spare
+    /// object if present, `cores` `{core}`.
+    pub(crate) fn universes(&self) -> Vec<PopulationUniverse> {
         vec![
             PopulationUniverse {
                 population: key("cells"),
-                keys: vec!["x".to_owned(), "y".to_owned()],
+                keys: self.cells.iter().map(|name| (*name).to_owned()).collect(),
             },
             PopulationUniverse {
                 population: key("spares"),
-                keys: if spare {
+                keys: if self.spare {
                     vec!["z".to_owned()]
                 } else {
                     Vec::new()
@@ -470,7 +480,7 @@ impl Documents {
                     normalization: ModelNormalizationLimits::default(),
                     snapshots: &self.snapshots,
                     initial: vec![self.initial.clone()],
-                    universes: Self::universes_of(self.spare),
+                    universes: self.universes(),
                     observation: ObservationLimits::default(),
                     expansion: ExpansionLimits {
                         max_candidates: 1_000_000,
