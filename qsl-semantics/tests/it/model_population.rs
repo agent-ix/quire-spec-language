@@ -12,7 +12,7 @@
 //! reference equality/upcast) and L10/L11 (`reaches`/`deref`, FR-043's graph
 //! navigation) stay out of this rung's scope.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
@@ -23,16 +23,18 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
+use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::EffectiveId;
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome, OfferedSelection,
 };
 use qsl_semantics::model::population::{
-    admit_binding, admit_invocation, admit_invocation_bound, all_instances, lookup,
+    admit_binding, admit_invocation, admit_invocation_bound, all_instances, decide_frame, lookup,
     AdmissionChargePoint, AdmissionIncomplete, AdmissionLimitKind, AdmissionMeter,
-    AdmissionOutcome, AllInstancesOutcome, InvocationBinding, InvocationContext, InvocationDelta,
-    LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
-    PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    AdmissionOutcome, AllInstancesOutcome, FrameCharge, FrameDecision, FrameDelta, FrameObject,
+    FrameStop, InvocationBinding, InvocationContext, InvocationDelta, LookupKey, LookupOutcome,
+    MemberFieldValues, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
@@ -4893,5 +4895,89 @@ fn a_scoped_deletes_entry_grants_the_receiver_or_the_argument_only() {
             matches!(run(&type_wide, gone), AdmissionOutcome::Admitted(_)),
             "a type-wide entry grants any subset: {gone:?}"
         );
+    }
+}
+
+/// FR-154-AC-2 (TC-572 step 2): `decide_frame` over the `Counter` package
+/// with `c1` and `c2` at `value` 0 and a post with `c2.value` 1. Under
+/// `modifies self.value` receiver `c1` is refused `frame_violation`
+/// /`unauthorized-change` naming `c2` and `value`, and receiver `c2` returns
+/// a `FrameDelta` with empty `created` and `deleted`; under `modifies value`
+/// both receivers return a `FrameDelta`.
+#[test]
+#[trace("TC-572", "FR-154-AC-2")]
+fn decide_frame_scopes_a_modifies_entry_to_the_receiver() {
+    let counter = DeclarationKey::fixture("model.Counter");
+    let value = DeclarationKey::fixture("model.Counter.value");
+    let index = ModelIndex::build(DomainPackage::new(
+        DomainPackageRef::fixture("bundle.counter"),
+        vec![
+            object_type("model.Counter", vec![]),
+            field_member("model.Counter.value", "model.Counter", "model.Counter"),
+        ],
+    ));
+    let state = |c2_value: i64| -> Vec<FrameObject<'static, i64>> {
+        [("c1", 0), ("c2", c2_value)]
+            .into_iter()
+            .map(|(object, field)| FrameObject {
+                object,
+                type_identity: counter.clone(),
+                fields: BTreeMap::from([(value.clone(), field)]),
+            })
+            .collect()
+    };
+    let decide = |effect: &OperationEffect, receiver: &str| {
+        decide_frame(
+            &FrameDecision {
+                index: &index,
+                ancestor_steps: 64,
+                effect,
+                declared_created: &[],
+                declared_deleted: &[],
+                receiver: Some(receiver),
+                arguments: &[],
+            },
+            &state(0),
+            &state(1),
+            |_, before, after| before == after,
+            &mut |_: FrameCharge| Ok::<(), std::convert::Infallible>(()),
+        )
+        .map_err(|stop| match stop {
+            FrameStop::Refused(refusal) => Box::new(refusal),
+            FrameStop::Denied(never) => match never {},
+        })
+    };
+    let empty = |delta: FrameDelta| (delta.created.is_empty(), delta.deleted.is_empty());
+
+    let own = OperationEffect {
+        receiver_modifies: vec![value.clone()],
+        ..Default::default()
+    };
+    let Err(refusal) = decide(&own, "c1") else {
+        panic!("a write to c2.value is outside `modifies self.value` on c1");
+    };
+    assert_eq!(refusal.code, Code::FrameViolation);
+    assert_eq!(refusal.cause.as_str(), "unauthorized-change");
+    assert_eq!(
+        refusal.cause,
+        ModelRefusalCause::FrameFieldWriteOutsideGrant {
+            object: "c2".to_owned(),
+            field: value.clone(),
+        }
+    );
+    let Ok(delta) = decide(&own, "c2") else {
+        panic!("the receiver c2 may write its own value");
+    };
+    assert_eq!(empty(delta), (true, true));
+
+    let every = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.Counter.value")],
+        ..Default::default()
+    };
+    for receiver in ["c1", "c2"] {
+        let Ok(delta) = decide(&every, receiver) else {
+            panic!("`modifies value` grants the write for receiver {receiver}");
+        };
+        assert_eq!(empty(delta), (true, true), "receiver {receiver}");
     }
 }
