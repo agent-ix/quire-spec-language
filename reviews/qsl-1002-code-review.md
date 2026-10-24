@@ -74,3 +74,19 @@ low.
 | FND-002 | medium | Budget members are typed `PositiveCount` (backend-provider-v1 schema: integer 1..9007199254740991; FR-331 invalid-value for a count outside 0..2^53-1). However, `read_hybrid` admits any u64, and `from_request` admits any u64 step count and any rounded time that fits u64. Both readers then admit out-of-domain values, and `hybrid_member` writes them to the wire. The reader should refuse values above 2^53-1, and the writer should refuse them before writing. | qsl-replay/src/hybrid.rs:478-507, 570-580 |
 | FND-003 | low | `BudgetRefusal` variants misname causes. A negative wire value (`-1`) is refused `NotAWholeNumber` instead of `NotPositive`. A whole value past u64, from either `round_up_seconds` or the reader, is refused `NotAWholeNumber` although it is whole (the doc's "or exceeds 64 bits" is a separate cause). | qsl-replay/src/hybrid.rs:465, 506, 577 |
 | FND-004 | low | `object["limits"]` uses serde_json `Map` indexing, which panics on a missing key. It is safe only because the preceding non-empty and all-keys-equal-"limits" checks hold. `object.get("limits")` folded into the `EmptyOrMalformed` path removes the panic site. | qsl-replay/src/hybrid.rs:561 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | `wire_count` refuses every finite, whole-valued float literal as `OutOfDomain` when it is positive, including in-range non-canonical spellings such as `2.0` or `1e2`. The refusal is still made before consumption, as FR-193 requires for a non-canonical value, but the cause wrongly says "above 2^53-1". A probe test of `{"limits": {"max_solver_time": 2.0}}` returned `Err(OutOfDomain("max_solver_time"))`. Only a float above `MAX_COUNT` should be `OutOfDomain`; any other float should be `NotAWholeNumber`. | qsl-replay/src/hybrid.rs:610-619 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (bba4e0735): `read_hybrid` is marked `#[ix_trace_rs::string_edge]`, and `xtask string-edge` reports 0 rows. This is a legitimate ADR-012 §9 edge, unlike #1426. No typed `hybrid.limits` vocabulary exists in QSL or its dependencies. `read_hybrid` is the one total conversion from wire member names to the typed `SolverBudget`, or to a typed `BudgetRefusal` that names the member. No later code compares these strings. A serde struct with `deny_unknown_fields` would be an alternative, but it is not required. |
+| FND-002 | fixed | Round 1 (bba4e0735): `MAX_COUNT = 2^53-1`. `from_request` refuses steps above it and a rounded time above it, and `wire_count` refuses wire counts above it, each as `OutOfDomain`. A new test covers max, max+1, a value past u64, and 2^53-1 plus a fraction rounding up past the maximum. |
+| FND-003 | fixed | Round 1 (bba4e0735): a negative integer is now `NotPositive`, and a value past u64 or above 2^53-1 is `OutOfDomain`. `NotAWholeNumber` is reserved for non-whole values. The float residue is FND-005. |
+| FND-004 | fixed | Round 1 (bba4e0735): `object.get("limits").and_then(serde_json::Value::as_object)` now feeds the `EmptyOrMalformed("hybrid.limits")` path, so no index panic site remains. |
+| FND-005 | still-open | Found in round 1 at bba4e0735 and not yet fixed. It needs the coder to change the float branch at hybrid.rs:610-619 so that only a value above MAX_COUNT is OutOfDomain, and to add a `2.0` assertion. Alternatively the lead may record it deferred, since it is low and the value is still refused. |

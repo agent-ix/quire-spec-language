@@ -611,8 +611,10 @@ impl SolverBudget {
             Some(float) if float.is_finite() && float.fract() == 0.0 => {
                 if float <= 0.0 {
                     Err(BudgetRefusal::NotPositive(name))
-                } else {
+                } else if float > MAX_COUNT as f64 {
                     Err(BudgetRefusal::OutOfDomain(name))
+                } else {
+                    Err(BudgetRefusal::NotAWholeNumber(name))
                 }
             }
             _ => Err(BudgetRefusal::NotAWholeNumber(name)),
@@ -1167,6 +1169,17 @@ mod tests {
         );
         assert_eq!(
             read(serde_json::from_str("100000000000000000000").expect("json")),
+            Err(BudgetRefusal::OutOfDomain("max_solver_steps"))
+        );
+        for float in ["2.0", "1e2"] {
+            assert_eq!(
+                read(serde_json::from_str(float).expect("json")),
+                Err(BudgetRefusal::NotAWholeNumber("max_solver_steps")),
+                "{float}"
+            );
+        }
+        assert_eq!(
+            read(serde_json::from_str("1e20").expect("json")),
             Err(BudgetRefusal::OutOfDomain("max_solver_steps"))
         );
         assert_eq!(
