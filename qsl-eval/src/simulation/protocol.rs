@@ -736,6 +736,7 @@ pub fn classify_accesses(
         &governing,
         model.initial().first(),
         &over,
+        access::ClassificationMode::Enabled,
     )
 }
 
@@ -749,8 +750,11 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     /// The model governing each `parallel`: its outermost `parallel`'s
     /// resolved model (FR-219, ADR-025 MM-3).
     governing: BTreeMap<qsl_semantics::check::ProtocolNodeId, qsl_foundation::MemoryModelName>,
-    /// EN-1's classification of the attempts of every weak `parallel`
-    /// (FR-220).
+    /// EN-1's initial enabled-footprint classification of the attempts of
+    /// every weak `parallel` (FR-220).
+    enabled: WeakAccesses,
+    /// EN-1's potential footprints, used to reserve memory backing for
+    /// operations that may become enabled (ADR-025 MA-1).
     weak: WeakAccesses,
     /// The `over` parameter's bound value.
     over: Value,
@@ -856,6 +860,18 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             )));
         }
         let program = Program::new(protocol)?;
+        let enabled = access::classify(
+            &model,
+            protocol,
+            &program,
+            &governing,
+            model.initial().first(),
+            &over,
+            access::ClassificationMode::Enabled,
+        )?;
+        if let Some(shape) = enabled.first_shape() {
+            return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
+        }
         let weak = access::classify(
             &model,
             protocol,
@@ -863,10 +879,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &governing,
             model.initial().first(),
             &over,
+            access::ClassificationMode::Potential,
         )?;
-        if let Some(shape) = weak.first_shape() {
-            return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
-        }
         let mut system = Self {
             model,
             package,
@@ -875,6 +889,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             memory,
             governing,
             weak,
+            enabled,
             over,
             roles,
             universes: Vec::new(),
@@ -993,7 +1008,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// EN-1's sharing and classification of the attempts of every weak
     /// `parallel` (FR-220).
     pub fn weak_accesses(&self) -> &WeakAccesses {
-        &self.weak
+        &self.enabled
     }
 
     /// The live threads of `state`, by instance and path.
