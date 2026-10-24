@@ -131,7 +131,7 @@ pub fn check_single_existential(
     }
     let seed = request.seed.unwrap_or(DEFAULT_WITNESS_SEED);
     let budgets = Budgets {
-        meter: request.subject.simulation.meter.work_units,
+        meter: request.subject.simulation.meter,
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -537,10 +537,22 @@ impl<'a> Run<'_, 'a> {
             TemporalOutcome::Violated { .. } | TemporalOutcome::Undefined(_) => {
                 return Ok(Ok(None))
             }
-            TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
+            TemporalOutcome::Incomplete(incomplete) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
                     stopped(
-                        ModelCheckLimit::EvaluationMeter,
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
+                        incomplete.limit,
+                    )
+                })));
+            }
+            TemporalOutcome::WindowLimitReached(_) => {
+                return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
+                    stopped(
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: quire_exact::LimitKind::WorkUnits,
+                        },
                         self.request.meter.work_units,
                     )
                 })));
@@ -726,9 +738,9 @@ impl<'a> Run<'_, 'a> {
             .ok_or_else(|| fault("a-stopped-expansion-recorded-its-halt"))?;
         let halt = match halt {
             ProductHalt::Expansion { stop, .. } => expansion_stop(&stop, self.budgets)?,
-            ProductHalt::Meter => stopped(
-                ModelCheckLimit::EvaluationMeter,
-                self.request.meter.work_units,
+            ProductHalt::Meter(counter) => stopped(
+                ModelCheckLimit::EvaluationMeter { counter },
+                qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             ProductHalt::Cancelled(source) => Halt {
                 cause: IncompleteCause::Cancelled { source },
