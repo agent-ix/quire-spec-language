@@ -85,7 +85,9 @@ introduced.
 
 ## Verdict
 
-**APPROVED.** The three new tags are complete against their AC text on main,
+**APPROVED (round 1).** Round 1 fixes FND-001: QSL-984 now has `related` relations to QSL-891 and QSL-1043, and stays open for them. At bd0e05f05 the matrix bindings are unchanged: no trace attribute or doc-comment AC id changed since f909c7201.
+
+Round 0: **APPROVED.** The three new tags are complete against their AC text on main,
 and two of them are red-checked. The two ACs the PR does not cover are
 correctly left untagged and are tracked in tickets. One low process finding
 remains.
@@ -95,3 +97,9 @@ remains.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | QSL-984's title and Work list still name FR-125-AC-7 and FR-127-AC-7, but the ticket has no Linear relation to QSL-1043 (FR-127-AC-7) or to QSL-891 (the FR-125-AC-7 tag follow-up, which is only a free-text comment there). If QSL-984 closes when this PR merges, ix-board's structured data loses both follow-ups. Add `related` relations (QSL-984 to QSL-1043 and to QSL-891), and narrow the ticket title or record the hand-off before closing. | QSL-984; QSL-891; QSL-1043 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: `linear issue relation list QSL-984` shows QSL-984 related QSL-891 and QSL-984 related QSL-1043. The ticket stays open for FR-125-AC-7 and FR-127-AC-7. |

@@ -47,7 +47,9 @@ needs. No unsafe code, no unbounded loop (`behaviour_values` asserts
 
 ## Verdict
 
-**APPROVED.** All three findings are low. Each one is a redundant or
+**APPROVED (round 1).** Round 1 at bd0e05f05 fixes FND-001, FND-002 and FND-003. fmt and clippy are clean, and `cargo test -p qsl-analyze --test it` gives 739 passed. The red check makes `ProductTransition::Model` encode as `terminal-stutter`, and the new canonical-bytes `assert_ne!` then fails at liveness.rs:1018.
+
+Round 0: **APPROVED.** All three findings are low. Each one is a redundant or
 type-implied assertion, or a harness-fidelity note, and none of them makes a
 tag overclaim. The tagged tests assert the behaviour that their ACs name, and
 the red checks confirm that they fail when that behaviour is removed.
@@ -59,3 +61,11 @@ the red checks confirm that they fail when that behaviour is removed.
 | FND-001 | low | `assert_ne!(stutter, ProductTransition::Model(inc))` follows `assert_eq!(stutter, ProductTransition::TerminalStutter)`. Distinct enum variants are never equal, so the assertion cannot fail, and FR-125-AC-1's "transition identity differs from every `inc` identity" clause is carried by the type, not by a behavioural check. Drop the loop, or compare the written identities (the `ProductTransition` writer emits `terminal-stutter` against each `inc` identity's text). | qsl-analyze/tests/it/liveness.rs:1010-1012 |
 | FND-002 | low | `hints.iter().all(granularity != Whole)` is implied by the earlier `hints.len() == 1` and `granularity() == Each` asserts, so it cannot fail on its own. FR-133-AC-5's "no hint for the held `Whole` constraint" is still asserted by those two lines. The extra assertion is redundant and adds no evidence. | qsl-analyze/tests/it/strong_hint.rs:330-336 |
 | FND-003 | low | `evaluated()`'s `Positions` reader ignores the atom's `FormulaNodeId` and reads each position through a test closure (`is_at_most_three`, `is_three`, `is_zero`). So the clause's atom text (`c.value <= 3`, `c.value = 3`, `c.value = 0`) is never evaluated, and pairing a clause with the wrong closure would still pass. This is the repo's existing `decide(atom)` harness pattern, and FR-125-AC-2 is about profile semantics, so the tag stands. The doc comment could still say that the atoms are supplied by the test. | qsl-analyze/tests/it/liveness.rs:822-860 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (bd0e05f05): the loop now compares the canonical written bytes (`quire_canonical::to_vec`) of the stutter against each `inc` identity. A red check that makes `Model` encode as `terminal-stutter` fails it at liveness.rs:1018. |
+| FND-002 | fixed | Round 1 (bd0e05f05): the redundant `all(granularity != Whole)` assert is removed. `hints.len() == 1` and `granularity() == Each` still assert AC-5's "no hint for the held `Whole` constraint". |
+| FND-003 | fixed | Round 1 (bd0e05f05): the `evaluated` doc comment now states that the letter is a test closure, that the atom text is not evaluated (that is FR-107's job), and that the formula structure is what the readings exercise. |
