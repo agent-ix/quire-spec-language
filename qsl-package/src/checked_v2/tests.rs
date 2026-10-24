@@ -11,7 +11,8 @@
 use ix_trace_rs::trace;
 use quire_contract_model::{
     CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, NominalIdentityPreimage,
+    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1823,6 +1824,312 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
     }
 }
 
+/// FR-447-AC-13 / QSpec FR-322-AC-120: the I2 reader retains every timed
+/// node body exactly as IR admitted it, and the package identity is the
+/// recomputation over that complete graph. QSL has no timed-model writer;
+/// checked-package emission does not synthesize this family.
+#[trace("TC-1187", "FR-447-AC-13")]
+#[test]
+fn conformance_timed_model_nodes_are_retained_by_i2() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let expected_id = derived_package_id(&envelope);
+    let (package_id, outcome) = read_fixture_wire(&envelope);
+    assert_eq!(
+        package_id, expected_id,
+        "fixture id is independently recomputed"
+    );
+    let Read::Verified {
+        package, admitted, ..
+    } = outcome
+    else {
+        panic!("timed fixture must pass the real IR reader: {outcome:?}");
+    };
+    assert_eq!(package.package_id(), expected_id);
+    assert_eq!(package.package_id(), package_id);
+
+    let wire_nodes = envelope["semantic_graph"]["nodes"].as_array().unwrap();
+    let retained = &admitted.graph().nodes;
+    let expected_timed = wire_nodes
+        .iter()
+        .filter(|node| node["node_tag"] == "timed_model")
+        .collect::<Vec<_>>();
+    let actual_timed = retained
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .collect::<Vec<_>>();
+    assert_eq!(actual_timed.len(), 9);
+    assert_eq!(
+        actual_timed
+            .iter()
+            .map(|node| node.semantic_form.as_ref())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        8
+    );
+    for expected in expected_timed {
+        let digest = expected["node_id"]["digest"].as_str().unwrap();
+        let actual = actual_timed
+            .iter()
+            .find(|node| node.node_id.digest.as_ref() == digest)
+            .expect("every wire timed node survives the read");
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            *expected,
+            "complete timed node {digest} round trips"
+        );
+    }
+    assert_eq!(
+        admitted.source_map().len(),
+        envelope["source_map"].as_array().unwrap().len()
+    );
+}
+
+/// FR-322-AC-120 and AC-124: positive hybrid and timed graph references all
+/// close over their own documents, and a unit node's nominal dimension is
+/// exactly the timed root's explicit `time_dimension` authority.
+#[trace("TC-1187", "FR-447-AC-13")]
+#[test]
+fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    for name in [
+        "positive-all-families.json",
+        "positive-timed-model-nodes.json",
+    ] {
+        let envelope = read_fixture(&directory.join(name));
+        let nodes = envelope["semantic_graph"]["nodes"].as_array().unwrap();
+        let ids = nodes
+            .iter()
+            .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(ids.len(), nodes.len(), "{name}: node ids are unique");
+        fn visit(value: &Value, ids: &std::collections::BTreeSet<String>, name: &str) {
+            match value {
+                Value::Object(object) => {
+                    if object.get("domain").and_then(Value::as_str) == Some(NODE_DOMAIN) {
+                        let digest = object.get("digest").and_then(Value::as_str).unwrap();
+                        assert!(ids.contains(digest), "{name}: dangling NodeRef {digest}");
+                    }
+                    for child in object.values() {
+                        visit(child, ids, name);
+                    }
+                }
+                Value::Array(values) => {
+                    for child in values {
+                        visit(child, ids, name);
+                    }
+                }
+                _ => {}
+            }
+        }
+        visit(&envelope["semantic_graph"], &ids, name);
+        let (_, outcome) = read_fixture_wire(&envelope);
+        let Read::Verified { admitted, .. } = outcome else {
+            panic!("{name}: complete positive read expected, got {outcome:?}");
+        };
+        for node in &admitted.graph().nodes {
+            if node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == "unit" {
+                let nominal_dimension = match node
+                    .nominal_identity_preimage
+                    .as_ref()
+                    .expect("unit carries its declared nominal preimage")
+                {
+                    NominalIdentityPreimage::Unit(unit) => unit.dimension_node_id.clone(),
+                    other => panic!("{name}: unit has non-unit preimage {other:?}"),
+                };
+                assert_eq!(
+                    node.semantic_type, nominal_dimension,
+                    "{name}: unit is dimension-typed"
+                );
+            }
+        }
+    }
+}
+
+/// The published TM schema and semantic refusal vectors reach the real I2
+/// reader. The body order is supplied by IR's FR-322 reader: hybrid,
+/// timed-model, then protocol; QSpec pins that order in TC-233.
+#[trace("TC-1187", "FR-447-AC-13")]
+#[test]
+fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let base = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let vectors = read_fixture(&directory.join("../timed-model-node-vectors.json"));
+    let indexes = &vectors["node_indexes"];
+    for row in vectors["schema_refusals"].as_array().unwrap() {
+        let mut candidate = base.clone();
+        let node_index = indexes[row["node"].as_str().unwrap()].as_u64().unwrap() as usize;
+        let body = &mut candidate["semantic_graph"]["nodes"][node_index]["body"]["members"];
+        match row["mutate"].as_str().unwrap() {
+            "remove-unit" => {
+                body.as_array_mut().unwrap().remove(1);
+            }
+            "extra-binding" => body.as_array_mut().unwrap().push(
+                json!({"term":"binding","name":"extra","value":{"term":"aggregate","members":[]}}),
+            ),
+            "invalid-path-step-kind" => {
+                body[1]["value"]["members"][0]["members"][0]["value"]["value"] = json!("slot")
+            }
+            "swap-model-source" => body.as_array_mut().unwrap().swap(0, 1),
+            "empty-path" => body[1]["value"]["members"] = json!([]),
+            other => panic!("{}: unknown schema vector {other}", row["id"]),
+        }
+        let expected_locus = row["locus"].as_str().unwrap().replace(
+            &format!("/nodes/{}", row["node"].as_str().unwrap()),
+            &format!("/nodes/{node_index}"),
+        );
+        let (_, outcome) = read_fixture_wire(&candidate);
+        assert_timed_refusal(
+            &outcome,
+            "malformed_wire",
+            None,
+            &expected_locus,
+            &row["id"],
+        );
+    }
+
+    for row in vectors["semantic_refusals"].as_array().unwrap() {
+        let mut candidate = base.clone();
+        match row["mutation"].as_str().unwrap() {
+            "remove-timed-root" => {
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .remove(52);
+            }
+            "dangling-tick-operation" => {
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let target = &mut source["body"]["members"][3]["value"]["target"];
+                let old = target.clone();
+                target["digest"] = json!("0".repeat(64));
+                let replacement = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &replacement);
+            }
+            "function-as-tick-operation" => {
+                let target = candidate["semantic_graph"]["nodes"][5]["node_id"].clone();
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][3]["value"]["target"].clone();
+                source["body"]["members"][3]["value"]["target"] = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &target);
+            }
+            "duplicate-clock-place" => {
+                let places = candidate["semantic_graph"]["nodes"][52]["body"]["members"][3]
+                    ["value"]["members"]
+                    .as_array_mut()
+                    .unwrap();
+                let duplicate = places[0].clone();
+                places.push(duplicate);
+            }
+            "noncanonical-place-path" => {
+                candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]["members"]
+                    [0]["members"][1]["value"]["value"] = json!("not-clock")
+            }
+            "zero-tick-period" => {
+                candidate["semantic_graph"]["nodes"][44]["body"]["members"][4]["value"]["value"] =
+                    json!("0")
+            }
+            "missing-clock-resolution-row" => {
+                let steps = candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]
+                    ["members"]
+                    .as_array_mut()
+                    .unwrap();
+                let duplicate = steps[0].clone();
+                steps.push(duplicate);
+            }
+            "mismatched-clock-path-step" => {
+                candidate["semantic_graph"]["nodes"][45]["body"]["members"][2]["value"]["members"]
+                    [0]["members"][0]["value"]["value"] = json!(1)
+            }
+            "wrong-clock-collection-metadata" => {
+                candidate["semantic_graph"]["nodes"][45]["body"]["members"][2]["value"]["members"]
+                    [0]["members"][4]["value"]["value"] = json!("sequence")
+            }
+            "undeclared-clock-member" => {
+                candidate["semantic_graph"]["nodes"][45]["body"]["members"][2]["value"]["members"]
+                    [0]["members"][2]["value"]["value"] = json!("ix://acme/orders/Order/unknown")
+            }
+            "wrong-terminal-clock-type" => {
+                candidate["semantic_graph"]["nodes"][45]["body"]["members"][2]["value"]["members"]
+                    [0]["members"][3]["value"]["value"] = json!("ix://quire/native/Integer")
+            }
+            "coherent-forged-selected-chain" => {
+                let place = &mut candidate["semantic_graph"]["nodes"][45]["body"]["members"];
+                place[1]["value"]["members"][1]["members"][1]["value"]["value"] = json!("sequence");
+                let rows = &mut place[2]["value"]["members"];
+                rows[0]["members"][3]["value"]["value"] = json!("Sequence<Evil>");
+                rows[0]["members"][4]["value"]["value"] = json!("sequence");
+                rows[1]["members"][1]["value"]["value"] = json!("Evil");
+                rows[1]["members"][2]["value"]["value"] = json!("Sequence<Evil>[slot]");
+            }
+            "tick-model-context-mismatch" => {
+                let target = candidate["semantic_graph"]["nodes"][14]["node_id"].clone();
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][2]["value"]["target"].clone();
+                source["body"]["members"][2]["value"]["target"] = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &target);
+            }
+            "unresolved-tick-operation" => {
+                candidate["semantic_graph"]["nodes"][53]["body"]["members"][1]["value"]["value"] =
+                    json!("missing")
+            }
+            other => panic!("{}: unknown semantic vector {other}", row["id"]),
+        }
+        rekey_stale(&mut candidate);
+        let expected_cause = row["expected_cause"].as_str().map(|cause| {
+            serde_json::from_value::<CheckedPackageRefusalCause>(json!(cause))
+                .unwrap_or_else(|_| panic!("{}: unrecognized cause {cause}", row["id"]))
+        });
+        assert_timed_refusal(
+            &read_fixture_wire(&candidate).1,
+            row["expected_code"].as_str().unwrap(),
+            expected_cause,
+            row["locus"].as_str().unwrap(),
+            &row["id"],
+        );
+    }
+}
+
+fn assert_timed_refusal(
+    outcome: &Read,
+    expected_code: &str,
+    expected_cause: Option<CheckedPackageRefusalCause>,
+    expected_pointer: &str,
+    id: &Value,
+) {
+    let Read::Refused(V2ReadRefusal::Envelope { refusal, locus }) = outcome else {
+        panic!("{id}: expected IR refusal at {expected_pointer}, got {outcome:?}");
+    };
+    let code = serde_json::to_value(refusal.code).unwrap();
+    assert_eq!(code, expected_code, "{id}: refusal code");
+    assert_eq!(refusal.cause, expected_cause, "{id}: refusal cause");
+    assert!(
+        matches!(
+            locus.as_deref(),
+            Some(Locus::Artifact { pointer, .. }) if pointer.as_str() == expected_pointer
+        ),
+        "{id}: refusal locus, got {locus:?}"
+    );
+}
+
+fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value) {
+    let entries = dependencies.as_array_mut().expect("node dependencies");
+    let entry = entries
+        .iter_mut()
+        .find(|entry| *entry == old)
+        .expect("body reference has a matching dependency");
+    *entry = replacement.clone();
+    entries.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+}
+
 /// FR-322-AC-100: each `adverse.json` `shipped_projection_cases` entry is
 /// `positive-all-families.json` with an `identity_projection` member added to
 /// its `identity_preimage`, as the occurrence-free graph or as `[]`. QSL's I2
@@ -3197,21 +3504,4 @@ fn published_extension_definitions_conform_to_their_schema_and_pairing() {
             );
         }
     }
-}
-
-/// QSL's accepted V2 node tags are exactly IR's `CheckedNodeTag` wire
-/// spellings, so a tag IR adds cannot pass IR yet fail QSL's identity
-/// preimage check (the `InvalidPreimage{NodeTag}` QSL-978 hit for
-/// `extension`).
-#[trace("FR-469-AC-1")]
-#[test]
-fn node_tags_equal_irs_checked_node_tag_wire_spellings() {
-    let mut ir: Vec<&str> = quire_contract_model::CheckedNodeTag::ALL
-        .iter()
-        .map(|tag| tag.as_wire())
-        .collect();
-    let mut qsl: Vec<&str> = qsl_semantics::library::node_tags().to_vec();
-    ir.sort_unstable();
-    qsl.sort_unstable();
-    assert_eq!(qsl, ir);
 }

@@ -976,23 +976,23 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
         .iter()
         .position(|node| node["node_id"]["digest"] == json!(hex("K::limit")))
         .unwrap();
-    let mut unknown_tag = nodes.clone();
-    // This layer requires the projected tag to be a string. The closed V2
-    // tag set is validated by IR's checked-package reader before projection.
-    unknown_tag[index]["node_tag"] = Value::Bool(true);
-    let (root, library) = supply(jcs(&preimage_value(unknown_tag)), "Status");
-    assert_library_refusal(
-        resolve_libraries(&root, &[library]),
-        &LibraryRefusal::InvalidPreimage {
-            library: name("K"),
-            defect: PreimageDefect::Node {
-                index,
-                defect: NodeDefect::NodeTag,
+    for invalid_tag in [json!(true), json!("not_a_checked_node_tag")] {
+        let mut unknown_tag = nodes.clone();
+        unknown_tag[index]["node_tag"] = invalid_tag;
+        let (root, library) = supply(jcs(&preimage_value(unknown_tag)), "Status");
+        assert_library_refusal(
+            resolve_libraries(&root, &[library]),
+            &LibraryRefusal::InvalidPreimage {
+                library: name("K"),
+                defect: PreimageDefect::Node {
+                    index,
+                    defect: NodeDefect::NodeTag,
+                },
             },
-        },
-        Code::InvalidPackage,
-        LibraryCause::InvalidValue,
-    );
+            Code::InvalidPackage,
+            LibraryCause::InvalidValue,
+        );
+    }
 }
 
 // TC-282 (FR-087-AC-12): every `LibraryRefusal` variant `resolve_libraries`
