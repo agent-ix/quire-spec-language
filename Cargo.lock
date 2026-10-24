@@ -2675,6 +2675,7 @@ dependencies = [
  "proc-macro2",
  "qsl-foundation",
  "qsl-replay",
+ "qsl-route",
  "qsl-semantics",
  "qsl-string-edge",
  "serde",
