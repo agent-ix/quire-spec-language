@@ -19,7 +19,7 @@ use super::{
     ClaimForm, Decision, StatisticalMethod, StatisticalOutcome, StatisticalRefusal,
     StatisticalStop, StatisticalUnsupported,
 };
-use crate::model_check::limits::ModelCheckLimit;
+use crate::model_check::limits::{meter_bound, ModelCheckLimit};
 use crate::proof_result::{
     IncompleteCause, InconclusiveCause, StatisticalRequestRefusal, TerminalRecord, TerminalValue,
     UnavailabilityCause,
@@ -194,9 +194,10 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
         }))
     };
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => {
-            reached(ModelCheckLimit::EvaluationMeter, subject.meter.work_units)
-        }
+        Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+            ModelCheckLimit::EvaluationMeter { counter },
+            meter_bound(subject.meter, counter),
+        ),
         Some(ExpansionLimit::MaxCandidates) => reached(
             ModelCheckLimit::MaxCandidates,
             subject.expansion.max_candidates,
@@ -346,7 +347,7 @@ mod tests {
             text_scalars: 64,
             normalized_scalars: 64,
             unit_edges: 64,
-            value_occurrences: 64,
+            value_occurrences: 7,
             work_units: 4_096,
             result_units: 64,
         }
@@ -356,9 +357,7 @@ mod tests {
         settle_statistical(
             outcome,
             SubjectLimits {
-                expansion: ExpansionLimits {
-                    max_candidates: 512,
-                },
+                expansion: ExpansionLimits { max_candidates: 2 },
                 meter: &meter(),
             },
         )
@@ -429,21 +428,63 @@ mod tests {
             })))
         };
         let exhausted = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
-        let metered = expansion(Some(ExpansionLimit::EvaluationMeter), exhausted);
+        let metered = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::WorkUnits,
+            )),
+            exhausted,
+        );
         assert_eq!(
             metered.value,
-            incomplete(ModelCheckLimit::EvaluationMeter, 4_096)
+            incomplete(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits
+                },
+                4_096
+            )
         );
         let json = wire(metered);
         assert_eq!(json["result"], "incomplete");
         assert_eq!(json["cause"]["kind"], "limit-reached");
-        assert_eq!(json["cause"]["limit"], "evaluation-meter");
+        assert_eq!(json["cause"]["limit"], "work_units");
         assert_eq!(json["cause"]["value"], 4_096);
-        assert_eq!(json["cause"]["setting"], "meter");
+        assert_eq!(json["cause"]["setting"], "accounting.work_units");
+        let integer_bits = wire(expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::IntegerBits,
+            )),
+            exhausted,
+        ));
+        assert_eq!(integer_bits["cause"]["limit"], "integer_bits");
+        assert_eq!(integer_bits["cause"]["value"], 64);
+        assert_eq!(integer_bits["cause"]["setting"], "accounting.integer_bits");
+        let occurrences = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::ValueOccurrences,
+            )),
+            exhausted,
+        );
+        assert_eq!(
+            occurrences.value,
+            incomplete(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::ValueOccurrences
+                },
+                7
+            )
+        );
+        let json = wire(occurrences);
+        assert_eq!(json["cause"]["limit"], "value_occurrences");
+        assert_eq!(json["cause"]["value"], 7);
+        assert_eq!(json["cause"]["setting"], "accounting.value_occurrences");
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
-            incomplete(ModelCheckLimit::MaxCandidates, 512)
+            incomplete(ModelCheckLimit::MaxCandidates, 2)
         );
+        let candidates = wire(expansion(Some(ExpansionLimit::MaxCandidates), exhausted));
+        assert_eq!(candidates["cause"]["limit"], "max_candidates");
+        assert_eq!(candidates["cause"]["value"], 2);
+        assert_eq!(candidates["cause"]["setting"], "expansion.max_candidates");
         let internal = expansion(None, BROKEN);
         assert_eq!(internal.value, TerminalValue::Failed);
         assert_eq!(internal.diagnostic, Some(BROKEN));
