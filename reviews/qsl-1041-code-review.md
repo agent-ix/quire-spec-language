@@ -31,7 +31,11 @@ partial matches behave as before. No trace tags are required: no test changed.
 
 ## Verdict
 
-**CHANGES REQUESTED.** Behaviour is preserved and the scan is at 0, but in
+**APPROVED (round 1).** Round 1 at 19234af7f fixes FND-001 and FND-002 and
+defers FND-003 and FND-004 to QSL-1042; string-edge 0 rows, fmt, clippy -D
+warnings and qsl-package/qsl-semantics tests all pass at 19234af7f.
+
+Round 0: **CHANGES REQUESTED.** Behaviour is preserved and the scan is at 0, but in
 qsl-package the marker relocates the string dispatch instead of removing it:
 IR's quire-contract-model (locked rev 1e177e0) already provides the closed
 typed vocabulary (`CheckedNodeTag::TimedModel`, `TimedModelForm::{Model,
@@ -50,3 +54,12 @@ are low; FND-004 can be deferred to a follow-up ticket.
 | FND-002 | low | mod timed_model widened to pub(crate) only to export one helper; a pub(crate) re-export (or FND-001's fix, which needs no import) keeps the module private | qsl-package/src/checked_v2.rs:103 |
 | FND-003 | low | New check::lowering::is_qualified_name(&str) is a third copy of the marked is_qualified helper and shares its name with value::semantic_node::is_qualified_name(&[String]), which means one-or-more valid segments; placed after the test module at file end | qsl-semantics/src/check/lowering.rs:4841-4845 |
 | FND-004 | low | Checker refusals at check/mod.rs:990 and 1027 still gate on source-name spelling outside an ADR-012 section 9 edge; the typed fix is a segmented NameForm from qsl-forms, out of scope here and best deferred to a follow-up ticket | qsl-semantics/src/check/mod.rs:990 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (19234af7f): ClockForm, has_form and is_timed_model_node deleted; all 11 qsl-package sites use CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel) or TimedModelForm::from_wire(&node.semantic_form) ==/!= Some(TimedModelForm::{Model,Place,Reset,Constraint}). Each variant's wire string is unique in IR's vocabulary, so behaviour is identical. |
+| FND-002 | fixed | Round 1 (19234af7f): checked_v2.rs is back to `mod timed_model;`; emit.rs no longer imports from it. |
+| FND-003 | deferred | QSL-1042. Round 1 renamed the helper to is_qualified_spelling (no clash with value::semantic_node::is_qualified_name) and moved it above `mod tests;`; merging it with the two older is_qualified copies is left to QSL-1042, which replaces all three with a typed name form, so consolidating now would be churn that ticket deletes. |
+| FND-004 | deferred | QSL-1042 (Backlog): qsl-forms typed/segmented NameForm so check/mod.rs stops choosing a refusal by name spelling; the helper doc cites it. |
