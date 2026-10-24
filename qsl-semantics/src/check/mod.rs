@@ -1391,18 +1391,10 @@ impl PackageDeclarations {
         let mut nodes_used = 0_u64;
         // FR-218 "Requirements": each function's name and keyword, which a
         // `requires temporal` name that resolves to it names.
-        let function_kinds: Vec<(String, &'static str)> = self
+        let function_kinds: Vec<_> = self
             .functions
             .iter()
-            .map(|function| {
-                (
-                    function.name.clone(),
-                    match function.kind() {
-                        qsl_forms::DeclarationKind::Function => "function",
-                        qsl_forms::DeclarationKind::Predicate => "predicate",
-                    },
-                )
-            })
+            .map(|function| (function.name.clone(), function.kind()))
             .collect();
         // FR-447: the bodies a hybrid term's calls are validated against,
         // kept before the function loop consumes the declarations.
@@ -1967,34 +1959,43 @@ impl PackageDeclarations {
                 .map(|clause| {
                     (
                         clause.name.as_str(),
-                        match clause.kind {
+                        protocol_requirement::UnitDeclarationKind::Other(match clause.kind {
                             qsl_forms::StateClauseKind::Invariant => "invariant",
                             qsl_forms::StateClauseKind::Precondition => "pre",
                             qsl_forms::StateClauseKind::Postcondition => "post",
-                        },
+                        }),
                     )
                 })
-                .chain(
-                    function_kinds
-                        .iter()
-                        .map(|(name, kind)| (name.as_str(), *kind)),
-                )
-                .chain(
-                    self.terminals
-                        .iter()
-                        .map(|terminal| (terminal.name.as_str(), "terminal")),
-                )
-                .chain(
-                    self.state_graph_claims
-                        .iter()
-                        .map(|claim| (claim.form.name.name.as_str(), "claim")),
-                )
-                .chain(
-                    self.native_names
-                        .iter()
-                        .map(|name| (name.as_str(), "dimension or unit")),
-                )
-                .chain(scope.type_names().map(|name| (name, "type"))),
+                .chain(function_kinds.iter().map(|(name, kind)| {
+                    (
+                        name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Callable(*kind),
+                    )
+                }))
+                .chain(self.terminals.iter().map(|terminal| {
+                    (
+                        terminal.name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("terminal"),
+                    )
+                }))
+                .chain(self.state_graph_claims.iter().map(|claim| {
+                    (
+                        claim.form.name.name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("claim"),
+                    )
+                }))
+                .chain(self.native_names.iter().map(|name| {
+                    (
+                        name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("dimension or unit"),
+                    )
+                }))
+                .chain(scope.type_names().map(|name| {
+                    (
+                        name,
+                        protocol_requirement::UnitDeclarationKind::Other("type"),
+                    )
+                })),
         );
         // The clauses whose own checks refused something, which a refinement
         // does not resolve against (FR-147 "Abstract side"), and each
@@ -3023,10 +3024,7 @@ impl PackageDeclarations {
         );
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
-        for protocol_index in 0..self.protocols.len() {
-            let Some(checked_index) = protocol_places[protocol_index] else {
-                continue;
-            };
+        for checked_index in protocol_places.iter().flatten().copied() {
             let Some(checked) = checked_protocols.get_mut(checked_index) else {
                 return Err(vec![CheckRefusal {
                     location: root(Origin::Expression),

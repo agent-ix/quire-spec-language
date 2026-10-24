@@ -890,12 +890,12 @@ pub fn kernel_refusal_record(
 }
 
 /// `Int[lo, hi]`, each bound as QSpec FR-038 writes an integer.
-fn spell_int(interval: &quire_exact::IntegerInterval) -> String {
+pub fn spell_int(interval: &quire_exact::IntegerInterval) -> String {
     format!("Int[{}, {}]", interval.lower(), interval.upper())
 }
 
 /// `Decimal[lo, hi; smin, smax]`; no rounding mode is written.
-fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
+pub fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
     format!(
         "Decimal[{}, {}; {}, {}]",
         decimal.lower(),
@@ -906,7 +906,7 @@ fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
 }
 
 /// `Rational[lo, hi; dmin, dmax]`.
-fn spell_rational(domain: &quire_exact::RationalDomain) -> String {
+pub fn spell_rational(domain: &quire_exact::RationalDomain) -> String {
     let (numerator, denominator) = (domain.numerator(), domain.denominator());
     format!(
         "Rational[{}, {}; {}, {}]",

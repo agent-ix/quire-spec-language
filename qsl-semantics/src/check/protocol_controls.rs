@@ -15,10 +15,9 @@
 //! Each `send` and `receive` names a declared channel and binds its
 //! `carries` type. A `fifo` key is checked through the one clause checker
 //! (FR-104) over its binder and constants only: it reads no model state and
-//! its type admits `=`. A `predicate(name)` join names a function no checker
-//! reads yet; `protocol_clause::content` refuses it as unimplemented through
-//! the construct S2 records for it, so a protocol holding one never compiles
-//! unchecked.
+//! its type admits `=`. A `predicate(name)` join resolves a pure function
+//! whose parameters match the distinct branch labels and records its checked
+//! function identity.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -805,6 +804,36 @@ mod tests {
             .protocol("Pipeline")
             .expect("the checked protocol")
             .channels
+    }
+
+    /// FR-218-AC-27 (TC-1056 row 51): a second protocol `Billing` that also
+    /// declares `channel Pay` with the same premises checks; the checked
+    /// clauses hold `Pipeline`'s `Pay` and `Billing`'s `Pay`, each recorded
+    /// under its protocol with the handle `Pay`, so their qualified names
+    /// differ and their handles are equal.
+    #[trace("TC-1056", "FR-218-AC-27")]
+    #[test]
+    fn a_channel_name_is_qualified_by_its_protocol() {
+        let billing = pipeline(&pay(), RUN)
+            .replacen("protocol Pipeline", "protocol Billing", 1)
+            .replacen(RECORD, "", 1);
+        let graph = checks(&format!("{}\n{billing}", pipeline(&pay(), RUN)));
+        let held: Vec<(&str, &str)> = graph
+            .protocols()
+            .iter()
+            .flat_map(|protocol| {
+                protocol
+                    .channels
+                    .iter()
+                    .map(|channel| (protocol.name.as_str(), channel.name.as_str()))
+            })
+            .collect();
+        assert_eq!(held, [("Pipeline", "Pay"), ("Billing", "Pay")]);
+        let [first, second] = &held[..] else {
+            unreachable!("two channels")
+        };
+        assert_eq!(first.1, second.1, "equal handles");
+        assert_ne!(first, second, "different qualified identities");
     }
 
     /// FR-218-AC-21 and FR-218-AC-13 (TC-1065 rows 1 and 3, TC-1056 rows 13

@@ -33,9 +33,10 @@ pub use checked::{EmittedPackage, Import, LinkRefusal};
 pub use checked_v2::{
     clause_roots, read_import_view, resolve_clause_root, supply_closure, AdmittedPackages,
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
-    CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
-    ClockPathStep, ClockSlotSelector, ImportViewRefusal, ResolvedClockPathStep, SourceMapDefect,
-    TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClauseRoot,
+    ClauseRootUnresolved, ClockPathStep, ClockSlotSelector, ImportViewRefusal,
+    ResolvedClockPathStep, SourceMapDefect, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
+    V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{
