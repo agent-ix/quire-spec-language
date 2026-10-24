@@ -61,7 +61,7 @@ Disposition pass 1, reviewing fix commit 70e7e960f.
 
 ## Dispositions
 
-Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
+Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e. Round 2 rows (FND-009, FND-010), at bc2e8ee1034825c0c06862ba0cf4916fb982757e, follow the round-1 rows.
 
 | FND | Outcome | Reason |
 | --- | --- | --- |
@@ -73,3 +73,5 @@ Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
 | FND-006 | fixed | The route_registry tests are now tagged `FR-075-AC-19` and `FR-075-AC-20` only. |
 | FND-007 | fixed | The test is retagged with plain `#[trace("TC-1187", "FR-447-AC-17")]`, and the matrix indexes it. It now also checks that a non-temporal item gets no label. It still asserts the `requirements()` accessor rather than serialized bytes, because this repo has no wire writer for request items. |
 | FND-008 | fixed | The root test `hybrid_request_items` now has `Reaches`, a real temporal claim over a non-hybrid model, which carries no label and routes to EN-6 only. The semantics test comment now says the bare declaration has no claim. |
+| FND-009 | deferred | QSL-1036 (spec ticket) amends FR-290-AC-5 and FR-289-AC-9 so a `bounded-solver` plugin basis settles through `from_hybrid_plugin_proof` with its coverage check. At bc2e8ee10 the refusal in `from_plugin_proof` stays, which is the sound behaviour. `every_plugin_basis_is_trusted` drops its FR-289-AC-9 tag and its doc comment names QSL-1036. FR-290-AC-5 stays only on `tc_774_basis_reader_accepts_the_plugin_spellings`, which checks the basis reader the refusal does not touch. |
+| FND-010 | fixed | At bc2e8ee10 `settle_hybrid_candidates(requirements: &[&str], candidate_count)` returns `Unsupported(HybridProviderAbsent)` only when `requirements` holds `hybrid-dynamics` and the count is 0. The root test maps both real items (`SlowEnough` gives `Some`, `Reaches` gives `None`) and checks that `(&[], 0)` gives `None`. |

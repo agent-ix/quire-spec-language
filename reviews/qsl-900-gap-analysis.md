@@ -45,7 +45,7 @@ Disposition pass 1 at 70e7e960f. The matrix was recomputed with `quire matrix --
 
 ## Dispositions
 
-Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
+Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e. Round 2 row (FND-005), at bc2e8ee1034825c0c06862ba0cf4916fb982757e, follows the round-1 rows.
 
 | FND | Outcome | Reason |
 | --- | --- | --- |
@@ -53,3 +53,4 @@ Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
 | FND-002 | deferred | QSL-1035 owns FR-250-AC-5. It stays untagged at 70e7e960f, and no tag claims it. |
 | FND-003 | deferred | QSL-1035 owns FR-250-AC-3. The inflated tag is gone, the matrix now reports AC-3 honestly as untagged, and no tag claims it. |
 | FND-004 | fixed | AC-1's unsupported clause now runs a real checked graph through the registry and `settle_hybrid_candidates`, in `a_checked_hybrid_claim_routes_to_the_hybrid_provider_only`. AC-6's first-party `/basis/method` refusal is implemented in `read_first_party_solver_basis` and tested in `a_first_party_entry_with_an_unsound_method_is_refused`. |
+| FND-005 | deferred | QSL-1036 (spec ticket) amends FR-290-AC-5 and FR-289-AC-9. At bc2e8ee10 `every_plugin_basis_is_trusted` no longer claims FR-289-AC-9, and FR-290-AC-5's only binder checks the `read_plugin_basis` spellings, which the refusal does not touch. The clause that sends `bounded-solver` through `from_plugin_proof` waits for the amendment. |
