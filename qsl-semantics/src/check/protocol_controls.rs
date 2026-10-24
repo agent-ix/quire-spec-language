@@ -807,6 +807,43 @@ mod tests {
             .channels
     }
 
+    /// FR-218-AC-27 (TC-1056 row 51): a second protocol `Billing` that also
+    /// declares `channel Pay` with the same premises checks; the checked
+    /// clauses hold `Pipeline`'s `Pay` and `Billing`'s `Pay`, each recorded
+    /// under its protocol with the handle `Pay`, so their qualified names
+    /// differ and their handles are equal.
+    #[trace("TC-1056", "FR-218-AC-27")]
+    #[test]
+    fn a_channel_name_is_qualified_by_its_protocol() {
+        let billing = pipeline(&pay(), RUN)
+            .replacen("protocol Pipeline", "protocol Billing", 1)
+            .replacen(RECORD, "", 1);
+        let graph = checks(&format!("{}\n{billing}", pipeline(&pay(), RUN)));
+        let channels_of = |protocol: &str| -> Vec<CheckedChannel> {
+            graph
+                .protocol(protocol)
+                .expect("the checked protocol")
+                .channels
+                .clone()
+        };
+        let [pipeline_pay] = &channels_of("Pipeline")[..] else {
+            panic!("Pipeline holds one channel");
+        };
+        let [billing_pay] = &channels_of("Billing")[..] else {
+            panic!("Billing holds one channel");
+        };
+        assert_eq!(pipeline_pay.name, billing_pay.name);
+        assert_eq!(pipeline_pay.name, "Pay");
+        let qualified =
+            |protocol: &str, channel: &CheckedChannel| format!("{protocol}::{}", channel.name);
+        assert_eq!(qualified("Pipeline", pipeline_pay), "Pipeline::Pay");
+        assert_eq!(qualified("Billing", billing_pay), "Billing::Pay");
+        assert_ne!(
+            qualified("Pipeline", pipeline_pay),
+            qualified("Billing", billing_pay)
+        );
+    }
+
     /// FR-218-AC-21 and FR-218-AC-13 (TC-1065 rows 1 and 3, TC-1056 rows 13
     /// and 14): the five overflow policies are recorded as written whatever
     /// the delivery policy is, and two channels that differ in exactly one

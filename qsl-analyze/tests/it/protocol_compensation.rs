@@ -1009,6 +1009,7 @@ fn a_compensation_thread_keys_its_registration() {
 /// effect after the join registers; an attempt in one case of a `choice`
 /// enables the effect after the `choice` on that case only, and on the
 /// other case the root waits at the effect.
+#[trace("TC-651", "FR-206-AC-10")]
 #[test]
 fn an_effect_waits_for_its_attempts_binder() {
     let joined = format!(

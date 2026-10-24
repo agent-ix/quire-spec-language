@@ -1057,7 +1057,7 @@ static SUPERSEDED_FENCE: Forbid = Forbid(|state, key| {
 
 /// SR-12255 FND-001 (PSC-4): an SC event that leaves `P` with its message
 /// keeps its predecessors for its thread's later events on other locations.
-#[trace("TC-668")]
+#[trace("TC-668", "FR-223-AC-7")]
 #[test]
 fn a_removed_sc_event_still_precedes_its_threads_later_events() {
     let case = unit(&removed_event_fixture(), &REMOVED_EVENT);
@@ -1070,11 +1070,32 @@ fn a_removed_sc_event_still_precedes_its_threads_later_events() {
 /// and the first one's edges follow through `po` (STD-247). This test passes
 /// without a retention rule for the first fence; it pins that the outcome
 /// is not admitted.
-#[trace("TC-668")]
+#[trace("TC-668", "FR-223-AC-9")]
 #[test]
 fn a_thread_that_fences_twice_still_orders_another_threads_fence() {
     let case = unit(&superseded_fence_fixture(), &SUPERSEDED_FENCE);
     assert!(forbids(&case, &ra_main()));
+}
+
+/// FR-223-AC-10 (TC-668), its first sentence: a thread running two
+/// `seq_cst` fences with no store between them, beside a thread that
+/// fences nowhere, has the first fence absent from `P` after its second
+/// fence.
+#[trace("TC-668", "FR-223-AC-10")]
+#[test]
+fn a_second_fence_with_no_store_between_removes_the_first_from_the_sc_event_graph() {
+    let fences = vec![
+        "fence F1 ordering seq_cst;".to_owned(),
+        "fence F2 ordering seq_cst;".to_owned(),
+    ];
+    let reader = attempt("Acq", "c", "Core::read1", "acquire", "ReadsX1, ReadFlag1");
+    let case = no_both_zero_unit(&run(&[("a", fences), ("b", vec![reader])], ""));
+    let system = case.system(&ra_main(), Ra::default()).expect("builds");
+    let mut state = forked(&system);
+    for (node, live) in [("F1", 1), ("F2", 1)] {
+        state = step(&system, &state, &format!("Main/Both/a/A/{node}"), None).1;
+        assert_eq!(state.memory().live_events(), live, "after {node}");
+    }
 }
 
 /// SR-12255 FND-003 (MB-2): `max_messages` bounds the live messages after

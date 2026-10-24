@@ -991,6 +991,7 @@ fn split_shipments_interleave_and_finish_after_both() {
 /// `terminal when k.v = 1` s2 is intended and the item settles `proved`;
 /// with `terminal any` the request carries no deadlock-freedom item.
 #[trace("TC-656", "FR-211-AC-2")]
+#[trace("TC-662", "FR-217-AC-1")]
 #[test]
 fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     let case = Case::new(&fill_unit("self.v = 0", ""), &[0]);
@@ -1012,6 +1013,13 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     );
     assert_eq!(counterexample.blocked, fill_blocked());
     assert!(counterexample.fairness.is_empty());
+    let replayed = case
+        .replay("Fill", counterexample.clone())
+        .expect("the counterexample replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "reproduced-with-evaluated-witness: {replayed:?}"
+    );
     let record = case.settle("Fill", &outcome);
     assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
     assert_eq!(record.counterexample, Some(counterexample));
@@ -1887,6 +1895,89 @@ fn a_cancelled_branch_takes_the_threads_it_forked_with_it() {
     }
     // `a` completes before, between or after any of `b`'s inner steps.
     assert!(joined > 1, "{joined}");
+}
+
+/// FR-206-AC-9 (TC-651): `Outer`'s `join any [a] outstanding cancel` while
+/// `a` has completed, `b` rests at `Inner`'s `join any [x, y] outstanding
+/// continue` and `x` and `y` are running. The `join(Outer)` step cancels
+/// `b`, `x` and `y` and settles `Inner`, so only the root is left, and in
+/// no state after it is `X1`, `Y1` or `After` enabled.
+#[trace("TC-651", "FR-206-AC-9")]
+#[test]
+fn an_outer_join_cancels_a_branch_resting_at_an_inner_join_and_its_running_branches() {
+    use Disposition::{Completed, Running};
+    let inner = format!(
+        "sequence Seq {{ parallel Inner {{ branch x {} branch y {} }} \
+         join any [x, y] outstanding continue; {} }}",
+        touch("X1"),
+        touch("Y1"),
+        attempt("After", "touch", "TouchPre", "tail", "true")
+    );
+    let run = parallel(
+        &[("a", touch("Fast")), ("b", inner)],
+        "join any [a] outstanding cancel",
+    );
+    let case = p_case(&run, 0);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let b = branch("b");
+    let mut cancelled_from_inner_join = 0;
+    for state in &reached {
+        let threads = system.threads(&state.state).expect("threads");
+        let under_b_running = threads
+            .iter()
+            .filter(|thread| {
+                thread.path != b && b.is_prefix_of(&thread.path) && thread.disposition == Running
+            })
+            .count();
+        let at_inner_join = threads
+            .iter()
+            .any(|thread| thread.path == b && thread.rest_point.kind == RestKind::Join);
+        let a_completed = threads
+            .iter()
+            .any(|thread| thread.path == branch("a") && thread.disposition == Completed);
+        if !(a_completed && at_inner_join && under_b_running == 2) {
+            continue;
+        }
+        let Some((_, next)) = state.steps.iter().find(|(transition, _)| {
+            transition.kind() == StepKind::Join && transition.node() == Some("Main/Both")
+        }) else {
+            continue;
+        };
+        cancelled_from_inner_join += 1;
+        let after_join = system.threads(&reached[*next].state).expect("threads");
+        assert_eq!(
+            after_join
+                .iter()
+                .map(|thread| &thread.path)
+                .collect::<Vec<_>>(),
+            vec![&root()],
+            "{after_join:?}"
+        );
+        let mut pending = vec![*next];
+        let mut seen = BTreeSet::new();
+        while let Some(at) = pending.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            let threads = system.threads(&reached[at].state).expect("threads");
+            assert!(
+                threads.iter().all(|thread| thread.path == root()),
+                "only the root is left: {threads:?}"
+            );
+            for (step, after) in &reached[at].steps {
+                assert!(
+                    !step.node().is_some_and(|node| ["/X1", "/Y1", "/After"]
+                        .iter()
+                        .any(|ending| node.ends_with(ending))),
+                    "{step:?}"
+                );
+                pending.push(*after);
+            }
+        }
+    }
+    assert!(cancelled_from_inner_join > 0);
 }
 
 /// FR-215's requires-bound pre-check over a replayed protocol subject: a
