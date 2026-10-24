@@ -28,7 +28,8 @@ Scope: FR-338-AC-21, FR-338-AC-22, FR-227-AC-5, FR-227-AC-6, FR-217-AC-8.
    `max_store_buffer` 3; check its certificate under a request carrying 3,
    then 2.
 2. Run the same program under `ra` with `max_messages` unset; check its
-   certificate under a request with `max_messages` unset, then 1.
+   certificate under a `ProtocolCertificateRequest` with `max_messages`
+   unset, then `Some(1)`.
 3. Replay `SB`'s `tso` counterexample with `max_store_buffer` unset, then 1.
 4. Replay `SB`'s `ra` counterexample with `max_messages` unset, then 1.
 5. Run FR-209-AC-2's guard-`{false}` protocol and check its certificate
