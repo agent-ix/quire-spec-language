@@ -741,7 +741,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     actual_result,
                     ..
                 } => format!(
-                    "{message}: parallel `{parallel}` joins on predicate `{function}` with signature {actual_parameters:?} -> {actual_result:?}; expected {expected_parameters:?} -> {expected_result:?}"
+                    "{message}: parallel `{parallel}` joins on predicate `{function}` with signature {} -> {}; expected {} -> {}",
+                    signature_source(actual_parameters),
+                    value_type_source(actual_result),
+                    signature_source(expected_parameters),
+                    value_type_source(expected_result),
                 ),
                 ProtocolAnchorCause::ChannelMismatch {
                     receive_channel,
@@ -1608,6 +1612,39 @@ mod dependency_tests;
 #[cfg(test)]
 mod wide_integer_tests;
 
+/// A parameter list in source syntax: `(Boolean, Int[0, 3])`.
+fn signature_source(parameters: &[quire_exact::ValueType]) -> String {
+    let parameters: Vec<String> = parameters.iter().map(value_type_source).collect();
+    format!("({})", parameters.join(", "))
+}
+
+/// A value type in source syntax. Parameterised kinds a predicate join
+/// signature cannot reach spell their kind name only.
+fn value_type_source(value_type: &quire_exact::ValueType) -> String {
+    use quire_exact::ValueType;
+    match value_type {
+        ValueType::Boolean => "Boolean".to_owned(),
+        ValueType::Integer => "Integer".to_owned(),
+        ValueType::Int(interval) => {
+            format!("Int[{}, {}]", interval.lower(), interval.upper())
+        }
+        ValueType::String => "String".to_owned(),
+        ValueType::Uuid => "Uuid".to_owned(),
+        ValueType::Timestamp => "Timestamp".to_owned(),
+        ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
+        ValueType::Rational(_) => "Rational".to_owned(),
+        ValueType::Decimal(_) => "Decimal".to_owned(),
+        ValueType::Float(_) => "Float".to_owned(),
+        ValueType::Quantity(_) => "Quantity".to_owned(),
+        ValueType::Text(_) => "Text".to_owned(),
+        ValueType::Enum(_) => "Enum".to_owned(),
+        ValueType::Composite(_) => "Composite".to_owned(),
+        ValueType::Collection(_) => "Collection".to_owned(),
+        ValueType::Reference(_) => "Reference".to_owned(),
+        ValueType::Population(_) => "Population".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1618,7 +1655,7 @@ mod tests {
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolAnchorCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    use quire_exact::ValueType;
+    use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
@@ -1650,12 +1687,15 @@ mod tests {
                     parallel: "Workers".to_owned(),
                     function: "done".to_owned(),
                     expected_parameters: vec![ValueType::Boolean, ValueType::Boolean].into_boxed_slice(),
-                    actual_parameters: Vec::new().into_boxed_slice(),
+                    actual_parameters: vec![ValueType::Int(
+                        IntegerInterval::new(Integer::from(0_i64), Integer::from(3_i64)).unwrap(),
+                    )]
+                    .into_boxed_slice(),
                     expected_result: Box::new(ValueType::Boolean),
-                    actual_result: Box::new(ValueType::Boolean),
+                    actual_result: Box::new(ValueType::Integer),
                     span,
                 },
-                "parallel `Workers` joins on predicate `done` with signature [] -> Boolean; expected [Boolean, Boolean] -> Boolean",
+                "parallel `Workers` joins on predicate `done` with signature (Int[0, 3]) -> Integer; expected (Boolean, Boolean) -> Boolean",
             ),
         ];
 
