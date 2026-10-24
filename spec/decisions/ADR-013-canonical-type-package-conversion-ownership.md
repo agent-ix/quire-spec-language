@@ -508,6 +508,13 @@ do not populate the existing `Witness{proved, replayed, given, derived,
 failure}` variant. The FR-331 `replay-parity` wire cause SHALL encode a
 discriminator for each arm and the complete hybrid counterexample in QSpec
 FR-193's hybrid trace wire form; decoding SHALL recover the same typed arm.
+The existing shared `DisagreementCause::to_json` and `from_json` codec SHALL
+receive the checked model associated with the routed hybrid claim as optional
+context. The `HybridTrace` variant requires that context; the codec uses it to
+map mode and variable indices to FR-193 names when encoding and to reconstruct
+typed indices when decoding. Other cause variants continue through this same
+codec without a hybrid model. No separate hybrid cause codec or adapter is
+introduced.
 FR-450 owns the settlement trigger and acceptance cases. A model-check run stopped by
 a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled
