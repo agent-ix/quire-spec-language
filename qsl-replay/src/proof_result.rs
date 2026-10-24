@@ -24,6 +24,7 @@ use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
+use qsl_semantics::check::HyperUnsupported;
 use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_checked::key::DeclarationKey;
@@ -424,6 +425,13 @@ pub enum UnavailabilityCause {
     /// non-empty `F_A` has no liveness half to decide. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
     HiddenFieldLiveness,
+    /// ADR-023 section 3, FR-173: a hyper clause S3 classified into HP-4
+    /// has no construction, so negotiation settles it without an engine run.
+    /// Wire cause `unsupported_projection`/`unsupported-requested-capability`.
+    UnsupportedHyperForm {
+        /// The rule that placed the clause in HP-4.
+        reason: HyperUnsupported,
+    },
     /// A refinement with a strong constraint in `F_A`, whose liveness half
     /// the second phase does not decide: it reads a class as weak. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -517,6 +525,7 @@ impl UnavailabilityCause {
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
+            | Self::UnsupportedHyperForm { .. }
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => "unsupported-requested-capability",
             Self::NotMarkov => "not-markov",
@@ -542,6 +551,7 @@ impl UnavailabilityCause {
             | Self::HybridProviderAbsent
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
+            | Self::UnsupportedHyperForm { .. }
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => Some("unsupported_projection"),
         }
