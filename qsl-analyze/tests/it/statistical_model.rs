@@ -10,6 +10,7 @@ use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MA
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::model::TransitionId;
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::statistical::{
@@ -249,6 +250,27 @@ fn quantity_parameters_are_encoded_and_measured_as_exact_unit_magnitudes() {
     assert_eq!(decimal.quantile, expected, "{decimal:?}");
     assert_eq!(rational.quantile, expected, "{rational:?}");
     assert_eq!(decimal.tests[0].samples, rational.tests[0].samples);
+}
+
+/// FR-189-AC-15 / FR-185-AC-8: a support written in another unit is rejected
+/// by S3 before a checked subject can reach the sampler.
+#[trace("TC-624", "FR-189-AC-15")]
+#[test]
+fn a_quantity_support_in_another_unit_is_refused_before_sampling() {
+    let claim = "probabilistic Q using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.75 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 5 ms }";
+    let refusals = match World::try_new(&prob_world::quantity_service("1 s: 1", claim)) {
+        Ok(_) => panic!("a support in seconds does not have the parameter's ms type"),
+        Err(refusals) => refusals,
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].cause.code(), Code::InvalidProbabilisticModel);
+    assert_eq!(
+        refusals[0].cause.catalog_code().map(|code| code.cause()),
+        Some("value-outside-type")
+    );
 }
 
 /// Checks FR-189-AC-4 (TC-624 step 4), the activation clause: over a

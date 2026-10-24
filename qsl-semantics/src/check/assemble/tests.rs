@@ -185,6 +185,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         selected.span,
         &mut operations,
         IdentityLimits::default(),
+        &BTreeMap::new(),
     )
     .expect("state-machine meaning is supported by the object-type seam");
     assert!(composites.is_empty());
@@ -247,6 +248,7 @@ fn a_model_scalar_is_named_with_its_integer_interval() {
         selected.span,
         &mut operations,
         IdentityLimits::default(),
+        &BTreeMap::new(),
     )
     .expect("a scalar-only model is supported");
     assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
@@ -1345,6 +1347,7 @@ fn model_field_of(
         &identities,
         &meaning_handles,
         &BTreeMap::new(),
+        &BTreeMap::new(),
     )
 }
 
@@ -1396,6 +1399,7 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
         &identities,
         &meaning_handles,
         &BTreeMap::new(),
+        &BTreeMap::new(),
     )
     .expect("native Timestamp is supported by the shared value kernel");
 
@@ -1417,6 +1421,7 @@ fn native_string_field_assembles_as_a_distinct_kernel_type() {
         &records,
         &identities,
         &meaning_handles,
+        &BTreeMap::new(),
         &BTreeMap::new(),
     )
     .expect("native String is supported by the shared value kernel");

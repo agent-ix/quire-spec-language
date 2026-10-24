@@ -2960,6 +2960,15 @@ fn read_value_type_ref(
     ctx: &NodeCtx<'_>,
     type_ref: &str,
 ) -> Result<ValueTypeRef, ModelRefusal> {
+    if let Some(name) = type_ref.strip_prefix("ix://quire/unit/") {
+        if name.is_empty() || name.contains('/') {
+            return Err(ctx.malformed_in(
+                "typeRef",
+                format!("{type_ref:?} is not a unit reference with a name"),
+            ));
+        }
+        return Ok(ValueTypeRef::Unit(name.to_owned()));
+    }
     if let Some(name) = type_ref.strip_prefix(native::PREFIX) {
         let native = name.parse::<NativeValueType>().map_err(|()| {
             ctx.malformed_in(
@@ -2988,7 +2997,7 @@ fn read_value_type_ref(
     if type_identity_segment(package, type_ref).is_none() {
         return Err(ctx.malformed_in(
             "typeRef",
-            format!("{type_ref:?} is not ix://quire/native/<Name> or ix://{package}/<artifact id>"),
+            format!("{type_ref:?} is not ix://quire/native/<Name>, ix://quire/unit/<name> or ix://{package}/<artifact id>"),
         ));
     }
     Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
