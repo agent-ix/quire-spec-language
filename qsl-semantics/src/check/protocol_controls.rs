@@ -1134,22 +1134,89 @@ mod tests {
         }
     }
 
-    /// A `predicate` join, whose function no checker reads yet, refuses
-    /// `unsupported_construct`/`not-yet-implemented` rather than compile
-    /// unchecked.
-    #[trace("TC-1065")]
+    /// FR-218-AC-31 (TC-1065): an admitted Boolean function is recorded on
+    /// the checked predicate join.
+    #[trace("TC-1065", "FR-218-AC-31")]
     #[test]
-    fn a_predicate_join_is_not_compiled_unchecked() {
-        let (_, cause, code, tag) =
-            only_refusal(&pipeline("", &parallel("predicate(done) [east, west]")));
-        assert_eq!(
-            (code, tag.as_str()),
-            ("unsupported_construct", "not-yet-implemented")
+    fn a_predicate_join_resolves_its_function_and_is_checked() {
+        let function = "function done using v(east: Boolean, west: Boolean): Boolean pure \
+            { east and west }";
+        let declarations = format!(
+            "{function}\n{}",
+            pipeline("", &parallel("predicate(done) [east, west]"))
         );
-        let ProtocolAnchorCause::Unimplemented { construct, .. } = &cause else {
-            panic!("an Unimplemented cause, got {cause:?}");
+        let graph = checks(&declarations);
+        let checked = graph.protocol("Pipeline").expect("checked protocol");
+        let [parallel] = &checked.parallels[..] else {
+            panic!("one checked parallel: {:?}", checked.parallels);
         };
-        assert_eq!(*construct, "join predicate");
+        let crate::check::CheckedJoinPolicy::Predicate { function } = &parallel.policy else {
+            panic!(
+                "predicate join holds a checked function key: {:?}",
+                parallel.policy
+            );
+        };
+        assert_eq!(
+            *function,
+            graph.function_identity("done").expect("function key")
+        );
+    }
+
+    /// FR-218-AC-31: predicate joins refuse unresolved names, non-functions
+    /// and functions whose signature does not match the distinct labels.
+    #[trace("TC-1065", "FR-218-AC-31")]
+    #[test]
+    fn predicate_join_checks_name_kind_and_signature() {
+        let run = parallel("predicate(done) [east, west]");
+        let cases = [
+            ("", "missing_declaration", "missing-name"),
+            (
+                "predicate done using v(east: Boolean, west: Boolean): Boolean \
+                 { east and west }",
+                "ill_typed",
+                "operator-ineligible",
+            ),
+            (
+                "function done using v(east: Boolean, west: Boolean, third: Boolean): Boolean \
+                 pure { east and west }",
+                "ill_typed",
+                "type-mismatch",
+            ),
+            (
+                "function done using v(east: Boolean, west: Int[0, 1]): Boolean pure \
+                 { east }",
+                "ill_typed",
+                "type-mismatch",
+            ),
+            (
+                "function done using v(east: Boolean, west: Boolean): Int[0, 1] pure \
+                 { 0 }",
+                "ill_typed",
+                "type-mismatch",
+            ),
+        ];
+        for (function, expected_code, expected_tag) in cases {
+            let declarations = format!("{function}\n{}", pipeline("", &run));
+            let (text, cause, code, tag) = only_refusal(&declarations);
+            assert_eq!((code, tag.as_str()), (expected_code, expected_tag));
+            assert_eq!(located(&text, &cause), "done");
+            match (expected_tag, &cause) {
+                ("missing-name", ProtocolAnchorCause::JoinFunctionMissing { function, .. }) => {
+                    assert_eq!(function, "done");
+                }
+                (
+                    "operator-ineligible",
+                    ProtocolAnchorCause::JoinFunctionKind { function, kind, .. },
+                ) => {
+                    assert_eq!(function, "done");
+                    assert_eq!(*kind, "predicate");
+                }
+                ("type-mismatch", ProtocolAnchorCause::JoinFunctionType { function, .. }) => {
+                    assert_eq!(function, "done");
+                }
+                (other, found) => panic!("{other}: unexpected cause {found:?}"),
+            }
+        }
     }
 
     /// A protocol with no channel, join or `terminal`/`scheduling` member

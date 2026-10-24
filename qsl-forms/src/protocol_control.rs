@@ -185,6 +185,8 @@ pub struct ParallelForm {
     pub memory: Option<Spanned<MemoryModelName>>,
     /// The join policy, with the span of its text.
     pub join: Spanned<JoinPolicy>,
+    /// The `predicate` function name's span, when this is a predicate join.
+    pub predicate_span: Option<Span>,
     /// The span of the `quorum` count, written exactly for `Quorum`.
     pub quorum_count: Option<Span>,
     /// The labels the join lists, in source order, repeats kept.
@@ -457,16 +459,16 @@ pub(crate) fn channel_form(
     })
 }
 
-/// A `JoinPolicy` node as its policy and, for `quorum`, the count's span.
+/// A `JoinPolicy` node as its policy, with the count or predicate-name span.
 fn join_policy(
     cst: &LosslessCst,
     join: &CstNode,
-) -> Result<(JoinPolicy, Option<Span>), FormsRefusal> {
+) -> Result<(JoinPolicy, Option<Span>, Option<Span>), FormsRefusal> {
     let join_items = items(cst, join);
     if has_token(&join_items, b"all") {
-        Ok((JoinPolicy::All, None))
+        Ok((JoinPolicy::All, None, None))
     } else if has_token(&join_items, b"any") {
-        Ok((JoinPolicy::Any, None))
+        Ok((JoinPolicy::Any, None, None))
     } else if has_token(&join_items, b"quorum") {
         let [count] = tokens_of(&join_items, TokenKind::Integer)[..] else {
             return Err(unexpected(join));
@@ -474,12 +476,17 @@ fn join_policy(
         Ok((
             JoinPolicy::Quorum(u64_token(count, join)?),
             Some(count.span()),
+            None,
         ))
     } else if has_token(&join_items, b"predicate") {
         let [name] = tokens_of(&join_items, TokenKind::Identifier)[..] else {
             return Err(unexpected(join));
         };
-        Ok((JoinPolicy::Predicate(text(name, join)?), None))
+        Ok((
+            JoinPolicy::Predicate(text(name, join)?),
+            None,
+            Some(name.span()),
+        ))
     } else {
         Err(unexpected(join))
     }
@@ -588,7 +595,7 @@ pub(crate) fn parallel_form(
         .map(|label| declared(label, parallel))
         .collect::<Result<Vec<_>, _>>()?;
     let join_node = only(&parallel_items, Production::JoinPolicy, parallel)?;
-    let (policy, quorum_count) = join_policy(cst, join_node)?;
+    let (policy, quorum_count, predicate_span) = join_policy(cst, join_node)?;
     let (Some(open), Some(close)) = (
         token_spelled(&parallel_items, b"["),
         token_spelled(&parallel_items, b"]"),
@@ -608,6 +615,7 @@ pub(crate) fn parallel_form(
             value: policy,
             span: join_node.span(),
         },
+        predicate_span,
         quorum_count,
         labels,
         labels_span: Span {
