@@ -9,8 +9,9 @@ use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::{hex, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
 
 const BUSINESS_MODULE: &str = "test/business";

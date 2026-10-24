@@ -549,28 +549,28 @@ pub struct CheckedGraph {
     operation_frames: Vec<CheckedOperationFrame>,
     /// Each `model` alias's object types, by artifact id: the table
     /// [`Self::field_domain`] resolves a field selection's alias and type in.
-    model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    model_objects: BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>,
     /// FR-115, FR-121: each `model` alias's operation owners (object types,
     /// processes and state machines), by artifact id: the table
     /// [`Self::resolve_operation`] resolves an operation selection's alias
     /// and owner in.
-    model_owners: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    model_owners: BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>,
     /// FR-116, FR-121: each `model` alias's top-level declarations that are
     /// not operation owners, by artifact id: the nodes that cannot declare
     /// operations a frame names.
     model_non_owners: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
     /// FR-115: every admitted operation owner's effective identity, by its
     /// declaration key.
-    owner_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    owner_types: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
-    object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_types: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
     /// ADR-012 §15.4: every admitted object type's `model`/`object_type`
     /// node key, by its declaration key -- keyed from the declaration
     /// whether or not this package's lowering minted the node, so
     /// [`Self::field_domain`] names a field's declaring type even when no
     /// clause reads it.
-    object_nodes: BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    object_nodes: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     /// ADR-012 §15.7: each `model` alias's population declarations, by
     /// artifact id, each with its canonical member type and ordinal, as
     /// [`AdmittedModel::population_domains`] orders them: the table
@@ -580,11 +580,11 @@ pub struct CheckedGraph {
     population_bounds: Vec<CheckedPopulationBound>,
     /// FR-304: every admitted population's declaration key, with its
     /// population domain.
-    population_keys: BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain>,
+    population_keys: BTreeMap<quire_checked::key::DeclarationKey, state_clause::PopulationDomain>,
     /// FR-304: the key of every declaration of every admitted domain
     /// package, of any kind, so a binding keyed by a declaration of the wrong
     /// kind refuses as malformed rather than missing.
-    declaration_keys: std::collections::BTreeSet<crate::model::key::DeclarationKey>,
+    declaration_keys: std::collections::BTreeSet<quire_checked::key::DeclarationKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -3568,8 +3568,8 @@ fn model_owner_tables(models: &[AdmittedModel]) -> (ModelTypeTable, TypeIdentiti
     type_tables(models, |model| Box::new(model.operation_owners()))
 }
 
-type ModelTypeTable = BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>;
-type TypeIdentities = BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>;
+type ModelTypeTable = BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>;
+type TypeIdentities = BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>;
 
 /// The tables of the declarations `select` picks from each admitted model.
 fn type_tables<'m>(
@@ -3579,7 +3579,7 @@ fn type_tables<'m>(
     ) -> Box<
         dyn Iterator<
                 Item = (
-                    &'m crate::model::key::DeclarationKey,
+                    &'m quire_checked::key::DeclarationKey,
                     quire_exact::EffectiveId,
                 ),
             > + 'm,
@@ -3707,7 +3707,7 @@ fn checked_population_bounds(models: &[AdmittedModel]) -> Vec<CheckedPopulationB
 /// domain [`AdmittedModel::population_domains`] gives it.
 fn population_key_table(
     models: &[AdmittedModel],
-) -> BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain> {
+) -> BTreeMap<quire_checked::key::DeclarationKey, state_clause::PopulationDomain> {
     models
         .iter()
         .flat_map(|model| {
@@ -3735,8 +3735,8 @@ fn population_key_table(
 /// checked graph's `population_key` and the emitted `temporal-satisfaction`
 /// record build it.
 fn population_domain_key(
-    object_types: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
-    object_nodes: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    object_types: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
     let node = object_types
@@ -3803,7 +3803,7 @@ impl CheckedGraph {
     pub fn resolve_declaration(
         &self,
         node: quire_exact::NodeKey,
-    ) -> Option<&crate::model::key::DeclarationKey> {
+    ) -> Option<&quire_checked::key::DeclarationKey> {
         self.model_correspondence.resolve(node)
     }
 
@@ -4152,7 +4152,7 @@ impl CheckedGraph {
     pub fn object_type_key(
         &self,
         id: quire_exact::EffectiveId,
-    ) -> Option<&crate::model::key::DeclarationKey> {
+    ) -> Option<&quire_checked::key::DeclarationKey> {
         self.object_types
             .iter()
             .find_map(|(key, known)| (*known == id).then_some(key))

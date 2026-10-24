@@ -14,7 +14,8 @@ use qsl_semantics::model::domain_package::{
     ClauseRecord, DomainPackageRecord, FieldMemberRecord, RecordValueTypeRecord, ValueTypeRef,
 };
 use qsl_semantics::model::intake::admit_unit;
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
+use quire_checked::key::DeclarationKey;
 use serde_json::json;
 
 fn key(node: &str) -> DeclarationKey {

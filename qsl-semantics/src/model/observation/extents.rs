@@ -23,8 +23,8 @@ use quire_semantic_value::relationship_extent::{
 
 use super::document::ObservationRole;
 use super::{fault, refuse, AdmissionFailure, AdmissionRecord};
-use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
+use quire_checked::key::DeclarationKey;
 
 /// Why the population enumerator stopped before normal exhaustion: it could
 /// not read the population declaration `declaration`. This is the only way a

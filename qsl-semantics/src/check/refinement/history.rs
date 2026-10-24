@@ -29,7 +29,7 @@ use crate::check::refusal::CheckCause;
 use crate::check::state_clause::{ClauseDeclarations, ClauseOperation};
 use crate::check::type_form::resolve_type_form;
 use crate::family::CheckContext;
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// One concrete operation's update of a history field, resolved.
 #[derive(Debug)]

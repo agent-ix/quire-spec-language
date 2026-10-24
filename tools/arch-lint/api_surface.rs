@@ -136,6 +136,14 @@ pub(crate) struct DebtEntry {
     pub(crate) function: &'static str,
 }
 
+/// The callers allowed to reference one constructor function of a rule's
+/// constructor module (see [`Rule::constructors`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ConstructorCallers {
+    pub(crate) function: &'static str,
+    pub(crate) callers: &'static [AllowedCaller],
+}
+
 /// A module of a crate that no reference may reach: `krate::module`, both
 /// single identifiers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,6 +171,15 @@ pub(crate) struct Rule {
     /// The callers allowed to contain a call site: each names its crate and
     /// a module path prefix within it (see [`AllowedCaller`]).
     pub(crate) allowed_callers: &'static [AllowedCaller],
+    /// Per-constructor allow-lists for a rule whose `call_patterns[0]` is the
+    /// path of a module of constructors (T12-G): a reference to
+    /// `<module>::<function>` is allowed from `allowed_callers` or from the
+    /// callers listed for that function; a reference to the module itself
+    /// (a `use` of it or a glob) names no single function, so only
+    /// `allowed_callers` may make it. References are found by parsing, so a
+    /// crate alias, a nested use tree and a glob import all count. `&[]` for
+    /// every other rule.
+    pub(crate) constructors: &'static [ConstructorCallers],
     /// A file path, relative to the QSL tree, whose presence the rule needs
     /// before it is live. `None` means the rule is always live once a root is
     /// given (the constructor rules below: the files that define `NodeKey`,
@@ -192,7 +209,7 @@ pub(crate) struct Rule {
     pub(crate) debt_list: &'static [DebtEntry],
 }
 
-/// today's six T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
+/// today's seven T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
 /// O-13/QC-21, T-1).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
@@ -226,6 +243,7 @@ pub(crate) const RULES: &[Rule] = &[
         pending_reason: "the layer-6 facade crate `qsl-replay/src/lib.rs` is absent from the \
                          --qsl tree",
         scope_note: None,
+        constructors: &[],
         shipped_only: false,
         debt_list: &[],
     },
@@ -262,6 +280,7 @@ pub(crate) const RULES: &[Rule] = &[
              sites -- ADR-013 does not name an allowed-caller mapping for either, not decided \
              here (#213)",
         ),
+        constructors: &[],
         shipped_only: true,
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists" --
         // every shipped mint outside `check` on origin/main, named by
@@ -298,6 +317,7 @@ pub(crate) const RULES: &[Rule] = &[
              quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
              name an allowed-caller mapping for either, not decided here (#213)",
         ),
+        constructors: &[],
         shipped_only: true,
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists".
         // Empty since reference types were retyped to `EffectiveId`
@@ -333,6 +353,7 @@ pub(crate) const RULES: &[Rule] = &[
         // makes no claim about either, rather than asserting a copy this
         // scan has not found.
         scope_note: Some("scoped to QSL's own tree only"),
+        constructors: &[],
         shipped_only: true,
         debt_list: &[],
     },
@@ -367,6 +388,7 @@ pub(crate) const RULES: &[Rule] = &[
              workspace crate's `src/`; the allowed caller is `qsl-package`'s `checked_v2` \
              since X-7",
         ),
+        constructors: &[],
         shipped_only: true,
         debt_list: &[],
     },
@@ -395,6 +417,56 @@ pub(crate) const RULES: &[Rule] = &[
             "scoped to QSL's own tree, where no module is an allowed caller; a backend names \
              its own admitted-package reader in its own run of the check",
         ),
+        constructors: &[],
+        shipped_only: true,
+        debt_list: &[],
+    },
+    Rule {
+        id: "T12-G",
+        description: "only `check`, `library` and `value::definition` of `qsl-semantics` call a \
+                      `quire_checked::construct` constructor (ADR-011 FB-14, FR-400 \"Checking \
+                      authority\" rule 3)",
+        role: Role::Qsl,
+        // Every function of the `construct` module builds a checked term. The
+        // module is compiled only under `quire-checked`'s `construct`
+        // feature, which only `qsl-semantics` enables in its manifest, but
+        // Cargo feature unification turns it on for the whole workspace, so
+        // this rule is what keeps another crate from building one. A path
+        // through the module, spelled through the crate or an alias of it,
+        // matches as a `use` leaf (plain, nested or glob), a call or a
+        // function value. `check` and every module under it may build any
+        // checked term; `library` mints `PackageId` and `value::definition`
+        // admits `AdmittedIntegerDivision`, each only its own constructor.
+        call_patterns: &["quire_checked::construct"],
+        forbidden_patterns: &[],
+        forbidden_modules: &[],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "qsl-semantics/src",
+            module_prefix: "check",
+        }],
+        requires_path: None,
+        pending_reason: "",
+        scope_note: Some(
+            "scoped to QSL's own tree; a reference through a re-export of `quire_checked` in \
+             another crate is not followed; the manifest check (TC-390) is what confines the \
+             `construct` feature to `qsl-semantics`",
+        ),
+        constructors: &[
+            ConstructorCallers {
+                function: "package_id",
+                callers: &[AllowedCaller {
+                    crate_src: "qsl-semantics/src",
+                    module_prefix: "library",
+                }],
+            },
+            ConstructorCallers {
+                function: "admitted_integer_division",
+                callers: &[AllowedCaller {
+                    crate_src: "qsl-semantics/src",
+                    module_prefix: "value::definition",
+                }],
+            },
+        ],
         shipped_only: true,
         debt_list: &[],
     },
@@ -1037,8 +1109,10 @@ fn scan_shipped_file(
     let forbidden_lines = pattern_match_lines(&tokens, &compile(rule.forbidden_patterns));
     let call_lines = if module_allowed(crate_src, module, rule.allowed_callers) {
         BTreeSet::new()
-    } else {
+    } else if rule.constructors.is_empty() {
         pattern_match_lines(&tokens, &compile(rule.call_patterns))
+    } else {
+        constructor_violation_lines(&parsed, &tokens, crate_src, module, rule)
     };
     let sites = forbidden_lines
         .union(&call_lines)
@@ -1056,6 +1130,116 @@ fn scan_shipped_file(
         })
         .collect();
     Ok(sites)
+}
+
+/// Every line in `module` that references a constructor of the rule's
+/// constructor module (`call_patterns[0]`, `krate::module`) from a caller not
+/// allowed for it (see [`Rule::constructors`]). A reference is a `use` tree
+/// leaf or a path through the crate or an alias of it; a macro argument `syn`
+/// does not parse is read as a token run.
+fn constructor_violation_lines(
+    parsed: &syn::File,
+    tokens: &[LocatedToken],
+    crate_src: &str,
+    module: &str,
+    rule: &Rule,
+) -> BTreeSet<usize> {
+    let Some((krate, constructor_module)) = rule.call_patterns[0].split_once("::") else {
+        return BTreeSet::new();
+    };
+    let allowed_for = |function: Option<&str>| {
+        function.is_some_and(|function| {
+            rule.constructors.iter().any(|constructor| {
+                constructor.function == function
+                    && module_allowed(crate_src, module, constructor.callers)
+            })
+        })
+    };
+    let mut aliases = CrateAliases {
+        krate,
+        names: BTreeSet::from([krate.to_owned()]),
+    };
+    aliases.visit_file(parsed);
+    let mut references = ConstructorReferences {
+        aliases: &aliases.names,
+        module: constructor_module,
+        found: Vec::new(),
+    };
+    references.visit_file(parsed);
+    let mut lines = BTreeSet::new();
+    let mut parsed_lines = BTreeSet::new();
+    for (line, function) in references.found {
+        parsed_lines.insert(line);
+        if !allowed_for(function.as_deref()) {
+            lines.insert(line);
+        }
+    }
+    let compile = |text: &str| CallPattern::compile(text);
+    let mut named_lines = BTreeSet::new();
+    for constructor in rule.constructors {
+        let pattern = compile(&format!(
+            "{krate}::{constructor_module}::{}",
+            constructor.function
+        ));
+        for line in pattern_match_lines(tokens, &[pattern]) {
+            named_lines.insert(line);
+            if !parsed_lines.contains(&line) && !allowed_for(Some(constructor.function)) {
+                lines.insert(line);
+            }
+        }
+    }
+    for line in pattern_match_lines(tokens, &[compile(rule.call_patterns[0])]) {
+        if !parsed_lines.contains(&line) && !named_lines.contains(&line) {
+            lines.insert(line);
+        }
+    }
+    lines
+}
+
+/// Every reference to `module` through one of `aliases`, with the constructor
+/// function it names, if it names one (`None` for the module itself, a glob
+/// or the crate glob).
+struct ConstructorReferences<'a> {
+    aliases: &'a BTreeSet<String>,
+    module: &'a str,
+    found: Vec<(usize, Option<String>)>,
+}
+
+impl ConstructorReferences<'_> {
+    fn note(&mut self, segments: &[String], line: usize) {
+        let [first, second, rest @ ..] = segments else {
+            return;
+        };
+        if !self.aliases.contains(first) {
+            return;
+        }
+        if second == self.module {
+            let function = rest.first().filter(|name| *name != "*").cloned();
+            self.found.push((line, function));
+        } else if second == "*" {
+            self.found.push((line, None));
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ConstructorReferences<'_> {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        let mut leaves = Vec::new();
+        use_leaves(&node.tree, &mut Vec::new(), &mut leaves);
+        for (segments, _, line) in leaves {
+            self.note(&segments, line);
+        }
+    }
+
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        let segments: Vec<String> = node
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        self.note(&segments, node.span().start().line);
+        syn::visit::visit_path(self, node);
+    }
 }
 
 /// Every module declared out of line as `#[cfg(test)] mod name;`, as the
@@ -2769,6 +2953,167 @@ mod tests {
             .unwrap();
         assert_is_qsl_root(&qsl_root).unwrap();
         let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
+        let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_029 (T12-G, FR-400-AC-3): a `quire_checked::construct`
+    /// path from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` fails,
+    /// naming file, line and module; `check` and
+    /// `value::definition` pass; `library` fails for this constructor.
+    #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_029_construct_outside_the_checker_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let call =
+            "fn f() {\n    let _ = quire_checked::construct::admitted_integer_division(p);\n}\n";
+        write(dir.path(), "qsl-eval/src/run.rs", call);
+        write(dir.path(), "qsl-package/src/emit.rs", call);
+        write(dir.path(), "qsl-semantics/src/model/key.rs", call);
+        write(dir.path(), "qsl-semantics/src/check/deep/node.rs", call);
+        write(dir.path(), "qsl-semantics/src/library/mod.rs", call);
+        write(dir.path(), "qsl-semantics/src/value/definition.rs", call);
+        write(dir.path(), "qsl-semantics/src/value/other.rs", call);
+        write(
+            dir.path(),
+            "qsl-semantics/src/model/test_only.rs",
+            "#[cfg(test)]\nmod tests {\n    fn f() { quire_checked::construct::x(); }\n}\n",
+        );
+        let rule = RULES.iter().find(|rule| rule.id == "T12-G").unwrap();
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        let mut found: Vec<(String, usize, String)> = outcome
+            .violations
+            .iter()
+            .map(|site| {
+                let file = site.file.strip_prefix(dir.path()).unwrap();
+                (file.display().to_string(), site.line, site.module.clone())
+            })
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                ("qsl-eval/src/run.rs".to_owned(), 2, "run".to_owned()),
+                ("qsl-package/src/emit.rs".to_owned(), 2, "emit".to_owned()),
+                // `library` may build only the `PackageId` constructor.
+                (
+                    "qsl-semantics/src/library/mod.rs".to_owned(),
+                    2,
+                    "library".to_owned()
+                ),
+                (
+                    "qsl-semantics/src/model/key.rs".to_owned(),
+                    2,
+                    "model::key".to_owned()
+                ),
+                (
+                    "qsl-semantics/src/value/other.rs".to_owned(),
+                    2,
+                    "value::other".to_owned()
+                ),
+            ],
+            "{:?}",
+            outcome.violations
+        );
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_031 (T12-G, FR-400-AC-3): a crate alias, a
+    /// nested use tree and a glob import of the `construct` module count as
+    /// references, and `library` and `value::definition` may reference only
+    /// their own constructor.
+    #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_031_construct_is_found_through_alias_group_and_glob() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let spellings = [
+            (
+                "qsl-eval/src/alias.rs",
+                "use quire_checked as qc;\nfn f() { let _ = qc::construct::admitted_integer_division(p); }\n",
+            ),
+            (
+                "qsl-eval/src/group.rs",
+                "use quire_checked::{construct::admitted_integer_division, key::DeclarationKey};\n",
+            ),
+            ("qsl-eval/src/glob.rs", "use quire_checked::construct::*;\n"),
+            ("qsl-eval/src/module.rs", "use quire_checked::construct;\n"),
+            (
+                "qsl-eval/src/rename.rs",
+                "use quire_checked::construct::admitted_integer_division as admit;\n",
+            ),
+            (
+                "qsl-eval/src/macro_arg.rs",
+                "fn f() { m!(quire_checked::construct::admitted_integer_division(p)); }\n",
+            ),
+            (
+                "qsl-semantics/src/library/mod.rs",
+                "use quire_checked::construct::admitted_integer_division;\n",
+            ),
+            (
+                "qsl-semantics/src/value/definition.rs",
+                "use quire_checked::construct::package_id;\n",
+            ),
+            (
+                "qsl-semantics/src/check/mod.rs",
+                "use quire_checked as qc;\nuse qc::construct::*;\nuse quire_checked::{construct::package_id};\n",
+            ),
+            (
+                "qsl-semantics/src/library/ok.rs",
+                "use quire_checked::{construct::package_id};\n",
+            ),
+            (
+                "qsl-semantics/src/value/definition/inner.rs",
+                "fn f() { quire_checked::construct::admitted_integer_division(p); }\n",
+            ),
+            ("qsl-eval/src/unrelated.rs", "use quire_checked::key::DeclarationKey;\nuse other::construct::x;\n"),
+        ];
+        for (path, text) in spellings {
+            write(dir.path(), path, text);
+        }
+        let rule = RULES.iter().find(|rule| rule.id == "T12-G").unwrap();
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        let mut found: Vec<(String, usize)> = outcome
+            .violations
+            .iter()
+            .map(|site| {
+                let file = site.file.strip_prefix(dir.path()).unwrap();
+                (file.display().to_string(), site.line)
+            })
+            .collect();
+        found.sort();
+        let expected: Vec<(String, usize)> = [
+            ("qsl-eval/src/alias.rs", 2),
+            ("qsl-eval/src/glob.rs", 1),
+            ("qsl-eval/src/group.rs", 1),
+            ("qsl-eval/src/macro_arg.rs", 1),
+            ("qsl-eval/src/module.rs", 1),
+            ("qsl-eval/src/rename.rs", 1),
+            ("qsl-semantics/src/library/mod.rs", 1),
+            ("qsl-semantics/src/value/definition.rs", 1),
+        ]
+        .into_iter()
+        .map(|(file, line)| (file.to_owned(), line))
+        .collect();
+        assert_eq!(found, expected, "{:?}", outcome.violations);
+    }
+
+    /// tc_arch_lint_api_surface_030 (T12-G on this repository's own tree,
+    /// FR-400-AC-3): no shipped QSL module outside the allow-list calls a
+    /// `construct` constructor.
+    #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_030_construct_live_tree_is_clean() {
+        let qsl_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        assert_is_qsl_root(&qsl_root).unwrap();
+        let rule = RULES.iter().find(|rule| rule.id == "T12-G").unwrap();
         let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);

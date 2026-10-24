@@ -19,12 +19,12 @@ use quire_semantic_value::relationship_extent::RelationshipExtent;
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
     AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
 };
+use quire_checked::key::DeclarationKey;
 
 /// One complete, closed population state: for each population, its objects
 /// by declared key.

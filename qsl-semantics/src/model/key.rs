@@ -9,8 +9,23 @@
 //! `Serialize` view below (`*Wire`), encoded by `quire-canonical`, the one
 //! RFC 8785 implementation (ADR-013 §2, ADR-013:113); the encoder orders
 //! members itself, so a view's field order carries no meaning.
+//!
+//! `DeclarationKey` is a plain value of `quire-checked` (FR-400, ADR-011 X-13)
+//! and is not re-exported here. Its old path no longer resolves:
+//!
+//! ```compile_fail,E0603
+//! use qsl_semantics::model::key::DeclarationKey;
+//! ```
+//!
+//! Its new owner does:
+//!
+//! ```no_run
+//! use quire_checked::key::DeclarationKey;
+//! let _ = DeclarationKey { package: String::new(), node: String::new() };
+//! ```
 use qsl_foundation::ByteDigest;
 use quire_canonical::{Encode, FixedShape, Limits};
+use quire_checked::key::DeclarationKey;
 use serde::Serialize;
 
 use crate::model::refusal::ModelRefusalCause;
@@ -85,43 +100,14 @@ pub const RULE_REDEFINE: RuleRef = RuleRef {
     identity: "quire.model.normalize.redefine/v2",
 };
 
-/// One original declaration key: `{package, node, digest_domain: "sha256-jcs"}`
-/// (`model-complete.md`, "Identity domains"; `model-effective-declaration.schema.json`,
-/// `$defs.DeclarationKey`). A declaration key carries no digest: two versions
-/// of one domain package with equal nodes yield equal declaration keys.
-///
-/// Ordering matches `model-complete.md`: `package`, then `node`, each as
-/// UTF-8 bytes, a proper prefix first. Field declaration order below gives
-/// exactly that comparison under `derive(Ord)`.
-///
-/// quire:canonical
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DeclarationKey {
-    /// The domain package identity (FR-154).
-    pub package: String,
-    /// The IR node identity.
-    pub node: String,
-}
-
-impl DeclarationKey {
-    /// A `test/orders` key over `node`, following TC-195's fixture
-    /// convention: every TC-195 fixture is a domain package with identity
-    /// `test/orders`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(node: impl Into<String>) -> Self {
-        Self {
-            package: "test/orders".to_owned(),
-            node: node.into(),
-        }
-    }
-
-    /// This key's `$defs.DeclarationKey` preimage view.
-    pub(super) fn wire(&self) -> DeclarationKeyWire<'_> {
-        DeclarationKeyWire {
-            package: &self.package,
-            node: &self.node,
-            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
-        }
+/// A [`DeclarationKey`]'s `$defs.DeclarationKey` preimage view. The key is a
+/// plain value in `quire-checked`; its identity encoding stays with the model
+/// stage that mints identities (FR-400).
+pub(super) fn declaration_key_wire(key: &DeclarationKey) -> DeclarationKeyWire<'_> {
+    DeclarationKeyWire {
+        package: &key.package,
+        node: &key.node,
+        digest_domain: SHA256_JCS_DIGEST_DOMAIN,
     }
 }
 
@@ -183,7 +169,7 @@ impl Fact {
         FactWire {
             ordinal: self.ordinal.to_string(),
             rule: self.rule.wire(),
-            inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
+            inputs: self.inputs.iter().map(declaration_key_wire).collect(),
             parent: self.parent.as_ref().map(EffectiveIdWire::from),
         }
     }
@@ -271,7 +257,7 @@ impl EffectiveDeclarationPreimage {
                 .owner_effective_type
                 .as_ref()
                 .map(EffectiveIdWire::from),
-            original: self.original.wire(),
+            original: declaration_key_wire(&self.original),
             derivation: self.derivation.iter().map(Fact::wire).collect(),
         }
     }
@@ -301,7 +287,7 @@ impl EffectiveDeclarationPreimage {
                 .owner_effective_type
                 .as_ref()
                 .map(EffectiveIdWire::from),
-            original: self.original.wire(),
+            original: declaration_key_wire(&self.original),
             derivation: Vec::new(),
         };
         self.derivation

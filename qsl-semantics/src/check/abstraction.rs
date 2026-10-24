@@ -35,8 +35,8 @@ use super::lowering::{
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
 use super::CheckedGraph;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationLookup;
+use quire_checked::key::DeclarationKey;
 
 /// A Rust path: a lexical key (QSpec FR-450 `rust-path`).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

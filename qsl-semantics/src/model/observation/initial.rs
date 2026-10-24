@@ -18,9 +18,9 @@ use super::{
     check_model_any, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, AnchorKind,
     DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::state::{ModelState, StateField, StateObject};
+use quire_checked::key::DeclarationKey;
 
 /// `attribute`'s own declaration key: its owner's key with the field name
 /// appended, the key FR-106 check 11 compares fields by.

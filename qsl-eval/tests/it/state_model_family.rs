@@ -16,7 +16,6 @@ use qsl_semantics::model::accounting::{Meter as ModelMeter, ModelNormalizationLi
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use qsl_semantics::model::intake::SelectedModel;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{AdmittedObservations, DocumentRef};
@@ -24,6 +23,7 @@ use qsl_semantics::model::population::{
     admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits, PopulationDocument,
     PopulationMember,
 };
+use quire_checked::key::DeclarationKey;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     CollectionKind, EffectiveId, FieldValue, IllTypedCause, Meter, ObjectId, ObjectReference,

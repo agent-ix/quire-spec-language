@@ -21,12 +21,13 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
 use qsl_semantics::model::key::{
-    hex, DeclarationKey, EffectiveDeclarationPreimage, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
+    hex, EffectiveDeclarationPreimage, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
 };
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use qsl_semantics::model::refusal::MemberPath;
+use quire_checked::key::DeclarationKey;
 use quire_exact::EffectiveId;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};

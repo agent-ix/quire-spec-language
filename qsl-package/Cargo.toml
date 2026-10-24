@@ -49,6 +49,8 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it.
 quire-canonical = { workspace = true, optional = true }
+# ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
+quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
@@ -61,6 +63,10 @@ thiserror = { version = "2.0.20", default-features = false, optional = true }
 qsl-forms = { path = "../qsl-forms" }
 # The S1 -> S2 -> S3 -> S4 round trip (FR-091) parses its unit with S1.
 qsl-cst = { path = "../qsl-cst" }
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 # `check::imports` (the reader's tests) is public only under `test-support`.
 # Only this dev-dependency enables it: the root crate's
 # `no_shipped_dependency_enables_test_support` refuses a normal or build

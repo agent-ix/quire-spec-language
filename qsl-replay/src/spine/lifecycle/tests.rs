@@ -1752,7 +1752,7 @@ fn an_internal_invariant_failure_is_a_fault() {
 #[test]
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
-    use qsl_semantics::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
     let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
@@ -2089,7 +2089,7 @@ fn type_invariant_check_refusal(cause: qsl_semantics::check::CheckCause) -> Comp
                 quire_semantic_value::location::Origin::Expression,
             ),
             cause: CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
-                clause: qsl_semantics::model::key::DeclarationKey {
+                clause: quire_checked::key::DeclarationKey {
                     package: "acme/orders".to_owned(),
                     node: "ix://acme/orders/Widget/Stable".to_owned(),
                 },

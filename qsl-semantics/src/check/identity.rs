@@ -73,8 +73,8 @@ use quire_exact::{
 
 use quire_semantic_value::declaration::CompositeShape;
 
-use crate::model::key::DeclarationKey;
 use crate::value::enumeration::mint_variant_id;
+use quire_checked::key::DeclarationKey;
 
 // ---------------------------------------------------------------------
 // O-10: clause kind

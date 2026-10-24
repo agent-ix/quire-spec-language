@@ -707,9 +707,9 @@ mod tests {
     #[test]
     fn typed_admission_command_details_preserve_model_and_type_causes() {
         use qsl_replay::spine::RunRefusal;
-        use qsl_semantics::model::key::DeclarationKey;
         use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
         use qsl_semantics::model::refusal::OfferedSelection;
+        use quire_checked::key::DeclarationKey;
 
         let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
         let model = RunError {

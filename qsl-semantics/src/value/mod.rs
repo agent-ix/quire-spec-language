@@ -164,9 +164,8 @@ pub(crate) mod unit;
 // `quire_semantic_value::definition`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use definition::{
-    divide, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, ModelEntry, ModelRole, TemporalEntry,
-    TemporalRole, Trigger,
+    divide, AdmittedIeeeProfile, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
+    DefinitionReference, ModelEntry, ModelRole, TemporalEntry, TemporalRole, Trigger,
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
 pub use layer::{HeaderLayer, LayerForm, LayerRow, WitnessKind, WitnessRequest};

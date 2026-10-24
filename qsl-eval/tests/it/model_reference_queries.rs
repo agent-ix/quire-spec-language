@@ -31,7 +31,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::key::EffectiveId;
 use qsl_semantics::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::{
@@ -39,6 +39,7 @@ use qsl_semantics::model::population::{
     InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
     PopulationMember,
 };
+use quire_checked::key::DeclarationKey;
 use quire_eval::{CallFailure, Evaluation};
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::NodeKey;

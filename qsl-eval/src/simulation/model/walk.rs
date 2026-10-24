@@ -3,8 +3,8 @@
 //! model state. It evaluates the state's invariants, then every application
 //! of every object's operations, collecting the successors and the findings.
 
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::Observation;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 

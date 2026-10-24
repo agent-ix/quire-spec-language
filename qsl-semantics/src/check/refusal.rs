@@ -558,7 +558,7 @@ pub enum ProtocolAnchorCause {
         /// The export's own kind, such as `port` or `object type`.
         actual: &'static str,
         /// The export's declaration key.
-        export: Box<crate::model::key::DeclarationKey>,
+        export: Box<quire_checked::key::DeclarationKey>,
         /// The model name's span.
         span: Span,
     },
@@ -1115,7 +1115,7 @@ pub enum TemporalCause {
     /// at the clause.
     AmbiguousPopulation {
         /// The covering populations, in ascending `DeclarationKey` order.
-        populations: Vec<crate::model::key::DeclarationKey>,
+        populations: Vec<quire_checked::key::DeclarationKey>,
         /// The clause's span.
         span: Span,
     },
@@ -1617,7 +1617,7 @@ pub enum MemberCandidate {
     /// the end on `side` (the end nearest the receiver).
     RelationshipEnd {
         /// The relationship's declaration.
-        relationship: crate::model::key::DeclarationKey,
+        relationship: quire_checked::key::DeclarationKey,
         /// The end whose role the name matched.
         side: super::navigation::EndSide,
     },
@@ -1942,7 +1942,7 @@ pub enum CheckCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DispatchLinkCause {
     /// The called operation: the root of the family that failed.
-    pub operation: crate::model::key::DeclarationKey,
+    pub operation: quire_checked::key::DeclarationKey,
     /// The refusal's code.
     pub code: Code,
     /// The refusal's catalog pair: `resource_exhausted`/
@@ -1964,15 +1964,15 @@ pub struct DispatchLinkCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DispatchSubtypeFailure {
     /// The subtype.
-    pub subtype: crate::model::key::DeclarationKey,
+    pub subtype: quire_checked::key::DeclarationKey,
     /// `no-applicable` or `multiple-undominated`.
     pub cause: &'static str,
     /// Every applicable candidate.
-    pub candidates: Vec<crate::model::key::DeclarationKey>,
+    pub candidates: Vec<quire_checked::key::DeclarationKey>,
     /// Every `(dominant, dominated)` pair among them.
     pub dominance_pairs: Vec<(
-        crate::model::key::DeclarationKey,
-        crate::model::key::DeclarationKey,
+        quire_checked::key::DeclarationKey,
+        quire_checked::key::DeclarationKey,
     )>,
 }
 
@@ -1990,13 +1990,13 @@ pub enum KeyFault {
     UnknownEffectiveId(EffectiveId),
     /// A `DeclarationKey`'s `package` is no admitted domain package's
     /// identity.
-    UnadmittedPackage(crate::model::key::DeclarationKey),
+    UnadmittedPackage(quire_checked::key::DeclarationKey),
     /// A `DeclarationKey`'s `node` is empty.
-    EmptyNode(crate::model::key::DeclarationKey),
+    EmptyNode(quire_checked::key::DeclarationKey),
     /// A `DeclarationKey` names no record of its admitted domain package.
-    UnknownDeclaration(crate::model::key::DeclarationKey),
+    UnknownDeclaration(quire_checked::key::DeclarationKey),
     /// A domain package record of a kind no checked node names.
-    UnnamedRecordKind(crate::model::key::DeclarationKey),
+    UnnamedRecordKind(quire_checked::key::DeclarationKey),
     /// A compound `UnitId` the check stage's unit scope does not hold.
     UnheldUnit(quire_exact::UnitId),
     /// A declared unit node, or a dimension or target unit node a held unit
@@ -2412,7 +2412,7 @@ pub struct IdentityObserving {
     /// The form of identity observation.
     pub form: IdentityForm,
     /// The population's declaration key.
-    pub population: crate::model::key::DeclarationKey,
+    pub population: quire_checked::key::DeclarationKey,
 }
 
 /// A located checking refusal, made before any charge.

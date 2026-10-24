@@ -21,7 +21,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};

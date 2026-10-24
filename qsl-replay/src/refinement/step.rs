@@ -23,8 +23,8 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::ModelState;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;

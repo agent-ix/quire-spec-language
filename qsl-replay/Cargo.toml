@@ -31,6 +31,8 @@ quire-exact = { workspace = true }
 # carries (re-exported at the crate root, so CG, which depends on this crate
 # alone, builds the arm).
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+# ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
+quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { workspace = true }
@@ -55,6 +57,10 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 # `qsl-semantics`' test-only fixtures (`check::fixture_source`,
 # `PackageDeclarations`, `CheckMode::Kernel`'s `check_expression`) for
 # `spine::call`'s own tests (TC-452 step 5, FR-100-AC-10): a standalone

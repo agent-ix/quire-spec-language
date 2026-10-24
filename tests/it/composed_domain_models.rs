@@ -38,10 +38,11 @@ use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
 use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, PortDirection};
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{admit, lift_document, read_domain_package};
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::systems::{
     check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome,
 };
+use quire_checked::key::DeclarationKey;
 use quire_spec_language::linking::composed::binding_work::{Limits as BindingLimits, Work};
 use quire_spec_language::linking::composed::models::{
     bind_models, ImportRefusal, ModelBindings, ModelErrorKind, ModelInput, ModelTarget,

@@ -139,6 +139,29 @@ impl DirectionReport {
     }
 }
 
+/// A resolved dependency of a repository on the checked-term leaf
+/// `quire-checked` (ADR-011 layer C), with the leaf's `construct` feature
+/// enabled in that repository's resolution. The leaf classifies as no
+/// ecosystem repository, so it has no [`Edge`]; this is its own kind of edge.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConstructEdge {
+    /// The depending repository.
+    pub from: Repo,
+    /// The depending package's name.
+    pub via_crate: String,
+}
+
+/// FR-059, FR-400-AC-3 / ADR-011 FB-14: the FB-05 violations among `edges`
+/// that enable `construct`. A backend (IR, RT or CG) reads checked terms and
+/// never builds one; QSL's own `qsl-semantics` is the one crate that does.
+pub fn construct_violations(edges: &[ConstructEdge]) -> Vec<ConstructEdge> {
+    edges
+        .iter()
+        .filter(|edge| edge.from != Repo::Qsl)
+        .cloned()
+        .collect()
+}
+
 /// The QSL crate that holds the layer-6 `replay` facade, the one QSL crate
 /// CG may take a normal dependency on (ADR-011 FB-05).
 const REPLAY_FACADE_CRATE: &str = "qsl-replay";
@@ -258,6 +281,25 @@ mod tests {
             kind,
             via_crate: via.to_owned(),
         }
+    }
+
+    /// tc_arch_lint_direction_010: a resolved backend dependency on
+    /// `quire-checked` with `construct` enabled is an FB-05 violation; QSL's
+    /// own is not (FR-059, FR-400-AC-3).
+    #[trace("TC-156", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_direction_010_construct_edge_from_a_backend_is_fb05_violation() {
+        let rt = ConstructEdge {
+            from: Repo::Rt,
+            via_crate: "quire-contract-runtime".to_owned(),
+        };
+        let qsl = ConstructEdge {
+            from: Repo::Qsl,
+            via_crate: "qsl-semantics".to_owned(),
+        };
+        assert_eq!(construct_violations(&[rt.clone(), qsl.clone()]), vec![rt]);
+        assert!(construct_violations(&[qsl]).is_empty());
+        assert!(construct_violations(&[]).is_empty());
     }
 
     /// tc_arch_lint_direction_001: a clean ecosystem (only the CG -> QSL

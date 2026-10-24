@@ -43,9 +43,10 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Incomplete, Meter, Undefined, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
