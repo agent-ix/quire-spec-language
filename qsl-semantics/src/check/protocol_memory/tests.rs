@@ -7,7 +7,8 @@ use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::check::{
-    AccessClass, CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, ProtocolAnchorCause,
+    AccessClass, CheckCause, CheckRefusal, CheckedAccess, CheckedGraph, PackageDeclarations,
+    ProtocolAnchorCause,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -253,7 +254,7 @@ fn a_weak_default_requires_join_all_without_outstanding() {
 
 /// A `fence` records its ordering, whichever of the four it is written
 /// with.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-2")]
 #[test]
 fn each_fence_ordering_is_recorded() {
     let orderings = [
@@ -551,7 +552,7 @@ fn sb(memory: &str, store_order: &str, load_order: &str) -> String {
 /// stores' `release` and the loads' `acquire` recorded and the model
 /// recorded. Which of `Cell.v` and `Core.r` is shared is EN-1's decision
 /// (MA-1), so S3 fixes no access kind for them.
-#[trace("TC-665", "TC-664")]
+#[trace("TC-665", "TC-664", "FR-220-AC-9")]
 #[test]
 fn store_buffering_checks_under_every_memory_model() {
     for (memory, model) in [
@@ -578,6 +579,16 @@ fn store_buffering_checks_under_every_memory_model() {
         );
         let (_, assembled) = assemble_model(&source, store_buffering_model());
         let graph = assembled.check(CheckingLimits::default()).expect("checks");
+        assert!(
+            graph
+                .protocol("Flow")
+                .expect("checked")
+                .memory
+                .accesses
+                .iter()
+                .all(CheckedAccess::is_atomic),
+            "{memory}: every attempt is atomic"
+        );
         assert_eq!(
             graph.protocol("Flow").expect("checked").memory.parallels[0].memory,
             model
@@ -588,7 +599,7 @@ fn store_buffering_checks_under_every_memory_model() {
 /// (a) Two branches that store the same cell with `ordering relaxed`, and
 /// nothing reads it, check under a weak default: whether the cell is shared
 /// is not S3's decision.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-7")]
 #[test]
 fn two_relaxed_stores_of_one_cell_check() {
     for memory in ["", "memory tso", "memory ra"] {
@@ -601,7 +612,8 @@ fn two_relaxed_stores_of_one_cell_check() {
         assert_eq!(found.len(), 2, "{memory}");
         assert!(found
             .iter()
-            .all(|(_, _, ordering)| *ordering == Some(AccessOrdering::Relaxed)));
+            .all(|(_, class, ordering)| class.is_none()
+                && *ordering == Some(AccessOrdering::Relaxed)));
     }
 }
 
@@ -609,7 +621,7 @@ fn two_relaxed_stores_of_one_cell_check() {
 /// core's register and a later attempt of that branch reads the register
 /// again, while the other branch writes its own register. It checks under
 /// every model.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-8")]
 #[test]
 fn a_register_read_again_in_its_own_branch_checks() {
     for memory in ["", "memory tso", "memory ra"] {
@@ -621,7 +633,12 @@ fn a_register_read_again_in_its_own_branch_checks() {
             ],
             &[("Lx", "C2", LOAD, "ordering acquire")],
         );
-        assert_eq!(classes(&source).len(), 3, "{memory}");
+        let found = classes(&source);
+        assert_eq!(found.len(), 3, "{memory}");
+        assert!(
+            found.iter().all(|(_, class, _)| class.is_none()),
+            "{memory}"
+        );
     }
 }
 
@@ -630,7 +647,7 @@ fn a_register_read_again_in_its_own_branch_checks() {
 /// touches no data place, `release` on one that writes nothing, `acquire` on
 /// one that reads nothing. An attempt that touches no data place records
 /// `Local`.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-2")]
 #[test]
 fn an_ordering_no_possible_access_kind_takes_refuses() {
     let one = |left: (&str, &str, &str, &str)| litmus("", &[left], &[("Sy", "Y", STORE, "")]);
@@ -665,6 +682,7 @@ fn an_ordering_no_possible_access_kind_takes_refuses() {
         ("M::Cell::peek", "ordering acquire"),
         ("M::Cell::flip", "ordering acq_rel"),
         ("M::Cell::flip", ""),
+        (LOAD, "ordering release"),
     ] {
         classes(&one(("Oa", "X", operation, ordering)));
     }
@@ -674,7 +692,7 @@ fn an_ordering_no_possible_access_kind_takes_refuses() {
 /// refuses `unsupported_construct`/`declaration-form`, naming the location;
 /// two fields of the receiver are not decided by the footprint alone, so
 /// they check at S3 (EN-1's pre-check decides them); `sc` admits all.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-3")]
 #[test]
 fn a_wide_write_refuses_under_a_weak_default_only() {
     let pair = |memory: &str, operation: &str| {
@@ -688,13 +706,17 @@ fn a_wide_write_refuses_under_a_weak_default_only() {
         classes(&pair("", operation));
         let (_, causes) = refused(&pair("memory tso", operation));
         assert_eq!(causes.len(), 2, "{operation}: {causes:?}");
-        for cause in &causes {
+        for (cause, named) in causes.iter().zip(["Wa", "Wb"]) {
             let ProtocolAnchorCause::AccessShape {
-                model, locations, ..
+                attempt,
+                model,
+                locations,
+                ..
             } = cause
             else {
                 panic!("an AccessShape cause, got {cause:?}");
             };
+            assert_eq!(attempt, named);
             assert_eq!(*model, MemoryModelName::Tso);
             let [location] = &locations[..] else {
                 panic!("one location: {locations:?}");
@@ -706,13 +728,20 @@ fn a_wide_write_refuses_under_a_weak_default_only() {
             );
         }
     }
-    classes(&pair("memory tso", "M::Cell::both"));
+    for memory in ["", "memory tso"] {
+        let found = classes(&pair(memory, "M::Cell::both"));
+        assert_eq!(found.len(), 2, "{memory}");
+        assert!(
+            found.iter().all(|(_, class, _)| class.is_none()),
+            "{memory}"
+        );
+    }
 }
 
 /// MA-1 shares nothing outside a `parallel`, so an attempt there is local
 /// and an `ordering` on it refuses `ill_typed`/`operator-ineligible` at the
 /// ordering; the same attempt without one checks.
-#[trace("TC-665")]
+#[trace("TC-665", "FR-220-AC-10")]
 #[test]
 fn an_ordering_on_an_attempt_outside_every_parallel_refuses() {
     let run = |ordering: &str| {
@@ -724,9 +753,62 @@ fn an_ordering_on_an_attempt_outside_every_parallel_refuses() {
     checks(&run(""));
     let (text, cause, code, tag) = only_refusal(&run("ordering seq_cst"));
     assert_eq!((code, tag.as_str()), ("ill_typed", "operator-ineligible"));
-    let ProtocolAnchorCause::AccessOrdering { class, .. } = &cause else {
+    let ProtocolAnchorCause::AccessOrdering { attempt, class, .. } = &cause else {
         panic!("an AccessOrdering cause, got {cause:?}");
     };
+    assert_eq!(attempt, "Lone");
     assert_eq!(*class, AccessClass::Local);
     assert_eq!(located(&text, &cause), "seq_cst");
+}
+
+/// ADR-025 section 10's `SB` under the source default `sc` checks with each
+/// of `Sx`, `Sy`, `Ly` and `Lx` atomic with its ordering and no class; loads
+/// without an ordering are non-atomic; an `acq_rel` `flip` is atomic; an
+/// attempt touching no data place and carrying no ordering is `Local`.
+#[trace("TC-665", "FR-220-AC-1")]
+#[test]
+fn atomicity_follows_the_written_ordering() {
+    let atomic = |source: &str| -> Vec<(String, bool, Option<AccessClass>)> {
+        let (_, assembled) = assemble_model(source, store_buffering_model());
+        let graph = assembled
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
+        let checked = graph.protocol("Flow").expect("the checked protocol");
+        checked
+            .memory
+            .accesses
+            .iter()
+            .map(|access| {
+                let control = checked.controls.control(access.node).expect("in the tree");
+                (control.name.clone(), access.is_atomic(), access.class)
+            })
+            .collect()
+    };
+    let ordered = atomic(&sb("", "ordering release", "ordering acquire"));
+    let names: Vec<_> = ordered.iter().map(|(name, ..)| name.as_str()).collect();
+    assert_eq!(names, ["Sx", "Ly", "Sy", "Lx"]);
+    assert!(ordered
+        .iter()
+        .all(|(_, atomic, class)| *atomic && class.is_none()));
+
+    let unordered = atomic(&sb("", "ordering release", ""));
+    for (name, atomic, class) in &unordered {
+        assert_eq!(*atomic, name.starts_with('S'), "{name}");
+        assert_eq!(*class, None, "{name}");
+    }
+
+    let flip = atomic(&litmus(
+        "",
+        &[("Fa", "X", "M::Cell::flip", "ordering acq_rel")],
+        &[("Sy", "Y", STORE, "")],
+    ));
+    assert_eq!((flip[0].1, flip[0].2), (true, None));
+    assert!(!flip[1].1);
+
+    let local = atomic(&litmus(
+        "",
+        &[("Ta", "X", "M::Cell::touch", "")],
+        &[("Sy", "Y", STORE, "")],
+    ));
+    assert_eq!((local[0].1, local[0].2), (false, Some(AccessClass::Local)));
 }
