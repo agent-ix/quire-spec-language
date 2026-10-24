@@ -854,11 +854,27 @@ fn shaped(mut value: Value, (lower, upper, ordered): (u32, u32, bool), presence:
 /// chain, link }` over `Slot { value }`, whose `chain` is a
 /// `Sequence<Reference<Ring>>[0, 2]` and `link` an `Option<Reference<Ring>>`.
 fn nested_models() -> (Vec<u8>, Vec<u8>) {
+    /// The record value type `Box { target }`, holding a `Reference<object>`.
+    fn boxed(package: &str, object: &str) -> Value {
+        declaration(
+            package,
+            "Box",
+            "record_value_type",
+            json!({"fields": [field(package, "Box", "target", &node(package, object))]}),
+        )
+    }
+
     let (queue, cell) = (node(NESTED_SPEC, "Queue"), node(NESTED_SPEC, "Cell"));
     let single = (1, 1, false);
-    let spec = document(
+    let spec = document_with(
         NESTED_SPEC,
+        vec![construct(
+            NESTED_SPEC,
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+        )],
         vec![
+            boxed(NESTED_SPEC, "Queue"),
             object_type(
                 NESTED_SPEC,
                 "Queue",
@@ -868,6 +884,7 @@ fn nested_models() -> (Vec<u8>, Vec<u8>) {
                     ("chain", &queue),
                     ("link", &queue),
                     ("cells", &cell),
+                    ("box", &node(NESTED_SPEC, "Box")),
                 ],
                 Vec::new(),
             ),
@@ -893,13 +910,24 @@ fn nested_models() -> (Vec<u8>, Vec<u8>) {
         }
     }
     let ring = node(NESTED_IMPL, "Ring");
-    let concrete = document(
+    let concrete = document_with(
         NESTED_IMPL,
+        vec![construct(
+            NESTED_IMPL,
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+        )],
         vec![
+            boxed(NESTED_IMPL, "Ring"),
             object_type(
                 NESTED_IMPL,
                 "Ring",
-                &[("size", INTEGER), ("chain", &ring), ("link", &ring)],
+                &[
+                    ("size", INTEGER),
+                    ("chain", &ring),
+                    ("link", &ring),
+                    ("box", &node(NESTED_IMPL, "Box")),
+                ],
                 Vec::new(),
             ),
             object_type(NESTED_IMPL, "Slot", &[("value", INTEGER)], Vec::new()),
@@ -942,7 +970,8 @@ fn nested_refinement(rows: &str) -> String {
 /// FR-135-AC-6 (TC-540 step 6): a `Sequence<Reference<Queue>>[0, 2]` field
 /// mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses
 /// `unsupported_construct`/`not-yet-implemented` naming `nested-reference-row`
-/// at the row's expression, and so does an option of a reference; a
+/// at the row's expression, and so do an option, a record, a tuple and a
+/// union holding a reference, before any check of the row's type; a
 /// population-reference row `cells = R::slots` checks, as does the same field
 /// as a plain `Reference<Queue>` mapped by `self`.
 #[trace("TC-540", "FR-135-AC-6")]
@@ -967,11 +996,25 @@ fn a_row_nesting_a_reference_other_than_a_whole_population_is_unsupported() {
     });
     assert_eq!(only_refinement(&graph).objects().len(), 2);
 
-    for (row, at) in [
-        ("chain = self.chain;", "self.chain"),
-        ("link = self.link;", "self.link"),
+    for (declarations, row, at) in [
+        ("", "chain = self.chain;", "self.chain"),
+        ("", "link = self.link;", "self.link"),
+        ("", "box = self.box;", "self.box"),
+        (
+            "tuple Pair(Reference<R::Ring>, Boolean);",
+            "box = Pair(self, true);",
+            "Pair(self, true)",
+        ),
+        (
+            "union Holder { Empty, Has(Reference<R::Ring>) }",
+            "box = Holder::Has(self);",
+            "Holder::Has(self)",
+        ),
     ] {
-        let found = refused(&models, &nested_refinement(row));
+        let found = refused(
+            &models,
+            &format!("{declarations}\n{}", nested_refinement(row)),
+        );
         let nested = only(&found);
         assert_eq!(
             nested.code_and_cause(),

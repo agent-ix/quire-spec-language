@@ -51,7 +51,7 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::{CompositeShape, FieldDeclaration, TypeEnvironment};
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
@@ -62,7 +62,7 @@ use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
 };
 use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
-use super::lowering::{population_node, AdmittedModel};
+use super::lowering::{population_node, preimage_refusal, AdmittedModel};
 use super::observation::Observations;
 use super::profile::TemporalProfile;
 use super::protocol_clause::ProtocolNodeId;
@@ -1011,57 +1011,60 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
     }
 }
 
-/// Whether the type of `row` holds a `Reference` below its top level, other
-/// than as the whole-population `Set<Reference<T>>` (FR-135 "Refinement
-/// features the build does not check"). A plain `Reference<T>` is lifted by
-/// the object map; a reference inside an option, record, tuple, union or
-/// collection is not.
-fn nests_reference(types: &TypeEnvironment, row: &CheckedRow) -> bool {
-    let value_type = row.body().value_type();
-    let whole_population = matches!(row.body().kind(), NodeKind::PopulationObjects { .. });
+/// Whether `value_type` holds a `Reference` below its top level (FR-135
+/// "Refinement features the build does not check"). A plain `Reference<T>`
+/// is lifted by the object map; a reference inside an option, record, tuple,
+/// union or collection is not. A tuple is a record by position, so it is
+/// caught with the record and the union.
+fn nests_reference(types: &TypeEnvironment, value_type: &ValueType) -> Result<bool, &'static str> {
     match value_type {
-        ValueType::Reference(_) => false,
-        ValueType::Collection(_) if whole_population => false,
+        ValueType::Reference(_) => Ok(false),
         other => holds_reference(types, other, &mut Vec::new()),
     }
 }
 
 /// Whether `value_type` is or contains a `Reference`. `seen` holds the
 /// composite declarations being walked, so a declaration that names itself
-/// is walked once.
+/// is walked once. A composite with no declaration is an internal fault.
 fn holds_reference(
     types: &TypeEnvironment,
     value_type: &ValueType,
     seen: &mut Vec<NodeKey>,
-) -> bool {
+) -> Result<bool, &'static str> {
+    let any = |candidates: &mut dyn Iterator<Item = &ValueType>,
+               seen: &mut Vec<NodeKey>|
+     -> Result<bool, &'static str> {
+        for candidate in candidates {
+            if holds_reference(types, candidate, seen)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
     match value_type {
-        ValueType::Reference(_) => true,
+        ValueType::Reference(_) => Ok(true),
         ValueType::Option(payload) => holds_reference(types, payload, seen),
         ValueType::Collection(collection) => holds_reference(types, collection.element(), seen),
         ValueType::Composite(key) => {
             if seen.contains(key) {
-                return false;
+                return Ok(false);
             }
             seen.push(*key);
-            let Some(declaration) = types.composite(*key) else {
-                return false;
-            };
+            let declaration = types
+                .composite(*key)
+                .ok_or("composite-type-has-a-declaration")?;
             match declaration.shape() {
-                CompositeShape::Record(fields) => fields
-                    .iter()
-                    .any(|field| holds_reference(types, field.value_type(), seen)),
-                CompositeShape::Tuple(positions) => positions
-                    .iter()
-                    .any(|position| holds_reference(types, position, seen)),
-                CompositeShape::Union(members) => members.iter().any(|member| {
-                    member
-                        .positions()
-                        .iter()
-                        .any(|position| holds_reference(types, position, seen))
-                }),
+                CompositeShape::Record(fields) => {
+                    any(&mut fields.iter().map(FieldDeclaration::value_type), seen)
+                }
+                CompositeShape::Tuple(positions) => any(&mut positions.iter(), seen),
+                CompositeShape::Union(members) => any(
+                    &mut members.iter().flat_map(|member| member.positions()),
+                    seen,
+                ),
             }
         }
-        _ => false,
+        _ => Ok(false),
     }
 }
 
@@ -1617,8 +1620,15 @@ impl<'c, 'a> Checker<'c, 'a> {
             if let Some(source) = source {
                 let node = match population_node(&target.record.key, identity) {
                     Ok(Some(node)) => node.key(),
-                    Ok(None) | Err(_) => {
+                    Ok(None) => {
                         self.fault("abstract-population-has-a-node-key");
+                        continue;
+                    }
+                    Err(refusal) => {
+                        let location = Location::root(Origin::Expression);
+                        self.findings
+                            .refusals
+                            .push(preimage_refusal(&location, refusal));
                         continue;
                     }
                 };
@@ -1891,26 +1901,10 @@ impl<'c, 'a> Checker<'c, 'a> {
                     operation: None,
                     label: format!("{}.{written}", target.name),
                     range_agnostic: false,
+                    field_row: true,
                 },
                 cx,
             );
-            let expression = expression.filter(|row| {
-                if !nests_reference(self.types(), row) {
-                    return true;
-                }
-                match field.value.spans.at(&[]) {
-                    Some(span) => self.findings.refuse(
-                        span,
-                        RefinementCause::Unsupported {
-                            feature: UnsupportedFeature::NestedReferenceRow,
-                            profile: self.profile.clone(),
-                            subject: None,
-                        },
-                    ),
-                    None => self.fault("row-expression-has-a-span"),
-                }
-                false
-            });
             let key = self.abstract_side.model.field_key(&attribute.identity());
             match (expression, key) {
                 (Some(expression), Some(key)) => fields.push(FieldRow {
@@ -1991,8 +1985,10 @@ impl<'c, 'a> Checker<'c, 'a> {
             operation,
             label,
             range_agnostic,
+            field_row,
         } = context;
         let populations = self.population_scope();
+        let mut outcome: Option<Nested> = None;
         let typed = (|| {
             let mut typer = Typer::new(
                 declarations.scope,
@@ -2024,6 +2020,30 @@ impl<'c, 'a> Checker<'c, 'a> {
             // coercion into it.
             let body = typer.infer(&expression.expression, required, &location)?;
             let types = declarations.scope.types();
+            if field_row {
+                let root = body.root();
+                // A whole population is the one nesting a row may have.
+                let whole_population = matches!(root.kind(), NodeKind::PopulationObjects { .. });
+                if !whole_population {
+                    match nests_reference(types, root.value_type()) {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            outcome = Some(Nested::Row);
+                            return Err(CheckRefusal::ill_typed(
+                                &location,
+                                IllTypedCause::TypeMismatch,
+                            ));
+                        }
+                        Err(invariant) => {
+                            outcome = Some(Nested::Fault(invariant));
+                            return Err(CheckRefusal::ill_typed(
+                                &location,
+                                IllTypedCause::TypeMismatch,
+                            ));
+                        }
+                    }
+                }
+            }
             let uses = match required {
                 None => Vec::new(),
                 Some(required)
@@ -2060,6 +2080,21 @@ impl<'c, 'a> Checker<'c, 'a> {
                     uses,
                     observations,
                 })
+            }
+            Err(_) if outcome.is_some() => {
+                match (outcome, expression.spans.at(&[])) {
+                    (Some(Nested::Row), Some(span)) => self.findings.refuse(
+                        span,
+                        RefinementCause::Unsupported {
+                            feature: UnsupportedFeature::NestedReferenceRow,
+                            profile: self.profile.clone(),
+                            subject: None,
+                        },
+                    ),
+                    (Some(Nested::Fault(invariant)), _) => self.fault(invariant),
+                    _ => self.fault("row-expression-has-a-span"),
+                }
+                None
             }
             Err(refusal) => {
                 match super::region::span_at(&expression.spans, &refusal.location)
@@ -2338,6 +2373,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                         operation: Some(concrete.name().to_owned()),
                         label: format!("step {}", concrete.name()),
                         range_agnostic: false,
+                        field_row: false,
                     };
                     let Some(row) = self.check_row_as(expression, None, context, cx) else {
                         complete = false;
@@ -2416,6 +2452,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             operation: Some(concrete.name().to_owned()),
             label: format!("step {}", concrete.name()),
             range_agnostic: false,
+            field_row: false,
         };
         let mut complete = true;
         let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id));
@@ -2544,6 +2581,14 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 }
 
+/// What the nesting check of a field row found.
+enum Nested {
+    /// The row's type nests a reference.
+    Row,
+    /// A composite type of the row has no declaration.
+    Fault(&'static str),
+}
+
 /// How a row expression is typed: its parameters, the clause kind it reads
 /// as and the concrete operation whose arguments it may name.
 struct RowContext {
@@ -2557,6 +2602,10 @@ struct RowContext {
     /// to run time: a history update (FR-138), whose value is computed and
     /// not a literal.
     range_agnostic: bool,
+    /// Whether the row defines an abstract field (FR-135), which a type that
+    /// nests a reference refuses `nested-reference-row` before any other
+    /// check of the row's type.
+    field_row: bool,
 }
 
 fn refuse_with(location: &Location, cause: CheckCause) -> CheckRefusal {

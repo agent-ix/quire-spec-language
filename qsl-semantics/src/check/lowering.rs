@@ -695,7 +695,7 @@ fn charge_work(meter: &mut Meter, work: u64) -> Result<(), NodeKeyRefusal> {
         })
 }
 
-fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
+pub(crate) fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
     match refusal {
         NodeKeyRefusal::WorkBudget { limit, actual } => refuse(
             location,

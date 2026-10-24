@@ -318,6 +318,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                         operation: Some(concrete.name().to_owned()),
                         label: format!("{}.{}", header.object_name, header.form.field.name),
                         range_agnostic: true,
+                        field_row: false,
                     },
                     cx,
                 );

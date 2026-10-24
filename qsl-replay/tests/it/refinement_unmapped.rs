@@ -120,7 +120,7 @@ fn an_undefined_row_outranks_an_unmapped_type_that_sorts_first() {
         ring_r.size = 2;
         custom_state(
             concrete,
-            &[ring("a", "SubRing", Some(("b", "Ring"))), ring_r],
+            &[ring("a", "SubRing", None), ring_r],
             &[("s0", "r", 0, 0), ("s1", "r", 1, 1)],
         )
     };
