@@ -618,7 +618,6 @@ impl ModelLetters for MeteredLetters<'_> {
     }
 }
 
-/// Trace: FR-126-AC-5, FR-126-AC-19, FR-127-AC-4, FR-255-AC-9
 #[trace("TC-521", "FR-126-AC-5", "FR-126-AC-19", "FR-127-AC-4")]
 #[test]
 fn a_denied_letter_or_guard_charge_stops_with_the_accounting_setting() {

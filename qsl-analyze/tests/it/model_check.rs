@@ -558,7 +558,7 @@ fn an_undefined_model_side_expression_refutes_the_deadlock_item() {
 /// `max_transitions` 1 stop the run naming the limit and its value; an
 /// already-cancelled handle stops it with no limit; a zero evaluation meter
 /// stops it at `inc`'s precondition naming the meter, 0.
-#[trace("TC-521", "FR-126-AC-19", "FR-255-AC-9")]
+#[trace("TC-521", "FR-126-AC-19")]
 #[test]
 fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -758,7 +758,6 @@ fn raising_the_reached_bound_lets_the_run_continue() {
     );
 }
 
-/// Trace: FR-126-AC-5, FR-126-AC-19, FR-127-AC-4, FR-255-AC-9
 #[trace("TC-521", "FR-126-AC-5", "FR-126-AC-19", "FR-127-AC-4")]
 #[test]
 fn a_terminal_when_meter_denial_stops_deadlock_check() {
