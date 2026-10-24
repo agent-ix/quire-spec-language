@@ -298,7 +298,13 @@ fn a_parallel_builds_its_join_policy_and_outstanding_rule() {
         form.parallels[0].join.value,
         JoinPolicy::Predicate("done".to_owned())
     );
-    assert!(form
+    assert_eq!(
+        form.parallels[0]
+            .predicate_span
+            .map(|span| slice(&text, span)),
+        Some("done")
+    );
+    assert!(!form
         .constructs
         .iter()
         .any(|construct| construct.kind == ProtocolConstructKind::JoinPredicate));

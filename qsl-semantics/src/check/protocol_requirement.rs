@@ -81,6 +81,16 @@ impl<'u> UnitDeclarations<'u> {
         }
         declarations
     }
+
+    /// The declared keyword for a name in this unit, including temporal
+    /// clauses and protocols.
+    pub(crate) fn kind(&self, name: &str) -> Option<&'static str> {
+        if self.temporal.contains_key(name) {
+            Some("temporal")
+        } else {
+            self.other.get(name).copied()
+        }
+    }
 }
 
 fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
