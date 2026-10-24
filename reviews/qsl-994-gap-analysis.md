@@ -44,3 +44,13 @@ The binding is complete. The guard substitution should still be reconciled with 
 The PR's tested scope is sound and traced correctly: FR-227-AC-4 is complete. The tests for FR-228-AC-1, AC-2 and AC-4 are left untagged on purpose, which is the right call, and their doc comments carry no AC ids. To be mergeable, the lead keeps QSL-994 open or splits it. The untagged remainders need owners: QSL-933 for ra, a ticket for FR-339 liveness certificates, and #1442 for the AC-2/AC-4 "ignored" wording.
 
 FR-227-AC-1 was already untagged on main. The reorder keeps its sc-replay refusal at the first differing step, and `a_tso_counterexample_replays_only_under_tso` passes.
+
+## Dispositions
+
+Disposition round 1, verified at head 33ee3220528f38283546795651ebed5f4c706dfd. The computed matrix (quire 0.36.2) shows FR-227-AC-4 and FR-228-AC-1, AC-2 and AC-4 untagged. The doc comment's "Not covered: FR-227-AC-4's `ra` clause" does not count as a binder.
+
+After spec PR #1442, FR-227-AC-4 on main has a second sentence: an `ra` FR-228-AC-3 lasso refuses as unfair under the strong visibility constraint. `replay_refuses_the_lasso_that_never_flushes_w` asserts only the tso sentence, so it no longer completes the AC. Removing the FR-227-AC-4 tag (now `#[trace("TC-672")]` only) is correct.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-994 stays open as the carrier. The PR body section "Not covered; QSL-994 stays open" lists FR-228-AC-1's ra half (QSL-933), FR-228-AC-2 (needs the FR-339 liveness certificate, and the "ignored" refutation has no switch), FR-228-AC-4's TP-1 half, and FR-227-AC-4's ra clause (QSL-933). No ticket is named yet for the FR-339 liveness certificate. |

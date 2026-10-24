@@ -83,3 +83,13 @@ Additional mutations:
 - MB-4 order swapped: survives (FND-001).
 - `dead_limited` insert removed: survives (FND-003).
 - `Each` changed to `Whole`: 1 fails.
+
+## Dispositions
+
+Disposition round 1, verified at head 33ee3220528f38283546795651ebed5f4c706dfd (fix commit 33ee32205; origin/main merged in 41082b7af). Gates at the head: qsl-eval, qsl-replay and qsl-analyze tests pass, clippy `-D warnings` passes on the 3 crates, fmt and string-edge are clean.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | New test `a_false_liveness_claim_with_a_cut_store_settles_inconclusive`: the same false claim settles `Violated` under the default bound and `MemoryBoundReached` under `max_store_buffer` 1. Re-run mutation: returning `Violated` ahead of the bound check now fails it. |
+| FND-002 | accepted-no-change | Lead decision: the wire shape stays interim, marked in the `ProtocolTarget::MemoryStep` doc comment as pending the FR-228/FR-436 ruling in spec PR #1442. The coordinator asked draco:QSL:codex3 for the settled shape and will merge the interim shape if there is no reply. A shape change after #1442 needs its own ticket. |
+| FND-003 | fixed | New test `a_cut_store_met_only_by_the_model_only_pass_settles_inconclusive`: re-run mutation, removing the `dead_limited` insert now fails it. New qsl-eval unit test `a_flush_member_is_one_constraint_per_thread_of_its_branch`: `Each` changed to `Whole` now fails it. The per-thread check is at class and loop-filter level, not through the engine. That is accepted, because two threads alive in one branch occur only across protocol instances, which liveness refuses, and sequential forks reuse the ordinal after a join, so they share one ThreadPath. |
