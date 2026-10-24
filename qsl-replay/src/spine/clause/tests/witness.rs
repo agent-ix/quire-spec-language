@@ -1774,7 +1774,9 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["failure"] = json!({"failure": "approximate"});
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]
@@ -1782,11 +1784,15 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
         .unwrap()
         .remove("index")
         .expect("the record carries its index");
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]["index"] = serde_json::Value::Null;
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let DisagreementCause::Witness {
         proved,
@@ -2286,7 +2292,10 @@ fn tc_744_member_option_value_and_field_steps_round_trip() {
             {"tag": "index", "index": 1},
         ])
     );
-    assert_eq!(DisagreementCause::from_json(&text, package, None).unwrap(), cause);
+    assert_eq!(
+        DisagreementCause::from_json(&text, package, None).unwrap(),
+        cause
+    );
 
     let mut renamed = record;
     renamed.value_path.steps[2] = ValuePathStep::Member("items".to_owned());
@@ -2326,7 +2335,10 @@ fn tc_744_a_refusal_reads_only_catalog_spellings() {
         },
     };
     let text = cause.to_json(None).unwrap();
-    assert_eq!(DisagreementCause::from_json(&text, package, None).unwrap(), cause);
+    assert_eq!(
+        DisagreementCause::from_json(&text, package, None).unwrap(),
+        cause
+    );
     for (member, value) in [
         ("code", json!("")),
         ("code", json!("made_up_code")),
