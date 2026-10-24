@@ -997,8 +997,14 @@ mod intake_proofs {
 
     fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
         let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
+        let fixture = if form == "time_source" {
+            "positive-tick-timed-model-nodes.json"
+        } else {
+            "positive-timed-model-nodes.json"
+        };
         let path = std::path::Path::new(&directory)
-            .join("proposals/checked-package-v2/fixtures/positive-timed-model-nodes.json");
+            .join("proposals/checked-package-v2/fixtures")
+            .join(fixture);
         let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
         let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let node = package["semantic_graph"]["nodes"]
