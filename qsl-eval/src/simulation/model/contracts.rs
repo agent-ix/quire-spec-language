@@ -161,7 +161,21 @@ pub(super) fn conjunction(
         .evaluate_clause_set(&set, walk.system.meter)
         .map_err(|_| stop(BROKEN))?;
     match evaluation.outcome {
-        ClauseSetOutcome::Incomplete => Err(exhausted(ExpansionLimit::EvaluationMeter)),
+        ClauseSetOutcome::Incomplete => {
+            let counter = evaluation
+                .results
+                .iter()
+                .find_map(
+                    |entry| match verdict(&entry.evaluation.evaluation.outcome) {
+                        Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => {
+                            Some(incomplete.limit_kind)
+                        }
+                        _ => None,
+                    },
+                )
+                .ok_or_else(|| stop(BROKEN))?;
+            Err(exhausted(ExpansionLimit::EvaluationMeter(counter)))
+        }
         ClauseSetOutcome::True => Ok(Conjunction::True),
         ClauseSetOutcome::False => {
             let entry = evaluation
