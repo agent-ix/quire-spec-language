@@ -95,6 +95,14 @@ pub enum ModelCheckLimit {
     MaxTransitions,
     /// `ModelCheckLimits::max_automaton_states`.
     MaxAutomatonStates,
+    /// EN-5's product bound `ExactProbLimits.model.limits.max_states`
+    /// (FR-203): FR-331 spelling as [`Self::MaxStates`], setting
+    /// `exact_prob.max_states`.
+    ExactProbMaxStates,
+    /// EN-5's product bound `ExactProbLimits.model.limits.max_transitions`.
+    ExactProbMaxTransitions,
+    /// EN-5's product bound `ExactProbLimits.model.max_automaton_states`.
+    ExactProbMaxAutomatonStates,
     /// The subject's evaluation meter budget.
     EvaluationMeter {
         /// The denied accounting counter.
@@ -120,9 +128,9 @@ impl ModelCheckLimit {
     /// The limit's FR-331 spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::MaxStates => "max-states",
-            Self::MaxTransitions => "max-transitions",
-            Self::MaxAutomatonStates => "max-automaton-states",
+            Self::MaxStates | Self::ExactProbMaxStates => "max-states",
+            Self::MaxTransitions | Self::ExactProbMaxTransitions => "max-transitions",
+            Self::MaxAutomatonStates | Self::ExactProbMaxAutomatonStates => "max-automaton-states",
             Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
                 LimitKind::DecimalDigits => "decimal_digits",
@@ -147,15 +155,17 @@ impl ModelCheckLimit {
 
     /// The FR-255 setting name that raises this limit: the `model_check.*`
     /// row of an EN-1 member, `expansion.max_candidates`,
-    /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, or an
-    /// EN-4 `statistical.*` row. An EN-5 exact-build stop still names the
-    /// `model_check.*` row, not `exact_prob.*` (tracked by QSL-1050, the follow-up
-    /// ticket "EN-5 exact-build stops must name exact_prob.*").
+    /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, an
+    /// EN-4 `statistical.*` row, or the `exact_prob.*` row of an EN-5 product
+    /// bound.
     pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "model_check.max_states",
             Self::MaxTransitions => "model_check.max_transitions",
             Self::MaxAutomatonStates => "model_check.max_automaton_states",
+            Self::ExactProbMaxStates => "exact_prob.max_states",
+            Self::ExactProbMaxTransitions => "exact_prob.max_transitions",
+            Self::ExactProbMaxAutomatonStates => "exact_prob.max_automaton_states",
             Self::EvaluationMeter { counter } => {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
@@ -199,6 +209,32 @@ pub struct ReachedLimit {
 mod tests {
     use super::ModelCheckLimit;
     use ix_trace_rs::trace;
+
+    #[test]
+    fn exact_prob_product_bounds_name_exact_prob_settings_and_share_spellings() {
+        let pairs = [
+            (
+                ModelCheckLimit::ExactProbMaxStates,
+                ModelCheckLimit::MaxStates,
+                "exact_prob.max_states",
+            ),
+            (
+                ModelCheckLimit::ExactProbMaxTransitions,
+                ModelCheckLimit::MaxTransitions,
+                "exact_prob.max_transitions",
+            ),
+            (
+                ModelCheckLimit::ExactProbMaxAutomatonStates,
+                ModelCheckLimit::MaxAutomatonStates,
+                "exact_prob.max_automaton_states",
+            ),
+        ];
+        for (exact, model, setting) in pairs {
+            assert_eq!(exact.setting(), setting);
+            assert_ne!(exact.setting(), model.setting());
+            assert_eq!(exact.as_str(), model.as_str());
+        }
+    }
 
     #[trace("TC-521", "FR-126-AC-19")]
     #[test]
