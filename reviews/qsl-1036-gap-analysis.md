@@ -63,3 +63,17 @@ its own.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-290-AC-1 has no tagged test after this PR. The removed tag on `coverage_is_decided_from_the_checked_claims_own_horizon` overclaimed: that test asserts no FR-281-AC-1 EN-5 `certified` record, no FR-281-AC-4 `uncertified` record, no Kani C-09 `certified` record, and no non-hybrid `BackendId`. The AC is now uncovered in the matrix. Follow-up ticket needed: "Test FR-290-AC-1 (TC-774 step 1)". One test settles a non-hybrid process-provider `proved` record (proved, provider BackendId, trusted), FR-281-AC-1's analyze record (certified, naming the EN-5 checker), FR-281-AC-4's test-engine record with no checker (uncertified, naming the engine) and a Kani C-09 `proved` record (certified), tagged `#[trace("TC-774", "FR-290-AC-1")]`. The EN-5 part is blocked on QSL-574/QSL-575. | spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md:542 |
 | FND-002 | low | TC-773 step 5 and its expected result still say each of the six plugin bases, `bounded-solver` included, settles a plugin `proved` with `trusted`. After the #1435 ruling, FR-289-AC-9 makes that true only for a hybrid claim with sufficient coverage. Insufficient coverage settles `inconclusive` `InsufficientHorizon`, and a `bounded-solver` basis on a non-hybrid item is refused. The TC that the new FR-289-AC-9 test is tagged to does not describe those two cases. Fix (spec lane): state the coverage split and the non-hybrid refusal in TC-773 step 5 and its expected result. | spec/test-cases/TC-773-installing-removing-or-reordering-providers-changes-nothing-outside.md:23,33 |
+
+## Dispositions
+
+Round 1, reviewed at 63162b5790db5051db878f70d50ef757bd8f7373. No production
+or spec change was in scope. Both findings are deferred to QSL-1053. I read
+that ticket (Backlog, project QSL language features v1.1). It carries the
+four-record FR-290-AC-1 test, the QSL-574/QSL-575 block on the EN-5 part,
+and a note that TC-773 step 5 lags the #1435 ruling. The PR body lists
+FR-290-AC-1 under "Not covered".
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-1053: one test tagged TC-774/FR-290-AC-1 settling the four AC-1 records; EN-5 part blocked on QSL-574/QSL-575. |
+| FND-002 | deferred | Spec-lane fix to TC-773 step 5 (coverage split, non-hybrid refusal) recorded on QSL-1053; a spec change is outside this tests-only PR. |

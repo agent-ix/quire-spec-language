@@ -93,3 +93,25 @@ tagged test (FND-001). The tag removals are all sound. FND-002 is a naming nit.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-290-AC-5 requires the `reduced` vector to read as `Reduced` holding `PartialOrder{BreadthFirstRevisit}` then `CopySwap{[["a","b"]]}`. `plugin_bases_read_and_settle_by_item_kind`, now the only FR-290-AC-5 test, asserts only `Reduced { reductions } if reductions.len() == 2`. A mutation that reverses `read_reductions`' output passes it. Only the untagged `tc_774_basis_reader_accepts_the_plugin_spellings` catches it. The tag claims a clause the test does not assert. Fix: `assert_eq!` the read value against the full `ProofBasis::Reduced { reductions: vec![PartialOrder{proviso: BreadthFirstRevisit}, CopySwap{classes: vec![vec!["a","b"]]}] }`. | qsl-replay/src/hybrid_replay/tests.rs:1161-1165 |
 | FND-002 | low | `tc_774_basis_reader_accepts_the_plugin_spellings` keeps its `tc_774_` name prefix but no longer carries a TC-774 trace tag. Its name now implies a TC-774 binding that the trace model does not record. Once FND-001 is fixed it duplicates the new test. Fix: delete it, or rename it without the `tc_774_` prefix. | qsl-replay/src/proof_result/plugin_tests.rs:135-137 |
+
+## Dispositions
+
+Round 1, reviewed at 63162b5790db5051db878f70d50ef757bd8f7373 (fix commit
+63162b579 on 47d37b6c3; `git diff 47d37b6c3 63162b579`). `cargo test -p
+qsl-replay` passed 1053 and failed 0 (one fewer test, because one was deleted).
+`cargo fmt --all --check` and `cargo clippy -p qsl-replay --all-targets -- -D
+warnings` were clean. I re-ran the reductions-order mutation (reverse
+`read_reductions`' output). `plugin_bases_read_and_settle_by_item_kind` now
+fails at hybrid_replay/tests.rs:1165, so the mutation is killed.
+
+- FND-001: the `reduced` vector is now `assert_eq!`-checked against
+  `ProofBasis::Reduced { reductions: vec![PartialOrder { proviso:
+  BreadthFirstRevisit }, CopySwap { classes: [["a","b"]] }] }`, in order.
+- FND-002: `tc_774_basis_reader_accepts_the_plugin_spellings` was deleted, along
+  with its now-unused helper `settle_basis`. The new test covers every
+  assertion it made, the full Reduced value included.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 63162b579 |
+| FND-002 | fixed | 63162b579 |
