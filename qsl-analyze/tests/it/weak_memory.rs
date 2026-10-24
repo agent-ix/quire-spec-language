@@ -69,6 +69,13 @@ impl Case {
         Self::with_letters(body, &NoBothZero)
     }
 
+    /// [`Self::new`] over the three cells `x`, `y` and `z`.
+    pub(crate) fn with_three_cells(body: &str) -> Self {
+        let mut case = Self::new(body);
+        case.documents = Documents::with_cells(&["x", "y", "z"]);
+        case
+    }
+
     /// The unit with `body`, its claim's atom read by `letters`.
     pub(crate) fn with_letters(body: &str, letters: &'static dyn ModelLetters) -> Self {
         Self {
@@ -205,7 +212,7 @@ impl Case {
         ProtocolTraceSubject {
             model: ModelTraceSubject {
                 initial: vec![self.documents.initial.clone()],
-                universes: Documents::universes(),
+                universes: self.documents.universes(),
                 expansion: subject.model.simulation.expansion,
             },
             protocol: "SB".to_owned(),
