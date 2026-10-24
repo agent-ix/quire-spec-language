@@ -1165,8 +1165,11 @@ impl quire_canonical::Encode for TimedNodePreimage<'_> {
 
 /// The unique digest-ascending reference targets directly named by a body.
 fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
-    let mut targets = Vec::new();
-    body.visit_reference_targets(&mut |target| targets.push(target.clone()));
+    let mut targets = body
+        .reference_targets()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
     targets.sort_by(|left, right| left.digest.cmp(&right.digest));
     targets.dedup();
     targets
