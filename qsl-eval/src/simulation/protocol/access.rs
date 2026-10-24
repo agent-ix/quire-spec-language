@@ -310,6 +310,15 @@ struct Footprinted {
     writes: BTreeSet<Location>,
 }
 
+/// Which EN-1 footprint set to derive (ADR-025 MA-1).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ClassificationMode {
+    /// Guard-agnostic footprints that reserve memory-model backing.
+    Potential,
+    /// Applications enabled in the supplied model observation.
+    Enabled,
+}
+
 /// EN-1 (MA-1, MA-2): instantiate and classify every attempt of every
 /// `parallel` `governing` resolves weak, over the identities of `initial`.
 ///
@@ -324,6 +333,7 @@ pub(crate) fn classify(
     governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
     initial: Option<&ModelSimState>,
     over: &Value,
+    mode: ClassificationMode,
 ) -> Result<WeakAccesses, ProtocolRefusal> {
     let Some(initial) = initial else {
         return Ok(WeakAccesses::default());
@@ -409,13 +419,23 @@ pub(crate) fn classify(
             name: &attempt.operation,
             receiver: attempt.receiver,
         };
-        let selected = |clause| attempt.contracts.contains(&clause);
-        let applications = model
-            .apply_operation(initial, &operation, &selected, &mut model.budget())
-            .map_err(unlisted)?;
+        let transitions = match mode {
+            ClassificationMode::Potential => model
+                .attempt_identities(initial, &operation)
+                .map_err(unlisted)?,
+            ClassificationMode::Enabled => {
+                let selected = |clause| attempt.contracts.contains(&clause);
+                model
+                    .apply_operation(initial, &operation, &selected, &mut model.budget())
+                    .map_err(unlisted)?
+                    .successors
+                    .into_iter()
+                    .map(|applied| applied.transition)
+                    .collect()
+            }
+        };
         let mut instances = BTreeMap::new();
-        for applied in applications.successors {
-            let transition = applied.transition;
+        for transition in transitions {
             let footprint = model
                 .footprint_selecting(&transition, Some(&attempt.contracts))
                 .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;

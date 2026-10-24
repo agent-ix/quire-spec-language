@@ -9,6 +9,11 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Location;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
+use quire_semantic_value::model_transition::ModelTransition;
+
+use super::application::OperationRef;
+use super::frames;
+use super::walk::{walk_of, Budget};
 
 /// One field of one object of a model state: the population and key that
 /// hold the object, and the field's declaration key and name.
@@ -59,6 +64,34 @@ impl ModelSimState {
 }
 
 impl ModelSystem<'_> {
+    /// Every FR-120 transition identity of `operation` at `state`, enabled or
+    /// not: the operation on held receivers and absent universe-key receivers,
+    /// over every argument vector. EN-1 uses these potential identities to
+    /// reserve memory backing, not to classify enabled accesses.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the state cannot be walked or the identity
+    /// set exceeds the candidate bound.
+    pub(crate) fn attempt_identities(
+        &self,
+        state: &ModelSimState,
+        operation: &OperationRef<'_>,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let mut walk = walk_of(self, state, None)?;
+        walk.rows.extend(absent_rows(self, state));
+        let mut budget = Budget::new(self.limits.max_candidates);
+        let mut found = Vec::new();
+        for row in &walk.rows {
+            if let Some(application) = self.application_at(row, operation) {
+                frames::identities(&walk, row, application, &mut budget, &mut found)?;
+            }
+        }
+        found.sort();
+        found.dedup();
+        Ok(found)
+    }
+
     /// The cell the field location `location` names at `state`: the object
     /// the state holds, or a universe key could name, with that reference.
     /// `None` for a location that is not one object's field, or whose object
