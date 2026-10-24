@@ -86,15 +86,15 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_model::{
-    encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
-    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
-    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
-    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
-    PACKAGE_DOMAIN_V2,
+    derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
+    CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
+    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
+    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
+    CheckedPackageV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, NominalIdentityPreimage, NominalOwner,
+    ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -1115,52 +1115,27 @@ fn rekey_timed_model_nodes(
     ))
 }
 
-/// FR-322's structural identity preimage for one closed timed-model node.
+/// Derive one ungrouped timed-node identity through IR's public producer API.
 fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, EmitRefusal> {
     if node.recursion_group.is_some() {
         return Err(EmitRefusal::TimedModelWriterInvariant(
             "timed nodes cannot belong to a recursion group",
         ));
     }
-    let digest = quire_canonical::sha256(&TimedNodePreimage(node), crate::checked::EMIT_LIMITS)
-        .map_err(encoding)?;
-    Ok(CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: digest.to_string().into(),
-    })
-}
-
-/// The timed-node structural preimage, encoded through the shared canonical writer.
-struct TimedNodePreimage<'a>(&'a CheckedSemanticNodeV2);
-
-impl quire_canonical::Encode for TimedNodePreimage<'_> {
-    fn encode_into<S: quire_canonical::Sink + ?Sized>(
-        &self,
-        writer: &mut quire_canonical::Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        let node = self.0;
-        writer.begin_object()?;
-        writer.name("version")?;
-        writer.string("quire.structural-node/v1")?;
-        writer.name("node_tag")?;
-        writer.string(&node.node_tag)?;
-        writer.name("semantic_form")?;
-        writer.string(&node.semantic_form)?;
-        writer.name("semantic_type")?;
-        let semantic_type = (node.semantic_type != node.node_id).then_some(&node.semantic_type);
-        writer.serialize(&semantic_type)?;
-        writer.name("declaration")?;
-        writer.serialize(&node.declaration)?;
-        writer.name("recursion")?;
-        writer.serialize(&Option::<u8>::None)?;
-        writer.name("body")?;
-        node.body.encode_into(writer)?;
-        if let Some(owner) = &node.owner {
-            writer.name("owner")?;
-            writer.serialize(owner)?;
-        }
-        writer.end_object()
-    }
+    // External references retain their identities here; complete-package
+    // admission checks their targets after the timed graph is re-keyed.
+    let candidates = derive_structural_candidates(
+        std::slice::from_ref(node),
+        crate::checked::EMIT_LIMITS.max_bytes(),
+        u64::MAX,
+    )
+    .map_err(encoding)?;
+    let [candidate] = candidates.nodes() else {
+        return Err(EmitRefusal::TimedModelWriterInvariant(
+            "a timed node must have one structural identity",
+        ));
+    };
+    Ok(candidate.candidate_node_id().clone())
 }
 
 /// The unique digest-ascending reference targets directly named by a body.
