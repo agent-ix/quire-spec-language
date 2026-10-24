@@ -261,7 +261,6 @@ impl CheckedTimedModel {
     }
 
     /// Write all timed nodes from this typed model in FR-322 graph order.
-    #[must_use]
     pub fn write_nodes(&self) -> Result<Vec<CheckedSemanticNodeV2>, &'static str> {
         let mut nodes = Vec::with_capacity(
             1 + self.clock_places.len()
