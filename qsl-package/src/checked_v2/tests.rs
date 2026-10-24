@@ -1768,7 +1768,15 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 /// refuses a `hybrid_model` whose body binds `modes` before `variables`
 /// `malformed_wire`. Skipped when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
-#[trace("TC-1187", "FR-447-AC-13")]
+#[trace(
+    "TC-685",
+    "FR-230-AC-36",
+    "FR-230-AC-37",
+    "QSpec-TC-367",
+    "QSpec-FR-322-AC-126",
+    "QSpec-FR-322-AC-127",
+    "FR-447-AC-13"
+)]
 #[test]
 fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2608,7 +2616,12 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
         );
     }
 
-    for row in vectors["semantic_refusals"].as_array().unwrap() {
+    let semantic_rows = vectors["semantic_refusals"].as_array().unwrap();
+    for row in semantic_rows
+        .iter()
+        .filter(|row| row["id"] != "TM-23")
+        .chain(semantic_rows.iter().filter(|row| row["id"] == "TM-23"))
+    {
         let is_tick = row["fixture"] == "tick";
         let mut candidate = if is_tick {
             tick_base.clone()
@@ -2696,6 +2709,86 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
             "unresolved-tick-operation" => {
                 candidate["semantic_graph"]["nodes"][46]["body"]["members"][1]["value"]["value"] =
                     json!("missing")
+            }
+            "tick-source-with-clock-place" => {
+                let place = base["semantic_graph"]["nodes"][45].clone();
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(place.clone());
+                let root = &mut candidate["semantic_graph"]["nodes"][45];
+                root["body"]["members"][3]["value"]["members"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"term":"reference", "target":place["node_id"].clone()}));
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(place["node_id"].clone());
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+            }
+            "source-unit-length" | "source-unit-derived-non-time" | "source-unit-derived-time" => {
+                let mutation = row["mutation"].as_str().unwrap();
+                let dimension_name = match mutation {
+                    "source-unit-length" => "Length",
+                    "source-unit-derived-non-time" => "Area",
+                    _ => "Duration",
+                };
+                let time_id = candidate["semantic_graph"]["nodes"][42]["node_id"].clone();
+                let mut dimension = candidate["semantic_graph"]["nodes"][42].clone();
+                dimension["nominal_identity_preimage"]["qualified_declaration"] =
+                    json!(["Example", dimension_name]);
+                dimension["declaration"]["qualified_name"] = json!(["Example", dimension_name]);
+                if dimension_name == "Area" || dimension_name == "Duration" {
+                    let base_id = if dimension_name == "Area" {
+                        let mut length = dimension.clone();
+                        length["nominal_identity_preimage"]["qualified_declaration"] =
+                            json!(["Example", "Length"]);
+                        length["declaration"]["qualified_name"] = json!(["Example", "Length"]);
+                        let length_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&length["nominal_identity_preimage"])});
+                        length["node_id"] = length_id.clone();
+                        length["semantic_type"] = length_id.clone();
+                        candidate["semantic_graph"]["nodes"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(length);
+                        length_id
+                    } else {
+                        time_id.clone()
+                    };
+                    dimension["nominal_identity_preimage"]["terms"] = json!([{
+                        "dimension_node_id": base_id.clone(),
+                        "exponent": if dimension_name == "Area" { "2" } else { "1" }
+                    }]);
+                    dimension["dependencies"] = json!([base_id]);
+                }
+                let dimension_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&dimension["nominal_identity_preimage"])});
+                dimension["node_id"] = dimension_id.clone();
+                dimension["semantic_type"] = dimension_id.clone();
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(dimension);
+                let mut unit = candidate["semantic_graph"]["nodes"][43].clone();
+                unit["nominal_identity_preimage"]["qualified_declaration"] =
+                    json!(["Example", "u"]);
+                unit["nominal_identity_preimage"]["dimension_node_id"] = dimension_id.clone();
+                let unit_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&unit["nominal_identity_preimage"])});
+                unit["node_id"] = unit_id.clone();
+                unit["semantic_type"] = dimension_id.clone();
+                unit["dependencies"] = json!([dimension_id]);
+                unit["declaration"]["qualified_name"] = json!(["Example", "u"]);
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(unit);
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][1]["value"]["target"].clone();
+                source["body"]["members"][1]["value"]["target"] = unit_id.clone();
+                replace_dependency(&mut source["dependencies"], &old, &unit_id);
             }
             other => panic!("{}: unknown semantic vector {other}", row["id"]),
         }
