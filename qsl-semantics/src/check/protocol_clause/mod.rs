@@ -372,8 +372,8 @@ fn check_predicate_joins(
                 refusal(ProtocolAnchorCause::JoinFunctionType {
                     parallel: parallel.name.name.clone(),
                     function: function.clone(),
-                    expected_parameters,
-                    actual_parameters,
+                    expected_parameters: expected_parameters.into_boxed_slice(),
+                    actual_parameters: actual_parameters.into_boxed_slice(),
                     expected_result: Box::new(quire_exact::ValueType::Boolean),
                     actual_result: Box::new(signature.result.clone()),
                     span,
