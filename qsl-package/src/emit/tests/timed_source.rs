@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-230: a checked time source must not be lost when v2 has no timed node.
+//! Interim fail-closed guard: until QSL-1032 maps checked time sources into
+//! `timed_model` nodes on the plain emit path, that path refuses a timed
+//! package instead of omitting its time source. This asserts the guard, not
+//! TC-685 step 26 (which requires the emission QSL-1032 adds).
 
 use super::admission_corpus::config_version_unit;
 use super::*;
 
-#[trace("TC-685")]
 #[test]
 fn a_checked_time_source_cannot_emit_as_an_untimed_package() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();

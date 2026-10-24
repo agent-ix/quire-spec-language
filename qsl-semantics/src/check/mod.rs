@@ -1001,10 +1001,12 @@ impl PackageDeclarations {
                                     Ok(None) => {
                                         return Some(CheckRefusal {
                                             location: root(Origin::Expression),
-                                            cause: CheckCause::TimedNotChecked {
-                                                construct: TimedConstruct::TimeSource,
-                                                span: source.unit.span,
-                                            },
+                                            cause: CheckCause::Temporal(Box::new(
+                                                TemporalCause::MalformedTimeUnit {
+                                                    name: source.unit.name.clone(),
+                                                    span: source.unit.span,
+                                                },
+                                            )),
                                         })
                                     }
                                     Err(cause) => {

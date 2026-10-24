@@ -1270,6 +1270,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::UrgencyWithoutTimeSource { .. } => {
                     format!("{message}: `urgent when` needs a model with a time source")
                 }
+                TemporalCause::MalformedTimeUnit { name, .. } => {
+                    format!("{message}: the time unit `{name}` has a zero scale")
+                }
                 TemporalCause::InvalidTickPeriod { .. } => {
                     format!("{message}: a tick period must be positive")
                 }

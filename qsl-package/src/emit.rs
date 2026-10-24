@@ -202,9 +202,15 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
-    /// A checked time source has no checked-package/v2 node. Emission cannot
-    /// omit it because the time source is part of the package's meaning.
-    #[error("timed model `{model}` cannot be written to a checked-package/v2 graph yet")]
+    /// Interim fail-closed guard: this emission path does not yet map a
+    /// checked time source into `timed_model` nodes, and it cannot omit one
+    /// because the time source is part of the package's meaning.
+    /// [`emit_timed_models`] writes typed timed models; QSL-1032 maps
+    /// `CheckedGraph::time_sources` into them here and removes this guard
+    /// (FR-230-AC-32, TC-685 step 26).
+    #[error(
+        "timed model `{model}` is not yet mapped to checked-package/v2 timed nodes on this path (QSL-1032)"
+    )]
     TimedModelNotEmitted {
         /// The first timed model's alias.
         model: String,
@@ -1435,6 +1441,8 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    // Interim guard until QSL-1032 emits the checked time sources as typed
+    // timed models on this path.
     if let Some(source) = graph.time_sources().first() {
         return Err(EmitRefusal::TimedModelNotEmitted {
             model: source.model.clone(),

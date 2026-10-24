@@ -1086,6 +1086,15 @@ pub enum TemporalCause {
         /// The period quantity's span.
         span: Span,
     },
+    /// FR-230: the time unit's scale to its root is zero, so it cannot be a
+    /// conversion target. The unit graph refuses a zero scale at admission;
+    /// this reports the malformed unit if one ever reaches S3.
+    MalformedTimeUnit {
+        /// The unit as written.
+        name: String,
+        /// The unit name's span.
+        span: Span,
+    },
     /// FR-230: a tick source names no operation of its model.
     MissingTickOperation {
         /// The operation as written.
@@ -1304,6 +1313,7 @@ impl TemporalCause {
             | Self::MissingTimedModel { span, .. }
             | Self::UrgencyWithoutTimeSource { span }
             | Self::InvalidTickPeriod { span }
+            | Self::MalformedTimeUnit { span, .. }
             | Self::MissingTickOperation { span, .. }
             | Self::AmbiguousTickOperation { span, .. }
             | Self::ProfileSelection { span, .. }
@@ -1336,7 +1346,9 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
-            Self::InvalidTickPeriod { .. } => Code::InvalidModelBinding,
+            Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
+                Code::InvalidModelBinding
+            }
             Self::MissingTickOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousTickOperation { .. } => Code::AmbiguousDeclaration,
             Self::ProfileSelection { .. } => Code::UnknownProfile,
@@ -1378,7 +1390,9 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
             Self::UrgencyWithoutTimeSource { .. } => "missing-name",
-            Self::InvalidTickPeriod { .. } => "malformed-declaration",
+            Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
+                "malformed-declaration"
+            }
             Self::MissingTickOperation { .. } => "missing-name",
             Self::AmbiguousTickOperation { .. } => "ambiguous-name",
             Self::ProfileSelection { .. } => "unsupported-selection",

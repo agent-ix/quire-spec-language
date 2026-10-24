@@ -11,7 +11,7 @@ use qsl_semantics::check::{AssemblyCause, CheckCause, TemporalCause, TimedConstr
 use serde_json::json;
 
 use crate::model_operations::{
-    admit_and_assemble_with_body, admit_and_assemble_with_profiles,
+    add_sub_type, admit_and_assemble_with_body, admit_and_assemble_with_profiles,
     attempt_update_modifies_version_number, config_unit_with_body, config_version_document,
     config_version_identity, tc465_deep_hierarchy_document, wire_field,
 };
@@ -30,6 +30,9 @@ fn clock_document() -> Vec<u8> {
         serde_json::from_slice(&document()).expect("the fixture is JSON");
     let owner = "ix://example/config-version/ConfigVersion";
     let field = config_version_identity("x");
+    let mut clock = wire_field(&field, "x", "ix://quire/native/Clock", "required", 1);
+    // FCD admits a Clock field only with a non-unique multiplicity.
+    clock["multiplicity"]["unique"] = json!(false);
     document["types"]
         .as_array_mut()
         .expect("the fixture declares types")
@@ -38,13 +41,7 @@ fn clock_document() -> Vec<u8> {
         .expect("ConfigVersion is declared")["fields"]
         .as_array_mut()
         .expect("ConfigVersion declares fields")
-        .push(wire_field(
-            &field,
-            "x",
-            "ix://quire/native/Clock",
-            "required",
-            1,
-        ));
+        .push(clock);
     serde_json::to_vec(&document).expect("the fixture stays JSON")
 }
 
@@ -104,24 +101,30 @@ fn s2_keeps_a_dense_time_member_for_the_temporal_layer() {
     );
 }
 
-#[trace("TC-685")]
+/// Fails today at QSL model intake (`model/intake.rs`, "names no native value
+/// type QSL declares"): QSL-1030 must admit the native Clock `typeRef`. FCD I1
+/// already accepts the field. Untagged while ignored so it verifies nothing.
 #[test]
-#[ignore = "QSL model intake does not admit the ix://quire/native/Clock field typeRef"]
-fn a_package_clock_field_reaches_the_timed_model_check() {
-    let assembled = admit_and_assemble_with_profiles(
+#[ignore = "QSL-1030: model intake rejects the ix://quire/native/Clock field typeRef"]
+fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
+    let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n";
+    let declarations = admit_and_assemble_with_profiles(
         &clock_document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
-        "time Config dense unit ms;\n",
-    );
-    assert!(
-        assembled.is_ok(),
-        "a package Clock field reaches S3: {assembled:?}"
-    );
+        body,
+    )
+    .expect("a package Clock field is admitted at intake");
+    let checked = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the time source checks beside the Clock field");
+    assert_eq!(checked.time_sources()[0].model, "Config");
 }
 
-#[trace("TC-685")]
+/// Fails today at S3: a qualified package unit refuses `TimedNotChecked`
+/// because S3 has no package-owned unit table (QSL-1031). FCD I1 already
+/// admits the package dimensions and units. Untagged while ignored.
 #[test]
-#[ignore = "S3 has no package-owned unit table: a qualified time unit refuses TimedNotChecked"]
+#[ignore = "QSL-1031: S3 has no package-owned unit table, so `Config::ms` refuses TimedNotChecked"]
 fn package_time_units_reach_s3_with_their_model_owner() {
     let declarations = admit_and_assemble_with_profiles(
         &package_units_document(),
@@ -479,6 +482,57 @@ fn missing_tick_operation_refuses_at_its_name() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("S3 resolves the operation");
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::MissingTickOperation { name, .. } if name == "ConfigVersion::absent"))), "{refusals:?}");
+}
+
+/// `document()` with `Sub` (a subtype of `ConfigVersion`) that declares its
+/// own `attemptUpdate`, overriding the inherited one.
+fn overriding_document() -> Vec<u8> {
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&add_sub_type(document(), &[])).expect("valid JSON");
+    let mut operation = attempt_update_modifies_version_number();
+    operation["identity"] = json!("ix://example/config-version/Sub/attemptUpdate");
+    let sub = envelope["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://example/config-version/Sub")
+        .expect("Sub is declared");
+    sub["operations"] = json!([operation]);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+fn tick_over(
+    document: &[u8],
+    operation: &str,
+) -> Result<Vec<qsl_semantics::check::ModelTimeSource>, Vec<qsl_semantics::check::CheckRefusal>> {
+    let body = format!("dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick {operation} period 1 ms unit ms;\n");
+    admit_and_assemble_with_profiles(
+        document,
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &body,
+    )
+    .expect("S2 retains the tick form")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .map(|checked| checked.time_sources().to_vec())
+}
+
+#[trace("TC-685")]
+#[test]
+fn an_unqualified_tick_operation_declared_twice_is_ambiguous() {
+    let refusals = tick_over(&overriding_document(), "attemptUpdate")
+        .expect_err("two declarations share the name");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::AmbiguousTickOperation { name, .. } if name == "attemptUpdate"))), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
+fn a_qualified_tick_operation_resolves_to_the_overriding_declaration() {
+    let sources = tick_over(&overriding_document(), "Sub::attemptUpdate")
+        .expect("the override hides the inherited declaration");
+    assert!(
+        matches!(&sources[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == "ix://example/config-version/Sub/attemptUpdate"),
+        "{sources:?}"
+    );
 }
 
 #[trace("TC-685")]
