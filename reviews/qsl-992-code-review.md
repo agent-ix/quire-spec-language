@@ -68,3 +68,17 @@ Mutation re-run (seven mutants):
 - **Survived (4):** M2, M3 and M4 on `ObservedWindowSource` (FND-001), and M6, the limit check moved after the value read (FND-002).
 
 CI: the `cla / cla-check` job reports fail while `cla / gate` passes; guard and language-boundary pass.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The fix for FND-002 (f17ed350a) reads the value at the position past the limit before checking `max_window_values`. An overflow therefore costs one extra value evaluation, and a `quantile` window briefly holds `max_window_values + 1` values before the stop. If that extra read exhausts the work budget, the run stops `Incomplete(LimitReached{work_units})` rather than FR-194's `LimitReached` naming `max_window_values`. No test pins either effect. Reading only the undefined-ness first, or checking the limit after `take` only for `Undefined`, would avoid both. | qsl-eval/src/temporal/window.rs:461-472 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | f17ed350a adds `the_observed_source_reads_numbers_and_faults_on_anything_else`, and mutants M2, M3 and M4 are now killed. Remaining gap: the `FamilyResult::Undefined` arm is still untested. It is a three-line mapping identical to `ObservedLetters::atom`, so it is acceptable without its own ticket; cover it when `ObservedWindowSource` is wired into the observed path. |
+| FND-002 | fixed | `evaluate` now reads the value before the limit check, so an undefined value at the limit position is `Undefined`. This matches FR-194: an undefined position holds no value, and the evaluator stops at it. `an_undefined_position_at_the_limit_is_undefined_and_not_an_overflow` kills M6. QSL-1045 covers the spec wording. |
+| FND-003 | fixed | `#[deny(clippy::wildcard_enum_match_arm)]` now guards `ObservedWindowSource::read`. |

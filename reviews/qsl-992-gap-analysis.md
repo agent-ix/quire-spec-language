@@ -72,3 +72,12 @@ CONDITIONAL. Findings by AC:
 - **FR-196-AC-10.** Complete: both bindings start from one initial state; equal model and monitor with differing keys and bindings; distinct labels.
 - **FR-196-AC-11.** Asserted except the AC-7 parenthetical (FND-002).
 - **Doc comments.** Every AC id in a new doc comment carries a matching `#[trace]` tag.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-1045 (spec rewording of FR-193-AC-5). f17ed350a drops the FR-193-AC-5 tag and doc id, so the test is TC-628 only and nothing overclaims; `quire matrix` shows FR-193-AC-5 untagged. |
+| FND-002 | deferred | QSL-1045 (AC-7 vector or drop the parenthetical). f17ed350a drops the FR-196-AC-11 tag and doc id (TC-631 only); `quire matrix` shows FR-196-AC-11 untagged. |
+| FND-003 | accepted-no-change | The `e.one` spelling is equal to `> 1` over the vector. The test doc now states why (the checker cannot type `> 1` against a quotient). QSL-1045 rewrites the AC in a typable spelling. |
+| FND-004 | fixed | The clause value is now asserted exactly, as `Undefined(UndefinedEvaluation{at: 0, cause: InsufficientData{count: 1, min_count: 5}})` with category `Undefined`; the AC's position-3 reading is asserted separately. The struct name is the existing FR-327 representation, and the O-16 category is what the AC requires. |

@@ -21,9 +21,9 @@ use qsl_semantics::check::{
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
-    ComparisonOperator, EffectiveId, FieldValue, Integer, IntegerInterval, LimitKind, Meter,
-    ObjectId, ObjectReference, Presence, Rational, RationalDomain, ScalarLimits, Undefined,
-    UniverseId, Value, ValueType,
+    Charge, ChargePoint, ComparisonOperator, EffectiveId, FieldValue, Integer, IntegerInterval,
+    LimitKind, Meter, ObjectId, ObjectReference, Presence, Rational, RationalDomain, ScalarLimits,
+    Undefined, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -1342,5 +1342,79 @@ fn an_undefined_position_at_the_limit_is_undefined_and_not_an_overflow() {
             value: 2,
             setting: MAX_WINDOW_VALUES_SETTING,
         }))
+    );
+}
+
+/// A source that charges one work unit for each value it reads.
+struct Charging(Rows);
+
+impl WindowSource for Charging {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        self.0.admits(position, meter)
+    }
+
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<Rational>, LetterStop> {
+        meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
+        self.0.value(position, meter)
+    }
+
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        self.0.predicate(position, meter)
+    }
+}
+
+/// The value past `max_window_values` is read before the limit is checked,
+/// so an undefined one can win over the overflow. That read is charged, and
+/// when it exhausts the work budget the run stops on the budget
+/// (`Incomplete`, work units), not on the limit. FR-194 is silent on that
+/// order; this pins the behaviour.
+#[trace("TC-629")]
+#[test]
+fn the_read_past_the_limit_is_charged_and_the_budget_stops_before_the_limit() {
+    let sum = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 2 },
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let trace = WindowTrace::positions(3);
+    // Three visits and three value reads: two admitted values and the one
+    // past the limit 2.
+    let outcome = |work_units: u64| {
+        let mut meter = Meter::new(ScalarLimits {
+            work_units,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        sum.evaluate(
+            &trace,
+            &mut Charging(Rows::values(&[1, 1, 1])),
+            2,
+            TemporalPosition::new(2),
+            &mut meter,
+        )
+    };
+    assert_eq!(
+        outcome(6),
+        Err(LetterStop::WindowLimit(WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: MAX_WINDOW_VALUES_SETTING,
+        }))
+    );
+    assert!(
+        matches!(outcome(5), Err(LetterStop::Incomplete(record)) if record.limit_kind == LimitKind::WorkUnits)
     );
 }
