@@ -73,6 +73,14 @@ pub enum StaticReplay {
     Inconsistent { at: JsonPointer, check: StaticCheck }, // the first failing check
 }
 pub enum StaticCheck { Initial, Invariant, Time, Jump, Loop } // QSpec FR-193 static checks 1 to 5
+pub struct ReplayRecord {
+    pub static_outcome: StaticReplay, // written as `replay.static`
+    pub exact: Option<ExactRecord>,   // written as `replay.exact` when present
+}
+pub enum ExactRecord {
+    NotExact,
+    NotReproduced { at: JsonPointer, check: ExactCheck },
+}
 pub enum ExactReplay {
     NotExact,                                   // not a point trace, or a mode without a polynomial flow
     Reproduced(HybridCounterexample),
@@ -91,6 +99,10 @@ pub struct HybridCounterexample {
     pub kind: HybridCounterexampleKind,         // Formula | UndefinedEvaluation{where, cause}
     pub trace: HybridTrace,
 }
+pub enum HybridTraceDisagreement {
+    NotReproduced { counterexample: HybridCounterexample },
+    NotExact { counterexample: HybridCounterexample },
+}
 ```
 
 `static_replay(graph, claim, trace, meter: &mut HybridReplayMeter) ->
@@ -98,7 +110,11 @@ Result<StaticReplay, HybridReplayRefusal>` and
 `exact_replay(graph, claim, trace, meter: &mut HybridReplayMeter) ->
 Result<ExactReplay, HybridReplayRefusal>` take the caller's meter. The
 `InconclusiveCause::SolverInconclusive { trace: Option<HybridTrace>, replay:
-Option<StaticReplay> }` carries static outcomes, and a reproduced trace
+Option<ReplayRecord> }` carries the static outcome and, when exact replay ran
+without reproducing the trace, its exact outcome. The stored FR-193 `replay`
+object has a required `static` member and an optional `exact` member; the
+`exact` member is `not-exact` or `not-reproduced` with its failing pointer and
+check. It is not a bare `StaticReplay`. A reproduced trace
 settles as `TerminalValue::Refuted` with its `HybridCounterexample` as the
 item's `Counterexample`.
 
@@ -217,8 +233,16 @@ item's `Counterexample`.
   raise the bound through that
   setting. The item SHALL carry no counterexample and no verdict.
 - A provider's `refuted` entry whose trace gives `NotReproduced` or
-  `NotExact` SHALL settle the item `inconclusive`, `ReplayParity` (QSpec
-  FR-364), with no `counterexamples` entry.
+  `NotExact` SHALL settle the item `inconclusive` with
+  `ReplayParity(DisagreementCause::HybridTrace(disagreement))` (QSpec FR-364).
+  `disagreement` SHALL be `HybridTraceDisagreement::NotReproduced` when exact
+  replay returned `NotReproduced`, and
+  `HybridTraceDisagreement::NotExact` when exact replay returned `NotExact`.
+  Each variant SHALL carry the provider's complete `HybridCounterexample`
+  (its kind and trace), and SHALL not be converted to a
+  `SeparatingWitnessRecord`, `Verdicts` or `NoValue`. The serialized
+  disagreement cause SHALL use `{"cause":"hybrid-trace","disagreement":{"type":"not-reproduced","counterexample":{"kind":...,"trace":...}}}` or the same object with `type` `not-exact`; `trace` uses QSpec FR-193's hybrid trace wire form. The enclosing `replay-parity` cause SHALL preserve this distinct variant and the complete counterexample. The
+  resulting record SHALL have no `counterexamples` entry.
 - No other path SHALL settle a hybrid item `refuted`.
 
 ## Acceptance Criteria
@@ -227,7 +251,8 @@ item's `Counterexample`.
 |----|----------|--------------|
 | FR-450-AC-1 | Over FR-447's `Braking`, a `solver-inconclusive` trace whose `start` box `v` in `[25, 26]` meets no initial entry replays `Inconsistent { at: /start, check: Initial }`; a trace whose `before` box `v` in `[1/200, 1/100]` misses the guard `v = 0` by less than its `delta` 1/100 replays `Consistent`, and the same trace with no `delta` `Inconsistent` at check `Jump`; a trace whose second state's `time.upper` is below the first's `time.lower` is `Inconsistent` at check `Time`; each item settles `inconclusive`, `SolverInconclusive{trace: Some(..), replay: Some(..)}` with that outcome and no `counterexamples` entry; a `delta` of `-1/100` is refused `invalid_result`/`invalid-value` at `/delta`. | Test (TC-1221) |
 | FR-450-AC-2 | Against `always [0, 12] holds(h.v > 0)`, the point trace from `(Moving, v = 20, a = 2, t = 0)` with `before` `(time 10, v = 0, a = 2, t = 10)` and transition 0 to `(Stopped, time 10, v = 0, a = 2, t = 10)` replays `Reproduced` with kind `Formula`, from a `solver-inconclusive` cause and from a provider's `refuted` entry alike, and the item settles `refuted` with that trace as its `Counterexample` and one `counterexamples` entry; against `SlowEnough` the same trace gives `NotReproduced` at check `Claim` and the item stays `inconclusive`. | Test (TC-1221) |
-| FR-450-AC-3 | The AC-2 trace with `before` `v = 1` gives `NotReproduced` at check `Dwell`; the same trace with `before.time` 9 gives `NotReproduced` at check `Dwell`; as a provider's `refuted` entry each settles `inconclusive`, `ReplayParity`, with no `counterexamples` entry. | Test (TC-1221) |
+| FR-450-AC-3 | The AC-2 trace with `before` `v = 1` gives `NotReproduced` at check `Dwell`; as a provider's `refuted` entry it settles `inconclusive`, `ReplayParity(DisagreementCause::HybridTrace(NotReproduced{counterexample}))`, preserving the complete input counterexample, and has no `counterexamples` entry. The same input with `before.time` 9 gives `NotReproduced` at check `Dwell` and the same distinct `NotReproduced` cause with its complete counterexample. | Test (TC-1221) |
+| FR-450-AC-9 | On FR-447's `Braking` with `Moving`'s flow changed to `v' = -v`, a provider's `refuted` entry carrying the otherwise valid AC-2 point trace returns `NotExact`; the item settles `inconclusive`, `ReplayParity(DisagreementCause::HybridTrace(NotExact{counterexample}))`, retaining the complete counterexample and distinguishing it from `NotReproduced`; no `counterexamples` entry is written. | Test (TC-1221) |
 | FR-450-AC-4 | With `Moving`'s flow `v' = -v`, the AC-2 trace gives `NotExact` and is replayed statically only, settling `inconclusive`; with `Moving`'s flows `v' = -a` and `a' = -1 / 10` it is replayed exactly, with `a(t) = 2 - t / 10` and `v(t) = 20 - 2t + t^2 / 20`, and gives `NotReproduced` at check `Dwell` because `v(10) = 5`; with a flow `v' = drag(v)` over a recursive `drag`, it gives `NotExact`. | Test (TC-1221) |
 | FR-450-AC-5 | The AC-2 trace against `always [0, 12] holds(1 / (h.v - 5) != 0)`, true up to the undefined instant, replays `Reproduced` with kind `UndefinedEvaluation`, naming the instant at time 15/2 in `Moving`, where `v = 5`, and the division's locus, and settles `refuted` with cause `UndefinedEvaluation{where, cause}`; against `always [0, 12] holds(1 / (h.v - 5) < 100)`, false from time 1499/200 before that instant, it replays `Reproduced` with kind `Formula`, the decisive instant 1499/200; against a claim whose atom calls a recursive function it gives `NotExact`; static replay of a guard calling a recursive function whose measure interval is undecided terminates with that call's result range. | Test (TC-1221) |
 | FR-450-AC-6 | Over `Bounce`, `hybrid Bounce using p { mode Up invariant { x >= 0 and x <= 1 } flow { x' = 1; } transition to Down when { x = 1 } reset { true }; mode Down invariant { x >= 0 and x <= 1 } flow { x' = -1; } transition to Up when { x = 0 } reset { true }; }`, whose initial states are `Up` with `x` in `[0, 1]` at time 0, against `eventually always holds(h.x < 1)` under the infinite-trace profile, the point trace from `(Up, x = 0)` through `Down` at time 1 back to `(Up, x = 0)` at time 2 with `loop_to` 0 reproduces as a periodic behaviour, also with `fair Up;`; the same trace with `loop_to` 1, whose last state `(Up, x = 0)` is not the `Down` state it names, gives `NotReproduced` at check `Loop`; the same trace whose last state has `x = 1/2` gives `NotReproduced` at check `Jump`, the reset `true` keeping `x = 0`; and a `loop_to` 2, naming the last state, is refused `invalid_result`/`invalid-value` at `/loop`. | Test (TC-1221) |
