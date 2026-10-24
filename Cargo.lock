@@ -1526,6 +1526,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "quire-canonical",
+ "quire-contract-model",
  "quire-exact",
  "quire-semantic-value",
  "quire-walk",
