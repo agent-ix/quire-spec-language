@@ -14,8 +14,8 @@ use qsl_semantics::model::accounting::{
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 
 /// One object type and its direct supertypes, by node name.
 struct Node {

@@ -115,6 +115,7 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
+mod hybrid;
 mod hyper_clause;
 mod hyper_typing;
 mod node_key;
@@ -280,6 +281,14 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use field_refinement::RefinementObligation;
+pub use hybrid::{
+    hybrid_horizon, ArithmeticOp, CaptureIndex, CheckedFunctionRef, CheckedHybridClaim,
+    CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
+    HorizonOutOfRange, HybridActivation, HybridCapture, HybridCause, HybridClaimDeclaration,
+    HybridClock, HybridDeclaration, HybridFairness, HybridFormula, HybridHorizon, HybridInterval,
+    HybridModelIndex, HybridTerm, InitialEntry, LogicOp, MalformedReason, ModeIndex,
+    ResetConstraint, TransitionIndex, VariableClass, VariableIndex,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
@@ -529,6 +538,10 @@ pub struct CheckedGraph {
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
+    /// FR-447: every checked hybrid model, in declaration order.
+    hybrid_models: Vec<CheckedHybridModel>,
+    /// FR-447: every checked hybrid claim, in declaration order.
+    hybrid_claims: Vec<CheckedHybridClaim>,
     /// FR-185: every checked random parameter, reward and workload.
     probabilistic: CheckedProbabilisticModel,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -536,28 +549,28 @@ pub struct CheckedGraph {
     operation_frames: Vec<CheckedOperationFrame>,
     /// Each `model` alias's object types, by artifact id: the table
     /// [`Self::field_domain`] resolves a field selection's alias and type in.
-    model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    model_objects: BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>,
     /// FR-115, FR-121: each `model` alias's operation owners (object types,
     /// processes and state machines), by artifact id: the table
     /// [`Self::resolve_operation`] resolves an operation selection's alias
     /// and owner in.
-    model_owners: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    model_owners: BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>,
     /// FR-116, FR-121: each `model` alias's top-level declarations that are
     /// not operation owners, by artifact id: the nodes that cannot declare
     /// operations a frame names.
     model_non_owners: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
     /// FR-115: every admitted operation owner's effective identity, by its
     /// declaration key.
-    owner_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    owner_types: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
-    object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_types: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
     /// ADR-012 §15.4: every admitted object type's `model`/`object_type`
     /// node key, by its declaration key -- keyed from the declaration
     /// whether or not this package's lowering minted the node, so
     /// [`Self::field_domain`] names a field's declaring type even when no
     /// clause reads it.
-    object_nodes: BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    object_nodes: BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     /// ADR-012 §15.7: each `model` alias's population declarations, by
     /// artifact id, each with its canonical member type and ordinal, as
     /// [`AdmittedModel::population_domains`] orders them: the table
@@ -567,11 +580,11 @@ pub struct CheckedGraph {
     population_bounds: Vec<CheckedPopulationBound>,
     /// FR-304: every admitted population's declaration key, with its
     /// population domain.
-    population_keys: BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain>,
+    population_keys: BTreeMap<quire_checked::key::DeclarationKey, state_clause::PopulationDomain>,
     /// FR-304: the key of every declaration of every admitted domain
     /// package, of any kind, so a binding keyed by a declaration of the wrong
     /// kind refuses as malformed rather than missing.
-    declaration_keys: std::collections::BTreeSet<crate::model::key::DeclarationKey>,
+    declaration_keys: std::collections::BTreeSet<quire_checked::key::DeclarationKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -1378,19 +1391,22 @@ impl PackageDeclarations {
         let mut nodes_used = 0_u64;
         // FR-218 "Requirements": each function's name and keyword, which a
         // `requires temporal` name that resolves to it names.
-        let function_kinds: Vec<(String, &'static str)> = self
+        let function_kinds: Vec<_> = self
             .functions
             .iter()
-            .map(|function| {
-                (
-                    function.name.clone(),
-                    match function.kind() {
-                        qsl_forms::DeclarationKind::Function => "function",
-                        qsl_forms::DeclarationKind::Predicate => "predicate",
-                    },
-                )
-            })
+            .map(|function| (function.name.clone(), function.kind()))
             .collect();
+        // FR-447: the bodies a hybrid term's calls are validated against,
+        // kept before the function loop consumes the declarations.
+        let hybrid_bodies: Vec<qsl_forms::Expression> =
+            if self.hybrids.is_empty() && self.hybrid_claims.is_empty() {
+                Vec::new()
+            } else {
+                self.functions
+                    .iter()
+                    .map(|function| function.body.clone())
+                    .collect()
+            };
         for (index, function) in self.functions.into_iter().enumerate() {
             // FR-092 "Function nodes": the kind travels with the draft to
             // lowering, which keys a predicate's node `predicate`.
@@ -1943,34 +1959,43 @@ impl PackageDeclarations {
                 .map(|clause| {
                     (
                         clause.name.as_str(),
-                        match clause.kind {
+                        protocol_requirement::UnitDeclarationKind::Other(match clause.kind {
                             qsl_forms::StateClauseKind::Invariant => "invariant",
                             qsl_forms::StateClauseKind::Precondition => "pre",
                             qsl_forms::StateClauseKind::Postcondition => "post",
-                        },
+                        }),
                     )
                 })
-                .chain(
-                    function_kinds
-                        .iter()
-                        .map(|(name, kind)| (name.as_str(), *kind)),
-                )
-                .chain(
-                    self.terminals
-                        .iter()
-                        .map(|terminal| (terminal.name.as_str(), "terminal")),
-                )
-                .chain(
-                    self.state_graph_claims
-                        .iter()
-                        .map(|claim| (claim.form.name.name.as_str(), "claim")),
-                )
-                .chain(
-                    self.native_names
-                        .iter()
-                        .map(|name| (name.as_str(), "dimension or unit")),
-                )
-                .chain(scope.type_names().map(|name| (name, "type"))),
+                .chain(function_kinds.iter().map(|(name, kind)| {
+                    (
+                        name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Callable(*kind),
+                    )
+                }))
+                .chain(self.terminals.iter().map(|terminal| {
+                    (
+                        terminal.name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("terminal"),
+                    )
+                }))
+                .chain(self.state_graph_claims.iter().map(|claim| {
+                    (
+                        claim.form.name.name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("claim"),
+                    )
+                }))
+                .chain(self.native_names.iter().map(|name| {
+                    (
+                        name.as_str(),
+                        protocol_requirement::UnitDeclarationKind::Other("dimension or unit"),
+                    )
+                }))
+                .chain(scope.type_names().map(|name| {
+                    (
+                        name,
+                        protocol_requirement::UnitDeclarationKind::Other("type"),
+                    )
+                })),
         );
         // The clauses whose own checks refused something, which a refinement
         // does not resolve against (FR-147 "Abstract side"), and each
@@ -1993,6 +2018,7 @@ impl PackageDeclarations {
                 &self.native_names,
                 &scope,
                 &signatures,
+                &unit_declarations,
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
@@ -2431,6 +2457,43 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-447: each `hybrid` declaration and each claim over one, checked
+        // against the same package-wide node total.
+        let hybrid_callees = hybrid::Callees {
+            signatures: &signatures,
+            bodies: &hybrid_bodies,
+        };
+        let checked_hybrid = hybrid::check_models(
+            &self.hybrids,
+            &hybrid_callees,
+            limits.nodes(),
+            &mut nodes_used,
+        );
+        let checked_hybrid_claims = hybrid::check_claims(
+            &self.hybrid_claims,
+            &hybrid::ClaimInputs {
+                models: &checked_hybrid.models,
+                index: &checked_hybrid.index,
+                scope: &scope,
+                units: &time_units,
+                rational_bits: limits.rational_bits(),
+                callees: &hybrid_callees,
+                node_limit: limits.nodes(),
+            },
+            &mut nodes_used,
+        );
+        let hybrid_exhausted = checked_hybrid
+            .refusals
+            .iter()
+            .chain(&checked_hybrid_claims.refusals)
+            .any(|refusal| matches!(refusal.cause, CheckCause::ResourceExhausted(_)));
+        refusals.extend(checked_hybrid.refusals);
+        refusals.extend(checked_hybrid_claims.refusals);
+        if hybrid_exhausted {
+            return Err(refusals);
+        }
+        let checked_hybrid_models = checked_hybrid.models;
+        let checked_hybrid_claim_list = checked_hybrid_claims.claims;
         // FR-172: each `hyper` clause and `relation`, checked through the
         // `TemporalTrace` family under the unit's one temporal profile. A
         // clause that checks is refused as not emitted, as a `temporal`
@@ -2874,6 +2937,38 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-447, QSpec FR-481: each checked hybrid model, then each claim
+        // over one, after every function their terms may call.
+        let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
+        for (index, model) in checked_hybrid_models.iter().enumerate() {
+            match lowering.hybrid_model(&lowering::HybridModelInput {
+                index,
+                model,
+                signatures: signatures.as_slice(),
+            }) {
+                Ok(lowered) => lowered_hybrids.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        if lowered_hybrids.len() == checked_hybrid_models.len() {
+            for (index, claim) in checked_hybrid_claim_list.iter().enumerate() {
+                let (Some(model), Some(lowered)) = (
+                    checked_hybrid_models.get(claim.model.get()),
+                    lowered_hybrids.get(claim.model.get()),
+                ) else {
+                    continue;
+                };
+                if let Err(refusal) = lowering.hybrid_claim(&lowering::HybridClaimInput {
+                    index,
+                    claim,
+                    model,
+                    lowered,
+                    signatures: signatures.as_slice(),
+                }) {
+                    refusals.push(refusal);
+                }
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -2959,6 +3054,35 @@ impl PackageDeclarations {
             lowered.functions,
             lowered.binders,
         );
+        // FR-218: bind each already-checked predicate join to its function
+        // node key after the function declarations have been lowered.
+        for checked_index in protocol_places.iter().flatten().copied() {
+            let Some(checked) = checked_protocols.get_mut(checked_index) else {
+                return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]);
+            };
+            for pending in std::mem::take(&mut checked.pending_predicate_joins) {
+                let name = &pending.name;
+                let identity = signatures
+                    .position(name)
+                    .and_then(|index| identities.get(index).copied().flatten());
+                let Some(identity) = identity else {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]);
+                };
+                checked.parallels.push(CheckedParallel {
+                    node: pending.node,
+                    policy: CheckedJoinPolicy::Predicate { function: identity },
+                    joined: pending.joined,
+                    outstanding: pending.outstanding,
+                });
+            }
+            checked.parallels.sort_by_key(|parallel| parallel.node.0);
+        }
         // ADR-012 §13.5, ADR-011 E7: exactly one record per claim site,
         // keyed by the `expression` occurrence recorded at the site's own
         // location (ADR-013 O-07). A claim that cannot be keyed is a fault,
@@ -3386,6 +3510,8 @@ impl PackageDeclarations {
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
+            hybrid_models: checked_hybrid_models,
+            hybrid_claims: checked_hybrid_claim_list,
             probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
@@ -3442,8 +3568,8 @@ fn model_owner_tables(models: &[AdmittedModel]) -> (ModelTypeTable, TypeIdentiti
     type_tables(models, |model| Box::new(model.operation_owners()))
 }
 
-type ModelTypeTable = BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>;
-type TypeIdentities = BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>;
+type ModelTypeTable = BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>;
+type TypeIdentities = BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>;
 
 /// The tables of the declarations `select` picks from each admitted model.
 fn type_tables<'m>(
@@ -3453,7 +3579,7 @@ fn type_tables<'m>(
     ) -> Box<
         dyn Iterator<
                 Item = (
-                    &'m crate::model::key::DeclarationKey,
+                    &'m quire_checked::key::DeclarationKey,
                     quire_exact::EffectiveId,
                 ),
             > + 'm,
@@ -3581,7 +3707,7 @@ fn checked_population_bounds(models: &[AdmittedModel]) -> Vec<CheckedPopulationB
 /// domain [`AdmittedModel::population_domains`] gives it.
 fn population_key_table(
     models: &[AdmittedModel],
-) -> BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain> {
+) -> BTreeMap<quire_checked::key::DeclarationKey, state_clause::PopulationDomain> {
     models
         .iter()
         .flat_map(|model| {
@@ -3609,8 +3735,8 @@ fn population_key_table(
 /// checked graph's `population_key` and the emitted `temporal-satisfaction`
 /// record build it.
 fn population_domain_key(
-    object_types: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
-    object_nodes: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    object_types: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
     let node = object_types
@@ -3677,7 +3803,7 @@ impl CheckedGraph {
     pub fn resolve_declaration(
         &self,
         node: quire_exact::NodeKey,
-    ) -> Option<&crate::model::key::DeclarationKey> {
+    ) -> Option<&quire_checked::key::DeclarationKey> {
         self.model_correspondence.resolve(node)
     }
 
@@ -3831,6 +3957,16 @@ impl CheckedGraph {
     /// FR-165: every checked state-graph claim, in declaration order.
     pub fn state_graph_claims(&self) -> &[CheckedStateGraphClaim] {
         &self.state_graph_claims
+    }
+
+    /// FR-447: every checked hybrid model, in declaration order.
+    pub fn hybrid_models(&self) -> &[CheckedHybridModel] {
+        &self.hybrid_models
+    }
+
+    /// FR-447: every checked hybrid claim, in declaration order.
+    pub fn hybrid_claims(&self) -> &[CheckedHybridClaim] {
+        &self.hybrid_claims
     }
 
     /// FR-185: the package's checked random parameters, rewards and
@@ -4016,7 +4152,7 @@ impl CheckedGraph {
     pub fn object_type_key(
         &self,
         id: quire_exact::EffectiveId,
-    ) -> Option<&crate::model::key::DeclarationKey> {
+    ) -> Option<&quire_checked::key::DeclarationKey> {
         self.object_types
             .iter()
             .find_map(|(key, known)| (*known == id).then_some(key))

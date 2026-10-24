@@ -2,8 +2,9 @@
 //! FR-093-AC-19 (TC-416 step 11): the emission-to-admission corpus. Every
 //! node family of IR's closed checked-package/v2 vocabulary
 //! (`CheckedNodeKind::all()`) is classified exactly once: as a family the
-//! emitter writes and IR admits (one or more rows), or as a kind QSL's
-//! lowering never writes ([`NOT_EMITTED_BY_QSL`], each with its reason).
+//! emitter or typed timed-model writer writes and IR admits (one or more
+//! rows), or as a kind QSL does not write ([`NOT_EMITTED_BY_QSL`], each with
+//! its reason).
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
@@ -18,8 +19,8 @@
 use qsl_forms::TypeFormHead;
 use quire_contract_model::{
     BoundedDomainForm, CheckedNodeKind, ClaimForm, CompositeTypeForm, CorrespondenceForm,
-    ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm, ScalarTypeForm, StateForm,
-    TemporalForm,
+    ExpressionForm, FunctionForm, HybridForm, ModelForm, ProtocolForm, RelationForm,
+    ScalarTypeForm, StateForm, TemporalForm,
 };
 
 use super::super::extent_agreement::{package_declaring, records};
@@ -93,11 +94,13 @@ enum Fixture {
     /// TC-524: ADR-018 §6's [`TEMPORAL_CLAUSE`] over the ConfigVersion
     /// domain package.
     TemporalClause,
+    /// TC-1187, TC-1220: [`HYBRID_UNIT`], hybrid models and their claims.
+    Hybrid,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 22] = [
+    const ALL: [Self; 23] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -120,6 +123,7 @@ impl Fixture {
         Self::NativeScalars,
         Self::UnionNodes,
         Self::TemporalClause,
+        Self::Hybrid,
     ];
 }
 
@@ -186,6 +190,34 @@ const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
 /// The complete-V1 header shared by every model source unit below.
 const COMPLETE_V1_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.model.complete/v1\";\n";
+
+/// FR-447's use case: `Braking2` with its two initial entries, and the
+/// `Slows` and `Recent` claims over it, after [`COMPLETE_V1_HEADER`].
+const HYBRID_UNIT: &str = "profile p = \"quire.temporal.infinite-trace/v1\";\n\
+     profile t = \"quire.temporal.timed/v1\";\n\
+     dimension Time;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n\
+     hybrid Braking2 using p {\n\
+       initial {\n\
+         mode Moving when { v = 20 and a >= 1 and a <= 2 and t = 0 };\n\
+         mode Stopped when { v = 0 and t = 0 };\n\
+       }\n\
+       mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }\n\
+         flow { v' = -a; a' = 0; t' = 1; }\n\
+         transition to Stopped when { v = 0 } reset { v = 0 and a >= 1 };\n\
+       mode Stopped invariant { v = 0 }\n\
+         flow { v' = 0; a' = 0; t' = 1; }\n\
+     }\n\
+     temporal Slows using t over (h: Braking2) clock \"model-time\"\n\
+         on each (q: Braking2) when (q.v > 10) {\n\
+       fair Moving::Stopped;\n\
+       capture v0: Rational[0, 20; 1, 1] = q.v;\n\
+         eventually [0 s, 10500 ms] holds(h.v < v0 and h.v <= 10)\n\
+     }\n\
+     temporal Recent using p over (h: Braking2) clock \"model-steps\" on origin {\n\
+       once [0, 2] holds(h.v = 20)\n\
+     }\n";
 
 /// The relationship model source after [`COMPLETE_V1_HEADER`].
 const RELATIONSHIP_MODEL_UNIT: &str =
@@ -291,6 +323,7 @@ impl Fixture {
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
+            Self::Hybrid => text(HYBRID_UNIT),
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = config_version_unit::unit_text(&document_digest(document));
@@ -467,10 +500,13 @@ fn rows() -> Vec<Row> {
         row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
         row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
         row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
+        row(K::Hybrid(HybridForm::Model), F::Hybrid),
+        row(K::Hybrid(HybridForm::Mode), F::Hybrid),
+        row(K::Hybrid(HybridForm::Transition), F::Hybrid),
     ]
 }
 
-/// Every IR node kind QSL's lowering never writes, each with the reason.
+/// Every IR node kind neither QSL's emitter nor typed timed-model writer writes.
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
@@ -704,16 +740,16 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .or_default()
             .push("not emitted: QSL writes no extension node yet (QSL-978)".to_owned());
     }
-    // IR does not export `HybridForm` either; QSL lowers no hybrid
-    // declaration to a node until QSL-900.
+    // `CheckedTimedModel::write_nodes` writes the complete closed timed-model
+    // family; its emitted-package conformance test reads the result through I2.
     for kind in all
         .iter()
-        .filter(|kind| matches!(kind, CheckedNodeKind::Hybrid(_)))
+        .filter(|kind| matches!(kind, CheckedNodeKind::TimedModel(_)))
     {
         classified
             .entry(*kind)
             .or_default()
-            .push("not emitted: QSL lowers no hybrid declaration yet (QSL-900)".to_owned());
+            .push("admitted by the typed timed-model writer (TC-367)".to_owned());
     }
     let unclassified: Vec<_> = all
         .iter()

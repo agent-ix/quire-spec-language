@@ -27,7 +27,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::lowering::AdmittedModel;
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
 use crate::model::domain_package::DomainPackageRecord;
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// One checked `relationship r = M::R;` member (FR-218 "Outputs").
 #[derive(Clone, Debug, Eq, PartialEq)]

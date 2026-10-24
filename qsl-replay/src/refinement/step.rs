@@ -23,8 +23,8 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::ModelState;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -241,9 +241,9 @@ pub(crate) fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> Ste
         return fault("system-invariant");
     }
     StepVerdict::Stopped(match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => ReachedLimit {
-            limit: ModelCheckLimit::EvaluationMeter,
-            value: system.meter().work_units,
+        Some(ExpansionLimit::EvaluationMeter(counter)) => ReachedLimit {
+            limit: ModelCheckLimit::EvaluationMeter { counter },
+            value: crate::model_check::limits::meter_bound(&system.meter(), counter),
         },
         Some(ExpansionLimit::MaxCandidates) | None => ReachedLimit {
             limit: ModelCheckLimit::MaxCandidates,

@@ -6,7 +6,7 @@
 //! observation is computed on demand and stored nowhere.
 
 use super::{StepRow, StepTarget};
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// The abstract step a label names (FR-214 "Behavior": the label carries its
 /// node or its operation).

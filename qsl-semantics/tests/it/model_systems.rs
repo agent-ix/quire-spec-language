@@ -19,7 +19,6 @@ use qsl_semantics::model::domain_package::{
     ScalarValueDomain,
 };
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::key::{RULE_INHERIT, RULE_QUALIFY};
 use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
@@ -28,6 +27,7 @@ use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
     ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind,
 };
+use quire_checked::key::DeclarationKey;
 
 pub(crate) fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {

@@ -19,7 +19,6 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun, DEFAULT_SUPPLIED_WORK_UNITS};
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
@@ -31,8 +30,8 @@ use quire_semantic_value::declaration::StorageRequest;
 use quire_semantic_value::supplied_membership::{InvalidMembershipCause, MembershipPart, PathStep};
 use quire_semantic_value::supplied_stop::{
     AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedFailure, SuppliedLimitKind,
-    SuppliedLocus, SuppliedPhase, SuppliedStop, SuppliedStorageUnit, ADMISSION_WORK_UNITS,
-    CONVERSION_WORK_UNITS,
+    SuppliedLimits, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop, SuppliedStorageUnit,
+    ADMISSION_WORK_UNITS, CONVERSION_WORK_UNITS, DEFAULT_SUPPLIED_WORK_UNITS,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

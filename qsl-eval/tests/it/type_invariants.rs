@@ -16,7 +16,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::observation::{
     admit_observations, AdmittedObservations, AnchorKind, ClauseFacts, ClauseSelection,
@@ -25,6 +24,7 @@ use qsl_semantics::model::observation::{
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use qsl_semantics::model::type_invariant::ClauseRole;
+use quire_checked::key::DeclarationKey;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, FieldValue, InjectedDenial, Meter, Outcome, Timestamp, Uuid, Value as QuireValue,

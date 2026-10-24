@@ -14,8 +14,8 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, NativeValueType,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, Integer};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 

@@ -21,7 +21,7 @@ use qsl_eval::simulation::{
 use qsl_replay::{
     ModelCheckItem, ReductionCause, ReductionKind, SymmetryBrokenCause, SymmetryRefusal,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 
 /// One symmetry declaration of a request (FR-151): classes of

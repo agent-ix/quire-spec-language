@@ -27,6 +27,7 @@ use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
+use quire_exact::Rational;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
@@ -116,6 +117,11 @@ pub enum Member {
         /// The checked interval; `None` for an unbounded operator.
         interval: Option<TemporalInterval>,
     },
+    /// A hybrid claim's timed-form interval (QSpec FR-370 timed form,
+    /// FR-481 "Hybrid claims"): `{kind: "temporal_interval", interval:
+    /// {lower, lower_end, upper, upper_end}}`. Boxed: two exact rationals
+    /// would make every member as large.
+    TimedInterval(Box<TimedMember>),
     /// One member of a clause's resolved fairness set (QSpec FR-370):
     /// `{kind: "fairness", fairness_kind, granularity, declaration, name}`,
     /// always in its resolved form, so an unmarked constraint and its
@@ -132,6 +138,20 @@ pub enum Member {
     },
 }
 
+/// The bounds of a [`Member::TimedInterval`], exact rationals in seconds.
+/// `upper` is `None`, with an open upper end, for `[q, *]`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TimedMember {
+    /// The lower bound.
+    pub lower: Rational,
+    /// Whether the lower end is closed.
+    pub lower_closed: bool,
+    /// The upper bound; `None` for `*`.
+    pub upper: Option<Rational>,
+    /// Whether the upper end is closed.
+    pub upper_closed: bool,
+}
+
 impl Member {
     /// The declaring node this member names, or `None` for a member kind
     /// that names none.
@@ -146,7 +166,8 @@ impl Member {
             | Self::Fairness { declaration, .. } => Some(*declaration),
             Self::ProfileOperator { .. }
             | Self::StateClause { .. }
-            | Self::TemporalInterval { .. } => None,
+            | Self::TemporalInterval { .. }
+            | Self::TimedInterval(_) => None,
         }
     }
 
@@ -162,6 +183,7 @@ impl Member {
             | Self::ProfileOperator { .. }
             | Self::StateClause { .. }
             | Self::TemporalInterval { .. }
+            | Self::TimedInterval(_)
             | Self::Fairness { .. } => None,
         }
     }
@@ -224,13 +246,23 @@ impl Member {
                 clause: state_clause_spelling(*clause),
             },
             Self::TemporalInterval { interval } => MemberWire::TemporalInterval {
-                interval: interval.map(|interval| IntervalWire {
-                    lower: interval.lower().to_string(),
-                    upper: match interval.upper() {
-                        TemporalUpper::Finite(upper) => Some(upper.to_string()),
-                        TemporalUpper::Open => None,
-                    },
+                interval: interval.map(|interval| {
+                    IntervalWire::Steps(StepsWire {
+                        lower: interval.lower().to_string(),
+                        upper: match interval.upper() {
+                            TemporalUpper::Finite(upper) => Some(upper.to_string()),
+                            TemporalUpper::Open => None,
+                        },
+                    })
                 }),
+            },
+            Self::TimedInterval(timed) => MemberWire::TemporalInterval {
+                interval: Some(IntervalWire::Timed(TimedWire {
+                    lower: RationalWire::of(&timed.lower),
+                    lower_end: end_spelling(timed.lower_closed),
+                    upper: timed.upper.as_ref().map(RationalWire::of),
+                    upper_end: end_spelling(timed.upper_closed),
+                })),
             },
             Self::Fairness {
                 kind,
@@ -256,9 +288,52 @@ impl Member {
 /// A `temporal_interval` member's integer-form `interval` (QSpec FR-370):
 /// both bounds decimal strings, `upper` `null` for an `[a,*]` operator.
 #[derive(Serialize, FixedShape)]
-struct IntervalWire {
+struct StepsWire {
     lower: String,
     upper: Option<String>,
+}
+
+/// A `temporal_interval` member's `interval`: the integer form or the timed
+/// form (QSpec FR-370).
+#[derive(Serialize, FixedShape)]
+#[serde(untagged)]
+enum IntervalWire {
+    Steps(StepsWire),
+    Timed(TimedWire),
+}
+
+/// The timed form: exact rational bounds with each end `closed` or `open`.
+#[derive(Serialize, FixedShape)]
+struct TimedWire {
+    lower: RationalWire,
+    lower_end: &'static str,
+    upper: Option<RationalWire>,
+    upper_end: &'static str,
+}
+
+/// A checked-package rational, `{denominator, numerator}` as decimal strings.
+#[derive(Serialize, FixedShape)]
+struct RationalWire {
+    denominator: String,
+    numerator: String,
+}
+
+impl RationalWire {
+    fn of(value: &Rational) -> Self {
+        Self {
+            denominator: value.denominator().to_string(),
+            numerator: value.numerator().to_string(),
+        }
+    }
+}
+
+/// `closed` or `open`.
+fn end_spelling(closed: bool) -> &'static str {
+    if closed {
+        "closed"
+    } else {
+        "open"
+    }
 }
 
 /// The `OperationMember` wire union, tagged by `kind`.

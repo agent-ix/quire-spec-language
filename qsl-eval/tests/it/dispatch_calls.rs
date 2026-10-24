@@ -39,7 +39,6 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
@@ -47,6 +46,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
 };
+use quire_checked::key::DeclarationKey;
 use quire_eval::{CallFailure, Evaluation};
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::EffectiveId;

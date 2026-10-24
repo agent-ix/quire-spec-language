@@ -17,7 +17,7 @@
 
 use quire_contract_model::{
     CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageV2,
-    CheckedSemanticNodeV2, TemporalForm,
+    CheckedSemanticNodeV2, CheckedTerm, TemporalForm,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -77,8 +77,13 @@ fn is_clause(node: &CheckedSemanticNodeV2) -> bool {
 /// to a `value`/`parameter` node (QSpec FR-370 reader order). `None` when
 /// that argument names no target.
 fn over_of(node: &CheckedSemanticNodeV2) -> Option<WireNodeId> {
-    let over = node.body.get("arguments")?.get(0)?;
-    WireNodeId::from_hex(over.get("target")?.get("digest")?.as_str()?)
+    let CheckedTerm::Application { arguments, .. } = &node.body else {
+        return None;
+    };
+    let CheckedTerm::Reference { target } = arguments.first()? else {
+        return None;
+    };
+    WireNodeId::from_hex(&target.digest)
 }
 
 /// The clause root of `node`'s `claim` occurrence `occurrence`.

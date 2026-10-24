@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-330
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-031
+    type: references
 ---
 # FR-312: Read a clause-run request and run it through run_clause
 
@@ -37,7 +39,7 @@ a `ClauseRunRequest` any other way.
 FR-100's clause runner is this requirement's reader plus `run_clause`
 (FR-109); every artifact names the change that lands it as "the change that
 lands FR-100's clause runner". That change is ADR-011 M-6c's deletion of
-native `run` (FR-026 to FR-032) and `native-run-result/1` (ADR-031 R-1).
+native `run` and `native-run-result/1` (ADR-031 R-1).
 
 ## Inputs
 
@@ -110,6 +112,14 @@ package and dependency inputs.
   `invalid-request` at stage `request`, naming the member.
 - If a `1-draft` request carries both `call` and `clause`, or neither, then
   the reader SHALL refuse `invalid-request` at stage `request`.
+- When `qsl-replay` is built with `quire-extraction` and the request's
+  `program` carries `extraction`, the reader SHALL decode `extraction` and
+  `clauses`, check the request's mode, build and validate the clause-only
+  Quire context, extract the body through FR-030 and put the extracted
+  source in the `ClauseRunRequest` as its unit, as FR-031 states. Its mode,
+  context and extraction refusals are FR-031's. When `qsl-replay` is built
+  without that feature, the reader SHALL refuse `extraction` as an unknown
+  member.
 - If `selection` holds no variant, more than one, or a variant whose
   members are not the closed set above, then the reader SHALL refuse
   `invalid-request` at stage `request`, naming the member.

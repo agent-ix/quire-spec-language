@@ -97,10 +97,18 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
 mod clause_root;
+mod hybrid;
 #[cfg(test)]
 pub(crate) mod tests;
+mod timed_model;
 
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
+pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
+pub use timed_model::{
+    CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
+    CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,
+    ClockSlotSelector, ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+};
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
 /// `Result` unpacked so a test matches every arm by pattern.
@@ -115,6 +123,10 @@ pub(crate) enum Read {
         source_map: PackageSourceMap,
         /// See [`V2Read::effective_limits`].
         effective_limits: V2ReadLimits,
+        /// The complete IR-admitted graph retained by the reader.
+        admitted: Arc<CheckedPackageV2>,
+        /// Typed timed-model projections reconstructed from the admitted graph.
+        timed_models: Vec<CheckedTimedModel>,
     },
     /// `StageFailure::Refused`.
     Refused(V2ReadRefusal),
@@ -141,12 +153,15 @@ pub(crate) fn read_v2(
                 package,
                 source_map,
                 effective_limits,
-                ..
+                admitted,
+                timed_models,
             } = staged.into_value();
             Read::Verified {
                 package,
                 source_map,
                 effective_limits,
+                admitted,
+                timed_models,
             }
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
@@ -614,6 +629,8 @@ pub(crate) struct V2Read {
     /// IR's admitted package, supplied to a later read whose
     /// `dependency_selections` name it.
     pub(crate) admitted: Arc<CheckedPackageV2>,
+    /// Typed timed-model projections reconstructed from the admitted graph.
+    pub(crate) timed_models: Vec<CheckedTimedModel>,
 }
 
 /// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified
@@ -680,6 +697,12 @@ pub(crate) fn read_checked_package_v2(
     }
     match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
+            let timed_models = match CheckedTimedModel::from_admitted(&package) {
+                Ok(models) => models,
+                Err(invariant) => {
+                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
+                }
+            };
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
             // §2, ADR-013:113: the one RFC 8785 implementation), encoded
             // straight from IR's typed preimage and the admitted graph: the
@@ -743,6 +766,7 @@ pub(crate) fn read_checked_package_v2(
                     source_map,
                     effective_limits: limits,
                     admitted: Arc::from(package),
+                    timed_models,
                 })),
                 Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
             }

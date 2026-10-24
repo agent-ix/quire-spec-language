@@ -30,8 +30,8 @@ use super::super::AdmittedModel;
 use super::claim::CheckedProbabilisticClaim;
 use super::{exact, refusal, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner};
 use crate::family::CheckContext;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup};
+use quire_checked::key::DeclarationKey;
 
 /// An operation a random parameter, a reward or a workload weight names,
 /// resolved (FR-185).

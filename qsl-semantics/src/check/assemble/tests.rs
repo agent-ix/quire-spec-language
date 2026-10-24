@@ -26,9 +26,9 @@ use crate::model::domain_package::{
     StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use crate::value::layer::{HeaderLayer, LayerForm};
+use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{

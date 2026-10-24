@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
+use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest, SubjectContext};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
@@ -35,6 +35,7 @@ use qsl_replay::{
     ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound,
     TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause,
 };
+use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Incomplete, Meter};
 use serde_json::{json, Value as Json};
@@ -458,6 +459,68 @@ fn the_resolved_model_is_the_identity_and_not_the_source_clause() {
         sc.claim(&[select("SB::Both", MemoryModelName::Tso)], None),
         ModelCheckOutcome::Violated { .. }
     ));
+}
+
+/// FR-225-AC-1 (TC-670 step 1): `SB`'s `sc`, `tso` and `ra` requests, with
+/// both bounds unset, state `max_store_buffer` 4 and `max_messages` 4, not
+/// reached, for `tso` and `ra`, and no memory bound for `sc`. Two `tso`
+/// requests that differ only in `max_store_buffer` write one obligation.
+#[trace("TC-670", "FR-225-AC-1")]
+#[test]
+fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let stated = |model| {
+        let selection = [select("SB::Both", model)];
+        let outcome = case.claim(&selection, None);
+        case.settle(&selection, &outcome, false, None).memory_bound
+    };
+    let default = |member| {
+        Some(StatedMemoryBound {
+            bound: MemoryBound { member, value: 4 },
+            reached: false,
+        })
+    };
+    assert_eq!(stated(MemoryModelName::Sc), None);
+    assert_eq!(
+        stated(MemoryModelName::Tso),
+        default(MemoryBoundMember::MaxStoreBuffer)
+    );
+    assert_eq!(
+        stated(MemoryModelName::Ra),
+        default(MemoryBoundMember::MaxMessages)
+    );
+
+    // The bound is a member of the request, beside the subject; the obligation
+    // is written from the subject and the clause alone.
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let obligation = |case: &Case, max_store_buffer| {
+        let [clause] = case.checked.graph().temporal_clauses() else {
+            panic!("one declared clause");
+        };
+        let request = ProtocolCheckRequest {
+            subject: case.subject(&tso),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+        };
+        let context = SubjectContext::new(&request.subject.model).expect("the package emits");
+        let mut written = ModelRequest::new();
+        let index = context
+            .author_clause(&mut written, clause)
+            .expect("the clause has a record");
+        written.obligation(index).cloned().expect("an obligation")
+    };
+    let default = obligation(&case, None);
+    assert_eq!(obligation(&case, Some(1)), default);
+    assert_eq!(obligation(&case, Some(2)), default);
+    // The comparison can fail: another checked package is another obligation.
+    let other = Case::new(
+        &sb_unit(&sb_run("", "release", "acquire"))
+            .replace("k.r1 = 0 and k.r2 = 0", "k.r1 = 1 and k.r2 = 1"),
+    );
+    assert_ne!(obligation(&other, None), default);
 }
 
 /// A protocol whose `parallel` has no `memory` clause and joins `any`,
@@ -1631,6 +1694,67 @@ fn a_refuted_run_that_cut_a_store_states_its_bound_reached() {
             })
         );
     }
+}
+
+/// The claim `always holds(x.v <= 1)` over stores of 1: no state breaks it.
+static NEVER_BROKEN: Forbid = Forbid(|_, _| false);
+
+/// FR-225-AC-2 (TC-670 step 2): a branch that stores to `x`, `y` and `z` in
+/// sequence with no fence, beside a branch that loads all three, under
+/// `tso` with a claim no state breaks. With `max_store_buffer` 2 the run
+/// settles V-6 `MemoryBoundReached` naming `max_store_buffer` 2, with at
+/// least one bound-limited state; with 3 it settles V-1 and states the bound
+/// as not reached. `x` is `x.v`, `y` is `x.w` and `z` is `y.v`.
+#[trace("TC-670", "FR-225-AC-2")]
+#[test]
+fn three_unfenced_stores_are_cut_at_bound_two_and_whole_at_bound_three() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} {} {} }} \
+         branch right sequence R {{ {} {} {} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+        attempt("Sy", "w", "Cell::setw", "relaxed", "IsXw, FlagOne"),
+        attempt("Sz", "w", "Cell::set", "relaxed", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read1", "relaxed", "ReadsX1, Read1"),
+        attempt("Ly", "c", "Core::read2", "relaxed", "ReadsX2, ReadFlag2"),
+        attempt("Lz", "c", "Core::read3", "relaxed", "ReadsY3, Read3"),
+    );
+    let case = Case::with_letters(&sb_unit(&run), &NEVER_BROKEN);
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+
+    let cut = case.claim(&tso, Some(2));
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::BoundReached { bound, states },
+        ..
+    } = &cut
+    else {
+        panic!("{cut:?}");
+    };
+    assert_eq!(
+        *bound,
+        MemoryBound {
+            member: MemoryBoundMember::MaxStoreBuffer,
+            value: 2
+        }
+    );
+    assert!(*states >= 1, "{states}");
+
+    let whole = case.claim(&tso, Some(3));
+    assert!(
+        matches!(whole, ModelCheckOutcome::Holds { .. }),
+        "{whole:?}"
+    );
+    let record = case.settle(&tso, &whole, false, Some(3));
+    assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
+    assert_eq!(
+        record.memory_bound,
+        Some(StatedMemoryBound {
+            bound: MemoryBound {
+                member: MemoryBoundMember::MaxStoreBuffer,
+                value: 3
+            },
+            reached: false,
+        })
+    );
 }
 
 /// A protocol system under `Sc` refuses a subject that resolves a

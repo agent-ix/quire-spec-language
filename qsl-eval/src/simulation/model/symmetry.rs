@@ -11,9 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_canonical::Limits;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     compare_keys, from_admitted, from_admitted_slots, CollectionKind, FieldValue, ObjectId,
     ObjectReference, OptionValue, UnionValue, UniverseId, Value,

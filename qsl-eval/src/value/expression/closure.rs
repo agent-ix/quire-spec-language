@@ -35,11 +35,11 @@ use std::ops::Deref;
 
 use qsl_semantics::check::CheckedExpression;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
 use quire_eval::{CheckedClosure, Evaluation, RequestRefusal, Signature, Transition};
 use quire_exact::{Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
 use super::evaluate::Machine;
 use super::family::EvaluationEnv;

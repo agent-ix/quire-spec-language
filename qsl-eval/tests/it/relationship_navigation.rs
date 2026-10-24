@@ -24,9 +24,9 @@ use qsl_semantics::model::domain_package::{
     RelationshipDirection, RelationshipEnd as DeclaredEnd, RelationshipRecord,
 };
 use qsl_semantics::model::intake::SelectedModels;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{PopulationEnumerationFailure, RelationshipExtents};
+use quire_checked::key::DeclarationKey;
 use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{

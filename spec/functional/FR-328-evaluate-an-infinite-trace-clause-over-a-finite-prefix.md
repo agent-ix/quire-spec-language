@@ -97,7 +97,7 @@ never reads as a guarantee.
 | FR-328-AC-2 | Over the same prefix, `always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))` is `Completed(false)` at position 0 (positions 1 and 2 are both present and neither has value 3); `always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))` is `Pending` (position 3 is unknown). | Test (TC-838) |
 | FR-328-AC-3 | Over the same prefix, `always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))` is `Completed(false)` at position 0, because `once[1,1]` at position 0 reads before position 0, where atoms are false. | Test (TC-838) |
 | FR-328-AC-4 | No clause in AC-1 to AC-3 yields `tested` or `proved`; each `Pending` maps to O-16 inconclusive. | Test (TC-838) |
-| FR-328-AC-5 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `eventually holds(2 / (2 - c.value) = 3)`, outside the safety fragment, returns `Undefined{where: 2, cause: division-by-zero}`, not `Pending`. | Test (TC-847) |
+| FR-328-AC-5 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `eventually holds(3 mod (2 - c.value) = 2)`, outside the safety fragment, returns `Undefined{where: 2, cause: division-by-zero}`, not `Pending`. | Test (TC-847) |
 | FR-328-AC-6 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `always holds(c.value <= 1)` with the fairness set `fair weak inc` returns `MissingFairnessPremise` naming `fair weak whole inc`, O-16 unsupported, and evaluates no position; with an empty fairness set it is `Completed(false)` at position 0. | Test (TC-848) |
 
 ## Dependencies

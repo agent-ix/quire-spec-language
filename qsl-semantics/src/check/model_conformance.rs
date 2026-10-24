@@ -9,9 +9,9 @@ use crate::model::accounting::{Incomplete, Meter};
 use crate::model::conformance::{self, ConformanceCheckOutcome, ConformanceOutcome};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::SelectedModel;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::ModelRefusalCause;
 use qsl_foundation::Code;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{PendingFieldFailure, PendingTypeEnvironment};
 
 /// One failed axis of one immediate-parent member pair. A refinement

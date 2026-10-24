@@ -246,8 +246,8 @@ fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
 #[test]
 fn the_two_scopes_of_one_field_differ_in_the_node_and_both_at_once_refuse_at_intake() {
     use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause};
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::refusal::ModelRefusalCause;
+    use quire_checked::key::DeclarationKey;
 
     let emitted = emit(&["own", "all"], &[]);
     let own = emitted.frame("own");

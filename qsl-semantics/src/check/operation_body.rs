@@ -18,7 +18,7 @@ use qsl_foundation::selection::ProfileSelection;
 use quire_exact::EffectiveId;
 
 use super::state_clause::ClauseOperation;
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// One `operation-body` the FR-091 assembler admitted: its target resolved
 /// to an operation of an admitted domain package, its body as S2 built it.

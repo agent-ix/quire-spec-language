@@ -885,10 +885,12 @@ fn interval_bounds(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic
             std::str::from_utf8(spelling).is_ok_and(|digits| digits.parse::<u64>().is_ok())
         };
         if timed {
-            if !quantity(upper) {
+            // `[q, *]` is admitted at S1 in every temporal clause; S3 refuses
+            // it where the clause is no hybrid claim (FR-447).
+            if !quantity(upper) && upper.2 != b"*" {
                 refuse(
                     upper.0,
-                    "a timed interval's upper bound is a quantity literal",
+                    "a timed interval's upper bound is a quantity literal or `*`",
                 );
             }
             continue;

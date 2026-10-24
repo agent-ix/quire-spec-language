@@ -13,12 +13,13 @@ use qsl_semantics::model::domain_package::{
     ObjectTypeRecord, ValueTypeRef,
 };
 use qsl_semantics::model::key::{
-    DeclarationKey, EffectiveId, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
+    EffectiveId, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_semantics::model::links::{ExpandError, Links};
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
+use quire_checked::key::DeclarationKey;
 
 const PREFIX: &str = "ix://test/orders/";
 

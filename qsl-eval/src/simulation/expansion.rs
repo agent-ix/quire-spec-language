@@ -4,6 +4,7 @@
 
 use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::digest::DigestRecord;
+use quire_exact::LimitKind;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;
 
@@ -44,7 +45,7 @@ impl ExpansionStop {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ExpansionLimit {
     /// A clause evaluation exhausted the evaluation meter.
-    EvaluationMeter,
+    EvaluationMeter(LimitKind),
     /// The expansion reached `max_candidates`.
     MaxCandidates,
 }

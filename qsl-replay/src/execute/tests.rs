@@ -59,9 +59,9 @@ fn proved() -> String {
 }
 
 /// A supplied-value run at the default ceilings over a handle nobody cancels.
-fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
-    qsl_semantics::value::supplied::SuppliedRun::new(
-        qsl_semantics::value::supplied::SuppliedLimits::default(),
+fn default_run() -> quire_semantic_value::supplied_stop::SuppliedRun {
+    quire_semantic_value::supplied_stop::SuppliedRun::new(
+        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         quire_exact::Cancel::new(),
     )
     .expect("a run")
@@ -1910,9 +1910,9 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, FieldValue, Integer, IntegerInterval, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{
@@ -2054,13 +2054,13 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
         PopulationRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};

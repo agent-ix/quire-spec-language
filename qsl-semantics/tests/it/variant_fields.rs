@@ -16,7 +16,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, ValueTypeRef};
 use qsl_semantics::model::intake::{admit_unit, package_input};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{CollectionKind, IllTypedCause, Presence, ValueType};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use serde_json::Value;

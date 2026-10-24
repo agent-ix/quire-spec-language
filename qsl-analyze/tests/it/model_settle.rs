@@ -56,15 +56,39 @@ pub(crate) struct Case {
     unit: Vec<u8>,
     documents: Documents,
     initial: Vec<DocumentRef>,
-    package_id: DigestRecord,
+    pub(crate) package_id: DigestRecord,
     checked: CheckedPackage,
     outcome: ModelCheckOutcome,
 }
 
 impl Case {
+    /// The deadlock-freedom item `analyze` runs (FR-281): the run, its
+    /// closure checker's request, the `package_id` the run checked, and the
+    /// counterexample replay of [`replay`] over this case's source.
+    pub(crate) fn model_item(&self) -> qsl_analyze::analyze::ModelItem<'_> {
+        qsl_analyze::analyze::ModelItem {
+            request: ModelCheckRequest {
+                subject: subject(
+                    &self.checked,
+                    &self.documents,
+                    self.initial.clone(),
+                    &["c"],
+                    UNLIMITED,
+                ),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            certificate: self.request(),
+            package_id: self.package_id,
+            replay: Box::new(|payload| replay(self, payload.clone())),
+        }
+    }
+
     /// The deadlock-freedom item's certificate request over the case's
     /// subject.
-    fn request(&self) -> CertificateRequest<'_> {
+    pub(crate) fn request(&self) -> CertificateRequest<'_> {
         CertificateRequest {
             subject: subject(
                 &self.checked,
@@ -704,6 +728,92 @@ fn each_outcome_settles_its_row_of_the_map() {
     for record in [bound, stopped] {
         assert_eq!(record.method, EXPLICIT_STATE);
         assert_eq!(record.limits, used);
+    }
+}
+
+/// FR-127-AC-16: a stop by an exhausted meter counter or by the candidate
+/// bound settles `failed`, `resource-incomplete`, `unavailable`,
+/// `Incomplete(LimitReached{limit, value, setting})`, category incomplete,
+/// for `work_units` 0, `value_occurrences` 7, `integer_bits` `u64::MAX` and
+/// `max_candidates` 1. Each setting is the FR-255 accounting or expansion
+/// name, never `meter`, a bare counter or a bare `max_candidates`, and the
+/// settings operation accepts each accounting name to raise that bound (the
+/// settings table registers no `expansion.*` row yet).
+#[trace("TC-522", "FR-127-AC-16")]
+#[test]
+fn a_meter_or_candidate_stop_settles_naming_its_setting() {
+    use qsl_replay::CallerLimits;
+    use quire_exact::LimitKind;
+
+    let case = case(CONTRACT, &[0]);
+    for (limit, value, name, setting, operand) in [
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::WorkUnits,
+            },
+            0,
+            "work_units",
+            "accounting.work_units",
+            "accounting.work_units=1",
+        ),
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::ValueOccurrences,
+            },
+            7,
+            "value_occurrences",
+            "accounting.value_occurrences",
+            "accounting.value_occurrences=8",
+        ),
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::IntegerBits,
+            },
+            u64::MAX,
+            "integer_bits",
+            "accounting.integer_bits",
+            "accounting.integer_bits=1",
+        ),
+        (
+            ModelCheckLimit::MaxCandidates,
+            1,
+            "max_candidates",
+            "expansion.max_candidates",
+            "expansion.max_candidates=2",
+        ),
+    ] {
+        let reached = ReachedLimit { limit, value };
+        let record = settle(
+            &case,
+            &ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::ResourceExhausted,
+                limit: Some(reached),
+                stats: RunStats::default(),
+            },
+        );
+        assert_eq!(
+            record.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached { limit, value })
+        );
+        assert_eq!(
+            (record.label, record.basis, record.execution, record.truth),
+            (
+                ResultLabel::Failed,
+                SettlementBasis::Unavailable,
+                Execution::ResourceIncomplete,
+                Truth::Unavailable
+            )
+        );
+        assert_eq!(record.value.category(), Category::Incomplete);
+        assert_eq!(record.limit_reached, Some(reached));
+        assert_eq!(limit.as_str(), name);
+        assert_eq!(limit.setting(), setting);
+        assert!(!matches!(setting, "meter" | "max_candidates"));
+        assert!(!setting.eq(name), "no bare counter name: {setting}");
+        if setting.starts_with("accounting.") {
+            CallerLimits::from_operands([operand])
+                .expect("the settings operation accepts the name");
+        }
     }
 }
 

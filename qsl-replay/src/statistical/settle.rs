@@ -9,7 +9,7 @@
 //! outcome with no terminal record. No record carries an FR-242 truth or an
 //! FR-243 basis: the record has neither.
 
-use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_eval::simulation::model::{ClauseOutcome, ExpansionLimits};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::{BackendId, RequestIndex};
 use quire_exact::ScalarLimits;
@@ -19,7 +19,7 @@ use super::{
     ClaimForm, Decision, StatisticalMethod, StatisticalOutcome, StatisticalRefusal,
     StatisticalStop, StatisticalUnsupported,
 };
-use crate::model_check::limits::ModelCheckLimit;
+use crate::model_check::limits::{meter_bound, ModelCheckLimit};
 use crate::proof_result::{
     IncompleteCause, InconclusiveCause, StatisticalRequestRefusal, TerminalRecord, TerminalValue,
     UnavailabilityCause,
@@ -124,10 +124,6 @@ pub enum UnsettledRefusal {
     /// (ADR-016 EX-8).
     #[error("the subject requires a bound")]
     RequiresBound,
-    /// A claim predicate's read was refused (FR-196's `PredicateRefused`):
-    /// FR-192's map has no row for it.
-    #[error("a claim predicate's read was refused")]
-    PredicateRefused,
     /// The subject did not admit (FR-120): FR-192's map has no row for it,
     /// so the refusal is the caller's to report as FR-106's admission
     /// failure.
@@ -194,9 +190,10 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
         }))
     };
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => {
-            reached(ModelCheckLimit::EvaluationMeter, subject.meter.work_units)
-        }
+        Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+            ModelCheckLimit::EvaluationMeter { counter },
+            meter_bound(subject.meter, counter),
+        ),
         Some(ExpansionLimit::MaxCandidates) => reached(
             ModelCheckLimit::MaxCandidates,
             subject.expansion.max_candidates,
@@ -230,7 +227,7 @@ pub fn settle_statistical_refusal(
         StatisticalRefusal::RequiresBound(_) => return Err(UnsettledRefusal::RequiresBound),
         StatisticalRefusal::Admission(_) => return Err(UnsettledRefusal::Admission),
         StatisticalRefusal::Symmetry(_) => return Err(UnsettledRefusal::Symmetry),
-        StatisticalRefusal::PredicateRefused(_) => return Err(UnsettledRefusal::PredicateRefused),
+        StatisticalRefusal::PredicateRefused(outcome) => predicate_refused(outcome),
         StatisticalRefusal::GeneratorMismatch { .. } => {
             request(StatisticalRequestRefusal::GeneratorMismatch)
         }
@@ -256,10 +253,37 @@ pub fn settle_statistical_refusal(
     })
 }
 
+/// FR-192's `PredicateRefused` rows, settled as EN-5 settles it (FR-203): a
+/// kernel refusal other than `CheckedInvariant`, or a family refusal, is
+/// `failed` with the refusal's own code and cause; an exhausted accounting
+/// counter is `incomplete` naming the counter and its configured bound
+/// (FR-255 Behavior 9); every other outcome is a broken invariant.
+fn predicate_refused(outcome: &ClauseOutcome) -> StatisticalRecord {
+    match outcome {
+        ClauseOutcome::KernelRefused(refusal) => match (refusal.code(), refusal.cause()) {
+            (Some(code), Some(cause)) => StatisticalRecord::failed(CatalogCode::new(code, cause)),
+            _ => StatisticalRecord::failed(BROKEN),
+        },
+        ClauseOutcome::FamilyRefused(code) => StatisticalRecord::failed(*code),
+        ClauseOutcome::Incomplete(incomplete) => {
+            StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
+                value: incomplete.limit,
+            }))
+        }
+        ClauseOutcome::KernelUndefined(_)
+        | ClauseOutcome::FamilyUndefined(_)
+        | ClauseOutcome::NotBoolean => StatisticalRecord::failed(BROKEN),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::selection::DefinitionRef;
+    use qsl_foundation::AccountingSetting;
     use quire_exact::{CancelCause, Integer, Rational};
     use quire_semantic_value::catalog::InternalFault;
 
@@ -346,7 +370,7 @@ mod tests {
             text_scalars: 64,
             normalized_scalars: 64,
             unit_edges: 64,
-            value_occurrences: 64,
+            value_occurrences: 7,
             work_units: 4_096,
             result_units: 64,
         }
@@ -356,9 +380,7 @@ mod tests {
         settle_statistical(
             outcome,
             SubjectLimits {
-                expansion: ExpansionLimits {
-                    max_candidates: 512,
-                },
+                expansion: ExpansionLimits { max_candidates: 2 },
                 meter: &meter(),
             },
         )
@@ -429,21 +451,63 @@ mod tests {
             })))
         };
         let exhausted = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
-        let metered = expansion(Some(ExpansionLimit::EvaluationMeter), exhausted);
+        let metered = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::WorkUnits,
+            )),
+            exhausted,
+        );
         assert_eq!(
             metered.value,
-            incomplete(ModelCheckLimit::EvaluationMeter, 4_096)
+            incomplete(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits
+                },
+                4_096
+            )
         );
         let json = wire(metered);
         assert_eq!(json["result"], "incomplete");
         assert_eq!(json["cause"]["kind"], "limit-reached");
-        assert_eq!(json["cause"]["limit"], "evaluation-meter");
+        assert_eq!(json["cause"]["limit"], "work_units");
         assert_eq!(json["cause"]["value"], 4_096);
-        assert_eq!(json["cause"]["setting"], "meter");
+        assert_eq!(json["cause"]["setting"], "accounting.work_units");
+        let integer_bits = wire(expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::IntegerBits,
+            )),
+            exhausted,
+        ));
+        assert_eq!(integer_bits["cause"]["limit"], "integer_bits");
+        assert_eq!(integer_bits["cause"]["value"], 64);
+        assert_eq!(integer_bits["cause"]["setting"], "accounting.integer_bits");
+        let occurrences = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::ValueOccurrences,
+            )),
+            exhausted,
+        );
+        assert_eq!(
+            occurrences.value,
+            incomplete(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::ValueOccurrences
+                },
+                7
+            )
+        );
+        let json = wire(occurrences);
+        assert_eq!(json["cause"]["limit"], "value_occurrences");
+        assert_eq!(json["cause"]["value"], 7);
+        assert_eq!(json["cause"]["setting"], "accounting.value_occurrences");
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
-            incomplete(ModelCheckLimit::MaxCandidates, 512)
+            incomplete(ModelCheckLimit::MaxCandidates, 2)
         );
+        let candidates = wire(expansion(Some(ExpansionLimit::MaxCandidates), exhausted));
+        assert_eq!(candidates["cause"]["limit"], "max_candidates");
+        assert_eq!(candidates["cause"]["value"], 2);
+        assert_eq!(candidates["cause"]["setting"], "expansion.max_candidates");
         let internal = expansion(None, BROKEN);
         assert_eq!(internal.value, TerminalValue::Failed);
         assert_eq!(internal.diagnostic, Some(BROKEN));
@@ -616,12 +680,89 @@ mod tests {
             settle_statistical_refusal(&refused),
             Err(UnsettledRefusal::Admission)
         );
-        assert_eq!(
-            settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(
-                qsl_eval::simulation::model::ClauseOutcome::NotBoolean
+    }
+
+    fn predicate(outcome: ClauseOutcome) -> StatisticalRecord {
+        settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(outcome))
+            .expect("a refused predicate read settles a record")
+    }
+
+    /// FR-192-AC-7 (TC-1166): a refused predicate read settles as EN-5
+    /// settles it. A kernel refusal other than `CheckedInvariant` is `failed`
+    /// with its own code and cause; an exhausted counter is `incomplete`
+    /// naming the counter and its bound; every other outcome is a broken
+    /// invariant.
+    #[trace("TC-1166", "FR-192-AC-7")]
+    #[test]
+    fn a_refused_predicate_read_settles_as_en5_does() {
+        use quire_exact::{Incomplete, IntegerInterval, LimitKind, Refusal};
+
+        let refused = predicate(ClauseOutcome::KernelRefused(Refusal::IntegerOutOfDomain {
+            target: Box::new(IntegerInterval::spanning(
+                Integer::from(0_i64),
+                Integer::from(1_i64),
             )),
-            Err(UnsettledRefusal::PredicateRefused)
+        }));
+        assert_eq!(refused.value, TerminalValue::Failed);
+        assert_eq!(
+            refused.diagnostic,
+            Some(CatalogCode::new("integer_out_of_domain", "outside-domain"))
         );
+
+        let family = CatalogCode::new("invalid_runtime_input", "invalid-value");
+        assert_eq!(
+            predicate(ClauseOutcome::FamilyRefused(family)).diagnostic,
+            Some(family)
+        );
+
+        let exhausted = |limit_kind| {
+            predicate(ClauseOutcome::Incomplete(Incomplete {
+                limit_kind,
+                limit: 9,
+                consumed: 9,
+                next_charge: Integer::from(1_i64),
+                charge_point: quire_exact::ChargePoint::TextInputBytes,
+            }))
+        };
+        let exhausted_text = exhausted(LimitKind::TextInputBytes);
+        assert_eq!(
+            exhausted_text.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: LimitKind::TextInputBytes,
+                },
+                value: 9,
+            })
+        );
+        assert_eq!(
+            wire(exhausted_text)["cause"]["setting"],
+            AccountingSetting::TextInputBytes.name()
+        );
+        let exhausted_work = exhausted(LimitKind::WorkUnits);
+        assert_eq!(
+            exhausted_work.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: LimitKind::WorkUnits,
+                },
+                value: 9,
+            })
+        );
+        assert_eq!(
+            wire(exhausted_work)["cause"]["setting"],
+            AccountingSetting::WorkUnits.name()
+        );
+
+        for broken in [
+            ClauseOutcome::NotBoolean,
+            ClauseOutcome::KernelRefused(Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::NativeIntegerCapacityBreach,
+            }),
+        ] {
+            let record = predicate(broken);
+            assert_eq!(record.value, TerminalValue::Failed);
+            assert_eq!(record.diagnostic, Some(BROKEN));
+        }
     }
 
     /// FR-192: a `measured` item writes its result `measured`, its decision

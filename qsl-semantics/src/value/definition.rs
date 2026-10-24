@@ -6,6 +6,25 @@
 //! They call `quire_exact::divide`/`modulo` and carry the kernel
 //! [`Outcome`](quire_exact::Outcome) straight through.
 //!
+//! `AdmittedIntegerDivision` is a checked term of `quire-checked` (FR-400,
+//! ADR-011 X-13); this module constructs it through `quire-checked`'s
+//! `construct` module and does not re-export it. Its old paths no longer
+//! resolve:
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::value::AdmittedIntegerDivision;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::value::definition::AdmittedIntegerDivision;
+//! ```
+//!
+//! Its new owner does:
+//!
+//! ```no_run
+//! use quire_checked::integer_division::AdmittedIntegerDivision;
+//! ```
+//!
 //! Profile misuse is refused here, at semantic admission, before any expression
 //! is evaluated. Selection refusals use QSpec's closed
 //! `selection_refusal_codes`; definition-closure refusals use the I04
@@ -20,8 +39,8 @@
 //! by authority and identity. The v2 emitter writes each row as the package
 //! lock's edition and definition selections ([`CatalogEntry::reference`]).
 //! `make conformance` compares the catalog and its selection rules with
-//! QSpec's `complete-value-lock.json` and `complete-model-lock.json`, read at
-//! run time.
+//! QSpec's `complete-value-lock.json`, `complete-model-lock.json` and
+//! `complete-temporal-lock.json`, read at run time.
 
 use std::collections::BTreeSet;
 
@@ -255,6 +274,61 @@ impl ModelEntry {
     }
 }
 
+/// A role in QSpec's complete-temporal lock, in catalog order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TemporalRole {
+    /// The temporal layer's root definition.
+    Root,
+    /// The timed-model declaration rule.
+    RuleFr415,
+    /// The exact-rational value rule.
+    RuleFr205,
+}
+
+impl TemporalRole {
+    /// Every role in the complete-temporal lock's catalog order.
+    pub const ALL: [Self; 3] = [Self::Root, Self::RuleFr415, Self::RuleFr205];
+
+    /// The lock's normative role spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::RuleFr415 => "rule_fr_415",
+            Self::RuleFr205 => "rule_fr_205",
+        }
+    }
+
+    /// The definition identity selected for this role.
+    pub const fn identity(self) -> &'static str {
+        match self {
+            Self::Root => "quire.temporal.complete/v1",
+            Self::RuleFr415 => "quire.rule.fr-415/v1",
+            Self::RuleFr205 => "quire.rule.fr-205/v1",
+        }
+    }
+}
+
+/// One complete-temporal lock catalog row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TemporalEntry {
+    /// Catalog role.
+    pub role: TemporalRole,
+    /// Publishing authority.
+    pub authority: &'static str,
+    /// Definition identity.
+    pub identity: &'static str,
+}
+
+impl TemporalEntry {
+    /// This entry as a package-lock definition reference.
+    pub fn reference(&self) -> DefinitionReference {
+        DefinitionReference {
+            authority: self.authority.to_owned(),
+            identity: self.identity.to_owned(),
+        }
+    }
+}
+
 /// How QSpec FR-001's package-selection rules select one role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SelectionRule {
@@ -457,6 +531,7 @@ pub struct DefinitionLock {
     exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
     layers: [LayerRow; HeaderLayer::ALL.len()],
     model_catalog: [ModelEntry; ModelRole::ALL.len()],
+    temporal_catalog: [TemporalEntry; TemporalRole::ALL.len()],
 }
 
 impl DefinitionLock {
@@ -490,6 +565,11 @@ impl DefinitionLock {
             exactly_one,
             layers: LAYER_ROWS,
             model_catalog: ModelRole::ALL.map(|role| ModelEntry {
+                role,
+                authority: AUTHORITY,
+                identity: role.identity(),
+            }),
+            temporal_catalog: TemporalRole::ALL.map(|role| TemporalEntry {
                 role,
                 authority: AUTHORITY,
                 identity: role.identity(),
@@ -561,6 +641,11 @@ impl DefinitionLock {
     /// conditional or exactly-one rule.
     pub fn model_catalog(&self) -> &[ModelEntry] {
         &self.model_catalog
+    }
+
+    /// The complete-temporal lock's catalog in its package-selection order.
+    pub fn temporal_catalog(&self) -> &[TemporalEntry] {
+        &self.temporal_catalog
     }
 
     /// The closed qualification catalog, in catalog order.
@@ -654,7 +739,7 @@ impl DefinitionLock {
         &self,
         div_rem: &[DefinitionReference],
         modulo: Option<&DefinitionReference>,
-    ) -> Result<AdmittedIntegerDivision, PackageRefusal> {
+    ) -> Result<quire_checked::integer_division::AdmittedIntegerDivision, PackageRefusal> {
         let mut profiles = Vec::new();
         for reference in div_rem {
             profiles.push(self.resolve_division(reference)?);
@@ -675,7 +760,7 @@ impl DefinitionLock {
                 ));
             }
         }
-        Ok(AdmittedIntegerDivision { profile })
+        Ok(quire_checked::construct::admitted_integer_division(profile))
     }
 
     /// Resolve `reference` to a division law by authority and identity.
@@ -739,25 +824,11 @@ impl AdmittedSelection {
     }
 }
 
-/// The admitted `div`/`rem` law of one checked package. Only
-/// [`DefinitionLock::admit_integer_division`] constructs it.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AdmittedIntegerDivision {
-    profile: DivisionProfile,
-}
-
-impl AdmittedIntegerDivision {
-    /// The selected law.
-    pub fn profile(&self) -> DivisionProfile {
-        self.profile
-    }
-}
-
 /// Evaluate the one member of `div`/`rem` an expression exposes (`div` is the
 /// quotient, `rem` the remainder) under the admitted package law. Both members
 /// are computed exactly; only the exposed `member` must lie in `domain`.
 pub fn divide(
-    selection: &AdmittedIntegerDivision,
+    selection: &quire_checked::integer_division::AdmittedIntegerDivision,
     member: DivisionMember,
     dividend: &Integer,
     divisor: &Integer,
@@ -772,17 +843,6 @@ pub fn divide(
         domain,
         meter,
     )
-}
-
-/// Evaluate `mod`: always the Euclidean remainder, independent of any selected
-/// `div`/`rem` law, charged only at the four `integer-modulus.*` points.
-pub fn modulo(
-    dividend: &Integer,
-    divisor: &Integer,
-    domain: &IntegerDomain,
-    meter: &mut Meter,
-) -> Outcome<Integer> {
-    quire_exact::modulo(dividend, divisor, domain, meter)
 }
 
 /// An IEEE package whose profile definition closure was admitted. Only

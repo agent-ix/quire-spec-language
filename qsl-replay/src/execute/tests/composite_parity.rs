@@ -22,8 +22,7 @@ use crate::identity::DeclaredDomain;
 use crate::scalar::{OperandIdentity, ScalarClaim};
 use crate::witness::{WitnessField, WitnessSlot};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::value::supplied::SuppliedLimits;
-use quire_semantic_value::supplied_stop::SuppliedLimitKind;
+use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
 
 const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function f using v(a: Q, b: Q): Boolean pure { a = b }\n\

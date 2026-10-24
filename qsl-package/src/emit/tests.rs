@@ -39,6 +39,7 @@ mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
 mod golden;
+mod hybrid;
 mod identity_depth;
 mod navigation;
 mod owners;
@@ -604,7 +605,14 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
     graph_order(&all)
         .into_iter()
-        .map(|candidate| serde_json::to_value(candidate.wire_node().unwrap()).unwrap())
+        .map(|candidate| {
+            let bytes = quire_canonical::to_vec(
+                &candidate.wire_node().unwrap(),
+                crate::checked::EMIT_LIMITS,
+            )
+            .unwrap();
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+        })
         .collect()
 }
 
@@ -1362,6 +1370,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         UnlocatedOccurrence,
         UnknownOccurrenceRole,
         Encoding,
+        TimedModelNodeSetMismatch,
+        TimedModelWriterInvariant,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1372,6 +1382,8 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnlocatedOccurrence { .. }) => Seen::UnlocatedOccurrence,
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
+            Err(EmitRefusal::TimedModelNodeSetMismatch) => Seen::TimedModelNodeSetMismatch,
+            Err(EmitRefusal::TimedModelWriterInvariant(_)) => Seen::TimedModelWriterInvariant,
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
@@ -2435,7 +2447,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     )
     .expect("the package admits");
     let object = |artifact: &str| {
-        let key = qsl_semantics::model::key::DeclarationKey {
+        let key = quire_checked::key::DeclarationKey {
             package: "acme/orders".to_owned(),
             node: format!("ix://acme/orders/{artifact}"),
         };
@@ -3058,8 +3070,8 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
         NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use quire_checked::key::DeclarationKey;
 
     let key = |name: &str| DeclarationKey {
         package: "example/config-version".to_owned(),
