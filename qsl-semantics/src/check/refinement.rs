@@ -51,7 +51,7 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
@@ -62,7 +62,7 @@ use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
 };
 use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
-use super::lowering::AdmittedModel;
+use super::lowering::{population_node, AdmittedModel};
 use super::observation::Observations;
 use super::profile::TemporalProfile;
 use super::protocol_clause::ProtocolNodeId;
@@ -123,6 +123,11 @@ pub enum UnsupportedFeature {
     /// canonical form (an enum or a decimal), which a product state could not
     /// key (FR-138).
     HistoryRow,
+    /// A field row whose type nests a `Reference` in an option, record,
+    /// union or collection, other than a whole-population `Set<Reference<T>>`
+    /// (FR-135): the lifting of ADR-020 RM-3 reaches no further than the
+    /// reference itself.
+    NestedReferenceRow,
     /// An abstract-operation application as the right side of a protocol
     /// step row: FR-136 binds `self` to the concrete receiver, and a
     /// protocol step has none that the requirement names.
@@ -136,6 +141,7 @@ impl UnsupportedFeature {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
             Self::RefinementInternalList => "refinement-internal-list",
             Self::HistoryRow => "history-row",
+            Self::NestedReferenceRow => "nested-reference-row",
             Self::ProtocolStepApplication => "protocol-step-application",
         }
     }
@@ -567,6 +573,10 @@ impl CheckedRefinement {
 pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
+    /// The node key of the abstract population's model declaration node,
+    /// whose ascending order is the order a mapping reads the populations
+    /// in (FR-140, QSpec FR-375).
+    pub abstract_node: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
 }
@@ -1001,6 +1011,60 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
     }
 }
 
+/// Whether the type of `row` holds a `Reference` below its top level, other
+/// than as the whole-population `Set<Reference<T>>` (FR-135 "Refinement
+/// features the build does not check"). A plain `Reference<T>` is lifted by
+/// the object map; a reference inside an option, record, tuple, union or
+/// collection is not.
+fn nests_reference(types: &TypeEnvironment, row: &CheckedRow) -> bool {
+    let value_type = row.body().value_type();
+    let whole_population = matches!(row.body().kind(), NodeKind::PopulationObjects { .. });
+    match value_type {
+        ValueType::Reference(_) => false,
+        ValueType::Collection(_) if whole_population => false,
+        other => holds_reference(types, other, &mut Vec::new()),
+    }
+}
+
+/// Whether `value_type` is or contains a `Reference`. `seen` holds the
+/// composite declarations being walked, so a declaration that names itself
+/// is walked once.
+fn holds_reference(
+    types: &TypeEnvironment,
+    value_type: &ValueType,
+    seen: &mut Vec<NodeKey>,
+) -> bool {
+    match value_type {
+        ValueType::Reference(_) => true,
+        ValueType::Option(payload) => holds_reference(types, payload, seen),
+        ValueType::Collection(collection) => holds_reference(types, collection.element(), seen),
+        ValueType::Composite(key) => {
+            if seen.contains(key) {
+                return false;
+            }
+            seen.push(*key);
+            let Some(declaration) = types.composite(*key) else {
+                return false;
+            };
+            match declaration.shape() {
+                CompositeShape::Record(fields) => fields
+                    .iter()
+                    .any(|field| holds_reference(types, field.value_type(), seen)),
+                CompositeShape::Tuple(positions) => positions
+                    .iter()
+                    .any(|position| holds_reference(types, position, seen)),
+                CompositeShape::Union(members) => members.iter().any(|member| {
+                    member
+                        .positions()
+                        .iter()
+                        .any(|position| holds_reference(types, position, seen))
+                }),
+            }
+        }
+        _ => false,
+    }
+}
+
 /// `value_type` with each reference to an abstract object type that an
 /// object row maps replaced by a reference to the concrete type it is mapped
 /// from (ADR-020 RM-3 reference lifting).
@@ -1125,6 +1189,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         lifting: BTreeMap::new(),
         maps_complete: true,
         baseline: 0,
+        profile: declaration.selection.identity.clone(),
         populations: None,
         history: Vec::new(),
         protocol_subject: matches!(form.abstract_side, AbstractSideForm::Protocol { .. }),
@@ -1136,7 +1201,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     };
     checker.baseline = checker.findings.refusals.len();
     let headers = checker.history_headers(form, &declaration.selection.identity);
-    let populations = checker.populations(form);
+    let populations = checker.populations(form, env.identity);
     let objects = checker.objects(form, cx);
     let StepRows {
         operations,
@@ -1245,6 +1310,8 @@ pub(crate) struct RefinementEnv<'e> {
     pub(crate) lists: &'e ParsedLists,
     /// The unit's protocol clauses, which a protocol subject selects among.
     pub(crate) protocols: &'e [ProtocolView<'e>],
+    /// The unit's identity budget, which keys the abstract populations.
+    pub(crate) identity: qsl_foundation::IdentityLimits,
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1405,6 +1472,8 @@ struct Checker<'c, 'a> {
     /// How many refusals the header already holds, which say nothing of the
     /// maps.
     baseline: usize,
+    /// The identity of the profile the declaration selects.
+    profile: String,
     /// The concrete populations a row may name, resolved on first use.
     populations: Option<PopulationScope>,
     /// The history fields a row may read (FR-138), in scope once their rows'
@@ -1465,7 +1534,11 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 
     /// FR-135 "Population map".
-    fn populations(&mut self, form: &RefinementForm) -> Vec<PopulationRow> {
+    fn populations(
+        &mut self,
+        form: &RefinementForm,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Vec<PopulationRow> {
         let abstract_populations = {
             let found = self.abstract_side.populations();
             self.or_fault(found)
@@ -1542,8 +1615,16 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
             if let Some(source) = source {
+                let node = match population_node(&target.record.key, identity) {
+                    Ok(Some(node)) => node.key(),
+                    Ok(None) | Err(_) => {
+                        self.fault("abstract-population-has-a-node-key");
+                        continue;
+                    }
+                };
                 rows.push(PopulationRow {
                     abstract_population: target.record.key.clone(),
+                    abstract_node: node,
                     concrete_population: source.record.key.clone(),
                 });
             }
@@ -1813,6 +1894,23 @@ impl<'c, 'a> Checker<'c, 'a> {
                 },
                 cx,
             );
+            let expression = expression.filter(|row| {
+                if !nests_reference(self.types(), row) {
+                    return true;
+                }
+                match field.value.spans.at(&[]) {
+                    Some(span) => self.findings.refuse(
+                        span,
+                        RefinementCause::Unsupported {
+                            feature: UnsupportedFeature::NestedReferenceRow,
+                            profile: self.profile.clone(),
+                            subject: None,
+                        },
+                    ),
+                    None => self.fault("row-expression-has-a-span"),
+                }
+                false
+            });
             let key = self.abstract_side.model.field_key(&attribute.identity());
             match (expression, key) {
                 (Some(expression), Some(key)) => fields.push(FieldRow {

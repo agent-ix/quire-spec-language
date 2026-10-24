@@ -678,6 +678,7 @@ impl ProtocolRefinement<'_> {
             lifting: typing.lifting,
             maps_complete: typing.maps_complete,
             baseline: 0,
+            profile: profile.clone(),
             populations: None,
             history: typing.history,
             protocol_subject: typing.protocol_subject,

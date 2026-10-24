@@ -2010,6 +2010,7 @@ impl PackageDeclarations {
                     support: self.refinement_support,
                     lists: &internal_lists,
                     protocols: $views,
+                    identity: self.identity,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,

@@ -12,7 +12,8 @@
 //! element.
 //!
 //! The rows are read in an order that does not depend on how they were
-//! written: populations by abstract declaration, objects by ascending key, and
+//! written: populations by the ascending node-key digest of the abstract
+//! population, objects by ascending key, and
 //! per object its object row, then its field rows by ascending field name as
 //! UTF-8 bytes. Every row is read, because an internal fault in any of them
 //! outranks every row outcome; of the row outcomes the first undefined one
@@ -222,7 +223,12 @@ pub fn map_state(
 ) -> Result<MappedState, MappingFailure> {
     check_systems(refinement, concrete_system, abstract_system)?;
     let mut populations: Vec<&PopulationRow> = refinement.populations().iter().collect();
-    populations.sort_by(|left, right| left.abstract_population.cmp(&right.abstract_population));
+    populations.sort_by(|left, right| {
+        left.abstract_node
+            .as_bytes()
+            .cmp(right.abstract_node.as_bytes())
+            .then_with(|| left.abstract_population.cmp(&right.abstract_population))
+    });
     let mut visible = ModelState {
         populations: BTreeMap::new(),
         extents: Vec::new(),
