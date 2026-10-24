@@ -1824,10 +1824,9 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
     }
 }
 
-/// FR-447-AC-13 / QSpec FR-322-AC-120: the I2 reader retains every timed
-/// node body exactly as IR admitted it, and the package identity is the
-/// recomputation over that complete graph. QSL has no timed-model writer;
-/// checked-package emission does not synthesize this family.
+/// FR-447-AC-13 / QSpec FR-322-AC-120: the I2 reader retains every dense
+/// timed node body exactly as IR admitted it, and the package identity is
+/// recomputed over that complete graph.
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_timed_model_nodes_are_retained_by_i2() {
@@ -1893,8 +1892,8 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     let [timed] = timed_models.as_slice() else {
         panic!("one timed model is reconstructed");
     };
-    assert_eq!(timed.source.kind, "tick");
-    assert_eq!(timed.source.period.as_deref(), Some("1/2"));
+    assert_eq!(timed.source.kind, "dense");
+    assert_eq!(timed.source.period, None);
     assert_eq!(timed.clock_places.len(), 1);
     assert_eq!(timed.clock_places[0].path.len(), 2);
     assert!(matches!(
@@ -1914,6 +1913,56 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     assert_eq!(timed.normalized_constraints[0].bound, "3/1");
     assert_eq!(timed.normalized_constraints[0].comparison, "le");
     assert_eq!(timed.normalized_constraints[0].unit, timed.source.unit);
+}
+
+#[trace("TC-1187", "FR-415-AC-17", "FR-447-AC-13")]
+#[test]
+fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let envelope = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
+    let expected_id = derived_package_id(&envelope);
+    let (package_id, outcome) = read_fixture_wire(&envelope);
+    assert_eq!(package_id, expected_id);
+    let Read::Verified {
+        package,
+        admitted,
+        timed_models,
+        ..
+    } = outcome
+    else {
+        panic!("tick timed fixture must pass the real IR reader: {outcome:?}");
+    };
+    assert_eq!(package.package_id(), expected_id);
+    assert_eq!(package.package_id(), package_id);
+    let [timed] = timed_models.as_slice() else {
+        panic!("one tick timed model is reconstructed");
+    };
+    assert_eq!(timed.source.kind, "tick");
+    assert_eq!(timed.source.period.as_deref(), Some("1/2"));
+    assert!(timed.clock_places.is_empty());
+    assert!(timed.resets.is_empty());
+    assert!(timed.guards.is_empty());
+    assert!(timed.invariants.is_empty());
+    assert!(timed.urgencies.is_empty());
+    assert!(timed.normalized_constraints.is_empty());
+    let source = &envelope["semantic_graph"]["nodes"][44];
+    let operation_id = &source["body"]["members"][3]["value"]["target"];
+    let operation = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["node_id"] == *operation_id)
+        .unwrap();
+    assert_eq!(operation["node_tag"], "state");
+    assert_eq!(operation["semantic_form"], "operation_anchor");
+    assert!(admitted
+        .graph()
+        .nodes
+        .iter()
+        .any(|node| node.node_id.digest.as_ref() == operation_id["digest"].as_str().unwrap()));
 }
 
 /// FR-415-AC-17 / FR-322-AC-122: the typed timed-model writer re-emits all
@@ -2388,6 +2437,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
         return;
     };
     let base = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let tick_base = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
     let vectors = read_fixture(&directory.join("../timed-model-node-vectors.json"));
     let indexes = &vectors["node_indexes"];
     for row in vectors["schema_refusals"].as_array().unwrap() {
@@ -2423,13 +2473,18 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
     }
 
     for row in vectors["semantic_refusals"].as_array().unwrap() {
-        let mut candidate = base.clone();
+        let is_tick = row["fixture"] == "tick";
+        let mut candidate = if is_tick {
+            tick_base.clone()
+        } else {
+            base.clone()
+        };
         match row["mutation"].as_str().unwrap() {
             "remove-timed-root" => {
                 candidate["semantic_graph"]["nodes"]
                     .as_array_mut()
                     .unwrap()
-                    .remove(52);
+                    .remove(if is_tick { 45 } else { 52 });
             }
             "dangling-tick-operation" => {
                 let source = &mut candidate["semantic_graph"]["nodes"][44];
@@ -2503,7 +2558,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 replace_dependency(&mut source["dependencies"], &old, &target);
             }
             "unresolved-tick-operation" => {
-                candidate["semantic_graph"]["nodes"][53]["body"]["members"][1]["value"]["value"] =
+                candidate["semantic_graph"]["nodes"][46]["body"]["members"][1]["value"]["value"] =
                     json!("missing")
             }
             other => panic!("{}: unknown semantic vector {other}", row["id"]),
