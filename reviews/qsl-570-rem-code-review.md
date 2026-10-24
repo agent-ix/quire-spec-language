@@ -71,3 +71,25 @@ Round 2, by the reviewer, at 325723f6e.
 | --- | --- | --- |
 | FND-003 | fixed | 325723f6e. `of_counter` is deleted. `predicate_refused` settles `LimitReached{Counter(incomplete.limit_kind), incomplete.limit}` for every counter, `work_units` included, so the limit and setting are the counter's own name (FR-255 Behavior 9). `EvaluationMeter.setting()` is `work_units`; the spec conflict this exposes is FND-005. The FR-192-AC-7 test asserts `Counter(LimitKind::WorkUnits)`. |
 | FND-004 | fixed | 325723f6e. The `statistical` fallback is gone. A probabilistic record with no evidence kind now gets `evidence: None` and `CandidateSet::none` (no backend), and no second-kind item under `Both`, so an exact-only claim is no longer routed to EN-4. It is not prevented at the type level (`Requirements::new` can still build such a record) and has no test. Judged acceptable: no S3 path builds such a record, and the arm only guards a broken invariant. The type-level fix belongs with the S3 probabilistic-record work (SR-12361 FND-004), where the probabilistic `Requirements` constructor should take the evidence kind. |
+
+## Dispositions (round 3)
+
+Round 3, by the reviewer, at the rebased head. Restored here from Linear comment 91bed3f7-dff8-4e28-a11b-e75589dc19bd, because that round's scratch file under /tmp/qsl-570-reviewer no longer exists.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | FR-192's table, AC-1 and TC-627 now agree on the FR-255 setting names. Accounting settings come from the shared typed setting mapping. |
+
+## Dispositions (round 4: merge resolution)
+
+Round 4, by the reviewer, at 7a4bce3e52750fa4d1a1c36b7596ca35155c1855: the merge of origin/main (dc267af55, which includes #1413/QSL-1025 and #1410/QSL-1018) into the round-3 head ee3373823. No finding was open before this round, so the round adds no outcome rows and no new findings.
+
+This round reviewed only the merge resolution. `git show --remerge-diff` shows that it changes two files compared with an automatic merge: `qsl-replay/src/model_check/limits.rs` and `qsl-replay/src/statistical/settle.rs`.
+
+- **limits.rs.** The resolution keeps main's `EvaluationMeter { counter }` and `AccountingLimits::setting_of`. It drops the PR's `Counter(LimitKind)` variant, its two match arms and its imports. Behaviour is unchanged. The PR's `Counter(kind).as_str()` was `quire_exact::LimitKind::as_str` (quire-exact 72b2542, src/accounting.rs:118-129). Main's `EvaluationMeter { counter }.as_str()` matches it on all ten counters. The setting is `AccountingLimits::setting_of(kind).name()` on both sides. The PR's `EvaluationMeter => AccountingSetting::WorkUnits.name()` was a special case of main's per-counter mapping. `MaxCandidates` now gets `expansion.max_candidates` from main (QSL-1018), which is the follow-up round 3 deferred.
+- **settle.rs.** `predicate_refused` settles `Incomplete` as `LimitReached { EvaluationMeter { counter: incomplete.limit_kind }, incomplete.limit }`. On the wire this gives the same limit and setting the PR gave. `KernelRefused`/`FamilyRefused` still settle `failed` with their code, and every other outcome settles `BROKEN`. TC-1166 / FR-192-AC-7 keeps its trace tag and every assertion. Only the two variant constructors were respoken, and the `setting` assertions (`AccountingSetting::TextInputBytes/WorkUnits.name()`) are unchanged. Main's added assertions for TC-627 (`accounting.work_units`, `integer_bits`, `value_occurrences`) are kept.
+- **Trace tags.** The union of `#[trace(...)]` tags in both parents, minus the tags at the merge, is `FR-469-AC-1`, `TC-665` and `TC-665, TC-664`. All of them were in the merge base and are absent on main, so main removed them, not the resolution. Every tag the PR added (`TC-1163`, `TC-1163/FR-075-AC-18`, `TC-761` x3, `TC-1166/FR-192-AC-7`) is present.
+- **Gates run at 7a4bce3e5 (own target dir).** `cargo test -p qsl-replay --lib`: 803 passed. `cargo test -p qsl-analyze`: 69 + 716 passed. `cargo clippy -p qsl-replay -p qsl-analyze --all-targets -D warnings`: clean.
+- **`quire matrix`.** FR-192-AC-7 is tagged (settle.rs:697). FR-192-AC-1, FR-075-AC-18 and FR-126-AC-19 are tagged. FR-280-AC-5 and FR-195-AC-6 are untagged, as in rounds 1-3: they stay open under QSL-596 and the S3 follow-up.
+
+Verdict: mergeable subject to the lead's final-head aggregate gate.
