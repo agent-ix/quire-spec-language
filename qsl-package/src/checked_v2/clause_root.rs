@@ -80,7 +80,7 @@ fn over_of(node: &CheckedSemanticNodeV2) -> Option<WireNodeId> {
     let CheckedTerm::Application { arguments, .. } = &node.body else {
         return None;
     };
-    let Some(CheckedTerm::Reference { target }) = arguments.first() else {
+    let CheckedTerm::Reference { target } = arguments.first()? else {
         return None;
     };
     WireNodeId::from_hex(&target.digest)

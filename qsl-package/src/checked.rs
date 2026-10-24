@@ -674,8 +674,8 @@ impl EmittedPackage {
     /// refuses (a failed heap reservation) is returned as `E`, never a
     /// panic. `pub(super)`: reachable from anywhere in
     /// `qsl-package` (in particular, `emit`), never from outside it.
-    pub(super) fn new<E: From<quire_canonical::Error>>(
-        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageRefV2<'_>,
+    pub(super) fn new<Body: quire_canonical::Encode, E: From<quire_canonical::Error>>(
+        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageRefV2<'_, Body>,
         encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
     ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:

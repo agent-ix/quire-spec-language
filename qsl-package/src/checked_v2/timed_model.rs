@@ -6,10 +6,9 @@ use std::str::FromStr;
 
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedOccurrence, CheckedPackageV2,
-    CheckedSemanticNodeV2, CheckedTerm, NominalIdentityPreimage,
+    CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage, TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
-use serde_json::Value;
 
 /// One admitted timed model, reconstructed from its closed graph nodes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,13 +78,32 @@ pub struct CheckedTimedPredicate {
     pub predicate: CheckedNodeId,
 }
 
+/// The closed kind of an admitted time source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedTimeSourceKind {
+    /// Continuous dense time.
+    Dense,
+    /// Discrete ticks from the selected model operation.
+    Tick,
+}
+
+impl CheckedTimeSourceKind {
+    /// The original checked-wire spelling.
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Dense => "dense",
+            Self::Tick => "tick",
+        }
+    }
+}
+
 /// A dense or tick time source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedTimeSource {
     /// The node's checked wire metadata.
     pub metadata: TimedNodeMetadata,
-    /// `dense` or `tick`.
-    pub kind: String,
+    /// The closed admitted source kind.
+    pub kind: CheckedTimeSourceKind,
     /// The selected time unit node.
     pub unit: CheckedNodeId,
     /// Tick model, when the source is `tick`.
@@ -270,46 +288,33 @@ impl CheckedTimedModel {
                 + self.urgencies.len()
                 + self.normalized_constraints.len(),
         );
-        nodes.push(write_source(&self.source, &self.literal_types)?);
+        nodes.push(write_source(&self.source, &self.literal_types));
         nodes.extend(
             self.clock_places
                 .iter()
                 .map(|place| write_place(place, &self.literal_types))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        nodes.extend(
-            self.resets
-                .iter()
-                .map(write_reset)
-                .collect::<Result<Vec<_>, _>>()?,
-        );
+        nodes.extend(self.resets.iter().map(write_reset));
         nodes.extend(
             self.guards
                 .iter()
-                .map(|guard| write_predicate(&guard.metadata, "clock_guard", &guard.predicate))
-                .collect::<Result<Vec<_>, _>>()?,
+                .map(|guard| write_predicate(&guard.metadata, "clock_guard", &guard.predicate)),
         );
-        nodes.extend(
-            self.invariants
-                .iter()
-                .map(|invariant| {
-                    write_predicate(&invariant.metadata, "time_invariant", &invariant.predicate)
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        );
+        nodes.extend(self.invariants.iter().map(|invariant| {
+            write_predicate(&invariant.metadata, "time_invariant", &invariant.predicate)
+        }));
         nodes.extend(
             self.urgencies
                 .iter()
-                .map(|urgency| write_urgency(urgency, &self.literal_types))
-                .collect::<Result<Vec<_>, _>>()?,
+                .map(|urgency| write_urgency(urgency, &self.literal_types)),
         );
         nodes.extend(
             self.normalized_constraints
                 .iter()
-                .map(|constraint| write_constraint(constraint, &self.literal_types))
-                .collect::<Result<Vec<_>, _>>()?,
+                .map(|constraint| write_constraint(constraint, &self.literal_types)),
         );
-        nodes.push(write_root(self)?);
+        nodes.push(write_root(self));
         Ok(nodes)
     }
 }
@@ -329,8 +334,8 @@ impl TimedNodeMetadata {
         }
     }
 
-    fn node(&self, form: &str, body: Value) -> Result<CheckedSemanticNodeV2, &'static str> {
-        Ok(CheckedSemanticNodeV2 {
+    fn node(&self, form: &str, body: CheckedTerm) -> CheckedSemanticNodeV2 {
+        CheckedSemanticNodeV2 {
             node_id: self.node_id.clone(),
             schema_version: self.schema_version.clone(),
             node_tag: "timed_model".into(),
@@ -342,18 +347,14 @@ impl TimedNodeMetadata {
             nominal_identity_preimage: self.nominal_identity_preimage.clone(),
             declaration: self.declaration.clone(),
             owner: self.owner.clone(),
-            body: serde_json::from_value::<CheckedTerm>(body)
-                .map_err(|_| "timed-node writer constructs a malformed checked term")?,
-        })
+            body,
+        }
     }
 }
 
-fn write_source(
-    source: &CheckedTimeSource,
-    types: &TimedLiteralTypes,
-) -> Result<CheckedSemanticNodeV2, &'static str> {
+fn write_source(source: &CheckedTimeSource, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
     let mut fields = vec![
-        binding_term("kind", text_literal(&types.text, &source.kind)),
+        binding_term("kind", text_literal(&types.text, source.kind.as_wire())),
         binding_term("unit", reference_term(&source.unit)),
     ];
     if let (Some(model), Some(operation), Some(period), Some(period_type)) = (
@@ -367,7 +368,7 @@ fn write_source(
             binding_term("operation", reference_term(operation)),
             binding_term(
                 "period",
-                typed_string_literal(period_type, "rational", period),
+                CheckedTerm::literal_rational(period_type.clone(), period.as_str()),
             ),
         ]);
     }
@@ -381,7 +382,7 @@ fn write_place(
     let path = place
         .path
         .iter()
-        .map(|step| -> Result<Value, &'static str> {
+        .map(|step| -> Result<CheckedTerm, &'static str> {
             Ok(match step {
                 ClockPathStep::Field(name) => aggregate_term(vec![
                     binding_term("kind", text_literal(&types.text, "field")),
@@ -423,7 +424,7 @@ fn write_place(
     let resolved_path = place
         .resolved_path
         .iter()
-        .map(|step| -> Result<Value, &'static str> {
+        .map(|step| -> Result<CheckedTerm, &'static str> {
             Ok(aggregate_term(vec![
                 binding_term("path_step", integer_literal(types, step.path_step)?),
                 binding_term(
@@ -444,7 +445,7 @@ fn write_place(
             ]))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    place.metadata.node(
+    Ok(place.metadata.node(
         "clock_place",
         aggregate_term(vec![
             binding_term("model", reference_term(&place.model)),
@@ -452,17 +453,17 @@ fn write_place(
             binding_term("resolved_path", aggregate_term(resolved_path)),
             binding_term("guards", reference_terms(&place.guards)),
         ]),
-    )
+    ))
 }
 
-fn write_reset(reset: &CheckedClockReset) -> Result<CheckedSemanticNodeV2, &'static str> {
+fn write_reset(reset: &CheckedClockReset) -> CheckedSemanticNodeV2 {
     reset.metadata.node(
         "clock_reset",
         aggregate_term(vec![
             binding_term("place", reference_term(&reset.place)),
             binding_term(
                 "value",
-                typed_string_literal(&reset.value_type, "quantity", &reset.value),
+                CheckedTerm::literal_quantity(reset.value_type.clone(), reset.value.as_str()),
             ),
         ]),
     )
@@ -472,17 +473,14 @@ fn write_predicate(
     metadata: &TimedNodeMetadata,
     form: &str,
     predicate: &CheckedNodeId,
-) -> Result<CheckedSemanticNodeV2, &'static str> {
+) -> CheckedSemanticNodeV2 {
     metadata.node(
         form,
         aggregate_term(vec![binding_term("predicate", reference_term(predicate))]),
     )
 }
 
-fn write_urgency(
-    urgency: &CheckedUrgency,
-    types: &TimedLiteralTypes,
-) -> Result<CheckedSemanticNodeV2, &'static str> {
+fn write_urgency(urgency: &CheckedUrgency, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
     match urgency {
         CheckedUrgency::When {
             metadata,
@@ -512,7 +510,7 @@ fn write_urgency(
 fn write_constraint(
     constraint: &CheckedClockConstraint,
     types: &TimedLiteralTypes,
-) -> Result<CheckedSemanticNodeV2, &'static str> {
+) -> CheckedSemanticNodeV2 {
     constraint.metadata.node(
         "clock_constraint",
         aggregate_term(vec![
@@ -523,13 +521,16 @@ fn write_constraint(
             ),
             binding_term(
                 "bound",
-                typed_string_literal(&constraint.bound_type, "quantity", &constraint.bound),
+                CheckedTerm::literal_quantity(
+                    constraint.bound_type.clone(),
+                    constraint.bound.as_str(),
+                ),
             ),
         ]),
     )
 }
 
-fn write_root(model: &CheckedTimedModel) -> Result<CheckedSemanticNodeV2, &'static str> {
+fn write_root(model: &CheckedTimedModel) -> CheckedSemanticNodeV2 {
     let references =
         |ids: Vec<&CheckedNodeId>| aggregate_term(ids.into_iter().map(reference_term).collect());
     model.metadata.node(
@@ -611,46 +612,32 @@ fn urgency_metadata(urgency: &CheckedUrgency) -> &TimedNodeMetadata {
     }
 }
 
-fn reference_term(id: &CheckedNodeId) -> Value {
-    serde_json::json!({"term": "reference", "target": id})
+fn reference_term(id: &CheckedNodeId) -> CheckedTerm {
+    CheckedTerm::reference(id.clone())
 }
 
-fn reference_terms(ids: &[CheckedNodeId]) -> Value {
+fn reference_terms(ids: &[CheckedNodeId]) -> CheckedTerm {
     aggregate_term(ids.iter().map(reference_term).collect())
 }
 
-fn binding_term(name: &str, value: Value) -> Value {
-    serde_json::json!({"term": "binding", "name": name, "value": value})
+fn binding_term(name: &str, value: CheckedTerm) -> CheckedTerm {
+    CheckedTerm::binding(name, value)
 }
 
-fn aggregate_term(members: Vec<Value>) -> Value {
-    serde_json::json!({"term": "aggregate", "members": members})
+fn aggregate_term(members: Vec<CheckedTerm>) -> CheckedTerm {
+    CheckedTerm::aggregate(members)
 }
 
-fn text_literal(type_id: &CheckedNodeId, value: &str) -> Value {
-    typed_string_literal(type_id, "text", value)
+fn text_literal(type_id: &CheckedNodeId, value: &str) -> CheckedTerm {
+    CheckedTerm::literal_text(type_id.clone(), value)
 }
 
-fn typed_string_literal(type_id: &CheckedNodeId, kind: &str, value: &str) -> Value {
-    serde_json::json!({
-        "term": "literal",
-        "type": type_id,
-        "value_kind": kind,
-        "value": value,
-    })
-}
-
-fn integer_literal(types: &TimedLiteralTypes, value: u64) -> Result<Value, &'static str> {
+fn integer_literal(types: &TimedLiteralTypes, value: u64) -> Result<CheckedTerm, &'static str> {
     let type_id = types
         .integer
         .as_ref()
         .ok_or("timed model needs an integer literal type to write this clock path")?;
-    Ok(serde_json::json!({
-        "term": "literal",
-        "type": type_id,
-        "value_kind": "integer",
-        "value": value,
-    }))
+    Ok(CheckedTerm::literal_integer(type_id.clone(), value))
 }
 
 fn project_root(
@@ -658,32 +645,32 @@ fn project_root(
     nodes: &BTreeMap<CheckedNodeId, &CheckedSemanticNodeV2>,
     literal_types: &TimedLiteralTypes,
 ) -> Result<CheckedTimedModel, &'static str> {
-    let body = checked_body(root)?;
-    let model = reference(binding(&body, "model")?)?;
-    let time_dimension = reference(binding(&body, "time_dimension")?)?;
-    let source_node = referenced_node(binding(&body, "source")?, nodes)?;
+    let body = &root.body;
+    let model = reference(binding(body, "model")?)?;
+    let time_dimension = reference(binding(body, "time_dimension")?)?;
+    let source_node = referenced_node(binding(body, "source")?, nodes)?;
     let source = project_source(source_node)?;
-    let clock_places = reference_list(binding(&body, "clock_places")?)?
+    let clock_places = reference_list(binding(body, "clock_places")?)?
         .into_iter()
         .map(|id| project_place(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let resets = reference_list(binding(&body, "resets")?)?
+    let resets = reference_list(binding(body, "resets")?)?
         .into_iter()
         .map(|id| project_reset(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let guards = reference_list(binding(&body, "guards")?)?
+    let guards = reference_list(binding(body, "guards")?)?
         .into_iter()
         .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "clock_guard"))
         .collect::<Result<Vec<_>, _>>()?;
-    let invariants = reference_list(binding(&body, "invariants")?)?
+    let invariants = reference_list(binding(body, "invariants")?)?
         .into_iter()
         .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "time_invariant"))
         .collect::<Result<Vec<_>, _>>()?;
-    let urgencies = reference_list(binding(&body, "urgencies")?)?
+    let urgencies = reference_list(binding(body, "urgencies")?)?
         .into_iter()
         .map(|id| project_urgency(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let normalized_constraints = reference_list(binding(&body, "constraints")?)?
+    let normalized_constraints = reference_list(binding(body, "constraints")?)?
         .into_iter()
         .map(|id| project_constraint(referenced_node_by_id(&id, nodes)?, source.unit.clone()))
         .collect::<Result<Vec<_>, _>>()?;
@@ -702,25 +689,28 @@ fn project_root(
     })
 }
 
+// Intake proof: time_source_intake_is_total_and_preserves_dense_and_tick_wire.
+// The wire literal is consumed once into CheckedTimeSourceKind; unknown or
+// mistyped payloads refuse instead of escaping as a dispatch string.
+#[ix_trace_rs::string_edge]
 fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'static str> {
-    if node.semantic_form.as_ref() != "time_source" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Source) {
         return Err("timed source reference has wrong form");
     }
-    let body = checked_body(node)?;
-    let kind = literal_text(binding(&body, "kind")?)?.to_owned();
-    let unit = reference(binding(&body, "unit")?)?;
-    let (model, operation, period) = if kind == "tick" {
-        (
-            Some(reference(binding(&body, "model")?)?),
-            Some(reference(binding(&body, "operation")?)?),
+    let body = &node.body;
+    let kind = literal_text(binding(body, "kind")?)?;
+    let unit = reference(binding(body, "unit")?)?;
+    let (kind, model, operation, period) = match kind {
+        "tick" => (
+            CheckedTimeSourceKind::Tick,
+            Some(reference(binding(body, "model")?)?),
+            Some(reference(binding(body, "operation")?)?),
             Some(normalized_rational(literal_string(binding(
-                &body, "period",
+                body, "period",
             )?)?)?),
-        )
-    } else if kind == "dense" {
-        (None, None, None)
-    } else {
-        return Err("unknown timed source kind");
+        ),
+        "dense" => (CheckedTimeSourceKind::Dense, None, None, None),
+        _ => return Err("unknown timed source kind"),
     };
     Ok(CheckedTimeSource {
         metadata: TimedNodeMetadata::from_node(node),
@@ -729,10 +719,8 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
         model,
         operation,
         period,
-        period_type: if node.semantic_form.as_ref() == "time_source"
-            && binding(&body, "period").is_ok()
-        {
-            Some(literal_type(binding(&body, "period")?)?)
+        period_type: if binding(body, "period").is_ok() {
+            Some(literal_type(binding(body, "period")?)?)
         } else {
             None
         },
@@ -743,13 +731,13 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
     if node.semantic_form.as_ref() != "clock_place" {
         return Err("clock place reference has wrong form");
     }
-    let body = checked_body(node)?;
-    let path_value = binding(&body, "path")?;
+    let body = &node.body;
+    let path_value = binding(body, "path")?;
     let path = aggregate(path_value)?
         .iter()
         .map(project_path_step)
         .collect::<Result<Vec<_>, _>>()?;
-    let resolved_path = aggregate(binding(&body, "resolved_path")?)?
+    let resolved_path = aggregate(binding(body, "resolved_path")?)?
         .iter()
         .map(project_resolved_step)
         .collect::<Result<Vec<_>, _>>()?;
@@ -757,12 +745,15 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
         metadata: TimedNodeMetadata::from_node(node),
         path,
         resolved_path,
-        model: reference(binding(&body, "model")?)?,
-        guards: reference_list(binding(&body, "guards")?)?,
+        model: reference(binding(body, "model")?)?,
+        guards: reference_list(binding(body, "guards")?)?,
     })
 }
 
-fn project_path_step(value: &Value) -> Result<ClockPathStep, &'static str> {
+// Intake proof: clock_path_intake_is_total_for_each_closed_step_and_rejects_unknown_or_mistyped.
+// Every accepted wire kind becomes a ClockPathStep variant; unknown kinds refuse.
+#[ix_trace_rs::string_edge]
+fn project_path_step(value: &CheckedTerm) -> Result<ClockPathStep, &'static str> {
     let kind = literal_text(binding(value, "kind")?)?;
     match kind {
         "field" => Ok(ClockPathStep::Field(
@@ -774,7 +765,7 @@ fn project_path_step(value: &Value) -> Result<ClockPathStep, &'static str> {
         )),
         "slot" => {
             let selector = binding(value, "selector")?;
-            let selector = if selector["term"] == "reference" {
+            let selector = if matches!(selector, CheckedTerm::Reference { .. }) {
                 ClockSlotSelector::Key(reference(selector)?)
             } else {
                 ClockSlotSelector::Index(literal_u64(selector)?)
@@ -796,7 +787,7 @@ fn project_path_step(value: &Value) -> Result<ClockPathStep, &'static str> {
     }
 }
 
-fn project_resolved_step(value: &Value) -> Result<ResolvedClockPathStep, &'static str> {
+fn project_resolved_step(value: &CheckedTerm) -> Result<ResolvedClockPathStep, &'static str> {
     Ok(ResolvedClockPathStep {
         path_step: literal_u64(binding(value, "path_step")?)?,
         declaring_type: literal_text(binding(value, "declaring_type")?)?.to_owned(),
@@ -812,12 +803,12 @@ fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'st
     if node.semantic_form.as_ref() != "clock_reset" {
         return Err("clock reset reference has wrong form");
     }
-    let body = checked_body(node)?;
+    let body = &node.body;
     Ok(CheckedClockReset {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(&body, "place")?)?,
-        value: normalized_rational(literal_string(binding(&body, "value")?)?)?,
-        value_type: literal_type(binding(&body, "value")?)?,
+        place: reference(binding(body, "place")?)?,
+        value: normalized_rational(literal_string(binding(body, "value")?)?)?,
+        value_type: literal_type(binding(body, "value")?)?,
     })
 }
 
@@ -830,24 +821,27 @@ fn project_predicate(
     }
     Ok(CheckedTimedPredicate {
         metadata: TimedNodeMetadata::from_node(node),
-        predicate: reference(binding(&checked_body(node)?, "predicate")?)?,
+        predicate: reference(binding(&node.body, "predicate")?)?,
     })
 }
 
+// Intake proof: urgency_intake_is_total_and_preserves_both_variants_or_refuses_unknown.
+// No wire kind escapes the CheckedUrgency variant conversion.
+#[ix_trace_rs::string_edge]
 fn project_urgency(node: &CheckedSemanticNodeV2) -> Result<CheckedUrgency, &'static str> {
-    if node.semantic_form.as_ref() != "urgency" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Urgency) {
         return Err("urgency reference has wrong form");
     }
-    let body = checked_body(node)?;
-    match literal_text(binding(&body, "kind")?)? {
+    let body = &node.body;
+    match literal_text(binding(body, "kind")?)? {
         "when" => Ok(CheckedUrgency::When {
             metadata: TimedNodeMetadata::from_node(node),
-            predicate: reference(binding(&body, "predicate")?)?,
+            predicate: reference(binding(body, "predicate")?)?,
         }),
         "operation" => Ok(CheckedUrgency::Operation {
             metadata: TimedNodeMetadata::from_node(node),
-            model: reference(binding(&body, "model")?)?,
-            operation_name: literal_text(binding(&body, "operation_name")?)?.to_owned(),
+            model: reference(binding(body, "model")?)?,
+            operation_name: literal_text(binding(body, "operation_name")?)?.to_owned(),
         }),
         _ => Err("unknown urgency kind"),
     }
@@ -860,19 +854,19 @@ fn project_constraint(
     if node.semantic_form.as_ref() != "clock_constraint" {
         return Err("clock constraint reference has wrong form");
     }
-    let body = checked_body(node)?;
+    let body = &node.body;
     Ok(CheckedClockConstraint {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(&body, "place")?)?,
-        comparison: literal_text(binding(&body, "comparison")?)?.to_owned(),
-        bound: normalized_rational(literal_string(binding(&body, "bound")?)?)?,
+        place: reference(binding(body, "place")?)?,
+        comparison: literal_text(binding(body, "comparison")?)?.to_owned(),
+        bound: normalized_rational(literal_string(binding(body, "bound")?)?)?,
         unit,
-        bound_type: literal_type(binding(&body, "bound")?)?,
+        bound_type: literal_type(binding(body, "bound")?)?,
     })
 }
 
 fn referenced_node<'a>(
-    value: &Value,
+    value: &CheckedTerm,
     nodes: &'a BTreeMap<CheckedNodeId, &'a CheckedSemanticNodeV2>,
 ) -> Result<&'a CheckedSemanticNodeV2, &'static str> {
     let id = reference(value)?;
@@ -889,67 +883,71 @@ fn referenced_node_by_id<'a>(
         .ok_or("admitted timed-model edge is absent")
 }
 
-fn binding<'a>(value: &'a Value, name: &str) -> Result<&'a Value, &'static str> {
+fn binding<'a>(value: &'a CheckedTerm, name: &str) -> Result<&'a CheckedTerm, &'static str> {
     aggregate(value)?
         .iter()
-        .find(|member| member["term"] == "binding" && member["name"] == name)
-        .map(|member| &member["value"])
+        .find_map(|member| match member {
+            CheckedTerm::Binding {
+                name: member_name,
+                value,
+            } if member_name.as_ref() == name => Some(value.as_ref()),
+            _ => None,
+        })
         .ok_or("admitted timed-model binding is absent")
 }
 
-fn checked_body(node: &CheckedSemanticNodeV2) -> Result<Value, &'static str> {
-    serde_json::to_value(&node.body).map_err(|_| "admitted timed-model body cannot be serialized")
-}
-
-fn aggregate(value: &Value) -> Result<&[Value], &'static str> {
-    if value["term"] != "aggregate" {
-        return Err("admitted timed-model term is not an aggregate");
+fn aggregate(value: &CheckedTerm) -> Result<&[CheckedTerm], &'static str> {
+    match value {
+        CheckedTerm::Aggregate { members } => Ok(members),
+        _ => Err("admitted timed-model term is not an aggregate"),
     }
-    value["members"]
-        .as_array()
-        .map(Vec::as_slice)
-        .ok_or("aggregate has no members")
 }
 
-fn reference(value: &Value) -> Result<CheckedNodeId, &'static str> {
-    if value["term"] != "reference" {
-        return Err("admitted timed-model term is not a reference");
+fn reference(value: &CheckedTerm) -> Result<CheckedNodeId, &'static str> {
+    match value {
+        CheckedTerm::Reference { target } => Ok(target.clone()),
+        _ => Err("admitted timed-model term is not a reference"),
     }
-    serde_json::from_value(value["target"].clone()).map_err(|_| "reference is malformed")
 }
 
-fn reference_list(value: &Value) -> Result<Vec<CheckedNodeId>, &'static str> {
+fn reference_list(value: &CheckedTerm) -> Result<Vec<CheckedNodeId>, &'static str> {
     aggregate(value)?.iter().map(reference).collect()
 }
 
-fn literal_text(value: &Value) -> Result<&str, &'static str> {
-    if value["term"] != "literal" || value["value_kind"] != "text" {
-        return Err("admitted timed-model term is not text");
+fn literal_text(value: &CheckedTerm) -> Result<&str, &'static str> {
+    match value {
+        CheckedTerm::Literal {
+            value_kind: LiteralKind::Text,
+            value,
+            ..
+        } => value.as_str().ok_or("text literal is malformed"),
+        _ => Err("admitted timed-model term is not text"),
     }
-    value["value"].as_str().ok_or("text literal is malformed")
 }
 
-fn literal_string(value: &Value) -> Result<&str, &'static str> {
-    if value["term"] != "literal" {
-        return Err("admitted timed-model term is not a literal");
+fn literal_string(value: &CheckedTerm) -> Result<&str, &'static str> {
+    match value {
+        CheckedTerm::Literal { value, .. } => value.as_str().ok_or("literal string is malformed"),
+        _ => Err("admitted timed-model term is not a literal"),
     }
-    value["value"].as_str().ok_or("literal string is malformed")
 }
 
-fn literal_type(value: &Value) -> Result<CheckedNodeId, &'static str> {
-    if value["term"] != "literal" {
-        return Err("admitted timed-model term is not a literal");
+fn literal_type(value: &CheckedTerm) -> Result<CheckedNodeId, &'static str> {
+    match value {
+        CheckedTerm::Literal { type_id, .. } => Ok(type_id.clone()),
+        _ => Err("admitted timed-model term is not a literal"),
     }
-    serde_json::from_value(value["type"].clone()).map_err(|_| "literal type is malformed")
 }
 
-fn literal_u64(value: &Value) -> Result<u64, &'static str> {
-    if value["term"] != "literal" || value["value_kind"] != "integer" {
-        return Err("admitted timed-model term is not an integer");
+fn literal_u64(value: &CheckedTerm) -> Result<u64, &'static str> {
+    match value {
+        CheckedTerm::Literal {
+            value_kind: LiteralKind::Integer,
+            value,
+            ..
+        } => value.as_u64().ok_or("integer literal is malformed"),
+        _ => Err("admitted timed-model term is not an integer"),
     }
-    value["value"]
-        .as_u64()
-        .ok_or("integer literal is malformed")
 }
 
 fn normalized_rational(value: &str) -> Result<String, &'static str> {
@@ -970,24 +968,209 @@ fn find_literal_type(
     nodes: &BTreeMap<CheckedNodeId, &CheckedSemanticNodeV2>,
     kind: &str,
 ) -> Option<CheckedNodeId> {
-    fn visit(value: &Value, kind: &str) -> Option<CheckedNodeId> {
+    fn visit(value: &CheckedTerm, kind: &str) -> Option<CheckedNodeId> {
         match value {
-            Value::Object(object) => {
-                if object.get("term").and_then(Value::as_str) == Some("literal")
-                    && object.get("value_kind").and_then(Value::as_str) == Some(kind)
-                {
-                    return serde_json::from_value(object.get("type")?.clone()).ok();
-                }
-                object.values().find_map(|child| visit(child, kind))
+            CheckedTerm::Literal {
+                type_id,
+                value_kind,
+                ..
+            } if value_kind.as_wire() == kind => Some(type_id.clone()),
+            CheckedTerm::Aggregate { members } => {
+                members.iter().find_map(|child| visit(child, kind))
             }
-            Value::Array(values) => values.iter().find_map(|child| visit(child, kind)),
+            CheckedTerm::Binding { value, .. } => visit(value, kind),
+            CheckedTerm::Application { arguments, .. } => {
+                arguments.iter().find_map(|child| visit(child, kind))
+            }
+            CheckedTerm::ExtensionForm { clauses, .. } => {
+                clauses.iter().find_map(|child| visit(child, kind))
+            }
             _ => None,
         }
     }
+    nodes.values().find_map(|node| visit(&node.body, kind))
+}
 
-    nodes.values().find_map(|node| {
-        serde_json::to_value(&node.body)
-            .ok()
-            .and_then(|body| visit(&body, kind))
-    })
+#[cfg(test)]
+mod intake_proofs {
+    use super::*;
+
+    fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
+        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
+        let fixture = if form == "time_source" {
+            "positive-tick-timed-model-nodes.json"
+        } else {
+            "positive-timed-model-nodes.json"
+        };
+        let path = std::path::Path::new(&directory)
+            .join("proposals/checked-package-v2/fixtures")
+            .join(fixture);
+        let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
+        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let node = package["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["semantic_form"] == form)
+            .unwrap()
+            .clone();
+        serde_json::from_value(node).unwrap()
+    }
+
+    fn replace_binding(body: &mut CheckedTerm, name: &str, replacement: CheckedTerm) {
+        let CheckedTerm::Aggregate { members } = body else {
+            panic!("fixture body is aggregate")
+        };
+        let value = members
+            .iter_mut()
+            .find_map(|member| match member {
+                CheckedTerm::Binding {
+                    name: actual,
+                    value,
+                } if actual.as_ref() == name => Some(value),
+                _ => None,
+            })
+            .expect("fixture binding exists");
+        **value = replacement;
+    }
+
+    #[test]
+    fn time_source_intake_is_total_and_preserves_dense_and_tick_wire() {
+        let tick = fixture_node("time_source");
+        let projected = project_source(&tick).unwrap();
+        assert_eq!(projected.kind, CheckedTimeSourceKind::Tick);
+        let text_type = literal_type(binding(&tick.body, "kind").unwrap()).unwrap();
+        let types = TimedLiteralTypes {
+            text: text_type.clone(),
+            integer: None,
+        };
+        assert_eq!(write_source(&projected, &types).body, tick.body);
+        let mut dense = tick.clone();
+        replace_binding(
+            &mut dense.body,
+            "kind",
+            CheckedTerm::literal_text(text_type.clone(), "dense"),
+        );
+        let projected = project_source(&dense).unwrap();
+        assert_eq!(projected.kind, CheckedTimeSourceKind::Dense);
+        assert!(
+            projected.model.is_none()
+                && projected.operation.is_none()
+                && projected.period.is_none()
+        );
+        let mut unknown = tick.clone();
+        replace_binding(
+            &mut unknown.body,
+            "kind",
+            CheckedTerm::literal_text(text_type.clone(), "other"),
+        );
+        assert_eq!(project_source(&unknown), Err("unknown timed source kind"));
+        replace_binding(
+            &mut unknown.body,
+            "kind",
+            CheckedTerm::literal_integer(text_type, 0),
+        );
+        assert_eq!(
+            project_source(&unknown),
+            Err("admitted timed-model term is not text")
+        );
+        let CheckedTerm::Aggregate { members } = &mut unknown.body else {
+            panic!("fixture body is aggregate")
+        };
+        members.retain(|member| !matches!(member, CheckedTerm::Binding { name, .. } if name.as_ref() == "unit"));
+        assert_eq!(
+            project_source(&unknown),
+            Err("admitted timed-model term is not text"),
+            "kind decoding still precedes the unit lookup"
+        );
+    }
+
+    #[test]
+    fn clock_path_intake_is_total_for_each_closed_step_and_rejects_unknown_or_mistyped() {
+        let source = fixture_node("time_source");
+        let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
+        let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
+        let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
+        let step = |kind: &str, name: &str, value| {
+            CheckedTerm::aggregate(vec![
+                CheckedTerm::binding("kind", text(kind)),
+                CheckedTerm::binding(name, value),
+            ])
+        };
+        assert_eq!(
+            project_path_step(&step("field", "name", text("clock"))),
+            Ok(ClockPathStep::Field("clock".into()))
+        );
+        assert_eq!(
+            project_path_step(&step("tuple", "index", integer(2))),
+            Ok(ClockPathStep::Tuple(2))
+        );
+        assert_eq!(
+            project_path_step(&step("union", "case", text("open"))),
+            Ok(ClockPathStep::Union("open".into()))
+        );
+        let slot = |maximum| {
+            CheckedTerm::aggregate(vec![
+                CheckedTerm::binding("kind", text("slot")),
+                CheckedTerm::binding("collection", text("sequence")),
+                CheckedTerm::binding("selector", integer(1)),
+                CheckedTerm::binding("minimum", integer(0)),
+                CheckedTerm::binding("maximum", maximum),
+            ])
+        };
+        for (maximum, expected) in [(integer(3), Some(3)), (text("unbounded"), None)] {
+            assert_eq!(
+                project_path_step(&slot(maximum)),
+                Ok(ClockPathStep::Slot {
+                    collection: "sequence".into(),
+                    selector: ClockSlotSelector::Index(1),
+                    minimum: 0,
+                    maximum: expected,
+                })
+            );
+        }
+        assert_eq!(
+            project_path_step(&step("other", "name", text("clock"))),
+            Err("unknown clock path step")
+        );
+        assert_eq!(
+            project_path_step(&step("tuple", "index", text("2"))),
+            Err("admitted timed-model term is not an integer")
+        );
+    }
+
+    #[test]
+    fn urgency_intake_is_total_and_preserves_both_variants_or_refuses_unknown() {
+        let source = fixture_node("time_source");
+        let mut node = fixture_node("urgency");
+        let type_id = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
+        let text = |value: &str| CheckedTerm::literal_text(type_id.clone(), value);
+        let target = reference(binding(&source.body, "model").unwrap()).unwrap();
+        node.body = CheckedTerm::aggregate(vec![
+            CheckedTerm::binding("kind", text("when")),
+            CheckedTerm::binding("predicate", CheckedTerm::reference(target.clone())),
+        ]);
+        assert!(
+            matches!(project_urgency(&node), Ok(CheckedUrgency::When { predicate, .. }) if predicate == target)
+        );
+        node.body = CheckedTerm::aggregate(vec![
+            CheckedTerm::binding("kind", text("operation")),
+            CheckedTerm::binding("model", CheckedTerm::reference(target.clone())),
+            CheckedTerm::binding("operation_name", text("advance")),
+        ]);
+        assert!(
+            matches!(project_urgency(&node), Ok(CheckedUrgency::Operation { model, operation_name, .. }) if model == target && operation_name == "advance")
+        );
+        replace_binding(&mut node.body, "kind", text("other"));
+        assert_eq!(project_urgency(&node), Err("unknown urgency kind"));
+        replace_binding(
+            &mut node.body,
+            "kind",
+            CheckedTerm::literal_integer(type_id, 0),
+        );
+        assert_eq!(
+            project_urgency(&node),
+            Err("admitted timed-model term is not text")
+        );
+    }
 }
