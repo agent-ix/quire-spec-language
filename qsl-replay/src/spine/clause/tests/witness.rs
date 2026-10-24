@@ -1766,15 +1766,17 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
     )
     .unwrap();
     let cause = witness_arm(&result).disagreement().unwrap().clone();
-    let text = cause.to_json().expect("the cause encodes");
+    let text = cause.to_json(None).expect("the cause encodes");
     assert_eq!(
-        DisagreementCause::from_json(&text, &unit.compiled.package).unwrap(),
+        DisagreementCause::from_json(&text, &unit.compiled.package, None).unwrap(),
         cause
     );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["failure"] = json!({"failure": "approximate"});
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]
@@ -1782,11 +1784,15 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
         .unwrap()
         .remove("index")
         .expect("the record carries its index");
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]["index"] = serde_json::Value::Null;
-    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
+    assert!(
+        DisagreementCause::from_json(&document.to_string(), &unit.compiled.package, None).is_err()
+    );
 
     let DisagreementCause::Witness {
         proved,
@@ -1963,12 +1969,12 @@ fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
                         failure: WitnessFailure::Mismatch,
                     };
                     let text = cause
-                        .to_json()
+                        .to_json(None)
                         .unwrap_or_else(|error| panic!("{label}: encodes: {error}"));
                     assert_eq!(text.matches(level).count(), levels, "{label}: every level");
-                    let read = DisagreementCause::from_json(&text, package)
+                    let read = DisagreementCause::from_json(&text, package, None)
                         .unwrap_or_else(|error| panic!("{label}: reads: {error}"));
-                    assert_eq!(read.to_json().unwrap(), text, "{label}: encodes back");
+                    assert_eq!(read.to_json(None).unwrap(), text, "{label}: encodes back");
                 }
             })
             .expect("the thread spawns")
@@ -2104,12 +2110,12 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     for (kind, element) in elements {
         let cause = cause_deciding(&unit, element);
         let text = cause
-            .to_json()
+            .to_json(None)
             .unwrap_or_else(|error| panic!("{kind}: {error}"));
-        let read = DisagreementCause::from_json(&text, package)
+        let read = DisagreementCause::from_json(&text, package, None)
             .unwrap_or_else(|error| panic!("{kind}: {error}"));
         assert_eq!(read, cause, "{kind}");
-        assert_eq!(read.to_json().unwrap(), text, "{kind}");
+        assert_eq!(read.to_json(None).unwrap(), text, "{kind}");
     }
 
     // A declared unit the package's unit table does not hold refuses.
@@ -2120,10 +2126,10 @@ fn tc_744_every_deciding_element_kind_round_trips() {
             UnitId::declared(quire_exact::NodeKey::from_digest([6; 32])),
         )),
     )
-    .to_json()
+    .to_json(None)
     .unwrap();
     assert!(matches!(
-        DisagreementCause::from_json(&declared, package),
+        DisagreementCause::from_json(&declared, package, None),
         Err(crate::CauseCodecError::Unresolved("unit"))
     ));
 
@@ -2136,10 +2142,10 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         vec![FieldValue::Present(int(1)), FieldValue::Present(int(10))],
     ] {
         let foreign = cause_deciding(&unit, quire_exact::from_admitted_slots(point, slots.into()))
-            .to_json()
+            .to_json(None)
             .unwrap();
         assert!(matches!(
-            DisagreementCause::from_json(&foreign, package),
+            DisagreementCause::from_json(&foreign, package, None),
             Err(crate::CauseCodecError::Value("slots"))
         ));
     }
@@ -2152,11 +2158,11 @@ fn tc_744_every_deciding_element_kind_round_trips() {
             vec![FieldValue::Present(int(1)), FieldValue::Present(int(2))].into(),
         ),
     )
-    .to_json()
+    .to_json(None)
     .unwrap();
-    assert!(DisagreementCause::from_json(&composite, package).is_ok());
+    assert!(DisagreementCause::from_json(&composite, package, None).is_ok());
     assert!(matches!(
-        DisagreementCause::from_json(&composite, &witness_unit().compiled.package),
+        DisagreementCause::from_json(&composite, &witness_unit().compiled.package, None),
         Err(crate::CauseCodecError::Unresolved("declaration"))
     ));
 }
@@ -2242,12 +2248,12 @@ fn tc_744_a_declared_unit_quantity_round_trips() {
         &unit,
         Value::Quantity(quire_exact::Quantity::new(magnitude, metre)),
     );
-    let text = cause.to_json().unwrap();
-    let read = DisagreementCause::from_json(&text, &package).unwrap();
+    let text = cause.to_json(None).unwrap();
+    let read = DisagreementCause::from_json(&text, &package, None).unwrap();
     assert_eq!(read, cause);
-    assert_eq!(read.to_json().unwrap(), text);
+    assert_eq!(read.to_json(None).unwrap(), text);
     assert!(matches!(
-        DisagreementCause::from_json(&text, &unit.compiled.package),
+        DisagreementCause::from_json(&text, &unit.compiled.package, None),
         Err(crate::CauseCodecError::Unresolved("unit"))
     ));
 }
@@ -2275,7 +2281,7 @@ fn tc_744_member_option_value_and_field_steps_round_trip() {
         derived: None,
         failure: WitnessFailure::Mismatch,
     };
-    let text = cause.to_json().unwrap();
+    let text = cause.to_json(None).unwrap();
     let document: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
         document["given"]["value_path"]["steps"],
@@ -2286,7 +2292,10 @@ fn tc_744_member_option_value_and_field_steps_round_trip() {
             {"tag": "index", "index": 1},
         ])
     );
-    assert_eq!(DisagreementCause::from_json(&text, package).unwrap(), cause);
+    assert_eq!(
+        DisagreementCause::from_json(&text, package, None).unwrap(),
+        cause
+    );
 
     let mut renamed = record;
     renamed.value_path.steps[2] = ValuePathStep::Member("items".to_owned());
@@ -2325,8 +2334,11 @@ fn tc_744_a_refusal_reads_only_catalog_spellings() {
             }),
         },
     };
-    let text = cause.to_json().unwrap();
-    assert_eq!(DisagreementCause::from_json(&text, package).unwrap(), cause);
+    let text = cause.to_json(None).unwrap();
+    assert_eq!(
+        DisagreementCause::from_json(&text, package, None).unwrap(),
+        cause
+    );
     for (member, value) in [
         ("code", json!("")),
         ("code", json!("made_up_code")),
@@ -2339,7 +2351,7 @@ fn tc_744_a_refusal_reads_only_catalog_spellings() {
         document["failure"]["reason"][member] = value.clone();
         assert!(
             matches!(
-                DisagreementCause::from_json(&document.to_string(), package),
+                DisagreementCause::from_json(&document.to_string(), package, None),
                 Err(crate::CauseCodecError::Spelling(_))
             ),
             "{member} = {value}"

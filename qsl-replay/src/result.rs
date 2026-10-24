@@ -21,6 +21,7 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::supplied_stop::SuppliedStop;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
+use crate::hybrid_replay::HybridCounterexample;
 
 mod wire;
 use crate::identity::TracePosition;
@@ -93,6 +94,23 @@ pub enum DisagreementCause {
         /// Why the witness does not agree.
         failure: WitnessFailure,
     },
+    /// FR-450: exact replay did not reproduce a provider's hybrid counterexample.
+    HybridTrace(HybridTraceDisagreement),
+}
+
+/// Why exact replay did not reproduce a provider's hybrid counterexample.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HybridTraceDisagreement {
+    /// The trace is not a counterexample to the checked claim.
+    NotReproduced {
+        /// The complete provider counterexample that failed replay.
+        counterexample: Box<HybridCounterexample>,
+    },
+    /// Exact replay could not decide this trace.
+    NotExact {
+        /// The complete provider counterexample that could not be replayed exactly.
+        counterexample: Box<HybridCounterexample>,
+    },
 }
 
 impl DisagreementCause {
@@ -102,24 +120,27 @@ impl DisagreementCause {
             Self::Verdicts { .. } => "verdicts",
             Self::NoValue { .. } => "no-value",
             Self::Witness { .. } => "witness",
+            Self::HybridTrace(_) => "hybrid-trace",
         }
     }
 
     /// The verdict the original proving run reached.
-    pub fn proved(&self) -> Verdict {
+    pub fn proved(&self) -> Option<Verdict> {
         match self {
             Self::Verdicts { proved, .. }
             | Self::NoValue { proved, .. }
-            | Self::Witness { proved, .. } => *proved,
+            | Self::Witness { proved, .. } => Some(*proved),
+            Self::HybridTrace(_) => None,
         }
     }
 
     /// The verdict the replay run reached.
-    pub fn replayed(&self) -> Verdict {
+    pub fn replayed(&self) -> Option<Verdict> {
         match self {
             Self::Verdicts { replayed, .. }
             | Self::NoValue { replayed, .. }
-            | Self::Witness { replayed, .. } => *replayed,
+            | Self::Witness { replayed, .. } => Some(*replayed),
+            Self::HybridTrace(_) => None,
         }
     }
 
@@ -175,6 +196,12 @@ impl DisagreementCause {
                     .sum::<usize>()
                     + failure.measured_bytes()
             }
+            Self::HybridTrace(disagreement) => match disagreement {
+                HybridTraceDisagreement::NotReproduced { counterexample }
+                | HybridTraceDisagreement::NotExact { counterexample } => {
+                    counterexample.measured_bytes()
+                }
+            },
         }
     }
 }
