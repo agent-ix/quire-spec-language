@@ -503,7 +503,7 @@ fn tc_444_a_disagreement_settles_inconclusive() {
         incomplete
             .disagreement()
             .map(crate::DisagreementCause::replayed),
-        Some(Verdict::from_category(Category::Incomplete))
+        Some(Some(Verdict::from_category(Category::Incomplete)))
     );
     assert_eq!(incomplete.value(), None);
 }

@@ -1273,7 +1273,7 @@ mod tests {
         assert_eq!(input.settlement(), InputSettlement::Inconclusive);
         assert_eq!(
             input.disagreement().map(DisagreementCause::replayed),
-            Some(violation)
+            Some(Some(violation))
         );
     }
 
