@@ -8098,7 +8098,7 @@ mod tests {
                             .name("typeRef"),
                     },
                     detail: "$.types[0].fields[0]: typeRef: \"ix://acme/other/Thing\" is not \
-                              ix://quire/native/<Name> or ix://acme/orders/<artifact id>"
+                              ix://quire/native/<Name>, ix://quire/unit/<name> or ix://acme/orders/<artifact id>"
                         .to_owned(),
                 },
                 ModelRefusal {
