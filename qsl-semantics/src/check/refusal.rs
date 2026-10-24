@@ -155,9 +155,9 @@ pub enum ProtocolAnchorCause {
         /// The resolved function name.
         function: String,
         /// The required parameter types.
-        expected_parameters: Vec<ValueType>,
+        expected_parameters: Box<[ValueType]>,
         /// The function's declared parameter types.
-        actual_parameters: Vec<ValueType>,
+        actual_parameters: Box<[ValueType]>,
         /// The required return type.
         expected_result: Box<ValueType>,
         /// The function's declared return type.
