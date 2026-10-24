@@ -41,8 +41,9 @@ Tag the tests `#[trace("TC-664", "FR-219-AC-n")]`.
   `invalid_runtime_input`/`invalid-value` refusals naming the entries.
 - Step 3: three different identities with `proved`, `refuted`, `refuted`;
   equal identities for source and selected `tso`.
-- Step 4: V-8 `WeakAccessShape{JoinPolicy}` before exploring; `sc` without
-  the selection.
+- Step 4: V-8 `WeakAccessShape.failures` contains the `JoinPolicy` entry before
+  exploring; when another failure is present, both entries occur in the same
+  canonical transition-identity order. `sc` without the selection.
 - Step 5: both requests carry `SB::Both` at `sc` and one obligation
   identity; the two packages differ in identity while the two `tso`
   requests share one.

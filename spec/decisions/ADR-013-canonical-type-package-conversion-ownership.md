@@ -497,7 +497,18 @@ refuses maps to `inconclusive` with `replay_refused`, and one whose replay
 faults maps to `failed`, as for a Kani counterexample. `InconclusiveCause` gains
 `BoundReached{depth}`, `InductionNotClosed{depth}`, `UndecidedSuccessor`,
 `NoInitialState` and `CertificateRejected{rule, at}`, each in category
-inconclusive. A model-check run stopped by
+inconclusive. `DisagreementCause` also has a `HybridTrace` variant owned by
+QSL `qsl-replay`: it carries a typed `HybridTraceDisagreement`, either
+`NotReproduced{counterexample: HybridCounterexample}` or
+`NotExact{counterexample: HybridCounterexample}`. These arms represent a
+provider-refuted hybrid counterexample that exact replay did not establish;
+they retain the complete counterexample and distinguish a completed negative
+replay from an ineligible trace. They are not `SeparatingWitnessRecord`s and
+do not populate the existing `Witness{proved, replayed, given, derived,
+failure}` variant. The FR-331 `replay-parity` wire cause SHALL encode a
+discriminator for each arm and the complete hybrid counterexample in QSpec
+FR-193's hybrid trace wire form; decoding SHALL recover the same typed arm.
+FR-450 owns the settlement trigger and acceptance cases. A model-check run stopped by
 a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled
 run maps to incomplete with `Cancelled{source}`, written `cancelled{source}` (ADR-018 V-7).
@@ -516,8 +527,9 @@ threshold.
 
 Amended by ADR-025 MV-1 (weak memory models). `InconclusiveCause` gains
 `MemoryBoundReached{bound, states}`, category inconclusive. The `Unsupported`
-causes gain `WeakAccessShape{site, transition, shape}`, category
-unsupported.
+causes gain `WeakAccessShape{failures}`, category unsupported. Its entries
+are ordered by typed protocol transition identity; the first failure supplies
+the headline reason, and the cause retains every failure.
 
 Amended by ADR-027 ST-12 (protocol transition system). The `Unsupported`
 causes gain `RecoveryView{predicate}`, category unsupported.
@@ -947,7 +959,7 @@ only. First-party dependencies are on `branch = "main"`.
 | --- | --- |
 | Owner | QSL `qsl-replay` owns the FR-331 terminal record (`TerminalValue`, `TerminalRecord`), its O-16 category map (`TerminalValue::category`) and the proof-result envelope (`ProofResultEnvelope`, FR-069), OQ-H ruling. IR keeps `KaniOutcome`, the typed result of one Kani run before it becomes a terminal record. CG maps it, with the E9 replay result of a `Counterexample`, into QSL's `TerminalValue` (C-09) and settles the FR-331 `dispositions` at E7 as the backend provider. The orchestrating driver (ADR-011 T-13) is the one writer of each item's FR-331 terminal record in `results`. |
 | Implementing ticket | #231 for the terminal record, its category map, the proof-result envelope and the FR-331 reader (FR-069). CG for the map from `KaniOutcomeKind` and the E9 replay result to `TerminalValue` (C-09, TK-05). |
-| Public type | QSL: `TerminalValue` (nine QSpec FR-331 result values, `measured` added by ADR-024 SV-1, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable; amended by ADR-018 §1: `Proved` carries a `ProofBasis`, whose `Checks{success_checks}` member is that count, and a `certification`), `TerminalRecord` (the item's typed `request_index`, QSL's one `RequestIndex`, and its value; one record per `request_index`), `TerminalValue::Inconclusive` carrying an `InconclusiveCause` (`ReplayParity(DisagreementCause)` or `ReplayRefused(Code)`, never the vacuous cause), `TerminalValue::Declined { cause, code: DeclineCode }` (the refusal's typed cause and its code: `DeclineCode::Qsl(Code)` a QSL catalog code, `DeclineCode::Std001(Std001Code)` a STD-001 registry code, never remapped from one registry onto the other, with no issuer recorded and no unregistered code refused), `TerminalValue::from_replay_refusal` and `TerminalValue::from_call_site_refusal` (the replay-refusal and call-site-refusal rows), the envelope's reporting `ReportedInconclusiveCause` (`KaniVacuousProof` or `Cause(InconclusiveCause)`), and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19) and the typed `inconclusive` cause (`kani_vacuous_proof`, `replay_parity` or `replay_refused`; amended by ADR-018 §1: also `bound_reached`, `induction_not_closed`, `undecided_successor`, `no_initial_state` and `certificate_rejected`); amended by ADR-028: `ProofBasis` also has `ExactValue` and `ValueBounds`, and the incomplete causes include `precision_budget`. IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
+| Public type | QSL: `TerminalValue` (nine QSpec FR-331 result values, `measured` added by ADR-024 SV-1, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable; amended by ADR-018 §1: `Proved` carries a `ProofBasis`, whose `Checks{success_checks}` member is that count, and a `certification`), `TerminalRecord` (the item's typed `request_index`, QSL's one `RequestIndex`, and its value; one record per `request_index`), `TerminalValue::Inconclusive` carrying an `InconclusiveCause` (`ReplayParity(DisagreementCause)` or `ReplayRefused(Code)`, never the vacuous cause). `DisagreementCause::HybridTrace(HybridTraceDisagreement)` has distinct `NotReproduced` and `NotExact` arms, each carrying a complete `HybridCounterexample`; the existing `DisagreementCause::Witness` remains reserved for separating-witness records. `TerminalValue::Declined { cause, code: DeclineCode }` (the refusal's typed cause and its code: `DeclineCode::Qsl(Code)` a QSL catalog code, `DeclineCode::Std001(Std001Code)` a STD-001 registry code, never remapped from one registry onto the other, with no issuer recorded and no unregistered code refused), `TerminalValue::from_replay_refusal` and `TerminalValue::from_call_site_refusal` (the replay-refusal and call-site-refusal rows), the envelope's reporting `ReportedInconclusiveCause` (`KaniVacuousProof` or `Cause(InconclusiveCause)`), and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19) and the typed `inconclusive` cause (`kani_vacuous_proof`, `replay_parity` or `replay_refused`; amended by ADR-018 §1: also `bound_reached`, `induction_not_closed`, `undecided_successor`, `no_initial_state` and `certificate_rejected`); amended by ADR-028: `ProofBasis` also has `ExactValue` and `ValueBounds`, and the incomplete causes include `precision_budget`. IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
 | Serialized authority | QSpec FR-331 `quire.backend-provider/v1` `results`, `dispositions`, `counterexamples`, `accounting`, manifest and tool lock. |
 | Conversions | Kani run → `KaniOutcome` (IR). `KaniOutcomeKind` with the E9 replay result of a `Counterexample` (settlement or `ReplayRefusal`) → QSL `TerminalValue` (CG, O-16 proof column, C-09). `TerminalValue` → O-16 category (QSL `TerminalValue::category`, one exhaustive map). FR-331 → QSL envelope (#231, C-23). |
 | Validation and diagnostics | Exactly one terminal record per `request_index` (AD-016); unknown version, duplicate keys and non-canonical encodings refuse before consumption (FR-331). |

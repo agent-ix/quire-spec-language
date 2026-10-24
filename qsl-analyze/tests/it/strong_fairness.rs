@@ -34,7 +34,7 @@ use crate::liveness::{counter, fixture, is_zero, Fixture};
 use crate::strong_hint::{is_one, mutex};
 
 const WEAK_EACH: &str = "fair weak each M::Counter::setTo;";
-const STRONG_EACH: &str = "fair strong each M::Counter::setTo;";
+pub(crate) const STRONG_EACH: &str = "fair strong each M::Counter::setTo;";
 const STRONG_WHOLE: &str = "fair strong M::Counter::setTo;";
 
 /// The outcome of `fixture`'s claim.
@@ -292,7 +292,7 @@ fn two_strong_constraints_failing_on_one_component_refine_together() {
 /// The lasso EN-1 finds for the mutex under `weak each`, carried into the
 /// clause `fairness` of the same claim: the steps are the model's, and the
 /// envelope's fairness set is the clause's.
-fn mutex_lasso_for(fairness: &str) -> (Fixture, TemporalCounterexample) {
+pub(crate) fn mutex_lasso_for(fairness: &str) -> (Fixture, TemporalCounterexample) {
     let weak = mutex(WEAK_EACH);
     let mut payload = found(&weak, is_one);
     let target = mutex(fairness);

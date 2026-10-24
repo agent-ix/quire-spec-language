@@ -70,11 +70,11 @@ fn cycle(symmetric: bool, starts: &[[i64; 3]], clauses: &[Clause<'_>]) -> World 
 }
 
 /// §7.3's subject, all counters at 0, with `clauses`.
-fn count(clauses: &[Clause<'_>]) -> World {
+pub(crate) fn count(clauses: &[Clause<'_>]) -> World {
     World::new(shape(false, 3), COUNT, clauses, &[start([0, 0, 0])], &KEYS)
 }
 
-fn infinite(formula: &str) -> Clause<'_> {
+pub(crate) fn infinite(formula: &str) -> Clause<'_> {
     Clause {
         profile: INFINITE,
         formula,
@@ -103,7 +103,7 @@ fn symmetry(classes: &[&[&str]]) -> Reductions {
     }
 }
 
-fn constraint(name: &str) -> Reductions {
+pub(crate) fn constraint(name: &str) -> Reductions {
     Reductions {
         constraint: Some(name.to_owned()),
         ..Reductions::default()

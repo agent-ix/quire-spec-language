@@ -987,7 +987,7 @@ impl PackageDeclarations {
                                 // Source-unit lookup has no package owner table yet.
                                 // A qualified unit must never be mistaken for a
                                 // missing unqualified source unit.
-                                if source.unit.name.contains("::") {
+                                if lowering::is_qualified_spelling(&source.unit.name) {
                                     return Some(CheckRefusal {
                                         location: root(Origin::Expression),
                                         cause: CheckCause::TimedNotChecked {
@@ -1024,7 +1024,7 @@ impl PackageDeclarations {
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
-                                        if period.unit.name.contains("::") {
+                                        if lowering::is_qualified_spelling(&period.unit.name) {
                                             return Some(CheckRefusal {
                                                 location: root(Origin::Expression),
                                                 cause: CheckCause::TimedNotChecked {
@@ -3511,14 +3511,15 @@ impl PackageDeclarations {
                 };
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
-                        .population()
-                        .map(|domain| population_domain_key(&object_types, &object_nodes, domain))
-                        .transpose()
-                        .and_then(|population| {
+                        .populations()
+                        .iter()
+                        .map(|domain| population_domain_key(&object_types, &object_nodes, *domain))
+                        .collect::<Result<Vec<_>, _>>()
+                        .and_then(|populations| {
                             claimed.requirements(
                                 claims::wire(lowered.key),
                                 &[claims::wire(lowered.over)],
-                                population,
+                                &populations,
                                 named_keys.as_ref().map_err(Clone::clone)?,
                             )
                         })

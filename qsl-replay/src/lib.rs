@@ -132,8 +132,9 @@ pub use execute::{
     ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
-    settle_hybrid_candidates, BoundDimension, ClaimHorizon, HybridSettlement, NegativeHorizon,
-    SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+    settle_hybrid_candidates, BoundDimension, BudgetRefusal, ClaimHorizon, HybridSettlement,
+    NegativeHorizon, SolverBudget, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome,
+    SolverResult, SolverStop,
 };
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
@@ -164,7 +165,7 @@ pub use model_check::hyper_counterexample::{
 pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
-    settle_hyper_check, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+    settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
 };
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};

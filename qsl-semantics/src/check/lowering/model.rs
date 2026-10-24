@@ -548,7 +548,8 @@ impl AdmittedModel {
             Some((owner, operation)) => {
                 let owner = match owner.split_once("::") {
                     Some((qualifier, owner))
-                        if self.alias() == Some(qualifier) && !owner.contains("::") =>
+                        if self.alias() == Some(qualifier)
+                            && !super::is_qualified_spelling(owner) =>
                     {
                         owner
                     }

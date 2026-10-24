@@ -61,7 +61,7 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-16.
     `Animal` declaring `age: Int[0, 9]`, universe `[k, t]`), with an initial
     state holding a `Dog` under `k` and a `Cat` under `t` in `animals` and a
     `Dog` under `d` in `dogs`; instantiate `over (x: Dog)`; check the unguarded
-    `always holds(x.age >= 0)`, the claim guarded by the disjunction `G` of
+    `always holds(x.age >= 0)`, `always holds(true)`, the claim guarded by the disjunction `G` of
     FR-125-AC-12 and a property guarded by `animals` alone; then instantiate
     over a subject whose only population is `animals` holding only `Cat`
     objects (FR-125-AC-12).
@@ -112,7 +112,8 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 - Step 9: `d`, `c`, `b`, `a`; then `d`, `c`, `a`; then instances `d`, `a` and excluded keys `[u]`.
 - Step 10: `true` for every formula.
 - Step 11: instances `k`, `t`, `d`; `k` reads as the `Dog` reference; the
-  unguarded claim refutes with `undefined-evaluation` naming `t`; the claim
+  unguarded claim refutes with `undefined-evaluation` naming `t`; `always
+  holds(true)` evaluates normally and is true at `t`; the claim
   guarded by `G` evaluates everywhere and is `proved`; the `animals`-only
   guard is false at `d`; the `Cat`-only subject has instances, not
   `NoInstance`.

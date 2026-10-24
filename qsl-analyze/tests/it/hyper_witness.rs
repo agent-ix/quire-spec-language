@@ -792,10 +792,13 @@ fn a_request_that_sets_neither_budget_runs_under_the_published_defaults() {
     assert_eq!(defaults.max_relation_tuples, 16_777_216);
     assert_eq!(DEFAULT_MAX_WITNESS_SET, 65_536);
     assert_eq!(DEFAULT_MAX_RELATION_TUPLES, 16_777_216);
-    assert_eq!(ModelCheckLimit::MaxWitnessSet.setting(), "max_witness_set");
+    assert_eq!(
+        ModelCheckLimit::MaxWitnessSet.setting(),
+        "model_check.max_witness_set"
+    );
     assert_eq!(
         ModelCheckLimit::MaxRelationTuples.setting(),
-        "max_relation_tuples"
+        "model_check.max_relation_tuples"
     );
     assert!(matches!(
         run(&secure(), defaults),
@@ -1097,9 +1100,7 @@ pub(crate) const GUARDED_CLAUSE: &str = "hyper Opaque using inf over behaviours 
 /// successor relation of the witness set is not exactly known and the item is
 /// `Undecided(UndecidedSuccessor)`, never `Holds`. `a` takes only `step(0)`, so
 /// it never reaches `(0, 1)`; its partner from `(0, 0)` takes `step(1)` there.
-#[trace("TC-602")]
-#[test]
-fn an_existential_member_with_an_undefined_contract_leaves_the_item_undecided() {
+fn assert_an_existential_member_with_an_undefined_contract_leaves_the_item_undecided() {
     let world = World::new(GUARDED, false, &STARTS, GUARDED_CLAUSE);
     let outcome = run(&world, ModelCheckLimits::default());
     let HyperOutcome::Undecided { cause, .. } = outcome else {
@@ -1147,9 +1148,7 @@ impl StepMatch for RefuseThenHold<'_> {
 /// their order in its list: the member's contract at joint position 1 comes
 /// before a refused `μ_U` at position 2 that was found first, so the cause is
 /// `UndecidedSuccessor`, not `MatchUndetermined`.
-#[trace("TC-602")]
-#[test]
-fn a_state_keeps_its_earliest_refused_finding() {
+fn assert_a_state_keeps_its_earliest_refused_finding() {
     let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
          forall trace a of V exists trace b of V \
          match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
@@ -1172,6 +1171,18 @@ fn a_state_keeps_its_earliest_refused_finding() {
         panic!("expected no decision, got {outcome:?}");
     };
     assert_eq!(cause, UndecidedCause::UndecidedSuccessor);
+}
+
+/// FR-177-AC-7: `Opaque` over the leaky vault whose `step` precondition has
+/// no value in the state `(0, 1)` returns `Undecided(UndecidedSuccessor)` and
+/// never `Holds`, and so does the same item with a `μ_U` evaluation refused on
+/// a joint step that enters position 2, the contract at position 1 coming
+/// first.
+#[trace("TC-602", "FR-177-AC-7")]
+#[test]
+fn an_undefined_contract_at_position_one_comes_before_a_refused_match_at_position_two() {
+    assert_an_existential_member_with_an_undefined_contract_leaves_the_item_undecided();
+    assert_a_state_keeps_its_earliest_refused_finding();
 }
 
 /// With two universal variables an undefined `μ_U` names all three variables,

@@ -222,7 +222,7 @@ pub enum HyperForm {
 }
 
 /// Which rule of ADR-023 section 3 places a clause in HP-4.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum HyperUnsupported {
     /// An `exists` before a `forall`.
     ExistentialBeforeUniversal,

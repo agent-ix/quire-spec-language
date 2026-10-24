@@ -347,10 +347,10 @@ fn plugin_counterexample_refusal_matches_from_replay_refusal() {
     );
 }
 
-/// FR-289-AC-9, AC-10 / TC-773: a plugin proof is `proved`, `trusted`, names the
+/// FR-289-AC-10 / TC-773: a plugin proof is `proved`, `trusted`, names the
 /// plugin and reads back through the envelope; the Kani check-count basis is
 /// refused.
-#[trace("TC-773", "FR-289-AC-9", "FR-289-AC-10")]
+#[trace("TC-773", "FR-289-AC-10")]
 #[test]
 fn plugin_proof_is_trusted_and_names_the_plugin() {
     let record = TerminalRecord::from_plugin_proof(
@@ -576,12 +576,9 @@ fn refused_plugin_results_carry_pl7_diagnostics() {
     assert_eq!(record.value(), &TerminalValue::Failed);
 }
 
-/// Every non-solver basis PL-7 lets a plugin carry settles `proved` with
-/// `trusted` and the plugin's identity. A `bounded-solver` basis is refused
-/// here: only a hybrid claim's coverage admits it
-/// (`TerminalRecord::from_hybrid_plugin_proof`, FR-250). That contradicts
-/// FR-289-AC-9 and FR-290-AC-5 as written, which QSL-1036 amends, so this
-/// test claims neither.
+/// Non-hybrid plugin proof bases settle through the generic entry, which
+/// refuses `bounded-solver`; hybrid bounded-solver proofs use the coverage
+/// check in `from_hybrid_plugin_proof` (FR-250).
 #[test]
 fn every_plugin_basis_is_trusted() {
     use qsl_replay::ProofBasis;

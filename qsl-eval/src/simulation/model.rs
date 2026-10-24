@@ -22,6 +22,7 @@ mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+mod letters;
 pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;
@@ -79,6 +80,7 @@ pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
 };
+pub use letters::{ClauseLetters, LettersRefusal};
 pub use probabilistic::{
     same_rewards, Action, Draw, NotMarkov, ScheduledIdentity, TransitionId, UndecidedSuccessor,
     Unsteppable, WeightedStep,
@@ -909,13 +911,7 @@ impl<'a> ModelSystem<'a> {
         };
         let mut admitting = Vec::new();
         for population in &self.populations {
-            let admits = population.member_types.iter().any(|member| {
-                self.model.type_identity(member).is_some_and(|member| {
-                    self.types.conforms(member, *parameter)
-                        || self.types.conforms(*parameter, member)
-                })
-            });
-            if admits {
+            if self.overlaps(population, *parameter) {
                 let text = declaration_text(&population.key, CanonicalLimits::new(u64::MAX))
                     .map_err(|_| {
                         NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
@@ -962,6 +958,21 @@ impl<'a> ModelSystem<'a> {
                     })
             })
             .collect())
+    }
+
+    /// Whether `population` overlaps the object type `parameter` (FR-125
+    /// Instancing): one of its member types conforms to `parameter` or
+    /// `parameter` conforms to one of them.
+    fn overlaps(
+        &self,
+        population: &qsl_semantics::model::state::StatePopulation,
+        parameter: EffectiveId,
+    ) -> bool {
+        population.member_types.iter().any(|member| {
+            self.model.type_identity(member).is_some_and(|member| {
+                self.types.conforms(member, parameter) || self.types.conforms(parameter, member)
+            })
+        })
     }
 
     /// The typed value an FR-338 key context binds for `instance` of a

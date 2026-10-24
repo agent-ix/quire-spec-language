@@ -531,6 +531,33 @@ pub(crate) fn population_of(
     }
 }
 
+/// Every population that covers `object`, by conformance, in ascending
+/// `DeclarationKey` order: what a clause `over (x: object)` of a model subject
+/// ranges over (FR-125 Instancing admits several, whose universes the subject
+/// lists together).
+pub(crate) fn populations_covering(
+    models: &[AdmittedModel],
+    object: EffectiveId,
+    types: &TypeEnvironment,
+) -> Vec<PopulationDomain> {
+    let mut found: Vec<(&DeclarationKey, PopulationDomain)> = models
+        .iter()
+        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .map(|(ordinal, key, member, bound)| {
+            (
+                key,
+                PopulationDomain {
+                    object: member,
+                    ordinal,
+                    maximum: bound.map(|bound| bound.maximum),
+                },
+            )
+        })
+        .collect();
+    found.sort_by_key(|(left, _)| *left);
+    found.into_iter().map(|(_, domain)| domain).collect()
+}
+
 /// The domain and authored bound of each population of `named` that the
 /// checked `root` names (FR-391 "Requirements").
 pub(crate) fn named_domains(

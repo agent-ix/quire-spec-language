@@ -9,14 +9,11 @@
 //! re-executes its traces through the vault's `ModelSystem` and reads only the
 //! model's successor relation.
 //!
-//! The leaky product has 10 reachable states here, not the 14 that
-//! the first criterion of FR-176 and ADR-023 section 8.1 count. Those 14 assume an automaton
-//! for the negated body whose `q0` moves to `q1` on a differing letter and
-//! also stays; the automaton `qsl-eval` translates (ADR-018 SM-6, shared with
-//! the liveness phase and the certificate checkers) guards that stay on the
-//! letter, so it is deterministic here and an unequal-secret pair has three
-//! product states, not five. The accepting components and the secure product's
-//! 8 states agree with the ADR; that criterion is therefore not claimed below.
+//! The leaky product has 10 reachable states and two accepting components,
+//! and the secure product 8, as the first criterion of FR-176 counts them
+//! (`World::explore` reads the unreduced product). That criterion is not tagged: the engine stores the
+//! secure vault's quotient by the swap and returns `HoldsReduced`, not the
+//! `Holds` the criterion states for the unreduced run.
 //!
 //! The clauses here that are symmetric in their copies are stored as the
 //! quotient by the swap (FR-174, `crate::hyper_swap`), so the counts the engine

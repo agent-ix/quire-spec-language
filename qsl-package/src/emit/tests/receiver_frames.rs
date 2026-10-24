@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7) and TC-573 (FR-154-AC-4): the `state`/`frame` node
+//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7), TC-573 (FR-154-AC-4) and
+//! TC-572 (FR-154-AC-5, with `decide_frame` over the same package): the `state`/`frame` node
 //! body S4 emits for receiver-scoped field entries and scoped deletes, the
 //! node ids and package ids those entries decide, and IR's I2 read of the
 //! frame step over edited copies. The expected bodies are the vectors of
@@ -512,6 +513,144 @@ fn both_scopes_of_one_field_refuse_conflicting_binding_in_either_order() {
                 Code::InvalidModelBinding
             ),
             "{row}"
+        );
+    }
+}
+
+/// FR-154-AC-5 (TC-572 step 3): `drop()` framed `deletes self`, then
+/// `dropall()` framed `deletes Counter`, both read from the package the unit
+/// selects. `decide_frame` with receiver `c1` over `c1` and `c2`: under
+/// `deletes self` the post without `c1` (declared deleted `c1`) is admitted
+/// with `c1` as its only deletion, and the post without `c2` is
+/// `frame_violation`/`unauthorized-change` naming `c2`; under `deletes
+/// Counter` the posts without `c1`, without `c2` and without either are all
+/// admitted. The two frames' emitted `state`/`frame` nodes differ.
+#[trace("TC-572", "FR-154-AC-5")]
+#[test]
+fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type() {
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, DomainPackageRef, OperationEffect,
+    };
+    use qsl_semantics::model::index::ModelIndex;
+    use qsl_semantics::model::intake::{admit, read_domain_package};
+    use qsl_semantics::model::normalize::ModelRefusalCause;
+    use qsl_semantics::model::population::{
+        decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop,
+    };
+    use quire_checked::key::DeclarationKey;
+
+    let dropall = json!({"modifies": [], "creates": [], "deletes": [fixture::id("Counter")]});
+    let overrides = [("dropall", dropall)];
+    let operations = ["drop", "dropall"];
+
+    let emitted = emit(&operations, &overrides);
+    assert_ne!(emitted.frame_id("drop"), emitted.frame_id("dropall"));
+    assert_ne!(
+        emitted.frame("drop")["body"],
+        emitted.frame("dropall")["body"]
+    );
+
+    let parts = unit_of(&operations, &overrides);
+    let [(digest, _)] = parts.packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let selection = DomainPackageRef {
+        identity: fixture::PACKAGE.to_owned(),
+        version: "1".to_owned(),
+        digest: *digest,
+    };
+    let (selection, document) = admit(
+        &selection,
+        qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
+        &parts.packages,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("the package is admitted");
+    let package = read_domain_package(selection, &document).expect("the package reads");
+    let effect_of = |operation: &str| -> OperationEffect {
+        let wanted = fixture::id(&format!("Counter/{operation}"));
+        package
+            .records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::OperationMember(member) if member.key.node == wanted => {
+                    Some(member.effect.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{operation} is declared"))
+    };
+    let drop_effect = effect_of("drop");
+    let dropall_effect = effect_of("dropall");
+    let counter = DeclarationKey {
+        package: fixture::PACKAGE.to_owned(),
+        node: fixture::id("Counter"),
+    };
+    assert!(drop_effect.deletes_receiver && drop_effect.deletes.is_empty());
+    assert!(!dropall_effect.deletes_receiver && dropall_effect.deletes == [counter.clone()]);
+
+    let index = ModelIndex::build(package);
+    let objects = |keys: &[&'static str]| -> Vec<FrameObject<'static, i64>> {
+        keys.iter()
+            .map(|key| FrameObject {
+                object: key,
+                type_identity: counter.clone(),
+                fields: std::collections::BTreeMap::new(),
+            })
+            .collect()
+    };
+    let decide = |effect: &OperationEffect, remaining: &[&'static str], deleted: &[String]| {
+        decide_frame(
+            &FrameDecision {
+                index: &index,
+                ancestor_steps: 64,
+                effect,
+                declared_created: &[],
+                declared_deleted: deleted,
+                receiver: Some("c1"),
+                arguments: &[],
+            },
+            &objects(&["c1", "c2"]),
+            &objects(remaining),
+            |_, before, after| before == after,
+            &mut |_: FrameCharge| Ok::<(), std::convert::Infallible>(()),
+        )
+        .map_err(|stop| match stop {
+            FrameStop::Refused(refusal) => Box::new(refusal),
+            FrameStop::Denied(never) => match never {},
+        })
+    };
+    let gone = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
+
+    let Ok(delta) = decide(&drop_effect, &["c2"], &gone(&["c1"])) else {
+        panic!("deletes self grants the receiver");
+    };
+    assert_eq!(delta.deleted, ["c1".to_owned()].into());
+    assert!(delta.created.is_empty());
+    let Err(refusal) = decide(&drop_effect, &["c1"], &gone(&["c2"])) else {
+        panic!("deletes self does not grant c2");
+    };
+    assert_eq!(refusal.code, Code::FrameViolation);
+    assert_eq!(refusal.cause.as_str(), "unauthorized-change");
+    assert_eq!(
+        refusal.cause,
+        ModelRefusalCause::FrameDeleteOutsideGrant {
+            object: "c2".to_owned(),
+            type_name: counter.clone(),
+        }
+    );
+
+    for (remaining, deleted) in [
+        (&["c2"][..], &["c1"][..]),
+        (&["c1"], &["c2"]),
+        (&[], &["c1", "c2"]),
+    ] {
+        let Ok(delta) = decide(&dropall_effect, remaining, &gone(deleted)) else {
+            panic!("deletes Counter grants {deleted:?}");
+        };
+        assert_eq!(
+            delta.deleted,
+            deleted.iter().map(|key| (*key).to_owned()).collect()
         );
     }
 }

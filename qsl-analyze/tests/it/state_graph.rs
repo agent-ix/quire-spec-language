@@ -26,7 +26,7 @@ use qsl_replay::{
     WitnessSource, DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
 use qsl_semantics::check::PredicateRole;
-use quire_exact::{Cancel, CancelCause};
+use quire_exact::{Cancel, CancelCause, ObjectReference};
 
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
@@ -615,7 +615,10 @@ fn an_overflowing_trace_index_and_a_cancellation_stop_before_any_walk() {
     let end = stopped_at(ModelCheckLimit::WitnessSamples, u64::MAX);
     assert_eq!(result.graph.end, end);
     assert!(result.graph.nodes.is_empty());
-    assert_eq!(ModelCheckLimit::WitnessSamples.setting(), "witness_samples");
+    assert_eq!(
+        ModelCheckLimit::WitnessSamples.setting(),
+        "model_check.witness_samples"
+    );
     for instance in &result.items[0] {
         assert_eq!(
             instance.outcome,
@@ -810,7 +813,10 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
     let defaults = ModelCheckLimits::default();
     assert_eq!(defaults.max_walk_steps, DEFAULT_MAX_WALK_STEPS);
     assert_eq!(DEFAULT_MAX_WALK_STEPS, 4_096);
-    assert_eq!(ModelCheckLimit::MaxWalkSteps.setting(), "max_walk_steps");
+    assert_eq!(
+        ModelCheckLimit::MaxWalkSteps.setting(),
+        "model_check.max_walk_steps"
+    );
     let result = run(world.request(AB, vec![world.item("ReachesThree")], short_walks()));
     for instance in &result.items[0] {
         assert_eq!(instance.walks_stopped, 64);
@@ -1211,4 +1217,62 @@ fn an_explored_witness_descends_toward_the_target_not_an_open_node() {
         .pop()
         .expect("a state");
     assert_eq!(world.value(&last, "f", "pos"), 4);
+}
+
+/// The bound object of each instance of item `index`, in instance order.
+fn bound(result: &StateGraphRun, index: usize) -> Vec<Option<ObjectReference>> {
+    result.items[index]
+        .iter()
+        .map(|instance| instance.over.clone())
+        .collect()
+}
+
+/// FR-125's Instancing for state-graph claims, over ADR-018 section 6's
+/// subject (universe `{a, b}`): the claims `ReachesTwo` and `ReachesThree` each yield two
+/// instances, `a` then `b`, and `possible Anything using v { true }` with no
+/// `over` yields one instance with no bound object. `ReachesTwo`, checked
+/// once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe
+/// is `{a}`, without being re-checked; a subject with an empty universe gives
+/// it no instance.
+#[trace("TC-520")]
+#[test]
+fn a_state_graph_claim_is_instanced_over_the_subjects_universe() {
+    let claims = format!("{REACHES_TWO}{REACHES_THREE}possible Anything using v {{ true }}\n");
+    let at = |value| [("versionNumber", value)];
+    let (zero_a, zero_b) = (at(0), at(0));
+    let world = World::new(
+        config_version(),
+        &format!("{}{claims}", crate::graph_world::CONFIG_CONTRACT),
+        &[&[("a", &zero_a), ("b", &zero_b)], &[("a", &zero_a)]],
+    );
+    let over = |keys: &[&str], snapshot: usize, names: &[&str]| {
+        let items = names.iter().map(|name| world.item(name)).collect();
+        let mut request = world.request(keys, items, no_samples());
+        request.subject.simulation.initial = vec![world.initial[snapshot].clone()];
+        run(request)
+    };
+    let result = over(AB, 0, &["ReachesTwo", "ReachesThree", "Anything"]);
+    let both = vec![Some(world.reference("a")), Some(world.reference("b"))];
+    assert_eq!(bound(&result, 0), both);
+    assert_eq!(bound(&result, 1), both);
+    assert_eq!(bound(&result, 2), vec![None]);
+
+    // The same checked claim over a subject whose universe is `{a}`.
+    let result = over(&["a"], 1, &["ReachesTwo"]);
+    assert_eq!(bound(&result, 0), vec![Some(world.reference("a"))]);
+
+    // An empty universe over an empty snapshot.
+
+    let none = config_world_over("", &claims, &[], &[vec![]]);
+    let result = run(none.request(
+        &[],
+        vec![none.item("ReachesTwo"), none.item("Anything")],
+        no_samples(),
+    ));
+    assert!(
+        result.items[0].is_empty(),
+        "no instance: {:?}",
+        result.items[0]
+    );
+    assert_eq!(bound(&result, 1), vec![None]);
 }

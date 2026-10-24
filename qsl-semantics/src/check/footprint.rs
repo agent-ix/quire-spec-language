@@ -338,6 +338,45 @@ pub fn derive_slot_reads(
         .collect())
 }
 
+/// ADR-025 MA-1: the locations the body of a protocol node (an `event`,
+/// `effect`, `commit`, `send` or `receive` constraint) reads, typed over the
+/// binders `parameters` in slot order, slot 0 being the protocol's `over`
+/// input. A field read of the `over` input stays a read of the receiver
+/// (the one object the input is bound to); a field read through any other
+/// binder is a read on any object, since that binder holds different objects
+/// at different steps. Membership reads are the body's own.
+///
+/// # Errors
+///
+/// As [`derive_atom_reads`].
+pub fn derive_node_reads(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    name: &str,
+    parameters: &[(String, ValueType)],
+    body: CheckedNode<'_>,
+) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+    let reader = Reader::new(graph.scope().types(), model)?;
+    let scope = BodyScope {
+        name,
+        binds_result: false,
+        parameters,
+        observations: None,
+        observation: Observation::Current,
+    };
+    Ok(reader
+        .body_reads(&scope, body)?
+        .into_iter()
+        .map(|(location, _)| match location {
+            SymbolicLocation::Field {
+                object: FootprintObject::Param(_),
+                field,
+            } => SymbolicLocation::AnyField { field },
+            other => other,
+        })
+        .collect())
+}
+
 /// FR-156 "Visibility": the locations the state constraint `clause` reads.
 /// The constraint holds for every object of its context type, so the
 /// context's `self` reads are reads on any object, and the membership of
