@@ -56,19 +56,26 @@ pub struct SampledWitness {
     pub value: WitnessValue,           // event false, the measure's value, or Undefined(UndefinedEvaluation)
 }
 
+pub struct WitnessReplay<'a> {
+    pub system: &'a ModelSystem<'a>,                 // FR-125: the admitted subject the sampler ran over
+    pub workload: &'a Workload,                      // FR-187: the claim's workload
+    pub provenance: &'a StatisticalProvenance,       // FR-191: seed, sampler, and per test the initial state and binding
+    pub cancel: &'a Cancel,                          // FR-276
+}
+
 pub fn replay_sampled_witness(
-    subject: &ModelSubject<'_>,         // FR-125: the checked subject the sampler ran over
-    provenance: &StatisticalProvenance, // FR-191: seed, sampler, and per test the initial state and binding
+    replay: &WitnessReplay<'_>,
     witness: &SampledWitness,
-) -> Result<ReplayOutcome, ReplayRefusal>;
+    reader: &mut dyn WitnessReader, // built from the checked package, claim, sampler and replay context
+) -> Result<SampledWitnessReplay, SampledWitnessRefusal>;
 ```
 
 ## Outputs
 
-- `ReplayOutcome::Reproduced` when every check agrees, which includes the
+- `SampledWitnessReplay::Reproduced` when every check agrees, which includes the
   replay of the converted counterexample ("The qualitative claim") settling
-  its TP-2 claim `refuted`, or `ReplayOutcome::Inconclusive(ReplayParity)`.
-- `ReplayRefusal` with FR-128's catalog codes.
+  its TP-2 claim `refuted`, or `SampledWitnessReplay::Inconclusive(SampledParity)`.
+- `SampledWitnessRefusal` with FR-128's catalog codes.
 
 ## Behavior
 
@@ -88,8 +95,10 @@ pub fn replay_sampled_witness(
 
 ### Replay
 
-- `replay_sampled_witness` SHALL recompile no package: it takes the checked
-  subject of the run and no package reference or source, since S4 refuses to
+- `replay_sampled_witness` SHALL recompile no package: it takes the
+  `WitnessReplay`, witness and `WitnessReader` inputs in "Inputs"; the reader
+  is built from the checked package, claim and sampler. It takes no package
+  reference or source for recompilation, since S4 refuses to
   emit a package that holds a random parameter, a workload, a reward or a
   probabilistic claim (FR-185) while its checked package remains. It SHALL
   re-admit the initial state the provenance records for the witness's test from the
@@ -126,8 +135,8 @@ pub fn replay_sampled_witness(
   behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a
   `<= θ` bound, the PF-4 event's form for a quantile, and the fraction
   comparison on every behaviour for a mean of a fraction.
-- The one call of `replay_sampled_witness` needs no input beyond the checked
-  subject, the provenance and the witness to replay the counterexample: it
+- The call of `replay_sampled_witness` SHALL take a `WitnessReplay`, witness
+  and `WitnessReader` built from the checked package, claim and sampler. It
   converts the witness and SHALL replay that converted counterexample by
   applying FR-128's re-execution, fairness and evaluation steps to the checked
   subject the sampler ran over, with no recompile and no `package_id`
@@ -151,7 +160,7 @@ pub fn replay_sampled_witness(
 | FR-193-AC-2 | Each kept witness replays `Reproduced`. The same witness with `d` changed to `2 ms` (outside the support) refuses `invalid_runtime_input`/`invalid-value`; with the seed changed so a recomputed draw selects `1 ms` it settles `Inconclusive(ReplayParity)`; with its path probability changed it settles `Inconclusive(ReplayParity)`. The item's record stays `measured`, `rejected` in each case. | Test (TC-628) |
 | FR-193-AC-3 | `replay_sampled_witness` over a witness of the `2 ms` claim returns `Reproduced`; in that one call the witness converts to a counterexample for the TP-2 claim "`M <= 2 ms` on every activated behaviour", and the replay of the counterexample refutes that claim. For `probability <= 0.01 [eventually[0,1000] holds(not n.healthy)]` with `alpha 0.01, beta 0.01, indifference 0.005` over `Health` under `Steady` (ADR-024 §7.1), a witness is a sample with a fault; `replay_sampled_witness` returns `Reproduced`, and the counterexample it replays refutes "not `eventually[0,1000] holds(not n.healthy)` on every behaviour". In a copy of that witness the first step that reaches a state with `n.healthy` false is replaced by the other choice of the same draw together with the post-state digest of the successor that choice reaches, and the later steps are dropped, so the replayed positions no longer violate the bound; the seed and the recorded path probability stay, and the replay returns `Inconclusive(ReplayParity)`, because the draw recomputed from the seed selects the recorded choice and not the replacing one. In the same witness, a step whose choice is changed with its recorded post-state digest kept refuses `stale_dependency`/`content-mismatch`, and a step changed to a transition not enabled at its pre-state (in `Health` the only candidate is an `attemptUpdate` with a receiver `z` whose identity lies outside the universe, built as in FR-128-AC-3) refuses `invalid_runtime_input`/`invalid-value`. `LongRun` keeps no witness. | Test (TC-628) |
 | FR-193-AC-4 | FR-189-AC-6's undefined sample is kept as a witness with value `Undefined(UndefinedEvaluation)` and replays `Reproduced`; the same witness with its cause changed to `precondition-false` settles `Inconclusive(ReplayParity)`. | Test (TC-640) |
-| FR-193-AC-5 | `Service` is refused at S4 (FR-185-AC-7) and `Health` is refused at S4 too. The witnesses of AC-1 replay `Reproduced` over the checked subject of `Service`, and so do the witnesses of the `Health` fault claim of AC-3 over the checked subject of `Health`, in each case although `emit_checked` refuses the package; `replay_sampled_witness` takes only the checked subject, the provenance and the witness. | Test (TC-628) |
+| FR-193-AC-5 | `Service` is refused at S4 (FR-185-AC-7) and `Health` is refused at S4 too. The witnesses of AC-1 replay `Reproduced` over the checked subject of `Service`, and so do the witnesses of the `Health` fault claim of AC-3 over the checked subject of `Health`, in each case although `emit_checked` refuses the package. | Test (TC-628) |
 
 ## Dependencies
 
