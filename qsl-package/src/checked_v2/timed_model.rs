@@ -964,3 +964,170 @@ fn find_literal_type(
     }
     nodes.values().find_map(|node| visit(&node.body, kind))
 }
+
+#[cfg(test)]
+mod intake_proofs {
+    use super::*;
+
+    fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
+        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
+        let path = std::path::Path::new(&directory)
+            .join("proposals/checked-package-v2/fixtures/positive-timed-model-nodes.json");
+        let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
+        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let node = package["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["semantic_form"] == form)
+            .unwrap()
+            .clone();
+        serde_json::from_value(node).unwrap()
+    }
+
+    fn replace_binding(body: &mut CheckedTerm, name: &str, replacement: CheckedTerm) {
+        let CheckedTerm::Aggregate { members } = body else {
+            panic!("fixture body is aggregate")
+        };
+        let value = members
+            .iter_mut()
+            .find_map(|member| match member {
+                CheckedTerm::Binding {
+                    name: actual,
+                    value,
+                } if actual.as_ref() == name => Some(value),
+                _ => None,
+            })
+            .expect("fixture binding exists");
+        **value = replacement;
+    }
+
+    #[test]
+    fn time_source_intake_is_total_and_preserves_dense_and_tick_wire() {
+        let tick = fixture_node("time_source");
+        let projected = project_source(&tick).unwrap();
+        let text_type = literal_type(binding(&tick.body, "kind").unwrap()).unwrap();
+        let types = TimedLiteralTypes {
+            text: text_type.clone(),
+            integer: None,
+        };
+        assert_eq!(write_source(&projected, &types).body, tick.body);
+        let mut dense = tick.clone();
+        replace_binding(
+            &mut dense.body,
+            "kind",
+            CheckedTerm::literal_text(text_type.clone(), "dense"),
+        );
+        let projected = project_source(&dense).unwrap();
+        assert!(
+            projected.model.is_none()
+                && projected.operation.is_none()
+                && projected.period.is_none()
+        );
+        let mut unknown = tick.clone();
+        replace_binding(
+            &mut unknown.body,
+            "kind",
+            CheckedTerm::literal_text(text_type.clone(), "other"),
+        );
+        assert_eq!(project_source(&unknown), Err("unknown timed source kind"));
+        replace_binding(
+            &mut unknown.body,
+            "kind",
+            CheckedTerm::literal_integer(text_type, 0),
+        );
+        assert_eq!(
+            project_source(&unknown),
+            Err("admitted timed-model term is not text")
+        );
+    }
+
+    #[test]
+    fn clock_path_intake_is_total_for_each_closed_step_and_rejects_unknown_or_mistyped() {
+        let source = fixture_node("time_source");
+        let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
+        let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
+        let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
+        let step = |kind: &str, name: &str, value| {
+            CheckedTerm::aggregate(vec![
+                CheckedTerm::binding("kind", text(kind)),
+                CheckedTerm::binding(name, value),
+            ])
+        };
+        assert_eq!(
+            project_path_step(&step("field", "name", text("clock"))),
+            Ok(ClockPathStep::Field("clock".into()))
+        );
+        assert_eq!(
+            project_path_step(&step("tuple", "index", integer(2))),
+            Ok(ClockPathStep::Tuple(2))
+        );
+        assert_eq!(
+            project_path_step(&step("union", "case", text("open"))),
+            Ok(ClockPathStep::Union("open".into()))
+        );
+        let slot = |maximum| {
+            CheckedTerm::aggregate(vec![
+                CheckedTerm::binding("kind", text("slot")),
+                CheckedTerm::binding("collection", text("sequence")),
+                CheckedTerm::binding("selector", integer(1)),
+                CheckedTerm::binding("minimum", integer(0)),
+                CheckedTerm::binding("maximum", maximum),
+            ])
+        };
+        for (maximum, expected) in [(integer(3), Some(3)), (text("unbounded"), None)] {
+            assert_eq!(
+                project_path_step(&slot(maximum)),
+                Ok(ClockPathStep::Slot {
+                    collection: "sequence".into(),
+                    selector: ClockSlotSelector::Index(1),
+                    minimum: 0,
+                    maximum: expected,
+                })
+            );
+        }
+        assert_eq!(
+            project_path_step(&step("other", "name", text("clock"))),
+            Err("unknown clock path step")
+        );
+        assert_eq!(
+            project_path_step(&step("tuple", "index", text("2"))),
+            Err("admitted timed-model term is not an integer")
+        );
+    }
+
+    #[test]
+    fn urgency_intake_is_total_and_preserves_both_variants_or_refuses_unknown() {
+        let source = fixture_node("time_source");
+        let mut node = fixture_node("urgency");
+        let type_id = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
+        let text = |value: &str| CheckedTerm::literal_text(type_id.clone(), value);
+        let target = reference(binding(&source.body, "model").unwrap()).unwrap();
+        node.body = CheckedTerm::aggregate(vec![
+            CheckedTerm::binding("kind", text("when")),
+            CheckedTerm::binding("predicate", CheckedTerm::reference(target.clone())),
+        ]);
+        assert!(
+            matches!(project_urgency(&node), Ok(CheckedUrgency::When { predicate, .. }) if predicate == target)
+        );
+        node.body = CheckedTerm::aggregate(vec![
+            CheckedTerm::binding("kind", text("operation")),
+            CheckedTerm::binding("model", CheckedTerm::reference(target.clone())),
+            CheckedTerm::binding("operation_name", text("advance")),
+        ]);
+        assert!(
+            matches!(project_urgency(&node), Ok(CheckedUrgency::Operation { model, operation_name, .. }) if model == target && operation_name == "advance")
+        );
+        replace_binding(&mut node.body, "kind", text("other"));
+        assert_eq!(project_urgency(&node), Err("unknown urgency kind"));
+        replace_binding(
+            &mut node.body,
+            "kind",
+            CheckedTerm::literal_integer(type_id, 0),
+        );
+        assert_eq!(
+            project_urgency(&node),
+            Err("admitted timed-model term is not text")
+        );
+    }
+}
