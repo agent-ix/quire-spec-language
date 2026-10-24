@@ -747,9 +747,9 @@ mod settlement {
     };
     use crate::model_check::limits::ModelCheckLimit;
     use crate::proof_result::{
-        read_first_party_solver_basis, read_plugin_inconclusive_cause_over, Certification,
-        IncompleteCause, InconclusiveCause, PluginResultRefusal, ProofBasis, TerminalRecord,
-        TerminalValue, ValueFault,
+        read_first_party_solver_basis, read_plugin_inconclusive_cause_over, AppliedReduction,
+        Certification, IncompleteCause, InconclusiveCause, PluginResultRefusal, ProofBasis,
+        Proviso, TerminalRecord, TerminalValue, ValueFault,
     };
     use qsl_foundation::{BackendId, RequestIndex};
     use quire_exact::LimitKind;
@@ -1162,7 +1162,19 @@ mod settlement {
             {"parameters": {"proviso": "breadth-first-revisit"}, "reduction": "partial-order", "row": "invariant"},
             {"parameters": {"classes": [["a", "b"]]}, "reduction": "copy-swap", "row": "hyper"}
         ]}));
-        assert!(matches!(&reduced, ProofBasis::Reduced { reductions } if reductions.len() == 2));
+        assert_eq!(
+            reduced,
+            ProofBasis::Reduced {
+                reductions: vec![
+                    AppliedReduction::PartialOrder {
+                        proviso: Proviso::BreadthFirstRevisit
+                    },
+                    AppliedReduction::CopySwap {
+                        classes: vec![vec!["a".to_owned(), "b".to_owned()]]
+                    },
+                ]
+            }
+        );
 
         for basis in [
             ProofBasis::Exhaustive,

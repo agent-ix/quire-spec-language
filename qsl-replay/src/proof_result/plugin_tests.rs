@@ -59,10 +59,6 @@ fn plugin() -> BackendId {
     BackendId::new("acme")
 }
 
-fn settle_basis(basis: ProofBasis) -> TerminalRecord {
-    TerminalRecord::from_plugin_proof(RequestIndex::new(0), plugin(), basis).unwrap()
-}
-
 #[trace("TC-774", "FR-290-AC-18")]
 #[test]
 fn hybrid_plugin_basis_reads_coverage_and_the_closed_method_table() {
@@ -130,70 +126,6 @@ fn hybrid_plugin_cause_reads_insufficient_horizon() {
     assert_eq!(item["cause"]["kind"], "insufficient-horizon");
     assert_eq!(item["cause"]["exhaustive"], json!(["time"]));
     assert_eq!(item["cause"]["jumps"], 1);
-}
-
-/// The plugin basis spellings read as their typed values.
-#[test]
-fn tc_774_basis_reader_accepts_the_plugin_spellings() {
-    let horizon = json!({"denominator": "2", "numerator": "5"});
-    let solver = |method: &str| json!({"type": "bounded-solver", "horizon": horizon, "jumps": 3, "method": method, "exhaustive": []});
-    let five_halves = SolverHorizon::new(
-        quire_exact::Rational::new(Integer::from(5_i64), Integer::from(2_i64)).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        read_plugin_basis(&json!({"type": "exhaustive"})),
-        Ok(ProofBasis::Exhaustive)
-    );
-    assert_eq!(
-        read_plugin_basis(&json!({"type": "bounded-complete", "depth": 4})),
-        Ok(ProofBasis::BoundedComplete { depth: 4 })
-    );
-    assert_eq!(
-        read_plugin_basis(&json!({"type": "inductive", "depth": 0})),
-        Ok(ProofBasis::Inductive { depth: 0 })
-    );
-    for (method, expected) in [
-        ("delta-complete", SolverMethod::DeltaComplete),
-        ("flowpipe-unrounded", SolverMethod::FlowpipeUnrounded),
-    ] {
-        assert_eq!(
-            read_plugin_basis(&solver(method)),
-            Ok(ProofBasis::BoundedSolver {
-                method: expected,
-                horizon: five_halves.clone(),
-                jumps: 3,
-                exhaustive: BTreeSet::new(),
-            })
-        );
-    }
-    let reduced = read_plugin_basis(&json!({"type": "reduced", "reductions": [
-        {"parameters": {"proviso": "breadth-first-revisit"}, "reduction": "partial-order", "row": "invariant"},
-        {"parameters": {"classes": [["a", "b"]]}, "reduction": "copy-swap", "row": "hyper"}
-    ]}))
-    .unwrap();
-    assert_eq!(
-        reduced,
-        ProofBasis::Reduced {
-            reductions: vec![
-                AppliedReduction::PartialOrder {
-                    proviso: Proviso::BreadthFirstRevisit
-                },
-                AppliedReduction::CopySwap {
-                    classes: vec![vec!["a".to_owned(), "b".to_owned()]]
-                },
-            ]
-        }
-    );
-    let record = settle_basis(reduced);
-    assert!(matches!(
-        record.value(),
-        TerminalValue::Proved {
-            certification: Certification::Trusted,
-            ..
-        }
-    ));
-    assert_eq!(record.backend(), Some(&plugin()));
 }
 
 /// FR-290-AC-6.
