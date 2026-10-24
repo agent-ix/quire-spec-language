@@ -3208,12 +3208,21 @@ pub struct TimedIntervalForm {
     pub lower: QuantityForm,
     /// Whether the lower end is closed: `[` (true) or `(` (false).
     pub lower_closed: bool,
-    /// The upper end's quantity.
-    pub upper: QuantityForm,
+    /// The upper end: a quantity, or `*` for `[q, *]`.
+    pub upper: TimedUpper,
     /// Whether the upper end is closed: `]` (true) or `)` (false).
     pub upper_closed: bool,
     /// The span of the whole bracketed interval.
     pub span: Span,
+}
+
+/// The upper end of a [`TimedIntervalForm`] (FR-393, FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimedUpper {
+    /// A quantity literal.
+    Finite(QuantityForm),
+    /// `*`: the interval has no upper bound.
+    Open,
 }
 
 /// A temporal operator's interval (FR-325 as amended by FR-393): one member
@@ -3426,8 +3435,13 @@ pub struct TemporalClauseForm {
     pub profile: UsingAlias,
     /// The `over (p: T)` parameter.
     pub over: ParameterForm,
-    /// The `clock "<string>"` the clause is stepped by.
-    pub clock: ClockForm,
+    /// The `clock "<string>"` the clause is stepped by; `None` when no
+    /// `clock` member is written (QSpec FR-252: S3 binds the subject's
+    /// default clock).
+    pub clock: Option<ClockForm>,
+    /// The span of the whole `clock "..."` member, for refusals that belong
+    /// to the clause rather than its string literal.
+    pub clock_clause_span: Option<Span>,
     /// The activation.
     pub activation: ActivationForm,
     /// The fairness constraints in source order.

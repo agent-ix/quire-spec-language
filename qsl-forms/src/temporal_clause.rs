@@ -17,7 +17,8 @@ use super::syntax::{
     ActivationForm, CaptureForm, ClockForm, DeclarationForm, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
     OperatorInterval, ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
-    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, UsingAlias,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, TimedUpper,
+    UsingAlias,
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node,
@@ -35,10 +36,27 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
     let [_, alias] = tokens_of(&clause_items, TokenKind::Identifier)[..] else {
         return Err(unexpected(node));
     };
-    // `clock "c"`: the clause's only direct string literal.
-    let [clock] = tokens_of(&clause_items, TokenKind::Text)[..] else {
-        return Err(unexpected(node));
+    // `clock "c"`: the clause's only direct string literal, when written.
+    let clock = match tokens_of(&clause_items, TokenKind::Text)[..] {
+        [] => None,
+        [clock] => Some(clock),
+        _ => return Err(unexpected(node)),
     };
+    let clock_clause_span = clock
+        .map(|clock| {
+            let keyword = clause_items
+                .iter()
+                .find_map(|item| match item {
+                    Item::Token(token) if token.spelling() == b"clock" => Some(*token),
+                    _ => None,
+                })
+                .ok_or_else(|| unexpected(node))?;
+            Ok(Span {
+                start: keyword.span().start,
+                end: clock.span().end,
+            })
+        })
+        .transpose()?;
     let activation = only(&clause_items, Production::Activation, node)?;
     let activation_items = items(cst, activation);
     let activation = match nodes_of(&activation_items, Production::Parameter).first() {
@@ -67,15 +85,22 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
             span: alias.span(),
         },
         over: parameter_form(cst, only(&clause_items, Production::Parameter, node)?)?,
-        clock: ClockForm {
-            text: qsl_cst::token::decode_quoted(&text(clock, node)?)
-                .ok_or_else(|| unexpected(node))?,
-            span: clock.span(),
-        },
+        clock: clock
+            .map(|clock| {
+                Ok(ClockForm {
+                    text: qsl_cst::token::decode_quoted(&text(clock, node)?)
+                        .ok_or_else(|| unexpected(node))?,
+                    span: clock.span(),
+                })
+            })
+            .transpose()?,
+        clock_clause_span,
         activation,
         fairness,
         captures,
-        formula: formula_form(cst, formula, false)?,
+        // S2 keeps indexed reads as syntax. S3 knows whether the `over`
+        // type makes this a hybrid claim and can give the right refusal.
+        formula: formula_form(cst, formula, true)?,
     })))
 }
 
@@ -491,9 +516,9 @@ impl<'c> Formula<'c> {
     }
 }
 
-/// One `TimedInterval` node: `( [ | ( ) lower , upper ( ] | ) )`. S1 refuses
-/// a timed interval whose upper end is not a quantity literal, so a missing
-/// quantity here is a broken invariant between the two stages.
+/// One `TimedInterval` node: `( [ | ( ) lower , ( upper | * ) ( ] | ) )`. S1
+/// refuses a timed interval whose upper end is neither a quantity literal nor
+/// `*`, so a missing end here is a broken invariant between the two stages.
 pub(crate) fn timed_interval_form(
     cst: &LosslessCst,
     node: &CstNode,
@@ -513,13 +538,16 @@ pub(crate) fn timed_interval_form(
             Err(unexpected(node))
         }
     };
-    let [lower, upper] = nodes_of(&interval_items, Production::QuantityLiteral)[..] else {
-        return Err(unexpected(node));
+    let quantities = nodes_of(&interval_items, Production::QuantityLiteral);
+    let (lower, upper) = match (&quantities[..], has_token(&interval_items, b"*")) {
+        ([lower, upper], false) => (*lower, TimedUpper::Finite(quantity_form(cst, upper)?)),
+        ([lower], true) => (*lower, TimedUpper::Open),
+        _ => return Err(unexpected(node)),
     };
     Ok(TimedIntervalForm {
         lower: quantity_form(cst, lower)?,
         lower_closed: closed(open.spelling(), b"[", b"(")?,
-        upper: quantity_form(cst, upper)?,
+        upper,
         upper_closed: closed(close.spelling(), b"]", b")")?,
         span: node.span(),
     })

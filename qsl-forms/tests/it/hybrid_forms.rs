@@ -143,3 +143,38 @@ fn a_hybrid_declaration_has_a_dispatch_entry() {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     assert_eq!(unit.forms().len(), 1);
 }
+
+fn claim_clause(declarations: &str) -> qsl_forms::TemporalClauseForm {
+    let text = format!("{HEADER}{declarations}\n");
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
+    let DeclarationForm::Temporal(clause) = unit.forms()[0].form() else {
+        panic!("a temporal clause");
+    };
+    (**clause).clone()
+}
+
+/// FR-447: a `temporal` clause may write no `clock` member, and a timed
+/// interval may write `*` for its upper end.
+#[trace("TC-1220", "FR-447-AC-9")]
+#[test]
+fn a_claim_builds_with_no_clock_member_and_a_timed_interval_with_no_upper_bound() {
+    let clause = claim_clause(
+        "temporal C using p over (h: Braking) on origin { always [rational(1, 4) s, *] holds(h.v < 30) }",
+    );
+    assert!(clause.clock.is_none());
+    let with_clock = claim_clause(
+        "temporal C using p over (h: Braking) clock \"model-steps\" on origin { always [0, 1] holds(h.v < 30) }",
+    );
+    assert_eq!(with_clock.clock.expect("a clock").text, "model-steps");
+    let Some(qsl_forms::TemporalNodeForm::Operator(always)) =
+        clause.formula.node(clause.formula.root())
+    else {
+        panic!("an operator at the root");
+    };
+    let Some(qsl_forms::OperatorInterval::Timed(timed)) = &always.interval else {
+        panic!("a timed interval: {:?}", always.interval);
+    };
+    assert_eq!(timed.upper, qsl_forms::TimedUpper::Open);
+}
