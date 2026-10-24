@@ -707,7 +707,7 @@ mod tests {
     /// FR-281-AC-11: each engine refusal row settles its record naming the
     /// engine; an unbounded extent carries QSpec FR-272's payload (kind,
     /// candidate, advertised modes).
-    #[trace("TC-762", "FR-281-AC-11")]
+    #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn engine_refusals_settle_by_the_refusal_table() {
         let mut engines = Engines::default();

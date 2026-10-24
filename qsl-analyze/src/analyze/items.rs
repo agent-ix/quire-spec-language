@@ -22,7 +22,6 @@ use crate::model_check::{
     ModelCheckRequest,
 };
 use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest};
-use qsl_eval::simulation::model::ClauseOutcome;
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
 /// refusal whose own type names no code.
@@ -193,13 +192,8 @@ pub(super) fn statistical_refusal(
         R::Symmetry(_) => symmetry(),
         R::RequiresBound(_) => Refusal::RequiresBound,
         R::NotStatistical { .. } => Refusal::NotStatistical,
-        // FR-192-AC-7 settles a refused predicate by its own code (and an
-        // incomplete read `incomplete`/`limit-reached`), but FR-192's map
-        // returns no record for it yet (QSL-570), so `analyze` inherits the
-        // gap: a family refusal keeps its code, every other one is `failed`
-        // with the broken-invariant diagnostic.
-        R::PredicateRefused(ClauseOutcome::FamilyRefused(code)) => Refusal::Failed(*code),
-        R::PredicateRefused(_) => Refusal::Failed(BROKEN),
+        // FR-192's map settles the rest, a refused predicate by FR-192-AC-7's
+        // rows (its own code, or `incomplete`/`limit-reached`).
         settled => match settle_statistical_refusal(settled) {
             Ok(record) => return EngineReport::Statistical(Box::new(record)),
             Err(_) => Refusal::Failed(BROKEN),
@@ -212,8 +206,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
+    use qsl_eval::simulation::model::ClauseOutcome;
     use qsl_foundation::Code;
     use qsl_replay::statistical::StatisticalRefusal;
+    use qsl_replay::{IncompleteCause, TerminalValue};
     use qsl_semantics::model::observation::AdmissionRecord;
 
     use super::*;
@@ -240,7 +236,7 @@ mod tests {
     /// FR-281-AC-11: a refused admission is `declined` `invalid-input` and an
     /// incomplete one `incomplete-input`, each carrying the record's full
     /// code and cause, and an admission fault is `failed`.
-    #[trace("TC-762", "FR-281-AC-11")]
+    #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn admission_declines_with_the_records_full_diagnostic() {
         let refused =
@@ -271,7 +267,7 @@ mod tests {
 
     /// FR-281-AC-11: a malformed symmetry declaration is `declined`,
     /// `invalid-input`, `invalid_runtime_input`/`invalid-value`.
-    #[trace("TC-762", "FR-281-AC-11")]
+    #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn symmetry_declines_invalid_value() {
         let Refusal::Declined(cause, decline, diagnostic) = symmetry() else {
@@ -285,7 +281,7 @@ mod tests {
     /// FR-281's table: only a refusal whose own code is `unsupported_*` is
     /// `unsupported`; liveness and hyper request or engine defects are
     /// `failed`.
-    #[trace("TC-762", "FR-281-AC-11")]
+    #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn model_refusals_are_unsupported_only_for_unsupported_codes() {
         let unsupported = |refusal: ModelCheckRefusal| match model_refusal(&refusal) {
@@ -358,39 +354,62 @@ mod tests {
         ));
     }
 
-    /// FR-281's table for EN-4, and FR-192-AC-7's gap: a family-refused
-    /// predicate keeps its code, every other predicate refusal is `failed`
-    /// with the broken-invariant diagnostic; `NotStatistical` is a
-    /// disposition; the rest settle through FR-192's map.
-    #[trace("TC-762", "FR-281-AC-11")]
+    /// FR-281's table for EN-4: a refused predicate is not intercepted, so
+    /// `analyze` settles it as FR-192-AC-7's rows do (a family refusal by its
+    /// own code, an exhausted meter `incomplete`/`limit-reached`, anything else
+    /// broken), equal to the provider entry's record (FR-280); `NotStatistical`
+    /// is a disposition; the rest settle through FR-192's map.
+    #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn statistical_refusals_follow_the_table() {
-        let class = |refusal: StatisticalRefusal| match statistical_refusal(&refusal) {
-            EngineReport::Refused(refusal) => code(&refusal).unwrap_or_else(|| match refusal {
-                Refusal::NotStatistical => "not-statistical".to_owned(),
-                _ => "requires-bound".to_owned(),
-            }),
-            _ => "settled".to_owned(),
+        use quire_exact::{ChargePoint, Incomplete, Integer, LimitKind};
+
+        let settled = |refusal: StatisticalRefusal| match statistical_refusal(&refusal) {
+            EngineReport::Statistical(record) => {
+                assert_eq!(
+                    *record,
+                    settle_statistical_refusal(&refusal).expect("a terminal record")
+                );
+                *record
+            }
+            _ => panic!("expected the map's record"),
         };
         let outside = CatalogCode::new("integer_out_of_domain", "outside-domain");
-        assert_eq!(
-            class(StatisticalRefusal::PredicateRefused(
-                ClauseOutcome::FamilyRefused(outside)
-            )),
-            "integer_out_of_domain/outside-domain"
-        );
-        assert_eq!(
-            class(StatisticalRefusal::PredicateRefused(
-                ClauseOutcome::NotBoolean
-            )),
-            "runtime_invariant/established-invariant-broken"
-        );
-        assert_eq!(class(StatisticalRefusal::EveryScheduler), "settled");
+        let family = settled(StatisticalRefusal::PredicateRefused(
+            ClauseOutcome::FamilyRefused(outside),
+        ));
+        assert_eq!(family.value, TerminalValue::Failed);
+        assert_eq!(family.diagnostic, Some(outside));
+
+        let exhausted = settled(StatisticalRefusal::PredicateRefused(
+            ClauseOutcome::Incomplete(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: 9,
+                consumed: 9,
+                next_charge: Integer::from(1_i64),
+                charge_point: ChargePoint::TextInputBytes,
+            }),
+        ));
+        assert!(matches!(
+            exhausted.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached { value: 9, .. })
+        ));
+
+        let broken = settled(StatisticalRefusal::PredicateRefused(
+            ClauseOutcome::NotBoolean,
+        ));
+        assert_eq!(broken.value, TerminalValue::Failed);
+        assert_eq!(broken.diagnostic, Some(BROKEN));
+
+        let class = |refusal: StatisticalRefusal| match statistical_refusal(&refusal) {
+            EngineReport::Refused(refusal) => code(&refusal),
+            _ => None,
+        };
         assert_eq!(
             class(StatisticalRefusal::Admission(Box::new(
                 AdmissionFailure::Refused(record(Code::InvalidRuntimeInput, "wrong-role-mapping"))
             ))),
-            "invalid_runtime_input/wrong-role-mapping"
+            Some("invalid_runtime_input/wrong-role-mapping".to_owned())
         );
     }
 }
