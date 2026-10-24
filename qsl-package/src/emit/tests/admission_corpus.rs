@@ -2,8 +2,9 @@
 //! FR-093-AC-19 (TC-416 step 11): the emission-to-admission corpus. Every
 //! node family of IR's closed checked-package/v2 vocabulary
 //! (`CheckedNodeKind::all()`) is classified exactly once: as a family the
-//! emitter writes and IR admits (one or more rows), or as a kind QSL's
-//! lowering never writes ([`NOT_EMITTED_BY_QSL`], each with its reason).
+//! emitter or typed timed-model writer writes and IR admits (one or more
+//! rows), or as a kind QSL does not write ([`NOT_EMITTED_BY_QSL`], each with
+//! its reason).
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
@@ -19,7 +20,7 @@ use qsl_forms::TypeFormHead;
 use quire_contract_model::{
     BoundedDomainForm, CheckedNodeKind, ClaimForm, CompositeTypeForm, CorrespondenceForm,
     ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm, ScalarTypeForm, StateForm,
-    TemporalForm, TimedModelForm,
+    TemporalForm,
 };
 
 use super::super::extent_agreement::{package_declaring, records};
@@ -470,13 +471,12 @@ fn rows() -> Vec<Row> {
     ]
 }
 
-/// Every IR node kind QSL's lowering never writes, each with the reason.
+/// Every IR node kind neither QSL's emitter nor typed timed-model writer writes.
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
         "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
-    const NO_TIMED_EMIT: &str = "QSL reads checked timed-model nodes through I2 but does not emit them";
     &[
         (
             K::CompositeType(CompositeTypeForm::Alias),
@@ -515,14 +515,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
-        (K::TimedModel(TimedModelForm::Model), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Source), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Place), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Reset), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Guard), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Invariant), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Urgency), NO_TIMED_EMIT),
-        (K::TimedModel(TimedModelForm::Constraint), NO_TIMED_EMIT),
         (K::Protocol(ProtocolForm::Role), NO_TAG),
         (K::Protocol(ProtocolForm::Channel), NO_TAG),
         (K::Protocol(ProtocolForm::Queue), NO_TAG),
@@ -723,6 +715,17 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .entry(*kind)
             .or_default()
             .push("not emitted: QSL lowers no hybrid declaration yet (QSL-900)".to_owned());
+    }
+    // `CheckedTimedModel::write_nodes` writes the complete closed timed-model
+    // family; its emitted-package conformance test reads the result through I2.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::TimedModel(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("admitted by the typed timed-model writer (TC-367)".to_owned());
     }
     let unclassified: Vec<_> = all
         .iter()
