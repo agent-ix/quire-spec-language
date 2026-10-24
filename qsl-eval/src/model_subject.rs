@@ -85,10 +85,11 @@ pub struct ModelInstance {
 pub trait ModelLetters {
     /// The `holds` atom `atom` for `instance` at `state`, charging `meter`.
     /// The implementation reads the bound parameter as the state's own
-    /// reference to the object under the instance's population and key
-    /// (FR-125 Instancing); where the population has no object under the
-    /// key conforming to the parameter's type, the read is `absent-key`
-    /// undefined. An exhausted meter is `Err(Incomplete)`, never a reading.
+    /// reference to the object held under the instance's key by the first
+    /// population that overlaps the parameter's type and holds there an
+    /// object conforming to it (FR-125 Instancing: the key identifies the
+    /// instance, not its population); where no overlapping population does,
+    /// the read is `absent-key` undefined. An exhausted meter is `Err(Incomplete)`, never a reading.
     fn atom(
         &self,
         atom: FormulaNodeId,

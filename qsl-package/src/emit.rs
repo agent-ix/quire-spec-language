@@ -1099,14 +1099,15 @@ fn rekey_timed_model_nodes(
 ) -> Result<(), EmitRefusal> {
     let timed_count = nodes
         .iter()
-        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .filter(|node| {
+            CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel)
+        })
         .count();
     for _ in 0..=timed_count.saturating_mul(timed_count).max(1) {
         let mut changes = Vec::new();
-        for node in nodes
-            .iter_mut()
-            .filter(|node| node.node_tag.as_ref() == "timed_model")
-        {
+        for node in nodes.iter_mut().filter(|node| {
+            CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel)
+        }) {
             node.dependencies = body_reference_targets(&node.body);
             let old = node.node_id.clone();
             let new = timed_model_node_id(node)?;
@@ -1185,7 +1186,9 @@ pub fn emit_timed_models(
         .graph()
         .nodes
         .iter()
-        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .filter(|node| {
+            CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel)
+        })
         .map(|node| node.node_id.clone())
         .collect::<BTreeSet<_>>();
     let mut timed = BTreeMap::new();
@@ -1194,7 +1197,7 @@ pub fn emit_timed_models(
             .write_nodes()
             .map_err(EmitRefusal::TimedModelWriterInvariant)?;
         for node in written {
-            if node.node_tag.as_ref() != "timed_model"
+            if CheckedNodeTag::from_wire(&node.node_tag) != Some(CheckedNodeTag::TimedModel)
                 || timed.insert(node.node_id.clone(), node).is_some()
             {
                 return Err(EmitRefusal::TimedModelNodeSetMismatch);
@@ -1210,7 +1213,7 @@ pub fn emit_timed_models(
         .nodes
         .iter()
         .map(|node| {
-            if node.node_tag.as_ref() == "timed_model" {
+            if CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel) {
                 timed
                     .remove(&node.node_id)
                     .ok_or(EmitRefusal::TimedModelNodeSetMismatch)
