@@ -672,7 +672,10 @@ fn the_real_corpus_passes_and_the_seeded_copy_fails() {
 #[test]
 #[trace("TC-865", "FR-343-AC-5")]
 fn an_unsupported_compile_on_either_side_is_unresolved() {
-    for (prior, superseding) in [(unit(), unsupported()), (unsupported(), unit())] {
+    for (side, prior, superseding) in [
+        ("superseding", unit(), unsupported()),
+        ("prior", unsupported(), unit()),
+    ] {
         let corpus = corpus(&[(
             "pair",
             Pair::new(prior, superseding, vec![clause_case("healthy-parent")]),
@@ -687,12 +690,14 @@ fn an_unsupported_compile_on_either_side_is_unresolved() {
             )]
         );
         let entry = &listed(&report)[0];
-        let unsupported_side = if entry["prior"]["class"] == "unsupported" {
-            &entry["prior"]
+        let other = if side == "prior" {
+            "superseding"
         } else {
-            &entry["superseding"]
+            "prior"
         };
-        assert_eq!(unsupported_side["class"], "unsupported");
+        assert_ne!(entry[other]["class"], "unsupported", "{side} side");
+        let unsupported_side = &entry[side];
+        assert_eq!(unsupported_side["class"], "unsupported", "{side} side");
         assert_eq!(unsupported_side["stage"], "compile");
         assert_eq!(
             unsupported_side["codes"][0]["code"],

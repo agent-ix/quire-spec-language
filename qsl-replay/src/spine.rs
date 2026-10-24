@@ -1618,30 +1618,60 @@ fn signature_source(parameters: &[quire_exact::ValueType]) -> String {
     format!("({})", parameters.join(", "))
 }
 
-/// A value type in source syntax. Parameterised kinds a predicate join
-/// signature cannot reach spell their kind name only.
+/// A value type in source syntax, with the bounds and modes the type
+/// declares. A record, tuple, union, enum or reference type carries only
+/// opaque identity digests, never a declared name, so it spells its kind and
+/// identity (`Composite[<node key>]`, `Reference[<effective id>]`) and an
+/// enum its kind alone.
 fn value_type_source(value_type: &quire_exact::ValueType) -> String {
-    use quire_exact::ValueType;
+    use qsl_foundation::diagnostic::{spell_decimal, spell_int, spell_rational};
+    use quire_exact::{CollectionKind, RoundingMode, ValueType};
     match value_type {
         ValueType::Boolean => "Boolean".to_owned(),
         ValueType::Integer => "Integer".to_owned(),
-        ValueType::Int(interval) => {
-            format!("Int[{}, {}]", interval.lower(), interval.upper())
+        ValueType::Int(interval) => spell_int(interval),
+        ValueType::Rational(domain) => spell_rational(domain),
+        ValueType::Decimal(decimal) => spell_decimal(decimal),
+        ValueType::Float(float) => {
+            let bare = format!("Float{}", float.width().bits());
+            match float.rounding() {
+                RoundingMode::Exact => bare,
+                mode => format!("{bare}[{}]", mode.as_str()),
+            }
         }
+        ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
+        ValueType::Text(text) => format!(
+            "Text[{}, {}; {}]",
+            text.min(),
+            text.max(),
+            text.profile().as_str()
+        ),
         ValueType::String => "String".to_owned(),
         ValueType::Uuid => "Uuid".to_owned(),
         ValueType::Timestamp => "Timestamp".to_owned(),
-        ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
-        ValueType::Rational(_) => "Rational".to_owned(),
-        ValueType::Decimal(_) => "Decimal".to_owned(),
-        ValueType::Float(_) => "Float".to_owned(),
-        ValueType::Quantity(_) => "Quantity".to_owned(),
-        ValueType::Text(_) => "Text".to_owned(),
         ValueType::Enum(_) => "Enum".to_owned(),
-        ValueType::Composite(_) => "Composite".to_owned(),
-        ValueType::Collection(_) => "Collection".to_owned(),
-        ValueType::Reference(_) => "Reference".to_owned(),
-        ValueType::Population(_) => "Population".to_owned(),
+        ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
+        ValueType::Composite(key) => format!("Composite[{key}]"),
+        ValueType::Collection(collection) => {
+            let kind = match collection.kind() {
+                CollectionKind::Sequence => "Sequence",
+                CollectionKind::Set => "Set",
+                CollectionKind::Bag => "Bag",
+                CollectionKind::OrderedSet => "OrderedSet",
+            };
+            let element = value_type_source(collection.element());
+            match collection.bound() {
+                Some(bound) => format!(
+                    "{kind}<{element}>[{}, {}]",
+                    bound.minimum(),
+                    bound.maximum()
+                ),
+                None => format!("{kind}<{element}>"),
+            }
+        }
+        ValueType::Reference(id) => format!("Reference[{id}]"),
+        ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
+        ValueType::Population(None) => "Population<_>".to_owned(),
     }
 }
 
@@ -2155,5 +2185,52 @@ mod tests {
         assert_eq!(refusal.stage(), SpineStage::Emit);
         assert_eq!(refusal.code(), Code::UnsupportedProjection);
         assert!(refusal.region().is_none());
+    }
+    /// A join signature spells every parameter type in source syntax, not
+    /// its debug form.
+    #[test]
+    fn join_signature_types_are_spelled_in_source_syntax() {
+        use quire_exact::{
+            CardinalityBound, CollectionKind, CollectionType, FloatType, IeeeWidth, NodeKey,
+            RoundingMode, TextProfile, TextType,
+        };
+        let sequence = ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Integer,
+            Some(CardinalityBound::new(1, 4).unwrap()),
+        ));
+        let cases = [
+            (
+                ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
+                "Float64",
+            ),
+            (
+                ValueType::Float(FloatType::new(
+                    IeeeWidth::Binary32,
+                    RoundingMode::NearestEven,
+                )),
+                "Float32[nearest-even]",
+            ),
+            (
+                ValueType::Text(TextType::new(0, 8, TextProfile::Nfc).unwrap()),
+                "Text[0, 8; nfc]",
+            ),
+            (sequence.clone(), "Sequence<Integer>[1, 4]"),
+            (
+                ValueType::Option(std::sync::Arc::new(sequence)),
+                "Option<Sequence<Integer>[1, 4]>",
+            ),
+            (
+                ValueType::Composite(NodeKey::from_digest([0xab; 32])),
+                &format!("Composite[{}]", "ab".repeat(32)),
+            ),
+        ];
+        for (value_type, expected) in cases {
+            assert_eq!(super::value_type_source(&value_type), expected);
+        }
+        assert_eq!(
+            super::signature_source(&[ValueType::Boolean, ValueType::String]),
+            "(Boolean, String)"
+        );
     }
 }
