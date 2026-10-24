@@ -18,7 +18,7 @@ use qsl_foundation::{ByteDigest, Span, Spanned};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::domain_package::DomainPackageRef;
-use qsl_semantics::model::key::DeclarationKey as DomainKey;
+use quire_checked::key::DeclarationKey as DomainKey;
 
 /// Supplied model selections: admitted native models and admitted domain
 /// packages. Nothing else binds.

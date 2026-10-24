@@ -16,8 +16,8 @@ use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::ModelRefusalCause;
+use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
 
 use super::model_operations::{

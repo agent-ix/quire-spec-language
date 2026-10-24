@@ -14,11 +14,11 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, BundleKey, BundlePart, Keyed, ObservationOrigin,
     ObservationRole, PopulationEnumerationFailure, RelationshipExtents, ResolveBundle,
 };
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, ObjectId, ObjectReference, UniverseId};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::object_closure::ObjectClosure;

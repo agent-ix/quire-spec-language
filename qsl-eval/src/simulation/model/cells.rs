@@ -5,7 +5,7 @@
 //! location names, read and written in place, for a memory model that keeps
 //! a shared location's value apart from the model state.
 
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
 use quire_semantic_value::model_transition::ModelTransition;
 

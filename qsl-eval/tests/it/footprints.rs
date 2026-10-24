@@ -19,7 +19,7 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
@@ -29,6 +29,7 @@ use qsl_semantics::model::population::{
 };
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use qsl_semantics::model::state::StateObject;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::model_transition::ModelTransition;

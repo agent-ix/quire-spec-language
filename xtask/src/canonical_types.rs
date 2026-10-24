@@ -58,7 +58,7 @@ const TAG: &str = "quire:canonical";
 /// scans them wherever they are sourced from, as it scans IR's types. The
 /// `copy` rule holds them against the code that runs the gate; their own
 /// one-definition checks belong to their repositories.
-const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
+const SHARED_LEAVES: [&str; 3] = ["quire-exact", "quire-semantic-value", "quire-checked"];
 
 /// Target kinds whose sources are shipped code.
 const SHIPPED_KINDS: [&str; 7] = [
@@ -1179,6 +1179,41 @@ mod tests {
                 .member("w", member);
             assert_eq!(fixture.findings(), expected, "{member}");
         }
+    }
+
+    /// FR-400: `quire-checked` is a shared leaf, so its `DeclarationKey` is a
+    /// canonical type of its own repository and a QSL crate that re-adds a
+    /// same-shaped copy is a `copy` finding.
+    #[test]
+    #[trace("TC-747", "FR-272-AC-2")]
+    fn tc_747_quire_checked_declaration_key_copy_is_flagged() {
+        let leaf = "/// The key.\n/// quire:canonical\npub struct DeclarationKey {\n    pub package: String,\n    pub node: String,\n}\n";
+        let mut fixture = Fixture::new();
+        fixture.dependency("quire-checked", "path+file:///elsewhere", leaf);
+        assert_eq!(
+            fixture
+                .packages()
+                .into_iter()
+                .map(|package| package.repository)
+                .collect::<Vec<_>>(),
+            [Repository::Ecosystem("quire-checked")]
+        );
+        let mut fixture = Fixture::new();
+        fixture
+            .dependency("quire-checked", "path+file:///elsewhere", leaf)
+            .member(
+                "w",
+                "pub struct DeclarationKey {\n    pub package: String,\n    pub node: String,\n}\n",
+            );
+        assert_eq!(
+            fixture.findings(),
+            vec![finding(
+                Rule::Copy,
+                "DeclarationKey",
+                Some(site("quire-checked/src/lib.rs", 3)),
+                site("w/src/lib.rs", 1),
+            )]
+        );
     }
 
     /// TC-747 step 3: a backend run finds the backend's copy of a QSL

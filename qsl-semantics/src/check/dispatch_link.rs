@@ -39,8 +39,8 @@ use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::{DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal};
+use quire_checked::key::DeclarationKey;
 
 /// One family a called member name may name: the alias of the selected model
 /// that declares it, the key of its root operation (an operation that

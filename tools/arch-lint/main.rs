@@ -76,9 +76,28 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     for root in [&qsl, &ir, &rt, &cg] {
         edges.extend(metadata::edges_for_manifest(&root.join("Cargo.toml"))?);
     }
+    let mut construct_edges = Vec::new();
+    for root in [&qsl, &ir, &rt, &cg] {
+        construct_edges.extend(metadata::construct_edges_for_manifest(
+            &root.join("Cargo.toml"),
+        )?);
+    }
+    let construct = graph::construct_violations(&construct_edges);
     let mut summary = String::new();
     summary.push_str("FR-059 backend direction check (ADR-011 FB-05/FB-11)\n");
     let report = graph::check(&edges);
+    if construct.is_empty() {
+        summary
+            .push_str("  FB-05 construct: PASS (no backend enables `quire-checked/construct`)\n");
+    } else {
+        summary.push_str("  FB-05 construct: FAIL\n");
+        for violation in &construct {
+            summary.push_str(&format!(
+                "    {} enables `quire-checked/construct` (via {})\n",
+                violation.from, violation.via_crate
+            ));
+        }
+    }
     if report.fb05.is_empty() {
         summary.push_str("  FB-05: PASS (no unapproved edge into QSL)\n");
     } else {
@@ -102,7 +121,7 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
             summary.push_str(&format!("    {}\n", path.join(" -> ")));
         }
     }
-    Ok((summary, report.is_clean()))
+    Ok((summary, report.is_clean() && construct.is_empty()))
 }
 
 /// `--qsl-only` runs every rule whose scan root is QSL's own tree (T12-B

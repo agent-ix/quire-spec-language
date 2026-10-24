@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedStateClause;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 

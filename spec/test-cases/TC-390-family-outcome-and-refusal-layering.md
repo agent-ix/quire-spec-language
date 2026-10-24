@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-400
+    type: verifies
 ---
 # TC-390: FamilyOutcome, FamilyResult and EvalOutcome live once in quire-eval, no QSL layer below 5 names them, and the check core names no family cause
 
@@ -52,7 +54,12 @@ type, which turns `FamilyResult` back into a shared cause list.
    and `qsl-package/Cargo.toml`, and the `[dependencies]` table of
    `qsl-eval/Cargo.toml`.
 
-Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
+5. Read every dependency table of every workspace member and of a fixture
+   manifest in which `qsl-eval` enables `quire-checked`'s `construct`
+   feature (FR-400-AC-1).
+
+Tag the layering test `#[trace("FR-090-AC-9", "TC-390")]` and the `construct`
+table check `#[trace("FR-400-AC-1", "TC-390")]`.
 
 ## Expected Results
 
@@ -75,3 +82,6 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
   X-14 lands; it has no `[build-dependencies]`, and its
   `[dev-dependencies]` may also name `qsl-forms` and `qsl-cst`, and no other
   workspace crate.
+- Step 5 finds `qsl-semantics` as the only workspace member that enables
+  `quire-checked`'s `construct` feature in any dependency table, and the
+  fixture manifest fails the check, naming `qsl-eval` and the table.

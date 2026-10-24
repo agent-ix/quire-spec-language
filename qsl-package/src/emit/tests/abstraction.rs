@@ -10,7 +10,7 @@ use qsl_semantics::check::{
     AbstractionNodeRefusal, AuthoredBinding, FrameBinding, ObjectBinding, OperationKey,
     PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Identifier;
 
 use super::*;

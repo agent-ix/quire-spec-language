@@ -42,8 +42,8 @@ use qsl_replay::{
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Incomplete, Meter, Value};
 use serde_json::{json, Value as Json};
 

@@ -5282,8 +5282,8 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
 const CONFIG_VERSION_NODE: &str = "ix://example/config-version/ConfigVersion";
 
 /// The field `ConfigVersion::<name>`'s declaration key in the TC-465 package.
-fn tc465_field_key(name: &str) -> qsl_semantics::model::key::DeclarationKey {
-    qsl_semantics::model::key::DeclarationKey {
+fn tc465_field_key(name: &str) -> quire_checked::key::DeclarationKey {
+    quire_checked::key::DeclarationKey {
         package: "example/config-version".to_owned(),
         node: format!("{CONFIG_VERSION_NODE}/{name}"),
     }

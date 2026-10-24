@@ -210,6 +210,7 @@ pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
+pub use outcome::undefined_reason;
 pub use outcome::{
     ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
     OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
@@ -333,11 +334,11 @@ pub use witness::{
 // name and build them through this crate (ADR-011 FB-05). The node and
 // occurrence identities are built from the `WireNodeId`, `Origin` and
 // `Identifier` re-exported above.
-pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
     SelectedObject,
 };
+pub use quire_checked::key::DeclarationKey;
 
 // FR-122: the state-clause counterexample's replay entry, payload and
 // result, and the FR-106 observation types a payload is built from and a

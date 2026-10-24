@@ -51,12 +51,13 @@ use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
     admit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
 };
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
     ConnectionOutcome,
 };
+use quire_checked::key::DeclarationKey;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 

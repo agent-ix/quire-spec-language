@@ -24,7 +24,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
     PopulationRecord,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::key::EffectiveId;
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
@@ -33,6 +33,7 @@ use qsl_semantics::model::population::{
     PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
 };
 use qsl_semantics::value::environment_stage::stage_failure;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
     UniverseId, Value, ValueType,

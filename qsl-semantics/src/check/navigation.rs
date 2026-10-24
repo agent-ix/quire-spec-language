@@ -11,7 +11,7 @@ use quire_exact::EffectiveId;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::model::domain_package::{Multiplicity, RelationshipDirection};
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// One end of a relationship.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

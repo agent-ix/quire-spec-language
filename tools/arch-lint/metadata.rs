@@ -8,13 +8,24 @@ use std::{path::Path, process::Command};
 use serde_json::Value;
 
 use crate::error::{Code, Error, Result};
-use crate::graph::{classify, Edge, EdgeKind, Repo};
+use crate::graph::{classify, ConstructEdge, Edge, EdgeKind, Repo};
 
 /// Run `cargo metadata` for the crate at `manifest_path` and return every
 /// resolved normal/dev edge whose source and target both classify as one of
 /// the four ADR-011 repositories (`classify`, by package name and source
 /// URL, so a `[patch]` or a differently pinned revision still resolves).
 pub(crate) fn edges_for_manifest(manifest_path: &Path) -> Result<Vec<Edge>> {
+    parse_edges(&load(manifest_path)?)
+}
+
+/// Every resolved dependency, in the `cargo metadata` resolution of the crate
+/// at `manifest_path`, on `quire-checked` with its `construct` feature
+/// enabled (FR-059; FR-400-AC-3).
+pub(crate) fn construct_edges_for_manifest(manifest_path: &Path) -> Result<Vec<ConstructEdge>> {
+    parse_construct_edges(&load(manifest_path)?)
+}
+
+fn load(manifest_path: &Path) -> Result<Value> {
     let output = Command::new("cargo")
         .arg("metadata")
         .arg("--format-version=1")
@@ -33,13 +44,83 @@ pub(crate) fn edges_for_manifest(manifest_path: &Path) -> Result<Vec<Edge>> {
             ),
         ));
     }
-    let document: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+    serde_json::from_slice(&output.stdout).map_err(|error| {
         Error::new(
             Code::InvalidMetadata,
             format!("cargo metadata produced invalid JSON: {error}"),
         )
-    })?;
-    parse_edges(&document)
+    })
+}
+
+/// The package name of the checked-term leaf (ADR-011 layer C).
+const CHECKED_LEAF: &str = "quire-checked";
+
+/// The `construct` edges of `document`: one per resolved package of an
+/// ecosystem repository that depends on `quire-checked` when the leaf's
+/// resolved features include `construct`. Features are the resolution's
+/// unified set, which is what a build of that repository enables.
+fn parse_construct_edges(document: &Value) -> Result<Vec<ConstructEdge>> {
+    let invalid = || Error::new(Code::InvalidMetadata, "unexpected cargo metadata shape");
+    let packages = document
+        .get("packages")
+        .and_then(Value::as_array)
+        .ok_or_else(invalid)?;
+    let mut by_id: Vec<(&str, &str, Option<Repo>)> = Vec::new();
+    for package in packages {
+        let id = package
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid)?;
+        let name = package
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid)?;
+        let source = package.get("source").and_then(Value::as_str);
+        by_id.push((id, name, classify(name, source)));
+    }
+    let nodes = document
+        .get("resolve")
+        .and_then(|resolve| resolve.get("nodes"))
+        .and_then(Value::as_array)
+        .ok_or_else(invalid)?;
+    let construct_on = |id: &str| {
+        nodes.iter().any(|node| {
+            node.get("id").and_then(Value::as_str) == Some(id)
+                && node
+                    .get("features")
+                    .and_then(Value::as_array)
+                    .is_some_and(|features| {
+                        features.iter().any(|f| f.as_str() == Some("construct"))
+                    })
+        })
+    };
+    let mut edges = Vec::new();
+    for node in nodes {
+        let from_id = node.get("id").and_then(Value::as_str).ok_or_else(invalid)?;
+        let Some((_, from_name, Some(from_repo))) = by_id.iter().find(|(id, _, _)| *id == from_id)
+        else {
+            continue;
+        };
+        let deps = node
+            .get("deps")
+            .and_then(Value::as_array)
+            .ok_or_else(invalid)?;
+        for dep in deps {
+            let to_id = dep.get("pkg").and_then(Value::as_str).ok_or_else(invalid)?;
+            let is_leaf = by_id
+                .iter()
+                .any(|(id, name, _)| *id == to_id && *name == CHECKED_LEAF);
+            if is_leaf && construct_on(to_id) {
+                edges.push(ConstructEdge {
+                    from: *from_repo,
+                    via_crate: (*from_name).to_owned(),
+                });
+            }
+        }
+    }
+    edges.sort_by(|a, b| (a.from, &a.via_crate).cmp(&(b.from, &b.via_crate)));
+    edges.dedup();
+    Ok(edges)
 }
 
 fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
@@ -153,6 +234,41 @@ mod tests {
         assert_eq!(edges[0].from, Repo::Ir);
         assert_eq!(edges[0].to, Repo::Qsl);
         assert_eq!(edges[0].kind, EdgeKind::Normal);
+    }
+
+    /// tc_arch_lint_metadata_010: a resolved RT dependency on `quire-checked`
+    /// is a `construct` edge when the leaf's resolved features include
+    /// `construct`, and none when they do not (FR-059; FR-400-AC-3).
+    #[trace("TC-156", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_metadata_010_construct_feature_on_a_backend_edge_is_reported() {
+        let document = |features: Value| {
+            json!({
+                "packages": [
+                    {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                    {"id": "qc 0.1.0", "name": "quire-checked",
+                     "source": "git+https://github.com/agent-ix/quire-eval?branch=main"},
+                ],
+                "resolve": {"nodes": [
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_checked", "pkg": "qc 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]}]},
+                    {"id": "qc 0.1.0", "deps": [], "features": features},
+                ]}
+            })
+        };
+        let on = parse_construct_edges(&document(json!(["std", "construct"]))).unwrap();
+        assert_eq!(
+            on,
+            vec![ConstructEdge {
+                from: Repo::Rt,
+                via_crate: "quire-contract-runtime".to_owned()
+            }]
+        );
+        assert!(parse_construct_edges(&document(json!(["std"])))
+            .unwrap()
+            .is_empty());
+        assert!(crate::graph::check(&parse_edges(&document(json!(["std"]))).unwrap()).is_clean());
     }
 
     /// tc_arch_lint_metadata_002: a dev-kind dependency edge is classified

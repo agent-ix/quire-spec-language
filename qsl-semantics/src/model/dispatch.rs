@@ -44,9 +44,9 @@ use std::collections::HashSet;
 
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use crate::model::index::ModelIndex;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// Whether a [`crate::model::domain_package::DomainPackageRef`]'s generalization graph
 /// is closed. See the module docs: this is not a `DomainPackage` field.

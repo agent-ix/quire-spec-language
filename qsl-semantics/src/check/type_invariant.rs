@@ -23,8 +23,8 @@ use super::ir::{CheckedBody, CheckedNode};
 use super::refusal::{CheckCause, CheckRefusal};
 use super::state_clause::ClauseView;
 use crate::model::domain_package::ParsedTypeInvariant;
-use crate::model::key::DeclarationKey;
 use crate::model::refusal::MemberPath;
+use quire_checked::key::DeclarationKey;
 
 /// The type whose values an invariant ranges over, as a value shows it: a
 /// record or event value shows the declaration node of its most-specific

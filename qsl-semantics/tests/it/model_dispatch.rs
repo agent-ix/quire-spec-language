@@ -25,8 +25,8 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
     OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 use quire_exact::ValueType;
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {

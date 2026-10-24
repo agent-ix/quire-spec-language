@@ -286,7 +286,7 @@ impl World {
             *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
                 .expect("canonical fixture")
                 .as_bytes();
-        let population = qsl_semantics::model::key::DeclarationKey {
+        let population = quire_checked::key::DeclarationKey {
             package: model.package.to_owned(),
             node: model.ident(model.population),
         };

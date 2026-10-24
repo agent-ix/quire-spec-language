@@ -9,8 +9,8 @@ use crate::model::domain_package::{
     DomainPackageRecord, StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord,
 };
 use crate::model::intake::{member_identity_name, read_record_value_type, NodeCtx};
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::ModelRefusal;
+use quire_checked::key::DeclarationKey;
 use serde_json::Value;
 
 use super::meaning_dispatch::MeaningBindingContext;

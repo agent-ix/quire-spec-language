@@ -10,9 +10,9 @@
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTypeInvariant, TypeSlot};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{AdmittedObservations, Observation, SelfKind};
+use quire_checked::key::DeclarationKey;
 use quire_eval::FamilyOutcome;
 use quire_exact::{FieldValue, Incomplete, Meter, ObjectReference, Outcome, Presence, Value};
 use quire_semantic_value::catalog::InternalFault;
