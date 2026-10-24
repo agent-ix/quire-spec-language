@@ -333,11 +333,10 @@ impl std::str::FromStr for NativeValueType {
     }
 }
 
-/// A field, parameter or result's resolved value type: QSL's own closed
-/// native vocabulary, declaring no node of any package, or a node of some
-/// package. The sole output shape [`crate::model::intake`]'s unified
-/// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
-/// made-up "quire/native" package.
+/// A field, parameter or result's resolved type: a `Clock` place, QSL's own
+/// closed native value vocabulary, no node of any package, a node of some
+/// package, or a unit of the compiling unit. Clock is represented separately
+/// because it is not a value in QSL's ordinary data algebra.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -355,7 +354,8 @@ pub enum ValueTypeRef {
 
 impl ValueTypeRef {
     /// This value type's own declaration key, when it names a node of a
-    /// package; `None` for a native value type, which names no node.
+    /// package; `None` for Clock, native value types and units, which name no
+    /// package node.
     pub fn as_package(&self) -> Option<&DeclarationKey> {
         match self {
             Self::Clock | Self::Native(_) | Self::Unit(_) => None,

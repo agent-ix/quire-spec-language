@@ -6241,6 +6241,20 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
+    #[test]
+    fn resolves_clock_only_for_a_clock_field() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/clock"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        assert_eq!(
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Clock", true)
+                .expect("Clock is admitted as a field place"),
+            ValueTypeRef::Clock
+        );
+        assert!(
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Clock", false).is_err()
+        );
+    }
+
     #[trace("TC-897", "FR-056-AC-17")]
     #[test]
     fn resolves_timestamp_as_a_distinct_native_type_ref() {
