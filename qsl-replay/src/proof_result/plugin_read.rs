@@ -31,6 +31,7 @@ mod trace;
 pub use trace::read_plugin_inconclusive_cause_over;
 
 /// Read a process-provider `refuted` entry's hybrid counterexample.
+#[ix_trace_rs::string_edge]
 pub fn read_plugin_hybrid_counterexample(
     entry: &Value,
     model: Option<&qsl_semantics::check::CheckedHybridModel>,

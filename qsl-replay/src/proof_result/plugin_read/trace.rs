@@ -45,16 +45,28 @@ pub(super) fn read_hybrid_counterexample(
     };
     let pointer = BASE.to_owned();
     let fields = object(counterexample, &["kind", "trace", "type"], &pointer)?;
-    if member(fields, "type", &pointer)?.as_str() != Some("hybrid-counterexample") {
-        return Err(PluginResultRefusal::MissingCounterexample {
-            pointer: child(BASE, "type"),
-            cause: crate::proof_result::plugin::ValueFault::InvalidValue,
-        });
+    let type_value = member(fields, "type", &pointer)?;
+    match type_value.as_str() {
+        Some("hybrid-counterexample") => {}
+        Some(_) => {
+            return Err(PluginResultRefusal::MissingCounterexample {
+                pointer: child(BASE, "type"),
+                cause: crate::proof_result::plugin::ValueFault::InvalidValue,
+            });
+        }
+        None => {
+            return Err(PluginResultRefusal::MissingCounterexample {
+                pointer: child(BASE, "type"),
+                cause: crate::proof_result::plugin::ValueFault::WrongValueKind,
+            });
+        }
     }
     let kind_pointer = child(BASE, "kind");
     let kind_value = member(fields, "kind", &pointer)?;
-    if kind_value.as_str() != Some("formula") {
-        return Err(malformed(false, kind_pointer));
+    match kind_value.as_str() {
+        Some("formula") => {}
+        Some(_) => return Err(invalid(kind_pointer)),
+        None => return Err(wrong_kind(kind_pointer)),
     }
     let trace_pointer = child(BASE, "trace");
     let trace = read_trace(model, member(fields, "trace", &pointer)?, &trace_pointer)?;
