@@ -65,6 +65,9 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { workspace = true, features = ["test-support"] }
+# `SuppliedRun::with_reservation_permit`, the test-only reservation permit of
+# the supplied-value run (FR-403). Only this dev-dependency enables it.
+quire-semantic-value = { workspace = true, features = ["test-support"] }
 sha2 = "0.10.9"
 
 [[test]]

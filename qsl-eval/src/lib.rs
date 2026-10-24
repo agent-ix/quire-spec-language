@@ -67,6 +67,18 @@
 //! ```
 //!
 //! ```compile_fail,E0432
+//! use qsl_semantics::value::supplied::SuppliedRun;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::model::refusal::render_identity;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::value::modulo;
+//! ```
+//!
+//! ```compile_fail,E0432
 //! use qsl_semantics::check::WrongSnapshotCause;
 //! ```
 //!

@@ -16,9 +16,10 @@ use qsl_replay::ScalarLimits;
 use qsl_replay::{
     run_with_replay_context, BackendId, Call, CallArgument, CallerLimits, Cancel, DependencyInput,
     DomainKey, DomainKind, FiniteBound, Integer, ObjectEnvironment, PluginReplayRefusal,
-    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, SuppliedLimits, TerminalValue,
-    Value, WireNodeId, WitnessValue,
+    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value, WireNodeId,
+    WitnessValue,
 };
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\

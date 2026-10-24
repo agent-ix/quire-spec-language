@@ -89,7 +89,7 @@ pub struct Call {
     pub accounting: ScalarLimits,
     /// FR-277: the caller's supplied-value helper ceilings. An omitted
     /// ceiling is its published default.
-    pub supplied: qsl_semantics::value::supplied::SuppliedLimits,
+    pub supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
 }
 
 /// A value [`run`] completed. [`run`] refuses `unsupported_construct` before

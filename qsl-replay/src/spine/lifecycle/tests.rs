@@ -19,12 +19,12 @@ use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::supplied::SuppliedLimits;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{Cancel, CancelCause, Integer, Outcome, Value};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,

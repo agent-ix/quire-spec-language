@@ -12,9 +12,8 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete,
-    NavigationRefusal, PreconditionFailure, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
-    ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
+    HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
+    ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
@@ -30,11 +29,15 @@ use qsl_semantics::check::{
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
+use qsl_semantics::value::divide as integer_divide;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
+use quire_eval::modulo as integer_modulo;
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_eval::FamilyResult;
+use quire_eval::{
+    PreconditionFailure, ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
+};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -54,7 +57,7 @@ use quire_exact::{
 };
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
-use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
     EqualityOperator, FieldRef, TypeEnvironment,
@@ -206,7 +209,7 @@ impl From<ModelQueryHalt> for Halt {
             ModelQueryHalt::AbsentKey { population, key } => Self::Family(FamilyResult::Undefined(
                 Box::new(StateModelUndefined::AbsentKey {
                     binding: population.to_string(),
-                    key: identity_string(&key),
+                    key: render_identity(&key),
                 }),
             )),
             ModelQueryHalt::IncompleteClosure {
@@ -2234,11 +2237,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
-                            failure: PreconditionFailure {
-                                operation: operation.member.clone(),
+                            failure: PreconditionFailure::new(
+                                operation.member.clone(),
                                 selected,
-                                receiver: reference,
-                            },
+                                reference,
+                            ),
                             node,
                         })));
                         self.tasks.push(Task::Eval(callable.body));
@@ -2519,7 +2522,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             ValueType::Option(payload) => Ok((**payload).clone()),
             _ => Err(invariant("lookup-option-result-expected")),
         };
-        let key = identity_string(reference.object().as_str().as_bytes());
+        let key = render_identity(reference.object().as_str().as_bytes());
         match (present, absence) {
             (true, AbsenceMode::Empty) => {
                 retain(self.meter, 2)?;
