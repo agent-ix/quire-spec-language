@@ -18,20 +18,25 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest,
+    check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest, Product, ProductTransition,
+    PropertyComponent,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
-use qsl_eval::simulation::TransitionSystem;
-use qsl_eval::temporal::UndefinedCause;
+use qsl_eval::simulation::{ExpansionStop, TransitionSystem};
+use qsl_eval::temporal::{
+    evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    TemporalTrace, UndefinedCause,
+};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
     ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndefinedLocus,
 };
 use qsl_semantics::check::CheckedTemporalClause;
-use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use qsl_semantics::check::FormulaNodeId;
+use qsl_semantics::model::observation::{AnchorKind, DocumentRef};
+use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
 
 use crate::counter::{
     clause_text, document, document_with_ranged_parameter, key, package_with_clauses, subject,
@@ -785,4 +790,224 @@ fn the_model_only_pass_spends_the_budget_the_next_instance_gets() {
         least > counted + 16,
         "a's model-only pass is charged before b's: {least} against {counted} + 16"
     );
+}
+
+fn is_at_most_three(value: i64) -> Option<bool> {
+    Some(value <= 3)
+}
+
+/// The values of `c` along the one behaviour of a single-counter fixture's
+/// model, read from its successor relation: each state's only successor
+/// until a state has none (the terminal state).
+fn behaviour_values(fixture: &Fixture) -> Vec<i64> {
+    let system = fixture.system();
+    let mut initial = system.initial();
+    assert_eq!(initial.len(), 1, "one initial state");
+    let mut current = initial.remove(0);
+    let mut values = vec![value(&current, "c")];
+    loop {
+        let mut successors = system.successors(&current).expect("expands").successors;
+        match successors.len() {
+            0 => return values,
+            1 => current = successors.remove(0).1,
+            more => panic!("{more} successors: more than one behaviour"),
+        }
+        values.push(value(&current, "c"));
+        assert!(values.len() < 16, "the behaviour ends");
+    }
+}
+
+/// The TemporalTrace evaluator's value of `fixture`'s clause on `trace`,
+/// whose position `i` reads `values[i]` through `atom`.
+fn evaluated(
+    fixture: &Fixture,
+    trace: TemporalTrace,
+    values: &[i64],
+    atom: fn(i64) -> Option<bool>,
+) -> TemporalOutcome {
+    struct Positions<'a> {
+        values: &'a [i64],
+        atom: fn(i64) -> Option<bool>,
+    }
+    impl TemporalLetters for Positions<'_> {
+        fn atom(
+            &mut self,
+            _atom: FormulaNodeId,
+            position: TemporalPosition,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, LetterStop> {
+            let index = usize::try_from(position.index()).expect("a small position");
+            Ok(match (self.atom)(self.values[index]) {
+                Some(true) => AtomReading::True,
+                _ => AtomReading::False,
+            })
+        }
+
+        fn activation(
+            &mut self,
+            _position: TemporalPosition,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, LetterStop> {
+            panic!("an `on origin` clause has no activation condition")
+        }
+    }
+    let mut letters = Positions { values, atom };
+    evaluate(
+        &fixture.clauses[0],
+        trace,
+        &mut letters,
+        &mut Meter::new(UNLIMITED),
+    )
+    .expect("the trace is readable")
+}
+
+/// FR-125-AC-2, over the `Counter` subject whose one behaviour is `0, 1, 2,
+/// 3` and then the terminal stutter at `3`: `always[0,5] holds(c.value <= 3)`
+/// from position 0 is false under event-position false-extension (positions 4
+/// and 5 are past closure) and true under infinite-trace (the stutter repeats
+/// `value = 3`); `eventually holds(c.value = 3)` is true under infinite-trace
+/// and `always eventually holds(c.value = 0)` is false. The model checker
+/// agrees where it decides (the first two), and the evaluator reads the
+/// behaviour the model's own successor relation gives.
+#[trace("TC-520", "FR-125-AC-2")]
+#[test]
+fn a_bounded_always_reads_past_closure_as_false_only_under_event_position_false_extension() {
+    let window = "always[0,5] holds(c.value <= 3)";
+    let closed = crate::lasso_replay::bounded_fixture(window);
+    let infinite = counter(document(false), "", window);
+    let reaches = counter(document(false), "", "eventually holds(c.value = 3)");
+    let recurs = counter(document(false), "", "always eventually holds(c.value = 0)");
+
+    let values = behaviour_values(&infinite);
+    assert_eq!(values, [0, 1, 2, 3]);
+    assert_eq!(behaviour_values(&closed), values);
+    let prefix = u64::try_from(values.len() - 1).expect("small");
+    let stuttered = TemporalTrace::Lasso {
+        prefix,
+        loop_len: 1,
+    };
+    let closed_trace = TemporalTrace::Finite { len: prefix + 1 };
+
+    assert!(matches!(
+        evaluated(&closed, closed_trace, &values, is_at_most_three),
+        TemporalOutcome::Violated { .. }
+    ));
+    assert_eq!(
+        evaluated(&infinite, stuttered, &values, is_at_most_three),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        evaluated(&reaches, stuttered, &values, is_three),
+        TemporalOutcome::Holds
+    );
+    assert!(matches!(
+        evaluated(&recurs, stuttered, &values, is_zero),
+        TemporalOutcome::Violated { .. }
+    ));
+
+    let outcome = closed.decide(is_at_most_three).expect("checked");
+    assert_eq!(violated(&outcome).kind, CounterexampleKind::Formula);
+    assert!(matches!(
+        infinite.decide(is_at_most_three),
+        Ok(ModelCheckOutcome::Holds { .. })
+    ));
+    let outcome = recurs.decide(is_zero).expect("checked");
+    assert!(violated(&outcome)
+        .lasso
+        .is_some_and(|lasso| lasso.terminal_stutter));
+}
+
+/// A property component that reads nothing, so a [`Product`] over it is the
+/// model's own behaviours.
+struct Silent;
+
+impl<M: TransitionSystem> PropertyComponent<M> for Silent {
+    type State = usize;
+    type Key = usize;
+    type Finding = ();
+
+    fn initial(&self, _model: &M::State) -> Vec<usize> {
+        vec![0]
+    }
+
+    fn key(&self, state: &usize) -> usize {
+        *state
+    }
+
+    fn advance(
+        &self,
+        state: &usize,
+        _source: &M::State,
+        _transition: &ProductTransition<M::TransitionId>,
+        _target: &M::State,
+    ) -> Result<Vec<usize>, ExpansionStop> {
+        Ok(vec![*state])
+    }
+
+    fn findings(&self, _state: &usize, _model: &M::State) -> Result<Vec<()>, ExpansionStop> {
+        Ok(Vec::new())
+    }
+
+    fn close(&self, _state: &usize, _model: &M::State) -> Result<Vec<()>, ExpansionStop> {
+        Ok(Vec::new())
+    }
+}
+
+/// FR-125-AC-1, over the `Counter` subject (universe `{c}`, initial value 0,
+/// no `terminal` declaration): the one behaviour is positions `0, 1, 2, 3`
+/// anchored `initialization`, `inc`, `inc`, `inc`; under infinite-trace it
+/// continues with the terminal stutter step repeating position 3, whose
+/// transition identity differs from every `inc` identity.
+#[trace("TC-520", "FR-125-AC-1")]
+#[test]
+fn the_counter_behaviour_is_positions_anchored_by_initialization_then_each_inc_and_a_stutter() {
+    let fixture = counter(document(false), "", "always holds(c.value <= 3)");
+    let model = fixture.system();
+    let property = Silent;
+    let product = Product::infinite(&model, &property);
+
+    let mut initial = product.initial();
+    assert_eq!(initial.len(), 1, "one initial state");
+    let mut state = initial.remove(0);
+    let mut values = vec![value(&state.model, "c")];
+    let mut anchors = vec![state.model.anchor().clone()];
+    let mut incs = Vec::new();
+    for _ in 0..3 {
+        let mut steps = product.successors(&state).expect("expands").successors;
+        assert_eq!(steps.len(), 1, "one behaviour: {steps:?}");
+        let (transition, next) = steps.remove(0);
+        let ProductTransition::Model(identity) = transition else {
+            panic!("a model step before the terminal state, got {transition:?}");
+        };
+        assert!(identity.operation().contains("Counter/inc"));
+        incs.push(identity);
+        state = next;
+        values.push(value(&state.model, "c"));
+        anchors.push(state.model.anchor().clone());
+    }
+    assert_eq!(values, [0, 1, 2, 3]);
+    assert_eq!(anchors[0].kind, AnchorKind::Initialization);
+    assert!(anchors[1..].iter().all(|anchor| {
+        anchor.kind == AnchorKind::Handler && anchor.name.contains("ix://test/counter/Counter/inc")
+    }));
+    assert_eq!(anchors[1..].iter().collect::<Vec<_>>(), [&anchors[1]; 3]);
+
+    assert!(model
+        .successors(&state.model)
+        .expect("expands")
+        .successors
+        .is_empty());
+    let mut steps = product.successors(&state).expect("expands").successors;
+    assert_eq!(steps.len(), 1, "the stutter is the only step: {steps:?}");
+    let (stutter, again) = steps.remove(0);
+    assert_eq!(stutter, ProductTransition::TerminalStutter);
+    assert_eq!(value(&again.model, "c"), 3, "position 3 repeats");
+    assert_eq!(
+        model.state_key(&again.model).expect("encodes").1,
+        model.state_key(&state.model).expect("encodes").1,
+        "the stutter returns to the same state"
+    );
+    for inc in incs {
+        assert_ne!(stutter, ProductTransition::Model(inc));
+    }
 }
