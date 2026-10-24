@@ -12,6 +12,7 @@
 //! false at the bindings ([`super::replay`]).
 
 use qsl_eval::value::{input_refusal_code, CheckedPackageEvaluation};
+use qsl_package::CheckedPackage;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{Cancel, Incomplete, Meter, ScalarLimits};
@@ -21,15 +22,16 @@ use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedRun, Supplied
 
 use super::argument::{self, Stopped};
 use super::{
-    arguments, call_failure_to_replay_refusal, consumed, function_target, recompile,
-    request_limits, select, Claim, ReplayRefusal,
+    arguments, call_failure_to_replay_refusal, consumed, declaration_occurrence, function_target,
+    recompile, request_limits, select, value_parity_obligation, value_parity_preimage, wire_id,
+    Claim, ReplayRefusal, ScalarIdentityMismatch, Selected,
 };
 use crate::bounds::ReplayLimits;
-use crate::identity::ObligationIdentity;
+use crate::identity::QualifiedName;
 use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{
-    evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome, ValueIdentity,
+    evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome, ValueClaim, ValueIdentity,
 };
 use crate::target::ReplayEntry;
 
@@ -126,8 +128,14 @@ impl ValueParityResult {
 ///
 /// `wire` names the proved package, the non-`Boolean` function `f` and the
 /// bindings of `f`'s declared parameters, and nothing else, in its `source`
-/// (FR-098's request, whose `source` is the witness's bindings). `generated`
-/// is the generated code's outcome at those bindings. A binding that names no
+/// (FR-098's request, whose `source` is the witness's bindings).
+/// `value_claim` is the driver's observation: the generated outcome at those
+/// bindings and the generated-content identity, carried unchanged (FR-484).
+/// After the target, recompile, package, `UnknownFunction` and
+/// `NotAValueFunction` checks and before the argument join, the request's
+/// occurrence key must be `f`'s `declaration` occurrence
+/// ([`ReplayRefusal::ClaimOccurrence`]) and its obligation identity the one
+/// FR-484's preimage gives ([`ReplayRefusal::ScalarIdentity`]). A binding that names no
 /// parameter of `f`, a parameter bound twice or not at all, and every other
 /// failure before an outcome refuses as FR-098's does
 /// ([`ValueParityResult::Refused`]); a function whose declared result is
@@ -136,17 +144,10 @@ impl ValueParityResult {
 /// `replay_limits` is `replay.input_bytes`, as [`crate::replay`] takes it.
 pub fn replay_value_parity(
     wire: ReplayRequestWire,
-    generated: ScalarOutcome,
+    value_claim: ValueClaim,
     replay_limits: ReplayLimits,
 ) -> ValueParityReport {
-    let claim = ValueIdentity {
-        obligation: ObligationIdentity::from_digest(wire.obligation_identity),
-        package_id: wire.package_id.clone(),
-        function: wire.replay_target.members.function.clone(),
-        source: wire.source.clone(),
-        limits: wire.effective_accounting_limits(),
-        generated,
-    };
+    let claim = ValueIdentity::sent(&wire, &value_claim);
     let result = match settle(wire, &claim, replay_limits) {
         Ok(result) => result,
         Err(refusal) => match refusal.input_refusal() {
@@ -170,6 +171,44 @@ fn pre_call(failure: SuppliedFailure) -> Result<ValueParityResult, ReplayRefusal
     }
 }
 
+/// FR-484: the request's occurrence key is the selected function's one
+/// `declaration` occurrence, then the request's obligation identity is the
+/// one the recompiled package's preimage gives. The preimage is built from
+/// the package alone; the request carries the digest and nothing else of it.
+fn check_identity(
+    request: &ReplayRequest,
+    package: &CheckedPackage,
+    call: &Selected,
+    function: &QualifiedName,
+) -> Result<(), ReplayRefusal> {
+    let key = request.replay_target().occurrence_key().ok_or_else(|| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "function-request-carries-an-occurrence-key",
+        ))
+    })?;
+    if *key != declaration_occurrence(wire_id(call.identity)) {
+        return Err(ReplayRefusal::ClaimOccurrence {
+            key: key.clone(),
+            function: function.clone(),
+        });
+    }
+    let mismatch = |cause| ReplayRefusal::ScalarIdentity(Box::new(cause));
+    let preimage = value_parity_preimage(package, call.identity, &call.parameters)
+        .map_err(ReplayRefusal::Fault)?;
+    let recomputed = value_parity_obligation(&preimage)
+        .map_err(|error| mismatch(ScalarIdentityMismatch::Encoding(error)))?;
+    let claimed = request.obligation_identity();
+    if claimed == recomputed {
+        Ok(())
+    } else {
+        Err(mismatch(ScalarIdentityMismatch::Obligation {
+            claimed,
+            recomputed,
+        }))
+    }
+}
+
 #[deny(clippy::wildcard_enum_match_arm)]
 fn settle(
     wire: ReplayRequestWire,
@@ -186,6 +225,7 @@ fn settle(
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, function, Claim::ValueParity)?;
+    check_identity(&request, package, &call, function)?;
     let joined = arguments(
         package,
         &call,

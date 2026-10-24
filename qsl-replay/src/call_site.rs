@@ -27,10 +27,14 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
-use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role};
+use quire_exact::{Cancel, Identifier, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
-use crate::execute::callable_parameter_keys;
+use crate::execute::{
+    callable_parameter_keys, declaration_occurrence, value_parity_obligation,
+    value_parity_preimage, ValueParityPreimage,
+};
+use crate::identity::ObligationIdentity;
 use crate::identity::QualifiedName;
 use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal, OperationName};
 use crate::FrameOperation;
@@ -166,6 +170,22 @@ pub struct FunctionSite {
     /// or a witness transcript names to bind that parameter's argument --
     /// joined by declared identity, never by position (ADR-013 O-25, C-11).
     pub parameters: Vec<(Identifier, WireNodeId)>,
+    /// FR-484: the function-value parity claim's preimage and the
+    /// obligation identity QSL mints from it; `Some` exactly when the
+    /// function's declared result is not `Boolean`. A claim producer takes
+    /// the identity from here and computes none of it.
+    pub value_parity: Option<ValueParitySite>,
+}
+
+/// FR-484: a non-`Boolean` function's value-parity obligation, minted by
+/// [`call_site`] and recomputed by [`crate::replay_value_parity`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueParitySite {
+    /// The preimage: the function node and one argument per declared
+    /// parameter, in declared order.
+    pub preimage: ValueParityPreimage,
+    /// The SHA-256 of the preimage's canonical bytes.
+    pub obligation_identity: ObligationIdentity,
 }
 
 /// An operation's identities in the compiled package (FR-104, FR-105): the
@@ -572,7 +592,7 @@ impl sealed::Locate for QualifiedName {
         let parameters = callable
             .parameters
             .iter()
-            .zip(keys)
+            .zip(keys.iter().copied())
             .map(|((name, _value_type), key)| {
                 Ok((
                     identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
@@ -581,10 +601,27 @@ impl sealed::Locate for QualifiedName {
             })
             .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
         let function = wire_id(callable.identity);
+        let value_parity = if *callable.result == ValueType::Boolean {
+            None
+        } else {
+            let preimage = value_parity_preimage(package, callable.identity, &keys)
+                .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
+            let obligation_identity = value_parity_obligation(&preimage).map_err(|error| {
+                Box::new(CallSiteRefusal::Fault(
+                    InternalFault::new("call_site", "value-parity-preimage-encodes")
+                        .with_named(vec![("cause", error.to_string())]),
+                ))
+            })?;
+            Some(ValueParitySite {
+                preimage,
+                obligation_identity,
+            })
+        };
         Ok(FunctionSite {
             function,
-            declaration: OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0)),
+            declaration: declaration_occurrence(function),
             parameters,
+            value_parity,
         })
     }
 }

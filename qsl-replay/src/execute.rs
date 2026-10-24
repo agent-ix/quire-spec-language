@@ -83,7 +83,8 @@ mod operator_parity;
 mod parity_identity;
 pub(crate) use parity_identity::process_provider_obligation;
 pub use parity_identity::{
-    parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
+    parity_obligation, value_parity_obligation, BoundEntries, Domain, IdentityEncodeError,
+    ParityArgument, ParityPreimage, ValueParityArgument, ValueParityPreimage,
 };
 pub(crate) mod scalar_site;
 pub use composite_domain::ParityBoundRefusal;
@@ -1331,11 +1332,7 @@ fn function_claim(
     let key = target
         .occurrence_key()
         .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
-    let declaration = OccurrenceKey::new(
-        wire_id(callable.identity),
-        Origin::new(Role::new("declaration"), 0),
-    );
-    if *key == declaration {
+    if *key == declaration_occurrence(wire_id(callable.identity)) {
         return Ok(FunctionClaim::Predicate);
     }
     let graph = compiled.checked.package().graph();
@@ -1376,6 +1373,13 @@ fn function_claim(
     }))
 }
 
+/// A function node's one `declaration` occurrence (ADR-013 O-07): the node,
+/// role `declaration`, ordinal 0. The one constructor `call_site`, the
+/// predicate claim and the value-parity claim share.
+pub(crate) fn declaration_occurrence(function: WireNodeId) -> OccurrenceKey {
+    OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))
+}
+
 /// The selected function: its S6a name, and its parameter nodes and
 /// declared types in declared order.
 struct Selected {
@@ -1408,6 +1412,40 @@ pub(crate) fn callable_parameter_keys(
         ));
     }
     Ok(parameters)
+}
+
+/// FR-484: the preimage of the value-parity claim about the function node
+/// `function` with the parameter nodes `parameters`, read from the checked
+/// package alone: each argument names the parameter node and its declared
+/// type node (`semantic_type`). The one builder `call_site` mints from and
+/// `replay_value_parity` recomputes from, so the two cannot disagree.
+pub(crate) fn value_parity_preimage(
+    package: &CheckedPackage,
+    function: NodeKey,
+    parameters: &[NodeKey],
+) -> Result<ValueParityPreimage, InternalFault> {
+    let graph = package.graph().semantic_graph();
+    let arguments = parameters
+        .iter()
+        .enumerate()
+        .map(|(position, parameter)| {
+            let semantic_type = graph
+                .node(*parameter)
+                .and_then(|node| node.semantic_type())
+                .ok_or_else(|| {
+                    InternalFault::new("replay", "parameter-node-has-a-semantic-type")
+                })?;
+            Ok(ValueParityArgument {
+                parameter: wire_id(*parameter),
+                position,
+                semantic_type: wire_id(semantic_type),
+            })
+        })
+        .collect::<Result<Vec<_>, InternalFault>>()?;
+    Ok(ValueParityPreimage {
+        node: wire_id(function),
+        arguments,
+    })
 }
 
 /// The function `name` selects in the recompiled package, by name lookup in
