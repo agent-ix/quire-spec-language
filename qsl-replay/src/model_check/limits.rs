@@ -118,7 +118,7 @@ pub enum ModelCheckLimit {
 
 impl ModelCheckLimit {
     /// The limit's FR-331 spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::MaxStates => "max-states",
             Self::MaxTransitions => "max-transitions",
@@ -145,8 +145,8 @@ impl ModelCheckLimit {
         }
     }
 
-    /// The request member that raises this limit, as the request spells it.
-    pub const fn setting(self) -> &'static str {
+    /// The request member or FR-255 accounting setting name that raises this limit.
+    pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
