@@ -225,7 +225,9 @@ fn deleting_self_grants_the_receiver_and_not_another_object() {
 /// `modifies self.value`, and `all`, framed `modifies value`) on `self = c1`
 /// whose post snapshot changes `c2.value`. The `Frame` run settles
 /// `violation` (exit 10) with the witness naming `c2.value` under `own` and
-/// `success` (exit 0) under `all`; the clause run of the operation's
+/// `success` (exit 0) under `all`; a post changing only `c1.value` (the
+/// receiver's own) is a success and is admitted under `own`, so the receiver
+/// scope is what separates the outcomes; the clause run of the operation's
 /// postcondition over the same invocation refuses `frame_violation` at
 /// admission under `own` and admits and evaluates under `all`.
 #[trace("TC-573", "FR-154-AC-3")]
@@ -285,6 +287,31 @@ fn the_frame_run_and_the_clause_admission_apply_the_receiver_scope() {
         qsl_foundation::diagnostic::Code::FrameViolation
     );
     assert_eq!(record.cause, "unauthorized-change");
+
+    // Only the receiver scope separates these: the receiver's own `value`
+    // changes, and `c2`'s does not.
+    let own_value = [counter("c1", 1), counter("c2", 0)];
+    let frame_own = run_frame(&["own", "all"], "own", &own_value, &[]);
+    assert!(
+        matches!(
+            frame_own.disposition,
+            ClauseDisposition::Evaluate(CallOutcome::Completed(super::super::CallValue::Boolean(
+                true
+            )))
+        ),
+        "{:?}",
+        frame_own.disposition
+    );
+    let admitted_own_value =
+        run_selected(&["own", "all"], "own", &own_value, &[], clause("DoneOwn"));
+    assert!(
+        matches!(
+            admitted_own_value.disposition,
+            ClauseDisposition::Evaluate(_)
+        ),
+        "{:?}",
+        admitted_own_value.disposition
+    );
 
     let admitted_all = run_selected(&["own", "all"], "all", &post, &[], clause("DoneAll"));
     assert!(

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7) and TC-573 (FR-154-AC-4): the `state`/`frame` node
+//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7), TC-573 (FR-154-AC-4) and
+//! TC-572 (FR-154-AC-5, with `decide_frame` over the same package): the `state`/`frame` node
 //! body S4 emits for receiver-scoped field entries and scoped deletes, the
 //! node ids and package ids those entries decide, and IR's I2 read of the
 //! frame step over edited copies. The expected bodies are the vectors of

@@ -26,8 +26,8 @@ use qsl_analyze::model_check::{
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_replay::{
     AppliedReduction, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ModelTraceSettlement, ModelTraceValue, ReachedLimit, ResultLabel, SettlementBasis,
-    TemporalCounterexample, TerminalValue,
+    ModelStep, ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReductionCause, ResultLabel,
+    SettlementBasis, TemporalCounterexample, TerminalValue,
 };
 use quire_exact::ScalarLimits;
 
@@ -571,13 +571,16 @@ fn a_loop_that_needs_two_passes_closes_at_the_concrete_entry() {
     assert!(reproduced(&world.replay(counterexample.clone())));
 }
 
-/// FR-160-AC-4: ADR-021 §7.1's `fair weak whole` refutation from the
-/// symmetry run settles through `settle_model_check` with its replay:
-/// `refuted`, `decisive-counterexample`, a record equal to the unreduced
-/// run's, which names no reduction, and the counterexample, three `upd(b)`
-/// steps from `(0,0,0)`, equal to the unreduced run's counterexample. The
-/// symmetry run is a reduced one: it stores fewer product states.
-#[trace("TC-584", "FR-160-AC-4")]
+/// FR-160-AC-4 (tagged by no id: the AC says the counterexample equals the
+/// unreduced one "byte for byte", and a `TemporalCounterexample` has no
+/// encoded form here, so what is asserted is equality over every member).
+/// ADR-021 §7.1's `fair weak whole` refutation from the symmetry run settles
+/// through `settle_model_check` with its replay: `refuted`,
+/// `decisive-counterexample`, a record equal to the unreduced run's, which
+/// names no reduction, and the counterexample, three `upd(b)` steps from
+/// `(0,0,0)`, equal to the unreduced run's counterexample. The symmetry run
+/// is a reduced one: it stores fewer product states.
+#[trace("TC-584")]
 #[test]
 fn a_symmetry_refutation_settles_as_the_unreduced_refutation_does() {
     let world = configs("fair weak whole M::Counter::bump; always eventually holds(x.v = 2)");
@@ -631,15 +634,22 @@ fn carries_only_concrete_members(counterexample: &TemporalCounterexample) {
     assert!(blocked.is_empty() && refinement.is_none());
 }
 
-/// FR-161-AC-4: FR-156-AC-3's partial-order counterexample and FR-158-AC-1's
-/// constrained counterexample are emitted as the search found them and
-/// replay; the constrained one is the unconstrained run's, step for step.
-/// AC-1's, AC-2's and AC-3's concretised counterexamples replay, and each
-/// step's recorded post-state is the digest of a concrete successor of its
-/// transition. Every one is a `TemporalCounterexample`, whose members hold
-/// no canonical state, permutation or reduction name. Concretising AC-1
-/// twice gives equal counterexamples.
-#[trace("TC-586", "FR-161-AC-4")]
+/// FR-161-AC-4 (tagged by no id: the AC's serialize/decode round trip and
+/// "byte-equal" have nothing to run against, because `TemporalCounterexample`
+/// has no encoded form here; what is asserted is equality over every member
+/// and that the witness envelope carries it to a replay, tracked as QSL-1045).
+/// FR-156-AC-3's partial-order counterexample replays, and agrees with the
+/// unreduced run's on every member but the step list (the reduced path is
+/// longer), ending in a state with the same `q.v`; FR-158-AC-1's constrained
+/// counterexample equals the unconstrained run's, in a world where the same
+/// constraint demonstrably cuts the search (`always holds(x.v <= 2)` settles
+/// `ConstraintReached{12}` over 20 stored states, where the unconstrained
+/// run is violated). AC-1's, AC-2's and AC-3's concretised counterexamples
+/// replay, and each step's recorded post-state is the digest of a concrete
+/// successor of its transition. Every one is a `TemporalCounterexample`
+/// whose members hold no canonical state, permutation or reduction name.
+/// Concretising AC-1 twice gives equal counterexamples.
+#[trace("TC-586")]
 #[test]
 fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
     use crate::por_world::ring;
@@ -664,6 +674,46 @@ fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
     carries_only_concrete_members(counterexample);
     assert_eq!(counterexample.prefix.len(), 6);
     assert_eq!(fixture.positions(counterexample).len(), 7);
+    let plain = fixture
+        .run(
+            Some(0),
+            crate::partial_order::below_two(),
+            Reductions::default(),
+        )
+        .expect("checks");
+    let ModelCheckOutcome::Violated {
+        counterexample: plain,
+        ..
+    } = &plain
+    else {
+        panic!("the unreduced run is violated too, got {plain:?}");
+    };
+    assert_eq!(
+        (
+            counterexample.initial_state,
+            &counterexample.over_binding,
+            &counterexample.fairness,
+            &counterexample.kind,
+            counterexample.lasso,
+            &counterexample.blocked,
+            &counterexample.refinement
+        ),
+        (
+            plain.initial_state,
+            &plain.over_binding,
+            &plain.fairness,
+            &plain.kind,
+            plain.lasso,
+            &plain.blocked,
+            &plain.refinement
+        )
+    );
+    let last = |cx: &TemporalCounterexample| {
+        let states = fixture.positions(cx);
+        crate::por_world::ring_state(states.last().expect("a final state"))
+    };
+    assert_eq!(last(counterexample).1, 2, "q.v reaches 2");
+    assert_eq!(last(counterexample).1, last(plain).1);
     assert!(reproduced_any(&fixture.replay(
         Some(0),
         crate::partial_order::below_two(),
@@ -671,8 +721,33 @@ fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
     )));
 
     // FR-158-AC-1's constrained counterexample.
-    let counting = count(&[infinite("always holds(x.v <= 1)")]);
+    let counting = count(&[
+        infinite("always holds(x.v <= 1)"),
+        infinite("always holds(x.v <= 2)"),
+    ]);
     let low = || vec![atom(|v| Some(v <= 1))];
+    let cut = counting
+        .run(
+            Some(1),
+            vec![atom(|v| Some(v <= 2))],
+            constraint("Low"),
+            None,
+            ModelCheckLimits::default(),
+        )
+        .expect("checks");
+    assert_eq!(cut.stats().product_states, 20);
+    assert!(
+        matches!(
+            cut,
+            ModelCheckOutcome::Reduction {
+                cause: ReductionCause::ConstraintReached {
+                    boundary_states: 12
+                },
+                ..
+            }
+        ),
+        "the constraint `Low` is active in this world: {cut:?}"
+    );
     let constrained = counting
         .run(
             Some(0),
