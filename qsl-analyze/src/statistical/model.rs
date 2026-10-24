@@ -44,7 +44,7 @@ use qsl_semantics::check::{
     Bound as CheckedBound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim,
     CheckedTemporalFormula, Event, FractionMeasure, ProbForm, ProbScheduler, TemporalProfile,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 

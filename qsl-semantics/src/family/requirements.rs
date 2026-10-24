@@ -131,6 +131,17 @@ pub enum UnsupportedItem {
     },
 }
 
+/// The evidence kind a `probabilistic-satisfaction` claim is decided by
+/// (FR-195, QSpec FR-290): the kind FR-075's request builder writes on the
+/// claim's item when the request names none.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ClaimEvidence {
+    /// Sampled evidence: EN-4.
+    Statistical,
+    /// Exact evidence: EN-5.
+    Exact,
+}
+
 /// One item's requirements (ADR-012 §2, FR-062-AC-4; ADR-014 §4, §6 step
 /// 1): the FR-057 capability kind it requests, its extent, the fairness
 /// kinds its fairness set uses (FR-134; empty for an item with none), and
@@ -143,6 +154,7 @@ pub struct Requirements {
     unsupported: Option<UnsupportedItem>,
     model_subject: bool,
     hybrid_dynamics: bool,
+    evidence: Option<ClaimEvidence>,
 }
 
 impl Requirements {
@@ -155,7 +167,22 @@ impl Requirements {
             unsupported: None,
             model_subject: false,
             hybrid_dynamics: false,
+            evidence: None,
         }
+    }
+
+    /// The requirements with the evidence kind a `probabilistic-satisfaction`
+    /// claim is decided by (FR-195).
+    #[must_use]
+    pub fn with_evidence(mut self, evidence: ClaimEvidence) -> Self {
+        self.evidence = Some(evidence);
+        self
+    }
+
+    /// The evidence kind recorded for a `probabilistic-satisfaction` claim;
+    /// `None` for every other kind.
+    pub fn evidence(&self) -> Option<ClaimEvidence> {
+        self.evidence
     }
 
     /// The requirements of an item over a model subject (FR-331, FR-368:

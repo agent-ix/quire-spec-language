@@ -10,15 +10,23 @@
 //! dynamics, which is ADR-026 HY-1's line between EN-6 and an external
 //! solver.
 
-use quire_exact::{Identifier, Rational};
+use quire_exact::{Identifier, Rational, ValueType};
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
+use super::profile::TemporalProfile;
+
+mod callee;
 mod cause;
+mod claim;
 mod model;
 mod term;
 
+pub(super) use callee::Callees;
 pub use cause::{HybridCause, MalformedReason};
+pub(super) use claim::{check_claims, ClaimInputs};
+pub use claim::{hybrid_horizon, HorizonOutOfRange, HybridClaimDeclaration};
+pub(super) use model::check_models;
 pub use model::HybridDeclaration;
-pub(super) use model::{check_models, not_emitted};
 
 /// A mode of a [`CheckedHybridModel`], by its position in
 /// [`CheckedHybridModel::modes`].
@@ -66,6 +74,41 @@ impl TransitionIndex {
     }
 
     /// The position in [`CheckedMode::transitions`].
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+/// A hybrid model of the package, by its position in
+/// `CheckedGraph::hybrid_models`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HybridModelIndex(usize);
+
+impl HybridModelIndex {
+    /// The model at position `index`.
+    pub fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The position in `CheckedGraph::hybrid_models`.
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+/// A pure function a term calls, by its position in the package's function
+/// list (FR-062). S4 emits the call as an application of that function's
+/// node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedFunctionRef(usize);
+
+impl CheckedFunctionRef {
+    /// The function at position `index`.
+    pub fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The position in the package's function list.
     pub fn get(self) -> usize {
         self.0
     }
@@ -214,6 +257,11 @@ pub enum HybridTerm {
     /// A continuous variable at the current position; in a reset, its
     /// pre-jump value.
     Variable(VariableIndex),
+    /// `q.x` of an `on each (q: D)` activation: the value of `x` at the
+    /// activation position.
+    ActivationVariable(VariableIndex),
+    /// A capture's value, read throughout its obligation.
+    Capture(CaptureIndex),
     /// A numeric constant, exact.
     Constant(Rational),
     /// `true` or `false`.
@@ -230,6 +278,149 @@ pub enum HybridTerm {
     Logic(LogicOp, Box<HybridTerm>, Box<HybridTerm>),
     /// `if c then a else b`.
     Conditional(Box<HybridTerm>, Box<HybridTerm>, Box<HybridTerm>),
+    /// A call of a pure function whose parameters and result are `Boolean`
+    /// or numeric, arguments in order. S3 expands no call.
+    Call(CheckedFunctionRef, Vec<HybridTerm>),
+}
+
+/// One checked hybrid claim: a `temporal` clause whose `over` parameter is
+/// typed by a `hybrid` declaration (FR-447 "Hybrid claims").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedHybridClaim {
+    /// The model the `over` parameter's type names.
+    pub model: HybridModelIndex,
+    /// The temporal profile the claim's `using` alias selects.
+    pub profile: TemporalProfile,
+    /// The `over` parameter's name.
+    pub over: Identifier,
+    /// The clock the claim is stepped by.
+    pub clock: HybridClock,
+    /// The activation.
+    pub activation: HybridActivation,
+    /// The captures, in source order.
+    pub captures: Vec<HybridCapture>,
+    /// The fairness constraints, in source order of first occurrence.
+    pub fairness: Vec<HybridFairness>,
+    /// The formula.
+    pub formula: HybridFormula,
+    /// The reach of the formula; `None` for an unbounded claim.
+    pub horizon: Option<HybridHorizon>,
+}
+
+/// The clock a hybrid claim is bound to (QSpec FR-252).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HybridClock {
+    /// `model-time`: positions are instants, intervals count seconds.
+    ModelTime,
+    /// `model-steps`: positions are the start state and each jump's state,
+    /// intervals count positions.
+    ModelSteps,
+}
+
+/// A hybrid claim's activation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HybridActivation {
+    /// `on origin`: one obligation, at the first position.
+    Origin,
+    /// `on each (q: D) [when (g)]`: one obligation at every position, or at
+    /// every position where the guard holds.
+    Each {
+        /// The `on each` parameter's name.
+        parameter: Identifier,
+        /// The guard, when written.
+        guard: Option<HybridTerm>,
+    },
+}
+
+/// One checked capture, `capture n: T = e;`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridCapture {
+    /// The capture's name.
+    pub name: Identifier,
+    /// Its declared type: `Boolean` or numeric.
+    pub ty: ValueType,
+    /// The initializer, evaluated once at the activation position.
+    pub value: HybridTerm,
+}
+
+/// One checked fairness constraint over hybrid transitions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridFairness {
+    /// Weak or strong.
+    pub kind: FairnessKind,
+    /// One constraint over the named transitions, or one per transition.
+    pub granularity: FairnessGranularity,
+    /// The target after `::` when the source writes `fair S::T`; absent for
+    /// `fair S`, even if all of S's transitions have the same target.
+    pub named_target: Option<ModeIndex>,
+    /// The named transitions, in source order.
+    pub transitions: Vec<(ModeIndex, TransitionIndex)>,
+}
+
+/// The reach of a claim's formula (FR-447 "Horizon").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HybridHorizon {
+    /// Seconds after the activation position, under `model-time`.
+    Seconds(Rational),
+    /// Positions after the activation position, under `model-steps`.
+    Positions(u64),
+}
+
+/// A hybrid claim's formula.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HybridFormula {
+    /// `holds(e)`, and `true` and `false`.
+    Holds(HybridTerm),
+    /// `not`.
+    Not(Box<HybridFormula>),
+    /// `and`, `or` or `implies`.
+    Logic(LogicOp, Box<HybridFormula>, Box<HybridFormula>),
+    /// `always`.
+    Always(Option<HybridInterval>, Box<HybridFormula>),
+    /// `eventually`.
+    Eventually(Option<HybridInterval>, Box<HybridFormula>),
+    /// `until`.
+    Until(
+        Option<HybridInterval>,
+        Box<HybridFormula>,
+        Box<HybridFormula>,
+    ),
+    /// `release`.
+    Release(
+        Option<HybridInterval>,
+        Box<HybridFormula>,
+        Box<HybridFormula>,
+    ),
+    /// `historically`.
+    Historically(Option<HybridInterval>, Box<HybridFormula>),
+    /// `once`.
+    Once(Option<HybridInterval>, Box<HybridFormula>),
+    /// `since`.
+    Since(
+        Option<HybridInterval>,
+        Box<HybridFormula>,
+        Box<HybridFormula>,
+    ),
+    /// `triggered`.
+    Triggered(
+        Option<HybridInterval>,
+        Box<HybridFormula>,
+        Box<HybridFormula>,
+    ),
+}
+
+/// An operator's interval: seconds under `model-time`, positions under
+/// `model-steps`, every bound an exact rational.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridInterval {
+    /// The lower bound.
+    pub lower: Rational,
+    /// Whether the lower end is open.
+    pub lower_open: bool,
+    /// The upper bound; `None` for `*`.
+    pub upper: Option<Rational>,
+    /// Whether the upper end is open.
+    pub upper_open: bool,
 }
 
 #[cfg(test)]

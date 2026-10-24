@@ -52,7 +52,7 @@ use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
-use crate::{CandidateOutcome, CandidateSet, Registry};
+use crate::{CandidateOutcome, CandidateSet, EvidenceKind, ItemEvidence, Registry};
 use qsl_foundation::BackendId;
 
 /// An item's QSpec FR-331 extent classification (QSpec FR-290 `bounded`/
@@ -384,9 +384,18 @@ pub struct RequirementItem {
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
     unsupported: Option<UnsupportedItem>,
+    evidence: Option<EvidenceKind>,
 }
 
 impl RequirementItem {
+    /// The evidence kind a `probabilistic-satisfaction` item names (FR-075
+    /// "Evidence kind of a probabilistic item"): always one of the two kinds
+    /// for such an item the builder writes, and `None` for an item of any
+    /// other capability kind.
+    pub fn evidence(&self) -> Option<EvidenceKind> {
+        self.evidence
+    }
+
     /// The item's request index: its position in record key order, or 0
     /// for a follow-up [`RequirementItem::bounded`] writes, the single item
     /// of its own request (ADR-014 §4, FR-075-AC-8).
@@ -554,51 +563,118 @@ impl RequirementItem {
     }
 }
 
+/// The evidence kinds a request selects for its probabilistic items (FR-075
+/// "Evidence kind of a probabilistic item").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvidenceSelection {
+    /// The request names none: each probabilistic item carries its record's
+    /// evidence kind.
+    Record,
+    /// The request names one kind: each probabilistic item carries it,
+    /// whatever the record's kind.
+    One(EvidenceKind),
+    /// The request names both: each probabilistic record's item carries the
+    /// record's kind, and a second-kind item per such record follows the
+    /// last record's item.
+    Both,
+}
+
 /// The requested items of a checked package's requirement `records`
-/// (`CheckedPackage::graph().requirements()`), one per record in the
-/// records' occurrence-key order, each with its candidate outcome from
-/// `registry` for the backend `named`, when the request names one, filtered
-/// by the fairness kinds the record's requirements use (FR-134), and the
-/// record's canonical path condition. An item whose candidate set is empty
-/// or whose extent is unbounded is written like any other; negotiation
-/// settles it.
+/// (`CheckedPackage::graph().requirements()`) for a request naming no
+/// evidence selection: [`items_with_evidence`] with
+/// [`EvidenceSelection::Record`].
 pub fn items_from_requirements(
     records: &BTreeMap<OccurrenceKey, RequirementRecord>,
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> Vec<RequirementItem> {
-    records
+    items_with_evidence(records, registry, named, EvidenceSelection::Record)
+}
+
+/// The requested items of a checked package's requirement `records`, one per
+/// record in the records' occurrence-key order, each with its candidate
+/// outcome from `registry` for the backend `named`, when the request names
+/// one, filtered by the fairness kinds the record's requirements use
+/// (FR-134), and the record's canonical path condition. A
+/// `probabilistic-satisfaction` item names its evidence kind by `selection`,
+/// and its candidates are the backends whose evidence-kind set holds exactly
+/// that kind. When `selection` is [`EvidenceSelection::Both`], the second-kind
+/// items follow, one per probabilistic record in key order, at request index
+/// `n + j`. An item whose candidate set is empty or whose extent is
+/// unbounded is written like any other; negotiation settles it.
+pub fn items_with_evidence(
+    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    registry: &Registry,
+    named: Option<&BackendId>,
+    selection: EvidenceSelection,
+) -> Vec<RequirementItem> {
+    let probabilistic = |record: &RequirementRecord| {
+        matches!(
+            record.requirements().kind(),
+            Capability::ProbabilisticSatisfaction
+        )
+    };
+    let write = |position: usize,
+                 occurrence: &OccurrenceKey,
+                 record: &RequirementRecord,
+                 evidence: Option<EvidenceKind>| {
+        let requirements = record.requirements();
+        let extent = ExtentClassification::of(requirements.extent());
+        let unbounded = match requirements.extent() {
+            ClaimExtent::Bounded => Vec::new(),
+            ClaimExtent::Unbounded(domains) => domains
+                .iter()
+                .map(|(key, kind)| (key.clone(), kind))
+                .collect(),
+        };
+        RequirementItem {
+            index: RequestIndex::new(position),
+            occurrence: occurrence.clone(),
+            kind: requirements.kind(),
+            hybrid_dynamics: requirements.hybrid_dynamics(),
+            extent,
+            unbounded,
+            proof_bounds: Vec::new(),
+            subject_proof_bounds: Vec::new(),
+            model_subject: requirements.model_subject(),
+            result_bound: record.result_bound().node(),
+            conversion_context: record.conversion_context().cloned(),
+            path_condition: record.path_condition().to_vec(),
+            candidates: if evidence.is_none() && probabilistic(record) {
+                // FR-195: a probabilistic record always carries its
+                // evidence kind; one without has no backend to settle it.
+                CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
+            } else {
+                candidates_of(requirements, evidence, registry, named)
+            },
+            unsupported: requirements.unsupported().cloned(),
+            evidence,
+        }
+    };
+    let own = |record: &RequirementRecord| match selection {
+        EvidenceSelection::One(kind) => probabilistic(record).then_some(kind),
+        EvidenceSelection::Record | EvidenceSelection::Both => {
+            record.requirements().evidence().map(EvidenceKind::from)
+        }
+    };
+    let mut items: Vec<RequirementItem> = records
         .iter()
         .enumerate()
-        .map(|(position, (occurrence, record))| {
-            let requirements = record.requirements();
-            let index = RequestIndex::new(position);
-            let extent = ExtentClassification::of(requirements.extent());
-            let unbounded = match requirements.extent() {
-                ClaimExtent::Bounded => Vec::new(),
-                ClaimExtent::Unbounded(domains) => domains
-                    .iter()
-                    .map(|(key, kind)| (key.clone(), kind))
-                    .collect(),
+        .map(|(position, (occurrence, record))| write(position, occurrence, record, own(record)))
+        .collect();
+    if selection == EvidenceSelection::Both {
+        let mut position = records.len();
+        for (occurrence, record) in records {
+            let Some(first) = own(record) else { continue };
+            let other = match first {
+                EvidenceKind::Statistical => EvidenceKind::Exact,
+                EvidenceKind::Exact => EvidenceKind::Statistical,
             };
-            RequirementItem {
-                index,
-                occurrence: occurrence.clone(),
-                kind: requirements.kind(),
-                hybrid_dynamics: requirements.hybrid_dynamics(),
-                extent,
-                unbounded,
-                proof_bounds: Vec::new(),
-                subject_proof_bounds: Vec::new(),
-                model_subject: requirements.model_subject(),
-                result_bound: record.result_bound().node(),
-                conversion_context: record.conversion_context().cloned(),
-                path_condition: record.path_condition().to_vec(),
-                candidates: candidates_of(requirements, registry, named),
-                unsupported: requirements.unsupported().cloned(),
-            }
-        })
-        .collect()
+            items.push(write(position, occurrence, record, Some(other)));
+            position += 1;
+        }
+    }
+    items
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
@@ -606,16 +682,22 @@ pub fn items_from_requirements(
 /// item the writer disposes `Unsupported` has no candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
+    evidence: Option<EvidenceKind>,
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> CandidateOutcome {
-    let outcome = registry.candidates_for_temporal_dynamics(
-        requirements.kind(),
-        named,
-        requirements.fairness(),
-        &Default::default(),
-        requirements.hybrid_dynamics(),
-    );
+    let outcome = match evidence {
+        Some(kind) => {
+            registry.candidates_for_evidence(requirements.kind(), &ItemEvidence::Kind(kind), named)
+        }
+        None => registry.candidates_for_temporal_dynamics(
+            requirements.kind(),
+            named,
+            requirements.fairness(),
+            &Default::default(),
+            requirements.hybrid_dynamics(),
+        ),
+    };
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
         CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => {
@@ -997,7 +1079,7 @@ mod tests {
         let item = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
 
         let CandidateOutcome::Candidates(strong) =
-            candidates_of(&item.clone().with_fairness([Strong]), &registry, None)
+            candidates_of(&item.clone().with_fairness([Strong]), None, &registry, None)
         else {
             panic!("a candidate outcome");
         };
@@ -1005,7 +1087,8 @@ mod tests {
             strong.candidates(),
             [Candidate::new(BackendId::new("both"))]
         );
-        let CandidateOutcome::Candidates(plain) = candidates_of(&item, &registry, None) else {
+        let CandidateOutcome::Candidates(plain) = candidates_of(&item, None, &registry, None)
+        else {
             panic!("a candidate outcome");
         };
         assert_eq!(plain.candidates().len(), 2);
@@ -1050,18 +1133,20 @@ mod tests {
         assert_eq!(disposed.unsupported(), Some(&cause));
         assert_eq!(negotiated.unsupported(), None);
 
-        let CandidateOutcome::Candidates(none) = candidates_of(&punctual, &registry, None) else {
+        let CandidateOutcome::Candidates(none) = candidates_of(&punctual, None, &registry, None)
+        else {
             panic!("a candidate outcome");
         };
         assert!(none.candidates().is_empty());
-        let CandidateOutcome::Candidates(some) = candidates_of(&plain, &registry, None) else {
+        let CandidateOutcome::Candidates(some) = candidates_of(&plain, None, &registry, None)
+        else {
             panic!("a candidate outcome");
         };
         assert_eq!(some.candidates(), [Candidate::new(BackendId::new("zones"))]);
 
         let missing = BackendId::new("missing");
         assert_eq!(
-            candidates_of(&punctual, &registry, Some(&missing)),
+            candidates_of(&punctual, None, &registry, Some(&missing)),
             CandidateOutcome::UnknownBackend(missing)
         );
     }

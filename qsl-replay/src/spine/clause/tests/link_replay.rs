@@ -12,8 +12,8 @@ use crate::{
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::intake::meaning;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{FrameChange, LinkDifference, SelectedObject};
+use quire_checked::key::DeclarationKey;
 use quire_exact::Identifier;
 use quire_semantic_value::catalog::Category;
 

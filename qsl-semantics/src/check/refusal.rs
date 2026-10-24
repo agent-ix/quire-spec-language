@@ -8,9 +8,9 @@ use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::MemoryModelName;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
-use quire_exact::Integer;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -124,6 +124,45 @@ pub enum ProtocolAnchorCause {
         construct: &'static str,
         /// The construct's own span: the earliest such construct in the
         /// protocol.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the named unit declaration does not exist.
+    JoinFunctionMissing {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The function name as written.
+        function: String,
+        /// The function name's span.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the name resolves to a declaration that is
+    /// not a function.
+    JoinFunctionKind {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The function name as written.
+        function: String,
+        /// The resolved declaration kind.
+        kind: &'static str,
+        /// The function name's span.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the resolved function's Boolean signature
+    /// does not match the distinct joined labels.
+    JoinFunctionType {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The resolved function name.
+        function: String,
+        /// The required parameter types.
+        expected_parameters: Box<[ValueType]>,
+        /// The function's declared parameter types.
+        actual_parameters: Box<[ValueType]>,
+        /// The required return type.
+        expected_result: Box<ValueType>,
+        /// The function's declared return type.
+        actual_result: Box<ValueType>,
+        /// The function name's span.
         span: Span,
     },
     /// The protocol's `using` alias names no profile selection of
@@ -519,7 +558,7 @@ pub enum ProtocolAnchorCause {
         /// The export's own kind, such as `port` or `object type`.
         actual: &'static str,
         /// The export's declaration key.
-        export: Box<crate::model::key::DeclarationKey>,
+        export: Box<quire_checked::key::DeclarationKey>,
         /// The model name's span.
         span: Span,
     },
@@ -846,6 +885,9 @@ impl ProtocolAnchorCause {
             | Self::MissingContract { span, .. }
             | Self::WrongContractAnchor { span, .. }
             | Self::Unimplemented { span, .. }
+            | Self::JoinFunctionMissing { span, .. }
+            | Self::JoinFunctionKind { span, .. }
+            | Self::JoinFunctionType { span, .. }
             | Self::MissingProfile { span, .. }
             | Self::MissingRoleType { span, .. }
             | Self::MissingRole { span, .. }
@@ -903,6 +945,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRelationship { .. }
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
+            Self::JoinFunctionMissing { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -916,6 +959,7 @@ impl ProtocolAnchorCause {
             | Self::RelatedEnd { .. }
             | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => Code::IllTyped,
+            Self::JoinFunctionKind { .. } | Self::JoinFunctionType { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
@@ -954,6 +998,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRelationship { .. }
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
+            Self::JoinFunctionMissing { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -962,11 +1007,13 @@ impl ProtocolAnchorCause {
             | Self::RelatedEnd { .. }
             | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => "type-mismatch",
+            Self::JoinFunctionType { .. } => "type-mismatch",
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
             | Self::AccessOrdering { .. }
             | Self::RequirementKind { .. } => "operator-ineligible",
+            Self::JoinFunctionKind { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {
@@ -1068,7 +1115,7 @@ pub enum TemporalCause {
     /// at the clause.
     AmbiguousPopulation {
         /// The covering populations, in ascending `DeclarationKey` order.
-        populations: Vec<crate::model::key::DeclarationKey>,
+        populations: Vec<quire_checked::key::DeclarationKey>,
         /// The clause's span.
         span: Span,
     },
@@ -1155,6 +1202,14 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// A clause over a non-hybrid subject that writes no `clock` member: its
+    /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
+    /// built, so the clause is refused rather than stepped by a guessed
+    /// clock. Located at the clause.
+    MissingClock {
+        /// The clause's span.
+        span: Span,
+    },
 }
 
 /// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
@@ -1205,7 +1260,8 @@ impl TemporalCause {
             | Self::ZeroDenominator { span }
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
-            | Self::TimedTraceSubject { span } => *span,
+            | Self::TimedTraceSubject { span }
+            | Self::MissingClock { span } => *span,
         }
     }
 
@@ -1220,7 +1276,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => Code::UnsupportedConstruct,
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
                 Code::InvalidTimedModel
@@ -1259,7 +1316,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => "not-yet-implemented",
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
@@ -1559,7 +1617,7 @@ pub enum MemberCandidate {
     /// the end on `side` (the end nearest the receiver).
     RelationshipEnd {
         /// The relationship's declaration.
-        relationship: crate::model::key::DeclarationKey,
+        relationship: quire_checked::key::DeclarationKey,
         /// The end whose role the name matched.
         side: super::navigation::EndSide,
     },
@@ -1884,7 +1942,7 @@ pub enum CheckCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DispatchLinkCause {
     /// The called operation: the root of the family that failed.
-    pub operation: crate::model::key::DeclarationKey,
+    pub operation: quire_checked::key::DeclarationKey,
     /// The refusal's code.
     pub code: Code,
     /// The refusal's catalog pair: `resource_exhausted`/
@@ -1906,15 +1964,15 @@ pub struct DispatchLinkCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DispatchSubtypeFailure {
     /// The subtype.
-    pub subtype: crate::model::key::DeclarationKey,
+    pub subtype: quire_checked::key::DeclarationKey,
     /// `no-applicable` or `multiple-undominated`.
     pub cause: &'static str,
     /// Every applicable candidate.
-    pub candidates: Vec<crate::model::key::DeclarationKey>,
+    pub candidates: Vec<quire_checked::key::DeclarationKey>,
     /// Every `(dominant, dominated)` pair among them.
     pub dominance_pairs: Vec<(
-        crate::model::key::DeclarationKey,
-        crate::model::key::DeclarationKey,
+        quire_checked::key::DeclarationKey,
+        quire_checked::key::DeclarationKey,
     )>,
 }
 
@@ -1932,13 +1990,13 @@ pub enum KeyFault {
     UnknownEffectiveId(EffectiveId),
     /// A `DeclarationKey`'s `package` is no admitted domain package's
     /// identity.
-    UnadmittedPackage(crate::model::key::DeclarationKey),
+    UnadmittedPackage(quire_checked::key::DeclarationKey),
     /// A `DeclarationKey`'s `node` is empty.
-    EmptyNode(crate::model::key::DeclarationKey),
+    EmptyNode(quire_checked::key::DeclarationKey),
     /// A `DeclarationKey` names no record of its admitted domain package.
-    UnknownDeclaration(crate::model::key::DeclarationKey),
+    UnknownDeclaration(quire_checked::key::DeclarationKey),
     /// A domain package record of a kind no checked node names.
-    UnnamedRecordKind(crate::model::key::DeclarationKey),
+    UnnamedRecordKind(quire_checked::key::DeclarationKey),
     /// A compound `UnitId` the check stage's unit scope does not hold.
     UnheldUnit(quire_exact::UnitId),
     /// A declared unit node, or a dimension or target unit node a held unit
@@ -2354,7 +2412,7 @@ pub struct IdentityObserving {
     /// The form of identity observation.
     pub form: IdentityForm,
     /// The population's declaration key.
-    pub population: crate::model::key::DeclarationKey,
+    pub population: quire_checked::key::DeclarationKey,
 }
 
 /// A located checking refusal, made before any charge.

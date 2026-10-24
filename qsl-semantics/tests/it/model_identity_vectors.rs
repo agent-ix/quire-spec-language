@@ -16,12 +16,12 @@ use qsl_semantics::model::domain_package::{
     ObjectTypeRecord, ValueTypeRef,
 };
 use qsl_semantics::model::key::{
-    DeclarationKey, EffectiveId, EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
-    RULE_SUBSET,
+    EffectiveId, EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
+use quire_checked::key::DeclarationKey;
 
 const PREFIX: &str = "ix://test/orders/";
 

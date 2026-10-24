@@ -240,7 +240,7 @@ fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
 #[trace("TC-514", "FR-267-AC-11", "FR-115-AC-7", "FR-109-AC-10")]
 #[test]
 fn native_result_two_round_trips_complete_frame_witness() {
-    use qsl_semantics::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
 
     let mut report = run(frame_input(
         config_version_request,
@@ -438,8 +438,8 @@ fn native_result_two_refuses_broken_frame_witness_members() {
 /// TC-1037 row 2's finding as a check-time witness: the evaluated `Link`
 /// of `Pump-housing-Tank` at `p1`-`t1`, `removed`, in population `Q`.
 fn link_witness(difference: qsl_semantics::model::observation::LinkDifference) -> FrameWitness {
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::observation::SelectedObject;
+    use quire_checked::key::DeclarationKey;
 
     let [invocation, pre, post] = ["invocation", "pre", "post"].map(|name| DocumentRef {
         authority: "test".to_owned(),
@@ -988,7 +988,7 @@ fn an_inherited_operation_selects_its_declaring_frame_through_the_resolver() {
 
     assert_eq!(
         via_sub.object(),
-        &qsl_semantics::model::key::DeclarationKey {
+        &quire_checked::key::DeclarationKey {
             package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
             node: format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub"),
         }
@@ -1052,7 +1052,7 @@ fn each_model_alias_resolves_its_own_packages_object_type() {
             .unwrap_or_else(|| panic!("{alias}::ConfigVersion resolves"));
         assert_eq!(
             selection.object(),
-            &qsl_semantics::model::key::DeclarationKey {
+            &quire_checked::key::DeclarationKey {
                 package: package.to_owned(),
                 node: format!("ix://{package}/ConfigVersion"),
             },

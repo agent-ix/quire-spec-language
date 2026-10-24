@@ -19,10 +19,10 @@ use qsl_semantics::check::footprint::{
 };
 use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
 use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, ObjectReference, Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 

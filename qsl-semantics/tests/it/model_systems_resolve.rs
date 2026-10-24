@@ -18,7 +18,7 @@ use qsl_semantics::model::domain_package::{
     AllocationRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect,
     OperationMemberRecord, PortDirection, RelationshipDirection, RelationshipRecord,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::key::EffectiveId;
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -26,6 +26,7 @@ use qsl_semantics::model::qualified::{
     resolve_systems, ModelAlias, ResolveFailure, ResolvedSystemsElement,
 };
 use qsl_semantics::model::systems::{ConditionFailure, Kind};
+use quire_checked::key::DeclarationKey;
 
 use super::model_systems::{
     allocation, component, endpoint, field_member, mult, object_type, one, relationship,

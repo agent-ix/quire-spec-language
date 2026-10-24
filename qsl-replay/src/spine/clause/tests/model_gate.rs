@@ -21,6 +21,7 @@ const QUERIES: &str = "quire.state.queries/v1";
 const GRAPH: &str = "quire.state.graph/v1";
 const VALUE: &str = "quire.value.complete/v1";
 const MODEL: &str = "quire.model.complete/v1";
+const TEMPORAL: &str = "quire.temporal.complete/v1";
 
 const BODY: &str = "body ok using v on Config::ConfigVersion::size() { 1 }";
 const CALL: &str = "pre c using v on Config::ConfigVersion::probe { self.size() > 0 }";
@@ -361,9 +362,11 @@ fn the_model_layer_selects_its_closure_and_both_locks_rows() {
         .map(|row| row["identity"].as_str().unwrap().to_owned())
         .collect();
     let lock = DefinitionLock::pinned();
-    let mut expected: BTreeSet<String> = HeaderLayer::ALL
+    let mut expected: BTreeSet<String> = lock
+        .closure(&[HeaderLayer::ModelComplete])
+        .into_iter()
         .map(|layer| layer.identity().to_owned())
-        .into();
+        .collect();
     expected.extend(
         lock.always_roles()
             .iter()
@@ -375,6 +378,40 @@ fn the_model_layer_selects_its_closure_and_both_locks_rows() {
             .iter()
             .map(|entry| entry.identity.to_owned()),
     );
+    assert_eq!(selected, expected);
+}
+
+/// The temporal layer requires the model layer, so its one header selection
+/// admits model constructs and selects the complete-model lock rows.
+#[trace("FR-361-AC-14", "TC-1017")]
+#[test]
+fn the_temporal_layer_admits_model_constructs_through_its_closure() {
+    let declarations = format!("{LOOKUP}\n{ABSTRACTION}\n{BODY}\n{CALL}");
+    let (_, compiled) = compile(&[("v", TEMPORAL)], &declarations);
+    let compiled = compiled.expect("the temporal layer includes the model layer");
+    assert_eq!(compiled.package.graph().dispatch_tables().len(), 1);
+
+    let wire: serde_json::Value = serde_json::from_slice(compiled.emitted.bytes()).unwrap();
+    let selected: BTreeSet<&str> = wire["lock"]["definition_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["identity"].as_str().unwrap())
+        .collect();
+    let lock = DefinitionLock::pinned();
+    let mut expected: BTreeSet<&str> = lock
+        .closure(&[HeaderLayer::TemporalComplete])
+        .into_iter()
+        .map(HeaderLayer::identity)
+        .collect();
+    expected.extend(
+        lock.always_roles()
+            .iter()
+            .filter(|role| **role != CatalogRole::Edition)
+            .map(|role| lock.entry(*role).identity),
+    );
+    expected.extend(lock.model_catalog().iter().map(|entry| entry.identity));
+    expected.extend(lock.temporal_catalog().iter().map(|entry| entry.identity));
     assert_eq!(selected, expected);
 }
 
@@ -535,11 +572,11 @@ fn an_abstraction_declaration_needs_the_model_profile() {
     // source writes (`Config::ConfigVersion`, `Config::config_history`,
     // `Config::ConfigVersion::attemptUpdate`) in the domain package, not read
     // back from the compiled relation.
-    let object = qsl_semantics::model::key::DeclarationKey {
+    let object = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_type(),
     };
-    let population = qsl_semantics::model::key::DeclarationKey {
+    let population = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_population_identity(),
     };

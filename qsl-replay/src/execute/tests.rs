@@ -32,6 +32,7 @@ mod native_scalar;
 pub(crate) mod object_environment;
 mod supplied;
 mod union;
+mod value_parity_identity;
 mod variant_fields;
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -58,9 +59,9 @@ fn proved() -> String {
 }
 
 /// A supplied-value run at the default ceilings over a handle nobody cancels.
-fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
-    qsl_semantics::value::supplied::SuppliedRun::new(
-        qsl_semantics::value::supplied::SuppliedLimits::default(),
+fn default_run() -> quire_semantic_value::supplied_stop::SuppliedRun {
+    quire_semantic_value::supplied_stop::SuppliedRun::new(
+        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         quire_exact::Cancel::new(),
     )
     .expect("a run")
@@ -1909,9 +1910,9 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, FieldValue, Integer, IntegerInterval, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{
@@ -2053,13 +2054,13 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
         PopulationRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
@@ -2334,12 +2335,49 @@ fn parity_request(
 ) -> ReplayRequestWire {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
-    request(
+    let mut wire = request(
         source.as_bytes(),
         compiled.emitted.package_id(),
         name(&[function]),
         bind(parameter(&compiled, function, 0)),
+    );
+    wire.obligation_identity = minted_identity(&source, function);
+    wire
+}
+
+/// The obligation identity `call_site` mints for `function` of `source`
+/// (FR-484); a predicate has none and keeps a placeholder, since its value
+/// replay refuses before the identity is read.
+fn minted_identity(source: &str, function: &str) -> [u8; 32] {
+    let site = crate::call_site(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        source.as_bytes(),
+        [],
+        &crate::DependencyInput::default(),
+        &name(&[function]),
     )
+    .expect("the function is located")
+    .site;
+    site.value_parity
+        .map_or([2; 32], |parity| *parity.obligation_identity.as_bytes())
+}
+
+/// The driver's observation of `generated`, under a fixed content identity.
+fn value_claim(generated: ScalarOutcome) -> crate::ValueClaim {
+    crate::ValueClaim {
+        generated,
+        content_identity: DigestRecord::mint(DigestDomain::SourceBytesV1, [9; 32]),
+    }
+}
+
+/// `replay_value_parity` over `generated` and the fixed content identity.
+fn replay_generated(
+    wire: ReplayRequestWire,
+    generated: ScalarOutcome,
+    limits: ReplayLimits,
+) -> ValueParityReport {
+    replay_value_parity(wire, value_claim(generated), limits)
 }
 
 fn parity(function: &str, x: i64) -> ReplayRequestWire {
@@ -2401,7 +2439,7 @@ fn tc_904_the_value_entry_refuses_a_non_function_target() {
     for (target, pointer) in non_function_targets() {
         let mut wire = parity("inc", 3);
         wire.replay_target = target.into();
-        let report = replay_value_parity(wire, integer(4), ReplayLimits::default());
+        let report = replay_generated(wire, integer(4), ReplayLimits::default());
         let ValueParityResult::Refused(refusal) = report.result() else {
             panic!("expected a refusal: {:?}", report.result());
         };
@@ -2419,14 +2457,14 @@ fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_valu
     let mut wire = parity("inc", 3);
     let above = crate::DEFAULT_REPLAY_INPUT_BYTES * 2;
     wire.stage_limits.insert("s1.input_bytes".to_owned(), above);
-    let report = replay_value_parity(wire.clone(), integer(4), ReplayLimits::default());
+    let report = replay_generated(wire.clone(), integer(4), ReplayLimits::default());
     assert!(matches!(
         report.result(),
         ValueParityResult::Refused(refusal)
             if matches!(**refusal, ReplayRefusal::LimitAboveReader(_))
     ));
     let raised = ReplayLimits::default().with_input_bytes(above);
-    let report = replay_value_parity(wire, integer(4), raised);
+    let report = replay_generated(wire, integer(4), raised);
     assert!(matches!(report.result(), ValueParityResult::Agrees { .. }));
 }
 
@@ -2458,12 +2496,12 @@ fn tc_921_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
         ] {
             split.stage_limits.insert(name.to_owned(), bound);
         }
-        let sent_whole = ValueIdentity::sent(&whole, &integer(4));
-        let sent_split = ValueIdentity::sent(&split, &integer(4));
+        let sent_whole = ValueIdentity::sent(&whole, &value_claim(integer(4)));
+        let sent_split = ValueIdentity::sent(&split, &value_claim(integer(4)));
         assert_eq!(sent_whole, sent_split, "work_units {work_units}");
         assert_eq!(sent_split.limits, effective);
-        let whole = replay_value_parity(whole, integer(4), ReplayLimits::default());
-        let split = replay_value_parity(split, integer(4), ReplayLimits::default());
+        let whole = replay_generated(whole, integer(4), ReplayLimits::default());
+        let split = replay_generated(split, integer(4), ReplayLimits::default());
         assert_eq!(whole.claim(), &sent_whole);
         assert_eq!(split.claim(), &sent_split);
         assert_eq!(whole.claim(), split.claim(), "work_units {work_units}");
@@ -2491,7 +2529,7 @@ fn tc_921_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
-    let report = replay_value_parity(parity("inc", 3), integer(5), ReplayLimits::default());
+    let report = replay_generated(parity("inc", 3), integer(5), ReplayLimits::default());
     let ValueParityResult::Diverged {
         qsl,
         generated,
@@ -2504,7 +2542,7 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
     assert!(generated.same_as(&integer(5)), "{generated:?}");
     assert!(charges.work_units > 0);
 
-    let report = replay_value_parity(
+    let report = replay_generated(
         parity("inc", 3),
         ScalarOutcome::OutOfRange,
         ReplayLimits::default(),
@@ -2520,7 +2558,7 @@ fn tc_904_an_integer_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-1")]
 #[test]
 fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
-    let report = replay_value_parity(parity("inv", 2), one_over(3), ReplayLimits::default());
+    let report = replay_generated(parity("inv", 2), one_over(3), ReplayLimits::default());
     let ValueParityResult::Diverged { qsl, generated, .. } = report.result() else {
         panic!("inv(2) is 1/2, not 1/3");
     };
@@ -2532,7 +2570,7 @@ fn tc_904_a_rational_function_diverges_from_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
-    let report = replay_value_parity(parity("inc", 3), integer(4), ReplayLimits::default());
+    let report = replay_generated(parity("inc", 3), integer(4), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inc(3) is 4");
     };
@@ -2544,7 +2582,7 @@ fn tc_904_an_integer_function_agrees_with_the_generated_outcome() {
 #[trace("TC-904", "FR-357-AC-2")]
 #[test]
 fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
-    let report = replay_value_parity(parity("inv", 2), one_over(2), ReplayLimits::default());
+    let report = replay_generated(parity("inv", 2), one_over(2), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = report.result() else {
         panic!("inv(2) is 1/2");
     };
@@ -2559,7 +2597,7 @@ fn tc_904_a_rational_function_agrees_with_the_generated_outcome() {
 #[test]
 fn tc_904_bindings_that_fail_admission_are_refused_input() {
     for (function, outcome) in [("inc", integer(13)), ("inv", one_over(12))] {
-        let report = replay_value_parity(parity(function, 12), outcome, ReplayLimits::default());
+        let report = replay_generated(parity(function, 12), outcome, ReplayLimits::default());
         let result = report.result();
         assert!(
             matches!(
@@ -2568,7 +2606,7 @@ fn tc_904_bindings_that_fail_admission_are_refused_input() {
             ),
             "{function}: {result:?}"
         );
-        let report = replay_value_parity(
+        let report = replay_generated(
             parity_request(function, |parameter| {
                 typed_input(parameter, WitnessValue::Boolean(true))
             }),
@@ -2595,7 +2633,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
     let source = parity_unit();
     let compiled = spine(&source, &BTreeMap::new());
     let other = parameter(&compiled, "inv", 0);
-    let stray = replay_value_parity(
+    let stray = replay_generated(
         parity_request("inc", |_| input(other, 3)),
         integer(4),
         ReplayLimits::default(),
@@ -2604,7 +2642,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
         matches!(stray.result(), ValueParityResult::Refused(refusal) if matches!(**refusal, ReplayRefusal::UnknownParameter(node) if node == other)),
         "{stray:?}"
     );
-    let unbound = replay_value_parity(
+    let unbound = replay_generated(
         parity_request("inc", |_| ReplaySource::Input(Vec::new())),
         integer(4),
         ReplayLimits::default(),
@@ -2620,7 +2658,7 @@ fn tc_904_only_the_declared_parameters_are_bound() {
 #[trace("TC-904", "FR-357-AC-5")]
 #[test]
 fn tc_904_a_boolean_function_has_no_value_parity_replay() {
-    let refused = replay_value_parity(
+    let refused = replay_generated(
         parity("small", 3),
         ScalarOutcome::Value(Value::Boolean(true)),
         ReplayLimits::default(),
@@ -2658,7 +2696,7 @@ fn tc_904_a_starved_function_evaluation_is_incomplete() {
         work_units: 0,
         ..UNLIMITED
     };
-    let report = replay_value_parity(starved, integer(4), ReplayLimits::default());
+    let report = replay_generated(starved, integer(4), ReplayLimits::default());
     assert!(
         matches!(report.result(), ValueParityResult::PreCallIncomplete(_)),
         "{report:?}"
@@ -2672,7 +2710,7 @@ fn tc_904_a_starved_function_evaluation_is_incomplete() {
 /// The identity a function-level report must carry for `wire` and
 /// `generated`, built as a consumer builds the claim it sent.
 fn sent_value_claim(wire: &ReplayRequestWire, generated: &ScalarOutcome) -> crate::ValueIdentity {
-    crate::ValueIdentity::sent(wire, generated)
+    crate::ValueIdentity::sent(wire, &value_claim(generated.clone()))
 }
 
 /// The settlement a value-parity result names, for asserting each case of a
@@ -2721,7 +2759,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
     ];
     for (wire, generated, kind) in cases {
         let sent = sent_value_claim(&wire, &generated);
-        let report = replay_value_parity(wire, generated, ReplayLimits::default());
+        let report = replay_generated(wire, generated, ReplayLimits::default());
         assert_eq!(value_kind(report.result()), kind, "{:?}", report.result());
         assert_eq!(report.claim(), &sent, "{kind}: {:?}", report.result());
     }
@@ -2733,7 +2771,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
     ] {
         assert_ne!(sent, other);
     }
-    let agrees = replay_value_parity(parity("inc", 3), integer(4), ReplayLimits::default());
+    let agrees = replay_generated(parity("inc", 3), integer(4), ReplayLimits::default());
     let ValueParityResult::Agrees { agreement, .. } = agrees.result() else {
         panic!("inc(3) is 4");
     };

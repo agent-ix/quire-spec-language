@@ -9,7 +9,7 @@
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::domain_package::{DomainPackageRecord, OperationMemberRecord};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
 
 use super::model_operations::{

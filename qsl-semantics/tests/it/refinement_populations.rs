@@ -11,7 +11,7 @@ use qsl_foundation::Code;
 use qsl_semantics::check::{
     CheckedRefinement, CheckedRow, PopulationUse, PopulationValue, RefinementCause,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, IntegerInterval, ValueType};
 
 #[path = "../../../tests/support/ring_queue.rs"]

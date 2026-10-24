@@ -149,6 +149,15 @@ impl DynamicsKind {
     }
 }
 
+impl From<qsl_semantics::family::ClaimEvidence> for EvidenceKind {
+    fn from(evidence: qsl_semantics::family::ClaimEvidence) -> Self {
+        match evidence {
+            qsl_semantics::family::ClaimEvidence::Statistical => EvidenceKind::Statistical,
+            qsl_semantics::family::ClaimEvidence::Exact => EvidenceKind::Exact,
+        }
+    }
+}
+
 /// The bounds a hybrid provider publishes in its descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SolverBounds {

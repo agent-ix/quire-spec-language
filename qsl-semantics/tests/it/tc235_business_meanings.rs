@@ -13,11 +13,12 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::intake::{
     admit, admit_unit, meaning, package_input, read_domain_package, read_records,
 };
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, MemberPath, ModelRefusal, ModelRefusalCause,
     NormalizeOutcome,
 };
+use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1036,7 +1037,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     );
     assert!(view
         .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+        .contains_key(&quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("Money"),
         }));
@@ -1046,7 +1047,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     assert!(view
         .type_identities()
         .contains_key(&package_key("OrderLifecycle")));
-    let process = qsl_semantics::model::key::DeclarationKey {
+    let process = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Fulfilment"),
     };
@@ -1058,7 +1059,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         view.object_universe_of(&process).is_some(),
         "process runs retain their object universe"
     );
-    let persistence = qsl_semantics::model::key::DeclarationKey {
+    let persistence = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("OrderStore"),
     };
@@ -1072,7 +1073,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     );
     assert!(!view
         .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+        .contains_key(&quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("OrderManagement"),
         }));
@@ -1131,13 +1132,13 @@ fn tc235_m03_record_shape_and_clause_meanings() {
             json!([clause("Money", "NonNegative", "self.amount_minor >= 0")]);
     });
     let package = read_k2(&invariant_document).expect("quire clause is admitted");
-    let invariant_key = qsl_semantics::model::key::DeclarationKey {
+    let invariant_key = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money/NonNegative"),
     };
     assert!(package.original(&invariant_key).is_some());
     let view = record_charges(&package, 22);
-    let owner = view.type_identities()[&qsl_semantics::model::key::DeclarationKey {
+    let owner = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money"),
     }];
@@ -1163,7 +1164,7 @@ fn tc235_m03_record_shape_and_clause_meanings() {
         type_named_mut(document, "Money")["clauses"] = json!([foreign]);
     });
     let package = read_k2(&foreign_document).expect("foreign-language clause is retained");
-    let foreign_key = qsl_semantics::model::key::DeclarationKey {
+    let foreign_key = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money/NonNegative"),
     };
@@ -1242,7 +1243,7 @@ fn record_value_subtype_preserves_effective_fields_support() {
     let package = read_k2(&document)
         .expect("reader admits the record-value slice without event declarations");
     let view = record_charges(&package, 9);
-    let taxed_key = qsl_semantics::model::key::DeclarationKey {
+    let taxed_key = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("TaxedMoney"),
     };
@@ -1324,11 +1325,11 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
         ("TaxedMoney", "Money"),
         ("ExpressOrderPlaced", "OrderPlaced"),
     ] {
-        let key = qsl_semantics::model::key::DeclarationKey {
+        let key = quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id(child),
         };
-        let parent_key = qsl_semantics::model::key::DeclarationKey {
+        let parent_key = quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id(parent),
         };
@@ -1596,7 +1597,7 @@ fn tc235_m08_persistence_interface_binder() {
     let view = record_charges(&package, 21);
     assert!(view
         .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+        .contains_key(&quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("Order")
         }));
@@ -1610,7 +1611,7 @@ fn tc235_m08_persistence_interface_binder() {
     // FR-322-AC-25: a persistence interface is a declaring `model` node for
     // its operations, so it has an effective identity; it has no object
     // universe (FR-208: only a process does).
-    let store = qsl_semantics::model::key::DeclarationKey {
+    let store = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("OrderStore"),
     };
@@ -1690,7 +1691,7 @@ fn tc235_m09_namespace_binder() {
     let mut document = k2();
     let package = read_k2(&document).expect("M09 K2 baseline admission");
     let namespace = package
-        .original(&qsl_semantics::model::key::DeclarationKey {
+        .original(&quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("OrderManagement"),
         })
@@ -1698,7 +1699,7 @@ fn tc235_m09_namespace_binder() {
     assert_eq!(namespace.meaning.as_deref(), Some(meaning::NAMESPACE));
     assert_eq!(namespace.origin, origin("OrderManagement"));
     // M01: members `[Order, Money, OrderPlaced]`, vocabulary `[Place]`.
-    let key = |name: &str| qsl_semantics::model::key::DeclarationKey {
+    let key = |name: &str| quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id(name),
     };
@@ -1723,7 +1724,7 @@ fn tc235_m09_namespace_binder() {
     let view = record_charges(&package, 21);
     assert!(!view
         .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
+        .contains_key(&quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("OrderManagement")
         }));
@@ -2005,7 +2006,7 @@ fn tc235_m18_event_type_specialization_vectors() {
         ));
     });
     let package = read_k2(&positive_document).expect("M18 event subtype reads through K2");
-    let event_key = qsl_semantics::model::key::DeclarationKey {
+    let event_key = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("ExpressOrderPlaced"),
     };
@@ -2019,20 +2020,20 @@ fn tc235_m18_event_type_specialization_vectors() {
     };
     assert_eq!(
         event.occurrence_field,
-        Some(qsl_semantics::model::key::DeclarationKey {
+        Some(quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("OrderPlaced/occurred_at"),
         })
     );
     assert_eq!(
         event.supertypes,
-        [qsl_semantics::model::key::DeclarationKey {
+        [quire_checked::key::DeclarationKey {
             package: PACKAGE.to_owned(),
             node: id("OrderPlaced"),
         }]
     );
     let view = record_charges(&package, 23);
-    let parent_key = qsl_semantics::model::key::DeclarationKey {
+    let parent_key = quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("OrderPlaced"),
     };

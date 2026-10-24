@@ -7,7 +7,7 @@
 //! import of it a module cycle (#141 finding 4). `normalize` re-exports this
 //! type at its own path (`crate::model::normalize::ModelRefusalCause`), so
 //! nothing outside this crate's module tree observes a rename. This module
-//! imports [`crate::model::key::DeclarationKey`]/[`crate::model::key::EffectiveId`]
+//! imports [`quire_checked::key::DeclarationKey`]/[`crate::model::key::EffectiveId`]
 //! back from `key`: a mutual `use` between sibling modules is not a cycle
 //! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
 //! type/const definition would be.
@@ -15,12 +15,13 @@
 use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::key::EffectiveId;
 use crate::model::origin::JsonValue;
 use qsl_foundation::diagnostic::{JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
+use quire_checked::key::DeclarationKey;
 use quire_exact::UniverseId;
-use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::{render_identity, CatalogCode};
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// two sites (#163 review finding: each offered value stays distinguishable
@@ -1530,12 +1531,15 @@ pub mod fixtures {
     //! `qsl-semantics` crate boundary through `test-support`.
     use super::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-    use crate::model::key::DeclarationKey;
     use qsl_foundation::source::{LocatedSpan, Position};
+    use quire_checked::key::DeclarationKey;
     use quire_exact::UniverseId;
 
     fn key(identity: &str) -> DeclarationKey {
-        DeclarationKey::fixture(identity)
+        DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: identity.to_owned(),
+        }
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
@@ -1900,22 +1904,6 @@ pub mod fixtures {
             computed_deleted: std::collections::BTreeSet::new(),
         },
         ]
-    }
-}
-
-/// The payload rendering of a member identity. A population member's
-/// identity is a JSON string, so a well-formed identity is valid UTF-8 and
-/// renders as itself. Bytes that are not UTF-8 render as
-/// `identity bytes 0x<lowercase hex> (not UTF-8)`: two distinct malformed
-/// identities never render alike, and a malformed identity never renders as
-/// a lossy decoding that could equal a real member's.
-pub fn render_identity(identity: &[u8]) -> String {
-    match std::str::from_utf8(identity) {
-        Ok(identity) => identity.to_owned(),
-        Err(_) => format!(
-            "identity bytes 0x{} (not UTF-8)",
-            crate::model::key::hex(identity)
-        ),
     }
 }
 

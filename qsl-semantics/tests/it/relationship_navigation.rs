@@ -17,7 +17,7 @@ use qsl_semantics::model::domain_package::{
     ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::intake::SelectedModels;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Presence,
     ValueType,

@@ -486,7 +486,7 @@ pub struct OutcomeItem {
 
 /// The catalogued reason of an undefined value: the kernel's own spelling,
 /// a family record's reason, or `insufficient-data` for a window.
-fn undefined_reason(cause: &UndefinedCause) -> &'static str {
+pub fn undefined_reason(cause: &UndefinedCause) -> &'static str {
     match cause {
         UndefinedCause::Kernel(reason) => kernel_undefined_reason(reason.clone()),
         UndefinedCause::Family(record) => record.reason.as_str(),
@@ -1302,6 +1302,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::WrongObservation { .. }
         | ReplayRefusal::Admission(_)
         | ReplayRefusal::UnusedObjectEnvironment
+        | ReplayRefusal::UnusedProfileSelections { .. }
         | ReplayRefusal::ForeignReference { .. }
         | ReplayRefusal::ObjectEnvironment(_)
         | ReplayRefusal::UnknownParameter(_)
@@ -1615,7 +1616,7 @@ mod tests {
     fn reduction_cause_wire_keeps_its_payload() {
         use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
         use qsl_eval::simulation::Permutation;
-        use qsl_semantics::model::key::DeclarationKey;
+        use quire_checked::key::DeclarationKey;
         use quire_semantic_value::fairness::PropertyForm;
 
         let population = DeclarationKey {
@@ -2018,6 +2019,13 @@ mod tests {
                                 work_units: 1,
                                 result_units: 1,
                             },
+                            occurrence_key: None,
+                            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(
+                            ),
+                            content_identity: qsl_foundation::digest::DigestRecord::mint(
+                                qsl_foundation::digest::DigestDomain::SourceBytesV1,
+                                [0; 32],
+                            ),
                             generated: crate::scalar::ScalarOutcome::OutOfRange,
                         })),
                         crate::scalar::ScalarOutcome::OutOfRange,

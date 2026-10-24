@@ -32,7 +32,6 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
-use qsl_semantics::value::supplied::SuppliedRun;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
@@ -44,11 +43,11 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
-    SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+    SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
 };
 
 use crate::bounds::ReplayLimits;
-use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
+use crate::identity::{ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef};
 use crate::limits::CallerLimits;
 use crate::request::StageLimits;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire};
@@ -84,7 +83,8 @@ mod operator_parity;
 mod parity_identity;
 pub(crate) use parity_identity::process_provider_obligation;
 pub use parity_identity::{
-    parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
+    parity_obligation, value_parity_obligation, BoundEntries, Domain, IdentityEncodeError,
+    ParityArgument, ParityPreimage, ValueParityArgument, ValueParityPreimage,
 };
 pub(crate) mod scalar_site;
 pub use composite_domain::ParityBoundRefusal;
@@ -408,6 +408,16 @@ pub enum ReplayRefusal {
     /// `object_environment`).
     #[error("invalid_runtime_input/unknown-member: `object_environment` is supplied for a function with no Reference parameter")]
     UnusedObjectEnvironment,
+    /// FR-484: a function-value parity request carries `profile_selections`.
+    /// A value-parity claim has no proving run, so the list is fixed empty
+    /// and lock rows bind through the `package_id` alone
+    /// (`invalid_runtime_input`/`unknown-member`). Refused before the
+    /// recompile, with no call and no charge.
+    #[error("invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run")]
+    UnusedProfileSelections {
+        /// The request's selections, in request order.
+        selections: Vec<ProfileSelection>,
+    },
     /// FR-098 step 2, FR-100: a reference argument's universe is not the
     /// universe of its declared `Reference<T>`'s object type
     /// (`foreign_reference`/`foreign-universe`).
@@ -465,7 +475,9 @@ impl ReplayRefusal {
             | Self::ScalarIdentity(_)
             | Self::TargetMismatch { .. } => Code::StaleDependency,
             Self::UnknownClause { .. } => Code::MissingDeclaration,
-            Self::UnusedObjectEnvironment => Code::InvalidRuntimeInput,
+            Self::UnusedObjectEnvironment | Self::UnusedProfileSelections { .. } => {
+                Code::InvalidRuntimeInput
+            }
             Self::ForeignReference { .. } => Code::ForeignReference,
             Self::ObjectEnvironment(failure) => failure.code(),
             Self::ParityBound(refusal) => refusal.code(),
@@ -516,7 +528,9 @@ impl ReplayRefusal {
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::ModelTrace(refusal) => Some(refusal.cause()),
-            Self::UnusedObjectEnvironment => Some("unknown-member"),
+            Self::UnusedObjectEnvironment | Self::UnusedProfileSelections { .. } => {
+                Some("unknown-member")
+            }
             Self::ForeignReference { .. } => Some("foreign-universe"),
             Self::ObjectEnvironment(failure) => failure.cause(),
             Self::Input(refusal) => Some(refusal.cause()),
@@ -1332,11 +1346,7 @@ fn function_claim(
     let key = target
         .occurrence_key()
         .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
-    let declaration = OccurrenceKey::new(
-        wire_id(callable.identity),
-        Origin::new(Role::new("declaration"), 0),
-    );
-    if *key == declaration {
+    if *key == declaration_occurrence(wire_id(callable.identity)) {
         return Ok(FunctionClaim::Predicate);
     }
     let graph = compiled.checked.package().graph();
@@ -1377,6 +1387,13 @@ fn function_claim(
     }))
 }
 
+/// A function node's one `declaration` occurrence (ADR-013 O-07): the node,
+/// role `declaration`, ordinal 0. The one constructor `call_site`, the
+/// predicate claim and the value-parity claim share.
+pub(crate) fn declaration_occurrence(function: WireNodeId) -> OccurrenceKey {
+    OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))
+}
+
 /// The selected function: its S6a name, and its parameter nodes and
 /// declared types in declared order.
 struct Selected {
@@ -1409,6 +1426,40 @@ pub(crate) fn callable_parameter_keys(
         ));
     }
     Ok(parameters)
+}
+
+/// FR-484: the preimage of the value-parity claim about the function node
+/// `function` with the parameter nodes `parameters`, read from the checked
+/// package alone: each argument names the parameter node and its declared
+/// type node (`semantic_type`). The one builder `call_site` mints from and
+/// `replay_value_parity` recomputes from, so the two cannot disagree.
+pub(crate) fn value_parity_preimage(
+    package: &CheckedPackage,
+    function: NodeKey,
+    parameters: &[NodeKey],
+) -> Result<ValueParityPreimage, InternalFault> {
+    let graph = package.graph().semantic_graph();
+    let arguments = parameters
+        .iter()
+        .enumerate()
+        .map(|(position, parameter)| {
+            let semantic_type = graph
+                .node(*parameter)
+                .and_then(|node| node.semantic_type())
+                .ok_or_else(|| {
+                    InternalFault::new("replay", "parameter-node-has-a-semantic-type")
+                })?;
+            Ok(ValueParityArgument {
+                parameter: wire_id(*parameter),
+                position,
+                semantic_type: wire_id(semantic_type),
+            })
+        })
+        .collect::<Result<Vec<_>, InternalFault>>()?;
+    Ok(ValueParityPreimage {
+        node: wire_id(function),
+        arguments,
+    })
 }
 
 /// The function `name` selects in the recompiled package, by name lookup in

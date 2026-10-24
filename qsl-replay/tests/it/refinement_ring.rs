@@ -458,5 +458,10 @@ fn an_exhausted_abstract_meter_stops_the_step_check() {
     let StepVerdict::Stopped(reached) = verdict else {
         panic!("the check stops: {verdict:?}");
     };
-    assert_eq!(reached.limit, qsl_replay::ModelCheckLimit::EvaluationMeter);
+    assert_eq!(
+        reached.limit,
+        qsl_replay::ModelCheckLimit::EvaluationMeter {
+            counter: quire_exact::LimitKind::WorkUnits
+        }
+    );
 }

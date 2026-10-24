@@ -61,17 +61,15 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
     IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
-use crate::value::definition::{
-    AdmittedIeeeProfile, AdmittedIntegerDivision, CatalogRole, DefinitionLock,
-};
+use crate::value::definition::{AdmittedIeeeProfile, CatalogRole, DefinitionLock};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
     FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -372,7 +370,7 @@ pub struct PackageDeclarations {
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
     /// The package's admitted `div`/`rem` law, when one was selected.
-    pub integer_division: Option<AdmittedIntegerDivision>,
+    pub integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
     /// resolve to, keyed by the receiver's static type and the member name.
     /// Built by the caller (the `crate::model` bridge); the checker only
@@ -499,9 +497,10 @@ pub struct PackageDeclarations {
     /// FR-447: the unit's `hybrid` declarations in declaration order, each
     /// with its `using` alias resolved by the FR-091 assembler.
     pub hybrids: Vec<super::HybridDeclaration>,
-    /// Test-only: check a package that holds a `hybrid` declaration without
-    /// refusing it as not emitted (FR-447).
-    pub emit_unwritten_hybrids: bool,
+    /// FR-447: the unit's hybrid claims in declaration order, the `temporal`
+    /// clauses whose `over` type names one of [`Self::hybrids`], each with its
+    /// `using` alias resolved by the FR-091 assembler.
+    pub hybrid_claims: Vec<super::HybridClaimDeclaration>,
     /// FR-147: the unit's `refinement_internals` input, supplied beside the
     /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
     /// name, "internal": [class, ...]}` objects. `None` is the empty list.
@@ -578,17 +577,6 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_state_graph_claims(mut self) -> Self {
         self.emit_unwritten_state_graph_claims = true;
-        self
-    }
-
-    /// These declarations, to be checked without refusing a `hybrid`
-    /// declaration as not emitted, so the S3 value
-    /// (`CheckedGraph::hybrid_models`) stays testable until S4 writes it
-    /// (FR-447).
-    #[cfg(any(test, feature = "test-support"))]
-    #[must_use]
-    pub fn with_unwritten_hybrids(mut self) -> Self {
-        self.emit_unwritten_hybrids = true;
         self
     }
 
@@ -672,7 +660,7 @@ impl PackageDeclarations {
             emit_unwritten_terminals: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
-            emit_unwritten_hybrids: false,
+            hybrid_claims: Vec::new(),
             refinement_internals: None,
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
@@ -687,7 +675,7 @@ impl PackageDeclarations {
     /// it.
     pub fn operation_body(
         &self,
-        key: &crate::model::key::DeclarationKey,
+        key: &quire_checked::key::DeclarationKey,
     ) -> Option<&super::OperationBodyDeclaration> {
         self.operation_bodies.iter().find(|body| &body.key == key)
     }
@@ -696,7 +684,7 @@ impl PackageDeclarations {
     /// the operation `key`, in declaration order.
     pub fn unit_clauses_for(
         &self,
-        key: &crate::model::key::DeclarationKey,
+        key: &quire_checked::key::DeclarationKey,
     ) -> Vec<&super::StateClauseDeclaration> {
         self.state_clauses
             .iter()
@@ -815,7 +803,7 @@ pub struct Scope {
     /// into floats are unavailable, and model float intake is refused. Any new
     /// source of floats must also extend this trigger before checking its body.
     ieee_operation: bool,
-    pub(crate) integer_division: Option<AdmittedIntegerDivision>,
+    pub(crate) integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
     /// The names of the concrete populations of the unit's models, which
     /// refuse `unsupported_construct`/`expression-form` where no refinement
@@ -1102,7 +1090,7 @@ impl Scope {
 
     pub(crate) fn with_integer_division(
         mut self,
-        division: Option<AdmittedIntegerDivision>,
+        division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     ) -> Self {
         self.integer_division = division;
         self

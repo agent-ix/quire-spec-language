@@ -8,7 +8,7 @@ use semantics::model::domain_package::{
     RecordValueTypeRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use semantics::model::intake::SelectedModel;
-use semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use semantics::model::normalize::{normalize, NormalizeOutcome};
 
 /// The native header of the obligation tests' units: model alias `M`,

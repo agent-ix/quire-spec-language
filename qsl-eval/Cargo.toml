@@ -20,6 +20,8 @@ qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { workspace = true }
+# ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
+quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
@@ -55,6 +57,10 @@ qsl-forms = { path = "../qsl-forms" }
 # FR-091-AC-13: a function compiled from source text through S1 and S2 is
 # called here.
 qsl-cst = { path = "../qsl-cst" }
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 # `qsl-semantics`' test-only fixtures (`DeclarationKey::fixture`,
 # `DomainPackageRef::fixture`, `model::refusal::fixtures`, ...). Only this
 # dev-dependency enables `test-support`: the root crate's
@@ -65,6 +71,9 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { workspace = true, features = ["test-support"] }
+# `SuppliedRun::with_reservation_permit`, the test-only reservation permit of
+# the supplied-value run (FR-403). Only this dev-dependency enables it.
+quire-semantic-value = { workspace = true, features = ["test-support"] }
 sha2 = "0.10.9"
 
 [[test]]

@@ -12,13 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 
 use qsl_semantics::model::domain_package::OperationEffect;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, Observation, SelfKind,
 };
 use qsl_semantics::model::population::{decide_frame, FrameDecision, FrameObject, FrameStop};
 use qsl_semantics::model::state::{ModelState, StateField, StateObject};
 use quire_canonical::Limits as CanonicalLimits;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 

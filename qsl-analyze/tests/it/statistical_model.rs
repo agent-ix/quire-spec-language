@@ -19,7 +19,7 @@ use qsl_replay::statistical::{
 };
 use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
 use quire_semantic_value::catalog::UndefinedReason;
 use serde_json::json;

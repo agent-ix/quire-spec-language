@@ -23,8 +23,8 @@ use std::collections::BTreeMap;
 use qsl_eval::simulation::model::{ClauseOutcome, ModelSystem, RowReading, StateObservation};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_semantics::check::{CheckedRefinement, FieldRow, ObjectRow, PopulationRow};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::{ModelState, StateField, StateObject};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{CollectionKind, ObjectReference, Value, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
 

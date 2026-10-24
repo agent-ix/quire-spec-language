@@ -16,11 +16,11 @@ use serde_json::value::RawValue;
 use super::call::{CallOutcome, CallRefusal, CallValue};
 use super::{ClauseDisposition, ClauseRunReport};
 use crate::result::RecordWire;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
 };
 use qsl_semantics::value::environment_stage::membership_failure_cause;
+use quire_checked::key::DeclarationKey;
 
 /// Why a clause-run report could not be written as a canonical document.
 #[derive(Debug, thiserror::Error)]
@@ -2296,7 +2296,7 @@ impl Disposition {
     }
 }
 
-fn format_declaration_key(key: &qsl_semantics::model::key::DeclarationKey) -> String {
+fn format_declaration_key(key: &quire_checked::key::DeclarationKey) -> String {
     format!("{}/{}", key.package, key.node)
 }
 

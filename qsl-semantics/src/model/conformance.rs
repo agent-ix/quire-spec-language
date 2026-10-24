@@ -33,9 +33,9 @@
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::domain_package::Multiplicity;
 use crate::model::index::ModelIndex;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// One failing conformance axis: `{axis, code, cause, detail}`.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -22,12 +22,12 @@ use qsl_semantics::model::domain_package::{
     ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::intake::SelectedModels;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmittedObservations, DocumentRef, Observation, PopulationEnumerationFailure,
     RelationshipExtents, SelfKind,
 };
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, UniverseId, Value,
 };

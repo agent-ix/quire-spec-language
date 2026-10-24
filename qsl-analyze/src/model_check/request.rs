@@ -22,7 +22,7 @@ use qsl_route::deadlock::ModelTemporalItem;
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::TemporalClauseNode;
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// An initial state's document, as the identity reads it: the four source
 /// labels and the digest.

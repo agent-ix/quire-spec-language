@@ -14,7 +14,7 @@ use super::{NodeContent, SemanticNode};
 use crate::check::node_key::{
     abstraction_node_key, node_key, AbstractionTerm, BodyTerm, ModelOwner, NodeKeyRefusal, NodeTag,
 };
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// `content` keyed as lowering keys any node outside a recursion group.
 fn detached(

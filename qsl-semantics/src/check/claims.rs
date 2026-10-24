@@ -330,6 +330,21 @@ impl RequirementRecord {
         }
     }
 
+    /// The record of a model-level claim keyed by its own claim node
+    /// (FR-195 "Requirement record", as FR-165 writes a state-graph claim's):
+    /// `requirements` (for a probabilistic claim,
+    /// [`CheckedProbabilisticClaim::requirements`](super::CheckedProbabilisticClaim::requirements)),
+    /// the `Boolean` result bound at the type node `boolean`, no direct
+    /// conversion context, an empty path condition and no owner.
+    pub fn model_claim(requirements: Requirements, boolean: WireNodeId) -> Self {
+        Self::unguarded(
+            requirements,
+            ValueType::Boolean,
+            boolean,
+            ModelReferences::default(),
+        )
+    }
+
     /// The model elements the record's claim references (ADR-017 AR-4).
     pub(crate) fn references(&self) -> &ModelReferences {
         &self.references

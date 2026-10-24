@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::ObjectReference;
 use serde::Serialize;
 

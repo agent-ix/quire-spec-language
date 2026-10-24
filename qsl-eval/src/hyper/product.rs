@@ -320,7 +320,7 @@ pub enum Halt {
         stop: ExpansionStop,
     },
     /// An atom's evaluation exhausted the meter.
-    Meter,
+    Meter(quire_exact::LimitKind),
     /// HP-3: a witness set would hold more members than `max_witness_set`
     /// (FR-184); the count is the size it would have reached.
     WitnessSet(u64),

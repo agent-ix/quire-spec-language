@@ -12,8 +12,9 @@
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{CollectionKind, IeeeWidth, ObjectReference, Value};
 
-use qsl_semantics::model::key::{effective_id_from_digest, DeclarationKey};
+use qsl_semantics::model::key::effective_id_from_digest;
 use qsl_semantics::model::state::{ModelState, StateModel};
+use quire_checked::key::DeclarationKey;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

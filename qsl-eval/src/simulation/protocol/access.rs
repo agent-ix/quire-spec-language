@@ -211,7 +211,7 @@ impl WeakAccesses {
 /// "<type>","field":"<name>"}` for any object, `{"type":"location",
 /// "population":"<population>"}` for a membership.
 pub(crate) fn location_enc(location: &Location, cell: Option<&Cell>) -> Enc {
-    let field_name = |field: &qsl_semantics::model::key::DeclarationKey| {
+    let field_name = |field: &quire_checked::key::DeclarationKey| {
         cell.map_or_else(
             || {
                 field

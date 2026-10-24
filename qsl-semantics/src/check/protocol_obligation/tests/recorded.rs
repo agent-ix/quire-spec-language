@@ -400,6 +400,15 @@ fn a_commit_that_dominates_its_effect_refuses() {
     for join in ["any [a, b]", "quorum(1) [a, b]"] {
         checked(&joined(join));
     }
+    // TC-1058 row 19f: the checked predicate can settle when branch `b`
+    // completes, so the commit in branch `a` does not dominate the effect.
+    let predicate = joined("predicate(P) [a, b]").replacen(
+        "protocol Refunds",
+        "function P using v(a: Boolean, b: Boolean): Boolean pure { a or b }\n\
+         protocol Refunds",
+        1,
+    );
+    checked(&predicate);
     let after = with_run(&format!(
         "run sequence Main {{\n{TRIED}\n{APPLIED}\n{COMMITTED}\n}}"
     ));

@@ -80,7 +80,6 @@ use crate::model::domain_package::{
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use crate::value::definition::DefinitionLock;
 use crate::value::enumeration::{
@@ -89,6 +88,7 @@ use crate::value::enumeration::{
 use crate::value::environment_stage::stage_limit;
 use crate::value::layer::{HeaderLayer, LayerForm};
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit, TypeEnvironment,
@@ -2453,7 +2453,7 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let unit = Unit::new(forms);
+        let mut unit = Unit::new(forms);
         // FR-393: the timed declarations build at S2; until FR-230's check
         // reads them, each refuses here rather than compile unchecked.
         let mut errors: Vec<AssemblyError> = unit
@@ -3242,6 +3242,12 @@ impl PackageDeclarations {
             }
         };
         let hybrids = hybrid_declarations(unit.hybrids, &resolve)?;
+        let (hybrid_claims, ordinary_clauses) = hybrid_claims(
+            std::mem::take(&mut unit.temporal_clauses),
+            &hybrids,
+            &resolve,
+        )?;
+        unit.temporal_clauses = ordinary_clauses;
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false
@@ -3322,6 +3328,7 @@ impl PackageDeclarations {
         package.terminals = terminals;
         package.refinements = refinements;
         package.hybrids = hybrids;
+        package.hybrid_claims = hybrid_claims;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3365,6 +3372,30 @@ impl PackageDeclarations {
                     written.span,
                 );
             }
+        }
+        // FR-447: a hybrid model's nodes are located at its declared name,
+        // each mode's clause and each transition's clause; a hybrid claim's
+        // nodes at its declared name and its `over` parameter's name.
+        for (model, declaration) in package.hybrids.iter().enumerate() {
+            use super::lowering::{hybrid_site, HybridSite};
+            let form = &declaration.form;
+            declared_type_spans.insert(hybrid_site(HybridSite::Model(model)), form.name.span);
+            for (mode, written) in form.modes.iter().enumerate() {
+                declared_type_spans
+                    .insert(hybrid_site(HybridSite::Mode(model, mode)), written.span);
+                for (transition, clause) in written.transitions.iter().enumerate() {
+                    declared_type_spans.insert(
+                        hybrid_site(HybridSite::Transition(model, mode, transition)),
+                        clause.span,
+                    );
+                }
+            }
+        }
+        for (claim, declaration) in package.hybrid_claims.iter().enumerate() {
+            use super::lowering::{hybrid_site, HybridSite};
+            let form = &declaration.form;
+            declared_type_spans.insert(hybrid_site(HybridSite::Claim(claim)), form.name.span);
+            declared_type_spans.insert(hybrid_site(HybridSite::Over(claim)), form.over.name.span);
         }
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
@@ -3659,6 +3690,60 @@ fn hybrid_declarations(
     }
     if errors.is_empty() {
         Ok(declarations)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-447: the `temporal` clauses whose `over` parameter is typed by one of
+/// the unit's hybrid declarations are hybrid claims, checked in place of the
+/// model-subject rules; each has its `using` alias resolved to one of the
+/// unit's profile selections. Every other clause is returned unchanged.
+fn hybrid_claims(
+    clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    hybrids: &[super::HybridDeclaration],
+    resolve: &Resolve<'_>,
+) -> Result<
+    (
+        Vec<super::HybridClaimDeclaration>,
+        Vec<super::temporal_clause::TemporalDeclaration>,
+    ),
+    AssemblyRefusal,
+> {
+    let mut errors = Vec::new();
+    let mut claims = Vec::new();
+    let mut ordinary = Vec::new();
+    for clause in clauses {
+        let over_hybrid = matches!(
+            &clause.form.over.value_type.head,
+            TypeFormHead::Name(name)
+                if hybrids.iter().any(|hybrid| hybrid.form.name.name == *name)
+        );
+        if !over_hybrid {
+            ordinary.push(clause);
+            continue;
+        }
+        let selection = resolve
+            .profiles
+            .iter()
+            .find(|profile| profile.alias == clause.form.profile.alias)
+            .cloned();
+        match selection {
+            Some(selection) => claims.push(super::HybridClaimDeclaration {
+                form: clause.form,
+                span: clause.span,
+                selection,
+            }),
+            None => errors.push(AssemblyError {
+                cause: AssemblyCause::UndeclaredAlias {
+                    alias: clause.form.profile.alias.clone(),
+                },
+                span: clause.form.profile.span,
+            }),
+        }
+    }
+    if errors.is_empty() {
+        Ok((claims, ordinary))
     } else {
         refuse(errors)
     }
