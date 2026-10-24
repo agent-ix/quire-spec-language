@@ -63,7 +63,7 @@ disagreement settles `inconclusive` and is never repaired.
 
 FR-450 adds `DisagreementCause::HybridTrace(HybridTraceDisagreement)`
 directly to this shared cause type and codec. Its wire shape is
-`{"cause":"hybrid-trace","disagreement":{"type":<arm>,"counterexample":<HybridCounterexample>}}`.
+`{"cause":"hybrid-trace","disagreement":{"type":<arm>,"counterexample":{"type":"hybrid-counterexample","kind":...,"trace":...}}}`.
 The `disagreement.type` is exactly `not-reproduced` or `not-exact`.
 `disagreement.counterexample` is the complete QSpec FR-193
 `HybridCounterexample`, including both `kind` and `trace`; the trace uses
@@ -99,7 +99,7 @@ verdict for an exact-replay failure.
 | FR-269-AC-2 | FR-268-AC-3's failing records map to `failure` `Separation { Quantifier, Unmet }`, `Separation { Element, Unmet }` (three times) and `Separation { Body, Unmet }`; its undefined-domain, undefined-body and refused-domain variants map to `Separation { Domain, UndefinedEvaluation }`, `Separation { Body, UndefinedEvaluation }` and `Separation { Domain, Refused }`, each `UndefinedEvaluation` naming the expression and its undefined cause. | Test (TC-744) |
 | FR-269-AC-3 | A replay result holding FR-269-AC-1's cause round-trips through serialize and read to an equal result; the same document with `failure` set to an undefined value refuses, and one with `given` missing its `index` refuses; two results that differ only in `derived` compare unequal. | Test (TC-744) |
 | FR-269-AC-4 | A deciding element whose value or type nests 100,000 levels round-trips through the cause codec on a 512 KiB stack: the writer is `quire-canonical`'s, the reader keeps the document on the heap (`quire_canonical::read`) and decodes each deciding element from it on an explicit stack, and the element reads back and encodes to the same document. No depth refuses (ADR-030 D-1). | Test (TC-744) |
-| FR-269-AC-5 | A provider formula counterexample whose exact replay returns `NotReproduced` round-trips as `DisagreementCause::HybridTrace(NotReproduced{counterexample})` through the shared `DisagreementCause::to_json(Some(checked_model))` and `from_json(text, package, Some(checked_model))` methods. The cause wire has `cause: hybrid-trace`, a `disagreement.type` discriminator, and the full `disagreement.counterexample` in FR-193 wire form; mode and variable names map through the supplied checked model. The `not-exact` discriminator round-trips to its distinct arm. The same hybrid cause without checked-model context is refused; the existing `Verdicts`, `NoValue` and `Witness` cause round trips remain unchanged. | Test (TC-1221) |
+| FR-269-AC-5 | A provider formula counterexample whose exact replay returns `NotReproduced` round-trips as `DisagreementCause::HybridTrace(NotReproduced{counterexample})` through the shared `DisagreementCause::to_json(Some(checked_model))` and `from_json(text, package, Some(checked_model))` methods. The cause wire has `cause: hybrid-trace`, a `disagreement.type` discriminator, and the full `disagreement.counterexample` in FR-193 wire form, including `type: hybrid-counterexample`; mode and variable names map through the supplied checked model. The `proved` and `replayed` accessors return `None` for this cause. The `not-exact` discriminator round-trips to its distinct arm. The same hybrid cause without checked-model context is refused; the existing `Verdicts`, `NoValue` and `Witness` cause round trips remain unchanged. | Test (TC-1221) |
 
 ## Dependencies
 
