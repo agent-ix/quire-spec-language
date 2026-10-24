@@ -179,14 +179,12 @@ fn assert_a_class_that_fails_keeps_the_class_that_passes_unreduced() {
         TOGGLING,
         false,
         &[(0, 0), (0, 1)],
-        &format!(
-            "hyper Mixed using inf over behaviours (v: V::Vault) \
+        "hyper Mixed using inf over behaviours (v: V::Vault) \
              forall trace a of V forall trace b of V forall trace c of V forall trace d of V \
-             match {{ a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i \
-                     and c.step.op = d.step.op and c.step.Vault::step.i = d.step.Vault::step.i }} \
-             {{ (eventually holds(v.l @ a = 1) and eventually holds(v.l @ b = 1)) \
-                and always holds(v.l @ c = 0) and always holds(v.l @ d = 0) }}"
-        ),
+             match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i \
+                     and c.step.op = d.step.op and c.step.Vault::step.i = d.step.Vault::step.i } \
+             { (eventually holds(v.l @ a = 1) and eventually holds(v.l @ b = 1)) \
+                and always holds(v.l @ c = 0) and always holds(v.l @ d = 0) }",
     );
     assert_eq!(
         world.clause.copy_group().classes,

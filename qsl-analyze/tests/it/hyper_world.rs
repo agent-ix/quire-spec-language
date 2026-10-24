@@ -63,6 +63,9 @@ const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000
 /// The key of the vault in `vaults`.
 pub(crate) const KEY: &str = "v";
 
+/// The vaults `(key, (h, l))` of each initial state.
+type Starts<'a> = Vec<Vec<(&'a str, (i64, i64))>>;
+
 /// Which `step` contract the vault has (ADR-023 section 8).
 #[derive(Clone, Copy)]
 pub(crate) enum Vault {
@@ -595,7 +598,7 @@ impl World {
         vault: Vault,
         reset: bool,
         starts: Vec<Vec<(&str, (i64, i64))>>,
-        second_starts: Option<Vec<Vec<(&str, (i64, i64))>>>,
+        second_starts: Option<Starts<'_>>,
         flags: Vec<i64>,
         universe: Vec<String>,
         declaration: &str,
