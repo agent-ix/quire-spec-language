@@ -58,3 +58,19 @@ origin/main 566ce2bcf), with its own target directory. Results are in the
 Linear comment. The qsl-semantics `complete_value_lock` failures fail only
 because the quire-specification checkout is missing (known environment
 noise).
+
+## Dispositions
+
+Round 1, verified against fix commit 45d622811ad5e22e3e3dcf0d8535de7941e5022c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-309-AC-1 tag dropped (`#[trace("TC-888")]`); the doc comment now states the whole-clause span; the gap is in QSL-1028's body |
+| FND-002 | fixed | FR-223-AC-9 tag dropped; QSL-1027 does not yet list AC-9's mechanism clause (tracking follow-up, non-blocking) |
+| FND-003 | fixed | Obligations are authored per bound and compared by value, with a different-package negative control; the comment states the bound is not an input to the obligation |
+| FND-004 | fixed | FR-219-AC-5 tag dropped; the AC is now honestly uncovered (second sentence: QSL-1028) |
+| FND-005 | fixed | FR-223-AC-10 tag dropped; the doc comment names the first sentence only |
+| FND-006 | fixed | Asserts (protocol, channel) names read from graph.protocols() |
+| FND-007 | fixed | `attempt` asserted: Wa/Wb (AC-3) and Lone (AC-10) |
+| FND-008 | fixed | At every state after a join step: Event enabled and C's binder held by the root |
+| FND-009 | fixed | Prefix transition_key JSON asserted: type protocol-transition, steps fork Main/Both and attempt Main/Both/left/A |
