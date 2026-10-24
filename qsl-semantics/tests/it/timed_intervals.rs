@@ -52,6 +52,7 @@ fn dense_ms() -> ModelTimeSource {
         model: "Config".to_owned(),
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
+        time_dimension: quire_exact::NodeKey::from_digest([0; 32]),
     }
 }
 
