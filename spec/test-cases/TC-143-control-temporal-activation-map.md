@@ -11,6 +11,7 @@ relationships:
 
 Verify canonical compiled-protocol `/3` mappings between eligible linked controls
 and their exact selected temporal declarations without changing `/1` or `/2`.
+TC-1194 verifies the FR-449 activation map derived from the checked package.
 
 ## Test Procedure
 

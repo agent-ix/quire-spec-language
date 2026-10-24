@@ -4,40 +4,19 @@
 //! beside the evaluator that raises them. Layer 5 `value::expression` holds
 //! every family's evaluator (ADR-011 §6.1), so the module path does not
 //! decide the owning family: [`ProtocolClauseSnapshot`] is `ProtocolClause`'s,
-//! [`StateModelUndefined`] is `StateModel`'s, and
-//! [`ModelQueryRefusal`] carries `StateModel`'s model-query refusal.
+//! [`ModelQueryRefusal`] carries `StateModel`'s model-query refusal. The
+//! `Value`-family causes both evaluators raise live in `quire-eval`
+//! (FR-403).
 
 use std::collections::BTreeMap;
 
 use quire_exact::ObjectReference;
-use quire_semantic_value::catalog::{
-    CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
-};
+use quire_semantic_value::catalog::{render_identity, CatalogCode, CatalogCoded};
 
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::call::WrongSnapshotCause;
-
-/// The `precondition-false` payload (`native-diagnostics.md`): the called
-/// effective operation, the selected method's effective identity, the
-/// receiver reference and the call locus. The call locus is the evaluator's
-/// own [`quire_eval::Evaluation::location`], not repeated here. Moved from
-/// the now-deleted `value::outcome`: not a kernel type
-/// (ADR-013 T-6 -- FR-151 dispatch resolution is QSL `model`/`check`
-/// vocabulary), and narrowed to `pub(crate)` since its only consumers are
-/// [`StateModelUndefined::PreconditionFalse`] here and `Machine`'s
-/// `DispatchGuard` in `value::expression::evaluate`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct PreconditionFailure {
-    /// The called effective operation's unqualified member name.
-    pub(crate) operation: String,
-    /// The selected method's effective identity: the redefinition candidate
-    /// the receiver's most-specific runtime type actually linked to.
-    pub(crate) selected: String,
-    /// The receiver reference the call was made on.
-    pub(crate) receiver: ObjectReference,
-}
 
 /// ADR-013 T-6: `ProtocolClause`'s evaluation-time refusal cause, carrying
 /// [`WrongSnapshotCause`]. `ProtocolClause` owns `Pre` (ADR-012 §4.3;
@@ -232,28 +211,8 @@ impl CatalogCoded for NavigationRefusal {
         };
         Some(BTreeMap::from([
             ("relationship", relationship.node.clone()),
-            (name, identity_string(object.object().as_str().as_bytes())),
+            (name, render_identity(object.object().as_str().as_bytes())),
         ]))
-    }
-}
-
-/// A protocol reference expression (FR-308) reached evaluation. Its value is
-/// the value of the protocol clause it names, and no stage evaluates a
-/// protocol clause: S6a evaluates state clauses only. It refuses, typed,
-/// rather than answer with a value no clause computed.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ProtocolReferenceUnsupported;
-
-impl CatalogCoded for ProtocolReferenceUnsupported {
-    /// `unknown_required_feature`/`unsupported-feature`, naming the
-    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
-    /// gap.
-    fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("unknown_required_feature", "unsupported-feature")
-    }
-
-    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
-        Some(BTreeMap::from([("construct", "protocol".to_owned())]))
     }
 }
 
@@ -274,25 +233,6 @@ impl CatalogCoded for NamedPopulationIncomplete {
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
         Some(BTreeMap::from([("population", self.population.clone())]))
-    }
-}
-
-/// A read through a `Reference<T>` over an object environment that holds no
-/// object: a replay (FR-098) admits a reference argument by its identity, and
-/// a call that dereferences it completes no value.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ReferenceUnresolved;
-
-impl CatalogCoded for ReferenceUnresolved {
-    /// `unknown_required_feature`/`unsupported-feature`, naming the
-    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
-    /// gap.
-    fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("unknown_required_feature", "unsupported-feature")
-    }
-
-    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
-        Some(BTreeMap::from([("construct", "dereference".to_owned())]))
     }
 }
 
@@ -378,110 +318,9 @@ impl CatalogCoded for ModelQueryRefusal {
     }
 }
 
-/// The payload rendering of a member identity. A population member's
-/// identity is a JSON string, so a well-formed identity is valid UTF-8 and
-/// renders as itself. Bytes that are not UTF-8 render as
-/// `identity bytes 0x<lowercase hex> (not UTF-8)`, the same rendering
-/// `model::population::lookup` uses: two distinct malformed identities never
-/// render alike, and a malformed identity never renders as a lossy decoding
-/// that could equal a real member's.
-pub(crate) fn identity_string(identity: &[u8]) -> String {
-    qsl_semantics::model::refusal::render_identity(identity)
-}
-
-/// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
-/// (FR-090-AC-11, AC-12). ADR-012 assigns dispatch, dispatch preconditions
-/// and population lookup to `StateModel` (§1, §3, §4.3).
-#[derive(Clone, Eq, PartialEq)]
-pub(crate) enum StateModelUndefined {
-    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
-    /// selected method's effective precondition evaluated to `false`.
-    PreconditionFalse(PreconditionFailure),
-    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
-    /// names no member of the population bound to `p`.
-    AbsentKey {
-        /// The population binding `p` is bound to, rendered for the
-        /// catalog payload.
-        binding: String,
-        /// The requested reference key `r`, rendered by
-        /// [`identity_string`].
-        key: String,
-    },
-    /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
-    /// result because no declared population member type covers the queried
-    /// type by reflexive conformance.
-    IncompleteClosure {
-        /// The queried effective type's canonical node name.
-        queried_type: String,
-        /// The queried type as the minimal uncovered-subtype witness.
-        uncovered_subtypes: Vec<String>,
-    },
-    /// FR-139: an `only(x in P where c: e)` form found no object of the
-    /// population satisfying `c`, or several.
-    OnlyNotOne {
-        /// The population's declaration identity.
-        population: String,
-        /// How many objects satisfied the condition.
-        found: u64,
-    },
-}
-
-impl std::fmt::Debug for StateModelUndefined {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("StateModelUndefined")
-            .field("catalog_code", &self.catalog_code())
-            .field("record", &self.undefined_record())
-            .finish()
-    }
-}
-
-impl UndefinedCoded for StateModelUndefined {
-    fn catalog_prefix(&self) -> Option<&'static str> {
-        Some(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
-    }
-    fn undefined_record(&self) -> UndefinedRecord {
-        match self {
-            Self::PreconditionFalse(failure) => UndefinedRecord {
-                reason: UndefinedReason::PreconditionFalse,
-                fields: BTreeMap::from([
-                    ("operation", failure.operation.clone()),
-                    ("selected", failure.selected.clone()),
-                    (
-                        "receiver",
-                        identity_string(failure.receiver.object().as_str().as_bytes()),
-                    ),
-                ]),
-            },
-            Self::AbsentKey { binding, key } => UndefinedRecord {
-                reason: UndefinedReason::AbsentKey,
-                fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
-            },
-            Self::IncompleteClosure {
-                queried_type,
-                uncovered_subtypes,
-            } => UndefinedRecord {
-                reason: UndefinedReason::IncompleteClosure,
-                fields: BTreeMap::from([
-                    ("closure", "subtype".to_owned()),
-                    ("queried_type", queried_type.clone()),
-                    ("uncovered_subtypes", uncovered_subtypes.join(", ")),
-                ]),
-            },
-            Self::OnlyNotOne { population, found } => UndefinedRecord {
-                reason: UndefinedReason::OnlyNotOne,
-                fields: BTreeMap::from([
-                    ("population", population.clone()),
-                    ("found", found.to_string()),
-                ]),
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{identity_string, ModelQueryRefusal, ProtocolClauseSnapshot};
+    use super::{ModelQueryRefusal, ProtocolClauseSnapshot};
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::{category_of, Code};
     use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -640,17 +479,5 @@ mod tests {
         let ModelQueryRefusal { cause, detail } = carried;
         let _: ModelRefusalCause = cause;
         let _: String = detail;
-    }
-
-    /// FR-090-AC-12: a malformed identity renders as its hex bytes, so two distinct
-    /// malformed identities never render alike.
-    #[test]
-    fn identity_string_renders_non_utf8_bytes_as_hex() {
-        assert_eq!(identity_string(b"c9"), "c9");
-        assert_eq!(
-            identity_string(&[0xFF, 0xFE]),
-            "identity bytes 0xfffe (not UTF-8)"
-        );
-        assert_ne!(identity_string(&[0xFF]), identity_string(&[0xFE]));
     }
 }

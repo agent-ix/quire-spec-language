@@ -23,7 +23,7 @@ FR-170-AC-7.
 
 ## Test Procedure
 
-Fixture: ADR-022 §7.1's subject and `possible 2 / (2 - c.versionNumber) = 2`
+Fixture: ADR-022 §7.1's subject and `possible 2 div (2 - c.versionNumber) = 2`
 for `c = a`.
 
 1. Run the item through EN-1.
@@ -32,7 +32,7 @@ for `c = a`.
    and the same cause.
 3. Settle the outcome with step 2's first replay result.
 4. Run `always possible PDiv using v over (c: Config::ConfigVersion) from
-   (c.versionNumber >= 1) { 2 / (2 - c.versionNumber) = 2 }` for `c = a`;
+   (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`;
    replay its `Undefined` evidence, then the same evidence with
    `where.predicate` naming the `from` predicate `c.versionNumber >= 1`
    and the same cause.
@@ -44,7 +44,10 @@ for `c = a`.
 6. Run FR-168-AC-12's `possible c.value = 3` over the `Counter` subject with
    the undefined `terminal when` predicate, and replay its evidence.
 7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint
-   `Half`, and replay its evidence with the request that selects `Half`.
+   `Half`, and replay its evidence through a request that selects `Half`
+   and through one that selects no constraint; then with its stem's last
+   step removed; then with its cause changed; then in an envelope over the
+   unit declaring `Half` as an `invariant`, with that unit's `package_id`.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
 
@@ -70,5 +73,7 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
   neither a predicate nor a transition; the replay settles
   `reproduced-with-evaluated-witness`.
 - Step 7: `Undefined` at `va = 2` with the constraint's locus; no
-  `ConstraintBoundary` node there; the replay settles
-  `reproduced-with-evaluated-witness`.
+  `ConstraintBoundary` node there; the item settles `refuted`,
+  `decisive-counterexample`, cause `UndefinedEvaluation`; both replays
+  settle `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`,
+  twice; refused `stale_dependency`/`content-mismatch` naming the locus.

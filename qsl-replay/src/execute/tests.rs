@@ -59,9 +59,9 @@ fn proved() -> String {
 }
 
 /// A supplied-value run at the default ceilings over a handle nobody cancels.
-fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
-    qsl_semantics::value::supplied::SuppliedRun::new(
-        qsl_semantics::value::supplied::SuppliedLimits::default(),
+fn default_run() -> quire_semantic_value::supplied_stop::SuppliedRun {
+    quire_semantic_value::supplied_stop::SuppliedRun::new(
+        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         quire_exact::Cancel::new(),
     )
     .expect("a run")
@@ -1910,9 +1910,9 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, FieldValue, Integer, IntegerInterval, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{
@@ -2054,13 +2054,13 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
         PopulationRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_checked::key::DeclarationKey;
     use quire_exact::{ChargePoint, Meter, Value, ValueType};
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
@@ -2470,7 +2470,7 @@ fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_valu
 
 /// FR-255-AC-11 (TC-921): two requests that reach the same effective
 /// accounting limits, one wholly in `accounting_limits` and one with
-/// `work_units` and `value_occurrences` only as `stage_limits` entries over
+/// `accounting.work_units` and `accounting.value_occurrences` only as `stage_limits` entries over
 /// other values, give the same claim identity, settlement and charges, with
 /// limits that fit and with `work_units` too small.
 #[trace("TC-921", "FR-255-AC-11")]
@@ -2491,8 +2491,8 @@ fn tc_921_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
             ..effective
         };
         for (name, bound) in [
-            ("work_units", effective.work_units),
-            ("value_occurrences", effective.value_occurrences),
+            ("accounting.work_units", effective.work_units),
+            ("accounting.value_occurrences", effective.value_occurrences),
         ] {
             split.stage_limits.insert(name.to_owned(), bound);
         }

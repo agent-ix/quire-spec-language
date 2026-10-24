@@ -122,6 +122,7 @@ fn repeated_terminal_declarations_build_in_source_order_beside_other_forms() {
             DeclarationForm::TimeInvariant(_) => "time invariant",
             DeclarationForm::Urgent(_) => "urgent",
             DeclarationForm::StateGraphClaim(_) => "state-graph",
+            DeclarationForm::Hybrid(_) => "hybrid",
             DeclarationForm::Temporal(_) => "temporal",
             _ => "other",
         })

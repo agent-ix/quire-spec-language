@@ -845,6 +845,11 @@ fn check_clause(
             }))
         }
     };
+    let clock = form.clock.as_ref().ok_or_else(|| {
+        refuse(TemporalCause::MissingClock {
+            span: declaration.span,
+        })
+    })?;
     let profile_ref =
         DefinitionRef::new(super::profile::CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| fault("profile-identity-valid"))?;
@@ -868,10 +873,7 @@ fn check_clause(
     let time_binding = match profile {
         TemporalProfile::Timed => {
             let over = types.first().ok_or_else(|| fault("over-type-resolved"))?;
-            Some(
-                timed::binding(&form.clock, over, declarations, declaration.span)
-                    .map_err(refuse)?,
-            )
+            Some(timed::binding(clock, over, declarations, declaration.span).map_err(refuse)?)
         }
         TemporalProfile::EventPositionFalseExtension
         | TemporalProfile::FixedSampleFalseExtension
@@ -962,8 +964,8 @@ fn check_clause(
         profile,
         profile_ref,
         over: (form.over.name.name.clone(), over_type),
-        clock: form.clock.text.clone(),
-        clock_binding: clock_binding(&form.clock.text),
+        clock: clock.text.clone(),
+        clock_binding: clock_binding(&clock.text),
         operators,
         horizon,
         claim: TemporalClaim {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public API tests for the unreduced graph core and the model checker.
 
+mod analyze;
 mod bounded_closure;
 mod closure_certificate;
 mod counter;
@@ -30,6 +31,7 @@ mod model_world;
 mod partial_order;
 mod por_world;
 mod prob_world;
+mod probabilistic_request_items;
 mod protocol_compensation;
 mod protocol_constructs;
 mod protocol_counted_steps;

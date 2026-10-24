@@ -38,8 +38,8 @@ relationships:
 
 ## Description
 
-When EN-1 returns `Holds` for an HP-1, HP-2, HP-3, HP-5 or HP-6 item, the
-layer-A engine in `qsl-analyze` SHALL hand over a
+When EN-1 returns `Holds` for an HP-1, HP-2, HP-3 or HP-6 item, or
+`Witnessed` for an HP-5 item (FR-181), the layer-A engine in `qsl-analyze` SHALL hand over a
 `ProductClosureCertificate`, and QSL's layer-6 crate `qsl-replay` SHALL hold
 `check_product_closure`, which accepts the certificate only when the
 certified set holds every initial product state, is closed under the
@@ -98,8 +98,12 @@ pub enum ProductClosureCheck {
     Accepted,
     Rejected(CertificateRejection),          // FR-338's: rule and locus
     Stopped(ReachedLimit),                   // FR-126: the limit and its value
+    PackageMismatch { certificate: PackageId, recompiled: PackageId },  // FR-282
 }
 ```
+
+The certificate's `package_id` is its `closure`'s (FR-338), the package
+EN-1 explored.
 
 The checker uses FR-338's `CertificateRejection{rule, at}`; `Rejected`
 settles ADR-018 PC-2's `CertificateRejected{rule, at}`. It reuses
@@ -115,21 +119,37 @@ An HP-1 edge retains its pre-state key, transition identity (operation,
 receiver and arguments), post-state key and observed result as FR-179
 retains them. The tuple is in execution-variable binding order. It is not
 the tuple of source states: two edges from the same source state can have
-different arguments, post-states or results. FR-331 carries them as the
-non-empty text of `at`.
+different arguments, post-states or results. FR-331's Certification table
+spells these loci and lists the rules admitted at each (FR-338 "Rejection
+spellings").
 
 ## Behavior
 
-- **Production.** When EN-1 returns `Holds` for one of these forms, the
+- **Production.** When EN-1 returns `Holds` for one of these forms, or
+  `Witnessed` for HP-5, the
   `qsl-analyze` engine SHALL write the certificate from its retained
   product: every stored product state, and for HP-2 and HP-3 the
   components of its SCC decomposition, each with the first PC-4 witness
-  that holds for it.
+  that holds for it in FR-126's witness order. The certificate SHALL be a
+  function of the request, the item and the limits: `closure` lists its
+  keys ascending; the components follow FR-126's component rule over the
+  hyper product, each component's vertex index the least FR-101 canonical
+  breadth-first index of its states in that product; each component's
+  states are ascending in the closure's key order; and every `sub` and
+  constraint list follows FR-126's refinement and constraint-list rules.
+  The certificate covers one object parameter binding (`instance`), so no
+  order across bindings arises. The checker requires a topological order
+  only and does not reject another topological order.
 - **Core code only.** `check_product_closure` SHALL build each alias's
   `ModelSystem` by FR-128's rules and SHALL expand product states through
   `qsl-eval`'s hyper product successor function, property-automaton
   translation, witness-set step and fairness-enabledness predicates (ADR-018
   LA-2), using no `qsl-analyze` code.
+- **Package identity.** The checker SHALL compare the recompiled package's
+  `package_id` with the certificate's first, before any other rule. When
+  they differ it SHALL return `PackageMismatch{certificate, recompiled}`
+  naming both and evaluate nothing else (FR-282); a stale certificate is
+  never `Rejected`, `Stopped` or `Accepted`.
 - **Malformed.** A certificate whose `closure` keys are unsorted or
   duplicated, or whose `components` are absent for HP-2 or HP-3, SHALL be
   rejected with rule `Malformed` before any recomputation. Absent
@@ -180,9 +200,12 @@ non-empty text of `at`.
 - **Purity.** The checker SHALL read no path, environment variable, clock
   or search location, and its result SHALL be a function of the
   certificate, the request and the limits.
-- **Settlement.** FR-182 SHALL settle `proved`, `Certified` only on
-  `Accepted`, V-6 `CertificateRejected{rule, at}` on `Rejected`, and V-7
-  on `Stopped`.
+- **Settlement.** The settling entry, FR-182's `settle_hyper_check` for an
+  HP-1, HP-2, HP-3 or HP-6 item and FR-169's `settle_existential` for an
+  HP-5 item, SHALL settle `proved`, `Certified` only on `Accepted`, V-6
+  `CertificateRejected{rule, at}` on `Rejected`, V-6
+  `StaleDependency{requested, recompiled}` with `requested` the
+  certificate's `package_id` on `PackageMismatch`, and V-7 on `Stopped`.
 
 ## Acceptance Criteria
 
@@ -195,6 +218,8 @@ non-empty text of `at`.
 | FR-163-AC-5 | HP-2 and HP-3 certificates with absent `components`, including one with an empty closure, reject `Malformed` at `CertificateMember("components")` before any successor recomputation, without selecting a state key. | Test (TC-646) |
 | FR-163-AC-6 | An HP-1 certificate for FR-179-AC-2's nondeterministic `Det` subject rejects `ViolatingMember` at the first complete labelled edge tuple in canonical order; equal pre-state keys and arguments with different post-states remain distinct. FR-179-AC-4's undefined body rejects `UndefinedMember` at its complete edge tuple. | Test (TC-646) |
 | FR-163-AC-7 | For ADR-023 HC-2 with zero universal variables, a supplied key with an empty universal tuple and its actual witness set retains both on serialization and reading; the empty witness set remains distinct from an absent witness set. No component is added to satisfy a nonempty-array constraint. | Test (TC-646) |
+| FR-163-AC-8 | Package identity. FR-181-AC-1's HP-5 certificate and §8.1's secure `NonInterference` certificate each carry the `package_id` of the package EN-1 explored and are `Accepted`. Each with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule; the `NonInterference` certificate with its keys also unsorted returns `PackageMismatch`, not `Malformed`. | Test (TC-1198) |
+| FR-163-AC-9 | Production order. §8.1's secure `NonInterference` proof run twice writes byte-equal RFC 8785 certificates, whose `closure` keys are ascending, whose components are in FR-126's component order over the self-composed product's canonical breadth-first indices, and whose components each list their states ascending in the closure's key order. The same certificate with two components that no edge joins listed in the other order is still `Accepted`. | Test (TC-646) |
 
 ## Dependencies
 
@@ -206,7 +231,8 @@ non-empty text of `at`.
   (PC-3 and PC-4 certificates),
   [FR-174](FR-174-reduce-hyper-products-and-check-copy-swap-symmetry.md)
   (copy-swap canonicalisation).
-- FR-176 to FR-179 and FR-181 produce the certificate; FR-182 settles it.
+- FR-176 to FR-179 and FR-181 produce the certificate; FR-182 settles it,
+  and FR-169 settles an HP-5 item's.
 
 ## References
 

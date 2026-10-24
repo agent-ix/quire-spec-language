@@ -1,6 +1,6 @@
 ---
 id: TC-104
-title: "Preserve standalone workflow failures and limits"
+title: "Native-v1 request intake failures, limits and path resolution"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-026
@@ -8,23 +8,36 @@ relationships:
 ---
 ## Description
 
-Integration, P1: exercise request, file, digest and runtime failures at the real
-command boundary without substituting compiler or execution logic.
+Integration, P1: exercise request, file and digest failures, the intake
+limits and path resolution through `command` in process with `1-draft`
+requests, without substituting compiler or execution logic.
+
+Scope: FR-026-AC-3 to FR-026-AC-5.
 
 ## Test Procedure
 
-Mutate selected bytes, request fields/format, paths and budgets; inspect the
-actual stage/code and available provenance. Retry an unchanged default request.
-Validate every emitted run envelope against its schema and resolve error codes
-through the native catalog. Reject missing result fields or truth attached to
-refusal. Adapt an independently typed cancelled package error and require exit 22.
-Exercise command-specific arity errors before I/O, plus absolute and parent-relative
-file selections in a request stored separately from the current working directory.
+1. Call `command` with a `1-draft` native-run/1 request with a stale program
+   source digest, a malformed request, an unknown format and a missing
+   program file. Validate each command-error envelope against the native
+   result schema and resolve its code through the native catalog.
+2. Call it with a request one byte over `request_bytes`, then one whose
+   dependent files total one byte over `dependent_bytes`. Repeat each with
+   that limit raised to its size. Then call it with a fresh request under
+   the default limits.
+3. Store a request outside the working directory whose file selections are
+   relative, absolute and parent-relative, and call `command` with its path
+   from two different process working directories.
+
+Capture the process streams around every call. Tag the tests
+`#[trace("TC-104", "FR-026-AC-n")]` with the AC each backs.
 
 ## Expected Results
 
-On FR-301's six-code contract, malformed requests, I/O, invalid command usage
-and semantic refusals other than a real, profile-gated capability this build
-does not admit all exit 20; that capability disposition exits 21; budget
-exhaustion exits 22 without truth. Fresh requests recover and no hosted
-service is needed.
+- Step 1: each refuses at its actual stage with its catalogued code and the
+  available source details, with no result document and exit code 20; every
+  envelope is `native-run-result/2` and validates.
+- Step 2: each refusal names the setting and its configured value; the
+  raised requests run; the fresh request succeeds.
+- Step 3: both calls return equal outcomes; each file selection resolves
+  against the request's directory, or as written when absolute.
+- No call writes a byte to stdout or stderr.

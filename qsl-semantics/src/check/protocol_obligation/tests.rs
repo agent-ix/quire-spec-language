@@ -40,7 +40,7 @@ fn ambiguous_population_model() -> SelectedModel {
         DomainPackageRecord, Extent, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
         PopulationRecord,
     };
-    use crate::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
     let key = |name: &str| DeclarationKey {
         package: "example/protocol-obligations".to_owned(),
         node: format!("ix://example/protocol-obligations/{name}"),

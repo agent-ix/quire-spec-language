@@ -337,7 +337,7 @@ item moves once.
   FR-401 fixes.
 - The checked-term boundary S6 builds on is FR-400: the checked terms live in
   `quire-checked` (ADR-011 layer C, repository `agent-ix/quire-eval`), which
-  depends on SV, K and W only and carries SV `Location`s. Source spans,
+  depends on SV, K and W only and carries SV `ExpressionLocation`s. Source spans,
   form-derived fields and source-region resolution stay with the checker.
   The interface must not import the checker into the leaf. It may name C's
   checked terms, and it takes the checked input as a type the implementation

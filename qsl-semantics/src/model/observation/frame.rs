@@ -30,12 +30,12 @@ use super::{
 };
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::OperationEffect;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop as DecisionStop,
 };
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
 

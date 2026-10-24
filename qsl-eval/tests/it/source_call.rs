@@ -176,7 +176,7 @@ fn integer_operator(operator: &str, profile: Option<DivisionProfile>) -> Checked
 
 fn admitted_integer_division(
     profile: DivisionProfile,
-) -> qsl_semantics::value::AdmittedIntegerDivision {
+) -> quire_checked::integer_division::AdmittedIntegerDivision {
     let role = match profile {
         DivisionProfile::Truncating => CatalogRole::IntegerDivisionTruncating,
         DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
@@ -448,4 +448,53 @@ fn a_source_predicate_is_called_through_the_checked_package() {
          function three using v(): Boolean pure { Positive(3) }",
     );
     assert!(completes_true(&package, "three"));
+}
+
+/// FR-403-AC-2 (TC-1121), the `mod` half: `-7 mod 2` through the reference
+/// evaluator returns the value, and ends with the admitted charges, that
+/// `quire_eval::modulo` returns when called directly on a fresh meter. The
+/// operation is defined once, in `quire-eval`, and `qsl_semantics::value`
+/// no longer holds it.
+#[trace("FR-403-AC-2", "TC-1121")]
+#[test]
+fn modulo_through_the_evaluator_matches_the_quire_eval_operation() {
+    let package = integer_operator("mod", None);
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("op").unwrap(),
+            vec![
+                Value::Integer(Integer::from(-7_i64)),
+                Value::Integer(Integer::from(2_i64)),
+            ],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+
+    let mut direct = Meter::new(UNLIMITED);
+    let expected = quire_eval::modulo(
+        &Integer::from(-7_i64),
+        &Integer::from(2_i64),
+        &quire_exact::IntegerDomain::Mathematical,
+        &mut direct,
+    );
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("expected a kernel outcome, got {:?}", evaluation.outcome);
+    };
+    let Outcome::Completed(remainder) = expected else {
+        panic!("-7 mod 2 completes, got {expected:?}");
+    };
+    assert_eq!(
+        format!("{outcome:?}"),
+        format!("{:?}", Outcome::Completed(Value::Integer(remainder)))
+    );
+    let points =
+        |meter: &Meter| -> Vec<_> { meter.admitted_charges().iter().map(|c| c.point).collect() };
+    let (through, direct) = (points(&meter), points(&direct));
+    assert!(!direct.is_empty());
+    assert!(
+        through.ends_with(&direct),
+        "{through:?} ends with {direct:?}"
+    );
 }

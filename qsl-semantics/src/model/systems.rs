@@ -41,10 +41,10 @@ use crate::model::domain_package::{
     ObjectTypeRecord, PortDirection, RelationshipRecord,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::refusal::{MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
 /// that resolved to no kind at all (missing a capability, cascaded from a

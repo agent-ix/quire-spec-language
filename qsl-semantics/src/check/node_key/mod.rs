@@ -312,6 +312,8 @@ pub enum NodeTag {
     Claim,
     /// `correspondence`.
     Correspondence,
+    /// `hybrid`: a hybrid model, mode or transition (QSpec FR-481).
+    Hybrid,
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
@@ -1201,9 +1203,15 @@ impl LiteralValue {
         let (value_kind, value) = match self {
             Self::Boolean(value) => ("boolean", LiteralJson::Boolean(*value)),
             Self::Integer(value) => ("integer", LiteralJson::Spelled(value.to_string())),
+            // QSpec FR-322 "Scalar literal values": the canonical magnitude
+            // spelling (`0`, `-3`, `1/2`), so one rational has one spelling.
             Self::Rational(value) => (
                 "rational",
-                LiteralJson::Spelled(format!("{}/{}", value.numerator(), value.denominator())),
+                LiteralJson::Spelled(if value.is_integer() {
+                    value.numerator().to_string()
+                } else {
+                    format!("{}/{}", value.numerator(), value.denominator())
+                }),
             ),
             Self::Quantity(value) => (
                 "quantity",
@@ -2312,6 +2320,7 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         // No `declaration`: nothing for `map` to remap.
         Member::StateClause { clause } => Member::StateClause { clause },
         Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
+        timed @ Member::TimedInterval(_) => timed,
         Member::Fairness {
             kind,
             granularity,

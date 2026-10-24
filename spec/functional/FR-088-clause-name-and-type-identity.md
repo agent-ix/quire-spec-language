@@ -125,10 +125,11 @@ variant of the checked clause-kind enum maps to exactly one v2 `node_tag`/
 `semantic_form` pair or clause operation identity, and no v2 string this
 enum's wire spelling admits maps to zero or more than one variant.
 
-Amended by FR-105. The enum gains `Invariant`, `Precondition` and
-`Postcondition`. All three spell the pair (`state`, `state_clause`) and the
-clause operation `quire.op.state.clause` (STD-111); their application's kind
-member tells them apart, so for these three the injective spelling is the
+Amended by FR-105. The enum gains `Invariant`, `Constraint` (FR-158),
+`Precondition` and `Postcondition`. All four spell the pair (`state`,
+`state_clause`) and the clause operation `quire.op.state.clause` (STD-111);
+their application's kind member tells them apart, so for these four the
+injective spelling is the
 triple (pair, operation identity, kind member), and a decoder reads the kind
 member after the operation identity. `StateTransition` spells
 (`state`, `transition`), its QSpec form as STD-111 item 5 defines it (a

@@ -44,7 +44,7 @@ const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.v
                        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
 
 /// A Counter subject over the counters `keys`, from one initial snapshot.
-struct World {
+pub(crate) struct World {
     body: String,
     package: CheckedPackage,
     documents: Documents,
@@ -52,7 +52,7 @@ struct World {
     keys: Vec<&'static str>,
 }
 
-fn world(body: &str, start: &[(&'static str, i64)]) -> World {
+pub(crate) fn world(body: &str, start: &[(&'static str, i64)]) -> World {
     let document = document(false);
     let package = package(&document, body);
     let mut documents = Documents::new(document);
@@ -69,7 +69,7 @@ fn world(body: &str, start: &[(&'static str, i64)]) -> World {
 /// A TP-1 clause with its letters, declared in a package of its own: the
 /// clause is a declaration of that package, whose `body` the unit text ends
 /// with.
-struct Invariant {
+pub(crate) struct Invariant {
     body: String,
     package: CheckedPackage,
     clause: CheckedTemporalClause,
@@ -78,7 +78,7 @@ struct Invariant {
 }
 
 impl World {
-    fn invariant(&self, formula: &str, atom: fn(i64) -> Option<bool>) -> Invariant {
+    pub(crate) fn invariant(&self, formula: &str, atom: fn(i64) -> Option<bool>) -> Invariant {
         let declared = [("C", "", formula)];
         let (package, mut clauses) =
             package_with_clauses(&self.documents.document, &self.body, &declared);
@@ -224,6 +224,39 @@ impl World {
 }
 
 impl Invariant {
+    /// The EN-1 item `analyze` runs for this clause under `limits`
+    /// (FR-281): the run, its closure checker's request, the `package_id`
+    /// the run checked, and `replay` for a counterexample.
+    pub(crate) fn model_item<'w>(
+        &'w self,
+        world: &'w World,
+        limits: ModelCheckLimits,
+        replay: impl FnOnce(
+                &qsl_replay::TemporalCounterexample,
+            )
+                -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal>
+            + 'w,
+    ) -> qsl_analyze::analyze::ModelItem<'w> {
+        qsl_analyze::analyze::ModelItem {
+            request: ModelCheckRequest {
+                subject: subject(
+                    &self.package,
+                    &world.documents,
+                    world.initial.clone(),
+                    &world.keys,
+                    UNLIMITED,
+                ),
+                item: self.item(),
+                max_depth: None,
+                limits,
+                reductions: Default::default(),
+            },
+            certificate: self.request(world, UNLIMITED),
+            package_id: self.package_id(world),
+            replay: Box::new(replay),
+        }
+    }
+
     fn item(&self) -> ModelCheckItem<'_> {
         ModelCheckItem::Clause {
             clause: &self.clause,
@@ -236,7 +269,7 @@ impl Invariant {
     }
 
     /// A request for `item` over this clause's package.
-    fn request_with<'w>(
+    pub(crate) fn request_with<'w>(
         &'w self,
         world: &'w World,
         item: ModelCheckItem<'w>,
@@ -815,7 +848,12 @@ fn a_stopped_check_names_what_stopped_it() {
             &Cancel::new()
         )
         .expect("checked"),
-        stop(ModelCheckLimit::EvaluationMeter, 0)
+        stop(
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            },
+            0
+        )
     );
     for source in [CancelCause::Requested, CancelCause::Deadline] {
         let cancel = Cancel::new();

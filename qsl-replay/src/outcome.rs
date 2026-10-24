@@ -466,7 +466,7 @@ pub struct OutcomeItem {
 
 /// The catalogued reason of an undefined value: the kernel's own spelling,
 /// a family record's reason, or `insufficient-data` for a window.
-fn undefined_reason(cause: &UndefinedCause) -> &'static str {
+pub fn undefined_reason(cause: &UndefinedCause) -> &'static str {
     match cause {
         UndefinedCause::Kernel(reason) => kernel_undefined_reason(reason.clone()),
         UndefinedCause::Family(record) => record.reason.as_str(),
@@ -1595,7 +1595,7 @@ mod tests {
     fn reduction_cause_wire_keeps_its_payload() {
         use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
         use qsl_eval::simulation::Permutation;
-        use qsl_semantics::model::key::DeclarationKey;
+        use quire_checked::key::DeclarationKey;
         use quire_semantic_value::fairness::PropertyForm;
 
         let population = DeclarationKey {
@@ -1999,7 +1999,8 @@ mod tests {
                                 result_units: 1,
                             },
                             occurrence_key: None,
-                            supplied: qsl_semantics::value::supplied::SuppliedLimits::default(),
+                            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(
+                            ),
                             content_identity: qsl_foundation::digest::DigestRecord::mint(
                                 qsl_foundation::digest::DigestDomain::SourceBytesV1,
                                 [0; 32],
@@ -2092,8 +2093,8 @@ mod tests {
     }
 
     /// FR-255-AC-7: `seven` under the accounting limits the settings
-    /// operation returns for `work_units=0` settles `Incomplete` naming the
-    /// counter, bound, count and setting; under `work_units=1000000` it
+    /// operation returns for `accounting.work_units=0` settles `Incomplete` naming the
+    /// counter, bound, count and setting; under `accounting.work_units=1000000` it
     /// completes with 7.
     #[trace("TC-921", "FR-255-AC-7")]
     #[test]
@@ -2124,13 +2125,13 @@ mod tests {
             json_of(&OutcomeDocument::from_call(&outcome))["result"].clone()
         };
         assert_eq!(
-            run_under("work_units=0"),
+            run_under("accounting.work_units=0"),
             json!({"kind": "incomplete", "limit": {
                 "kind": "work_units", "bound": "0", "counter": "1",
-                "field": "work_units", "setting": "work_units"}})
+                "field": "work_units", "setting": "accounting.work_units"}})
         );
         assert_eq!(
-            run_under("work_units=1000000"),
+            run_under("accounting.work_units=1000000"),
             json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
         );
     }
@@ -2202,7 +2203,7 @@ mod tests {
                 "artifacts": [],
                 "result": {"kind": "incomplete", "limit": {
                     "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units",
-                    "setting": "work_units"}},
+                    "setting": "accounting.work_units"}},
             })
         );
 

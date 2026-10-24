@@ -18,7 +18,7 @@ use semantics::model::domain_package::{
     RecordValueTypeRecord, ValueTypeRef,
 };
 use semantics::model::intake::SelectedModel;
-use semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use semantics::model::normalize::{normalize, NormalizeOutcome};
 
 /// The owning protocol test's original native header.

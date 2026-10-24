@@ -17,10 +17,6 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-023
-    type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-028
-    type: traces_to
   - target: ix://agent-ix/quire-specification/FR-301
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-267
@@ -36,9 +32,8 @@ spine (S1 to S4, the same `spine::compile` CLI `compile` and FR-100 use),
 selects one state clause, or one Boolean function run as a claim, by name,
 admits the supplied observations (FR-106), evaluates through S6a (FR-107 or
 `CheckedPackage::call`) and returns one `ClauseRunReport`: a typed
-disposition, the compiled `package_id` and the usage. It is the spine replacement
-for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
-no spine equivalent before M-6c) and for FR-023's in-process `execute`.
+disposition, the compiled `package_id` and the usage. It is the one
+clause execution path (ADR-011 §5).
 
 FR-100 owns the spine run's typed public argument binding and S6a outcome
 mapping. This requirement reuses their applicable rules and adds observations
@@ -52,7 +47,8 @@ selected as a claim to work around the Value-call boundary.
 A `ClauseRunRequest`:
 
 - the unit's source bytes and its four FR-001 labels, or an I3 extracted
-  source (ADR-011 I3, `qsl-source`, feature `quire-extraction`) with its
+  source (ADR-011 I3, `qsl-source`, under `qsl-replay`'s feature
+  `quire-extraction`; the root crate has no such feature) with its
   original document identity;
 - FR-056's package input (domain packages by canonical package identity) and
   FR-099's dependency input;
@@ -108,8 +104,7 @@ binding receipt when CG consumes the serialized result.
   not supplied) and SHALL admit and evaluate nothing.
 - If the unit is an I3 extracted source whose declared language is not
   `ix:native`, then the entry SHALL report stage `compile`, category
-  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing. This is the
-  refusal the CLI's extracted-clause join gives the same fence.
+  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing.
 - If an expected `package_id` is given and the recompiled one differs, then
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or
@@ -195,7 +190,7 @@ binding receipt when CG consumes the serialized result.
 | FR-109-AC-7 | Over the model `M` of FR-107-AC-19 (`ready` with effective precondition `false`) and the clause `pre F using v on M::A::ready { self.ready() }`, run over a snapshot holding `r1` selecting `F`, the entry reports stage `evaluate`, category `undefined`, `UndefinedEvaluation{cause: precondition-false}`, no `truth`, exit 10. | Test |
 | FR-109-AC-8 | Given a successful clause run with the expected compiled `package_id`, CG consumption of its serialized result still refuses campaign binding when its external receipt is missing or its generated-source or source-map association is mismatched, as FR-267-AC-4 and FR-267-AC-6 require; the QSL report retains its original success disposition and package identity. | Test |
 | FR-109-AC-9 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added reports stage `compile`, `ill_typed`, exit 20, no `package_id` and no `truth`, and admits and evaluates nothing: the checker refuses integer `/` that has no `Rational` expected type, so no linked clause divides by zero at run time. | Test |
-| FR-109-AC-9 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
+| FR-109-AC-10 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
 
 ## Dependencies
 
@@ -221,4 +216,4 @@ binding receipt when CG consumes the serialized result.
   [FR-312](FR-312-read-a-clause-run-request-and-run-it.md)'s: `run` and the
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
-  ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
+  (ADR-031 R-1).

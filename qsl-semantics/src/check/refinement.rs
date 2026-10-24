@@ -72,8 +72,8 @@ use crate::family::CheckContext;
 use crate::model::clause_observation::Observation;
 use crate::model::domain_package::PopulationRecord;
 use crate::model::intake::type_identity_segment;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationLookup;
+use quire_checked::key::DeclarationKey;
 
 /// One `refinement` declaration the assembler resolved: its form and the
 /// profile selection its `using` alias resolved to.

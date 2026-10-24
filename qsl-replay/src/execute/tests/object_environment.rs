@@ -21,7 +21,7 @@ use crate::object_environment::{
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::{DecodeRefusal, WitnessBinding, WitnessField, WitnessSlot, WitnessValueType};
 use crate::SnapshotValue;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 pub(crate) const PACKAGE: &str = "test/graph";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";

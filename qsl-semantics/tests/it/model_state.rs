@@ -11,7 +11,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::intake::package_input;
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::ModelRefusalCause;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, declared_type_universe_for, AdmissionFailure, AdmissionRecord,
@@ -21,6 +21,7 @@ use qsl_semantics::model::population::{
     decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop,
 };
 use qsl_semantics::model::state::{ModelState, StateModel, StateObject};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{FieldValue, Integer, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::relationship_extent::ExtentState;

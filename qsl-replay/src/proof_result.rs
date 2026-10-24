@@ -24,8 +24,8 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::family::UnsupportedItem;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
+use quire_checked::key::DeclarationKey;
 use quire_contract_model::Std001Code;
 use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::catalog::{CatalogCode, Category};
@@ -995,6 +995,8 @@ impl TerminalValue {
             | CallSiteRefusal::Dependency { .. }
             | CallSiteRefusal::UnknownFunction { .. }
             | CallSiteRefusal::UnknownOperation { .. }
+            | CallSiteRefusal::NotAnOperationOwner { .. }
+            | CallSiteRefusal::AmbiguousOperation { .. }
             | CallSiteRefusal::UnknownClause { .. }
             | CallSiteRefusal::UnknownField { .. }
             | CallSiteRefusal::UnknownPopulation { .. } => Self::Declined {
@@ -1181,6 +1183,27 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
     }
 
+    /// FR-281: a `declined` record carrying the refusal's full FR-272
+    /// diagnostic (code and cause) beside its `DeclineCode`.
+    pub fn declined_with(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: ProofRefusalCause,
+        code: DeclineCode,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self::declined(request_index, backend, cause, code).with_diagnostic(Some(diagnostic))
+    }
+
+    /// FR-281: a `failed` record carrying the refusal's FR-272 diagnostic.
+    pub fn failed_with(
+        request_index: RequestIndex,
+        backend: BackendId,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self::failed(request_index, backend).with_diagnostic(Some(diagnostic))
+    }
+
     pub(crate) fn with_backend(
         request_index: RequestIndex,
         backend: BackendId,
@@ -1258,6 +1281,10 @@ pub enum TerminalRecordRefusal {
     /// Only a reproduced witness arm can provide refutation evidence.
     #[error("input-arm replay does not carry backend witness evidence")]
     ReplayLacksWitness,
+    /// A `refuted` value arrived without the counterexample its replay
+    /// reproduced.
+    #[error("a refuted value carries no reproduced counterexample")]
+    RefutedWithoutCounterexample,
 }
 
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
@@ -1554,7 +1581,7 @@ mod tests {
                 result_units: 1,
             },
             occurrence_key: None,
-            supplied: qsl_semantics::value::supplied::SuppliedLimits::default(),
+            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
             content_identity: qsl_foundation::digest::DigestRecord::mint(
                 qsl_foundation::digest::DigestDomain::SourceBytesV1,
                 [0; 32],

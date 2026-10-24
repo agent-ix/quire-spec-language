@@ -23,7 +23,7 @@ const SOURCE: &str = concat!(
     "predicate Good using Complete (x: Integer): Boolean { choose(x) >= 0 }\r\n",
     "relation Same using Complete over (left: M::Execution, right: M::Execution) { true }\r\n",
     "hyper Secret using Complete over traces in M::Execution bounded 2 forall trace a exists trace b { true }\r\n",
-    "hybrid Plant using Complete { mode Idle invariant { true } flow { M::x' = 0; } transition to Idle when { true } reset { true }; }\r\n",
+    "hybrid Plant using Complete { initial { mode Idle when { true }; } mode Idle invariant { true } flow { M::x' = 0; } transition to Idle when { true } reset { true }; }\r\n",
     "synthesis Find using Complete grammar M::Grammar domain M::Domain satisfies { true };\r\n",
     "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }",
 );

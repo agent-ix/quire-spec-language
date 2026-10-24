@@ -5,7 +5,7 @@
 //! or independent checker can establish their obligations.
 
 use super::facts::Established;
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Integer;
 
 /// The obligation belonging to one immediate-parent field pair and one

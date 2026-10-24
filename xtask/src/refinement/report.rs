@@ -5,7 +5,7 @@
 //! gate's exit code is chosen.
 
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Setting, SettingLimits};
+use qsl_foundation::{Setting, SettingLimits, SettingName};
 use qsl_replay::spine::{
     Classification, ClauseRunStage, ReachedLimit, RefinementClass, RefusalCause,
 };
@@ -239,7 +239,7 @@ impl SideReport {
     }
 }
 
-fn code_report(cause: &RefusalCause) -> CodeReport {
+pub(super) fn code_report(cause: &RefusalCause) -> CodeReport {
     CodeReport {
         code: cause.code.as_str(),
         cause: cause.cause,
@@ -274,11 +274,17 @@ pub fn limit_reports(side: SideName, classification: &Classification) -> Vec<Lim
     classification
         .limits()
         .iter()
-        .map(|limit| LimitReport {
-            side,
-            name: limit.name,
-            bound: limit.bound,
-            member: LimitMember::of(limit),
+        .map(|limit| {
+            let name = match SettingName::from_name(limit.name) {
+                Some(SettingName::Accounting(setting)) => setting.counter(),
+                _ => limit.name,
+            };
+            LimitReport {
+                side,
+                name,
+                bound: limit.bound,
+                member: LimitMember::of(limit),
+            }
         })
         .collect()
 }

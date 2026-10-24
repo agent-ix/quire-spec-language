@@ -23,7 +23,7 @@ use qsl_replay::{
     UndecidedCause,
 };
 use qsl_semantics::check::{FormulaNodeId, OperationKey};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Charge, ChargePoint, Identifier, Incomplete, Meter, Undefined};
 use std::cell::RefCell;
 
@@ -555,7 +555,9 @@ fn an_evaluator_that_runs_out_while_confirming_stops_the_item() {
     assert_eq!(cause, IncompleteCause::ResourceExhausted);
     assert_eq!(
         limit.map(|reached| reached.limit),
-        Some(ModelCheckLimit::EvaluationMeter)
+        Some(ModelCheckLimit::EvaluationMeter {
+            counter: quire_exact::LimitKind::WorkUnits,
+        })
     );
 }
 

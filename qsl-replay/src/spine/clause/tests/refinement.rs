@@ -22,8 +22,8 @@ use qsl_semantics::check::{
     ProtocolReferenceCause, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::MemberPath;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::{Location, Origin};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -560,7 +560,7 @@ fn an_exhausted_budget_is_incomplete_naming_work_units() {
     assert_eq!(
         classified.classification.limits(),
         [ReachedLimit {
-            name: "work_units",
+            name: "accounting.work_units",
             bound: 0
         }]
     );
@@ -925,7 +925,7 @@ fn a_model_budget_denial_at_s3_is_incomplete_naming_the_limit() {
 
     let dispatch = classify_refusal(&check(vec![CheckCause::DispatchLink(Box::new(
         DispatchLinkCause {
-            operation: qsl_semantics::model::key::DeclarationKey {
+            operation: quire_checked::key::DeclarationKey {
                 package: "test/orders".to_owned(),
                 node: "op".to_owned(),
             },

@@ -19,10 +19,11 @@ use qsl_replay::{
     CallArgument, CallOutcome, CallerLimits, CanonicalAssignment, DependencyInput, DomainKey,
     DomainKind, FiniteBound, InconclusiveCause, Integer, ObjectEnvironment, PluginReplayContext,
     PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire, RequestIndex, RunRefusal,
-    RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits, TerminalRecord,
-    TerminalValue, Value, WireNodeId, WitnessValue,
+    RunWithReplayContext, SourceIdentity, SpineLimits, TerminalRecord, TerminalValue, Value,
+    WireNodeId, WitnessValue,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";
@@ -486,7 +487,7 @@ fn only_the_spine_limits_bound_the_run() {
     let roomy = CallerLimits::from_operands([
         "s1.tokens=200000",
         "library.definitions=9000",
-        "work_units=5000",
+        "accounting.work_units=5000",
     ])
     .unwrap();
     let result = run(&source, &call, roomy, &Cancel::new()).expect("completes");

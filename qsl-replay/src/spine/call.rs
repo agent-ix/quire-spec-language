@@ -89,7 +89,7 @@ pub struct Call {
     pub accounting: ScalarLimits,
     /// FR-277: the caller's supplied-value helper ceilings. An omitted
     /// ceiling is its published default.
-    pub supplied: qsl_semantics::value::supplied::SuppliedLimits,
+    pub supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
 }
 
 /// A value [`run`] completed. [`run`] refuses `unsupported_construct` before
@@ -192,8 +192,8 @@ pub struct CallIncomplete {
 
 impl CallIncomplete {
     /// The `Call::accounting` field that raises this bound: the exhausted
-    /// counter's `quire.value.accounting/v1` member name, which is also its
-    /// setting's name.
+    /// counter's `quire.value.accounting/v1` member name, which is no setting
+    /// name (see [`Self::setting`]).
     pub fn limits_field(&self) -> &'static str {
         self.record.limit_kind.as_str()
     }

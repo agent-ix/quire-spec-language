@@ -44,7 +44,7 @@ use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
     admit, meaning, read_domain_package, read_records, PackageDocument,
 };
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
     normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
 };
@@ -54,6 +54,7 @@ use qsl_semantics::model::population::{
     InvocationDelta, PopulationAdmissionLimits, PopulationDocument, PopulationMember,
 };
 use qsl_semantics::value::model_query::{evaluate_all_instances, ModelQueryHalt};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Meter, ValueType};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

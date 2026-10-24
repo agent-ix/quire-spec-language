@@ -167,7 +167,7 @@ impl<'r, 's> Joint<'r, 's> {
                 .seams
                 .letters
                 .atom(*atom, self.instance, &states, &mut meter)
-                .map_err(|_| self.record(Halt::Meter))?;
+                .map_err(|incomplete| self.record(Halt::Meter(incomplete.limit_kind)))?;
             match value {
                 AtomReading::True => {
                     let atom = Atom::new(index).map_err(|_| {

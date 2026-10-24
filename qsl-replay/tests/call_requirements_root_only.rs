@@ -2,7 +2,8 @@
 //! TC-1089 (FR-395-AC-9): a consumer reaches `run_with_requirements`, its
 //! result types and `run`'s call types through the `qsl_replay` root alone.
 //! This file names no `qsl_replay::spine`, `qsl_semantics` or `quire_exact`
-//! item, so it stops compiling if the facade needs one.
+//! item, so it stops compiling if the facade needs one. `SuppliedLimits`
+//! comes from its owner, `quire_semantic_value` (FR-403).
 
 use std::collections::BTreeMap;
 
@@ -10,8 +11,9 @@ use ix_trace_rs::trace;
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal,
     CallValue, Cancel, CancelCause, CompileRefusal, DependencyInput, Integer, ObjectEnvironment,
-    PackageId, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, SuppliedLimits, Value,
+    PackageId, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
 };
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\

@@ -19,7 +19,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::value::supplied::SuppliedLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use crate::composite::{CompositeIdentity, EqualityOutcome};
 use crate::execute::ReplayRefusal;

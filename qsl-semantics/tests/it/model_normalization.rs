@@ -15,13 +15,13 @@ use qsl_semantics::model::domain_package::{
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use qsl_semantics::model::key::{
-    DeclarationKey, EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
-    RULE_SUBSET,
+    EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     ObjectUniverse, Refusals,
 };
+use quire_checked::key::DeclarationKey;
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

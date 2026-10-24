@@ -32,7 +32,6 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
-use qsl_semantics::value::supplied::SuppliedRun;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
@@ -44,7 +43,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
-    SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+    SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
 };
 
 use crate::bounds::ReplayLimits;
@@ -74,7 +73,7 @@ use std::collections::BTreeSet;
 mod argument;
 mod object_environment;
 pub use object_environment::{ObjectEnvironmentFailure, Unresolved};
-mod frame;
+pub(crate) mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod composite_domain;
@@ -119,8 +118,10 @@ fn hex(digest: &[u8; 32]) -> WireNodeId {
 /// (FR-116, QSpec FR-323).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum MalformedOperationReason {
-    /// The object names a declaration that cannot declare operations (a
-    /// value type, an enum, a record).
+    /// The object names a declaration that is no operation owner (not an
+    /// object type, a process or a state machine: a value type, an enum, a
+    /// record). The variant keeps its name from before processes and state
+    /// machines were owners.
     #[error("the object names a declaration that cannot declare operations")]
     NotAnObjectType,
     /// The object only inherits the operation; the target names the

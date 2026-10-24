@@ -12,11 +12,11 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
     RelationshipDirection, RelationshipEnd, RelationshipRecord,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
+use quire_checked::key::DeclarationKey;
 
 fn object_type(identity: &str) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {

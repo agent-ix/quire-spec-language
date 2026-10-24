@@ -12,7 +12,7 @@ use ix_trace_rs::trace;
 use qsl_forms::ExprNode;
 use qsl_semantics::check::{AssemblyCause, AssemblyRefusal, PackageDeclarations};
 use qsl_semantics::model::domain_package::{DomainPackageRecord, OperationMemberRecord};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Integer;
 use serde_json::{json, Value};
 

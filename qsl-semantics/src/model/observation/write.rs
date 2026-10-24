@@ -7,7 +7,7 @@
 
 use serde_json::{json, Map, Value as Json};
 
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 use super::{fault, AdmissionFailure, SnapshotValue};
 

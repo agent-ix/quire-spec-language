@@ -20,10 +20,11 @@ use std::collections::{HashMap, HashSet};
 use qsl_foundation::diagnostic::Code;
 
 use crate::model::key::{
-    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, RuleRef, RULE_INHERIT, RULE_QUALIFY,
-    RULE_REDEFINE, RULE_SUBSET,
+    EffectiveDeclarationPreimage, EffectiveId, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_SUBSET,
 };
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, ViewEntry};
+use quire_checked::key::DeclarationKey;
 
 /// One path-form derivation fact: `{ordinal, rule, inputs}`, the inputs
 /// spelling the whole inheritance path.

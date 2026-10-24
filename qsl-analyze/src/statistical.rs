@@ -27,6 +27,7 @@ mod claim;
 pub mod manifest;
 mod method;
 mod model;
+pub mod provider;
 mod regenerative;
 #[cfg(test)]
 mod tests;

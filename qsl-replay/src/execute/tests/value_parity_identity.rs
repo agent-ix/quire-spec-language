@@ -6,10 +6,9 @@
 use super::*;
 use crate::witness::{NoPayload, WitnessEnvelope, WitnessPacket};
 use crate::{ProfileSelection, TracePosition};
-use qsl_semantics::value::supplied::SuppliedLimits;
 use quire_canonical::Limits;
 use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
-use quire_semantic_value::supplied_stop::SuppliedLimitKind;
+use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
 
 const NODE: [u8; 32] = [0x22; 32];
 const P0: &str = "ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda";

@@ -165,7 +165,7 @@ struct Classified {
 #[derive(Debug)]
 pub(crate) enum QuotientStop {
     /// The run's meter is spent.
-    Meter,
+    Meter(quire_exact::LimitKind),
     /// The run was cancelled.
     Cancelled,
     /// A permutation could not be applied to an identity.
@@ -244,7 +244,7 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
         }
         self.meter
             .charge(Charge::new(ChargePoint::GraphExpand))
-            .map_err(|_| QuotientStop::Meter)
+            .map_err(|incomplete| QuotientStop::Meter(incomplete.limit_kind))
     }
 
     fn apply(&mut self, identity: &I, permutation: &Permutation) -> Result<I, QuotientStop> {
@@ -1077,7 +1077,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_semantics::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
 
     use super::*;
 
@@ -1540,6 +1540,9 @@ mod tests {
         let cancel = Cancel::new();
         let mut meter = Meter::new(limits(10));
         let mut analyzer = filter(&quotient, &constraints, &mut meter, &cancel);
-        assert!(matches!(analyzer.analyze(&all), Err(QuotientStop::Meter)));
+        assert!(matches!(
+            analyzer.analyze(&all),
+            Err(QuotientStop::Meter(_))
+        ));
     }
 }

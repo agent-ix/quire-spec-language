@@ -10,8 +10,6 @@ relationships:
     type: constrains
   - target: ix://agent-ix/quire-spec-language/NFR-001
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/NFR-007
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: depends_on
 ---
@@ -89,8 +87,8 @@ domain bound (NFR-001).
   at least as many FR-093 leaves as typed nodes. The checker does not split
   the budget; typed nodes and leaves draw on it in the order they are
   charged.
-- **Preimage bytes, 16777216.** NFR-007's default package byte ceiling,
-  sixteen times NFR-001's default source ceiling. A declaration's preimage
+- **Preimage bytes, 16777216.** Sixteen times NFR-001's default source
+  ceiling. A declaration's preimage
   is not linear in its source: each parameter or result typed with an enum
   writes one string per case, about 72 bytes each, so an enum reference of
   one token can write kilobytes. The ceiling bounds one declaration's
@@ -181,5 +179,3 @@ covered by FR-258 (TC-725 to TC-727).
   defaults derive from.
 - [FR-185](../functional/FR-185-declare-random-parameters-workloads-and-rewards.md)
   defines the rational-bit measure and refusal.
-- [NFR-007](NFR-007-bound-native-packages.md) sets the package byte ceiling
-  the preimage default reuses.
