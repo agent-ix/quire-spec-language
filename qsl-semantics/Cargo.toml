@@ -43,8 +43,8 @@ serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] 
 quire-canonical = { workspace = true, features = ["std", "serde_json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
-agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "ac62202af46327ce40b783d9063dd8024b644ea0" }
-agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "ac62202af46327ce40b783d9063dd8024b644ea0" }
+agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "50c00e93c626664b8638f2d0ffb0370c57356955" }
+agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "50c00e93c626664b8638f2d0ffb0370c57356955" }
 # `model::intake::lift_document` calls FCD's `lift`, which always writes its
 # document to a required output path (FR-099); this is that scratch
 # directory, not test-only.

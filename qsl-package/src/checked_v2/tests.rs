@@ -20,6 +20,8 @@ use sha2::{Digest, Sha256};
 use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
+mod timed_model_wire_port;
+
 use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -1892,7 +1894,7 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     let [timed] = timed_models.as_slice() else {
         panic!("one timed model is reconstructed");
     };
-    assert_eq!(timed.source.kind, "dense");
+    assert_eq!(timed.source.kind, super::CheckedTimeSourceKind::Dense);
     assert_eq!(timed.source.period, None);
     assert_eq!(timed.clock_places.len(), 1);
     assert_eq!(timed.clock_places[0].path.len(), 2);
@@ -1940,7 +1942,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
     let [timed] = timed_models.as_slice() else {
         panic!("one tick timed model is reconstructed");
     };
-    assert_eq!(timed.source.kind, "tick");
+    assert_eq!(timed.source.kind, super::CheckedTimeSourceKind::Tick);
     assert_eq!(timed.source.period.as_deref(), Some("1/2"));
     assert!(timed.clock_places.is_empty());
     assert!(timed.resets.is_empty());
@@ -2015,6 +2017,7 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("QSL writes the checked timed model into a complete package");
+    timed_model_wire_port::observe("standard", &timed_models, emission.package().bytes());
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(
@@ -2138,12 +2141,13 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
     let [timed] = timed_models.as_slice() else {
         panic!("one no-clock model reconstructs");
     };
-    assert_eq!(timed.source.kind, "dense");
+    assert_eq!(timed.source.kind, super::CheckedTimeSourceKind::Dense);
     assert!(timed.clock_places.is_empty());
     assert!(timed.literal_types.integer.is_none());
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("a no-clock model writes without an integer literal type");
+    timed_model_wire_port::observe("dense", &timed_models, emission.package().bytes());
     let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
     let (_, round_trip) = read_fixture_wire(&emitted);
     let Read::Verified {
@@ -2154,7 +2158,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         panic!("the emitted dense no-clock model is read back: {round_trip:?}");
     };
     assert_eq!(reread.len(), 1);
-    assert_eq!(reread[0].source.kind, "dense");
+    assert_eq!(reread[0].source.kind, super::CheckedTimeSourceKind::Dense);
     assert!(reread[0].clock_places.is_empty());
 }
 
@@ -2243,7 +2247,9 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         .find(|node| {
             node.node_tag.as_ref() == "value"
                 && node.semantic_form.as_ref() == "literal"
-                && node.body.to_string().contains("audit")
+                && serde_json::to_string(&node.body)
+                    .expect("the checked body serializes")
+                    .contains("audit")
         })
         .expect("fixture text key value")
         .node_id
@@ -2277,6 +2283,11 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     for (case, mut expected) in cases {
         let emission = crate::emit::emit_timed_models(&admitted, &[expected.clone()])
             .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
+        timed_model_wire_port::observe(
+            case,
+            std::slice::from_ref(&expected),
+            emission.package().bytes(),
+        );
         let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
         assert_ne!(
             wire["package_id"]["digest"],
@@ -2372,8 +2383,14 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     let mut changed_tick = tick_models.remove(0);
     let original_tick_source = id_for(&tick_admitted, "time_source");
     changed_tick.source.period = Some("3/2".to_owned());
-    let tick_emission = crate::emit::emit_timed_models(&tick_admitted, &[changed_tick])
-        .expect("changed tick period emits");
+    let tick_emission =
+        crate::emit::emit_timed_models(&tick_admitted, std::slice::from_ref(&changed_tick))
+            .expect("changed tick period emits");
+    timed_model_wire_port::observe(
+        "period",
+        std::slice::from_ref(&changed_tick),
+        tick_emission.package().bytes(),
+    );
     let changed_tick_wire: Value = serde_json::from_slice(tick_emission.package().bytes()).unwrap();
     assert_ne!(
         changed_tick_wire["package_id"]["digest"],

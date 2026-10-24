@@ -104,8 +104,8 @@ mod timed_model;
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
-    CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep, ClockSlotSelector,
-    ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+    CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,
+    ClockSlotSelector, ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
 };
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
