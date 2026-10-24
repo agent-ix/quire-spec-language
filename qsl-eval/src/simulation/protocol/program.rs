@@ -596,7 +596,7 @@ impl<'a> Program<'a> {
 
         let mut joins = BTreeMap::new();
         for parallel in &protocol.parallels {
-            if parallel.policy == CheckedJoinPolicy::Predicate {
+            if matches!(parallel.policy, CheckedJoinPolicy::Predicate { .. }) {
                 return Err(unsupported(Unsupported::JoinPredicate));
             }
             if parallel.outstanding.is_none() && parallel.policy != CheckedJoinPolicy::All {

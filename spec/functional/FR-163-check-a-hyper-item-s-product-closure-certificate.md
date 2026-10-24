@@ -130,7 +130,16 @@ spellings").
   `qsl-analyze` engine SHALL write the certificate from its retained
   product: every stored product state, and for HP-2 and HP-3 the
   components of its SCC decomposition, each with the first PC-4 witness
-  that holds for it.
+  that holds for it in FR-126's witness order. The certificate SHALL be a
+  function of the request, the item and the limits: `closure` lists its
+  keys ascending; the components follow FR-126's component rule over the
+  hyper product, each component's vertex index the least FR-101 canonical
+  breadth-first index of its states in that product; each component's
+  states are ascending in the closure's key order; and every `sub` and
+  constraint list follows FR-126's refinement and constraint-list rules.
+  The certificate covers one object parameter binding (`instance`), so no
+  order across bindings arises. The checker requires a topological order
+  only and does not reject another topological order.
 - **Core code only.** `check_product_closure` SHALL build each alias's
   `ModelSystem` by FR-128's rules and SHALL expand product states through
   `qsl-eval`'s hyper product successor function, property-automaton
@@ -210,6 +219,7 @@ spellings").
 | FR-163-AC-6 | An HP-1 certificate for FR-179-AC-2's nondeterministic `Det` subject rejects `ViolatingMember` at the first complete labelled edge tuple in canonical order; equal pre-state keys and arguments with different post-states remain distinct. FR-179-AC-4's undefined body rejects `UndefinedMember` at its complete edge tuple. | Test (TC-646) |
 | FR-163-AC-7 | For ADR-023 HC-2 with zero universal variables, a supplied key with an empty universal tuple and its actual witness set retains both on serialization and reading; the empty witness set remains distinct from an absent witness set. No component is added to satisfy a nonempty-array constraint. | Test (TC-646) |
 | FR-163-AC-8 | Package identity. FR-181-AC-1's HP-5 certificate and §8.1's secure `NonInterference` certificate each carry the `package_id` of the package EN-1 explored and are `Accepted`. Each with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule; the `NonInterference` certificate with its keys also unsorted returns `PackageMismatch`, not `Malformed`. | Test (TC-1198) |
+| FR-163-AC-9 | Production order. §8.1's secure `NonInterference` proof run twice writes byte-equal RFC 8785 certificates, whose `closure` keys are ascending, whose components are in FR-126's component order over the self-composed product's canonical breadth-first indices, and whose components each list their states ascending in the closure's key order. The same certificate with two components that no edge joins listed in the other order is still `Accepted`. | Test (TC-646) |
 
 ## Dependencies
 

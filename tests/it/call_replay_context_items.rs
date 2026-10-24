@@ -11,14 +11,15 @@ use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::spine::default_accounting;
 use qsl_replay::{
     replay, run_with_replay_context, Call, CallArgument, CallerLimits, CanonicalAssignment,
-    DependencyInput, InconclusiveCause, Integer, ObjectEnvironment, ReplayLimits, SuppliedLimits,
-    TerminalRecord, TerminalValue, Value, WitnessValue,
+    DependencyInput, InconclusiveCause, Integer, ObjectEnvironment, ReplayLimits, TerminalRecord,
+    TerminalValue, Value, WitnessValue,
 };
 use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;
 use qsl_semantics::check::PackageDeclarations;
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

@@ -15,7 +15,7 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16, FR-126-AC-17 and FR-126-AC-19.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16 to FR-126-AC-19.
 
 ## Test Procedure
 
@@ -66,13 +66,16 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    condition's letters reading false at every position.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
-11. The meter and candidate runs of FR-126-AC-19: `DeadlockFreedom` over
+11. Step 1's weak `each` proof twice, comparing certificate order with the
+    order FR-126 computes from the retained product graph; the `Fork` unit's
+    `always eventually holds(f.phase = 1)` with no fairness constraint, then
+    its certificate checked by FR-339's checker; FR-130-AC-5's mutex proof.
+    Also run FR-126-AC-19's meter and candidate cases: `DeadlockFreedom` over
     `Counter` under `work_units` 0, `always holds(c.value <= 3)` over the
     no-precondition `Counter` variant under `work_units` 0, and
-    `DeadlockFreedom` over the example subject with `max_candidates` 1; then
-    each run again under the limits
-    the settings operation returns for `accounting.work_units=1000000` and
-    for `expansion.max_candidates=1000000`.
+    `DeadlockFreedom` over the example subject with `max_candidates` 1; repeat
+    each with the settings operation's `accounting.work_units=1000000` and
+    `expansion.max_candidates=1000000` settings.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -122,11 +125,15 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.
-- Step 11: `DeadlockFreedom` over `Counter` returns
-  `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}` at the
-  `inc` precondition; `always holds(c.value <= 3)` over the no-precondition
-  `Counter` variant returns the same stop at the letter of position 0 with
-  no counterexample and no certificate; `DeadlockFreedom` over the example
-  subject returns `Stopped{ResourceExhausted, {MaxCandidates, 1}}`; each
-  limit's setting is `accounting.work_units` or `expansion.max_candidates`;
-  under the raised limits no run stops at that limit.
+- Step 11: the weak `each` proof has closure and component states ascending by
+  `ProductStateRef`, binding `a`'s components before `b`'s, with each binding's
+  components in the computed order and byte-equal certificates across runs;
+  the `Fork` result is `Holds{Exhaustive}` with components `(0,q0)`, `(0,q1)`,
+  `(2,q0)`, `(1,q0)`, `(2,q1)`, `(1,q0)` carrying `MissingAcceptance` and the
+  rest `Trivial`, accepted by the checker; the `UnfairStrong` entry lists
+  `acq(1)` before `acq(2)`. `DeadlockFreedom` over `Counter` stops at the `inc`
+  precondition with `{EvaluationMeter{work_units}, 0}`; the no-precondition
+  `Counter` clause stops at position 0 without a counterexample or certificate;
+  the example subject stops with `{MaxCandidates, 1}`. Each stop names
+  `accounting.work_units` or `expansion.max_candidates`, and raised limits
+  allow the corresponding run to complete without that stop.

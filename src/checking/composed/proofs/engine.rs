@@ -163,11 +163,7 @@ enum Key<'a> {
     Binder(usize, u8),
     Field(ValueKey, &'a ir::RequirementRef, &'a str, String),
     /// A field of a domain-package type, keyed by the type's FR-154 key.
-    DomainField(
-        ValueKey,
-        &'a qsl_semantics::model::key::DeclarationKey,
-        String,
-    ),
+    DomainField(ValueKey, &'a quire_checked::key::DeclarationKey, String),
     Unwrap(ValueKey),
     Deref(ValueKey),
     Expression(usize),

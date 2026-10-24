@@ -18,13 +18,13 @@ use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     admit_observations, AdmissionFailure, AdmissionRecord, AdmittedObservations, AnchorKind,
     ClauseFacts, ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationLimits,
     ObservationRole, Provisions, SelectedAnchor, SelectedObject,
 };
 use qsl_semantics::model::operation::OperationDeclaration;
+use quire_checked::key::DeclarationKey;
 use quire_exact::ObjectReference;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::relationship_extent::Resolution;

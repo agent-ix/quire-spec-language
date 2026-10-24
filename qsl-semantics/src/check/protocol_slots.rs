@@ -52,7 +52,7 @@ use super::refusal::{
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
 use crate::family::CheckContext;
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// One `case` of a checked `choice`.
 #[derive(Clone, Debug, PartialEq)]

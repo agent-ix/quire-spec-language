@@ -13,8 +13,8 @@ use qsl_semantics::model::accounting::{LimitKind, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize_with_meter, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 
 /// Set in the child process only.
 const CHILD_ENV: &str = "QSL_670_FULL_SIZE_CHILD";

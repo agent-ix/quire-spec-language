@@ -40,9 +40,9 @@ use crate::family::{
     FamilyContract, Requirements,
 };
 use crate::model::clause_observation::Observation;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
@@ -186,7 +186,7 @@ pub struct StateClauseDeclaration {
     /// The `DeclarationKey` of the resolved operation a `pre` or `post`
     /// clause names, the key the unit's operation bodies and clauses join on
     /// (FR-103, FR-302); `None` for an invariant.
-    pub operation_key: Option<crate::model::key::DeclarationKey>,
+    pub operation_key: Option<quire_checked::key::DeclarationKey>,
     /// The context's population domain, the assembler's own resolution
     /// (FR-104 "Resolution", "Requirements"): the one population with no
     /// maximum whose member types cover `context`, by conformance

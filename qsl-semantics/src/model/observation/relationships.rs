@@ -27,7 +27,7 @@ use super::{
     ReadMeter, SelectedObject,
 };
 use crate::model::domain_package::{DomainPackageRecord, OperationEffect};
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 // ---------------------------------------------------------------------------
 // The read

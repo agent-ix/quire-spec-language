@@ -174,7 +174,7 @@ fn cold_admission(c: &mut Criterion) {
 
 fn all_instances_of(
     binding: &qsl_semantics::model::population::PopulationBinding,
-    queried: &qsl_semantics::model::key::DeclarationKey,
+    queried: &quire_checked::key::DeclarationKey,
 ) -> AllInstancesOutcome {
     let mut meter = Meter::new(qsl_bench::check::SCALAR_UNLIMITED);
     all_instances(binding, queried, &mut meter)

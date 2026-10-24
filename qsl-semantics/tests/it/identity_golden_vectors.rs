@@ -28,8 +28,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::intake::admit;
 use qsl_semantics::model::key::{
-    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY,
-    SHA256_JCS_DIGEST_DOMAIN,
+    EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
 };
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome, ObjectUniverse};
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -38,6 +37,7 @@ use qsl_semantics::value::{
     admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, NodeOwner,
     OwnerSelection, OwnerSubject, UnitPreimage,
 };
+use quire_checked::key::DeclarationKey;
 use quire_exact::NodeKey;
 use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
 

@@ -400,14 +400,14 @@ pub(super) struct Limits {
     /// and complete with each ceiling an exact `u64`, or the request is
     /// refused before anything runs.
     #[serde(default, deserialize_with = "supplied_limits")]
-    pub supplied: Option<qsl_semantics::value::supplied::SuppliedLimits>,
+    pub supplied: Option<quire_semantic_value::supplied_stop::SuppliedLimits>,
 }
 
 /// `limits.supplied`, read by the one strict reader the replay request also
 /// uses ([`qsl_replay::read_supplied_limits`]).
 fn supplied_limits<'de, D: serde::Deserializer<'de>>(
     decoder: D,
-) -> Result<Option<qsl_semantics::value::supplied::SuppliedLimits>, D::Error> {
+) -> Result<Option<quire_semantic_value::supplied_stop::SuppliedLimits>, D::Error> {
     let value = serde_json::Value::deserialize(decoder)?;
     qsl_replay::read_supplied_limits(&value)
         .map(Some)

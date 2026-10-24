@@ -85,10 +85,7 @@ fn keys(keys: &[&str]) -> Vec<String> {
     keys.iter().map(|key| (*key).to_owned()).collect()
 }
 
-fn class(
-    population: &qsl_semantics::model::key::DeclarationKey,
-    members: &[&str],
-) -> SymmetryClass {
+fn class(population: &quire_checked::key::DeclarationKey, members: &[&str]) -> SymmetryClass {
     SymmetryClass {
         population: population.clone(),
         keys: keys(members),

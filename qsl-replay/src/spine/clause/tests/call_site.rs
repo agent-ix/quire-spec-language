@@ -640,7 +640,7 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
     let config_version = wire(config_version_node_key(graph));
-    let sub_declaration = qsl_semantics::model::key::DeclarationKey {
+    let sub_declaration = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub"),
     };

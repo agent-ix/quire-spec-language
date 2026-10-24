@@ -870,7 +870,9 @@ fn a_concrete_contract_over_the_budget_stops_the_check() {
     assert_eq!(
         check_under(&heavy, &certificate, b),
         TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
-            limit: ModelCheckLimit::EvaluationMeter,
+            limit: ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            },
             value: b
         })
     );

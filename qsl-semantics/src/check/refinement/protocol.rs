@@ -33,8 +33,8 @@ use crate::check::protocol_obligation::CheckedActivation;
 use crate::check::refusal::{CheckCause, CheckRefusal};
 use crate::check::state_clause::ClauseDeclarations;
 use crate::family::CheckContext;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
+use quire_checked::key::DeclarationKey;
 
 /// A step of a protocol node (ADR-027 ST-2 to ST-9) that has no operation
 /// and so needs a row of its own.

@@ -196,7 +196,7 @@ pub enum ObligationCause {
         /// The template.
         compensation: String,
         /// The populations, in ascending declaration key order.
-        populations: Vec<crate::model::key::DeclarationKey>,
+        populations: Vec<quire_checked::key::DeclarationKey>,
         /// The operation.
         span: Span,
     },

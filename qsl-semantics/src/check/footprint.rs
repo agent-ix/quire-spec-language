@@ -16,9 +16,9 @@ use quire_semantic_value::location::Location;
 use crate::check::observation::Observations;
 use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind};
 use crate::model::clause_observation::Observation;
-use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use crate::model::state::StateModel;
+use quire_checked::key::DeclarationKey;
 
 /// The object a symbolic location is about: the operation's receiver or the
 /// argument bound to one of its parameters.

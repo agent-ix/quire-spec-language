@@ -13,10 +13,10 @@
 //!   home in `qsl_foundation::source::provenance` (#213 S-4);
 //!   this crate carries them from there.
 //! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): CG
-//!   names this type directly; IR names no QSL type. CG computes its digest
-//!   (AD-016 arrow 5); QSL only ever carries the digest CG mints, never
-//!   hashes one itself, mirroring `quire_exact`'s own opaque digest
-//!   identities.
+//!   names this type directly; IR names no QSL type. CG computes the digest
+//!   of a clause, application or function contract (AD-016 arrow 5) and QSL
+//!   carries it; QSL itself mints the digest of a parity claim, a
+//!   process-provider item and a function-value parity claim (FR-484).
 //!
 //! [`QualifiedName`] moves to its ADR-013-assigned home once that ticket
 //! lands; until then it exists here, once, so the four envelope types have a
@@ -27,18 +27,18 @@ use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord};
 use quire_exact::Identifier;
 
-/// ADR-013 O-09: the caller-minted digest identifying one obligation. QSL
-/// treats it as opaque and carries it unchanged. For a clause, an
-/// application or a function contract the preimage is the RFC 8785 encoding, through ADR-013 §2's one encoder, of
+/// ADR-013 O-09: the digest identifying one obligation. For a clause, an
+/// application or a function contract CG mints it, and QSL treats it as
+/// opaque and carries it unchanged; the preimage is the RFC 8785 encoding, through ADR-013 §2's one encoder, of
 /// the clause node id, the clause occurrence key, the obligation kind and the
 /// arguments (each a parameter node id and its declared domain); the source
 /// span is excluded (QC-14). The occurrence key is part of the preimage, so
-/// two occurrences of one clause never collide. A scalar-parity claim's
-/// owning item defines its own preimage (FR-357). QSL never mints this
-/// digest; CG does (AD-016 arrow 5), so this type only wraps and compares
-/// it, performing no hashing -- the same shape as
-/// `quire_exact`'s QC-15 opaque identities. Its digest domain is not in the
-/// closed FR-201 set (QC-4), so it is not a `qsl_foundation::digest::DigestRecord`.
+/// two occurrences of one clause never collide. QSL mints the identity of a
+/// parity claim, a process-provider item and a function-value parity claim
+/// (FR-484, [`crate::value_parity_obligation`], which `call_site` returns in
+/// `FunctionSite::value_parity`); this type only wraps and compares the
+/// digest. Its digest domain is not in the closed FR-201 set (QC-4), so it
+/// is not a `qsl_foundation::digest::DigestRecord`.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObligationIdentity([u8; 32]);
 

@@ -54,9 +54,9 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, NativeValueType, OperationMemberRecord,
     ScalarValueDomain, ValueTypeRef,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// One interned declaration key. Index order is [`DeclarationKey`] order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

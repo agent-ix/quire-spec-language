@@ -13,7 +13,7 @@ use qsl_eval::simulation::{
     TransitionSystem,
 };
 use qsl_foundation::IdentityLimits;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::catalog::CatalogCode;
 
 type Graph = RetainedGraph<usize, String, usize>;

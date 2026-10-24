@@ -16,9 +16,9 @@ use crate::model::intake::{
     malformed_on, meaning, member_identity_name, read_clauses, read_object_type, NodeCtx,
     ObjectShape,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{MemberPath, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
+use quire_checked::key::DeclarationKey;
 
 use super::meaning_dispatch::MeaningBindingContext;
 

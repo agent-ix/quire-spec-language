@@ -19,12 +19,12 @@ use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::supplied::SuppliedLimits;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{Cancel, CancelCause, Integer, Outcome, Value};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
@@ -1752,7 +1752,7 @@ fn an_internal_invariant_failure_is_a_fault() {
 #[test]
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
-    use qsl_semantics::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
     let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
@@ -2089,7 +2089,7 @@ fn type_invariant_check_refusal(cause: qsl_semantics::check::CheckCause) -> Comp
                 quire_semantic_value::location::Origin::Expression,
             ),
             cause: CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
-                clause: qsl_semantics::model::key::DeclarationKey {
+                clause: quire_checked::key::DeclarationKey {
                     package: "acme/orders".to_owned(),
                     node: "ix://acme/orders/Widget/Stable".to_owned(),
                 },

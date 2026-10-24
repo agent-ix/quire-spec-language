@@ -14,9 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::model::clause_observation::Observation;
-use crate::model::key::DeclarationKey;
 use crate::model::observation::{OutOfRange, RelationshipExtents};
 use crate::model::population::PopulationBinding;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, ObjectReference, PopulationId, Value};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;

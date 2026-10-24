@@ -13,7 +13,6 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, snapshot_document_digest, write_environment_document,
     AdmissionFailure,
@@ -21,6 +20,7 @@ use qsl_semantics::model::observation::{
 pub use qsl_semantics::model::observation::{
     EnvironmentLabels, EnvironmentModel, EnvironmentObject, EnvironmentPopulation,
 };
+use quire_checked::key::DeclarationKey;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 

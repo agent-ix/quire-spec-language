@@ -28,10 +28,10 @@ use crate::check::VariantTypeDeclaration;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use qsl_forms::DeclaredClauseKind;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};

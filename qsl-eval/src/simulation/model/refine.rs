@@ -9,9 +9,9 @@
 
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CheckedRow;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::{ModelState, StateField};
+use quire_checked::key::DeclarationKey;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 

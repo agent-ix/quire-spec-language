@@ -60,6 +60,7 @@ mod certificate;
 mod composite;
 mod execute;
 mod hybrid;
+mod hybrid_replay;
 mod identity;
 mod limits;
 mod model_check;
@@ -88,7 +89,7 @@ pub use call_requirements::{
 };
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
-    FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
+    FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite, ValueParitySite,
 };
 pub use certificate::closed_form::outcome::{
     AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,
@@ -124,14 +125,21 @@ pub use composite::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
-    DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    replay_value_parity, replay_with_cancel, settle_verified_shadow, value_parity_obligation,
+    BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
     IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
-    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport,
-    ValueParityResult,
+    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityArgument,
+    ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
     NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
+pub use hybrid_replay::{
+    admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
+    ExactReal, ExactReplay, ExpansionGap, ExpressionLocus, ExpressionSite, HybridCounterexample,
+    HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal, HybridTrace, JsonPointer,
+    Root, StaticCheck, StaticReplay, TermLocus, TraceBefore, TraceFault, TraceJump, TraceRefusal,
+    TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
@@ -160,7 +168,7 @@ pub use model_check::hyper_settle::{
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
-    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
     DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
@@ -202,6 +210,7 @@ pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
+pub use outcome::undefined_reason;
 pub use outcome::{
     ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
     OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
@@ -256,7 +265,6 @@ pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // without naming `qsl_replay::spine` or `qsl_semantics`.
 pub use qsl_semantics::library::PackageId;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
-pub use qsl_semantics::value::supplied::SuppliedLimits;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
@@ -313,7 +321,7 @@ pub use qsl_foundation::witness::{
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,
     OperatorIdentity, OperatorParityReport, OperatorParityResult, ScalarAgreement, ScalarClaim,
-    ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueIdentity,
+    ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueClaim, ValueIdentity,
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, EntryFault, FamilyPayload,
@@ -326,11 +334,11 @@ pub use witness::{
 // name and build them through this crate (ADR-011 FB-05). The node and
 // occurrence identities are built from the `WireNodeId`, `Origin` and
 // `Identifier` re-exported above.
-pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
     SelectedObject,
 };
+pub use quire_checked::key::DeclarationKey;
 
 // FR-122: the state-clause counterexample's replay entry, payload and
 // result, and the FR-106 observation types a payload is built from and a

@@ -24,12 +24,16 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::simulation::model::ModelSimState;
+use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
     ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndefinedLocus,
 };
-use quire_exact::Cancel;
+use qsl_semantics::check::FormulaNodeId;
+use quire_exact::{Cancel, Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use serde_json::json;
 
 use crate::counter::{CONTRACT, UNLIMITED};
@@ -557,6 +561,132 @@ fn guarded_run(
     let letters =
         Letters::new(&world.clauses[0], atoms).guarded(value(guard), crate::units::unread());
     run_letters(world, 0, &["c"], &letters, ModelCheckLimits::default()).expect("checked")
+}
+
+/// A letter seam that denies the selected read through the real evaluation
+/// meter, preserving the counter named by the denied charge.
+struct MeteredLetters<'a> {
+    inner: &'a Letters,
+    charge_atom: bool,
+    charge_activation: bool,
+    counter: LimitKind,
+}
+
+impl MeteredLetters<'_> {
+    fn charge(&self, meter: &mut Meter) -> Result<(), Incomplete> {
+        let charge = Charge::new(ChargePoint::GraphExpand);
+        let charge = match self.counter {
+            LimitKind::WorkUnits => charge,
+            counter => charge.size(counter, 1),
+        };
+        meter.charge(charge)
+    }
+}
+
+impl ModelLetters for MeteredLetters<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        if self.charge_atom {
+            self.charge(meter)?;
+        }
+        self.inner.atom(atom, instance, state, meter)
+    }
+
+    fn activation(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        if self.charge_activation {
+            self.charge(meter)?;
+        }
+        self.inner.activation(instance, state, meter)
+    }
+
+    fn reads(&self, atom: FormulaNodeId) -> crate::units::Reads {
+        self.inner.reads(atom)
+    }
+
+    fn activation_reads(&self) -> crate::units::Reads {
+        self.inner.activation_reads()
+    }
+}
+
+#[trace("TC-521", "FR-126-AC-5", "FR-126-AC-19", "FR-127-AC-4")]
+#[test]
+fn a_denied_letter_or_guard_charge_stops_with_the_accounting_setting() {
+    for (guarded, counter, setting) in [
+        (false, LimitKind::WorkUnits, "accounting.work_units"),
+        (true, LimitKind::WorkUnits, "accounting.work_units"),
+        (
+            false,
+            LimitKind::ValueOccurrences,
+            "accounting.value_occurrences",
+        ),
+        (
+            true,
+            LimitKind::ValueOccurrences,
+            "accounting.value_occurrences",
+        ),
+    ] {
+        let world = if guarded {
+            guarded_world(BOUNDED, "always[0,1] holds(c.value <= 3)")
+        } else {
+            counter_world(
+                BOUNDED,
+                &[Clause {
+                    activation: ORIGIN,
+                    formula: "always[0,1] holds(c.value <= 3)",
+                }],
+            )
+        };
+        let letters = Letters::new(&world.clauses[0], vec![value(|v| Some(v <= 3))]);
+        let letters = if guarded {
+            letters.guarded(value(|_| Some(true)), crate::units::unread())
+        } else {
+            letters
+        };
+        let metered = MeteredLetters {
+            inner: &letters,
+            charge_atom: !guarded,
+            charge_activation: guarded,
+            counter,
+        };
+        let mut meter = UNLIMITED;
+        match counter {
+            LimitKind::WorkUnits => meter.work_units = 0,
+            LimitKind::ValueOccurrences => meter.value_occurrences = 0,
+            _ => unreachable!("test cases choose a configured counter"),
+        }
+        let outcome = check_model(
+            ModelCheckRequest {
+                subject: world.subject(&["c"], meter),
+                item: ModelCheckItem::Clause {
+                    clause: &world.clauses[0],
+                    letters: &metered,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("checked");
+        let ModelCheckOutcome::Stopped { cause, limit, .. } = outcome else {
+            panic!("letter or guard exhaustion must stop the run: {outcome:?}");
+        };
+        assert_eq!(cause, IncompleteCause::ResourceExhausted);
+        let reached = limit.expect("the denied meter counter is named");
+        assert_eq!(reached.limit, ModelCheckLimit::EvaluationMeter { counter });
+        assert_eq!(reached.value, 0);
+        assert_eq!(reached.limit.setting(), setting);
+    }
 }
 
 /// FR-126-AC-16 for TP-2: a guarded `on each` clause activates at the

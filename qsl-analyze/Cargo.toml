@@ -26,6 +26,8 @@ qsl-semantics = { path = "../qsl-semantics" }
 # FR-336-AC-4: the request writer (layer R) the EN-1 request path writes a
 # model subject's temporal items through.
 qsl-route = { path = "../qsl-route" }
+# ADR-011 §6.1 layer C: the checked terms (FR-400) the analysis reads.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 quire-canonical = { workspace = true }
 quire-exact = { workspace = true }
@@ -47,6 +49,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # its temporal clauses with `qsl-semantics`' test-only `check_clauses`.
 qsl-cst = { path = "../qsl-cst" }
 qsl-forms = { path = "../qsl-forms" }
+quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # `ProtocolTransition::carrying` and `SendRecord::with_outcome`, which the
 # replay tests use to change or misplace a send record (FR-217-AC-5/AC-6).

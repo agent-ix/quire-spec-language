@@ -98,6 +98,7 @@
 )]
 
 use quire_canonical::FixedShape;
+use quire_semantic_value::catalog::render_identity;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
@@ -112,11 +113,12 @@ use crate::model::domain_package::{
 };
 use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
-    canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
-    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRef, RuleRefWire,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
+    canonical_len, sha256_and_len, EffectiveDeclarationPreimage, EffectiveDeclarationWire,
+    EffectiveId, EffectiveIdWire, Fact, RuleRef, RuleRefWire, RULE_INHERIT, RULE_QUALIFY,
+    RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_foundation::diagnostic::{Code, JsonPointer};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{length_amount, Cancel};
 use serde::Serialize;
 
@@ -163,18 +165,7 @@ impl ModelRefusal {
     /// FR-090 `lookup` with absence `Refused`: `key`, an object identity's
     /// bytes, names no member of the population `binding`.
     pub fn absent_key(binding: String, key: Vec<u8>) -> Self {
-        let display = match std::str::from_utf8(&key) {
-            Ok(object) => object.to_owned(),
-            // Distinguishable from a well-formed identity string, which
-            // this format can never itself produce: no JSON string
-            // (`PopulationDocument`'s own member identity shape) contains
-            // "(not UTF-8)" as a literal suffix of a bare hex run, since a
-            // JSON string is already valid UTF-8 by construction.
-            Err(_) => format!(
-                "identity bytes 0x{} (not UTF-8)",
-                crate::model::key::hex(&key)
-            ),
-        };
+        let display = render_identity(&key);
         Self {
             code: Code::InvalidRuntimeInput,
             cause: ModelRefusalCause::AbsentKey { binding, key },
@@ -224,7 +215,7 @@ impl Refusals {
     /// empty fixture is a fixture bug worth failing loudly on, not a
     /// production caller's concern -- production code builds a `Refusals`
     /// through [`Self::new`] or [`TryFrom`] instead, neither of which can
-    /// panic. Follows [`DeclarationKey::fixture`]'s identical
+    /// panic. Follows `DeclarationKey::fixture`'s identical
     /// `test`/`test-support` gate.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_vec(refusals: Vec<ModelRefusal>) -> Self {

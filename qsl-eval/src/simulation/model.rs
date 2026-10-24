@@ -42,13 +42,13 @@ use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::domain_package::OperationEffect;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, AnchorKind, DocumentRef, ObservationLimits, SelectedAnchor,
 };
 use qsl_semantics::model::operation::OperationDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_canonical::Limits as CanonicalLimits;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     EffectiveId, Incomplete, NodeKey, ObjectReference, Refusal, ScalarLimits, Undefined, ValueType,
 };

@@ -228,11 +228,13 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
 `1-draft` program the request carries:
 
 - `program`: the program's source selection (file and the two [FR-001](FR-001-read-exact-source.md) labels, `document` and
-  `formal_revision`), with no `clauses` and no `extraction`. No build of the
-  command decodes an `extraction` member: the root crate has no
-  `quire-extraction` feature (ADR-011 §7.3 X-4), so the member refuses as
-  the refusal table states, with every feature of the workspace enabled or
-  none.
+  `formal_revision`). An ordinary function run carries no `clauses` or
+  `extraction`. In FR-031's extraction mode, a clause-run request (FR-312)
+  selects the original Markdown document and carries a closed `extraction`
+  record and exactly one `clauses` binding; the request reader decodes these
+  only when `qsl-replay` is built with `quire-extraction` (ADR-011 §7.3 X-4).
+  A build without that feature refuses the `extraction` member as
+  `invalid-request` at the request stage.
 - `package`: optional FR-028 selection, a closed object naming the package file
   and canonical SHA-256 digest. When present, the verified package is executed
   without fallback to source compilation.
@@ -442,7 +444,9 @@ exits with that code's exit status:
 | Refusal | Stage | Code | `details` | Exit |
 |---------|-------|------|-----------|------|
 | A declared edition other than `1-draft`, `0-draft` included | `profile` | `unknown_edition` | as FR-027 | 20 |
-| A `1-draft` request carrying `selection`, `snapshots`, `invocations`, a set `validation_work` or `expression_steps`, `clauses`, `extraction` (in every build), or a model in a format other than `semantic-ir/2.0.0`; or carrying no `call` | `request` | `invalid-request` | as FR-026 | 20 |
+| A `1-draft` function-run request carrying `selection`, `snapshots`, `invocations`, a set `validation_work` or `expression_steps`, `clauses`, `extraction`, or a model in a format other than `semantic-ir/2.0.0`; or carrying no `call` | `request` | `invalid-request` | as FR-026 | 20 |
+| A clause-run request carrying `extraction` in a build without `quire-extraction` | `request` | `invalid-request` | names `extraction` | 20 |
+| A feature-enabled extraction request with `call` instead of `clause`, a package selection, or a clause-binding count other than one | `request` | `extraction-requires-run`; `extraction-package-conflict`; `extraction-clause-count` | as FR-031; `{"actual": n}` for clause count | 20 |
 | A `call` that is not the closed object above; an argument `value` that is not a JSON integer in the signed 64-bit range; an `accounting` member that is not the closed counter object above or has a value that is not a JSON integer from 0 to `u64::MAX` | `request` | `invalid-request` | as FR-026 | 20 |
 | A spine compile refusal | the refusing spine stage | that stage's cause code | as FR-027 | that code's |
 | A `function` that is empty, holds an empty segment or a segment that is not an identifier, has more than one segment, or names no function of the compiled package | `call` | `missing_declaration` | `{"function": "<the function string>"}` | 20 |
@@ -508,17 +512,16 @@ session's frame stack (FR-262), which already holds one frame per open call.
   "<edition>"` header, then the run command shall hand it to
   `qsl_replay::spine::run`, which carries S1's refusal of the header with
   stage `source`.
-- If the program declares `1-draft`, then the run command shall refuse a
-  request carrying a member the refusal table names, or carrying neither
-  `call` nor `clause`, with `invalid-request` before it reads any model or
-  library file.
-- From the change that lands FR-100's clause runner (FR-312's reader plus
-  `run_clause`, ADR-031 R-1), if the program declares `1-draft` and the
-  request carries `clause`, then the run command shall run it as a clause
-  run ([FR-312](FR-312-read-a-clause-run-request-and-run-it.md)).
-- Until that change, if the program declares `1-draft` and the request
-  carries `clause`, then the run command shall refuse it with
-  `invalid-request` at stage `request`, naming `clause`.
+- If the program declares `1-draft`, the function-run command shall refuse
+  a request carrying a member the refusal table names, or carrying neither
+  `call` nor the FR-031 clause-run form, with `invalid-request` before it
+  reads any model or library file. A clause-run request may carry `extraction`
+  only through the feature-enabled FR-031 reader.
+- If the program declares `1-draft` and the request carries `clause`, the run
+  command shall pass it to FR-312's request reader and run it through
+  `qsl_replay::spine::run_clause`. An extraction clause-run request is admitted
+  only through the feature-enabled FR-031 reader; a build without
+  `quire-extraction` refuses its `extraction` member at the request stage.
 - If a `call` member, an argument `value` or `accounting` member is outside the
   shape Inputs states, then the run command shall refuse with
   `invalid-request` at stage `request`.
@@ -595,7 +598,7 @@ session's frame stack (FR-262), which already holds one frame per open call.
 |----|----------|--------------|
 | FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` has exit code 0 and an outcome carrying no refusal envelope and one result document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
 | FR-100-AC-2 | A program declaring `edition "0-draft"`, one declaring `edition "0-draft"` whose request carries `call` and `libraries`, and one declaring `edition "7-draft"` each refuse `unknown_edition` at stage `profile`, exit 20, no result document, with a `message` naming the file and the edition. A program with no header refuses `invalid_syntax` at stage `source`, exit 20, no result document. | Test |
-| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, no result document, whatever state its model files are in; a `1-draft` request carrying program `extraction` refuses the same way from the command built with no features and from the command built with every workspace feature enabled; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way. A value in `call.accounting` of `18446744073709551616`, `-1` or `1.5`, and a legacy `work_units` member directly in `call`, each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test |
+| FR-100-AC-3 | A `1-draft` function-run request carrying each forbidden member refuses `invalid-request` at stage `request`, exit 20, no result document, before model or library reads; a program `extraction` member with no feature refuses `invalid-request`, while the same `call` request in a build with `quire-extraction` refuses `extraction-requires-run`. A feature-enabled FR-031 clause-run request with one `clauses` binding is admitted to extraction; no-feature, package-bearing, missing-clause and duplicate-clause variants refuse as FR-031-AC-6 specifies. A request carrying neither `call` nor the FR-031 clause-run form refuses `invalid-request`. Values in `call.accounting` of `18446744073709551616`, `-1` or `1.5`, and a legacy `work_units` member directly in `call`, each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a selected domain package runs successfully. | Test (TC-450, TC-109) |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, no result document, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test |
 | FR-100-AC-5 | `function` `nope`, `module.seven`, `""`, `seven.`, and `7x` each refuse `missing_declaration` at stage `call`, exit 20, no result document, with `details` `{"function": <that string>}`. A function whose declared result is a record refuses `unsupported_construct` at stage `call`, exit 21, before any call. A `1-draft` source with a syntax error refuses at stage `source` (`invalid_syntax`), and one declaring `inv(x: Int[0, 9]): Boolean { 1 / x > 0 }` refuses at stage `check` with `ill_typed` (integer `/` with no `Rational` expected type); each has exit code 20 and no result document (FR-027-AC-8). | Test |
 | FR-100-AC-6 | `seven` with `call.accounting` `{"work_units": 0}` returns a result document whose outcome is `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test |

@@ -36,7 +36,7 @@ use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimu
 use super::claims::wire;
 use super::family::OccurrenceRole;
 use super::{CheckedRefinement, CheckedStateClause, StepClass, StepTarget};
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 /// Why a refinement's step rows have no [`StepRowRef`]s.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

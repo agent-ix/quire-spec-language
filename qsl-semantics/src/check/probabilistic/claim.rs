@@ -36,6 +36,8 @@ use qsl_forms::{
     ProbabilisticForm, SchedulerForm, StateClauseKind, TemporalFormulaForm, TemporalNodeForm,
     TemporalNodeId, TemporalOperator, TemporalOperatorForm, WeightingForm,
 };
+use qsl_foundation::bound::{DomainKey, DomainKind};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
 use quire_exact::{
@@ -48,6 +50,7 @@ use quire_semantic_value::fairness::{
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{convert_quantity, ConvertedValue, QuantityTarget};
 
+use super::super::capability::Capability;
 use super::super::check::{bind_parameters, Scope, StateContext, Typer};
 use super::super::facts::Definedness;
 use super::super::hyper_clause::{encode_event, encode_predicate, node_bytes};
@@ -63,6 +66,7 @@ use super::super::temporal_clause::{
 use super::model::{literal, site_location, Pass, Site};
 use super::{exact, exact_refusal, refusal, ProbabilisticCause};
 use crate::family::CheckContext;
+use crate::family::{ClaimEvidence, ClaimExtent, Requirements};
 use crate::model::clause_observation::Observation;
 use crate::model::domain_package::DomainPackageRef;
 
@@ -377,6 +381,32 @@ impl CheckedProbabilisticClaim {
         self.exact_only_form()
             || self.scheduler == ProbScheduler::Every
             || self.confidence.is_none()
+    }
+
+    /// The claim's requirement record content (FR-195 "Requirement
+    /// record"): `probabilistic-satisfaction` over an unbounded extent whose
+    /// one domain names the claim's node, as FR-165 names a state-graph
+    /// claim's, with the evidence kind S3 records: `exact` when
+    /// [`Self::exact_only`], `statistical` otherwise. The evidence kind
+    /// enters neither the normal form nor the obligation identity.
+    pub fn requirements(&self, claim: WireNodeId) -> Requirements {
+        let domains = BTreeMap::from([(
+            DomainKey::Node {
+                node: claim,
+                path: Vec::new(),
+            },
+            DomainKind::InfiniteTrace,
+        )]);
+        let evidence = if self.exact_only() {
+            ClaimEvidence::Exact
+        } else {
+            ClaimEvidence::Statistical
+        };
+        Requirements::new(
+            Capability::ProbabilisticSatisfaction,
+            ClaimExtent::from_domains(domains),
+        )
+        .with_evidence(evidence)
     }
 
     /// Whether the claim's form is one only exact evidence decides: an
