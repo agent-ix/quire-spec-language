@@ -604,7 +604,14 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
     graph_order(&all)
         .into_iter()
-        .map(|candidate| serde_json::to_value(candidate.wire_node().unwrap()).unwrap())
+        .map(|candidate| {
+            let bytes = quire_canonical::to_vec(
+                &candidate.wire_node().unwrap(),
+                crate::checked::EMIT_LIMITS,
+            )
+            .unwrap();
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+        })
         .collect()
 }
 

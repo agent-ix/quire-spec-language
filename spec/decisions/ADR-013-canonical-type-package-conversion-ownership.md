@@ -164,7 +164,7 @@ it.
 
 | Field | Decision |
 | --- | --- |
-| Owner | QSL `model::key`, intake stage. The domain package assigns the key; QSL never mints, renames or merges one (FR-321-AC-3). |
+| Owner | QSL, intake stage: `model::key` keeps the preimage encoding. The type lives in `quire-checked` (`agent-ix/quire-eval`, ADR-011 layer C). The domain package assigns the key; QSL never mints, renames or merges one (FR-321-AC-3). |
 | Implementing ticket | #131 (QSL PR #200) lands native references as `ValueTypeRef::Native`; #213 S-2 reworks the key after #131 merges. |
 | Public type | `quire_checked::key::DeclarationKey{package, node}` (`quire-checked`, ADR-011 layer C; FR-400), digest domain `sha256-jcs`. It names declarations of a domain package only. The key has no version member; uniqueness across versions holds because O-01 admits one version per identity. A native type is not a declaration: native type references are `ValueTypeRef::Native(NativeValueType)` (AD-016). |
 | Serialized authority | `model-effective-declaration.schema.json` `DeclarationKey`; v2 wire strings. |

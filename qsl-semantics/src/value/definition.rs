@@ -11,11 +11,11 @@
 //! `construct` module and does not re-export it. Its old paths no longer
 //! resolve:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0432
 //! use qsl_semantics::value::AdmittedIntegerDivision;
 //! ```
 //!
-//! ```compile_fail
+//! ```compile_fail,E0432
 //! use qsl_semantics::value::definition::AdmittedIntegerDivision;
 //! ```
 //!

@@ -1185,7 +1185,7 @@ mod tests {
     /// canonical type of its own repository and a QSL crate that re-adds a
     /// same-shaped copy is a `copy` finding.
     #[test]
-    #[trace("TC-747", "FR-272-AC-2", "FR-400-AC-5")]
+    #[trace("TC-747", "FR-272-AC-2")]
     fn tc_747_quire_checked_declaration_key_copy_is_flagged() {
         let leaf = "/// The key.\n/// quire:canonical\npub struct DeclarationKey {\n    pub package: String,\n    pub node: String,\n}\n";
         let mut fixture = Fixture::new();

@@ -58,9 +58,11 @@ population-fixtures = []
 # not by this dependency edge itself -- every crate that depends on
 # `quire-exact` is in that check's scope, this one included as of this edit.
 quire-exact = { workspace = true }
+# ADR-011 §6.1 layer C: the checked terms (FR-400) `DeclarationKey` and
+# `AdmittedIntegerDivision` live in.
+quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the expression `Origin` the run output renders; the
 # tests also assert its refusal vocabulary and runtime enum values.
-quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
 # native-temporal document identities encode through the one RFC 8785
@@ -104,9 +106,6 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 
 [dev-dependencies]
 serde_json_canonicalizer = "0.3.2"
-# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
-# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
-# refuses a normal or build dependency that does.
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
 # unit and integration tests. Only this dev-dependency may enable
@@ -114,8 +113,11 @@ serde_json_canonicalizer = "0.3.2"
 # (`no_shipped_dependency_enables_test_support`) refuses a normal or build
 # dependency that does. Resolver 2 turns it on only when a test target is
 # built, so it never reaches the production lib.
-quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 # ADR-011 §7.3 X-9: layer R, extracted out of this crate. No
 # shipped module of this crate calls it, so it is a dev dependency only
 # (ADR-011 §7.1: "A dependency needed only by tests is a dev dependency"):

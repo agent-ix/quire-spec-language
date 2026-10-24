@@ -13,7 +13,7 @@
 //! `DeclarationKey` is a plain value of `quire-checked` (FR-400, ADR-011 X-13)
 //! and is not re-exported here. Its old path no longer resolves:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0603
 //! use qsl_semantics::model::key::DeclarationKey;
 //! ```
 //!
