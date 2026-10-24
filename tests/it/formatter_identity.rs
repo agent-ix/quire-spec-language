@@ -633,6 +633,7 @@ fn state_generated_occurrences_have_authored_regions() {
         assert_eq!(clause.name(), expected, "original authored clause order");
     }
     let mut generated_zero = 0;
+    let mut operation_references = 0;
     for (key, origin, location) in graph.occurrences() {
         if origin.role().as_str() != "generated" {
             continue;
@@ -660,6 +661,7 @@ fn state_generated_occurrences_have_authored_regions() {
             "generated occurrence must be placed"
         );
         if matches!(&location.origin, Origin::TypeDeclaration { .. }) {
+            operation_references += 1;
             // The frame's occurrence for the named operation sits at the
             // operation reference of the first clause naming it.
             assert_eq!(location.depth(), 0, "the reference is one position");
@@ -716,6 +718,10 @@ fn state_generated_occurrences_have_authored_regions() {
     assert!(
         generated_zero > 0,
         "the original fixture exercises Generated ordinal 0"
+    );
+    assert_eq!(
+        operation_references, 1,
+        "the one named operation's frame occurrence is placed at its reference"
     );
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .expect("actual public S4 requires all original occurrences to be located");

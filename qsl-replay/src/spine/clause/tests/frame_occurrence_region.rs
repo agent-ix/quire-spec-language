@@ -87,7 +87,7 @@ fn reference_in(unit: &str, name: &str, reference: &str) -> (usize, String) {
     (start, reference.to_owned())
 }
 
-#[ix_trace_rs::trace("TC-462", "FR-105-AC-9")]
+#[trace("TC-462", "FR-105-AC-9")]
 #[test]
 fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
     // The ConfigVersion package: the one occurrence is at `VersionUnchanged`.
