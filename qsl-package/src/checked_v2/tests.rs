@@ -2235,10 +2235,6 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     }
     cases.push(("unit", changed_unit));
 
-    let mut changed_period = original.clone();
-    changed_period.source.period = Some("3/2".to_owned());
-    cases.push(("period", changed_period));
-
     let mut changed_path = original.clone();
     let audit_key = admitted
         .graph()
@@ -2300,7 +2296,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             panic!("{case} mutation leaves one timed model");
         };
         let changed_form = match case {
-            "unit" | "period" => "time_source",
+            "unit" => "time_source",
             "path" => "clock_place",
             "bound" => "clock_constraint",
             _ => unreachable!(),
@@ -2360,6 +2356,41 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         }
         assert_eq!(actual, &expected, "{case} typed content reads back exactly");
     }
+
+    let tick_wire = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
+    let (_, tick_outcome) = read_fixture_wire(&tick_wire);
+    let Read::Verified {
+        admitted: tick_admitted,
+        timed_models: tick_models,
+        ..
+    } = tick_outcome
+    else {
+        panic!("tick fixture admits before its period mutation: {tick_outcome:?}");
+    };
+    let mut tick_models = tick_models;
+    assert_eq!(tick_models.len(), 1, "tick fixture reconstructs one model");
+    let mut changed_tick = tick_models.remove(0);
+    let original_tick_source = id_for(&tick_admitted, "time_source");
+    changed_tick.source.period = Some("3/2".to_owned());
+    let tick_emission = crate::emit::emit_timed_models(&tick_admitted, &[changed_tick])
+        .expect("changed tick period emits");
+    let changed_tick_wire: Value = serde_json::from_slice(tick_emission.package().bytes()).unwrap();
+    assert_ne!(
+        changed_tick_wire["package_id"]["digest"],
+        json!(derived_package_id(&tick_wire).hex()),
+        "tick period changes package identity"
+    );
+    let (_, changed_tick_outcome) = read_fixture_wire(&changed_tick_wire);
+    let Read::Verified {
+        admitted: reread_tick,
+        timed_models: reread_tick_models,
+        ..
+    } = changed_tick_outcome
+    else {
+        panic!("changed tick period reads back: {changed_tick_outcome:?}");
+    };
+    assert_ne!(id_for(&reread_tick, "time_source"), original_tick_source);
+    assert_eq!(reread_tick_models[0].source.period.as_deref(), Some("3/2"));
 }
 
 /// FR-322-AC-120 and AC-124: positive hybrid and timed graph references all
