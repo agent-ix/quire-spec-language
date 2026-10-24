@@ -1013,6 +1013,32 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     );
     assert_eq!(counterexample.blocked, fill_blocked());
     assert!(counterexample.fairness.is_empty());
+    // The steps serialize as protocol transition identities.
+    let identities: Vec<Json> = counterexample
+        .prefix
+        .iter()
+        .map(|step| {
+            json_of(
+                &system
+                    .transition_key(&step.transition)
+                    .expect("an identity"),
+            )
+        })
+        .collect();
+    let described: Vec<(&str, &str)> = identities
+        .iter()
+        .map(|identity| {
+            assert_eq!(identity["type"], "protocol-transition");
+            (
+                identity["step"].as_str().expect("a step kind"),
+                identity["node"].as_str().expect("a node"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        described,
+        [("fork", "Main/Both"), ("attempt", "Main/Both/left/A")]
+    );
     let replayed = case
         .replay("Fill", counterexample.clone())
         .expect("the counterexample replays");

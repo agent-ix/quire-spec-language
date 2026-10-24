@@ -600,11 +600,11 @@ fn a_replicated_role_a_channel_and_an_activation_build_as_written() {
     }
 }
 
-/// FR-309-AC-1: a `parallel` with `memory tso` builds `Some(Tso)` with the
-/// span of its clause, which ends at `tso`, and one with no `memory` clause builds `None`. A `fence`
+/// A `parallel` with `memory tso` builds `Some(Tso)` with the span of its
+/// whole clause, and one with no `memory` clause builds `None`. A `fence`
 /// control builds as a protocol node beside the controls around it; the
 /// `memory` words do not become the parallel's name or join labels.
-#[trace("TC-888", "FR-309-AC-1")]
+#[trace("TC-888")]
 #[test]
 fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     let run = format!(

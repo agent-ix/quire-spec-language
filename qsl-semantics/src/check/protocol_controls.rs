@@ -818,29 +818,22 @@ mod tests {
             .replacen("protocol Pipeline", "protocol Billing", 1)
             .replacen(RECORD, "", 1);
         let graph = checks(&format!("{}\n{billing}", pipeline(&pay(), RUN)));
-        let channels_of = |protocol: &str| -> Vec<CheckedChannel> {
-            graph
-                .protocol(protocol)
-                .expect("the checked protocol")
-                .channels
-                .clone()
+        let held: Vec<(&str, &str)> = graph
+            .protocols()
+            .iter()
+            .flat_map(|protocol| {
+                protocol
+                    .channels
+                    .iter()
+                    .map(|channel| (protocol.name.as_str(), channel.name.as_str()))
+            })
+            .collect();
+        assert_eq!(held, [("Pipeline", "Pay"), ("Billing", "Pay")]);
+        let [first, second] = &held[..] else {
+            unreachable!("two channels")
         };
-        let [pipeline_pay] = &channels_of("Pipeline")[..] else {
-            panic!("Pipeline holds one channel");
-        };
-        let [billing_pay] = &channels_of("Billing")[..] else {
-            panic!("Billing holds one channel");
-        };
-        assert_eq!(pipeline_pay.name, billing_pay.name);
-        assert_eq!(pipeline_pay.name, "Pay");
-        let qualified =
-            |protocol: &str, channel: &CheckedChannel| format!("{protocol}::{}", channel.name);
-        assert_eq!(qualified("Pipeline", pipeline_pay), "Pipeline::Pay");
-        assert_eq!(qualified("Billing", billing_pay), "Billing::Pay");
-        assert_ne!(
-            qualified("Pipeline", pipeline_pay),
-            qualified("Billing", billing_pay)
-        );
+        assert_eq!(first.1, second.1, "equal handles");
+        assert_ne!(first, second, "different qualified identities");
     }
 
     /// FR-218-AC-21 and FR-218-AC-13 (TC-1065 rows 1 and 3, TC-1056 rows 13

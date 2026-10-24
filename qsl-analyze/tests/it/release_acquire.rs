@@ -1070,18 +1070,18 @@ fn a_removed_sc_event_still_precedes_its_threads_later_events() {
 /// and the first one's edges follow through `po` (STD-247). This test passes
 /// without a retention rule for the first fence; it pins that the outcome
 /// is not admitted.
-#[trace("TC-668", "FR-223-AC-9")]
+#[trace("TC-668")]
 #[test]
 fn a_thread_that_fences_twice_still_orders_another_threads_fence() {
     let case = unit(&superseded_fence_fixture(), &SUPERSEDED_FENCE);
     assert!(forbids(&case, &ra_main()));
 }
 
-/// FR-223-AC-10 (TC-668), its first sentence: a thread running two
+/// The first sentence of FR-223-AC-10: a thread running two
 /// `seq_cst` fences with no store between them, beside a thread that
 /// fences nowhere, has the first fence absent from `P` after its second
 /// fence.
-#[trace("TC-668", "FR-223-AC-10")]
+#[trace("TC-668")]
 #[test]
 fn a_second_fence_with_no_store_between_removes_the_first_from_the_sc_event_graph() {
     let fences = vec![

@@ -433,7 +433,7 @@ fn the_request_selects_the_model_of_an_outermost_parallel() {
 /// so their obligations differ, and settle `proved` and `refuted`. A defaulted
 /// `sc` is written as explicitly as a selected one, and `SB` with source
 /// `memory tso` and no member resolves as `SB` with a `tso` selection.
-#[trace("TC-664", "FR-219-AC-5")]
+#[trace("TC-664")]
 #[test]
 fn the_resolved_model_is_the_identity_and_not_the_source_clause() {
     let sc = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
@@ -490,13 +490,13 @@ fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
         default(MemoryBoundMember::MaxMessages)
     );
 
+    // The bound is a member of the request, beside the subject; the obligation
+    // is written from the subject and the clause alone.
     let tso = [select("SB::Both", MemoryModelName::Tso)];
-    let [clause] = case.checked.graph().temporal_clauses() else {
-        panic!("one declared clause");
-    };
-    let mut written = ModelRequest::new();
-    let mut indices = Vec::new();
-    for max_store_buffer in [Some(1), Some(2), None] {
+    let obligation = |case: &Case, max_store_buffer| {
+        let [clause] = case.checked.graph().temporal_clauses() else {
+            panic!("one declared clause");
+        };
         let request = ProtocolCheckRequest {
             subject: case.subject(&tso),
             item: ModelCheckItem::DeadlockFreedom,
@@ -506,15 +506,21 @@ fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
             limits: ModelCheckLimits::default(),
         };
         let context = SubjectContext::new(&request.subject.model).expect("the package emits");
-        indices.push(
-            context
-                .author_clause(&mut written, clause)
-                .expect("the clause has a record"),
-        );
-    }
-    assert_eq!(indices[0], indices[1]);
-    assert_eq!(indices[1], indices[2]);
-    assert_eq!(written.items().len(), 1);
+        let mut written = ModelRequest::new();
+        let index = context
+            .author_clause(&mut written, clause)
+            .expect("the clause has a record");
+        written.obligation(index).cloned().expect("an obligation")
+    };
+    let default = obligation(&case, None);
+    assert_eq!(obligation(&case, Some(1)), default);
+    assert_eq!(obligation(&case, Some(2)), default);
+    // The comparison can fail: another checked package is another obligation.
+    let other = Case::new(
+        &sb_unit(&sb_run("", "release", "acquire"))
+            .replace("k.r1 = 0 and k.r2 = 0", "k.r1 = 1 and k.r2 = 1"),
+    );
+    assert_ne!(obligation(&other, None), default);
 }
 
 /// A protocol whose `parallel` has no `memory` clause and joins `any`,

@@ -706,13 +706,17 @@ fn a_wide_write_refuses_under_a_weak_default_only() {
         classes(&pair("", operation));
         let (_, causes) = refused(&pair("memory tso", operation));
         assert_eq!(causes.len(), 2, "{operation}: {causes:?}");
-        for cause in &causes {
+        for (cause, named) in causes.iter().zip(["Wa", "Wb"]) {
             let ProtocolAnchorCause::AccessShape {
-                model, locations, ..
+                attempt,
+                model,
+                locations,
+                ..
             } = cause
             else {
                 panic!("an AccessShape cause, got {cause:?}");
             };
+            assert_eq!(attempt, named);
             assert_eq!(*model, MemoryModelName::Tso);
             let [location] = &locations[..] else {
                 panic!("one location: {locations:?}");
@@ -749,9 +753,10 @@ fn an_ordering_on_an_attempt_outside_every_parallel_refuses() {
     checks(&run(""));
     let (text, cause, code, tag) = only_refusal(&run("ordering seq_cst"));
     assert_eq!((code, tag.as_str()), ("ill_typed", "operator-ineligible"));
-    let ProtocolAnchorCause::AccessOrdering { class, .. } = &cause else {
+    let ProtocolAnchorCause::AccessOrdering { attempt, class, .. } = &cause else {
         panic!("an AccessOrdering cause, got {cause:?}");
     };
+    assert_eq!(attempt, "Lone");
     assert_eq!(*class, AccessClass::Local);
     assert_eq!(located(&text, &cause), "seq_cst");
 }
