@@ -22,7 +22,9 @@ use quire_exact::{Cancel, Incomplete, Meter, Undefined};
 
 use crate::hyper_projected::{aligned, IDLE, MID_OPERATION};
 use crate::hyper_witness::{members, ExhaustedExistential, GUARDED, GUARDED_CLAUSE};
-use crate::hyper_world::{high, low, non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS};
+use crate::hyper_world::{
+    busy_of, high, low, non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS,
+};
 
 /// The counterexample of `world`'s run.
 fn refuted(world: &World) -> HyperCounterexample {
@@ -113,8 +115,10 @@ fn a_counterexample_that_breaks_a_replay_rule_is_refused() {
     ));
 
     let mut unmatched = counterexample.clone();
-    // `b` takes `step(1)` at both steps, so its loop still closes (its secret
-    // is 1, and `l` stays 0); only `μ_U` is false.
+    // `b`'s input is changed to 1 at both steps. Changing its first input alone
+    // leaves its loop (re-entered at 1) open, since the second `step(0)` sets
+    // `l` to 1, and the loop is checked before `μ_U`; with both changed the
+    // loop closes (its secret is 1, and `l` stays 0) and only `μ_U` is false.
     let initial = system.initial()[unmatched.traces[1].initial as usize].clone();
     let (step, _) = take(&world, &initial, 1);
     unmatched.traces[1].steps = vec![HyperStep::Model(step.clone()), HyperStep::Model(step)];
@@ -1030,22 +1034,43 @@ fn a_projected_counterexample_on_which_the_body_holds_is_inconclusive() {
     ));
 }
 
-/// FR-183 "Projected": the refusals that settle no result. A `step` marked
-/// skipped, a `mix` marked visible, a trace with one visible step fewer, a
-/// position other than the visible step count, a stutter step and a joint
-/// visible step at which `μ_U` is false are each refused.
+/// The reason a replay gave for refusing `counterexample` as the shape it
+/// breaks.
+fn shape_reason(world: &World, counterexample: &HyperCounterexample) -> &'static str {
+    assert!(counterexample.marks_match_kind());
+    match refusal(world.replay(counterexample)) {
+        ModelTraceRefusal::HyperShape { reason } => reason,
+        other => panic!("expected a shape refusal, got {other:?}"),
+    }
+}
+
+/// The number of visible marks of `trace`.
+fn visible_marks(trace: &qsl_replay::HyperTrace) -> u64 {
+    trace
+        .marks
+        .iter()
+        .filter(|mark| **mark == StepMark::Visible)
+        .count() as u64
+}
+
+/// FR-183 "Projected": the refusals that settle no result, each isolated so
+/// that no other rule refuses it.
+///
+/// - The mark rules: every step marked skipped, so the visible counts (0 and
+///   0) and the position (0) agree and only the `step` marked skipped is
+///   wrong; and both runs mid-operation with their `mix` marked visible, so
+///   the counts (2 and 2) and the position (2) agree and only the `mix` marked
+///   visible is wrong.
+/// - The count rule: a trace with a step fewer, the position being the first
+///   trace's visible count.
+/// - The position rule: equal counts and a position beside them.
+/// - A stutter step.
+/// - A joint visible step at which `μ_U` is false.
 #[trace("TC-608")]
 #[test]
 fn a_projected_counterexample_that_breaks_a_replay_rule_is_refused() {
     let world = World::busy(Vault::BusyLeaky, &MID_OPERATION, &aligned(&[]));
     let counterexample = refuted(&world);
-    let shape = |changed: &HyperCounterexample| {
-        assert!(changed.marks_match_kind());
-        assert!(matches!(
-            refusal(world.replay(changed)),
-            ModelTraceRefusal::HyperShape { .. }
-        ));
-    };
     // The trace that takes a skipped `mix` first, and the one that does not.
     let (long, short) = if counterexample.traces[0].steps.len() == 2 {
         (0, 1)
@@ -1055,25 +1080,36 @@ fn a_projected_counterexample_that_breaks_a_replay_rule_is_refused() {
     assert_eq!(counterexample.traces[long].marks[0], StepMark::Skipped);
 
     let mut skipped_step = counterexample.clone();
-    skipped_step.traces[short].marks[0] = StepMark::Skipped;
-    shape(&skipped_step);
+    for trace in &mut skipped_step.traces {
+        trace.marks.fill(StepMark::Skipped);
+    }
+    skipped_step.trace_position = 0;
+    assert!(shape_reason(&world, &skipped_step).contains("skipped whose operation is not in"));
 
     let mut visible_mix = counterexample.clone();
-    visible_mix.traces[long].marks[0] = StepMark::Visible;
-    shape(&visible_mix);
+    visible_mix.traces[short] = counterexample.traces[long].clone();
+    visible_mix.traces[short].variable = counterexample.traces[short].variable.clone();
+    for trace in &mut visible_mix.traces {
+        trace.marks = vec![StepMark::Visible; trace.steps.len()];
+    }
+    visible_mix.trace_position = 2;
+    assert!(shape_reason(&world, &visible_mix).contains("visible whose operation is in"));
 
+    // The first trace's visible count is the position, so only the unequal
+    // counts are wrong.
     let mut fewer = counterexample.clone();
     fewer.traces[short].steps.clear();
     fewer.traces[short].marks.clear();
-    shape(&fewer);
+    fewer.trace_position = visible_marks(&fewer.traces[0]);
+    assert!(shape_reason(&world, &fewer).contains("unequal visible step counts"));
 
     let mut elsewhere = counterexample.clone();
     elsewhere.trace_position = 2;
-    shape(&elsewhere);
+    assert!(shape_reason(&world, &elsewhere).contains("other than its visible step count"));
 
     let mut stutter = counterexample;
     stutter.traces[short].steps[0] = HyperStep::TerminalStutter;
-    shape(&stutter);
+    assert!(shape_reason(&world, &stutter).contains("terminal stutter"));
 
     // `b` takes `step(1)` where `a` takes `step(0)`: both re-execute, and
     // `μ_U` is false at the one joint visible step.
@@ -1087,6 +1123,74 @@ fn a_projected_counterexample_that_breaks_a_replay_rule_is_refused() {
         refusal(idle.replay(&unmatched)),
         ModelTraceRefusal::HyperUnmatched { joint: 1 }
     );
+}
+
+/// FR-183 "Projected": a prefix that is bad before its last position
+/// reproduces at the position that fixes the `false`, not at the position the
+/// payload names. Both runs of the idle leaky vault take a second visible
+/// `step(0)` after the one that already separates their outputs (the secret-1
+/// run takes a skipped `mix` before it), and the payload names position 2.
+#[trace("TC-608")]
+#[test]
+fn a_projected_prefix_that_is_bad_early_reproduces_at_the_position_that_fixes_it() {
+    let world = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    let mut counterexample = refuted(&world);
+    let system = ModelSystem::new(world.subject().simulation).expect("the subject admits");
+    for trace in &mut counterexample.traces {
+        let mut state = system.initial()[trace.initial as usize].clone();
+        let (_, next) = take(&world, &state, 0);
+        state = next;
+        if busy_of(&state) == 1 {
+            let (transition, next) = system
+                .successors(&state)
+                .expect("the vault expands")
+                .successors
+                .into_iter()
+                .find(|(transition, _)| transition.operation().contains("/Vault/mix\""))
+                .expect("mix is enabled");
+            let post_state = system.state_key(&next).expect("a key").1;
+            trace.steps.push(HyperStep::Model(ModelStep {
+                transition,
+                post_state,
+            }));
+            trace.marks.push(StepMark::Skipped);
+            state = next;
+        }
+        let (step, _) = take(&world, &state, 0);
+        trace.steps.push(HyperStep::Model(step));
+        trace.marks.push(StepMark::Visible);
+    }
+    counterexample.trace_position = 2;
+    assert_eq!(
+        world.replay(&counterexample).expect("the replay settles"),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: Some(1),
+        }
+    );
+}
+
+/// FR-183 "Projected": a `Lockstep` or `WitnessExhausted` counterexample of a
+/// clause with `align skip` is of a kind the clause is not read as, and is
+/// refused as the shape it breaks, not as an unsupported replay.
+#[trace("TC-608")]
+#[test]
+fn a_lockstep_or_witness_counterexample_of_an_align_skip_clause_is_refused_as_a_shape() {
+    let world = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    for kind in [
+        HyperCounterexampleKind::Lockstep { loop_entry: 0 },
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 0,
+            position: 1,
+        },
+    ] {
+        let mut counterexample = refuted(&world);
+        counterexample.kind = kind;
+        for trace in &mut counterexample.traces {
+            trace.marks.clear();
+        }
+        assert!(shape_reason(&world, &counterexample).contains("projected"));
+    }
 }
 
 /// FR-183 "Projected": a `Projected` counterexample handed in with a
@@ -1108,7 +1212,8 @@ fn a_projected_counterexample_of_a_lockstep_clause_is_refused() {
 }
 
 /// FR-183-AC-3: every refusal it lists settles no result: §8.1's counterexample
-/// with one trace one step shorter, with `b`'s inputs changed so `μ_U` is false,
+/// with one trace one step shorter, with `b`'s inputs changed to 1 (both of
+/// its steps, to keep its loop closed) so `μ_U` is false,
 /// with one post-state digest altered, a `Projected` counterexample with a
 /// `step` marked skipped, and the `Lockstep` counterexample whose loop is unfair
 /// under its own fairness set.

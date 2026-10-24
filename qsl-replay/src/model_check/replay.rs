@@ -210,11 +210,17 @@ pub enum ModelTraceRefusal {
     /// An `Undefined` hyper counterexample of an `align skip` clause (HP-6),
     /// whose unmarked paths hold skipped steps and whose replay FR-183 does
     /// not state.
-    #[error("unsupported_construct/not-yet-implemented: replay of a counterexample of an `align skip` clause")]
+    #[error("unsupported_construct/not-yet-implemented: replay of an `Undefined` counterexample of an `align skip` clause")]
     HyperProjected,
     /// A hyper counterexample whose traces do not match the clause: in
     /// number, order, variable, alias or instance; of unequal step counts;
-    /// or whose loop entry is not a position of a step (FR-183 "Common").
+    /// or whose loop entry is not a position of a step (FR-183 "Common"). For
+    /// a `Projected` one (FR-183 "Projected"): a skipped mark on an operation
+    /// the `align skip` list does not name, a visible mark on one it does,
+    /// unequal visible counts, a position other than the visible count or a
+    /// stutter step; and a kind the clause is not read as (a lockstep or
+    /// witness counterexample of an `align skip` clause, a `Projected` one of
+    /// any other).
     #[error("invalid_runtime_input/invalid-value: the hyper counterexample {reason}")]
     HyperShape {
         /// What does not match.

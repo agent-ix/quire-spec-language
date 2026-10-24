@@ -39,7 +39,7 @@
 //!   and `μ_U` holds at every joint visible step. The replay then evaluates
 //!   the body three-valued over the joint projected prefix, whose position
 //!   `j` reads each trace's state after its `j`-th visible step (FR-178):
-//!   `false` settles `Reproduced` at `trace_position`, anything else
+//!   `false` settles `Reproduced` at the shortest bad prefix's position, anything else
 //!   `Inconclusive`. A trace of a projected counterexample has no loop and no
 //!   fairness to check.
 //!
@@ -143,7 +143,10 @@ pub fn replay_hyper_trace_tuple(
     // `Undefined` counterexample of one has paths of unequal length and
     // positions that count visible steps: FR-183 does not state their replay.
     if !replay.clause.align_skip().is_empty() {
-        return Err(refused(ModelTraceRefusal::HyperProjected));
+        return Err(match counterexample.kind {
+            HyperCounterexampleKind::Undefined(_) => refused(ModelTraceRefusal::HyperProjected),
+            _ => shape_error(WRONG_KIND_FOR_ALIGN_SKIP),
+        });
     }
     shape(replay, counterexample)?;
     let Some(executed) = execute(replay, counterexample)? else {
@@ -165,6 +168,16 @@ pub fn replay_hyper_trace_tuple(
         }
     }
 }
+
+/// The reason a lockstep or witness counterexample of an `align skip` clause
+/// is refused: that clause is read over projected prefixes (FR-183 "Projected").
+const WRONG_KIND_FOR_ALIGN_SKIP: &str =
+    "is of a kind that a clause with `align skip` is not read as: it is projected";
+const SKIPPED_NOT_LISTED: &str =
+    "marks a step skipped whose operation is not in the `align skip` list";
+const VISIBLE_LISTED: &str = "marks a step visible whose operation is in the `align skip` list";
+const UNEQUAL_VISIBLE: &str = "holds traces of unequal visible step counts";
+const POSITION_NOT_VISIBLE: &str = "names a joint position other than its visible step count";
 
 fn no_value() -> ModelTraceSettlement {
     ModelTraceSettlement::Inconclusive(no_value_cause())
@@ -952,12 +965,10 @@ fn projected(
     let visible = visible_steps(replay, counterexample)?;
     let projected = visible.first().map_or(0, Vec::len);
     if visible.iter().any(|steps| steps.len() != projected) {
-        return Err(shape_error("holds traces of unequal visible step counts"));
+        return Err(shape_error(UNEQUAL_VISIBLE));
     }
     if counterexample.trace_position != u64::try_from(projected).unwrap_or(u64::MAX) {
-        return Err(shape_error(
-            "names a joint position other than its visible step count",
-        ));
+        return Err(shape_error(POSITION_NOT_VISIBLE));
     }
     let Some(executed) = execute(replay, counterexample)? else {
         return Ok(no_value());
@@ -996,27 +1007,54 @@ fn projected(
                 .collect()
         })
         .collect();
-    let mut letters = ProjectedLetters {
-        letters: replay.letters,
-        instance: replay.instance,
-        executed: &executed,
-        entered: &entered,
+    let evaluate = |len: usize| -> Result<TemporalOutcome, ReplayRefusal> {
+        let mut letters = ProjectedLetters {
+            letters: replay.letters,
+            instance: replay.instance,
+            executed: &executed,
+            entered: &entered,
+        };
+        let mut meter = Meter::new(replay.meter).with_cancel(replay.cancel.clone());
+        evaluate_projected_prefix(
+            replay.clause,
+            u64::try_from(len).unwrap_or(u64::MAX),
+            &mut letters,
+            &mut meter,
+        )
+        .map_err(|_| fault("the-evaluator-reads-the-projected-prefix"))
     };
-    let mut meter = Meter::new(replay.meter).with_cancel(replay.cancel.clone());
-    let outcome = evaluate_projected_prefix(
-        replay.clause,
-        u64::try_from(projected + 1).unwrap_or(u64::MAX),
-        &mut letters,
-        &mut meter,
-    )
-    .map_err(|_| fault("the-evaluator-reads-the-projected-prefix"))?;
-    Ok(match outcome {
-        TemporalOutcome::Violated { .. } => ModelTraceSettlement::Reproduced {
-            value: ModelTraceValue::Truth(false),
-            trace_position: Some(counterexample.trace_position),
-        },
-        TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => no_value(),
-        other => ModelTraceSettlement::Inconclusive(disagreement(other.category())),
+    let longest = projected + 1;
+    // FR-183 and ADR-023 PA-7 differ on the kind of an inconclusive projected
+    // replay (`Verdicts` or `ReplayParity`); this follows FR-183 (QSL-1044).
+    match evaluate(longest)? {
+        TemporalOutcome::Violated { .. } => {}
+        TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
+            return Ok(no_value())
+        }
+        other => {
+            return Ok(ModelTraceSettlement::Inconclusive(disagreement(
+                other.category(),
+            )))
+        }
+    }
+    // A bad prefix stays bad as it grows, so the shortest one is found by
+    // bisection: `low` is not known to be bad, `high` is. The replay reports
+    // the position that fixes the `false`, as the lockstep replay does, not the
+    // position the payload names.
+    let (mut low, mut high) = (0, longest);
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        match evaluate(middle)? {
+            TemporalOutcome::Violated { .. } => high = middle,
+            TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
+                return Ok(no_value())
+            }
+            _ => low = middle,
+        }
+    }
+    Ok(ModelTraceSettlement::Reproduced {
+        value: ModelTraceValue::Truth(false),
+        trace_position: Some(u64::try_from(high - 1).unwrap_or(u64::MAX)),
     })
 }
 
@@ -1047,16 +1085,8 @@ fn visible_steps(
             match (mark, skipped) {
                 (StepMark::Skipped, true) => {}
                 (StepMark::Visible, false) => steps.push(index),
-                (StepMark::Skipped, false) => {
-                    return Err(shape_error(
-                        "marks a step skipped whose operation is not in the `align skip` list",
-                    ))
-                }
-                (StepMark::Visible, true) => {
-                    return Err(shape_error(
-                        "marks a step visible whose operation is in the `align skip` list",
-                    ))
-                }
+                (StepMark::Skipped, false) => return Err(shape_error(SKIPPED_NOT_LISTED)),
+                (StepMark::Visible, true) => return Err(shape_error(VISIBLE_LISTED)),
             }
         }
         visible.push(steps);
