@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-222
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-215
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-439
@@ -98,7 +100,7 @@ again.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-225-AC-1 | ADR-025 §10's three requests leave both bounds unset: the `tso` and `ra` records state `max_store_buffer` 4 and `max_messages` 4 respectively, not reached; the `sc` record states no memory bound. Two `tso` requests that differ only in `max_store_buffer` carry equal obligation identities. | Test (TC-670) |
+| FR-225-AC-1 | ADR-025 §10's three requests leave both bounds unset: the `tso` record states `max_store_buffer` 4 and the `ra` record states `max_messages` 4, neither reached; the `sc` record states no memory bound. `ModelCheckRequest` and its protocol request form `ProtocolCheckRequest` (FR-215) carry `max_store_buffer` and `max_messages` as independent optional members; two `tso` requests that differ only in `max_store_buffer` carry equal obligation identities. | Test (TC-670) |
 | FR-225-AC-2 | A branch that stores to `x`, `y` and `z` in sequence with no fence, beside a branch that loads `x`, `y` and `z`, so that all three are shared, under `tso` with the claim `always holds(x.v <= 1)`: with `max_store_buffer` 2 the run settles V-6 `MemoryBoundReached{bound: max_store_buffer 2, states}` with `states` at least 1; with 3 it settles V-1, bound not reached. | Test (TC-670) |
 | FR-225-AC-3 | `SB` under `tso` with `max_store_buffer` 1 still settles `refuted` (V-4). `SB` under `ra` with `max_messages` 1 settles V-6 `MemoryBoundReached` with `bound: max_messages 1`, since no store can add a second message. | Test (TC-670) |
 | FR-225-AC-4 | In AC-2 with bound 2, a state whose only enabled step is the third store is not reported by the deadlock-freedom item and has no stutter successor. AC-2's protocol written in ADR-025 §10's vocabulary (`Cell` with `v: Int[0, 1]`, universe `{x, y, z}` at 0, `set()` storing 1 with `ordering release`; `Core` with `r: Int[0, 2]` at 2; branch `left` on `c1` runs `set` on `x`, `y`, then `z`; branch `right` on `c2` runs `read(x)`, `read(y)`, then `read(z)` with `ordering acquire`), under `tso` with `max_store_buffer` 2, the claim `always holds(x.v <= 1)` and the request naming `constraint Zero using v on M::Cell at current { self.v <= 0 }`, stores 20 states: 12 expanded states with no store flushed, 4 of them bound-limited (`left`'s third store cut), and 8 boundary states reached by `left`'s first flush. It settles `ConstraintReached{boundary_states: 8}` with no counterexample, and its terminal record states `max_store_buffer` 2 as reached; the same request without `Zero` settles `MemoryBoundReached` (AC-2). | Test (TC-670) |
@@ -110,7 +112,8 @@ again.
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (`ModelCheckRequest`, outcomes),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
-  (the V-6 row and the terminal record), FR-221, FR-222.
+  (the V-6 row and the terminal record), FR-215 (protocol request form),
+  FR-221, FR-222.
 - QSpec owns the memory bounds as request method bounds, their default, the bound
   semantics and verdicts, and their statement in the terminal record (QSpec
   FR-439, FR-331).
