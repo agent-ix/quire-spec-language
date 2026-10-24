@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedOccurrence, CheckedPackageV2,
-    CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage,
+    CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage, TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
 
@@ -78,13 +78,32 @@ pub struct CheckedTimedPredicate {
     pub predicate: CheckedNodeId,
 }
 
+/// The closed kind of an admitted time source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedTimeSourceKind {
+    /// Continuous dense time.
+    Dense,
+    /// Discrete ticks from the selected model operation.
+    Tick,
+}
+
+impl CheckedTimeSourceKind {
+    /// The original checked-wire spelling.
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Dense => "dense",
+            Self::Tick => "tick",
+        }
+    }
+}
+
 /// A dense or tick time source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedTimeSource {
     /// The node's checked wire metadata.
     pub metadata: TimedNodeMetadata,
-    /// `dense` or `tick`.
-    pub kind: String,
+    /// The closed admitted source kind.
+    pub kind: CheckedTimeSourceKind,
     /// The selected time unit node.
     pub unit: CheckedNodeId,
     /// Tick model, when the source is `tick`.
@@ -335,7 +354,7 @@ impl TimedNodeMetadata {
 
 fn write_source(source: &CheckedTimeSource, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
     let mut fields = vec![
-        binding_term("kind", text_literal(&types.text, &source.kind)),
+        binding_term("kind", text_literal(&types.text, source.kind.as_wire())),
         binding_term("unit", reference_term(&source.unit)),
     ];
     if let (Some(model), Some(operation), Some(period), Some(period_type)) = (
@@ -670,25 +689,28 @@ fn project_root(
     })
 }
 
+// Intake proof: time_source_intake_is_total_and_preserves_dense_and_tick_wire.
+// The wire literal is consumed once into CheckedTimeSourceKind; unknown or
+// mistyped payloads refuse instead of escaping as a dispatch string.
+#[ix_trace_rs::string_edge]
 fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'static str> {
-    if node.semantic_form.as_ref() != "time_source" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Source) {
         return Err("timed source reference has wrong form");
     }
     let body = &node.body;
-    let kind = literal_text(binding(body, "kind")?)?.to_owned();
+    let kind = literal_text(binding(body, "kind")?)?;
     let unit = reference(binding(body, "unit")?)?;
-    let (model, operation, period) = if kind == "tick" {
-        (
+    let (kind, model, operation, period) = match kind {
+        "tick" => (
+            CheckedTimeSourceKind::Tick,
             Some(reference(binding(body, "model")?)?),
             Some(reference(binding(body, "operation")?)?),
             Some(normalized_rational(literal_string(binding(
                 body, "period",
             )?)?)?),
-        )
-    } else if kind == "dense" {
-        (None, None, None)
-    } else {
-        return Err("unknown timed source kind");
+        ),
+        "dense" => (CheckedTimeSourceKind::Dense, None, None, None),
+        _ => return Err("unknown timed source kind"),
     };
     Ok(CheckedTimeSource {
         metadata: TimedNodeMetadata::from_node(node),
@@ -697,9 +719,7 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
         model,
         operation,
         period,
-        period_type: if node.semantic_form.as_ref() == "time_source"
-            && binding(body, "period").is_ok()
-        {
+        period_type: if binding(body, "period").is_ok() {
             Some(literal_type(binding(body, "period")?)?)
         } else {
             None
@@ -730,6 +750,9 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
     })
 }
 
+// Intake proof: clock_path_intake_is_total_for_each_closed_step_and_rejects_unknown_or_mistyped.
+// Every accepted wire kind becomes a ClockPathStep variant; unknown kinds refuse.
+#[ix_trace_rs::string_edge]
 fn project_path_step(value: &CheckedTerm) -> Result<ClockPathStep, &'static str> {
     let kind = literal_text(binding(value, "kind")?)?;
     match kind {
@@ -802,8 +825,11 @@ fn project_predicate(
     })
 }
 
+// Intake proof: urgency_intake_is_total_and_preserves_both_variants_or_refuses_unknown.
+// No wire kind escapes the CheckedUrgency variant conversion.
+#[ix_trace_rs::string_edge]
 fn project_urgency(node: &CheckedSemanticNodeV2) -> Result<CheckedUrgency, &'static str> {
-    if node.semantic_form.as_ref() != "urgency" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Urgency) {
         return Err("urgency reference has wrong form");
     }
     let body = &node.body;
@@ -1006,6 +1032,7 @@ mod intake_proofs {
     fn time_source_intake_is_total_and_preserves_dense_and_tick_wire() {
         let tick = fixture_node("time_source");
         let projected = project_source(&tick).unwrap();
+        assert_eq!(projected.kind, CheckedTimeSourceKind::Tick);
         let text_type = literal_type(binding(&tick.body, "kind").unwrap()).unwrap();
         let types = TimedLiteralTypes {
             text: text_type.clone(),
@@ -1019,6 +1046,7 @@ mod intake_proofs {
             CheckedTerm::literal_text(text_type.clone(), "dense"),
         );
         let projected = project_source(&dense).unwrap();
+        assert_eq!(projected.kind, CheckedTimeSourceKind::Dense);
         assert!(
             projected.model.is_none()
                 && projected.operation.is_none()
@@ -1039,6 +1067,15 @@ mod intake_proofs {
         assert_eq!(
             project_source(&unknown),
             Err("admitted timed-model term is not text")
+        );
+        let CheckedTerm::Aggregate { members } = &mut unknown.body else {
+            panic!("fixture body is aggregate")
+        };
+        members.retain(|member| !matches!(member, CheckedTerm::Binding { name, .. } if name.as_ref() == "unit"));
+        assert_eq!(
+            project_source(&unknown),
+            Err("admitted timed-model term is not text"),
+            "kind decoding still precedes the unit lookup"
         );
     }
 

@@ -1895,7 +1895,7 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     let [timed] = timed_models.as_slice() else {
         panic!("one timed model is reconstructed");
     };
-    assert_eq!(timed.source.kind, "tick");
+    assert_eq!(timed.source.kind, super::CheckedTimeSourceKind::Tick);
     assert_eq!(timed.source.period.as_deref(), Some("1/2"));
     assert_eq!(timed.clock_places.len(), 1);
     assert_eq!(timed.clock_places[0].path.len(), 2);
@@ -2092,7 +2092,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
     let [timed] = timed_models.as_slice() else {
         panic!("one no-clock model reconstructs");
     };
-    assert_eq!(timed.source.kind, "dense");
+    assert_eq!(timed.source.kind, super::CheckedTimeSourceKind::Dense);
     assert!(timed.clock_places.is_empty());
     assert!(timed.literal_types.integer.is_none());
 
@@ -2109,7 +2109,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         panic!("the emitted dense no-clock model is read back: {round_trip:?}");
     };
     assert_eq!(reread.len(), 1);
-    assert_eq!(reread[0].source.kind, "dense");
+    assert_eq!(reread[0].source.kind, super::CheckedTimeSourceKind::Dense);
     assert!(reread[0].clock_places.is_empty());
 }
 

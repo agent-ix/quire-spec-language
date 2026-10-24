@@ -376,16 +376,22 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     })
 }
 
-/// The `max` of a population node's body, when it has one.
-fn population_max(node: &CheckedSemanticNodeV2) -> Option<u64> {
-    let CheckedTerm::Aggregate { members } = &node.body else {
+/// Borrow one named member from a typed aggregate, retaining first-match order.
+fn binding_value<'a>(term: &'a CheckedTerm, binding_name: &str) -> Option<&'a CheckedTerm> {
+    let CheckedTerm::Aggregate { members } = term else {
         return None;
     };
-    let value = members.iter().find_map(|member| match member {
-        CheckedTerm::Binding { name, value } if name.as_ref() == "max" => Some(value.as_ref()),
+    members.iter().find_map(|member| match member {
+        CheckedTerm::Binding { name, value } if name.as_ref() == binding_name => {
+            Some(value.as_ref())
+        }
         _ => None,
-    })?;
-    let CheckedTerm::Literal { value, .. } = value else {
+    })
+}
+
+/// The `max` of a population node's typed body, when it has one.
+fn population_max(node: &CheckedSemanticNodeV2) -> Option<u64> {
+    let CheckedTerm::Literal { value, .. } = binding_value(&node.body, "max")? else {
         return None;
     };
     value.as_str()?.parse().ok()
