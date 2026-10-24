@@ -2,8 +2,9 @@
 //! FR-093-AC-19 (TC-416 step 11): the emission-to-admission corpus. Every
 //! node family of IR's closed checked-package/v2 vocabulary
 //! (`CheckedNodeKind::all()`) is classified exactly once: as a family the
-//! emitter writes and IR admits (one or more rows), or as a kind QSL's
-//! lowering never writes ([`NOT_EMITTED_BY_QSL`], each with its reason).
+//! emitter or typed timed-model writer writes and IR admits (one or more
+//! rows), or as a kind QSL does not write ([`NOT_EMITTED_BY_QSL`], each with
+//! its reason).
 //!
 //! Every fixture is emitted and read back through QSL's I2 read
 //! (`read_checked_package_v2`, which runs IR's checked-package/v2 reader).
@@ -470,7 +471,7 @@ fn rows() -> Vec<Row> {
     ]
 }
 
-/// Every IR node kind QSL's lowering never writes, each with the reason.
+/// Every IR node kind neither QSL's emitter nor typed timed-model writer writes.
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
@@ -714,6 +715,17 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .entry(*kind)
             .or_default()
             .push("not emitted: QSL lowers no hybrid declaration yet (QSL-900)".to_owned());
+    }
+    // `CheckedTimedModel::write_nodes` writes the complete closed timed-model
+    // family; its emitted-package conformance test reads the result through I2.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::TimedModel(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("admitted by the typed timed-model writer (TC-367)".to_owned());
     }
     let unclassified: Vec<_> = all
         .iter()
