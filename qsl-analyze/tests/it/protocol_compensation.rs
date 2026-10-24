@@ -1009,6 +1009,7 @@ fn a_compensation_thread_keys_its_registration() {
 /// effect after the join registers; an attempt in one case of a `choice`
 /// enables the effect after the `choice` on that case only, and on the
 /// other case the root waits at the effect.
+#[trace("TC-651", "FR-206-AC-10")]
 #[test]
 fn an_effect_waits_for_its_attempts_binder() {
     let joined = format!(
@@ -1026,6 +1027,26 @@ fn an_effect_waits_for_its_attempts_binder() {
             .iter()
             .any(|state| statuses(&key_json(system, state)) == ["registered"]);
         assert!(registered, "the effect after the join registers");
+        // At each state right after `join(P)` the effect is enabled and the
+        // root's environment holds `C`'s binder, added by the join.
+        let mut joins = 0;
+        for state in reached {
+            for (step, next) in &state.steps {
+                if step.kind() != StepKind::Join {
+                    continue;
+                }
+                joins += 1;
+                assert!(kinds(reached, *next).contains(&StepKind::Event));
+                let held = system.binders(&reached[*next].state).expect("binders");
+                assert!(
+                    held.iter().any(|(node, holder)| {
+                        node.rsplit('/').next() == Some("C") && *holder == ThreadPath::root(0)
+                    }),
+                    "{held:?}"
+                );
+            }
+        }
+        assert!(joins > 0);
     });
 
     let chosen = format!(

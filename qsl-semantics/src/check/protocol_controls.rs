@@ -806,6 +806,36 @@ mod tests {
             .channels
     }
 
+    /// FR-218-AC-27 (TC-1056 row 51): a second protocol `Billing` that also
+    /// declares `channel Pay` with the same premises checks; the checked
+    /// clauses hold `Pipeline`'s `Pay` and `Billing`'s `Pay`, each recorded
+    /// under its protocol with the handle `Pay`, so their qualified names
+    /// differ and their handles are equal.
+    #[trace("TC-1056", "FR-218-AC-27")]
+    #[test]
+    fn a_channel_name_is_qualified_by_its_protocol() {
+        let billing = pipeline(&pay(), RUN)
+            .replacen("protocol Pipeline", "protocol Billing", 1)
+            .replacen(RECORD, "", 1);
+        let graph = checks(&format!("{}\n{billing}", pipeline(&pay(), RUN)));
+        let held: Vec<(&str, &str)> = graph
+            .protocols()
+            .iter()
+            .flat_map(|protocol| {
+                protocol
+                    .channels
+                    .iter()
+                    .map(|channel| (protocol.name.as_str(), channel.name.as_str()))
+            })
+            .collect();
+        assert_eq!(held, [("Pipeline", "Pay"), ("Billing", "Pay")]);
+        let [first, second] = &held[..] else {
+            unreachable!("two channels")
+        };
+        assert_eq!(first.1, second.1, "equal handles");
+        assert_ne!(first, second, "different qualified identities");
+    }
+
     /// FR-218-AC-21 and FR-218-AC-13 (TC-1065 rows 1 and 3, TC-1056 rows 13
     /// and 14): the five overflow policies are recorded as written whatever
     /// the delivery policy is, and two channels that differ in exactly one
