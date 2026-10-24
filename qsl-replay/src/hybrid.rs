@@ -8,7 +8,7 @@
 //! ([`SolverResult::settle`]), and a provider's own claim about its
 //! soundness is never read: [`SolverMethod`] has no such field.
 
-use quire_exact::Rational;
+use quire_exact::{Integer, NonZeroInteger, Rational};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeSet;
@@ -443,6 +443,148 @@ impl HybridSettlement {
     }
 }
 
+/// A request's hybrid solver budget (FR-250, QSpec FR-331 `hybrid.limits`).
+///
+/// `max_solver_time` is a whole number of seconds: a request value is
+/// rounded up, so 1.5 s is 2 s and 0.2 s is 1 s. Each member is positive. A
+/// member the request does not set is omitted, and the provider applies the
+/// bound its descriptor publishes ([`SolverBudget::resolved`]).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SolverBudget {
+    time_seconds: Option<u64>,
+    steps: Option<u64>,
+}
+
+/// Why a hybrid budget is refused before any solver consumes it
+/// (`invalid_runtime_input`/`invalid-value`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BudgetRefusal {
+    /// A budget member that is zero or negative.
+    NotPositive(&'static str),
+    /// A wire member that is not a whole number, or exceeds 64 bits.
+    NotAWholeNumber(&'static str),
+    /// A member of `hybrid` or `hybrid.limits` the contract does not define.
+    UnknownMember(String),
+    /// `hybrid`, or its `limits`, is empty or not an object.
+    EmptyOrMalformed(&'static str),
+}
+
+const TIME_MEMBER: &str = "max_solver_time";
+const STEPS_MEMBER: &str = "max_solver_steps";
+
+impl SolverBudget {
+    /// The budget a request sets: `time` in seconds (rounded up to whole
+    /// seconds) and `steps`; `None` leaves a member unset.
+    pub fn from_request(
+        time: Option<&Rational>,
+        steps: Option<u64>,
+    ) -> Result<Self, BudgetRefusal> {
+        let time_seconds = time.map(Self::round_up_seconds).transpose()?;
+        if steps == Some(0) {
+            return Err(BudgetRefusal::NotPositive(STEPS_MEMBER));
+        }
+        Ok(Self {
+            time_seconds,
+            steps,
+        })
+    }
+
+    fn round_up_seconds(time: &Rational) -> Result<u64, BudgetRefusal> {
+        if time.numerator().is_negative() || time.is_zero() {
+            return Err(BudgetRefusal::NotPositive(TIME_MEMBER));
+        }
+        let divisor = NonZeroInteger::try_from(time.denominator())
+            .map_err(|_| BudgetRefusal::NotAWholeNumber(TIME_MEMBER))?;
+        let (floor, remainder) = time.numerator().div_mod_floor(divisor);
+        let ceiling = if remainder.is_zero() {
+            floor
+        } else {
+            floor.add(&Integer::one())
+        };
+        ceiling
+            .to_u64()
+            .ok_or(BudgetRefusal::NotAWholeNumber(TIME_MEMBER))
+    }
+
+    /// The whole-second time budget the request sets.
+    pub fn time_seconds(&self) -> Option<u64> {
+        self.time_seconds
+    }
+
+    /// The budget a solver runs under: each unset member takes the bound the
+    /// provider's descriptor publishes, as `(seconds, steps)`.
+    pub fn resolved(&self, published_seconds: u64, published_steps: u64) -> (u64, u64) {
+        (
+            self.time_seconds.unwrap_or(published_seconds),
+            self.steps.unwrap_or(published_steps),
+        )
+    }
+
+    /// The request's `hybrid` member, or `None` when the request sets no
+    /// budget (both members are then omitted).
+    pub fn hybrid_member(&self) -> Option<serde_json::Value> {
+        let mut limits = serde_json::Map::new();
+        if let Some(seconds) = self.time_seconds {
+            limits.insert(TIME_MEMBER.to_owned(), seconds.into());
+        }
+        if let Some(steps) = self.steps {
+            limits.insert(STEPS_MEMBER.to_owned(), steps.into());
+        }
+        (!limits.is_empty()).then(|| serde_json::json!({ "limits": limits }))
+    }
+
+    /// The bytes the budget contributes to a request's canonical key. The
+    /// step budget is part of the request identity and the wall-clock budget
+    /// is not, so two requests that differ only in `max_solver_time` have
+    /// equal bytes.
+    pub fn key_bytes(&self) -> Vec<u8> {
+        let keyed = Self {
+            time_seconds: None,
+            steps: self.steps,
+        };
+        keyed
+            .hybrid_member()
+            .map(|member| member.to_string().into_bytes())
+            .unwrap_or_default()
+    }
+
+    /// Read a request's `hybrid` member, refusing a malformed one before any
+    /// solver consumes it.
+    pub fn read_hybrid(hybrid: &serde_json::Value) -> Result<Self, BudgetRefusal> {
+        let object = hybrid
+            .as_object()
+            .filter(|object| !object.is_empty())
+            .ok_or(BudgetRefusal::EmptyOrMalformed("hybrid"))?;
+        if let Some(unknown) = object.keys().find(|key| key.as_str() != "limits") {
+            return Err(BudgetRefusal::UnknownMember(unknown.clone()));
+        }
+        let limits = object["limits"]
+            .as_object()
+            .filter(|limits| !limits.is_empty())
+            .ok_or(BudgetRefusal::EmptyOrMalformed("hybrid.limits"))?;
+        if let Some(unknown) = limits
+            .keys()
+            .find(|key| ![TIME_MEMBER, STEPS_MEMBER].contains(&key.as_str()))
+        {
+            return Err(BudgetRefusal::UnknownMember(unknown.clone()));
+        }
+        let member = |name: &'static str| -> Result<Option<u64>, BudgetRefusal> {
+            limits
+                .get(name)
+                .map(|value| match value.as_u64() {
+                    Some(0) => Err(BudgetRefusal::NotPositive(name)),
+                    Some(count) => Ok(count),
+                    None => Err(BudgetRefusal::NotAWholeNumber(name)),
+                })
+                .transpose()
+        };
+        Ok(Self {
+            time_seconds: member(TIME_MEMBER)?,
+            steps: member(STEPS_MEMBER)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -868,5 +1010,132 @@ mod tests {
             serde_json::to_value(SolverHorizon::new(half).expect("non-negative")).expect("wire"),
             json!({"numerator": "18446744073709551615", "denominator": "2"})
         );
+    }
+
+    fn ratio(numerator: i64, denominator: i64) -> Rational {
+        Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("non-zero")
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn max_solver_time_rounds_up_to_whole_seconds_and_unset_members_take_the_published_bounds() {
+        let seconds = |time: Rational| {
+            SolverBudget::from_request(Some(&time), None)
+                .expect("admitted")
+                .time_seconds()
+        };
+        assert_eq!(seconds(ratio(3, 2)), Some(2));
+        assert_eq!(seconds(ratio(2, 1)), Some(2));
+        assert_eq!(seconds(ratio(1, 5)), Some(1));
+
+        let unset = SolverBudget::from_request(None, None).expect("admitted");
+        assert_eq!(unset.resolved(60, 1_000_000), (60, 1_000_000));
+        let set = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000)).expect("admitted");
+        assert_eq!(set.resolved(60, 1_000_000), (2, 1000));
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn the_request_writer_writes_whole_seconds_and_omits_unset_members() {
+        let rounded = SolverBudget::from_request(Some(&ratio(3, 2)), None).expect("admitted");
+        assert_eq!(
+            rounded.hybrid_member(),
+            Some(json!({"limits": {"max_solver_time": 2}}))
+        );
+        let both = SolverBudget::from_request(Some(&ratio(1, 5)), Some(1000)).expect("admitted");
+        assert_eq!(
+            both.hybrid_member(),
+            Some(json!({"limits": {"max_solver_time": 1, "max_solver_steps": 1000}}))
+        );
+        let unset = SolverBudget::from_request(None, None).expect("admitted");
+        assert_eq!(unset.hybrid_member(), None);
+        assert_eq!(
+            SolverBudget::read_hybrid(&both.hybrid_member().expect("set")),
+            Ok(both)
+        );
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn a_malformed_budget_is_refused_before_any_solver_consumes_it() {
+        let refused = |hybrid: serde_json::Value| SolverBudget::read_hybrid(&hybrid);
+        assert_eq!(
+            refused(json!({"limits": {"max_solver_time": 1.5}})),
+            Err(BudgetRefusal::NotAWholeNumber("max_solver_time"))
+        );
+        assert_eq!(
+            refused(json!({"limits": {"max_solver_time": 0}})),
+            Err(BudgetRefusal::NotPositive("max_solver_time"))
+        );
+        assert_eq!(
+            refused(json!({"limits": {"max_solver_steps": 0}})),
+            Err(BudgetRefusal::NotPositive("max_solver_steps"))
+        );
+        assert_eq!(
+            refused(json!({"limits": {"max_solver_depth": 3}})),
+            Err(BudgetRefusal::UnknownMember("max_solver_depth".to_owned()))
+        );
+        assert_eq!(
+            refused(json!({})),
+            Err(BudgetRefusal::EmptyOrMalformed("hybrid"))
+        );
+        assert_eq!(
+            refused(json!({"limits": {}})),
+            Err(BudgetRefusal::EmptyOrMalformed("hybrid.limits"))
+        );
+        let zero = Rational::from_integer(Integer::from(0_i64));
+        assert_eq!(
+            SolverBudget::from_request(Some(&zero), None),
+            Err(BudgetRefusal::NotPositive("max_solver_time"))
+        );
+        assert_eq!(
+            SolverBudget::from_request(None, Some(0)),
+            Err(BudgetRefusal::NotPositive("max_solver_steps"))
+        );
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn requests_differing_only_in_max_solver_time_have_equal_key_bytes() {
+        let key = |time: i64, steps: Option<u64>| {
+            SolverBudget::from_request(Some(&ratio(time, 1)), steps)
+                .expect("admitted")
+                .key_bytes()
+        };
+        assert_eq!(key(1, Some(1000)), key(30, Some(1000)));
+        assert_eq!(key(1, None), key(30, None));
+        assert_ne!(key(1, Some(1000)), key(1, Some(2000)));
+        assert!(!String::from_utf8(key(30, Some(1000)))
+            .expect("utf-8")
+            .contains("max_solver_time"));
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn a_time_stop_settles_timed_out_distinct_from_a_deadline_cancellation() {
+        let timed = result(
+            SolverMethod::DeltaComplete,
+            SolverOutcome::Stopped(SolverStop::Time),
+        )
+        .terminal_value(&claim());
+        let cancelled = TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: quire_exact::CancelCause::Deadline,
+        });
+        assert_eq!(timed, TerminalValue::Incomplete(IncompleteCause::TimedOut));
+        assert_ne!(timed, cancelled);
+        assert_eq!(IncompleteCause::TimedOut.as_str(), "timed-out");
+        assert_eq!(
+            IncompleteCause::Cancelled {
+                source: quire_exact::CancelCause::Deadline
+            }
+            .as_str(),
+            "cancelled"
+        );
+        let stored = item(&result(
+            SolverMethod::DeltaComplete,
+            SolverOutcome::Stopped(SolverStop::Time),
+        ))
+        .to_string();
+        assert!(!stored.contains("seconds") && !stored.contains("max_solver_time"));
     }
 }
