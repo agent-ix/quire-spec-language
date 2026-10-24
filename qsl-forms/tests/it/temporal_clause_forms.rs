@@ -342,8 +342,14 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
     let built = clause(&infinite);
     assert_eq!(built.profile.alias, "t");
     assert_eq!(built.over.name.name, "p");
-    assert_eq!(built.clock.text, "steps");
-    assert_eq!(slice(&infinite_text, built.clock.span), "\"steps\"");
+    assert_eq!(built.clock.as_ref().expect("a clock member").text, "steps");
+    assert_eq!(
+        slice(
+            &infinite_text,
+            built.clock.as_ref().expect("a clock member").span
+        ),
+        "\"steps\""
+    );
     let ActivationForm::Each { parameter, when } = &built.activation else {
         panic!("an `on each` activation: {:?}", built.activation);
     };
@@ -512,10 +518,11 @@ fn the_clock_string_and_its_span_are_built() {
         );
         let unit = build(&text);
         let built = clause(&unit);
-        assert_eq!(built.clock.text, value);
-        assert_eq!(slice(&text, built.clock.span), format!("\"{written}\""));
+        let clock = built.clock.as_ref().expect("a clock member");
+        assert_eq!(clock.text, value);
+        assert_eq!(slice(&text, clock.span), format!("\"{written}\""));
         assert_eq!(
-            built.clock.span.start,
+            clock.span.start,
             text.find("clock ").expect("the clock keyword") + "clock ".len()
         );
     }

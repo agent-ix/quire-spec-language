@@ -6,8 +6,8 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, BinaryOperator, DeclarationForm, ExprNode, ExpressionForm, FairnessKind,
-    FormsCause, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm, ParsedUnit,
-    QuantifierKind, StepLabelForm, TemporalNodeForm,
+    HyperBehavioursForm, HyperFiniteForm, ModelRelationForm, ParsedUnit, QuantifierKind,
+    StepLabelForm, TemporalNodeForm,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -312,21 +312,31 @@ fn a_finite_trace_domain_clause_builds_its_domain_and_quantifiers() {
     assert_eq!(aliases, [None, Some("V")]);
 }
 
-/// An indexed read is a syntax of a hyper body: the same `holds` condition in
-/// a `temporal` clause is unrepresented, located at the condition.
-#[trace("TC-596", "FR-171-AC-1")]
+/// FR-325: S2 preserves an indexed read in a temporal clause as syntax;
+/// S3 judges whether the clause binds a trace variable.
+#[trace("FR-325")]
 #[test]
-fn an_indexed_read_in_a_temporal_clause_is_unrepresented() {
-    let text = format!(
-        "{HEADER}temporal C using inf over (p: V::Vault) clock \"steps\" on origin \
-         {{ always holds(p.l @ a = 1) }}\n"
+fn an_indexed_read_in_a_temporal_clause_is_preserved_at_s2() {
+    let (_, unit) = build(
+        "temporal C using inf over (p: V::Vault) clock \"steps\" on origin \
+         { always holds(p.l @ a = 1) }",
     );
-    let parsed = parse(&text);
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let refusal = build_unit(&parsed).expect_err("a temporal clause admits no indexed read");
-    assert!(matches!(
-        refusal.cause,
-        FormsCause::UnrepresentedConstruct { .. }
-    ));
-    assert_eq!(slice(&text, refusal.span.expect("located")), "p.l @ a = 1");
+    let [form] = unit.forms() else {
+        panic!("one temporal clause: {:?}", unit.forms());
+    };
+    let DeclarationForm::Temporal(clause) = form.form() else {
+        panic!("a temporal clause: {:?}", form.form());
+    };
+    let atoms: Vec<_> = clause
+        .formula
+        .iter()
+        .filter_map(|(_, node)| match node {
+            TemporalNodeForm::Holds { condition, .. } => Some(condition),
+            _ => None,
+        })
+        .collect();
+    let [condition] = atoms.as_slice() else {
+        panic!("one holds condition: {atoms:?}");
+    };
+    assert_eq!(indexed_reads(condition), ["p.l @ a"]);
 }
