@@ -42,8 +42,8 @@ use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Reached};
 use crate::litmus::{
-    attempt, contracts, core, document, field, package, protocol, protocol_with, sb_run, sb_unit,
-    unit_text, Documents, NO_BOTH_ZERO,
+    attempt, contracts, core, document, field, key, package, protocol, protocol_with, sb_run,
+    sb_unit, unit_text, Documents, NO_BOTH_ZERO,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -62,6 +62,8 @@ pub(crate) struct Case {
     checked: CheckedPackage,
     /// The letters of the unit's one claim.
     letters: &'static dyn ModelLetters,
+    /// The cell `SB`'s `over` input is bound to, when not the core.
+    over: Option<ModelInstance>,
 }
 
 impl Case {
@@ -76,11 +78,33 @@ impl Case {
             documents: Documents::new(),
             checked: package(body),
             letters,
+            over: None,
+        }
+    }
+
+    /// The unit with `body`, `SB` over the object `object` of `population`;
+    /// `spare` adds the `Spare` object `z` to the universe.
+    fn over_object(body: &str, population: &str, object: &str, spare: bool) -> Self {
+        Self {
+            documents: if spare {
+                Documents::with_spare_cell()
+            } else {
+                Documents::new()
+            },
+            over: Some(ModelInstance {
+                population: key(population),
+                key: object.to_owned(),
+            }),
+            ..Self::new(body)
         }
     }
 
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
-        self.documents.subject(&self.checked, "SB", selection)
+        let mut subject = self.documents.subject(&self.checked, "SB", selection);
+        if let Some(over) = &self.over {
+            subject.over = over.clone();
+        }
+        subject
     }
 
     /// EN-1's classification of `SB` under `selection`.
@@ -88,7 +112,7 @@ impl Case {
         let subject = self.subject(selection);
         let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
         let protocol = self.checked.graph().protocol("SB").expect("SB");
-        classify_accesses(&model, protocol, &subject.memory).expect("classifies")
+        classify_accesses(&model, protocol, &subject.memory, &subject.over).expect("classifies")
     }
 
     /// The protocol system of `SB` under `memory`.
@@ -740,6 +764,126 @@ fn en1_keeps_a_register_read_again_by_its_own_branch_local() {
             location: None
         }));
     assert!(local(&accesses, "Both/left/L/Cp").contains(&name("core", "r1")));
+}
+
+/// `SB`'s protocol over an object of `object_type`, the `over` input `k`,
+/// with `run` and the `finish` constraint `finish`.
+fn object_unit(object_type: &str, run: &str, finish: &str) -> String {
+    contracts()
+        + &protocol("SB", run)
+            .replace("over (k: M::Core)", &format!("over (k: M::{object_type})"))
+            .replace("{ d }", finish)
+}
+
+/// `SB`'s `parallel` with `event` ahead of the right branch's attempts.
+fn sb_with_event(event: &str) -> String {
+    format!(
+        "parallel Both {{ branch left sequence L {{ {} {} }} \
+         branch right sequence R {{ {event} {} {} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "", "IsX, StoreOne"),
+        attempt("Ly", "c", "Core::read1", "", "ReadsY1, Read1"),
+        attempt("Sy", "w", "Cell::set", "", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read2", "", "ReadsX2, Read2"),
+    )
+}
+
+/// FR-220-AC-15 (TC-665 step 14): an `event` in a branch of `SB`'s weak
+/// `parallel`, whose constraint reads `x.v`, beside the branch whose attempt
+/// stores `x.v`, settles V-8 `WeakAccessShape` with `MultiLocation` naming
+/// the event and `(x, v)` before any state is explored, under `tso`; under
+/// `sc` it is admitted. With a third cell `z` that no attempt accesses, the
+/// same `event` reading `z.v` is admitted under `tso`, and so is a `finish`
+/// that reads `x.v` after the `join`.
+#[trace("TC-665", "FR-220-AC-15")]
+#[test]
+fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
+    const SEEN: &str = "event Seen by c as (s: Boolean) { s and k.v >= 0 };";
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let read_x = Case::over_object(
+        &object_unit("Cell", &sb_with_event(SEEN), "{ d }"),
+        "cells",
+        "x",
+        false,
+    );
+
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        let selection = [select("SB::Both", model)];
+        let outcome = read_x.check(&selection, ModelCheckItem::DeadlockFreedom, None);
+        let ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            stats,
+        } = &outcome
+        else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(stats.product_states, 0);
+        assert_eq!(shape.site, "Both/right/R/Seen");
+        assert_eq!(shape.transition, None);
+        let AccessShape::MultiLocation { locations } = &shape.shape else {
+            panic!("{shape:?}");
+        };
+        let accesses = read_x.accesses(&selection);
+        let names: Vec<(String, String)> = locations
+            .iter()
+            .map(|location| named(&accesses, location))
+            .collect();
+        assert_eq!(names, vec![name("x", "v")]);
+        assert_eq!(
+            accesses.node_reads("Both/right/R/Seen"),
+            locations.as_slice()
+        );
+        let text: Json = serde_json::from_str(&shape.shape_text().expect("text")).expect("JSON");
+        assert_eq!(text["type"], json!("multi-location"));
+        assert_eq!(text["locations"][0]["field"], json!("v"));
+    }
+    assert!(matches!(
+        read_x.check(&[], ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    // The event alone beside a store makes the location shared.
+    let alone = format!(
+        "parallel Both {{ branch left sequence L {{ {} }} \
+         branch right sequence R {{ {SEEN} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "", "IsX, StoreOne"),
+    );
+    let alone = Case::over_object(&object_unit("Cell", &alone, "{ d }"), "cells", "x", false);
+    let accesses = alone.accesses(&tso);
+    let shared: BTreeSet<(String, String)> = accesses
+        .shared()
+        .iter()
+        .map(|location| named(&accesses, location))
+        .collect();
+    assert_eq!(shared, BTreeSet::from([name("x", "v")]));
+
+    // A cell no attempt accesses is not shared with the reader.
+    let read_z = Case::over_object(
+        &object_unit("Spare", &sb_with_event(SEEN), "{ d }"),
+        "spares",
+        "z",
+        true,
+    );
+    assert!(read_z
+        .accesses(&tso)
+        .node_reads("Both/right/R/Seen")
+        .is_empty());
+    assert!(matches!(
+        read_z.check(&tso, ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    // A `finish` is no reader: it reads `x.v` after the `join`.
+    let finish = Case::over_object(
+        &object_unit("Cell", &sb_run("", "", ""), "{ d and k.v >= 0 }"),
+        "cells",
+        "x",
+        false,
+    );
+    let selection = [select("SB::Both", MemoryModelName::Tso)];
+    assert!(matches!(
+        finish.check(&selection, ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
 }
 
 /// FR-220-AC-4 (TC-665 step 4): `SB` under `sc` with every ordering

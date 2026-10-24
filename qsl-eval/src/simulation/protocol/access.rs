@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::AccessOrdering;
 use qsl_semantics::check::{AccessClass, CheckedProtocol, ProtocolNodeId};
+use quire_exact::{Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::program::Program;
@@ -144,6 +145,10 @@ impl WeakAccessShape {
 #[derive(Clone, Debug, Default)]
 pub struct WeakAccesses {
     attempts: BTreeMap<ProtocolNodeId, WeakAttempt>,
+    /// Each `event`, `effect`, `commit`, `send` or `receive` node of a weak
+    /// `parallel` whose constraint reads a shared location: its static
+    /// declaration path and the shared locations it reads.
+    readers: BTreeMap<ProtocolNodeId, (String, Vec<Location>)>,
     shared: BTreeSet<Location>,
     cells: BTreeMap<Location, Cell>,
 }
@@ -164,6 +169,16 @@ impl WeakAccesses {
         self.attempts.get(&node)
     }
 
+    /// The shared locations the constraint of the node at the static
+    /// declaration path `node` reads; empty for a node that is no reader or
+    /// reads none (ADR-025 MA-1).
+    pub fn node_reads(&self, node: &str) -> &[Location] {
+        self.readers
+            .values()
+            .find(|(path, _)| path == node)
+            .map_or(&[], |(_, locations)| locations.as_slice())
+    }
+
     /// Every shared location, of every weak `parallel`.
     pub fn shared(&self) -> &BTreeSet<Location> {
         &self.shared
@@ -174,35 +189,56 @@ impl WeakAccesses {
         self.cells.get(location)
     }
 
-    /// The first instance, attempts in ascending node and instances in
-    /// ascending transition identity, that is not one access.
+    /// The first shape the pre-check settles: the first instance, attempts in
+    /// ascending node and instances in ascending transition identity, that
+    /// is not one access, else the first node, in ascending node order,
+    /// whose constraint reads a shared location. A node has no transition.
     pub(crate) fn first_shape(&self) -> Option<WeakAccessShape> {
-        self.attempts.values().find_map(|attempt| {
+        let attempt = self.attempts.values().find_map(|attempt| {
             attempt.instances.iter().find_map(|instance| {
                 let InstanceAccess::Shape { locations } = &instance.access else {
                     return None;
                 };
-                Some(WeakAccessShape {
-                    site: attempt.node.clone(),
-                    transition: Some(instance.transition.clone()),
-                    shape: AccessShape::MultiLocation {
-                        locations: locations.clone(),
-                    },
-                    wire: Enc::tagged(
-                        "multi-location",
-                        vec![(
-                            "locations",
-                            Enc::Array(
-                                locations
-                                    .iter()
-                                    .map(|location| location_enc(location, self.cell(location)))
-                                    .collect(),
-                            ),
-                        )],
-                    ),
-                })
+                Some(self.multi_location(
+                    attempt.node.clone(),
+                    Some(instance.transition.clone()),
+                    locations,
+                ))
             })
+        });
+        attempt.or_else(|| {
+            self.readers
+                .values()
+                .find(|(_, locations)| !locations.is_empty())
+                .map(|(node, locations)| self.multi_location(node.clone(), None, locations))
         })
+    }
+
+    fn multi_location(
+        &self,
+        site: String,
+        transition: Option<ModelTransition>,
+        locations: &[Location],
+    ) -> WeakAccessShape {
+        WeakAccessShape {
+            site,
+            transition,
+            shape: AccessShape::MultiLocation {
+                locations: locations.to_vec(),
+            },
+            wire: Enc::tagged(
+                "multi-location",
+                vec![(
+                    "locations",
+                    Enc::Array(
+                        locations
+                            .iter()
+                            .map(|location| location_enc(location, self.cell(location)))
+                            .collect(),
+                    ),
+                )],
+            ),
+        }
     }
 }
 
@@ -255,7 +291,11 @@ pub(crate) fn location_enc(location: &Location, cell: Option<&Cell>) -> Enc {
     }
 }
 
-/// One touch of a location by an attempt instance.
+/// A node's outermost weak `parallel` and the (`parallel`, branch label)
+/// pairs above it, innermost first.
+type Chain = (ProtocolNodeId, Vec<(ProtocolNodeId, String)>);
+
+/// One touch of a location by an attempt instance or a reader node.
 struct Touch {
     location: Location,
     write: bool,
@@ -282,19 +322,18 @@ pub(crate) fn classify(
     program: &Program<'_>,
     governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
     initial: Option<&ModelSimState>,
+    over: &Value,
 ) -> Result<WeakAccesses, ProtocolRefusal> {
     let Some(initial) = initial else {
         return Ok(WeakAccesses::default());
     };
     let unlisted = |_: ExpansionStop| ProtocolRefusal::fault("attempt-identities-list");
-    // Each attempt's chain: its outermost weak `parallel` and every
+    // Each node's chain: its outermost weak `parallel` and every
     // (`parallel`, branch label) above it, innermost first.
-    let mut chains: BTreeMap<ProtocolNodeId, (ProtocolNodeId, Vec<(ProtocolNodeId, String)>)> =
-        BTreeMap::new();
-    for node in program.attempts.keys() {
+    let chain_of = |node: ProtocolNodeId| -> Result<Option<Chain>, ProtocolRefusal> {
         let mut chain = Vec::new();
         let mut outermost = None;
-        let mut below = *node;
+        let mut below = node;
         while let Some(above) = program.parent(below)? {
             if governing.contains_key(&above) {
                 let label = program.control(below)?.name.clone();
@@ -303,11 +342,49 @@ pub(crate) fn classify(
             }
             below = above;
         }
-        if let Some(outermost) =
-            outermost.filter(|parallel| governing.get(parallel).is_some_and(|m| m.is_weak()))
-        {
-            chains.insert(*node, (outermost, chain));
+        Ok(outermost
+            .filter(|parallel| governing.get(parallel).is_some_and(|m| m.is_weak()))
+            .map(|outermost| (outermost, chain)))
+    };
+    let mut chains: BTreeMap<ProtocolNodeId, Chain> = BTreeMap::new();
+    for node in program.attempts.keys() {
+        if let Some(chain) = chain_of(*node)? {
+            chains.insert(*node, chain);
         }
+    }
+    // MA-1: an `event`, `effect`, `commit`, `send` or `receive` node of a
+    // weak `parallel` whose constraint reads a model location is a reader of
+    // it. A `finish` and a node outside every weak `parallel` are not.
+    let mut node_reads: BTreeMap<ProtocolNodeId, BTreeSet<Location>> = BTreeMap::new();
+    let mut reader_chains: BTreeMap<ProtocolNodeId, Chain> = BTreeMap::new();
+    let Value::Reference(over) = over else {
+        return Err(ProtocolRefusal::fault("the-over-input-is-a-reference"));
+    };
+    let parameters: Vec<(String, ValueType)> = protocol
+        .slots
+        .binders
+        .iter()
+        .map(|binder| (binder.name.clone(), binder.value_type.clone()))
+        .collect();
+    let constraints = program
+        .events
+        .iter()
+        .map(|(node, record)| (node, record.constraint))
+        .chain(
+            program
+                .messages
+                .iter()
+                .map(|(node, message)| (node, message.record.constraint)),
+        );
+    for (node, constraint) in constraints {
+        let (Some(body), Some(chain)) = (constraint, chain_of(*node)?) else {
+            continue;
+        };
+        let reads = model
+            .node_reads(program.text(*node)?, &parameters, body, over)
+            .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;
+        node_reads.insert(*node, reads);
+        reader_chains.insert(*node, chain);
     }
 
     let mut footprints: BTreeMap<ProtocolNodeId, Vec<Footprinted>> = BTreeMap::new();
@@ -347,6 +424,15 @@ pub(crate) fn classify(
     // MA-1: two touches in different branches of one `parallel` conflict
     // when one writes a location that meets the other's.
     let mut touches: Vec<Touch> = Vec::new();
+    for (node, reads) in &node_reads {
+        for location in reads {
+            touches.push(Touch {
+                location: location.clone(),
+                write: false,
+                attempt: *node,
+            });
+        }
+    }
     for (node, instances) in &footprints {
         for instance in instances {
             for location in &instance.reads {
@@ -366,7 +452,8 @@ pub(crate) fn classify(
         }
     }
     let apart = |left: ProtocolNodeId, right: ProtocolNodeId| {
-        let (Some((_, left)), Some((_, right))) = (chains.get(&left), chains.get(&right)) else {
+        let chain = |node: ProtocolNodeId| chains.get(&node).or_else(|| reader_chains.get(&node));
+        let (Some((_, left)), Some((_, right))) = (chain(left), chain(right)) else {
             return false;
         };
         left.iter().any(|(parallel, label)| {
@@ -426,8 +513,17 @@ pub(crate) fn classify(
             },
         );
     }
+    let mut readers = BTreeMap::new();
+    for (node, reads) in node_reads {
+        let shared_reads = reads
+            .into_iter()
+            .filter(|location| shared.contains(location))
+            .collect();
+        readers.insert(node, (program.text(node)?.to_owned(), shared_reads));
+    }
     Ok(WeakAccesses {
         attempts,
+        readers,
         shared,
         cells,
     })

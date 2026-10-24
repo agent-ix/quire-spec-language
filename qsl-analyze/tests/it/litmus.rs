@@ -174,6 +174,12 @@ pub(crate) fn document() -> Vec<u8> {
                 ],
                 "relationships": [],
             })),
+            wire_type(&ident("Spare"), "object_type", json!({
+                "supertypes": [],
+                "fields": fields("Spare", &["v"]),
+                "operations": [],
+                "relationships": [],
+            })),
             wire_type(&ident("Core"), "object_type", json!({
                 "supertypes": [],
                 "fields": fields("Core", &["r1", "r2", "r3", "r4"]),
@@ -187,7 +193,11 @@ pub(crate) fn document() -> Vec<u8> {
                 "relationships": [],
             })),
         ],
-        "populations": [population("cells", "Cell"), population("cores", "Core")],
+        "populations": [
+            population("cells", "Cell"),
+            population("cores", "Core"),
+            population("spares", "Spare"),
+        ],
     })
     .to_string()
     .into_bytes()
@@ -350,12 +360,24 @@ pub(crate) struct Documents {
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: DocumentRef,
+    /// Whether the universe also holds the `Spare` object `z`.
+    spare: bool,
 }
 
 impl Documents {
     /// Cells `x` (`id` 0) and `y` (`id` 1) at `v = w = 0`, and `core` with
     /// every register at 3, "not yet read".
     pub(crate) fn new() -> Self {
+        Self::build(false)
+    }
+
+    /// [`Self::new`] with the `Spare` object `z`, which no operation touches,
+    /// in the universe.
+    pub(crate) fn with_spare_cell() -> Self {
+        Self::build(true)
+    }
+
+    fn build(spare: bool) -> Self {
         let int = |value: i64| json!({"integer": value.to_string()});
         let cell = |key: &str, id: i64| {
             json!({"key": key, "type": ident("Cell"),
@@ -363,6 +385,13 @@ impl Documents {
         };
         let header = json!({"identity": PACKAGE, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&document_digest(&document())))});
+        let cells = vec![cell("x", 0), cell("y", 1)];
+        let spares: Vec<Json> = if spare {
+            vec![json!({"key": "z", "type": ident("Spare"),
+                "fields": {"v": int(0)}})]
+        } else {
+            Vec::new()
+        };
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -370,8 +399,9 @@ impl Documents {
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [
+                {"population": ident("spares"), "complete": true, "objects": spares},
                 {"population": ident("cells"), "complete": true,
-                    "objects": [cell("x", 0), cell("y", 1)]},
+                    "objects": cells},
                 {"population": ident("cores"), "complete": true,
                     "objects": [{"key": "core", "type": ident("Core"),
                         "fields": {"r1": int(3), "r2": int(3), "r3": int(3),
@@ -393,15 +423,28 @@ impl Documents {
                 revision: "fixture:1".to_owned(),
                 digest,
             },
+            spare,
         }
     }
 
     /// The universes: `cells` `{x, y}`, `cores` `{core}`.
     pub(crate) fn universes() -> Vec<PopulationUniverse> {
+        Self::universes_of(false)
+    }
+
+    fn universes_of(spare: bool) -> Vec<PopulationUniverse> {
         vec![
             PopulationUniverse {
                 population: key("cells"),
                 keys: vec!["x".to_owned(), "y".to_owned()],
+            },
+            PopulationUniverse {
+                population: key("spares"),
+                keys: if spare {
+                    vec!["z".to_owned()]
+                } else {
+                    Vec::new()
+                },
             },
             PopulationUniverse {
                 population: key("cores"),
@@ -427,7 +470,7 @@ impl Documents {
                     normalization: ModelNormalizationLimits::default(),
                     snapshots: &self.snapshots,
                     initial: vec![self.initial.clone()],
-                    universes: Self::universes(),
+                    universes: Self::universes_of(self.spare),
                     observation: ObservationLimits::default(),
                     expansion: ExpansionLimits {
                         max_candidates: 1_000_000,

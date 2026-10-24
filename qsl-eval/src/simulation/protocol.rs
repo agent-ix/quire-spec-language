@@ -661,6 +661,36 @@ pub fn explore_protocol<M: MemoryModel>(
     )
 }
 
+/// The `over` parameter's value: the reference to `over`'s key in its
+/// declared type's universe.
+pub(crate) fn over_value(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+    over: &ModelInstance,
+) -> Result<Value, ProtocolRefusal> {
+    let input = protocol
+        .slots
+        .binders
+        .first()
+        .filter(|binder| binder.node.is_none())
+        .ok_or_else(|| ProtocolRefusal::fault("a-protocol-has-an-over-input"))?;
+    let refused = || ProtocolRefusal::OverBinding {
+        parameter: input.name.clone(),
+        object: over.key.clone(),
+    };
+    let ValueType::Reference(object_type) = input.value_type else {
+        return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
+    };
+    let instances = model.instances(&input.value_type).map_err(|_| refused())?;
+    if !instances.contains(over) {
+        return Err(refused());
+    }
+    model
+        .bound_reference(object_type, over)
+        .map(Value::Reference)
+        .map_err(|_| refused())
+}
+
 /// FR-220 "Sharing and classification" (ADR-025 MA-1, MA-2): EN-1's
 /// sharing and classification of every attempt of each `parallel` `memory`
 /// resolves weak, over the initial states of `model`. It reads no memory
@@ -670,22 +700,26 @@ pub fn explore_protocol<M: MemoryModel>(
 ///
 /// [`ProtocolRefusal`] when `memory` does not resolve the protocol's
 /// outermost `parallel` controls, for a construct this system does not
-/// step, or when an application has no footprint.
+/// step, or when an application has no footprint. `over` is the instance
+/// the protocol's `over` input is bound to.
 pub fn classify_accesses(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
     memory: &ResolvedMemory,
+    over: &ModelInstance,
 ) -> Result<WeakAccesses, ProtocolRefusal> {
     let governing = memory
         .governing(protocol)
         .map_err(ProtocolRefusal::Memory)?;
     let program = Program::new(protocol)?;
+    let over = over_value(model, protocol, over)?;
     access::classify(
         model,
         protocol,
         &program,
         &governing,
         model.initial().first(),
+        &over,
     )
 }
 
@@ -781,7 +815,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             }
             roles.push((role.name.clone(), binding.model.clone()));
         }
-        let over = Self::over_value(&model, protocol, &subject.over)?;
+        let over = over_value(&model, protocol, &subject.over)?;
         let governing = subject
             .memory
             .governing(protocol)
@@ -812,6 +846,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &program,
             &governing,
             model.initial().first(),
+            &over,
         )?;
         if let Some(shape) = weak.first_shape() {
             return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
@@ -870,36 +905,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 Ok(objects)
             })
             .collect()
-    }
-
-    /// The `over` parameter's value: the reference to `over`'s key in its
-    /// declared type's universe.
-    fn over_value(
-        model: &ModelSystem<'_>,
-        protocol: &CheckedProtocol,
-        over: &ModelInstance,
-    ) -> Result<Value, ProtocolRefusal> {
-        let input = protocol
-            .slots
-            .binders
-            .first()
-            .filter(|binder| binder.node.is_none())
-            .ok_or_else(|| ProtocolRefusal::fault("a-protocol-has-an-over-input"))?;
-        let refused = || ProtocolRefusal::OverBinding {
-            parameter: input.name.clone(),
-            object: over.key.clone(),
-        };
-        let ValueType::Reference(object_type) = input.value_type else {
-            return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
-        };
-        let instances = model.instances(&input.value_type).map_err(|_| refused())?;
-        if !instances.contains(over) {
-            return Err(refused());
-        }
-        model
-            .bound_reference(object_type, over)
-            .map(Value::Reference)
-            .map_err(|_| refused())
     }
 
     /// FO-3: for each initial model state, instance 0 with its root thread

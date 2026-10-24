@@ -14,8 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
-    derive_atom_reads, derive_constraint_reads, derive_footprint, derive_selected_footprint,
-    derive_slot_reads, FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
+    derive_atom_reads, derive_constraint_reads, derive_footprint, derive_node_reads,
+    derive_selected_footprint, derive_slot_reads, FootprintObject, FootprintRefusal,
+    SymbolicFootprint, SymbolicLocation,
 };
 use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
@@ -589,6 +590,55 @@ impl<'a> ModelSystem<'a> {
         Ok(symbolic
             .iter()
             .filter_map(|location| lower(location, &|_| None))
+            .flat_map(|location| match location {
+                Location::AnyField { field } => match self.universe_declaring(&field) {
+                    Some(objects) => objects
+                        .into_iter()
+                        .map(|object| Location::Field {
+                            object,
+                            field: field.clone(),
+                        })
+                        .collect(),
+                    None => vec![Location::AnyField { field }],
+                },
+                other => vec![other],
+            })
+            .collect())
+    }
+
+    /// ADR-025 MA-1: the model locations the constraint `body` of a protocol
+    /// node reads, typed over the protocol's binders `parameters` in slot
+    /// order (slot 0 the `over` input, bound to `over`). A field read of the
+    /// input is a read of `over`'s field; a field read through another
+    /// binder is a read of the field of every object of the universe that
+    /// declares it.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintError::Refused`] when the expression reads through a form
+    /// QSpec FR-383 gives no footprint rule.
+    pub(crate) fn node_reads(
+        &self,
+        name: &str,
+        parameters: &[(String, ValueType)],
+        body: &qsl_semantics::check::CheckedBody,
+        over: &ObjectReference,
+    ) -> Result<BTreeSet<Location>, FootprintError> {
+        let symbolic = derive_node_reads(
+            self.package.graph(),
+            &self.model,
+            name,
+            parameters,
+            body.root(),
+        )?;
+        Ok(symbolic
+            .iter()
+            .filter_map(|location| {
+                lower(location, &|bound| match bound {
+                    FootprintObject::Receiver => Some(over.clone()),
+                    FootprintObject::Param(_) => None,
+                })
+            })
             .flat_map(|location| match location {
                 Location::AnyField { field } => match self.universe_declaring(&field) {
                     Some(objects) => objects
