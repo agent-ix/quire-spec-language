@@ -19,7 +19,7 @@ use std::ops::ControlFlow;
 use super::dispatch::{Construct, FormsRefusal};
 use super::protocol_control::{
     access_ordering, await_form, channel_form, choice_form, member_forms, parallel_form,
-    repeat_form, role_form, AwaitForm, ChannelOrdering, FenceForm, JoinPolicy, ParallelForm,
+    repeat_form, role_form, AwaitForm, ChannelOrdering, FenceForm, ParallelForm,
     ProtocolMemberForm, RepeatForm, TerminalForm,
 };
 use super::spans::DeclarationSpans;
@@ -930,12 +930,6 @@ impl<'c> ControlWalk<'c, '_, '_> {
             Production::Parallel => {
                 let (kind, name) = named(ProtocolNodeKind::Parallel)?;
                 let form = parallel_form(cst, matched, self.collector.declarations.len())?;
-                if matches!(form.join.value, JoinPolicy::Predicate(_)) {
-                    self.collector.constructs.push(ProtocolConstructForm {
-                        kind: ProtocolConstructKind::JoinPredicate,
-                        span: form.join.span,
-                    });
-                }
                 self.collector.parallels.push(form);
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);

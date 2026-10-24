@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_canonical::{Node, NodeRef};
+use quire_contract_model::CheckedNodeTag;
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::digest::WireNodeId;
@@ -285,32 +286,6 @@ fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
     WireNodeId::from_hex(string_of(value.get("digest")?)?)
 }
 
-/// The node tags of the V2 semantic graph.
-const NODE_TAGS: [&str; 15] = [
-    "scalar_type",
-    "composite_type",
-    "bounded_domain",
-    "value",
-    "expression",
-    "function",
-    "model",
-    "relation",
-    "state",
-    "temporal",
-    "protocol",
-    "claim",
-    "correspondence",
-    "extension",
-    "hybrid",
-];
-
-/// The node tags `projected_node` admits, for a dependent crate's test that
-/// they equal IR's `CheckedNodeTag` wire spellings.
-#[cfg(any(test, feature = "test-support"))]
-pub fn node_tags() -> &'static [&'static str] {
-    &NODE_TAGS
-}
-
 fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
     if is_qualified_name(&segments) {
         Ok(segments.join("::"))
@@ -391,7 +366,7 @@ fn projected_node(value: NodeRef<'_>) -> Result<NodeShape, NodeDefect> {
     }
     node.get("node_tag")
         .and_then(string_of)
-        .filter(|tag| NODE_TAGS.contains(tag))
+        .and_then(CheckedNodeTag::from_wire)
         .ok_or(NodeDefect::NodeTag)?;
     let (declared, nominal) = declaration_shape(node)?;
     Ok(NodeShape {
@@ -624,8 +599,8 @@ mod tests {
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
 
-    /// An `extension`-tagged projection node (QSpec FR-469) passes the node
-    /// tag check, and a tag outside the V2 set is refused as `NodeTag`.
+    /// The IR-owned closed vocabulary admits `extension` without a second
+    /// QSL copy of the node-tag list.
     #[trace("QSpec-FR-469-AC-1")]
     #[test]
     fn an_extension_tagged_node_passes_the_node_tag_check() {
@@ -633,14 +608,25 @@ mod tests {
             serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
         preimage["identity_projection"][0]["node_tag"] = Value::from("extension");
         assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
-        preimage["identity_projection"][0]["node_tag"] = Value::from("not_a_tag");
-        assert!(matches!(
-            project_declarations(&serde_json::to_vec(&preimage).unwrap()),
-            Err(PreimageDefect::Node {
-                defect: NodeDefect::NodeTag,
-                ..
-            })
-        ));
+    }
+
+    /// Non-string tags and strings outside IR's closed V2 vocabulary are
+    /// refused as `NodeTag`; QSL has no copied node-tag inventory.
+    #[trace("QSpec-FR-322-AC-122")]
+    #[test]
+    fn tags_outside_the_ir_vocabulary_are_refused() {
+        let base = one_node_preimage(b"L::R", &["L", "R"]);
+        for tag in [Value::Bool(true), Value::from("not_a_checked_node_tag")] {
+            let mut preimage: Value = serde_json::from_slice(&base).unwrap();
+            preimage["identity_projection"][0]["node_tag"] = tag;
+            assert!(matches!(
+                project_declarations(&serde_json::to_vec(&preimage).unwrap()),
+                Err(PreimageDefect::Node {
+                    defect: NodeDefect::NodeTag,
+                    ..
+                })
+            ));
+        }
     }
 
     /// A `hybrid`-tagged projection node (QSpec FR-481, FR-322-AC-13) passes
@@ -651,6 +637,17 @@ mod tests {
         let mut preimage: Value =
             serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
         preimage["identity_projection"][0]["node_tag"] = Value::from("hybrid");
+        assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
+    }
+
+    /// A `timed_model` tag added by IR is read through the same closed
+    /// vocabulary as every other checked node tag.
+    #[trace("FR-447-AC-13")]
+    #[test]
+    fn a_timed_model_tag_passes_the_node_tag_check() {
+        let mut preimage: Value =
+            serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+        preimage["identity_projection"][0]["node_tag"] = Value::from("timed_model");
         assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
     }
 

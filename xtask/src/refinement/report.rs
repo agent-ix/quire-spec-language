@@ -239,7 +239,7 @@ impl SideReport {
     }
 }
 
-fn code_report(cause: &RefusalCause) -> CodeReport {
+pub(super) fn code_report(cause: &RefusalCause) -> CodeReport {
     CodeReport {
         code: cause.code.as_str(),
         cause: cause.cause,

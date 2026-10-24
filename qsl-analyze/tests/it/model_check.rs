@@ -25,9 +25,9 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndecidedCause, UndefinedLocus,
-    DEFAULT_MAX_AUTOMATON_STATES,
+    CallerLimits, CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndecidedCause,
+    UndefinedLocus, DEFAULT_MAX_AUTOMATON_STATES,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
@@ -558,7 +558,7 @@ fn an_undefined_model_side_expression_refutes_the_deadlock_item() {
 /// `max_transitions` 1 stop the run naming the limit and its value; an
 /// already-cancelled handle stops it with no limit; a zero evaluation meter
 /// stops it at `inc`'s precondition naming the meter, 0.
-#[trace("TC-521")]
+#[trace("TC-521", "FR-126-AC-19")]
 #[test]
 fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -615,11 +615,38 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
         (
             IncompleteCause::ResourceExhausted,
             Some(ReachedLimit {
-                limit: ModelCheckLimit::EvaluationMeter,
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits
+                },
                 value: 0
             })
         )
     );
+    let mut candidate_subject = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    );
+    candidate_subject.simulation.expansion.max_candidates = 1;
+    let candidate_stop = check_model(
+        ModelCheckRequest {
+            subject: candidate_subject,
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            limits: defaults,
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("checked");
+    let (cause, limit) = stopped(candidate_stop);
+    assert_eq!(cause, IncompleteCause::ResourceExhausted);
+    let reached = limit.expect("candidate bound stopped expansion");
+    assert_eq!(reached.limit, ModelCheckLimit::MaxCandidates);
+    assert_eq!(reached.value, 1);
+    assert_eq!(reached.limit.setting(), "expansion.max_candidates");
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
     let cancelled = check_model(
@@ -648,6 +675,123 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             None
         )
     );
+}
+
+/// FR-126-AC-19: the settings operation given `accounting.work_units=1000000`
+/// raises the bound that stopped the run, so the same check that stopped at
+/// `work_units` 0 no longer stops there. The meter is the operation's
+/// accounting limits, raised to every counter's `UNLIMITED` bound except the
+/// one the operand names. The candidate bound is raised by its own
+/// `max_candidates` limit (1000000), the bound `expansion.max_candidates`
+/// names.
+#[trace("TC-521", "FR-126-AC-19")]
+#[test]
+fn raising_the_reached_bound_lets_the_run_continue() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let defaults = ModelCheckLimits::default();
+    let stopped_at = |meter| match run(
+        &world,
+        &["c"],
+        ModelCheckItem::DeadlockFreedom,
+        None,
+        defaults,
+        meter,
+    )
+    .expect("checked")
+    {
+        ModelCheckOutcome::Stopped { limit, .. } => limit,
+        other => {
+            assert_eq!(
+                violated(&other).kind,
+                CounterexampleKind::Deadlock,
+                "a run that is not stopped finds the depth-3 deadlock"
+            );
+            None
+        }
+    };
+    let work_units = |meter: ScalarLimits| ScalarLimits {
+        work_units: meter.work_units,
+        ..UNLIMITED
+    };
+    let reached = stopped_at(work_units(ZERO)).expect("work_units 0 stops the run");
+    assert_eq!(reached.limit.setting(), "accounting.work_units");
+    assert_eq!(reached.value, 0);
+    let operand = format!("{}=1000000", reached.limit.setting());
+    let raised = CallerLimits::from_operands([operand.as_str()])
+        .expect("the settings operation accepts the reached limit's setting")
+        .accounting
+        .0;
+    assert_eq!(raised.work_units, 1_000_000);
+    assert_eq!(stopped_at(work_units(raised)), None);
+
+    let candidates = |max_candidates| {
+        let mut candidate_subject = subject(
+            &world.package,
+            &world.documents,
+            world.initial.clone(),
+            &["c"],
+            UNLIMITED,
+        );
+        candidate_subject.simulation.expansion.max_candidates = max_candidates;
+        check_model(
+            ModelCheckRequest {
+                subject: candidate_subject,
+                item: ModelCheckItem::DeadlockFreedom,
+                max_depth: None,
+                limits: defaults,
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("checked")
+    };
+    let ModelCheckOutcome::Stopped { limit, .. } = candidates(1) else {
+        panic!("max_candidates 1 stops the run")
+    };
+    assert_eq!(
+        limit.expect("the candidate bound").limit.setting(),
+        "expansion.max_candidates"
+    );
+    assert_eq!(
+        violated(&candidates(1_000_000)).kind,
+        CounterexampleKind::Deadlock
+    );
+}
+
+#[trace("TC-521", "FR-126-AC-5", "FR-126-AC-19", "FR-127-AC-4")]
+#[test]
+fn a_terminal_when_meter_denial_stops_deadlock_check() {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document(false)).expect("counter model document");
+    document["types"][1]["operations"] = serde_json::json!([]);
+    let document = serde_json::to_vec(&document).expect("model document");
+    let world = world_with(
+        document,
+        "terminal Done using v on M when { self.value = 0 };\n",
+        &[&[("c", 0)]],
+    );
+    let outcome = run(
+        &world,
+        &["c"],
+        ModelCheckItem::DeadlockFreedom,
+        None,
+        ModelCheckLimits::default(),
+        ZERO,
+    )
+    .expect("checked");
+    let ModelCheckOutcome::Stopped { cause, limit, .. } = outcome else {
+        panic!("terminal predicate exhaustion stops the run: {outcome:?}");
+    };
+    assert_eq!(cause, IncompleteCause::ResourceExhausted);
+    let reached = limit.expect("denied meter counter");
+    assert_eq!(
+        reached.limit,
+        ModelCheckLimit::EvaluationMeter {
+            counter: quire_exact::LimitKind::WorkUnits
+        }
+    );
+    assert_eq!(reached.value, 0);
+    assert_eq!(reached.limit.setting(), "accounting.work_units");
 }
 
 /// Verifies the cancelled-handle row of FR-126-AC-5 over a TP-1 clause: the

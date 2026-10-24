@@ -17,6 +17,26 @@ mod fixture {
 }
 use fixture::{obligation_model, HEADER};
 
+#[trace("TC-1065", "FR-218-AC-31")]
+#[test]
+fn join_kind_retains_first_declaration_and_diagnostic_keyword() {
+    use super::UnitDeclarationKind::{Callable, Other};
+    use qsl_forms::DeclarationKind::{Function, Predicate};
+
+    for (first, expected_kind, expected_keyword) in [
+        (Callable(Function), Some(Function), "function"),
+        (Callable(Predicate), Some(Predicate), "predicate"),
+        (Other("terminal"), None, "terminal"),
+    ] {
+        let declarations =
+            UnitDeclarations::new(&[], &[], [("done", first), ("done", Callable(Function))]);
+        assert_eq!(declarations.callable_kind("done"), expected_kind);
+        assert_eq!(declarations.kind("done"), Some(expected_keyword));
+        assert_eq!(declarations.callable_kind("missing"), None);
+        assert_eq!(declarations.kind("missing"), None);
+    }
+}
+
 /// A temporal clause `name` whose formula holds `condition`.
 fn temporal(name: &str, condition: &str) -> String {
     format!(

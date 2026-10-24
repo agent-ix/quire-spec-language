@@ -96,6 +96,7 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
         &std::collections::BTreeSet::new(),
         &scope,
         &signatures,
+        &super::super::protocol_requirement::UnitDeclarations::new(&[], &[], std::iter::empty()),
         &[],
         &[],
         // The anchor-resolution oracle: an `await` here reads a selected

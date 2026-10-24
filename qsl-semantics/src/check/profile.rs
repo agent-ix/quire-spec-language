@@ -3,7 +3,7 @@
 //! `Value` family's catalog, [`DefinitionLock::pinned`].
 //!
 //! A header selects one of the lock's `header_selectable_layers` rows (the
-//! five layers of QSpec AD-003, including the `root` row
+//! six layers of QSpec AD-003, including the `root` row
 //! `quire.value.complete/v1`); the catalog's `qualification_catalog` rows
 //! come from its own package-selection rules. A clause
 //! profile resolves in its clause family's catalog (ADR-012 §2): the

@@ -3,10 +3,8 @@
 //! run names.
 
 use qsl_eval::simulation::Limits;
-use qsl_foundation::AccountingSetting;
-use quire_exact::LimitKind;
+use quire_exact::{LimitKind, ScalarLimits};
 
-use crate::limits::AccountingLimits;
 use crate::statistical::StatisticalLimit;
 
 /// FR-126's published default for `max_automaton_states`: 2^20.
@@ -98,7 +96,10 @@ pub enum ModelCheckLimit {
     /// `ModelCheckLimits::max_automaton_states`.
     MaxAutomatonStates,
     /// The subject's evaluation meter budget.
-    EvaluationMeter,
+    EvaluationMeter {
+        /// The denied accounting counter.
+        counter: LimitKind,
+    },
     /// The subject's `ExpansionLimits::max_candidates`.
     MaxCandidates,
     /// FR-250: a hybrid solver's step budget.
@@ -113,8 +114,6 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
-    /// An accounting counter a predicate read exhausted (FR-255 Behavior 9).
-    Counter(LimitKind),
 }
 
 impl ModelCheckLimit {
@@ -124,15 +123,25 @@ impl ModelCheckLimit {
             Self::MaxStates => "max-states",
             Self::MaxTransitions => "max-transitions",
             Self::MaxAutomatonStates => "max-automaton-states",
-            Self::EvaluationMeter => "evaluation-meter",
-            Self::MaxCandidates => "max-candidates",
+            Self::EvaluationMeter { counter } => match counter {
+                LimitKind::IntegerBits => "integer_bits",
+                LimitKind::DecimalDigits => "decimal_digits",
+                LimitKind::ScaleExpansion => "scale_expansion",
+                LimitKind::TextInputBytes => "text_input_bytes",
+                LimitKind::TextScalars => "text_scalars",
+                LimitKind::NormalizedScalars => "normalized_scalars",
+                LimitKind::UnitEdges => "unit_edges",
+                LimitKind::ValueOccurrences => "value_occurrences",
+                LimitKind::WorkUnits => "work_units",
+                LimitKind::ResultUnits => "result_units",
+            },
+            Self::MaxCandidates => "max_candidates",
             Self::SolverSteps => "solver-steps",
             Self::WitnessSamples => "witness-samples",
             Self::MaxWalkSteps => "max-walk-steps",
             Self::MaxWitnessSet => "max-witness-set",
             Self::MaxRelationTuples => "max-relation-tuples",
             Self::Statistical(limit) => limit.as_str(),
-            Self::Counter(kind) => kind.as_str(),
         }
     }
 
@@ -142,16 +151,33 @@ impl ModelCheckLimit {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter => AccountingSetting::WorkUnits.name(),
-            Self::MaxCandidates => "max_candidates",
+            Self::EvaluationMeter { counter } => {
+                crate::limits::AccountingLimits::setting_of(counter).name()
+            }
+            Self::MaxCandidates => "expansion.max_candidates",
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
-            Self::Counter(kind) => AccountingLimits::setting_of(kind).name(),
         }
+    }
+}
+
+/// The configured bound for one evaluation counter.
+pub fn meter_bound(limits: &ScalarLimits, counter: LimitKind) -> u64 {
+    match counter {
+        LimitKind::IntegerBits => limits.integer_bits,
+        LimitKind::DecimalDigits => limits.decimal_digits,
+        LimitKind::ScaleExpansion => limits.scale_expansion,
+        LimitKind::TextInputBytes => limits.text_input_bytes,
+        LimitKind::TextScalars => limits.text_scalars,
+        LimitKind::NormalizedScalars => limits.normalized_scalars,
+        LimitKind::UnitEdges => limits.unit_edges,
+        LimitKind::ValueOccurrences => limits.value_occurrences,
+        LimitKind::WorkUnits => limits.work_units,
+        LimitKind::ResultUnits => limits.result_units,
     }
 }
 
@@ -162,4 +188,33 @@ pub struct ReachedLimit {
     pub limit: ModelCheckLimit,
     /// Its value in the run.
     pub value: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelCheckLimit;
+    use ix_trace_rs::trace;
+
+    #[trace("TC-521", "FR-126-AC-19")]
+    #[test]
+    fn evaluation_meter_stop_names_the_accounting_setting() {
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            }
+            .setting(),
+            "accounting.work_units"
+        );
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::IntegerBits
+            }
+            .as_str(),
+            "integer_bits"
+        );
+        assert_eq!(
+            ModelCheckLimit::MaxCandidates.setting(),
+            "expansion.max_candidates"
+        );
+    }
 }
