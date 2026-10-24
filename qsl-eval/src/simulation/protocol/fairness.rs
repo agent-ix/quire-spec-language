@@ -62,6 +62,12 @@ pub enum ProtocolTarget {
         /// The branch label.
         branch: String,
     },
+    /// An interim shape, pending the FR-228/FR-436 ruling on how a memory
+    /// step's thread target is spelled (QSL-994, spec PR #1442): the
+    /// specification names a thread path, which is not known before the run,
+    /// so the member names the branch instead and its `each` classes are one
+    /// per thread.
+    ///
     /// The memory steps `step` of `model` of the threads of the branch
     /// `branch` of the `parallel` at `parallel`, such as `tso`'s
     /// `flush(b)` (ADR-025 MF-1).
@@ -479,6 +485,58 @@ mod tests {
                 .expect("a member encodes"),
         )
         .expect("JCS is UTF-8")
+    }
+
+    /// ADR-025 MF-1: a flush member is `weak each`, one constraint per
+    /// thread of its branch. The flushes of two threads of branch `w` (here
+    /// of two protocol instances, the only way two live in one branch) are
+    /// two classes, so a loop that flushes one thread while the other's flush
+    /// stays enabled is unfair; one `whole` class over both would pass it.
+    #[trace("TC-673")]
+    #[test]
+    fn a_flush_member_is_one_constraint_per_thread_of_its_branch() {
+        use super::super::memory::MemoryStepId;
+        use crate::fairness::{check_loop, EdgeLabel, LassoFairness, LoopStep};
+
+        let flush = |instance: u64| {
+            ProtocolTransition::memory(MemoryStepId {
+                model: MemoryModelName::Tso,
+                step: "flush",
+                thread: ThreadPath::root(instance).child("Both", "w", 0),
+            })
+        };
+        let (first, second) = (flush(0), flush(1));
+        let member = ProtocolFairness::memory_step(MemoryModelName::Tso, "flush", "Both", "w");
+        assert_ne!(member.class_of(&first), member.class_of(&second));
+        let numbers = [
+            (first.clone(), Identity::new(0)),
+            (second.clone(), Identity::new(1)),
+        ];
+        let identity = |transition: &ProtocolTransition| -> Result<Identity, ()> {
+            numbers
+                .iter()
+                .find(|(known, _)| known == transition)
+                .map(|(_, identity)| *identity)
+                .ok_or(())
+        };
+        let constraints: Vec<Constraint> = protocol_constraints(
+            std::slice::from_ref(&member),
+            &[first.clone(), second.clone()],
+            identity,
+        )
+        .expect("both are numbered")
+        .into_iter()
+        .map(|(_, constraint)| constraint)
+        .collect();
+        assert_eq!(constraints.len(), 2);
+        let step = LoopStep::new(
+            [Identity::new(0), Identity::new(1)],
+            EdgeLabel::Transition(Identity::new(0)),
+        );
+        assert!(matches!(
+            check_loop(&[step], &constraints),
+            Ok(LassoFairness::Unfair { .. })
+        ));
     }
 
     /// QSpec FR-430 "Fairness set members": a scheduler constraint over a

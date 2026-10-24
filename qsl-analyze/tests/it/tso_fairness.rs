@@ -464,11 +464,11 @@ fn a_false_liveness_claim_over_tso_is_refuted_with_the_memory_constraints() {
         .expect("the fair lasso replays");
 }
 
-/// FR-227-AC-4 (TC-672): the unflushed lasso over `Spin`, in which `w`'s buffer
+/// ADR-025 MK-2 (TC-672): the unflushed lasso over `Spin`, in which `w`'s buffer
 /// stays `[x := 1]` through `r`'s repeated load of `x`, refuses
 /// `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s
-/// constraint.
-#[trace("TC-672", "FR-227-AC-4")]
+/// constraint. Not covered: FR-227-AC-4's `ra` clause, which waits on QSL-933.
+#[trace("TC-672")]
 #[test]
 fn replay_refuses_the_lasso_that_never_flushes_w() {
     let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
@@ -614,5 +614,75 @@ fn a_liveness_run_that_cut_a_store_settles_inconclusive() {
             ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
         ),
         "{refusal:?}"
+    );
+}
+
+/// `Spin` whose `w` stores twice, so `max_store_buffer` 1 cuts its second
+/// store at the state where the first is buffered.
+fn double_store_run() -> String {
+    spin_run().replace(
+        &attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+        &format!(
+            "{} {}",
+            attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+            attempt("Sy", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+        ),
+    )
+}
+
+/// ADR-025 MB-4 over a liveness clause: the claim `eventually holds(k.r1 =
+/// 2)` is false (no load reads 2), and its lasso exists under the default
+/// bound, but under `max_store_buffer` 1 a store is cut, so the run settles
+/// `MemoryBoundReached` in place of the counterexample.
+#[trace("TC-673")]
+#[test]
+fn a_false_liveness_claim_with_a_cut_store_settles_inconclusive() {
+    static IS_TWO: R1 = R1(|value| value == 2);
+    let claim = SETTLES.replace("= 1", "= 2");
+    let unit = Unit::new(&double_store_run(), &claim, &IS_TWO);
+    let found = unit.check(&unit.tso(), None).expect("the subject checks");
+    assert!(
+        matches!(found, ModelCheckOutcome::Violated { .. }),
+        "{found:?}"
+    );
+    let cut = unit
+        .check(&unit.tso(), Some(1))
+        .expect("the subject checks");
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::BoundReached { bound, states },
+        ..
+    } = cut
+    else {
+        panic!("{cut:?}");
+    };
+    assert_eq!(bound.value, 1);
+    assert!(states > 0);
+}
+
+/// The model-only pass over a clause that is dead at its initial state still
+/// meets the cut store: `eventually holds(k.r1 <= 3)` holds at once, so the
+/// product has one state and the cut store is met only by the model-only
+/// walk of the dead root, which settles `MemoryBoundReached` all the same.
+#[trace("TC-673")]
+#[test]
+fn a_cut_store_met_only_by_the_model_only_pass_settles_inconclusive() {
+    static ANY: R1 = R1(|value| value <= 3);
+    let claim = SETTLES.replace("k.r1 = 1", "k.r1 <= 3");
+    let unit = Unit::new(&double_store_run(), &claim, &ANY);
+    let cut = unit
+        .check(&unit.tso(), Some(1))
+        .expect("the subject checks");
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::BoundReached { states, .. },
+        ..
+    } = cut
+    else {
+        panic!("{cut:?}");
+    };
+    assert!(states > 0);
+    let uncut = unit.check(&unit.tso(), None);
+    assert!(
+        !matches!(uncut, Ok(ModelCheckOutcome::Memory { .. })),
+        "{uncut:?}"
     );
 }
