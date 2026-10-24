@@ -811,149 +811,6 @@ const SPREAD: &str = "probabilistic Merge using inf on M over (n: M::Node) under
 const REWARDS: &str = "probabilistic Spread using ev on M over (s: M::Server) \
      under every scheduler on origin { long_run_fraction holds(s.phase = 0) >= 0.5 }";
 
-const UNACTIVATED: &str = "probabilistic Never using ev on M over (s: M::Server) under Steady \
-     on origin { probability >= 0.5 [ steps from holds(s.phase = 2 and s.attempts = 0) \
-     until holds(s.phase = 2) within 3 <= 1 ] }\n\
-     probabilistic Count using ev on M over (s: M::Server) under Steady on origin \
-     { probability >= 0.5 [ fraction holds(s.phase = 1) over [0, 2] >= rational(1, 2) ] }";
-
-const ACTIVATED_AT_TERMINAL: &str = "probabilistic Late using ev on M over (m: M::Msg) under Even \
-     on origin { probability >= 0.5 [ steps from holds(m.delivered) \
-     until holds(not m.delivered) within 4 <= 10 ] }";
-
-/// Checks FR-196-AC-11 (TC-631): a `steps` measure whose `A` never holds ends
-/// every path at `Measure{remaining: 0, phase: Unactivated}` with accumulator
-/// `Steps{activated: false, amount: 0}`, decided and not expanded; a `steps`
-/// measure activated at a terminal model state counts each stutter step up to
-/// its horizon; a fraction reads its predicate at the position the step
-/// leaves.
-#[trace("TC-631", "FR-196-AC-11")]
-#[test]
-fn an_unactivated_measure_ends_decided_and_stutter_steps_and_fractions_count_exactly() {
-    let world = World::new(&prob_world::service(UNACTIVATED));
-    let never = built(&world, "Never");
-    let ended: Vec<ProbStateId> = never
-        .ids()
-        .filter(|state| {
-            never.states[state.index()]
-                .monitor
-                .is_some_and(MonitorState::is_decided)
-        })
-        .collect();
-    assert!(!ended.is_empty());
-    for state in ended {
-        let key = &never.states[state.index()];
-        assert_eq!(
-            key.monitor,
-            Some(MonitorState::Measure {
-                remaining: 0,
-                phase: MeasurePhase::Unactivated
-            })
-        );
-        assert_eq!(
-            key.accumulator,
-            Some(Accumulator::Steps {
-                activated: false,
-                amount: Amount::Exact(ratio(0, 1))
-            })
-        );
-        assert!(never.outgoing(state).is_empty());
-    }
-    // Every path ends there: no state without a successor is undecided.
-    assert!(never
-        .ids()
-        .filter(|state| never.outgoing(*state).is_empty())
-        .all(|state| is_decided(&never, state)));
-    assert!(never.states.iter().all(|key| !matches!(
-        key.accumulator,
-        Some(Accumulator::Steps {
-            activated: true,
-            ..
-        })
-    )));
-
-    // The fraction's counts after each step: the predicate is read at the
-    // position the step leaves, so position 0 (idle) is false, position 1
-    // (busy) is true and position 2 is busy or done.
-    let count = built(&world, "Count");
-    let counts: BTreeMap<u64, BTreeSet<(u64, u64)>> = count
-        .states
-        .iter()
-        .filter(|key| key.pending.is_none())
-        .fold(BTreeMap::new(), |mut by_remaining, key| {
-            let (
-                Some(MonitorState::Fraction { remaining }),
-                Some(Accumulator::CountFraction {
-                    true_count,
-                    position_count,
-                }),
-            ) = (&key.monitor, &key.accumulator)
-            else {
-                panic!("a counted fraction: {key:?}");
-            };
-            by_remaining
-                .entry(*remaining)
-                .or_default()
-                .insert((*true_count, *position_count));
-            by_remaining
-        });
-    assert_eq!(
-        counts,
-        BTreeMap::from([
-            (3, BTreeSet::from([(0, 0)])),
-            (2, BTreeSet::from([(0, 1)])),
-            (1, BTreeSet::from([(1, 2)])),
-            (0, BTreeSet::from([(1, 3), (2, 3)])),
-        ])
-    );
-
-    // `Late` activates where the message is delivered, a terminal model
-    // state, and each stutter step from there adds one step until the window
-    // ends censored.
-    let late = World::new(&prob_world::link(ACTIVATED_AT_TERMINAL));
-    let product = built(&late, "Late");
-    let steps = |state: ProbStateId| match &product.states[state.index()] {
-        ProbKey {
-            monitor: Some(MonitorState::Measure { remaining, .. }),
-            accumulator: Some(Accumulator::Steps { activated, amount }),
-            ..
-        } => (*remaining, *activated, amount.clone()),
-        other => panic!("a steps measure: {other:?}"),
-    };
-    let activated_terminal: Vec<ProbStateId> = product
-        .edges
-        .iter()
-        .filter(|edge| matches!(edge.choice, ProductAction::TerminalStutter))
-        .map(|edge| edge.from)
-        .filter(|state| {
-            let (_, activated, amount) = steps(*state);
-            activated && amount == Amount::Exact(ratio(0, 1))
-        })
-        .collect();
-    assert!(!activated_terminal.is_empty());
-    for start in activated_terminal {
-        let mut chain = vec![steps(start)];
-        let mut at = start;
-        while let [edge] = product.outgoing(at) {
-            assert!(matches!(edge.choice, ProductAction::TerminalStutter));
-            at = edge.to;
-            chain.push(steps(at));
-        }
-        let remaining = chain[0].0;
-        let expected: Vec<_> = (0..=remaining)
-            .map(|taken| {
-                let amount = if taken == remaining {
-                    Amount::Censored
-                } else {
-                    Amount::Exact(ratio(i64::try_from(taken).expect("small"), 1))
-                };
-                (remaining - taken, true, amount)
-            })
-            .collect();
-        assert_eq!(chain, expected);
-    }
-}
-
 /// Checks FR-196 "Behavior": over every scheduler, draws of one action that reach
 /// the same post-state with the same rewards are one edge with their summed
 /// probability and no draw; draws whose rewards differ stay apart, and under
@@ -1385,6 +1242,10 @@ fn statistical_evidence_is_refused_for_a_claim_only_exact_evidence_decides() {
     );
 }
 
+const ACTIVATED_AT_TERMINAL: &str = "probabilistic Late using ev on M over (m: M::Msg) under Even \
+     on origin { probability >= 0.5 [ steps from holds(m.delivered) \
+     until holds(not m.delivered) within 4 <= 10 ] }";
+
 const HORIZON: &str =
     "probabilistic Idle using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ steps from holds(s.phase = 1 and s.attempts = 2) \
@@ -1392,10 +1253,13 @@ const HORIZON: &str =
      probabilistic Source using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ fraction holds(s.phase = 0) over [0, 2] >= rational(1, 2) ] }";
 
-/// Checks FR-196 "Behavior": a measure whose `A` never holds is unactivated when the
-/// window ends, decided with amount zero; a fraction reads its predicate at
-/// the position the step leaves, not at the position it reaches.
-#[trace("TC-631")]
+/// Checks FR-196-AC-11 (TC-631): a `steps` measure whose `A` never holds ends
+/// every path at `Measure{remaining: 0, phase: Unactivated}` with accumulator
+/// `Steps{activated: false, amount: 0}`, decided and not expanded; a `steps`
+/// measure activated at a terminal model state counts each stutter step up to
+/// its horizon; a fraction reads its predicate at the position the step
+/// leaves, not at the position it reaches.
+#[trace("TC-631", "FR-196-AC-11")]
 #[test]
 fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
     let world = World::new(&prob_world::service(HORIZON));
@@ -1422,6 +1286,15 @@ fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
             })
         );
     }
+    // Every path ends there, and a decided state is not expanded.
+    for state in idle.ids() {
+        assert_eq!(
+            idle.outgoing(state).is_empty(),
+            is_decided(&idle, state),
+            "{:?}",
+            idle.states[state.index()]
+        );
+    }
 
     // Idle holds only at the first position; the positions reached never do.
     let source = built(&world, "Source");
@@ -1440,6 +1313,52 @@ fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
             .collect(),
     );
     assert_eq!(complete, [(1, 3)]);
+
+    // `Late` activates where the message is delivered, a terminal model
+    // state: each stutter step from there adds one step until the window
+    // ends censored.
+    let late = World::new(&prob_world::link(ACTIVATED_AT_TERMINAL));
+    let product = built(&late, "Late");
+    let steps = |state: ProbStateId| match &product.states[state.index()] {
+        ProbKey {
+            monitor: Some(MonitorState::Measure { remaining, .. }),
+            accumulator: Some(Accumulator::Steps { activated, amount }),
+            ..
+        } => (*remaining, *activated, amount.clone()),
+        other => panic!("a steps measure: {other:?}"),
+    };
+    let activated_terminal: Vec<ProbStateId> = product
+        .edges
+        .iter()
+        .filter(|edge| matches!(edge.choice, ProductAction::TerminalStutter))
+        .map(|edge| edge.from)
+        .filter(|state| {
+            let (_, activated, amount) = steps(*state);
+            activated && amount == Amount::Exact(ratio(0, 1))
+        })
+        .collect();
+    assert!(!activated_terminal.is_empty());
+    for start in activated_terminal {
+        let mut chain = vec![steps(start)];
+        let mut at = start;
+        while let [edge] = product.outgoing(at) {
+            assert!(matches!(edge.choice, ProductAction::TerminalStutter));
+            at = edge.to;
+            chain.push(steps(at));
+        }
+        let remaining = chain[0].0;
+        let expected: Vec<_> = (0..=remaining)
+            .map(|taken| {
+                let amount = if taken == remaining {
+                    Amount::Censored
+                } else {
+                    Amount::Exact(ratio(i64::try_from(taken).expect("small"), 1))
+                };
+                (remaining - taken, true, amount)
+            })
+            .collect();
+        assert_eq!(chain, expected);
+    }
 }
 
 const LOOSE_COST: &str = "reward cost on Node::tick = 2;\n\
