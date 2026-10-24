@@ -135,6 +135,7 @@ fn the_check_core_names_no_family_cause_type() {
 struct PackageDependencies {
     name: String,
     normal: Vec<String>,
+    optional_normal: Vec<String>,
     dev: Vec<String>,
     build: Vec<String>,
     /// Each normal (and build) dependency with the features it enables.
@@ -203,6 +204,19 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
             PackageDependencies {
                 name: package["name"].as_str().expect("a package name").to_owned(),
                 normal: names_of_kind(None),
+                optional_normal: dependencies
+                    .iter()
+                    .filter(|dependency| {
+                        dependency["kind"].is_null()
+                            && dependency["optional"].as_bool() == Some(true)
+                    })
+                    .map(|dependency| {
+                        dependency["name"]
+                            .as_str()
+                            .expect("a dependency name")
+                            .to_owned()
+                    })
+                    .collect(),
                 dev: names_of_kind(Some("dev")),
                 build: names_of_kind(Some("build")),
                 shipped_features: dependencies
@@ -394,9 +408,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // I2 reader keys the v2 source map by, ADR-013 O-07),
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
             // RFC 8785 encoder, for the `package_id` preimage),
-            // and `thiserror`; the last three and `quire-exact` are optional,
-            // enabled by `std` (NFR-015).
-            // `serde_json` and `sha2` are used by its tests only. `ix-trace-rs`
+            // `thiserror` and the std-only timed-model wire `serde_json`
+            // dependency, optional and enabled by `std` (NFR-015).
+            // `serde` and `sha2` are used by its tests only. `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
             // zero-cost attribute `xtask string-edge` reads, not a semantic
@@ -413,9 +427,34 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-contract-model",
                     "quire-exact",
                     "quire-semantic-value",
+                    "serde_json",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
+            );
+            assert!(
+                package
+                    .optional_normal
+                    .iter()
+                    .any(|name| name == "serde_json"),
+                "qsl-package's timed-model wire dependency must be optional"
+            );
+            let activators: Vec<&str> = package
+                .features
+                .iter()
+                .filter(|(_, values)| {
+                    values.iter().any(|value| {
+                        value == "dep:serde_json"
+                            || value == "serde_json"
+                            || value.starts_with("serde_json/")
+                    })
+                })
+                .map(|(name, _)| name.as_str())
+                .collect();
+            assert_eq!(
+                activators,
+                ["std"],
+                "only std may activate qsl-package's timed-model wire dependency"
             );
         }
         if crate_name == "qsl-eval" {

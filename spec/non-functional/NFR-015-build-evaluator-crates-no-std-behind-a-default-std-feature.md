@@ -113,7 +113,7 @@ feature unification would turn it back on.
 | Crate | Slice | Tier | Normal dependencies with `std` disabled | Behind `std` | Closure-tier condition |
 | --- | --- | --- | --- | --- | --- |
 | `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `sha2`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
-| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-semantic-value` and `ix-trace-rs` | `quire-contract-model`, `quire-canonical` (without `std` in the workspace table), `quire-exact` and `thiserror`, each optional and enabled by `std` because only `std` items use them (`serde` is a dev-dependency only: shipped source does not use it), and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
+| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-semantic-value` and `ix-trace-rs` | `quire-contract-model`, `quire-canonical` (without `std` in the workspace table), `quire-exact`, `thiserror` and `serde_json`, each optional and enabled only by `std`; `serde_json` is limited to the typed timed-model wire projection, construction and rekeying described below (`serde` is a dev-dependency only: shipped source does not use it), and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
 
 `qsl-semantics` and `qsl-eval` have no row. The `no_std` evaluator is
 `quire-eval`'s (S6, IR-590, FR-403), gated in its own repository. S4
@@ -144,12 +144,25 @@ needs IR's preimage types (`quire-contract-model`) to build without `std`; a
 are outside this requirement.
 
 With `std` disabled the checked-IR path reads no JSON and computes no
-`package_id`. `qsl-package`'s shipped source does not name `serde_json`; it
-reaches the crate through `quire-contract-model` (which also brings
+`package_id`; compiled `qsl-package` source SHALL NOT name `serde_json`.
+With `std` enabled, `qsl-package` MAY use its optional `serde_json` dependency
+only in `checked_v2::timed_model` and the call graph of
+`emit::emit_timed_models`, including its timed-node identity and rekey helpers,
+to project admitted timed-node wire values and construct or update the wire
+values of a typed timed model. The dependency SHALL be optional and activated
+only by `std`; it SHALL NOT add a JSON reader to the `no_std` checked-IR path.
+IR's `quire-contract-model` reader SHALL remain the authority for admitting a
+complete emitted package. This permission changes neither `write_nodes`' public
+contract nor the wire bytes of the existing timed-model conformance vectors.
+Every identity preimage and emitted package SHALL continue to encode through
+`quire-canonical`; `serde_json` SHALL NOT provide a second canonical encoder or
+identity digest implementation.
+
+The transitive paths through `quire-contract-model` (which also brings
 `jsonschema`, `serde_path_to_error`, `serde_stacker` and `stacker`, none
-`no_std`) and through `qsl-semantics` and `qsl-cst`. The first edge is
-behind `qsl-package`'s `std` feature. The others stay: `qsl-package` is
-crate tier, so its host check needs only its own source to be `no_std`.
+`no_std`), `qsl-semantics` and `qsl-cst` remain. The first path and the direct
+`serde_json` edge are behind `qsl-package`'s `std` feature. `qsl-package` stays
+crate tier, so its host check needs only its own compiled source to be `no_std`.
 
 The wire representation is unchanged: QSpec FR-322 defines
 `quire.checked-package/v2`, IR's `quire-contract-model` owns its reader,
