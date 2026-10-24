@@ -279,6 +279,8 @@ pub enum AssemblyCause {
     UnresolvedModelQuantityType {
         /// The unit name as written.
         name: String,
+        /// The field, parameter or operation identity carrying the type.
+        member_identity: String,
         /// The typed member path, such as `Operation.params[0].typeRef`.
         member_path: String,
     },
@@ -1129,12 +1131,18 @@ fn model_object_types(
                             profile: None,
                         }))
                     }
-                    Err(Unmapped::QuantityType { name, member_path }) => {
-                        errors.push(AssemblyError {
-                            cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
-                            span,
-                        })
-                    }
+                    Err(Unmapped::QuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    }) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedModelQuantityType {
+                            name,
+                            member_identity,
+                            member_path,
+                        },
+                        span,
+                    }),
                     Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
@@ -1163,12 +1171,18 @@ fn model_object_types(
                             profile: None,
                         }))
                     }
-                    Err(Unmapped::QuantityType { name, member_path }) => {
-                        errors.push(AssemblyError {
-                            cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
-                            span,
-                        })
-                    }
+                    Err(Unmapped::QuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    }) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedModelQuantityType {
+                            name,
+                            member_identity,
+                            member_path,
+                        },
+                        span,
+                    }),
                     Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
@@ -1308,8 +1322,16 @@ fn model_object_types(
                     rounding: RoundingMode::Exact,
                     profile: None,
                 })),
-                Err(Unmapped::QuantityType { name, member_path }) => errors.push(AssemblyError {
-                    cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
+                Err(Unmapped::QuantityType {
+                    name,
+                    member_identity,
+                    member_path,
+                }) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedModelQuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    },
                     span,
                 }),
                 Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
@@ -1534,7 +1556,11 @@ enum Unmapped {
     /// A `ix://quire/unit/<name>` reference has no unit in the compiling unit.
     QuantityName(String),
     /// An unresolved unit in a model typeRef with its source contract path.
-    QuantityType { name: String, member_path: String },
+    QuantityType {
+        name: String,
+        member_identity: String,
+        member_path: String,
+    },
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
 }
@@ -1678,6 +1704,7 @@ fn model_field(
     .map_err(|error| match error {
         Unmapped::QuantityName(name) => Unmapped::QuantityType {
             name,
+            member_identity: field.key.node.clone(),
             member_path: "Field.typeRef".to_owned(),
         },
         error => error,
@@ -1726,6 +1753,7 @@ fn model_operation(
         .map_err(|error| match error {
             Unmapped::QuantityName(name) => Unmapped::QuantityType {
                 name,
+                member_identity: parameter.key.node.clone(),
                 member_path: format!("Operation.params[{index}].typeRef"),
             },
             error => error,
@@ -1748,6 +1776,7 @@ fn model_operation(
             .map_err(|error| match error {
                 Unmapped::QuantityName(name) => Unmapped::QuantityType {
                     name,
+                    member_identity: operation.key.node.clone(),
                     member_path: "Operation.returns.typeRef".to_owned(),
                 },
                 error => error,

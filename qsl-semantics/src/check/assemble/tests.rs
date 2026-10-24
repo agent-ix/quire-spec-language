@@ -321,6 +321,7 @@ fn unresolved_model_unit_type_names_the_operation_parameter_path() {
         errors[0].cause,
         AssemblyCause::UnresolvedModelQuantityType {
             name: "missing".to_owned(),
+            member_identity: "ix://test/orders/Counter/set/value".to_owned(),
             member_path: "Operation.params[0].typeRef".to_owned(),
         }
     );
