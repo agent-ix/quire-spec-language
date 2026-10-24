@@ -3322,6 +3322,24 @@ impl PackageDeclarations {
             Ok(bounds) => (apply_population_bounds(admitted, bounds), Vec::new()),
             Err(errors) => (admitted, errors),
         };
+        // FR-105 "Outputs": a `pre` or `post` clause's qualified operation
+        // reference, `M::T::op`, from the start of the context to the end of
+        // the operation name, by the clause's index.
+        let operation_references: Vec<(usize, Span)> = unit
+            .state_clauses
+            .iter()
+            .enumerate()
+            .filter_map(|(index, form)| {
+                let operation = form.operation.as_ref()?;
+                Some((
+                    index,
+                    Span {
+                        start: form.context.span.start,
+                        end: operation.span.end,
+                    },
+                ))
+            })
+            .collect();
         let state_clauses = state_clauses(
             unit.state_clauses,
             &resolve,
@@ -3480,6 +3498,13 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-105: a clause's frame `generated` occurrence is located at the
+        // clause's operation reference.
+        declared_type_spans.extend(
+            operation_references
+                .into_iter()
+                .map(|(index, span)| (super::lowering::state_operation_site(index), span)),
+        );
         // FR-337: a temporal clause's nodes are located at its own sites:
         // its name, its `over` parameter's name, each formula node's span,
         // each written fairness constraint's span, and each `holds`
