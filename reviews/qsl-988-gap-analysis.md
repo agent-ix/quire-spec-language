@@ -59,3 +59,12 @@ backed by assertions that a mutation can fail. The one partial tag
 - Semantic review: skipped (not opted in). The clause-by-clause test-to-AC
   check is recorded in SR-17005.
 - Plan completion: not assessed.
+
+## Dispositions
+
+Round 1. Reviewed at `a6d83f830bba03dcb096e20617f73b740bbb0e55`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | The routing and negotiation wiring is filed as QSL-1046. The ticket covers FR-173-AC-2 and FR-182-AC-3, and the PR body and the test-module doc both cite it. FR-173-AC-2 is no longer claimed (`untagged` in the matrix). |
+| FND-002 | deferred | FR-176-AC-1 (the spec-vs-engine question of Holds{Exhaustive} against the default copy-swap) and FR-177-AC-8..12 are filed as QSL-1047, which the PR body cites. |

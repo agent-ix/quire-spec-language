@@ -12,7 +12,7 @@
 //! tests; AC-4 to AC-6, which are HP-1's; and the "published defaults"
 //! marking of a `proved` record in FR-184-AC-1. Nothing in production calls
 //! `settle_hyper_form` yet: the negotiation wiring in the CG repository and
-//! `qsl-route` is tracked by the ticket "Wire settle_hyper_form into
+//! `qsl-route` is tracked by QSL-1046, "Wire settle_hyper_form into
 //! negotiation (CG) and qsl-route".
 
 use ix_trace_rs::trace;
@@ -579,7 +579,7 @@ fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_che
 /// `unsupported-requested-capability`, naming its rule, from its form alone:
 /// `settle_hyper_form` reads the classification and no run, and an admitted
 /// form settles nothing there. The call is made directly; that negotiation
-/// calls it for every item is tracked by the ticket "Wire settle_hyper_form
+/// calls it for every item is tracked by QSL-1046, "Wire settle_hyper_form
 /// into negotiation (CG) and qsl-route".
 #[trace("TC-598")]
 #[test]
