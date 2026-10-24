@@ -10,22 +10,22 @@
 
 use ix_trace_rs::trace;
 use quire_contract_model::{
-    CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
+    CHECKED_PACKAGE_V2, CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
     CheckedPackageRefusalCause, CheckedPackageRefusalCode, NominalIdentityPreimage,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    PACKAGE_DOMAIN_V2,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
+use super::{Read, V2ReadLimits, V2ReadRefusal, read_checked_package_v2, read_v2};
 use std::collections::BTreeMap;
 
+use qsl_foundation::Setting;
 use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::Setting;
-use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
+use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     RefusalClass,
@@ -1740,7 +1740,15 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 /// refuses a `hybrid_model` whose body binds `modes` before `variables`
 /// `malformed_wire`. Skipped when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
-#[trace("TC-1187", "FR-447-AC-13")]
+#[trace(
+    "TC-685",
+    "FR-230-AC-36",
+    "FR-230-AC-37",
+    "QSpec-TC-367",
+    "QSpec-FR-322-AC-126",
+    "QSpec-FR-322-AC-127",
+    "FR-447-AC-13"
+)]
 #[test]
 fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -1798,10 +1806,10 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
         .iter()
         .position(|node| node["semantic_form"] == "hybrid_model")
         .expect("the Tank model node");
-    let variables = candidate["semantic_graph"]["nodes"][model]["body"]["members"][0]["value"]
-        ["members"]
-        .as_array_mut()
-        .expect("variables");
+    let variables =
+        candidate["semantic_graph"]["nodes"][model]["body"]["members"][0]["value"]["members"]
+            .as_array_mut()
+            .expect("variables");
     for variable in variables {
         variable["members"][1]["value"]["value"] = json!("clock");
     }
@@ -1958,11 +1966,13 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
         .unwrap();
     assert_eq!(operation["node_tag"], "state");
     assert_eq!(operation["semantic_form"], "operation_anchor");
-    assert!(admitted
-        .graph()
-        .nodes
-        .iter()
-        .any(|node| node.node_id.digest.as_ref() == operation_id["digest"].as_str().unwrap()));
+    assert!(
+        admitted
+            .graph()
+            .nodes
+            .iter()
+            .any(|node| node.node_id.digest.as_ref() == operation_id["digest"].as_str().unwrap())
+    );
 }
 
 /// FR-415-AC-17 / FR-322-AC-122: the typed timed-model writer re-emits all
@@ -2503,7 +2513,12 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
         );
     }
 
-    for row in vectors["semantic_refusals"].as_array().unwrap() {
+    let semantic_rows = vectors["semantic_refusals"].as_array().unwrap();
+    for row in semantic_rows
+        .iter()
+        .filter(|row| row["id"] != "TM-23")
+        .chain(semantic_rows.iter().filter(|row| row["id"] == "TM-23"))
+    {
         let is_tick = row["fixture"] == "tick";
         let mut candidate = if is_tick {
             tick_base.clone()
@@ -2591,6 +2606,86 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
             "unresolved-tick-operation" => {
                 candidate["semantic_graph"]["nodes"][46]["body"]["members"][1]["value"]["value"] =
                     json!("missing")
+            }
+            "tick-source-with-clock-place" => {
+                let place = base["semantic_graph"]["nodes"][45].clone();
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(place.clone());
+                let root = &mut candidate["semantic_graph"]["nodes"][45];
+                root["body"]["members"][3]["value"]["members"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"term":"reference", "target":place["node_id"].clone()}));
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(place["node_id"].clone());
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+            }
+            "source-unit-length" | "source-unit-derived-non-time" | "source-unit-derived-time" => {
+                let mutation = row["mutation"].as_str().unwrap();
+                let dimension_name = match mutation {
+                    "source-unit-length" => "Length",
+                    "source-unit-derived-non-time" => "Area",
+                    _ => "Duration",
+                };
+                let time_id = candidate["semantic_graph"]["nodes"][42]["node_id"].clone();
+                let mut dimension = candidate["semantic_graph"]["nodes"][42].clone();
+                dimension["nominal_identity_preimage"]["qualified_declaration"] =
+                    json!(["Example", dimension_name]);
+                dimension["declaration"]["qualified_name"] = json!(["Example", dimension_name]);
+                if dimension_name == "Area" || dimension_name == "Duration" {
+                    let base_id = if dimension_name == "Area" {
+                        let mut length = dimension.clone();
+                        length["nominal_identity_preimage"]["qualified_declaration"] =
+                            json!(["Example", "Length"]);
+                        length["declaration"]["qualified_name"] = json!(["Example", "Length"]);
+                        let length_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&length["nominal_identity_preimage"])});
+                        length["node_id"] = length_id.clone();
+                        length["semantic_type"] = length_id.clone();
+                        candidate["semantic_graph"]["nodes"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(length);
+                        length_id
+                    } else {
+                        time_id.clone()
+                    };
+                    dimension["nominal_identity_preimage"]["terms"] = json!([{
+                        "dimension_node_id": base_id.clone(),
+                        "exponent": if dimension_name == "Area" { "2" } else { "1" }
+                    }]);
+                    dimension["dependencies"] = json!([base_id]);
+                }
+                let dimension_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&dimension["nominal_identity_preimage"])});
+                dimension["node_id"] = dimension_id.clone();
+                dimension["semantic_type"] = dimension_id.clone();
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(dimension);
+                let mut unit = candidate["semantic_graph"]["nodes"][43].clone();
+                unit["nominal_identity_preimage"]["qualified_declaration"] =
+                    json!(["Example", "u"]);
+                unit["nominal_identity_preimage"]["dimension_node_id"] = dimension_id.clone();
+                let unit_id = json!({"domain": NODE_DOMAIN, "digest": package_id_digest(&unit["nominal_identity_preimage"])});
+                unit["node_id"] = unit_id.clone();
+                unit["semantic_type"] = dimension_id.clone();
+                unit["dependencies"] = json!([dimension_id]);
+                unit["declaration"]["qualified_name"] = json!(["Example", "u"]);
+                candidate["semantic_graph"]["nodes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(unit);
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][1]["value"]["target"].clone();
+                source["body"]["members"][1]["value"]["target"] = unit_id.clone();
+                replace_dependency(&mut source["dependencies"], &old, &unit_id);
             }
             other => panic!("{}: unknown semantic vector {other}", row["id"]),
         }
@@ -2772,8 +2867,8 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
         })
         .expect("the all-families fixture holds a temporal clause");
     let mut package = base.clone();
-    package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
-        ["identity"] = json!("quire.fixture.temporal-profile/v1");
+    package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]["identity"] =
+        json!("quire.fixture.temporal-profile/v1");
     // Rekey innermost first: each changed key is renamed wherever it is named.
     for _ in 0..=nodes_of(&package).len() {
         let mut changed = false;
