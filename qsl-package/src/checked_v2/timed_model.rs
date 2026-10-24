@@ -243,7 +243,7 @@ impl CheckedTimedModel {
             .graph()
             .nodes
             .iter()
-            .filter(|node| node.node_tag.as_ref() == "timed_model")
+            .filter(|node| is_timed_model_node(node))
             .cloned()
             .collect::<Vec<_>>();
         Self::from_nodes(&nodes)
@@ -256,12 +256,12 @@ impl CheckedTimedModel {
     ) -> Result<Vec<Self>, &'static str> {
         let nodes = wire_nodes
             .iter()
-            .filter(|node| node.node_tag.as_ref() == "timed_model")
+            .filter(|node| is_timed_model_node(node))
             .map(|node| (node.node_id.clone(), node))
             .collect::<BTreeMap<_, _>>();
         let mut roots = nodes
             .values()
-            .filter(|node| node.semantic_form.as_ref() == "timed_model")
+            .filter(|node| has_form(node, ClockForm::TimedModel))
             .copied()
             .collect::<Vec<_>>();
         roots.sort_by(|a, b| a.node_id.digest.cmp(&b.node_id.digest));
@@ -727,8 +727,36 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
     })
 }
 
+/// Semantic forms the timed-model projections accept.
+#[derive(Clone, Copy)]
+enum ClockForm {
+    TimedModel,
+    Place,
+    Reset,
+    Constraint,
+}
+
+/// `#[string_edge]`: the wire node's semantic form is a string; this is the
+/// one place it is matched against the forms the projections accept.
+#[ix_trace_rs::string_edge]
+fn has_form(node: &CheckedSemanticNodeV2, form: ClockForm) -> bool {
+    let expected = match form {
+        ClockForm::TimedModel => "timed_model",
+        ClockForm::Place => "clock_place",
+        ClockForm::Reset => "clock_reset",
+        ClockForm::Constraint => "clock_constraint",
+    };
+    node.semantic_form.as_ref() == expected
+}
+
+/// `#[string_edge]`: whether the wire node carries the timed-model tag.
+#[ix_trace_rs::string_edge]
+pub(crate) fn is_timed_model_node(node: &CheckedSemanticNodeV2) -> bool {
+    node.node_tag.as_ref() == "timed_model"
+}
+
 fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'static str> {
-    if node.semantic_form.as_ref() != "clock_place" {
+    if !has_form(node, ClockForm::Place) {
         return Err("clock place reference has wrong form");
     }
     let body = &node.body;
@@ -800,7 +828,7 @@ fn project_resolved_step(value: &CheckedTerm) -> Result<ResolvedClockPathStep, &
 }
 
 fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'static str> {
-    if node.semantic_form.as_ref() != "clock_reset" {
+    if !has_form(node, ClockForm::Reset) {
         return Err("clock reset reference has wrong form");
     }
     let body = &node.body;
@@ -851,7 +879,7 @@ fn project_constraint(
     node: &CheckedSemanticNodeV2,
     unit: CheckedNodeId,
 ) -> Result<CheckedClockConstraint, &'static str> {
-    if node.semantic_form.as_ref() != "clock_constraint" {
+    if !has_form(node, ClockForm::Constraint) {
         return Err("clock constraint reference has wrong form");
     }
     let body = &node.body;

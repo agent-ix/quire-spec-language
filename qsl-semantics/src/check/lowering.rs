@@ -4837,3 +4837,9 @@ fn takes_inline_integer_literals(identity: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// `#[string_edge]`: whether written source text is a `::`-qualified name.
+#[ix_trace_rs::string_edge]
+pub(in crate::check) fn is_qualified_name(name: &str) -> bool {
+    name.contains("::")
+}

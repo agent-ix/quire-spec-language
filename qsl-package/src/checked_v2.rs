@@ -100,7 +100,7 @@ mod clause_root;
 mod hybrid;
 #[cfg(test)]
 pub(crate) mod tests;
-mod timed_model;
+pub(crate) mod timed_model;
 
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
 pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
