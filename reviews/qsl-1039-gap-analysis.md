@@ -72,3 +72,15 @@ existing precedent.
 | a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check | TC-520 | correct; FR-380-AC-7 could be added |
 | the_state_observation_is_charged_to_the_meter_on_every_read | TC-520 | correct (no AC exists) |
 | a_state_is_observed_once_for_all_the_reads_of_it | TC-520 | correct (no AC exists) |
+
+## Dispositions
+
+Round 1. The fixes are in PR #1501 (head c2820aeacd52), checked against the
+code. Gates pass at that head: fmt, clippy `-D warnings` and tests of
+qsl-eval, qsl-analyze and qsl-replay.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | the missing acceptance criteria need a spec ruling, which is spec-owner work outside this code PR. The ruling should give an FR-125/FR-126 AC for a refused, unobservable or faulted `holds` read and its settlement, an FR-281-AC-11 clause for `AtomRefused`, and a ruling on charging the observation. PR #1501 says the coordinator is routing it, and no ticket id exists yet. File one before closing QSL-1039 |
+| FND-002 | fixed | `a_refused_holds_atom_and_an_unobservable_state_settle_failed_with_their_own_code` (items.rs, TC-763) asserts the `AtomRefused` kernel, family and not-Boolean arms and the `StateUnobservable` arm through `model_refusal`; mutation K1 is caught |
+| FND-003 | fixed | `a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check` now carries `#[trace("TC-520", "FR-380-AC-7")]` |

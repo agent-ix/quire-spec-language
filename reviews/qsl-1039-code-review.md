@@ -130,3 +130,27 @@ Reviewer mutations, each run on a scratch copy of the head against the 13
   fails.
 - M3, `Err(AtomStop::Refused(outcome))` replaced with `Ok(AtomReading::False)`:
   `a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check` fails.
+
+## Dispositions
+
+Round 1. The fixes are in PR #1501 (branch qsl-1039-review-fixes, head
+c2820aeacd52, commit 006c4ecaa), checked against the code. Gates were run at
+c2820aea by the reviewer, every cargo call under `flock /tmp/qsl-cargo.lock`:
+
+- `cargo fmt --all --check`: exit 0.
+- `clippy -p qsl-eval -p qsl-analyze -p qsl-replay --all-targets -D warnings`: exit 0.
+- `cargo test` on those three crates: exit 0.
+
+Reviewer mutations:
+
+- K1, the kernel refusal's code dropped to `BROKEN` in `model_refusal`: caught by
+  `a_refused_holds_atom_and_an_unobservable_state_settle_failed_with_their_own_code`.
+- C1, the cache ignores the digest: caught by `a_changed_state_is_observed_afresh`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `AtomRefused(KernelRefused(r))` settles `failed` with r's own code and cause (`items.rs` model_refusal); tested for `CardinalityOutOfBound` -> `cardinality_out_of_bound`/`above-maximum` |
+| FND-002 | fixed | the per-object observation charge and its test were removed; the `ClauseLetters` doc states the observation is uncharged and that charging it needs a ruling |
+| FND-003 | fixed | `a_changed_state_is_observed_afresh` (two initial states, reads 0,1,0,1,1 against fresh-letters oracles, 4 observations) catches mutation C1 |
+| FND-004 | fixed | the closure checker passes the evaluator's `InternalFault` through as `ClosureRefusal::Fault`; a refused outcome names its kind via `refused_invariant`, and `From<AtomStop> for LetterStop` does the same |
+| FND-005 | deferred | the no-limit half is fixed and tested: `StateUnobservable(stop)` settles `failed(stop.cause)`, as FR-203-AC-6 does for a stop naming no limit. A stop that names a limit would still settle `failed` rather than `incomplete` by its limit. No letters path produces one (`observe` and `rows_of` only produce `stop(BROKEN)`), so it stays latent; leave it to the spec ruling that SR-17091 FND-001 asks for |
