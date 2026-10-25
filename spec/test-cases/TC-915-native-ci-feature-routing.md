@@ -14,9 +14,10 @@ Check NFR-013-AC-1 to NFR-013-AC-3 at the actual Make-to-Cargo
 process boundary. `xtask/src/ci_feature_lane_tests.rs` copies the repository's
 Makefile into an isolated fixture and compiles the Rust recorder
 `ci_feature_lane_tests/cargo_double.rs` under the owned target. The recorder
-reports the received `CARGO_TARGET_DIR` and full Cargo argument vector; it does
-not compile a workspace or qualify compiler feature behavior. NFR-013-AC-4 and NFR-013-AC-5 are
-checked separately against real `cargo tree` resolves (step 7).
+reports the received `CARGO_TARGET_DIR`, Cargo build settings and full Cargo
+argument vector; it does not compile a workspace or qualify compiler feature
+behavior. NFR-013-AC-4 and NFR-013-AC-5 are checked separately against real
+`cargo tree` resolves (step 7).
 
 ## Test Procedure
 
@@ -76,6 +77,13 @@ checked separately against real `cargo tree` resolves (step 7).
    complete, require the compiled helper to exist, drop its fixture owner and
    require its temporary directory to be absent. Preserve the retained owned
    warm Cargo artifacts; the check removes only its owned temporary helper.
+9. Run `aggregate_ci_disables_incremental_metadata_and_debug_symbols` with
+   `check-spec-validation` marked old in the isolated Make fixture. Require
+   the `cargo run --locked --package xtask -- ci` invocation to retain its
+   complete argv and receive `CARGO_INCREMENTAL=0`,
+   `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`,
+   `CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true`, and
+   `CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true` (AC-6).
 
 ## Expected Results
 
@@ -85,9 +93,10 @@ switch directions retain distinct feature children. Shell metacharacters remain
 literal path data; the controlled dollar canary is not expanded. The helper's
 temporary directory is removed after child completion and owner drop.
 
-These results establish the routing criteria and fixture hygiene only. Real
-Cargo compilation and real CLI default/all-feature extraction controls remain
-separate evidence. The full ticket acceptance is retained: "Running `make ci`
-twice in succession from a warm target dir produces the same result both times,
-and no lane can execute an artifact built under different features." This TC
-does not waive or substitute for the two unchanged-source warm aggregate runs.
+These results establish the routing criteria, aggregate build settings and
+fixture hygiene only. Real Cargo compilation and real CLI default/all-feature
+extraction controls remain separate evidence. The full ticket acceptance is
+retained: "Running `make ci` twice in succession from a warm target dir
+produces the same result both times, and no lane can execute an artifact built
+under different features." This TC does not waive or substitute for the two
+unchanged-source warm aggregate runs.
