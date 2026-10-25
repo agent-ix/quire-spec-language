@@ -247,13 +247,13 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "convert_outcome".to_owned(),
         },
         // FR-337: the temporal letter reader's `match` over `FamilyOutcome`
-        // (`ObservedLetters::atom`), mirroring `execute::replay`'s above.
+        // (`ObservedLetters::reading`, shared by `atom` and `activation`), mirroring `execute::replay`'s above.
         SeamLocation {
             file: "qsl-eval/src/temporal/observed.rs".to_owned(),
-            item: "ObservedLetters::atom".to_owned(),
+            item: "ObservedLetters::reading".to_owned(),
         },
         // The window-expression reader's `match` over `FamilyOutcome`
-        // (`ObservedWindowSource::read`), mirroring `ObservedLetters::atom`.
+        // (`ObservedWindowSource::read`), mirroring `ObservedLetters::reading`.
         SeamLocation {
             file: "qsl-eval/src/temporal/observed_window.rs".to_owned(),
             item: "ObservedWindowSource::read".to_owned(),
