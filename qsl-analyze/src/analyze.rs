@@ -565,9 +565,12 @@ mod tests {
                 ProviderOrigin::Linked,
                 ManifestDigest::from_digest([9; 32]),
                 [(Some(kind.to_wire()), Some(Mode::Bounded.to_wire()))],
-                Some(&[DomainKind::Population.to_wire()]),
-                Some(qsl_route::FairnessKindsMember::List(&[])),
-                None,
+                qsl_route::ManifestMembers {
+                    domains: Some(&[DomainKind::Population.to_wire()]),
+                    fairness_kinds: Some(qsl_route::FairnessKindsMember::List(&[])),
+                    evidence_kinds: None,
+                    memory_models: None,
+                },
             )
             .expect("a well-formed test engine"),
         )

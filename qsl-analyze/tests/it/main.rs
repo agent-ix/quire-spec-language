@@ -23,6 +23,7 @@ mod hyper_world;
 mod lasso_replay;
 mod litmus;
 mod liveness;
+mod load_buffering;
 mod model_check;
 mod model_check_safety;
 mod model_instances;

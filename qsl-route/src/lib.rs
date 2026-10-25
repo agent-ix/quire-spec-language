@@ -287,6 +287,20 @@ pub struct BackendDescriptor {
     solver_bounds: Option<SolverBounds>,
 }
 
+/// The optional FR-331 manifest members [`descriptor_from_manifest`] reads
+/// beside the advertised pairs, each `None` when the manifest has none.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ManifestMembers<'a> {
+    /// The `domains` member.
+    pub domains: Option<&'a [&'a str]>,
+    /// The `fairness_kinds` member exactly as supplied.
+    pub fairness_kinds: Option<FairnessKindsMember<'a>>,
+    /// The evidence-kind labels.
+    pub evidence_kinds: Option<&'a [&'a str]>,
+    /// The `memory_models` member (QSpec FR-331-AC-30).
+    pub memory_models: Option<&'a [MemoryModelName]>,
+}
+
 /// Convert one already-read FR-331 provider manifest into its routed
 /// descriptor. The driver supplies the manifest fields as data; this is the
 /// sole manifest conversion entry point shared by linked and process
@@ -302,6 +316,13 @@ pub struct BackendDescriptor {
 /// in member order) or `duplicate-label`. An empty list is admitted and
 /// advertises none.
 ///
+/// `memory_models` is the manifest's `memory_models` member (QSpec
+/// FR-331-AC-30), `None` when it has none. It is judged last, after
+/// `evidence_kinds`. A temporal backend's member that is empty or repeats a
+/// model refuses `invalid-memory-models`, as does the member on a backend
+/// that does not advertise `temporal-satisfaction`; a descriptor with no
+/// member advertises `sc` only (FR-226-AC-2).
+///
 /// `evidence_kinds` is the manifest's evidence-kind labels, `None` when it
 /// has none. It is judged last (after every advertised pair, `domains` and
 /// `fairness_kinds`), and only for a backend that advertises
@@ -314,10 +335,14 @@ pub fn descriptor_from_manifest<'a>(
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
-    domains: Option<&[&str]>,
-    fairness_kinds: Option<FairnessKindsMember<'_>>,
-    evidence_kinds: Option<&[&str]>,
+    members: ManifestMembers<'_>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
+    let ManifestMembers {
+        domains,
+        fairness_kinds,
+        evidence_kinds,
+        memory_models,
+    } = members;
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
         manifest_digest,
@@ -349,6 +374,8 @@ pub fn descriptor_from_manifest<'a>(
     } else {
         BTreeSet::new()
     };
+    let memory_models = admit_memory_models(memory_models, advertises_temporal)
+        .map_err(|defect| refuse(RegistrationCause::InvalidMemoryModels(defect)))?;
     let evidence_kinds = if advertises_probabilistic(&advertises) {
         admit_evidence_kinds(evidence_kinds)
             .map_err(|defect| refuse(RegistrationCause::UnknownEvidenceKind(defect)))?
@@ -365,11 +392,32 @@ pub fn descriptor_from_manifest<'a>(
         evidence_kinds,
         dynamics: None,
         solver_bounds: None,
-        // Remaining work: QSpec FR-331-AC-30's `memory_models` member is not
-        // read here yet, so a manifest descriptor advertises `sc` only, as a
-        // descriptor without the member does (FR-226).
-        memory_models: BTreeSet::new(),
+        memory_models,
     })
+}
+
+/// FR-331-AC-30: a `memory_models` member is a nonempty, duplicate-free list
+/// on a temporal descriptor only; an absent member is the empty set.
+fn admit_memory_models(
+    member: Option<&[MemoryModelName]>,
+    temporal: bool,
+) -> Result<BTreeSet<MemoryModelName>, MemoryModelsDefect> {
+    let Some(models) = member else {
+        return Ok(BTreeSet::new());
+    };
+    if !temporal {
+        return Err(MemoryModelsDefect::NonTemporal);
+    }
+    if models.is_empty() {
+        return Err(MemoryModelsDefect::Empty);
+    }
+    let mut seen = BTreeSet::new();
+    for model in models {
+        if !seen.insert(*model) {
+            return Err(MemoryModelsDefect::DuplicateModel(model.label()));
+        }
+    }
+    Ok(seen)
 }
 
 /// A manifest's supplied `dynamics` member before validation.
@@ -384,27 +432,17 @@ pub enum DynamicsMember<'a> {
 /// Convert a provider manifest including its optional temporal dynamics.
 /// Checks the existing descriptor fields first, then dynamics, preserving
 /// FR-075's refusal precedence and an absent member exactly.
-#[allow(clippy::too_many_arguments)]
 pub fn descriptor_from_manifest_with_dynamics<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
-    domains: Option<&[&str]>,
-    fairness_kinds: Option<FairnessKindsMember<'_>>,
-    evidence_kinds: Option<&[&str]>,
+    members: ManifestMembers<'_>,
     dynamics: Option<DynamicsMember<'_>>,
     bounds: Option<SolverBounds>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
-    let descriptor = descriptor_from_manifest(
-        backend,
-        origin,
-        manifest_digest,
-        advertised,
-        domains,
-        fairness_kinds,
-        evidence_kinds,
-    )?;
+    let descriptor =
+        descriptor_from_manifest(backend, origin, manifest_digest, advertised, members)?;
     if !descriptor.advertises_kind(Capability::TemporalSatisfaction) {
         return Ok(descriptor);
     }
@@ -906,6 +944,18 @@ pub enum FairnessKindsDefect {
     DuplicateLabel(String),
 }
 
+/// Why a `memory_models` member was refused (QSpec FR-331-AC-30).
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum MemoryModelsDefect {
+    /// The list had no models.
+    Empty,
+    /// A model occurred more than once; its label.
+    DuplicateModel(&'static str),
+    /// The member is on a descriptor that does not advertise
+    /// `temporal-satisfaction`.
+    NonTemporal,
+}
+
 /// Why a temporal provider's `dynamics` member was refused.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DynamicsDefect {
@@ -952,6 +1002,9 @@ pub enum RegistrationCause {
     UnknownEvidenceKind(EvidenceKindsDefect),
     /// A temporal provider supplied defective dynamics or missing solver bounds.
     InvalidDynamics(DynamicsDefect),
+    /// The manifest's `memory_models` member is defective (QSpec
+    /// FR-331-AC-30; FR-226-AC-2).
+    InvalidMemoryModels(MemoryModelsDefect),
 }
 
 impl RegistrationCause {
@@ -966,6 +1019,7 @@ impl RegistrationCause {
             Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
             Self::UnknownEvidenceKind(_) => "unknown-evidence-kind",
             Self::InvalidDynamics(_) => "invalid-dynamics",
+            Self::InvalidMemoryModels(_) => "invalid-memory-models",
         }
     }
 }

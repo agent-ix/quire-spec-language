@@ -189,8 +189,8 @@ pub use model_check::replay::{
     StrongFairnessHint,
 };
 pub use model_check::settle::{
-    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, ResultLabel, Truth,
-    EXPLICIT_STATE,
+    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,
+    ResultLabel, Truth, EXPLICIT_STATE,
 };
 pub use model_check::smt_query::{encode_smt_query, Refusal, SmtEncodingRefusal, SmtQueryKind};
 pub use model_check::state_graph::{

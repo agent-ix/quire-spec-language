@@ -16,8 +16,8 @@
 
 use qsl_foundation::bound::DomainKind;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, EvidenceKind, ManifestDigest, Mode,
-    ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest, BackendDescriptor, Candidate, EvidenceKind, ManifestDigest,
+    ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -56,8 +56,11 @@ pub fn descriptor(
         origin,
         manifest_digest,
         ADVERTISED,
-        Some(&DOMAINS),
-        None,
-        Some(&EVIDENCE_KINDS),
+        ManifestMembers {
+            domains: Some(&DOMAINS),
+            fairness_kinds: None,
+            evidence_kinds: Some(&EVIDENCE_KINDS),
+            memory_models: None,
+        },
     )
 }
