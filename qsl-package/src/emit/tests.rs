@@ -40,6 +40,7 @@ mod deep_bodies;
 mod envelope_adoption;
 mod golden;
 mod hybrid;
+mod hyper_clause;
 mod identity_depth;
 mod navigation;
 mod owners;

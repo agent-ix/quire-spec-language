@@ -1437,11 +1437,15 @@ fn model_of<'m>(models: &'m [AdmittedModel], alias: &str) -> Option<&'m Admitted
 /// The quantifiers, each bound to its alias and its fairness set. A quantifier
 /// with no alias, one naming no model and a constraint naming an operation of
 /// another model push their refusals onto `found`.
+/// The checked quantifiers and, per quantifier, the span of each written
+/// fairness constraint that resolved.
+type QuantifiersWithSpans = (Vec<CheckedQuantifier>, Vec<Vec<Span>>);
+
 fn checked_quantifiers(
     form: &HyperBehavioursForm,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Result<(Vec<CheckedQuantifier>, Vec<Vec<Span>>), StageFailure<CheckRefusal>> {
+) -> Result<QuantifiersWithSpans, StageFailure<CheckRefusal>> {
     let mut checked = Vec::with_capacity(form.quantifiers.len());
     let mut spans = Vec::with_capacity(form.quantifiers.len());
     let mut seen: Vec<&str> = Vec::new();
@@ -1940,7 +1944,10 @@ pub(crate) fn conjunct_spans(form: &qsl_forms::HyperBehavioursForm) -> (Vec<Span
 /// ones and the existential ones, each in source order.
 pub(crate) fn conjunct_trees(
     form: &qsl_forms::HyperBehavioursForm,
-) -> (Vec<qsl_forms::ExpressionSpans>, Vec<qsl_forms::ExpressionSpans>) {
+) -> (
+    Vec<qsl_forms::ExpressionSpans>,
+    Vec<qsl_forms::ExpressionSpans>,
+) {
     let Some(block) = &form.match_block else {
         return (Vec::new(), Vec::new());
     };

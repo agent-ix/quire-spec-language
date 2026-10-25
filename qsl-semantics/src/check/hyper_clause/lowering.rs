@@ -22,8 +22,8 @@ use qsl_forms::{ExprId, ExprNode, Expression, ExpressionSpans, StepLabelForm};
 use qsl_foundation::Span;
 use quire_exact::{Cancel, EffectiveId, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::quantity::UnitTable;
 
 use crate::check::abstraction::OperationKey;
 use crate::check::check::{bind_parameters, HyperTyping, NamedScope, Scope, StateContext, Typer};

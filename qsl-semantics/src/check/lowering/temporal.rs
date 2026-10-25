@@ -29,12 +29,12 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
+use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm, NodeTag, Operation,
     OperationLaw, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
-use crate::check::ir::CheckedNode;
 use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
     BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,

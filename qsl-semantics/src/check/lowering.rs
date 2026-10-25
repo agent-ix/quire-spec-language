@@ -100,6 +100,7 @@ pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
+pub(crate) use hyper::HyperClauseInput;
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
     bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
@@ -112,7 +113,6 @@ pub(crate) use state::{
     state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
     OperationBinding, StateClauseInput,
 };
-pub(crate) use hyper::{HyperClauseInput, LoweredHyperClause};
 pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the

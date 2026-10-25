@@ -135,7 +135,11 @@ fn unencodable_read(clause: &CheckedHyperClause) -> Option<Span> {
             let Some(component) = atom.components.get(node.location()) else {
                 continue;
             };
-            let traces = roots(operands.into_iter().map(|id| node.at(id)), &bound, slots.len());
+            let traces = roots(
+                operands.into_iter().map(|id| node.at(id)),
+                &bound,
+                slots.len(),
+            );
             let encodable = !traces.is_empty()
                 && traces
                     .iter()

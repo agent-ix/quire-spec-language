@@ -48,10 +48,6 @@ pub(crate) struct HyperClauseInput<'a> {
 pub(crate) struct LoweredHyperClause {
     /// The `claim`/`hyperproperty` node: the clause's identity.
     pub(crate) key: NodeKey,
-    /// The body wrapper's `temporal`/`temporal_clause` node.
-    pub(crate) wrapper: NodeKey,
-    /// The `Boolean` scalar type node: the clause's semantic type.
-    pub(crate) boolean: NodeKey,
 }
 
 impl Lowering<'_> {
@@ -84,7 +80,7 @@ impl Lowering<'_> {
                 .quantifiers()
                 .get(slot.trace)
                 .ok_or_else(|| stage_fault(&site, "slot-has-a-trace"))?;
-            let name = format!("{}@{}", parameter.name, trace.variable);
+            let name = format!("slot_s{}_s{}", esc(&parameter.name), esc(&trace.variable));
             let semantic_type = self.binder_type(&ValueType::Reference(*object), None, &site)?;
             let node = self.parameter(&name, level, semantic_type, &site)?;
             self.record(semantic_type, OccurrenceRole::Type, site);
@@ -191,11 +187,7 @@ impl Lowering<'_> {
             ]),
         )?;
         self.record(key, OccurrenceRole::Claim, claim);
-        Ok(LoweredHyperClause {
-            key,
-            wrapper,
-            boolean,
-        })
+        Ok(LoweredHyperClause { key })
     }
 
     /// `subjects`: one `binding(alias, reference)` per alias in order of
@@ -317,15 +309,13 @@ impl Lowering<'_> {
             let mut scope: Vec<Binder> = Vec::with_capacity(reads.len());
             for (level, read) in reads.into_iter().enumerate() {
                 let slot_at = hyper_location(input.index, slot_site(level));
-                let name = lowered
-                    .slot_names
-                    .get(level)
-                    .ok_or_else(|| stage_fault(&slot_at, "slot-has-a-name"))?;
+                let name =
+                    read_slot_name(read).ok_or_else(|| stage_fault(&slot_at, "slot-has-a-name"))?;
                 let slot_type = read
                     .slot_type()
                     .ok_or_else(|| stage_fault(&slot_at, "slot-has-a-type"))?;
                 let semantic_type = self.binder_type(&slot_type, None, &slot_at)?;
-                let parameter = self.parameter(name, level, semantic_type, &slot_at)?;
+                let parameter = self.parameter(&name, level, semantic_type, &slot_at)?;
                 self.record(semantic_type, OccurrenceRole::Type, slot_at);
                 scope.push(Binder {
                     slot: level,
@@ -338,5 +328,83 @@ impl Lowering<'_> {
             members.push(GroupMember::Leaf(term));
         }
         Ok(GroupTerm::new(members))
+    }
+}
+
+/// `esc(x)` of FR-488 "Slot node names": each UTF-8 byte of `x` that is an
+/// ASCII letter or digit as itself, `_` as `__`, any other byte as `_x` and
+/// two uppercase hexadecimal digits.
+pub(crate) fn esc(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        match byte {
+            b'_' => escaped.push_str("__"),
+            byte if byte.is_ascii_alphanumeric() => escaped.push(char::from(byte)),
+            byte => escaped.push_str(&format!("_x{byte:02X}")),
+        }
+    }
+    escaped
+}
+
+/// The identifier-safe name of the parameter node of a conjunct's step-label
+/// read (FR-488 "Slot node names"); `None` for `stutter`, which has no slot,
+/// and for an argument read whose operation is not written `T::name`.
+pub(crate) fn read_slot_name(read: &crate::check::hyper_clause::StepRead) -> Option<String> {
+    use crate::check::hyper_clause::StepRead;
+    match read {
+        StepRead::Operation { trace } => Some(format!("op_s{}", esc(trace))),
+        StepRead::Receiver { trace, .. } => Some(format!("rcv_s{}", esc(trace))),
+        StepRead::Argument(argument) => {
+            let (object, name) = argument.written.rsplit_once("::")?;
+            Some(format!(
+                "arg_s{}_s{}_s{}_s{}",
+                esc(&argument.trace),
+                esc(object),
+                esc(name),
+                esc(&argument.parameter)
+            ))
+        }
+        StepRead::Stutter => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::esc;
+
+    /// FR-488-AC-23: `esc` is the byte-wise encoding of FR-488 "Slot node
+    /// names", and `slot_s<p>_s<t>` is injective over underscores, `s`, `x`,
+    /// digits and non-ASCII text.
+    #[trace("TC-1266", "FR-488-AC-23")]
+    #[test]
+    fn slot_names_are_identifier_safe_and_injective() {
+        assert_eq!(esc("a_b"), "a__b");
+        assert_eq!(esc("é"), "_xC3_xA9");
+        assert_eq!(esc("a.b"), "a_x2Eb");
+        let fields = [
+            "a", "a_b", "b", "_", "s", "x", "7", "é", "a_sb", "_sa", "", "a__b",
+        ];
+        let mut seen = std::collections::BTreeMap::new();
+        for p in fields {
+            for t in fields {
+                let name = format!("slot_s{}_s{}", esc(p), esc(t));
+                assert!(
+                    name.bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                    "{name}"
+                );
+                assert_eq!(seen.insert(name.clone(), (p, t)), None, "{name}");
+            }
+        }
+        assert_eq!(
+            format!("slot_s{}_s{}", esc("a"), esc("b_c")),
+            "slot_sa_sb__c"
+        );
+        assert_eq!(
+            format!("slot_s{}_s{}", esc("a_b"), esc("c")),
+            "slot_sa__b_sc"
+        );
     }
 }
