@@ -52,7 +52,7 @@ use qsl_foundation::Setting;
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
-use crate::check::Capability;
+use crate::check::{Capability, HyperForm, HyperUnsupported};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::fairness::FairnessKind;
 
@@ -129,6 +129,12 @@ pub enum UnsupportedItem {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
     },
+    /// FR-396, FR-399: a hyper item whose checked HP-4 form has no
+    /// negotiation arm.
+    HyperForm {
+        /// The one classifier's reason for placing the form in HP-4.
+        reason: HyperUnsupported,
+    },
 }
 
 /// The evidence kind a `probabilistic-satisfaction` claim is decided by
@@ -168,6 +174,18 @@ impl Requirements {
             model_subject: false,
             hybrid_dynamics: false,
             evidence: None,
+        }
+    }
+
+    /// The requirements of a checked hyper form, including its model
+    /// subject extent. HP-4 is marked unsupported by the shared
+    /// [`HyperForm::unsupported_reason`] classifier; admitted forms remain
+    /// available for negotiation with their backends (FR-396, FR-399).
+    pub fn hyper_form(extent: ClaimExtent, form: &HyperForm) -> Self {
+        let requirements = Self::new(Capability::TemporalSatisfaction, extent).over_model_subject();
+        match form.unsupported_reason() {
+            Some(reason) => requirements.with_unsupported(UnsupportedItem::HyperForm { reason }),
+            None => requirements,
         }
     }
 

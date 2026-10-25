@@ -45,7 +45,7 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
-pub use items::{model_item, statistical_item, ModelItem};
+pub use items::{hyper_form_item, model_item, statistical_item, ModelItem};
 
 use crate::{model_check, statistical};
 

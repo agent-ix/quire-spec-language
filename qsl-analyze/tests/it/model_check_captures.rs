@@ -385,6 +385,7 @@ fn the_closure_checker_reads_the_captures_and_rejects_an_undefined_one() {
     let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
+    let qsl_replay::ProofCertificate::Closure(certificate) = certificate;
     assert!(!certificate.states.is_empty());
     assert_eq!(
         check(&at_three, certificate),

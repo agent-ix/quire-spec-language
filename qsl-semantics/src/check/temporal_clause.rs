@@ -1607,11 +1607,10 @@ fn formula_horizon(
 }
 
 /// Whether S4 emits `checked` (FR-337, FR-212): one that names no protocol
-/// target and is not under the timed profile. No emitted member names a
-/// protocol target, and S4 writes no timed interval (QSpec FR-370's timed
-/// form), so a clause with either is [`not_emitted`].
+/// target. QSpec FR-370 defines the timed interval form, which S4 lowers with
+/// the same temporal formula topology as integer intervals.
 pub(crate) fn is_emitted(checked: &CheckedTemporalClause) -> bool {
-    checked.protocol_fairness.is_empty() && checked.time_binding.is_none()
+    checked.protocol_fairness.is_empty()
 }
 
 /// Whether `refusal` of the clause `form` is located after its `on each`

@@ -40,7 +40,7 @@ use crate::check::temporal_clause::{
     BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, UnaryTemporal,
 };
-use crate::value::member::Member;
+use crate::value::member::{Member, TimedMember};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "lowering.temporal";
@@ -389,9 +389,7 @@ impl Lowering<'_> {
                     operand: only,
                 } => (
                     unary_identity(*operator),
-                    Some(Member::TemporalInterval {
-                        interval: step_interval(interval.as_ref(), &location)?,
-                    }),
+                    Some(temporal_interval(interval.as_ref())),
                     vec![operand(*only)?],
                 ),
                 FormulaNode::Binary {
@@ -401,9 +399,7 @@ impl Lowering<'_> {
                     right,
                 } => (
                     binary_identity(*operator),
-                    Some(Member::TemporalInterval {
-                        interval: step_interval(interval.as_ref(), &location)?,
-                    }),
+                    Some(temporal_interval(interval.as_ref())),
                     vec![operand(*left)?, operand(*right)?],
                 ),
             };
@@ -465,16 +461,18 @@ pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> Check
     )
 }
 
-/// A checked operator's step interval as S4 writes it. A timed interval
-/// never reaches S4: `temporal_clause::is_emitted` refuses a
-/// clause under the timed profile before lowering.
-fn step_interval(
-    interval: Option<&CheckedInterval>,
-    location: &Location,
-) -> Result<Option<qsl_foundation::bound::TemporalInterval>, CheckRefusal> {
+/// A checked operator's interval in the FR-370 wire form.
+fn temporal_interval(interval: Option<&CheckedInterval>) -> Member {
     match interval {
-        None => Ok(None),
-        Some(CheckedInterval::Steps(interval)) => Ok(Some(*interval)),
-        Some(CheckedInterval::Timed(_)) => Err(stage_fault(location, "timed-clause-not-lowered")),
+        None => Member::TemporalInterval { interval: None },
+        Some(CheckedInterval::Steps(interval)) => Member::TemporalInterval {
+            interval: Some(*interval),
+        },
+        Some(CheckedInterval::Timed(interval)) => Member::TimedInterval(Box::new(TimedMember {
+            lower: interval.lower().clone(),
+            lower_closed: interval.lower_closed(),
+            upper: Some(interval.upper().clone()),
+            upper_closed: interval.upper_closed(),
+        })),
     }
 }
