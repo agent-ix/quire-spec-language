@@ -296,6 +296,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::Malformed { .. }
             | RefinementCause::Unsupported { .. }
             | RefinementCause::UnsupportedRowForm { .. }
+            | RefinementCause::AbstractRelationships { .. }
             | RefinementCause::PopulationBound { .. }
             | RefinementCause::NodeArgumentCount { .. }
             | RefinementCause::NodeArgumentType { .. } => None,

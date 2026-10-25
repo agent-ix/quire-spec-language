@@ -2110,6 +2110,7 @@ impl PackageDeclarations {
                     &declarations,
                     &mut contract_cx,
                     &env,
+                    self.identity,
                 );
                 nodes_used = used;
                 // A limit or a cancellation stops the unit at a refusal, as
