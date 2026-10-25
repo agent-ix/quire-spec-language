@@ -93,6 +93,7 @@ mod hyper;
 mod model;
 mod protocol;
 mod state;
+mod state_graph;
 mod temporal;
 mod wire;
 
@@ -113,6 +114,7 @@ pub(crate) use state::{
     state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
     OperationBinding, StateClauseInput,
 };
+pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the

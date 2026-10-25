@@ -30,8 +30,8 @@ use qsl_forms::{
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, ValueType};
 use quire_semantic_value::location::{Location, Origin};
@@ -287,7 +287,9 @@ impl CheckedStateGraphClaim {
 
     /// The predicates in the order `from`, `target`: the predicates the node
     /// references, each with the site it is located at.
-    pub(crate) fn from_and_target(&self) -> (Option<&CheckedStatePredicate>, &CheckedStatePredicate) {
+    pub(crate) fn node_predicates(
+        &self,
+    ) -> (Option<&CheckedStatePredicate>, &CheckedStatePredicate) {
         match &self.form {
             StateGraphForm::Possible { target } => (None, target),
             StateGraphForm::AlwaysPossible { from, target } => (Some(from), target),
