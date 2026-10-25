@@ -13,9 +13,12 @@
 //! QSL-774: the rows are built from one [`CheckedUnit`], so the graph, the type
 //! report and the selected source cannot be passed as three loose inputs.
 //!
-//! [`CheckedUnit::new`] binds the graph, the type report's unit and the
-//! selected formal source by their complete `RawSourceRef`, including the
-//! digest of the source bytes (FR-362).
+//! INTERIM, NOT A DIGEST-BOUND MATCH: [`CheckedUnit::new`] compares only the
+//! source labels (authority and identity) of the graph, the type report's unit
+//! and the selected formal source. The graph and the type report come from two
+//! different parse stages over different bytes, so their digests cannot agree.
+//! This label match expires when the unified single-source producer (QSL-781)
+//! lands; that producer replaces [`CheckedUnit::new`].
 
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::check::CheckedGraph;
@@ -116,34 +119,50 @@ fn stop_reason(types: &TypeReport<'_, '_>) -> Option<SourceInventoryIncompleteRe
         )
 }
 
-/// Why the selected source, graph and type report do not identify one source.
+/// The authority and identity labels of one source. The digest is not part of
+/// a label: this is the interim, label-only match of [`CheckedUnit`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnitLabel {
+    /// The source's authority.
+    pub authority: String,
+    /// The source's identity within that authority.
+    pub identity: String,
+}
+
+impl From<&RawSourceRef> for UnitLabel {
+    fn from(source: &RawSourceRef) -> Self {
+        Self {
+            authority: source.authority().into(),
+            identity: source.identity().into(),
+        }
+    }
+}
+
+/// Why the inputs are not one checked unit under the interim label match.
+/// This is never a digest comparison; it expires with QSL-781.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum UnitSourceMismatch {
+pub enum UnitLabelMismatch {
     /// The type report does not cover exactly one source unit.
     #[error("the type report covers {count} units, not one")]
     NotOneUnit {
         /// Units in the report's namespace.
         count: usize,
     },
-    /// The selected source's complete reference differs from the type report's unit.
-    #[error(
-        "the type report's unit is not the selected source: selected {selected:?}, report {unit:?}"
-    )]
+    /// The selected source's labels differ from the type report's unit.
+    #[error("the type report's unit is not the selected source")]
     TypeReport {
-        /// Complete reference of the selected formal source.
-        selected: RawSourceRef,
-        /// Complete reference of the type report's only unit.
-        unit: RawSourceRef,
+        /// Labels of the selected formal source.
+        selected: UnitLabel,
+        /// Labels of the type report's only unit.
+        unit: UnitLabel,
     },
-    /// The selected source's complete reference differs from the graph's source.
-    #[error(
-        "the checked graph is not of the selected source: selected {selected:?}, graph {graph:?}"
-    )]
+    /// The selected source's labels differ from the checked graph's source.
+    #[error("the checked graph is not of the selected source")]
     Graph {
-        /// Complete reference of the selected formal source.
-        selected: RawSourceRef,
-        /// Complete reference of the checked graph's source.
-        graph: RawSourceRef,
+        /// Labels of the selected formal source.
+        selected: UnitLabel,
+        /// Labels of the checked graph's source.
+        graph: UnitLabel,
     },
 }
 
@@ -159,28 +178,29 @@ pub struct CheckedUnit<'g, 'r, 'a> {
 impl<'g, 'r, 'a> CheckedUnit<'g, 'r, 'a> {
     /// Bind `graph` and `types` to the selected `source`.
     ///
-    /// Refuses unless the type report has one unit and the complete source
-    /// references of the report, graph and selected source are equal.
+    /// INTERIM: refuses unless the type report has one unit and the labels
+    /// (authority, identity; not the digest) of that unit and of the graph both
+    /// equal the selected source's. Expires when QSL-781 lands.
     pub fn new(
         source: &FormalSource,
         graph: &'g CheckedGraph,
         types: &'g TypeReport<'r, 'a>,
-    ) -> Result<Self, UnitSourceMismatch> {
-        let selected = source.source().reference().clone();
+    ) -> Result<Self, UnitLabelMismatch> {
+        let selected = UnitLabel::from(source.source().reference());
         let [unit] = types.binding().namespace().units() else {
-            return Err(UnitSourceMismatch::NotOneUnit {
+            return Err(UnitLabelMismatch::NotOneUnit {
                 count: types.binding().namespace().units().len(),
             });
         };
-        let unit = unit.source().reference().clone();
+        let unit = UnitLabel::from(unit.source().reference());
         if unit != selected {
-            return Err(UnitSourceMismatch::TypeReport { selected, unit });
+            return Err(UnitLabelMismatch::TypeReport { selected, unit });
         }
-        let graph_source = graph.source().clone();
-        if graph_source != selected {
-            return Err(UnitSourceMismatch::Graph {
+        let graph_label = UnitLabel::from(graph.source());
+        if graph_label != selected {
+            return Err(UnitLabelMismatch::Graph {
                 selected,
-                graph: graph_source,
+                graph: graph_label,
             });
         }
         Ok(Self {
