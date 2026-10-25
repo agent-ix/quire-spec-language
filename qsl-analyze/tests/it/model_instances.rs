@@ -45,7 +45,9 @@ use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{declarations_in, document_digest, UNLIMITED};
+use crate::counter::{
+    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED,
+};
 
 const PACKAGE: &str = "test/things";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -957,7 +959,7 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
 /// FR-125-AC-17: an absent `x` remains a guard when forwarded through a let
 /// alias and unchanged helper returns, while a helper that reads its argument
 /// as a field still produces `absent-key`.
-#[trace("TC-520", "FR-125-AC-17")]
+#[trace("TC-520", "FR-125-AC-17", "FR-361-AC-16")]
 #[test]
 fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
     let world = world(
@@ -980,7 +982,7 @@ fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
             "{helpers}temporal C using t0 over (x: M::Dog) clock \"model-steps\" on origin {{ {formula} }}\n"
         );
         CheckedPackage::link(
-            declarations_in(PACKAGE, &world.document, &body)
+            declarations_with_model_profile(PACKAGE, &world.document, &body)
                 .with_unwritten_terminals()
                 .check(CheckingLimits::default())
                 .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
