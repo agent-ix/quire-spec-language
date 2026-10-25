@@ -1936,3 +1936,34 @@ fn the_always_violation_is_two_disjuncts_per_position() {
     }
     assert_eq!(negated, expected);
 }
+
+/// FR-315-AC-45 and FR-315-AC-50: the scripts of TP-3 items, which read a
+/// tabulated monitor, are byte-equal to the golden bytes recorded from `main`
+/// before the table was built through the `CheckedFormula` constructor.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn monitored_scripts_are_byte_equal_to_the_recorded_golden_bytes() {
+    let world = counter(
+        INFINITE,
+        &[
+            "always (holds(c.value = 3) implies always holds(c.value = 3))",
+            "always[0,1] holds(c.value <= 3)",
+        ],
+    );
+    let kinds = [
+        ("unrolling-2", SmtQueryKind::Unrolling { depth: 2 }),
+        ("base-1", SmtQueryKind::InductionBase { depth: 1 }),
+        ("step-2", SmtQueryKind::InductionStep { depth: 2 }),
+    ];
+    for (clause, name) in [(0, "implies-always"), (1, "bounded-always")] {
+        for (label, kind) in kinds {
+            let script = world.query(clause, kind).expect("encodes");
+            let path = format!(
+                "{}/tests/golden/smt_monitor/{name}-{label}.smt2",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let golden = std::fs::read(&path).expect("the golden file");
+            assert_eq!(script.as_bytes(), golden.as_slice(), "{name}-{label}");
+        }
+    }
+}
