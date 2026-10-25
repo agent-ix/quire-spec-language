@@ -16,7 +16,7 @@ parameter nodes, `match` conjunct terms, operation anchors and fairness
 aggregates, that the clause exposes its `claim` occurrence, and that clauses
 with no encoding are refused.
 
-Scope: FR-488-AC-1 to FR-488-AC-10.
+Scope: FR-488-AC-1 to FR-488-AC-21.
 
 ## Test Procedure
 
@@ -41,7 +41,10 @@ device models, and FR-487's `Linked`.
    clause roots.
 8. Compile `Linked` with the two `B` atoms of FR-488-AC-9 and a timed-profile
    clause.
-9. Pass each admitted package through QSpec FR-370's reader.
+9. Admit each package through QSL's I2 admission.
+10. Compile bounded-profile and `until` clauses (FR-488-AC-19, AC-20), a
+    clause with a `systems_interface` fairness declaration, and
+    `NonInterference` at and one below the node ceiling.
 
 Tag the tests `#[trace("TC-1266", "FR-488-AC-n")]`.
 
@@ -56,6 +59,7 @@ Tag the tests `#[trace("TC-1266", "FR-488-AC-n")]`.
 - Step 5: FR-488-AC-6's different and equal NodeIds and ordinals.
 - Step 6: FR-488-AC-7's fairness aggregates.
 - Step 7: FR-488-AC-8's equal occurrences and lookup refusals.
-- Step 8: the first `Linked` emits, the second and the timed clause are
-  refused `unsupported_construct`/`not-yet-implemented`.
-- Step 9: no refusal (FR-488-AC-10).
+- Step 8: the first `Linked` emits, and the second, a rootless or multi-component
+  read and the timed clause are refused `unsupported_construct`/`not-yet-implemented`.
+- Step 9: no refusal.
+- Step 10: FR-488-AC-19 to AC-21's emissions and refusals.
