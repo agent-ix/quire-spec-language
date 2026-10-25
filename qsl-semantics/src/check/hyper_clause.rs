@@ -534,6 +534,8 @@ impl CheckedHyperClause {
     /// assembled, so a clause that was checked and not assembled has none
     /// ([`Self::assembled_occurrence`]) and this returns the zero
     /// occurrence, which names no node.
+    /// A consumer reads clauses from `CheckedGraph::hyper_clauses()`, which
+    /// are all assembled, never from `HyperTraceFamily::check`.
     pub fn occurrence(&self) -> &OccurrenceKey {
         &self.occurrence
     }
