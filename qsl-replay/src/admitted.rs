@@ -707,7 +707,10 @@ pub fn compile_admitted<'a>(
     })
 }
 
-fn context_of(package: &CheckedPackage, id: PackageId) -> Result<AdmittedContext, InternalFault> {
+pub(crate) fn context_of(
+    package: &CheckedPackage,
+    id: PackageId,
+) -> Result<AdmittedContext, InternalFault> {
     let enums = enum_table(package.graph().semantic_graph())?;
     let composites = composite_table(package.graph())?;
     let UnitTables {

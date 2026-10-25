@@ -39,6 +39,7 @@ use quire_eval::{CheckedClosure, Evaluation, RequestRefusal, Signature, Transiti
 use quire_exact::{Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
 use super::evaluate::Machine;
@@ -173,6 +174,18 @@ where
                 .collect::<Vec<_>>(),
             function.result.clone(),
         ))
+    }
+
+    fn root_call_site(&self, callable: &NodeKey) -> Option<Location> {
+        let package = self.declaring(*callable)?;
+        Some(
+            package
+                .graph()
+                .function_by_identity(*callable)?
+                .body
+                .location()
+                .clone(),
+        )
     }
 
     fn admit_call(
