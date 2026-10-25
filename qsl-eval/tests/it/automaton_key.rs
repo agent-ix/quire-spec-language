@@ -1483,6 +1483,22 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
         BuchiStates::clause(&safety.clause, &context, SubjectKind::Ordinary),
         Err(TranslationRefusal::NotTranslated(_))
     ));
+    // A closed interval under an unbounded `always` is TP-3, not TP-4.
+    let bounded = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
+    let context = StateContext::clause(&bounded.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        BuchiStates::clause(&bounded.clause, &context, SubjectKind::Ordinary),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+    // A guarded clause has the `each-when` context, which the two-state
+    // reachable-invariant translation does not read.
+    let guarded_invariant = fixture(INFINITE, "c: Counter", GUARD, "always holds(c.level = 1)");
+    let context = StateContext::clause(&guarded_invariant.clause, occurrence(0), Vec::new());
+    assert_eq!(context.activation, ContextActivation::EachWhen);
+    assert!(matches!(
+        SafetyTranslation::reachable_invariant(&guarded_invariant.clause, &context),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
     let live = fixture(INFINITE, "c: Counter", "on origin", LIVE);
     let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
     assert!(matches!(

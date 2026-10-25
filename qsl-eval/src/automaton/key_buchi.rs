@@ -124,9 +124,6 @@ impl BuchiStates {
             BuchiState::Elementary(branch) => ("buchi", None, branch),
             BuchiState::Guarded(phase, branch) => ("guarded-buchi", Some(*phase), branch),
         };
-        if (phase.is_some()) != self.guarded {
-            return Err(KeyRefusal::WrongForm(tag.to_owned()));
-        }
         let branch = normal(std::slice::from_ref(branch), self.max_bytes)?
             .into_iter()
             .next()
