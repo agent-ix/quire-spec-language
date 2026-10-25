@@ -7,6 +7,6 @@ publish = false
 
 [dependencies]
 qsl-replay = { path = "../../../qsl-replay" }
-quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
-quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
-quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
+quire-eval = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }

@@ -482,7 +482,7 @@ mod tests {
         );
         let own = wire(&acquired.handle.package, "f");
         let (bytes, context, handle) = acquired.into_parts();
-        drop((bytes, context, text));
+        drop((bytes, context, text, input));
         let selection = handle
             .lookup_callable(handle.package_id(), own)
             .expect("retained callable");
@@ -679,6 +679,12 @@ mod tests {
             registry.register(&foreign, foreign.signature(), host.clone()),
             Err(SelectionRefusal::WrongAcquisition)
         );
+        assert!(matches!(
+            registry.begin_call(&foreign, vec![int(3)], &environment, &mut meter),
+            Err(ApplicationBeginRefusal::WrongAcquisition)
+        ));
+        assert!(registry.is_sealed());
+        assert_eq!(meter.admission_count(), 0);
         assert_eq!(
             registry.register(&selection, selection.signature(), host),
             Ok(Admission::RegistrySealed)
