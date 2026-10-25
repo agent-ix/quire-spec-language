@@ -410,8 +410,9 @@ pub enum ProbBuild {
 /// The budget or cancellation that ended a build.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProductStop {
-    /// A FR-126 budget: `max_states`, `max_transitions` or
-    /// `max_automaton_states`, with the value that was reached.
+    /// An EN-5 product budget (FR-203): `max_states`, `max_transitions` or
+    /// `max_automaton_states`, named by its `ExactProb*` limit, with the
+    /// value that was reached.
     Limit {
         /// The budget.
         limit: ModelCheckLimit,
