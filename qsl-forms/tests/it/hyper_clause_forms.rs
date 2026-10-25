@@ -82,7 +82,7 @@ fn indexed_reads(condition: &ExpressionForm) -> Vec<String> {
                 let ExprNode::Name(object) = node.at(*operand).node() else {
                     panic!("a name: {:?}", node.at(*operand).node());
                 };
-                Some(format!("{object}.{field} @ {trace}"))
+                Some(format!("{}.{field} @ {trace}", object.name))
             }
             _ => None,
         })

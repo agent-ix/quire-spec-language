@@ -566,7 +566,9 @@ fn a_construction_of_the_wrong_shape_refuses_at_the_construction() {
     }
     // A union name is a type, so an unknown qualifier is an unresolved name.
     let (_, bad) = refused("Shape", "Missing::Empty");
-    assert_eq!(bad.cause, CheckCause::MissingName("Missing::Empty".into()));
+    assert!(
+        matches!(bad.cause, CheckCause::MissingQualifiedName(name) if name.name == "Missing::Empty")
+    );
 }
 
 /// Type `Shape::Rect(2, 3)` (and the one-argument `Shape::Rect(1)`) as a

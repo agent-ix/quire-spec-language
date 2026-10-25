@@ -141,7 +141,7 @@ fn a_capture_builds_into_the_field_of_its_position() {
     );
     assert_eq!(
         order.parameter.value_type.head,
-        TypeFormHead::Name(OBJECT.to_owned())
+        TypeFormHead::Name(OBJECT.into())
     );
     assert_eq!(expression_text(&text, &order.value), "input.order");
     assert!(matches!(
@@ -286,7 +286,7 @@ fn a_related_clause_builds_both_ends_as_expression_forms() {
     assert_eq!(expression_text(&text, &related.ends[0]), "f(applied)");
     assert!(matches!(
         related.ends[0].expression.root_node(),
-        ExprNode::Call { name, arguments } if name == "f" && arguments.len() == 1
+        ExprNode::Call { name, arguments } if name.name == "f" && arguments.len() == 1
     ));
 }
 
@@ -317,10 +317,7 @@ fn a_compensation_builds_every_member_as_written() {
     assert_eq!(slice(&text, undo.within.span), "[0,30]");
     assert_eq!(undo.attempts.count, 3);
     assert_eq!(slice(&text, undo.attempts.count_span), "3");
-    assert_eq!(
-        undo.attempts.record.head,
-        TypeFormHead::Name(OBJECT.to_owned())
-    );
+    assert_eq!(undo.attempts.record.head, TypeFormHead::Name(OBJECT.into()));
     assert_eq!(undo.retry.earlier.name.name, "earlier");
     assert_eq!(undo.retry.later.name.name, "later");
     assert_eq!(expression_text(&text, &undo.retry.relation), "true");
@@ -464,7 +461,7 @@ fn a_protocol_activation_builds_into_its_field() {
     let TypeFormHead::Name(type_name) = &parameter.value_type.head else {
         panic!("a named type: {:?}", parameter.value_type.head);
     };
-    assert_eq!(type_name, OBJECT);
+    assert_eq!(type_name.name, OBJECT);
     let guard = when.as_ref().expect("the guard is written");
     assert_eq!(expression_text(&each_text, guard), "opened.ready");
 

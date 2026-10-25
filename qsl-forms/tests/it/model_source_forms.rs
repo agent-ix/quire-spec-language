@@ -142,7 +142,7 @@ fn population_keyword_forms_keep_case_and_contextual_member_rules() {
     for body in ["M::Population", "receiver.Population"] {
         let (_, function) = function(body);
         match function.body.root_node() {
-            ExprNode::Name(name) => assert_eq!(name, "M::Population"),
+            ExprNode::Name(name) => assert_eq!(name.name, "M::Population"),
             ExprNode::Field { field, .. } => assert_eq!(field, "Population"),
             node => panic!("unexpected contextual form: {node:?}"),
         }
@@ -292,7 +292,7 @@ fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
     let (_, function) = function("query(r).member(convert<Int[-2,3]>(1))");
     let children = function.body.root().children();
     assert!(
-        matches!(children[0].node(), ExprNode::Call { name, arguments } if name == "query" && arguments.len() == 1)
+        matches!(children[0].node(), ExprNode::Call { name, arguments } if name.name == "query" && arguments.len() == 1)
     );
     let ExprNode::Convert { target, .. } = children[1].node() else {
         panic!("convert");
@@ -305,7 +305,7 @@ fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
     assert_eq!(target.arguments.len(), 1);
     assert_eq!(target.arguments[0].head, TypeFormHead::Name("M::T".into()));
     assert!(
-        matches!(nested.body.root().children()[0].node(), ExprNode::Call { name, .. } if name == "query")
+        matches!(nested.body.root().children()[0].node(), ExprNode::Call { name, .. } if name.name == "query")
     );
     assert!(
         matches!(nested.body.root().children()[1].node(), ExprNode::Dispatch { member, arguments, .. } if member == "query" && arguments.is_empty())

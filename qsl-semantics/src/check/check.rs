@@ -1935,7 +1935,7 @@ fn reference_root(expression: ExprRef<'_>) -> Option<&str> {
     let mut expression = expression;
     loop {
         match expression.node() {
-            ExprNode::Name(name) => return Some(name),
+            ExprNode::Name(name) => return Some(name.name.as_str()),
             ExprNode::Deref(operand)
             | ExprNode::Value(operand)
             | ExprNode::Field { operand, .. } => {
@@ -2385,14 +2385,15 @@ impl<'a> Typer<'a> {
                         let mut at = scope;
                         let mut alias = None;
                         while let Some(binding) = at.and_then(|index| bindings.get(index)) {
-                            if binding.name == name {
+                            if binding.name == name.name {
                                 alias = Some(binding.alias);
                                 break;
                             }
                             at = binding.outer;
                         }
-                        resolved
-                            .push(alias.unwrap_or_else(|| self.captured_before(name, boundary)));
+                        resolved.push(
+                            alias.unwrap_or_else(|| self.captured_before(&name.name, boundary)),
+                        );
                     }
                     ExprNode::Let { name, value, body } => {
                         pending.push(AliasStep::Bind(name, operand.at(*body), scope));
