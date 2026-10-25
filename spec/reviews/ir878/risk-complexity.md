@@ -1,9 +1,9 @@
 ---
-id: SR-17025
+id: SR-17045
 title: "IR-878 risk and complexity review"
 type: SpecReview
 analysis: risk-complexity
-scope: "spec/functional/FR-485-supplied-admission-and-conversion-owner-allocation.md"
+scope: "spec/functional/FR-486-supplied-admission-and-conversion-owner-allocation.md"
 review_set: all
 ---
 
@@ -15,4 +15,4 @@ Checked the risk of double-charging shared helper work, conflating admission fai
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No unallocated risk found; FR-485 states one initiating budget owner, forbids evaluator projection for admission/conversion failures, and limits default resolution to the QSL caller. | FR-485 |
+| FND-001 | low | No unallocated risk found; FR-486 states one initiating budget owner, forbids evaluator projection for admission/conversion failures, and limits default resolution to the QSL caller. | FR-486 |

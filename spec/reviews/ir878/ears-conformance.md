@@ -1,9 +1,9 @@
 ---
-id: SR-17027
+id: SR-17047
 title: "IR-878 EARS conformance review"
 type: SpecReview
 analysis: ears-conformance
-scope: "spec/functional/FR-485-supplied-admission-and-conversion-owner-allocation.md"
+scope: "spec/functional/FR-486-supplied-admission-and-conversion-owner-allocation.md"
 review_set: all
 ---
 
@@ -15,4 +15,4 @@ Checked the normative description and behavior statements for a named subject, t
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No EARS conformance defect found in the requirement statements. | FR-485 |
+| FND-001 | low | No EARS conformance defect found in the requirement statements. | FR-486 |

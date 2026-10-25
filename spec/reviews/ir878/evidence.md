@@ -1,9 +1,9 @@
 ---
-id: SR-17024
+id: SR-17044
 title: "IR-878 evidence review"
 type: SpecReview
 analysis: evidence
-scope: "spec/functional/FR-485-supplied-admission-and-conversion-owner-allocation.md"
+scope: "spec/functional/FR-486-supplied-admission-and-conversion-owner-allocation.md"
 review_set: all
 ---
 
@@ -15,4 +15,4 @@ Checked the verification methods and evidence boundaries for the planned QSL tes
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No evidence-method mismatch found. The future tests must establish charge invariance and bound pass-through; PLANNED status does not claim those tests exist. | FR-485 |
+| FND-001 | low | No evidence-method mismatch found. The future tests must establish charge invariance and bound pass-through; PLANNED status does not claim those tests exist. | FR-486 |
