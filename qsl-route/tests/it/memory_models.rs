@@ -9,7 +9,9 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_foundation::MemoryModelName::{self, Ra, Sc, Tso};
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
+    descriptor_from_manifest, descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate,
+    CandidateOutcome, DynamicsMember, FairnessKindsMember, FairnessLabel, ManifestDigest,
+    ManifestMembers, MemoryModelsDefect, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind::Weak;
@@ -85,4 +87,130 @@ fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
     assert_eq!(candidates(&unadvertised, Ra), []);
     let tso_only = registry([temporal("tso-only", 4, &[Tso])]);
     assert_eq!(candidates(&tso_only, Sc), []);
+}
+
+/// FR-226-AC-2 (TC-671 step 2) at the manifest conversion: a temporal
+/// manifest carrying `memory_models` advertises exactly them, and one
+/// without the member advertises `sc` only, so it is no candidate for a
+/// `tso` or `ra` item.
+#[trace("TC-671", "FR-226-AC-2")]
+#[test]
+fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() {
+    let converted = |id: &str, seed: u8, models: Option<&[MemoryModelName]>| {
+        descriptor_from_manifest(
+            candidate(id),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest([seed; 32]),
+            [(Some("temporal-satisfaction"), Some("unbounded"))],
+            ManifestMembers {
+                domains: None,
+                fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
+                evidence_kinds: None,
+                memory_models: models,
+            },
+        )
+        .expect("a well-formed manifest")
+    };
+    let with = converted("with", 1, Some(&[Sc, Tso, Ra]));
+    assert_eq!(with.memory_models(), &BTreeSet::from([Sc, Tso, Ra]));
+    let without = converted("without", 2, None);
+    assert!(without.memory_models().is_empty());
+
+    let routed = registry([with, without]);
+    assert_eq!(
+        candidates(&routed, Sc),
+        [candidate("with"), candidate("without")]
+    );
+    assert_eq!(candidates(&routed, Tso), [candidate("with")]);
+    assert_eq!(candidates(&routed, Ra), [candidate("with")]);
+}
+
+/// QSpec FR-331-AC-30 at the manifest conversion: a `memory_models` member
+/// that is empty or repeats a model, or that sits on a descriptor that does
+/// not advertise `temporal-satisfaction`, refuses under the temporal members' cause `invalid-dynamics`.
+#[trace("TC-671")]
+#[test]
+fn a_defective_memory_models_member_refuses_the_registration() {
+    let refused = |kind: &str, models: &[MemoryModelName]| {
+        descriptor_from_manifest(
+            candidate("m"),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest([3; 32]),
+            [(Some(kind), Some("unbounded"))],
+            ManifestMembers {
+                domains: None,
+                fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
+                evidence_kinds: None,
+                memory_models: Some(models),
+            },
+        )
+        .expect_err("refused")
+    };
+    let temporal = "temporal-satisfaction";
+    for (kind, models, defect) in [
+        (temporal, &[][..], MemoryModelsDefect::Empty),
+        (
+            temporal,
+            &[Sc, Ra, Sc][..],
+            MemoryModelsDefect::DuplicateModel("sc"),
+        ),
+        (
+            "operation-contract",
+            &[Sc][..],
+            MemoryModelsDefect::NonTemporal,
+        ),
+    ] {
+        let refusal = refused(kind, models);
+        assert_eq!(
+            refusal.cause(),
+            &RegistrationCause::InvalidMemoryModels(defect),
+            "{kind} {models:?}"
+        );
+        assert_eq!(refusal.cause().as_str(), "invalid-dynamics");
+    }
+}
+
+/// A temporal provider that also carries `dynamics` keeps its
+/// `memory_models` member.
+#[trace("TC-671")]
+#[test]
+fn a_provider_with_dynamics_keeps_its_memory_models() {
+    let descriptor = descriptor_from_manifest_with_dynamics(
+        candidate("both"),
+        ProviderOrigin::Linked,
+        ManifestDigest::from_digest([4; 32]),
+        [(Some("temporal-satisfaction"), Some("unbounded"))],
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
+            evidence_kinds: None,
+            memory_models: Some(&[Sc, Tso]),
+        },
+        Some(DynamicsMember::List(&["discrete"])),
+        None,
+    )
+    .expect("a well-formed manifest");
+    assert_eq!(descriptor.memory_models(), &BTreeSet::from([Sc, Tso]));
+}
+
+/// `memory_models` is judged after every other member: a manifest with a
+/// defective evidence kind and a defective `memory_models` refuses the
+/// evidence kind.
+#[trace("TC-671")]
+#[test]
+fn memory_models_are_judged_after_evidence_kinds() {
+    let refusal = descriptor_from_manifest(
+        candidate("late"),
+        ProviderOrigin::Linked,
+        ManifestDigest::from_digest([5; 32]),
+        [(Some("probabilistic-satisfaction"), Some("unbounded"))],
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: Some(&[Sc]),
+        },
+    )
+    .expect_err("refused");
+    assert_eq!(refusal.cause().as_str(), "unknown-evidence-kind");
 }

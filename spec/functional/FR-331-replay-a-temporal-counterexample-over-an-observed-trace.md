@@ -55,7 +55,9 @@ formula is false on it.
 ## Inputs
 
 - FR-098's request: package reference, byte provision holding each observed
-  document by `sha256-jcs` digest, and limits.
+  document by `sha256-jcs` digest, limits, and `over`, the object reference
+  `{"reference":{"population":P,"key":K}}` that binds the recompiled
+  clause's `over` parameter in the first observed document.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070) whose payload is
   QSpec FR-364's counterexample on its observed arm, read by FR-364's
   member names: `trace: "observed"`, `kind` (formula or the
@@ -77,6 +79,9 @@ formula is false on it.
 - The facade SHALL recompile and check the package by FR-098's rules and in
   FR-098's order, and SHALL resolve the occurrence key to the clause's
   operator node.
+- The facade SHALL resolve the request's `over` reference in the first
+  observed document and use that object when evaluating the clause. It SHALL
+  refuse an absent object as `invalid_runtime_input`/`wrong-role-mapping`.
 - A payload whose `trace` is `"model"` SHALL refuse
   `invalid_runtime_input`/`invalid-value`; it replays through FR-128.
 - When the recompiled clause's profile selection or fairness set differs
@@ -123,6 +128,7 @@ formula is false on it.
 | FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`content-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, or `trace: "model"`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome (`always[0,2] holds(3 mod (2 - c.value) >= 0)`, an interval-carrying clause, with the undefined-evaluation envelope and no interval check) with `trace_position` 2 settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` 1 settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
+| FR-331-AC-6 | An observed temporal replay request for AC-1 carries `over` `{"reference":{"population":"Counters","key":"c1"}}`; decoding and re-encoding preserves both values, and the replay resolves that object in the first observed document before evaluation. A request that carries `over` for a function or frame target refuses `invalid_runtime_input`/`unknown-member` at `/replay/over`. | Test (TC-841) |
 
 ## Dependencies
 

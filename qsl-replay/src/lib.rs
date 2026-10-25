@@ -189,8 +189,8 @@ pub use model_check::replay::{
     StrongFairnessHint,
 };
 pub use model_check::settle::{
-    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, ResultLabel, Truth,
-    EXPLICIT_STATE,
+    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,
+    ResultLabel, Truth, EXPLICIT_STATE,
 };
 pub use model_check::smt_query::{encode_smt_query, Refusal, SmtEncodingRefusal, SmtQueryKind};
 pub use model_check::state_graph::{
@@ -315,8 +315,8 @@ pub use result::{
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.
 pub use target::{
-    NamedKind, ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
-    TargetSelectionRefusal,
+    NamedKind, ReplayEntry, ReplayOverBinding, ReplayTarget, ReplayTargetMembers,
+    RequestTargetWire, TargetMember, TargetSelectionRefusal,
 };
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them

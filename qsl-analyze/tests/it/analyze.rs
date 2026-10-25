@@ -406,6 +406,22 @@ fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
     );
 }
 
+/// FR-226-AC-2 (TC-671 step 2): EN-1's registered provider manifest
+/// descriptor carries `memory_models` `sc`, `tso` and `ra`.
+#[trace("TC-671", "FR-226-AC-2")]
+#[test]
+fn en1_advertises_the_memory_models_sc_tso_and_ra() {
+    use qsl_analyze::model_check::manifest;
+    use qsl_foundation::MemoryModelName::{Ra, Sc, Tso};
+    let descriptor =
+        manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([1; 32]))
+            .expect("EN-1's own manifest is admitted");
+    assert_eq!(
+        descriptor.memory_models(),
+        &std::collections::BTreeSet::from([Sc, Tso, Ra])
+    );
+}
+
 fn service_request<'w>(
     world: &'w crate::prob_world::World,
 ) -> qsl_analyze::statistical::StatisticalRequest<'w> {

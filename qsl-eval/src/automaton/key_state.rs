@@ -322,7 +322,7 @@ impl PastMemory {
 
 /// One elementary configuration `[obligations, past, windows, acceptance]`
 /// of a safety state. The empty configuration is true. Each set may be given
-/// in any order: [`SafetyStates::key`] writes it sorted.
+/// in any order: [`SafetyStates::key`](super::SafetyStates::key) writes it sorted.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Configuration {
     /// The conjunction of obligations.
@@ -367,7 +367,7 @@ impl Configuration {
 /// `["safety", branches]` for `branches` written as a sorted duplicate-free
 /// set, each configuration with its own sets sorted.
 pub(super) fn safety_enc(branches: &[Configuration], max_bytes: u64) -> Result<Enc, KeyRefusal> {
-    let branches = branches
+    let branches = normal(branches, max_bytes)?
         .iter()
         .map(|branch| branch.enc(max_bytes))
         .collect::<Result<_, _>>()?;
@@ -427,6 +427,10 @@ struct Shaped {
     interval: Option<Bounds>,
     /// Whether an operand's subtree holds an interval operator.
     nested_interval: bool,
+    /// Whether the occurrence is read at positive and at negative polarity
+    /// from a positive root.
+    positive: bool,
+    negative: bool,
 }
 
 /// The checked formula as the operand paths FR-338 resolves members in.
@@ -451,20 +455,26 @@ impl FormulaShape {
             path: Vec<u64>,
             node: usize,
             parent: Option<usize>,
+            signs: (bool, bool),
         }
         let nodes = formula.nodes();
         let mut entries = vec![Entry {
             path: Vec::new(),
             node: formula.root().index(),
             parent: None,
+            signs: (true, false),
         }];
         let mut next = 0_usize;
         while next < entries.len() {
-            let (path, node) = {
+            let (path, node, signs) = {
                 let entry = entries.get(next)?;
-                (entry.path.clone(), entry.node)
+                (entry.path.clone(), entry.node, entry.signs)
             };
-            for (position, child) in nodes.get(node)?.operands().enumerate() {
+            let parent = nodes.get(node)?;
+            for (position, child) in parent.operands().enumerate() {
+                // `not` and an implication's antecedent dualize the operand.
+                let flips = matches!(parent, FormulaNode::Not(_))
+                    || (position == 0 && matches!(parent, FormulaNode::Implies(..)));
                 if entries.len() >= MAX_PATHS {
                     return None;
                 }
@@ -474,13 +484,17 @@ impl FormulaShape {
                     path: child_path,
                     node: child.index(),
                     parent: Some(next),
+                    signs: if flips { (signs.1, signs.0) } else { signs },
                 });
             }
             next += 1;
         }
         let mut shaped = Vec::with_capacity(entries.len());
         for entry in &entries {
-            shaped.push(shape_of(nodes.get(entry.node)?)?);
+            let mut node = shape_of(nodes.get(entry.node)?)?;
+            node.positive = entry.signs.0;
+            node.negative = entry.signs.1;
+            shaped.push(node);
         }
         // An operand precedes no operator in the breadth-first order, so one
         // reverse pass folds every subtree.
@@ -553,10 +567,28 @@ fn shape_of(node: &FormulaNode) -> Option<Shaped> {
         op,
         interval,
         nested_interval: false,
+        positive: false,
+        negative: false,
     })
 }
 
 impl Shaped {
+    /// Whether the occurrence is read at `polarity`.
+    fn reached(&self, polarity: Polarity) -> bool {
+        match polarity {
+            Polarity::Positive => self.positive,
+            Polarity::Negative => self.negative,
+        }
+    }
+
+    /// Whether the occurrence is a future temporal operator.
+    fn is_future(&self) -> bool {
+        matches!(
+            self.op,
+            Some(Op::Eventually | Op::Always | Op::Until | Op::Release)
+        )
+    }
+
     fn past_class(&self) -> Option<(PastOperator, PastClass)> {
         let Some(Op::Past(operator)) = self.op else {
             return None;
@@ -619,6 +651,7 @@ fn path(node: NodeRef<'_>) -> Result<Vec<u64>, KeyRefusal> {
         .collect()
 }
 
+#[ix_trace_rs::string_edge]
 fn polarity(node: NodeRef<'_>) -> Result<Polarity, KeyRefusal> {
     match string(node)? {
         "positive" => Ok(Polarity::Positive),
@@ -642,6 +675,75 @@ fn set<'d, T>(
     Ok(out)
 }
 
+/// Whether two configurations differ at most in their obligations.
+///
+/// The facts are compared as the canonical sets they encode to, so the order
+/// they were given in does not matter.
+fn same_facts(
+    left: &Configuration,
+    right: &Configuration,
+    max_bytes: u64,
+) -> Result<bool, KeyRefusal> {
+    let facts = |branch: &Configuration| -> Result<Vec<u8>, KeyRefusal> {
+        let enc = branch.enc(max_bytes)?;
+        let Enc::Array(mut members) = enc else {
+            return Err(KeyRefusal::Encoding);
+        };
+        members.remove(0);
+        quire_canonical::to_vec(&Enc::Array(members), Limits::new(max_bytes))
+            .map_err(|_| KeyRefusal::Encoding)
+    };
+    Ok(facts(left)? == facts(right)?)
+}
+
+/// The branches of a state in FR-338's normal form: the windows of one
+/// occurrence merged to the one retained counter (the earliest deadline, the
+/// furthest extent, the union of offsets), and every branch an obligation-free
+/// branch subsumes removed.
+fn normal(branches: &[Configuration], max_bytes: u64) -> Result<Vec<Configuration>, KeyRefusal> {
+    let merged: Vec<Configuration> = branches
+        .iter()
+        .map(|branch| {
+            let mut windows: Vec<Window> = Vec::new();
+            for window in &branch.windows {
+                let held = windows.iter_mut().find(|held| {
+                    std::mem::discriminant(*held) == std::mem::discriminant(window)
+                        && held.occurrence() == window.occurrence()
+                });
+                match (held, window) {
+                    (Some(Window::Deadline(_, kept)), Window::Deadline(_, new)) => {
+                        *kept = (*kept).min(*new);
+                    }
+                    (Some(Window::Extent(_, kept)), Window::Extent(_, new)) => {
+                        *kept = (*kept).max(*new);
+                    }
+                    (Some(Window::Offsets(_, kept)), Window::Offsets(_, new)) => {
+                        kept.extend(new.iter().copied());
+                    }
+                    _ => windows.push(window.clone()),
+                }
+            }
+            Configuration {
+                windows,
+                ..branch.clone()
+            }
+        })
+        .collect();
+    let mut kept = Vec::with_capacity(merged.len());
+    for branch in &merged {
+        let mut subsumed = false;
+        if !branch.obligations.is_empty() {
+            for free in merged.iter().filter(|other| other.obligations.is_empty()) {
+                subsumed |= same_facts(free, branch, max_bytes)?;
+            }
+        }
+        if !subsumed {
+            kept.push(branch.clone());
+        }
+    }
+    Ok(kept)
+}
+
 /// The reader of one safety state over one formula shape.
 pub(super) struct Reader<'s> {
     pub(super) shape: &'s FormulaShape,
@@ -651,9 +753,17 @@ pub(super) struct Reader<'s> {
 impl Reader<'_> {
     /// The configurations of a `["safety", branches]` state's `branches`.
     pub(super) fn branches(&self, branches: NodeRef<'_>) -> Result<Vec<Configuration>, KeyRefusal> {
-        set(branches, self.max_bytes, |branch| {
+        let parsed = set(branches, self.max_bytes, |branch| {
             self.configuration(branch)
-        })
+        })?;
+        for free in parsed.iter().filter(|free| free.obligations.is_empty()) {
+            for other in parsed.iter().filter(|other| !other.obligations.is_empty()) {
+                if same_facts(free, other, self.max_bytes)? {
+                    return Err(KeyRefusal::NonNormal);
+                }
+            }
+        }
+        Ok(parsed)
     }
 
     fn occurrence<'a>(
@@ -692,12 +802,20 @@ impl Reader<'_> {
             windowed.push(window.occurrence());
         }
         for obligation in &configuration.obligations {
-            if matches!(obligation, Obligation::Interval { .. })
-                && windowed.contains(&obligation.occurrence())
-            {
+            let stored = match obligation {
+                Obligation::Interval { .. } => true,
+                // A completed shift's unbounded obligation replaces its
+                // `shift` entry, so both together name one debt twice.
+                Obligation::Current(occurrence) => self
+                    .shape
+                    .get(&occurrence.path)
+                    .is_some_and(|node| node.interval.is_some()),
+            };
+            if stored && windowed.contains(&obligation.occurrence()) {
                 return Err(KeyRefusal::Members);
             }
         }
+        self.membership(configuration)?;
         let mut held: Vec<&[u64]> = configuration.past.iter().map(PastMemory::path).collect();
         held.sort_unstable();
         if held.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -722,13 +840,45 @@ impl Reader<'_> {
         Ok(())
     }
 
+    /// A branch belongs to a least-fixed-point occurrence's acceptance set
+    /// exactly when that occurrence is not carried from this position.
+    fn membership(&self, configuration: &Configuration) -> Result<(), KeyRefusal> {
+        for (path, node) in &self.shape.nodes {
+            if node.interval.is_some() {
+                continue;
+            }
+            for polarity in [Polarity::Positive, Polarity::Negative] {
+                if node.least_fixed_point(polarity) != Some(true) || !node.reached(polarity) {
+                    continue;
+                }
+                let signed = Occurrence {
+                    path: path.clone(),
+                    polarity,
+                };
+                let carried = configuration
+                    .obligations
+                    .iter()
+                    .any(|obligation| *obligation.occurrence() == signed);
+                if configuration.acceptance.contains(&signed) == carried {
+                    return Err(KeyRefusal::NonNormal);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// `[o,s]` or `[o,s,lower,upper]`.
+    #[ix_trace_rs::string_edge]
     fn obligation(&self, entry: NodeRef<'_>) -> Result<Obligation, KeyRefusal> {
         let items = members(entry)?;
         match items.as_slice() {
             [path, polarity] => {
                 let (occurrence, node) = self.occurrence(*path, *polarity)?;
-                if node.interval.is_some() {
+                // Spec ruling R-3 pending: only a future temporal carry is a
+                // retained current obligation. An open-upper interval's
+                // completed shift is its unbounded obligation (`[o,s]`).
+                let unbounded = node.interval.is_none_or(|bounds| bounds.upper.is_none());
+                if !node.is_future() || !unbounded {
                     return Err(KeyRefusal::Unresolved);
                 }
                 Ok(Obligation::Current(occurrence))
@@ -746,11 +896,14 @@ impl Reader<'_> {
                     return Err(KeyRefusal::Unresolved);
                 };
                 let ordered = upper.is_none_or(|upper| lower <= upper);
+                // Spec ruling R-1 pending: whether this form is reachable at
+                // all; the conservative reading admits only a remaining
+                // interval inside the checked one.
                 let within = lower <= checked.lower
                     && match (upper, checked.upper) {
-                        (_, None) => true,
+                        (None, None) => true,
                         (Some(upper), Some(bound)) => upper <= bound,
-                        (None, Some(_)) => false,
+                        (Some(_), None) | (None, Some(_)) => false,
                     };
                 if !ordered || !within || (lower == 0 && upper.is_none()) {
                     return Err(KeyRefusal::Unresolved);
@@ -769,8 +922,12 @@ impl Reader<'_> {
     fn accepted(&self, entry: NodeRef<'_>) -> Result<Occurrence, KeyRefusal> {
         let [path, polarity] = exactly(members(entry)?.into_iter()).ok_or(KeyRefusal::Members)?;
         let (occurrence, node) = self.occurrence(path, polarity)?;
-        let unbounded = node.interval.is_none_or(|bounds| bounds.upper.is_none());
-        if node.least_fixed_point(occurrence.polarity) == Some(true) && unbounded {
+        // Spec ruling R-2 pending: an `F`/`U[a,open]` occurrence has no
+        // acceptance membership here; only an unbounded `F`/`U` does.
+        if node.least_fixed_point(occurrence.polarity) == Some(true)
+            && node.interval.is_none()
+            && node.reached(occurrence.polarity)
+        {
             Ok(occurrence)
         } else {
             Err(KeyRefusal::Unresolved)
@@ -778,6 +935,7 @@ impl Reader<'_> {
     }
 
     /// `[o,s,kind,payload]`.
+    #[ix_trace_rs::string_edge]
     fn window(&self, entry: NodeRef<'_>) -> Result<Window, KeyRefusal> {
         let [path, polarity, kind, payload] =
             exactly(members(entry)?.into_iter()).ok_or(KeyRefusal::Members)?;
@@ -829,6 +987,7 @@ impl Reader<'_> {
     }
 
     /// One `past` entry.
+    #[ix_trace_rs::string_edge]
     fn past(&self, entry: NodeRef<'_>) -> Result<PastMemory, KeyRefusal> {
         let items = members(entry)?;
         let [path_node, tag, rest @ ..] = items.as_slice() else {

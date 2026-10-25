@@ -14,7 +14,7 @@ Verify replay of a `WitnessEnvelope<TemporalCounterexample>` with observed
 steps: agreement, parity disagreement, identity refusals and malformed
 lassos.
 
-Scope: FR-331-AC-1 to FR-331-AC-3.
+Scope: FR-331-AC-1 to FR-331-AC-3 and FR-331-AC-6.
 
 ## Test Procedure
 
@@ -31,6 +31,8 @@ Build envelopes by hand over the `Counter` unit of TC-840.
 4. Replay step 1's first packet for the clause `ReachesFair`
    (`eventually holds(c.value = 2)` under `fair weak inc`), with the packet
    fairness set equal to the clause's.
+5. Decode and re-encode a temporal replay request whose `over` reference is
+   `Counters` / `c1`, then resolve that object in the first observed document.
 
 Tag the tests `#[trace("TC-841", "FR-331-AC-n")]`.
 
@@ -45,3 +47,5 @@ Tag the tests `#[trace("TC-841", "FR-331-AC-n")]`.
 - Step 4: `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole
   inc`, catalog code `unsupported_projection`/`missing-fairness-premise`,
   O-16 unsupported, no result.
+- Step 5: the request round-trips the `Counters` population and `c1` key, and
+  replay binds that object in the first observed document.
