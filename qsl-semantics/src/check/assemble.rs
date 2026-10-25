@@ -3588,6 +3588,25 @@ impl PackageDeclarations {
                 );
             }
         }
+        // FR-487: a `hyper` clause over `behaviours` locates each `holds`
+        // atom at its condition's expression tree and each `match` conjunct
+        // (match conjuncts refuse at their own spans), indexed as the family checks them.
+        let mut behaviours = 0;
+        for declaration in &unit.hyper_clauses {
+            let super::hyper_clause::HyperDeclaration::Behaviours(form) = declaration else {
+                continue;
+            };
+            use super::hyper_clause::lowering::{hyper_site, Site};
+            for (id, node) in form.body.iter() {
+                if let qsl_forms::TemporalNodeForm::Holds { condition, .. } = node {
+                    declared_site_spans.insert(
+                        hyper_site(behaviours, Site::Atom(id.index())),
+                        condition.spans.clone(),
+                    );
+                }
+            }
+            behaviours += 1;
+        }
         // FR-447: a hybrid model's nodes are located at its declared name,
         // each mode's clause and each transition's clause; a hybrid claim's
         // nodes at its declared name and its `over` parameter's name.

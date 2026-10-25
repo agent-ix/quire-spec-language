@@ -55,7 +55,7 @@ use crate::model::operation::OperationLookup;
 
 pub(crate) mod lowering;
 
-pub use lowering::{operation_text, AtomSlot};
+pub use lowering::{operation_text, AtomSlot, STUTTER_TEXT};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.hyper";
@@ -145,6 +145,13 @@ pub struct CheckedQuantifier {
     pub fairness: Vec<FairnessConstraint>,
 }
 
+impl CheckedQuantifier {
+    /// Whether the quantifier is `forall`.
+    pub fn is_universal(&self) -> bool {
+        self.kind == QuantifierKind::Forall
+    }
+}
+
 /// One step label a `match` conjunct reads, typed by its trace's model
 /// (FR-172 "Indexed atoms and step labels").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -181,6 +188,8 @@ pub struct ArgumentRead {
     pub written: String,
     /// The parameter `p`.
     pub parameter: String,
+    /// The parameter's index among the operation's parameters.
+    pub index: usize,
     /// The parameter's type `T`.
     pub parameter_type: ValueType,
 }
@@ -2006,17 +2015,19 @@ fn step_read(
             };
             let (resolved, declaration) =
                 resolve_operation(declarations, alias.as_str(), &name).map_err(|_| unresolved())?;
-            let (_, value_type) = declaration
+            let index = declaration
                 .parameters()
                 .iter()
-                .find(|(declared, _)| declared == parameter)
+                .position(|(declared, _)| declared == parameter)
                 .ok_or_else(unresolved)?;
+            let (_, value_type) = &declaration.parameters()[index];
             Ok(StepRead::Argument(Box::new(ArgumentRead {
                 trace: trace.to_owned(),
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
                     .ok_or_else(unresolved)?,
                 written: operation.clone(),
                 parameter: parameter.clone(),
+                index,
                 parameter_type: value_type.clone(),
             })))
         }

@@ -29,7 +29,7 @@ use qsl_replay::{
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ReachedLimit, UndecidedCause,
 };
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, Undefined};
 
 use crate::counter::ZERO;
 use crate::hyper_world::{
@@ -473,8 +473,11 @@ impl StepMatch for Refusing {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Ok(MatchReading::Refused)
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Ok(MatchReading::Refused {
+            conjunct: 0,
+            outcome: qsl_eval::simulation::model::ClauseOutcome::NotBoolean,
+        })
     }
 
     fn existential(
@@ -482,7 +485,7 @@ impl StepMatch for Refusing {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }
@@ -497,8 +500,13 @@ impl StepMatch for Exhausted {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Meter::new(ZERO).charge(Charge::new(ChargePoint::GraphExpand))?;
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Meter::new(ZERO)
+            .charge(Charge::new(ChargePoint::GraphExpand))
+            .map_err(|incomplete| qsl_eval::hyper::MatchIncomplete {
+                conjunct: 0,
+                incomplete,
+            })?;
         Ok(MatchReading::Holds)
     }
 
@@ -507,7 +515,7 @@ impl StepMatch for Exhausted {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }
@@ -549,7 +557,7 @@ impl HyperLetters for UndefinedWhereBHigh<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         if low(states[1]) == 1 {
             return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                 Undefined::DivisionByZero,
@@ -912,7 +920,7 @@ impl HyperLetters for UndefinedFor<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         if instance[0].instance.key == self.key && low_of(states[0], self.key) == 1 {
             return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                 Undefined::DivisionByZero,
@@ -934,7 +942,7 @@ impl StepMatch for UndefinedMatchFor<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         if instance[0].instance.key == self.key {
             return Ok(MatchReading::Undefined {
                 conjunct: 0,
@@ -949,7 +957,7 @@ impl StepMatch for UndefinedMatchFor<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }

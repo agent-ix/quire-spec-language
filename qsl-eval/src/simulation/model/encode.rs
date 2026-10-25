@@ -137,7 +137,7 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
 /// the members in sorted order, so the text is matched member by member.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
 #[ix_trace_rs::string_edge]
-pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
+pub(crate) fn parse_reference(text: &str) -> Option<ObjectReference> {
     let rest = text.strip_prefix(r#"{"identity":""#)?;
     let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
     let (object_type, rest) = rest.split_once(r#"","type":"reference","universe":""#)?;

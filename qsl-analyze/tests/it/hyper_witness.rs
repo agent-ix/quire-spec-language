@@ -29,7 +29,7 @@ use qsl_replay::{
     ReplayRefusal, UndecidedCause, DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET,
 };
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, Undefined};
 
 use crate::counter::ZERO;
 use crate::hyper::{input, inputs, positions, refuted};
@@ -364,7 +364,7 @@ impl StepMatch for ExhaustedExistential<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.universal(instance, steps, meter)
     }
 
@@ -373,8 +373,13 @@ impl StepMatch for ExhaustedExistential<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Meter::new(ZERO).charge(Charge::new(ChargePoint::GraphExpand))?;
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Meter::new(ZERO)
+            .charge(Charge::new(ChargePoint::GraphExpand))
+            .map_err(|incomplete| qsl_eval::hyper::MatchIncomplete {
+                conjunct: 0,
+                incomplete,
+            })?;
         Ok(MatchReading::Holds)
     }
 }
@@ -455,7 +460,7 @@ impl StepMatch for UndefinedUniversal<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         Ok(MatchReading::Undefined {
             conjunct: 0,
             cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
@@ -467,7 +472,7 @@ impl StepMatch for UndefinedUniversal<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.existential(instance, steps, meter)
     }
 }
@@ -519,7 +524,7 @@ impl StepMatch for LateUndefined<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         let calls = self.calls.get() + 1;
         self.calls.set(calls);
         let one = matches!(steps[0], StepLabel::Operation(step)
@@ -539,7 +544,7 @@ impl StepMatch for LateUndefined<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }
@@ -594,7 +599,7 @@ impl HyperLetters for UndefinedWhereB<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         let partner = states[1];
         let undefined = if self.at_start {
             high(partner) == 1
@@ -1128,11 +1133,14 @@ impl StepMatch for RefuseThenHold<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         let calls = self.calls.get() + 1;
         self.calls.set(calls);
         match calls {
-            5 => Ok(MatchReading::Refused),
+            5 => Ok(MatchReading::Refused {
+                conjunct: 0,
+                outcome: qsl_eval::simulation::model::ClauseOutcome::NotBoolean,
+            }),
             6 => Ok(MatchReading::Holds),
             _ => self.seams.universal(instance, steps, meter),
         }
@@ -1143,7 +1151,7 @@ impl StepMatch for RefuseThenHold<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }
@@ -1237,7 +1245,7 @@ impl HyperLetters for PerInstance<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         match (instance[0].instance.key.as_str(), self.undefined_at_w) {
             ("v", false) => Ok(AtomReading::False),
             ("w", true) => Ok(AtomReading::Undefined(UndefinedCause::Kernel(
@@ -1254,7 +1262,7 @@ impl StepMatch for PerInstance<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         if instance[0].instance.key == "v" && !self.undefined_at_w {
             return Ok(MatchReading::Undefined {
                 conjunct: 0,
@@ -1269,7 +1277,7 @@ impl StepMatch for PerInstance<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }

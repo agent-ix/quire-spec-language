@@ -38,7 +38,7 @@ use crate::model::clause_observation::Observation;
 use super::StepRead;
 
 /// The text a `String` label holds at a stutter step, and `stutter` lowers to.
-pub(crate) const STUTTER_TEXT: &str = "stutter";
+pub const STUTTER_TEXT: &str = "stutter";
 
 /// A slot no local carries: a condition has no `self`.
 const NO_SLOT: usize = usize::MAX;

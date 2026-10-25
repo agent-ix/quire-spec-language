@@ -741,6 +741,7 @@ impl<'a> Run<'_, 'a> {
                 limit: None,
             },
             ProductHalt::Automaton(limit) => stopped(ModelCheckLimit::MaxAutomatonStates, limit),
+            ProductHalt::Atom(stop) => return Err(super::atom_halt(stop)),
             ProductHalt::Encoding(refusal) => return Err(ModelCheckRefusal::Encoding(refusal)),
             ProductHalt::Fault(internal) => return Err(ModelCheckRefusal::Fault(internal)),
             ProductHalt::WitnessSet(_) => return Err(fault("a-single-trace-has-no-witness-set")),

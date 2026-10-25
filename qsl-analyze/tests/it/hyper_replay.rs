@@ -18,7 +18,7 @@ use qsl_replay::{
     ModelStep, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
     ReplayRefusal, RunStats, StepMark, TerminalValue,
 };
-use quire_exact::{Cancel, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, Meter, Undefined};
 
 use crate::hyper_projected::{aligned, IDLE, MID_OPERATION};
 use crate::hyper_witness::{members, ExhaustedExistential, GUARDED, GUARDED_CLAUSE};
@@ -585,7 +585,7 @@ impl qsl_eval::hyper::StepMatch for UniversalOnly<'_> {
         instance: &[qsl_eval::hyper::ParameterBinding],
         steps: &[qsl_eval::hyper::StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+    ) -> Result<qsl_eval::hyper::MatchReading, qsl_eval::hyper::MatchIncomplete> {
         assert_eq!(steps.len(), 1, "μ_U reads the universal variable `a` alone");
         self.0.universal(instance, steps, meter)
     }
@@ -595,7 +595,7 @@ impl qsl_eval::hyper::StepMatch for UniversalOnly<'_> {
         instance: &[qsl_eval::hyper::ParameterBinding],
         steps: &[qsl_eval::hyper::StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+    ) -> Result<qsl_eval::hyper::MatchReading, qsl_eval::hyper::MatchIncomplete> {
         assert_eq!(steps.len(), 2, "μ_E reads both variables");
         self.0.existential(instance, steps, meter)
     }
@@ -802,7 +802,7 @@ impl qsl_eval::hyper::HyperLetters for UndefinedWhereBIsHigh<'_> {
         instance: &[qsl_eval::hyper::ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<qsl_eval::temporal::AtomReading, Incomplete> {
+    ) -> Result<qsl_eval::temporal::AtomReading, qsl_eval::model_subject::AtomStop> {
         if low(states[1]) == 1 {
             return Ok(qsl_eval::temporal::AtomReading::Undefined(
                 UndefinedCause::Kernel(Undefined::DivisionByZero),
@@ -900,7 +900,7 @@ impl qsl_eval::hyper::StepMatch for UndefinedOnStepOne<'_> {
         instance: &[qsl_eval::hyper::ParameterBinding],
         steps: &[qsl_eval::hyper::StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+    ) -> Result<qsl_eval::hyper::MatchReading, qsl_eval::hyper::MatchIncomplete> {
         if crate::hyper_world::input_of(&steps[0]) == Some(1) {
             return Ok(qsl_eval::hyper::MatchReading::Undefined {
                 conjunct: 0,
@@ -915,7 +915,7 @@ impl qsl_eval::hyper::StepMatch for UndefinedOnStepOne<'_> {
         instance: &[qsl_eval::hyper::ParameterBinding],
         steps: &[qsl_eval::hyper::StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+    ) -> Result<qsl_eval::hyper::MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.existential(instance, steps, meter)
     }
 }

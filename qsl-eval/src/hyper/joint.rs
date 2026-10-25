@@ -16,7 +16,10 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{Atom, Letter};
 use crate::hyper::product::{ComponentStep, Halt, HyperTransition};
-use crate::hyper::seam::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
+use crate::hyper::seam::{
+    HyperLetters, MatchIncomplete, MatchReading, ParameterBinding, StepLabel, StepMatch,
+};
+use crate::model_subject::AtomStop;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use crate::simulation::{EncodingRefusal, ExpansionStop, TransitionSystem};
 use crate::temporal::{AtomReading, UndefinedCause};
@@ -167,7 +170,12 @@ impl<'r, 's> Joint<'r, 's> {
                 .seams
                 .letters
                 .atom(*atom, self.instance, &states, &mut meter)
-                .map_err(|incomplete| self.record(Halt::Meter(incomplete.limit_kind)))?;
+                .map_err(|stop| match stop {
+                    AtomStop::Incomplete(incomplete) => {
+                        self.record(Halt::Meter(incomplete.limit_kind))
+                    }
+                    other => self.record(Halt::Atom(other)),
+                })?;
             match value {
                 AtomReading::True => {
                     let atom = Atom::new(index).map_err(|_| {
@@ -308,12 +316,12 @@ impl<'r, 's> Joint<'r, 's> {
     }
 }
 
-fn read(reading: Result<MatchReading, quire_exact::Incomplete>) -> Matched {
+fn read(reading: Result<MatchReading, MatchIncomplete>) -> Matched {
     match reading {
         Ok(MatchReading::Holds) => Matched::Holds,
         Ok(MatchReading::Fails) => Matched::Fails,
         Ok(MatchReading::Undefined { conjunct, cause }) => Matched::Undefined { conjunct, cause },
-        Ok(MatchReading::Refused) | Err(_) => Matched::Refused,
+        Ok(MatchReading::Refused { .. }) | Err(_) => Matched::Refused,
     }
 }
 

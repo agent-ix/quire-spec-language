@@ -103,7 +103,7 @@ impl TupleLetters for Letters<'_> {
         self.world
             .seams()
             .atom(atom, &instance(), &[state], meter)
-            .map_err(LetterStop::Incomplete)
+            .map_err(LetterStop::from)
     }
 }
 
