@@ -6,7 +6,7 @@
 //! triple. The subject is the ConfigVersion domain package, whose one
 //! operation is `attemptUpdate`.
 
-use qsl_semantics::check::{CheckCause, TemporalCause};
+use qsl_semantics::check::{CheckCause, CheckRefusal, CheckingLimitKind, MatchPart, TemporalCause};
 
 use super::admission_corpus::config_version_unit;
 use super::*;
@@ -169,7 +169,7 @@ fn slots(wire: &Value) -> BTreeMap<String, &Value> {
 /// FR-488-AC-1, AC-2, AC-3, AC-6: `NonInterference` emits one
 /// `claim`/`hyperproperty` node whose body binds the seven FR-402 members in
 /// order, with the `quantifiers` Tuple of Groups.
-#[trace("TC-1266", "FR-488-AC-1", "FR-488-AC-2", "FR-488-AC-3", "FR-488-AC-6")]
+#[trace("TC-1266", "FR-488-AC-1", "FR-488-AC-2", "FR-488-AC-3")]
 #[test]
 fn a_hyper_clause_emits_the_hyperproperty_node_with_its_seven_bindings() {
     let compiled = compile(&unit(INFINITE, &non_interference()));
@@ -469,7 +469,7 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
 
 /// FR-488-AC-18, AC-19: a fairness set under a bounded profile is refused
 /// `unsupported_construct`/`not-yet-implemented` as not emitted.
-#[trace("TC-1266", "FR-488-AC-18", "FR-488-AC-19")]
+#[trace("TC-1266", "FR-488-AC-20")]
 #[test]
 fn a_fairness_set_under_a_bounded_profile_is_not_emitted() {
     let declarations = hyper(
@@ -489,15 +489,608 @@ fn a_fairness_set_under_a_bounded_profile_is_not_emitted() {
     );
 }
 
-/// FR-488-AC-21: the nodes of the clause count against the node ceiling.
+// ---------------------------------------------------------------------
+// Models with operations that take parameters, and several aliases.
+// ---------------------------------------------------------------------
+
+/// The ConfigVersion domain package under `identity`, with `step(i)` and
+/// `mix()` added to `ConfigVersion` (ADR-023 §8's vault shape).
+fn vault(identity: &str) -> Vec<u8> {
+    let mut document: Value = serde_json::from_str(config_version_unit::DOMAIN_PACKAGE).unwrap();
+    let attempt = document["types"][1]["operations"][0].clone();
+    let operation = |name: &str, params: Value| {
+        let mut operation = attempt.clone();
+        operation["name"] = json!(name);
+        operation["identity"] = json!(format!("ix://example/config-version/ConfigVersion/{name}"));
+        operation["params"] = params;
+        operation["frame"] = json!({"modifies": [], "creates": [], "deletes": []});
+        operation
+    };
+    let parameter = json!({
+        "identity": "ix://example/config-version/ConfigVersion/step/i",
+        "name": "i",
+        "typeRef": "ix://example/config-version/VersionNumber",
+        "presence": "required",
+        "nullable": false,
+        "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "origin": {"generated": {
+            "generatorIdentity": "ix://example/config-version/ConfigVersion/step/i",
+            "generatorVersion": "1.0.0",
+            "inputIdentities": ["ix://example/config-version/ConfigVersion/step/i"],
+        }},
+    });
+    let step = operation("step", json!([parameter]));
+    let mix = operation("mix", json!([]));
+    document["types"][1]["operations"] = json!([attempt, step, mix]);
+    serde_json::to_string(&document)
+        .unwrap()
+        .replace("example/config-version", identity)
+        .into_bytes()
+}
+
+fn alias_identity(alias: &str) -> &'static str {
+    match alias {
+        "V" => "example/config-version",
+        "S" => "example/device-saving",
+        "N" => "example/device-normal",
+        other => panic!("no model {other}"),
+    }
+}
+
+fn digest_of_document(document: &[u8]) -> String {
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    qsl_semantics::model::key::hex(digest)
+}
+
+/// A unit over the models `aliases` under `profile`, then `declarations`.
+fn world_unit(profile: &str, aliases: &[&str], declarations: &str) -> (String, Vec<Vec<u8>>) {
+    let mut text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"{profile}\";\n"
+    );
+    let mut documents = Vec::new();
+    for alias in aliases {
+        let identity = alias_identity(alias);
+        let document = vault(identity);
+        text.push_str(&format!(
+            "model {alias} = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
+            digest_of_document(&document)
+        ));
+        documents.push(document);
+    }
+    text.push_str(declarations);
+    text.push('\n');
+    (text, documents)
+}
+
+fn packages_of(documents: &[Vec<u8>]) -> BTreeMap<[u8; 32], Vec<u8>> {
+    qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice))
+}
+
+/// A built world: the checked clauses, the emission, the wire and the
+/// documents it was admitted against.
+struct Built {
+    clauses: Vec<qsl_semantics::check::CheckedHyperClause>,
+    emission: Emission,
+    wire: Value,
+    documents: Vec<Vec<u8>>,
+}
+
+fn build(profile: &str, aliases: &[&str], declarations: &str) -> Built {
+    let (text, documents) = world_unit(profile, aliases, declarations);
+    let graph = assemble_with_models(text.as_bytes(), &packages_of(&documents))
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{text}"));
+    let clauses = graph.hyper_clauses().to_vec();
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    Built {
+        clauses,
+        emission,
+        wire,
+        documents,
+    }
+}
+
+/// The refusals of the world, with the unit text.
+fn refused(profile: &str, aliases: &[&str], declarations: &str) -> (String, Vec<CheckRefusal>) {
+    let (text, documents) = world_unit(profile, aliases, declarations);
+    let refusals = assemble_with_models(text.as_bytes(), &packages_of(&documents))
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("the unit is refused");
+    (text, refusals)
+}
+
+/// QSL's full I2 read of `built`.
+fn admitted(built: &Built) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in built.wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    for document in &built.documents {
+        evidence
+            .insert_domain_package_document(digest_of_document(document), document.clone())
+            .expect("a fresh evidence key");
+    }
+    crate::checked_v2::read_checked_package_v2(
+        built.emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+        &qsl_semantics::library::fixtures::single_pin(
+            library(),
+            built.emission.package.package_id(),
+        ),
+    )
+    .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
+    .into_value()
+    .admitted
+}
+
+/// The text a not-emitted refusal's span covers in `text`.
+fn not_emitted_text<'t>(text: &'t str, refusals: &[CheckRefusal]) -> &'t str {
+    let [CheckRefusal {
+        cause: CheckCause::Temporal(cause),
+        ..
+    }] = refusals
+    else {
+        panic!("one temporal refusal: {refusals:?}");
+    };
+    let TemporalCause::NotEmitted { span, .. } = &**cause else {
+        panic!("not emitted: {cause:?}");
+    };
+    &text[span.start..span.end]
+}
+
+/// FR-488-AC-6: `SavesPower` over two aliases lists its subjects in order of
+/// first naming, its parameters, and its slots by object parameter and trace.
+#[trace("TC-1266", "FR-488-AC-6")]
+#[test]
+fn two_aliases_list_their_subjects_parameters_and_slots() {
+    let declarations = "hyper SavesPower using t over behaviours \
+         (d: S::ConfigVersion, e: N::ConfigVersion) forall trace s of S forall trace n of N \
+         match { s.step.ConfigVersion::step.i = n.step.ConfigVersion::step.i } \
+         { always holds(d.versionNumber @ s <= e.versionNumber @ n) }";
+    let built = build(INFINITE, &["S", "N"], declarations);
+    let body = &hyper_node(&built.wire)["body"];
+    let subjects = binding(body, "subjects")["members"].as_array().unwrap();
+    let names: Vec<_> = subjects
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["S", "N"]);
+    assert_ne!(target(&subjects[0]["value"]), target(&subjects[1]["value"]));
+    let parameters = binding(body, "parameters")["members"].as_array().unwrap();
+    let names: Vec<_> = parameters
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["d", "e"]);
+    let slots = slots(&built.wire);
+    assert!(slots.contains_key("slot_sd_ss") && slots.contains_key("slot_se_sn"));
+    admitted(&built);
+}
+
+/// The `(name, level)` of every slot parameter node of `wire`.
+fn slot_levels(wire: &Value) -> Vec<(String, String)> {
+    let mut levels: Vec<(String, String)> = nodes(wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "parameter")
+        .map(|node| {
+            (
+                text(binding(&node["body"], "name")).to_owned(),
+                binding(&node["body"], "level")["value"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    levels.sort();
+    levels
+}
+
+fn clause_over(name: &str, quantifiers: &str, match_block: &str) -> String {
+    format!(
+        "hyper {name} using t over behaviours (c: V::ConfigVersion) {quantifiers} \
+         {match_block} {{ always holds(c.versionNumber @ a = c.versionNumber @ b) }}"
+    )
+}
+
+const TWO_FORALL: &str = "forall trace a of V forall trace b of V";
+
+/// FR-488-AC-7, AC-8: argument, receiver and operation reads mint slot nodes
+/// named by their step label with the types FR-487 gives; a constant
+/// conjunct is a reference to a boolean literal node; `op_sb` is a different
+/// node at level 0 and at level 1.
+#[trace("TC-1266", "FR-488-AC-7", "FR-488-AC-8")]
+#[test]
+fn match_conjuncts_mint_typed_step_label_slots_at_their_own_levels() {
+    let declarations = clause_over(
+        "Reads",
+        TWO_FORALL,
+        "match { a.step.op = V::ConfigVersion::step and b.step.op = stutter and true and \
+         a.step.ConfigVersion::step.i = b.step.ConfigVersion::step.i and \
+         a.step.receiver = b.step.receiver }",
+    );
+    let built = build(INFINITE, &["V"], &declarations);
+    let slots = slots(&built.wire);
+    let type_form = |name: &str| {
+        let slot = slots.get(name).unwrap_or_else(|| panic!("a slot {name}"));
+        node_with(
+            &built.wire,
+            slot["semantic_type"]["digest"].as_str().unwrap(),
+        )["semantic_form"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let op = type_form("op_sa");
+    assert_eq!(op, type_form("op_sb"));
+    let argument = type_form("arg_sa_sConfigVersion_sstep_si");
+    assert_eq!(argument, type_form("arg_sb_sConfigVersion_sstep_si"));
+    assert_ne!(
+        op, argument,
+        "an argument read is an Option, an op a String"
+    );
+    assert_eq!(argument, type_form("rcv_sa"));
+    // Five conjuncts in written order: the constant one is a reference.
+    let node = hyper_node(&built.wire);
+    let terms = binding(&node["body"], "match")["members"]
+        .as_array()
+        .unwrap();
+    assert_eq!(terms.len(), 5);
+    let constant = node_with(&built.wire, target(&terms[2]));
+    assert_eq!(constant["node_tag"], "value");
+    assert_eq!(constant["body"]["term"], "literal");
+    assert_eq!(constant["body"]["value_kind"], "boolean");
+    admitted(&built);
+
+    // `op_sb` alone is level 0; after `a.step.op` it is level 1.
+    let both = build(
+        INFINITE,
+        &["V"],
+        &clause_over(
+            "Levels",
+            TWO_FORALL,
+            "match { b.step.op = stutter and a.step.op = b.step.op }",
+        ),
+    );
+    let levels = slot_levels(&both.wire);
+    assert!(levels.contains(&("op_sa".into(), "0".into())), "{levels:?}");
+    assert!(levels.contains(&("op_sb".into(), "0".into())), "{levels:?}");
+    assert!(levels.contains(&("op_sb".into(), "1".into())), "{levels:?}");
+    admitted(&both);
+}
+
+/// FR-488-AC-9: interleaved universal and existential conjuncts keep written
+/// order in `match` and `conjuncts()`.
+#[trace("TC-1266", "FR-488-AC-9")]
+#[test]
+fn interleaved_conjuncts_keep_their_written_order() {
+    let declarations = clause_over(
+        "Interleaved",
+        "forall trace a of V exists trace b of V",
+        "match { a.step.op = a.step.op and a.step.op = b.step.op and \
+         a.step.receiver = a.step.receiver and b.step.op = a.step.op }",
+    );
+    let built = build(INFINITE, &["V"], &declarations);
+    let [clause] = &built.clauses[..] else {
+        panic!("one clause");
+    };
+    assert_eq!(
+        clause.conjuncts(),
+        [
+            (MatchPart::Universal, 0),
+            (MatchPart::Existential, 0),
+            (MatchPart::Universal, 1),
+            (MatchPart::Existential, 1),
+        ]
+    );
+    let node = hyper_node(&built.wire);
+    assert_eq!(
+        binding(&node["body"], "match")["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    admitted(&built);
+}
+
+/// FR-488-AC-16, AC-17: a `let` rooted in `a`'s slot read inside `@ a`
+/// emits; the same read inside `@ b` is refused at the read it dereferences;
+/// a read with no slot root is refused.
+#[trace("TC-1266", "FR-488-AC-16", "FR-488-AC-17")]
+#[test]
+fn a_read_must_stay_in_the_component_its_slot_root_names() {
+    let linked = |atom: &str| {
+        format!(
+            "hyper Linked using t over behaviours (c: V::ConfigVersion) {TWO_FORALL} \
+             {{ always holds({atom}) }}"
+        )
+    };
+    let emits =
+        linked("(let r = c.parent in present(r) and deref(value(r)).versionNumber = 1) @ a");
+    admitted(&build(INFINITE, &["V"], &emits));
+
+    let crossing =
+        linked("(let r = (c.parent @ a) in present(r) and deref(value(r)).versionNumber = 1) @ b");
+    let (text, refusals) = refused(INFINITE, &["V"], &crossing);
+    assert_eq!(
+        not_emitted_text(&text, &refusals),
+        "deref(value(r)).versionNumber"
+    );
+}
+
+/// FR-488-AC-18: a clause with two refusals reports the first in the order
+/// of "Clauses S4 does not emit": an alias that binds no object parameter
+/// (at the clause) before a fairness set under a bounded profile (at the
+/// constraint).
+#[trace("TC-1266", "FR-488-AC-18")]
+#[test]
+fn the_first_refusal_in_precedence_order_is_reported() {
+    let body = "eventually [0, 2] holds(d.versionNumber @ s = d.versionNumber @ s)";
+    let alias_only = format!(
+        "hyper Unbound using t over behaviours (d: S::ConfigVersion) \
+         forall trace s of S forall trace n of N {{ {body} }}"
+    );
+    let (text, refusals) = refused(EVENT, &["S", "N"], &alias_only);
+    assert!(
+        not_emitted_text(&text, &refusals).starts_with("hyper Unbound"),
+        "an alias with no parameter is refused at the clause"
+    );
+    let both = format!(
+        "hyper Unbound using t over behaviours (d: S::ConfigVersion) \
+         forall trace s of S fair weak S::ConfigVersion::mix; forall trace n of N {{ {body} }}"
+    );
+    let (text, refusals) = refused(EVENT, &["S", "N"], &both);
+    assert!(
+        not_emitted_text(&text, &refusals).starts_with("hyper Unbound"),
+        "the clause-level refusal precedes the constraint's"
+    );
+}
+
+/// FR-488-AC-19: bounded and open intervals emit with their values.
+#[trace("TC-1266", "FR-488-AC-19")]
+#[test]
+fn bounded_and_open_intervals_emit_and_are_admitted() {
+    for (profile, formula, interval) in [
+        (
+            EVENT,
+            "always [0, 3] holds(c.versionNumber @ a = c.versionNumber @ b)",
+            ("0", "3"),
+        ),
+        (
+            INFINITE,
+            "eventually [2, *] holds(c.versionNumber @ a = c.versionNumber @ b)",
+            ("2", ""),
+        ),
+    ] {
+        let declarations = format!(
+            "hyper Window using t over behaviours (c: V::ConfigVersion) {TWO_FORALL} {{ {formula} }}"
+        );
+        let built = build(profile, &["V"], &declarations);
+        let wire = serde_json::to_string(&built.wire).unwrap();
+        assert!(wire.contains(&format!("\"{}\"", interval.0)), "{wire}");
+        admitted(&built);
+    }
+}
+
+/// FR-488-AC-20: a fairness set under a bounded profile is refused at the
+/// constraint.
+#[trace("TC-1266", "FR-488-AC-20")]
+#[test]
+fn a_bounded_fairness_refusal_is_located_at_the_constraint() {
+    let declarations = clause_over(
+        "Bounded",
+        "forall trace a of V fair weak V::ConfigVersion::mix; forall trace b of V",
+        "",
+    )
+    .replace("always holds", "always [0, 3] holds");
+    let (text, refusals) = refused(EVENT, &["V"], &declarations);
+    assert!(
+        not_emitted_text(&text, &refusals).starts_with("fair weak V::ConfigVersion::mix"),
+        "{}",
+        not_emitted_text(&text, &refusals)
+    );
+}
+
+/// FR-488-AC-21: the nodes of the clause count against the node ceiling:
+/// the exact count compiles and one fewer is refused with the node limit.
 #[trace("TC-1266", "FR-488-AC-21")]
 #[test]
-fn the_emitted_nodes_count_against_the_node_ceiling() {
-    let text = unit(INFINITE, &non_interference());
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let tight = CheckingLimits::default().with_nodes(8);
-    let refused = assemble_with_models(text.as_bytes(), &packages)
-        .expect("the unit assembles")
-        .check(tight);
-    assert!(refused.is_err(), "eight nodes cannot hold the clause");
+fn the_emitted_nodes_count_against_the_node_ceiling_exactly() {
+    let (text, documents) = world_unit(INFINITE, &["V"], &non_interference_v());
+    let packages = packages_of(&documents);
+    let check = |nodes: u64| {
+        assemble_with_models(text.as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default().with_nodes(nodes))
+    };
+    let needed = (1..200)
+        .find(|nodes| check(*nodes).is_ok())
+        .expect("a ceiling admits the clause");
+    assert!(needed > 1);
+    let refusals = check(needed - 1).expect_err("one node short");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a node limit: {refusal:?}");
+    };
+    assert_eq!(limit.kind, CheckingLimitKind::Nodes);
+    assert_eq!(limit.limit, needed - 1);
+    assert!(check(needed).is_ok());
+}
+
+fn non_interference_v() -> String {
+    clause_over(
+        "NonInterference",
+        TWO_FORALL,
+        "match { a.step.op = b.step.op }",
+    )
+}
+
+/// FR-488-AC-11, AC-12, AC-13: each variant has a different NodeId;
+/// reformatting and a changed clause name keep it; `weak whole` equals the
+/// unmarked constraint and `each` differs.
+#[trace("TC-1266", "FR-488-AC-11", "FR-488-AC-12", "FR-488-AC-13")]
+#[test]
+fn node_ids_follow_the_checked_clause() {
+    let id = |declarations: String| {
+        let built = build(INFINITE, &["V"], &declarations);
+        hyper_node(&built.wire)["node_id"]["digest"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let with =
+        |quantifiers: &str, matched: &str| clause_over("NonInterference", quantifiers, matched);
+    let base = id(non_interference_v());
+    let m = "match { a.step.op = b.step.op }";
+    let fair = "fair weak V::ConfigVersion::mix;";
+    let variants = [
+        id(with("forall trace a of V exists trace b of V", m)),
+        id(with("forall trace b of V forall trace a of V", m)),
+        id(with(
+            &format!("forall trace a of V {fair} forall trace b of V"),
+            m,
+        )),
+        id(with(
+            &format!("forall trace a of V forall trace b of V {fair}"),
+            m,
+        )),
+        id(with(
+            TWO_FORALL,
+            "match { a.step.op = b.step.op and a.step.receiver = b.step.receiver }",
+        )),
+        id(with(
+            "forall trace a of V forall trace b of V align skip { V::ConfigVersion::mix }",
+            m,
+        )),
+        id(non_interference_v()
+            .replace("<=", "=")
+            .replace("= c.version", "!= c.version")),
+    ];
+    for (i, variant) in variants.iter().enumerate() {
+        assert_ne!(&base, variant, "variant {i}");
+        for other in &variants[..i] {
+            assert_ne!(other, variant, "variant {i}");
+        }
+    }
+    // Reformatting and a renamed clause keep the NodeId.
+    let reformatted = non_interference_v()
+        .replace("NonInterference", "Renamed")
+        .replace(" forall", "\n   forall")
+        .replace("{ always", "{\n always");
+    assert_eq!(base, id(reformatted));
+    // `weak whole` is the unmarked constraint; `each` is not.
+    let marked = |written: &str| {
+        id(with(
+            &format!("forall trace a of V {written} V::ConfigVersion::mix; forall trace b of V"),
+            m,
+        ))
+    };
+    assert_eq!(marked("fair"), marked("fair weak whole"));
+    assert_ne!(marked("fair weak whole"), marked("fair weak each"));
+}
+
+/// FR-488-AC-4, AC-5, AC-13: the wrapper's law, activation and formula, the
+/// fairness `declaration` reference, and the slot nodes the formula reads.
+#[trace("TC-1266", "FR-488-AC-4", "FR-488-AC-5", "FR-488-AC-13")]
+#[test]
+fn the_wrapper_carries_the_profile_law_activation_and_formula() {
+    let declarations = clause_over(
+        "Fair",
+        "forall trace a of V fair weak V::ConfigVersion::mix; forall trace b of V",
+        "",
+    );
+    let built = build(INFINITE, &["V"], &declarations);
+    let wire = &built.wire;
+    let node = hyper_node(wire);
+    let wrapper = node_with(wire, target(binding(&node["body"], "body")));
+    assert_eq!(
+        wrapper["body"]["operation"]["laws"],
+        json!([{"role": "temporal_profile", "definition": {
+            "authority": "agent-ix", "identity": INFINITE}}])
+    );
+    let arguments = &wrapper["body"]["arguments"];
+    assert_eq!(arguments[2]["members"].as_array().unwrap().len(), 1);
+    assert_eq!(arguments[2]["members"][0]["name"], "kind");
+    assert_eq!(text(&arguments[2]["members"][0]["value"]), "origin");
+    let formula = node_with(wire, target(&arguments[5]));
+    assert_eq!(formula["semantic_form"], "formula");
+    assert_eq!(
+        formula["body"]["operation"]["identity"],
+        "quire.op.temporal.always"
+    );
+    let operand = formula["body"]["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["term"] == "reference")
+        .expect("the formula's operand");
+    let holds = node_with(wire, target(operand));
+    assert_eq!(holds["semantic_form"], "formula");
+    // The fairness Group's `declaration` is the model node `subjects` names.
+    let groups = binding(&node["body"], "quantifiers")["members"]
+        .as_array()
+        .unwrap();
+    let declaration = groups[1]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "declaration")
+        .unwrap();
+    let subjects = binding(&node["body"], "subjects")["members"]
+        .as_array()
+        .unwrap();
+    assert_eq!(target(&declaration["value"]), target(&subjects[0]["value"]));
+    admitted(&built);
+}
+
+/// FR-488-AC-14, AC-15: lookups of an unknown NodeId, a non-hyper NodeId,
+/// another role and another ordinal return `hyper-root-unresolved`.
+#[trace("TC-1266", "FR-488-AC-14", "FR-488-AC-15")]
+#[test]
+fn lookups_of_what_is_no_hyper_clause_are_unresolved() {
+    let built = build(INFINITE, &["V"], &non_interference_v());
+    let package = admitted(&built);
+    let root = hyper_roots(&package).unwrap().remove(0);
+    let claim = |node, role: &str, ordinal| {
+        OccurrenceKey::new(
+            node,
+            quire_exact::Origin::new(quire_exact::Role::new(role), ordinal),
+        )
+    };
+    let slot = qsl_foundation::digest::WireNodeId::from_hex(
+        slots(&built.wire)["slot_sc_sa"]["node_id"]["digest"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    for key in [
+        claim(
+            qsl_foundation::digest::WireNodeId::from_digest([9; 32]),
+            "claim",
+            0,
+        ),
+        claim(slot, "claim", 0),
+        claim(root.occurrence().node(), "invariant", 0),
+        claim(root.occurrence().node(), "claim", 9),
+    ] {
+        assert_eq!(
+            resolve_hyper_root(&package, &key),
+            Err(HyperRootUnresolved { root: key })
+        );
+    }
 }

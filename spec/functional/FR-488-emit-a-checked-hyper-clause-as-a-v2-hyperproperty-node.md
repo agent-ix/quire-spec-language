@@ -345,8 +345,9 @@ deterministic and injective:
 
 - Each conjunct is its checked condition lowered as FR-093 lowers a Boolean
   expression. The aggregate member is the term the lowering returns: a
-  `reference` to the condition's root `expression` node, or a `literal`
-  term for a constant conjunct such as `true` (Q-4).
+  `reference` to the condition's root `expression` node; a constant conjunct
+  such as `true` lowers to a boolean `literal` `value` node and the
+  term is a `reference` to it (Q-4).
 - The condition's slot `j` (FR-487 "Slots") is bound to a
   `value`/`parameter` node, at level `j` (the level rule above), named by the
   step-label read it stands for as § "Slot node names" gives (`op_s<t>`,
@@ -423,7 +424,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | FR-488-AC-5 | The `holds` operand of AC-4 is the equality of the field read `l` of `slot_sv_sa` (level 0) and of `slot_sv_sb` (level 1), with no term for `@`; the slot nodes have `expression` occurrences at `hyper 0 slot 0` and `hyper 0 slot 1` and `type` occurrences of their type node. | Test (TC-1266) |
 | FR-488-AC-6 | `SavesPower` emits `subjects` with two bindings `S` and `N` in order of first naming, each to the `model` node of its alias's first object parameter's type, `parameters` `d` and `e` in declaration order, slot nodes `slot_sd_ss` and `slot_se_sn`, and a `holds` operand reading `used` of `slot_sd_ss` and of `slot_se_sn`. | Test (TC-1266) |
 | FR-488-AC-7 | `NonInterference`'s `match` aggregate holds, in source order, a reference to the equality of the `parameter` nodes `op_sa` and `op_sb` (levels 0 and 1, `String`), then a reference to the equality of `arg_sa_sVault_sstep_si` and `arg_sb_sVault_sstep_si` (`Option<Int[0, 1]>`), with each conjunct root's `expression` occurrence at `hyper 0 match <k>`. | Test (TC-1266) |
-| FR-488-AC-8 | In `match { a.step.op = V::Vault::step and b.step.op = stutter }` the first term compares its one slot with the `String` literal of `step`'s operation text and the second compares its one slot with the `String` literal `stutter`. A constant conjunct `true` is a `literal` term. A conjunct that reads only `b.step.op` has `op_sb` at level 0, and `op_sb` in `a.step.op = b.step.op` is a different node at level 1. | Test (TC-1266) |
+| FR-488-AC-8 | In `match { a.step.op = V::Vault::step and b.step.op = stutter }` the first term compares its one slot with the `String` literal of `step`'s operation text and the second compares its one slot with the `String` literal `stutter`. A constant conjunct `true` is a `reference` to a boolean `literal` `value` node. A conjunct that reads only `b.step.op` has `op_sb` at level 0, and `op_sb` in `a.step.op = b.step.op` is a different node at level 1. | Test (TC-1266) |
 | FR-488-AC-9 | For a clause whose conjuncts `c0` (universal), `c1` (reads an existential variable) and `c2` (universal) are written in that order, `match` holds `c0`, `c1`, `c2`, as `CheckedHyperClause::conjuncts()` returns them, with `c1` at `hyper 0 match exists 0`. | Test (TC-1266) |
 | FR-488-AC-10 | `NonInterference` with `align skip { V::Vault::mix }` binds `align_skip` to one reference, to the `state`/`operation_anchor` node of `mix`, equal to the anchor node a state clause naming `mix` references; two listed operations give two references in written order. | Test (TC-1266) |
 | FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (a fairness Group naming `b`, after `b`'s quantifier Group, and different from the one on `a`); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |

@@ -3381,6 +3381,7 @@ impl PackageDeclarations {
         // its declaring type and operation, anchored like a clause's.
         let hyper_skipped: Vec<(
             usize,
+            usize,
             quire_exact::EffectiveId,
             crate::model::operation::OperationDeclaration,
             Location,
@@ -3403,6 +3404,7 @@ impl PackageDeclarations {
                                 .operation_declaration(declaring, key.operation.as_str())?
                                 .clone();
                             Some((
+                                clause_index,
                                 clause.span().start,
                                 declaring,
                                 operation,
@@ -3457,7 +3459,7 @@ impl PackageDeclarations {
                 ));
             }
         }
-        for (source_order, declaring, operation, location) in &hyper_skipped {
+        for (_, source_order, declaring, operation, location) in &hyper_skipped {
             source_ordered_anchors.push((
                 *source_order,
                 lowering::AnchorInput {
@@ -3545,24 +3547,31 @@ impl PackageDeclarations {
         }
         // FR-488: the `operation_anchor` of each `align skip` operation.
         let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
-        {
-            let mut skipped = hyper_skipped.iter();
-            for (clause_index, clause) in checked_hyper.iter().enumerate() {
-                for _ in clause.align_skip() {
-                    let Some((_, declaring, operation, location)) = skipped.next() else {
-                        break;
-                    };
-                    let anchor = lowering::AnchorInput {
-                        declaring: *declaring,
-                        operation,
-                        location,
-                        reference: location,
-                    };
-                    match lowering.align_skip_anchor(&anchor) {
-                        Ok(key) => hyper_align[clause_index].push(key),
-                        Err(refusal) => refusals.push(refusal),
-                    }
-                }
+        for (clause_index, _, declaring, operation, location) in &hyper_skipped {
+            let anchor = lowering::AnchorInput {
+                declaring: *declaring,
+                operation,
+                location,
+                reference: location,
+            };
+            match lowering.align_skip_anchor(&anchor) {
+                Ok(key) => hyper_align[*clause_index].push(key),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // S3 resolves every listed operation, so a clause whose anchors fall
+        // short of its list is a broken invariant, never a silent drop.
+        for (clause, align) in checked_hyper.iter().zip(&hyper_align) {
+            if align.len() != clause.align_skip().len() && refusals.is_empty() {
+                refusals.push(CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                        quire_semantic_value::catalog::InternalFault::new(
+                            "S3",
+                            "align-skip-operation-resolves",
+                        ),
+                    ))),
+                });
             }
         }
         // FR-104: each state clause after every function it may call,
