@@ -28,6 +28,7 @@ use qsl_forms::{
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -53,6 +54,7 @@ use crate::family::requirements::{classify_domains, ClaimExtent, ClassifyFailure
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
 
+pub(crate) mod emission;
 pub(crate) mod lowering;
 
 pub use lowering::{operation_text, AtomSlot, STUTTER_TEXT};
@@ -279,6 +281,11 @@ impl CheckedStepPredicate {
     pub fn condition(&self) -> (CheckedNode<'_>, usize) {
         (self.condition.body.root(), self.condition.slots)
     }
+
+    /// The conjunct's lowered condition with the names of its slots.
+    pub(crate) fn lowered(&self) -> &lowering::ConjunctCondition {
+        &self.condition
+    }
 }
 
 /// The form ADR-023 section 3 classifies a clause into.
@@ -375,6 +382,14 @@ pub struct CheckedHyperClause {
     identity: HyperIdentity,
     atom_slots: Vec<AtomSlot>,
     atoms: BTreeMap<usize, lowering::AtomCondition>,
+    /// The object type each object parameter declares, in source order.
+    parameter_objects: Vec<EffectiveId>,
+    /// The span of each quantifier's written constraint that resolved to
+    /// each member of its fairness set, in fairness-set order.
+    fairness_spans: Vec<Vec<Span>>,
+    /// The `claim` occurrence of the clause's `hyperproperty` node, set when
+    /// the package is assembled (FR-488 "Outputs").
+    occurrence: Option<OccurrenceKey>,
 }
 
 impl CheckedHyperClause {
@@ -486,7 +501,100 @@ impl CheckedHyperClause {
     pub fn component_reads(&self, atom: FormulaNodeId) -> Option<&BTreeMap<Location, usize>> {
         self.atoms.get(&atom.index()).map(|atom| &atom.components)
     }
+
+    /// Both parts' `match` conjuncts in source order, as `(part, index in
+    /// that part)`, ordered by [`CheckedStepPredicate::span`] start (FR-488
+    /// "Inputs"). The package keeps no part or index, so the split between
+    /// `mu_U` and `mu_E` is recomputed from the checked clause.
+    pub fn conjuncts(&self) -> Vec<(MatchPart, usize)> {
+        let mut ordered: Vec<(usize, MatchPart, usize)> = self
+            .mu_universal
+            .iter()
+            .enumerate()
+            .map(|(index, conjunct)| (conjunct.span.start, MatchPart::Universal, index))
+            .chain(
+                self.mu_existential
+                    .iter()
+                    .enumerate()
+                    .map(|(index, conjunct)| (conjunct.span.start, MatchPart::Existential, index)),
+            )
+            .collect();
+        ordered.sort_by_key(|(start, _, _)| *start);
+        ordered
+            .into_iter()
+            .map(|(_, part, index)| (part, index))
+            .collect()
+    }
+
+    /// The `claim` occurrence `[node, "claim", ordinal]` (ADR-013 O-07) of
+    /// the clause's `hyperproperty` node: the `clause` member of FR-315's
+    /// `HyperProductIdentity`. The emitter assigns it when the package is
+    /// assembled, so a clause that was checked and not assembled has none
+    /// ([`Self::assembled_occurrence`]) and this returns the zero
+    /// occurrence, which names no node.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        self.occurrence.as_ref().unwrap_or(&UNASSEMBLED)
+    }
+
+    /// [`Self::occurrence`], or `None` for a clause no package assembled.
+    pub fn assembled_occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
+    }
+
+    /// The same clause, assembled into a package at `occurrence`.
+    pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
+        self.occurrence = Some(occurrence);
+        self
+    }
+
+    /// The object type each object parameter declares (`v: V::T`), in
+    /// source order.
+    pub(crate) fn parameter_objects(&self) -> &[EffectiveId] {
+        &self.parameter_objects
+    }
+
+    /// The span of each quantifier's written fairness constraints, one per
+    /// member of its fairness set.
+    pub(crate) fn fairness_spans(&self) -> &[Vec<Span>] {
+        &self.fairness_spans
+    }
+
+    /// The checked condition of each `holds` atom, by arena index.
+    pub(crate) fn atom_conditions(&self) -> &BTreeMap<usize, lowering::AtomCondition> {
+        &self.atoms
+    }
+
+    /// Hand the compound units typing formed to lowering, which keys them.
+    pub(crate) fn take_formed_units(&mut self) -> Vec<quire_semantic_value::quantity::UnitTable> {
+        let mut units = Vec::new();
+        for atom in self.atoms.values_mut() {
+            units.push(std::mem::take(&mut atom.formed_units));
+        }
+        for conjunct in self.mu_universal.iter_mut().chain(&mut self.mu_existential) {
+            units.push(std::mem::take(&mut conjunct.condition.formed_units));
+        }
+        units
+    }
 }
+
+/// Which part of a `match` block a conjunct belongs to (FR-172, ADR-023
+/// HM-3).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MatchPart {
+    /// `mu_U`: the conjuncts that read universal variables only.
+    Universal,
+    /// `mu_E`: the conjuncts that read an existential variable.
+    Existential,
+}
+
+/// The occurrence of a clause no package assembled: node zero, `claim`
+/// ordinal zero. No package holds a node with the zero id.
+static UNASSEMBLED: std::sync::LazyLock<OccurrenceKey> = std::sync::LazyLock::new(|| {
+    OccurrenceKey::new(
+        WireNodeId::from_digest([0; 32]),
+        quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
+    )
+});
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
 #[derive(Clone, Debug)]
@@ -1020,7 +1128,7 @@ fn check_behaviours<'a>(
     };
     let mut found: Vec<Found> = Vec::new();
 
-    let quantifiers = checked_quantifiers(form, declarations, &mut found)?;
+    let (quantifiers, fairness_spans) = checked_quantifiers(form, declarations, &mut found)?;
     let aliases = distinct_aliases(&quantifiers);
     let variables = Variables {
         by_name: quantifiers
@@ -1252,6 +1360,8 @@ fn check_behaviours<'a>(
         _ => CopyGroup::default(),
     };
 
+    let parameter_objects: Vec<EffectiveId> =
+        parameters.iter().map(|(_, object)| *object).collect();
     let roots: Vec<ValueType> = parameters
         .iter()
         .map(|(_, object)| ValueType::Reference(*object))
@@ -1302,6 +1412,9 @@ fn check_behaviours<'a>(
         identity,
         atom_slots: slots.slots().to_vec(),
         atoms,
+        parameter_objects,
+        fairness_spans,
+        occurrence: None,
     })
 }
 
@@ -1328,8 +1441,9 @@ fn checked_quantifiers(
     form: &HyperBehavioursForm,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Result<Vec<CheckedQuantifier>, StageFailure<CheckRefusal>> {
+) -> Result<(Vec<CheckedQuantifier>, Vec<Vec<Span>>), StageFailure<CheckRefusal>> {
     let mut checked = Vec::with_capacity(form.quantifiers.len());
+    let mut spans = Vec::with_capacity(form.quantifiers.len());
     let mut seen: Vec<&str> = Vec::new();
     for quantifier in &form.quantifiers {
         if seen.contains(&quantifier.variable.name.as_str()) {
@@ -1353,14 +1467,17 @@ fn checked_quantifiers(
             }));
             continue;
         }
+        let (fairness, fairness_spans) =
+            checked_fairness(quantifier, &alias.name, declarations, found);
         checked.push(CheckedQuantifier {
             kind: quantifier.kind,
             variable: quantifier.variable.name.clone(),
             alias: ModelAlias(alias.name.clone()),
-            fairness: checked_fairness(quantifier, &alias.name, declarations, found),
+            fairness,
         });
+        spans.push(fairness_spans);
     }
-    Ok(checked)
+    Ok((checked, spans))
 }
 
 /// A quantifier's fairness set (FR-172 "Fairness and profile"): each
@@ -1370,20 +1487,22 @@ fn checked_fairness(
     alias: &str,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Vec<FairnessConstraint> {
+) -> (Vec<FairnessConstraint>, Vec<Span>) {
     let mut set: Vec<FairnessConstraint> = Vec::new();
+    let mut spans: Vec<Span> = Vec::new();
     for written in &quantifier.fairness {
         match resolve_operation(declarations, alias, &written.operation) {
             Ok((operation, _)) => {
                 let constraint = checked_constraint(written, operation);
                 if !set.contains(&constraint) {
                     set.push(constraint);
+                    spans.push(written.span);
                 }
             }
             Err(cause) => found.push(Found::Temporal(cause)),
         }
     }
-    set
+    (set, spans)
 }
 
 /// The operation `name` (`Alias::Type::operation`) names in the model of
@@ -1811,6 +1930,34 @@ pub(crate) fn conjunct_spans(form: &qsl_forms::HyperBehavioursForm) -> (Vec<Span
             existential.push(span);
         } else {
             universal.push(span);
+        }
+    }
+    (universal, existential)
+}
+
+/// The expression span trees of the `match` conjuncts of `form`, rooted at
+/// each conjunct and classified as [`conjunct_spans`] does: the universal
+/// ones and the existential ones, each in source order.
+pub(crate) fn conjunct_trees(
+    form: &qsl_forms::HyperBehavioursForm,
+) -> (Vec<qsl_forms::ExpressionSpans>, Vec<qsl_forms::ExpressionSpans>) {
+    let Some(block) = &form.match_block else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut universal, mut existential) = (Vec::new(), Vec::new());
+    for (node, located) in split_conjuncts(block) {
+        let Some(tree) = located.and_then(|id| block.spans.subtree(id)) else {
+            continue;
+        };
+        let exists = reads_existential(node, |name| {
+            form.quantifiers.iter().any(|quantifier| {
+                quantifier.kind == QuantifierKind::Exists && quantifier.variable.name == name
+            })
+        });
+        if exists {
+            existential.push(tree);
+        } else {
+            universal.push(tree);
         }
     }
     (universal, existential)

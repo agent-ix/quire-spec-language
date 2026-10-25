@@ -198,6 +198,16 @@ impl Lowering<'_> {
         Ok(binding.anchor)
     }
 
+    /// Lower one operation an `align skip` list names to the same operation
+    /// anchor a state clause naming it references (FR-488 "The node and its
+    /// aggregate"), recording an `anchor` occurrence at `anchor.location`.
+    pub(crate) fn align_skip_anchor(
+        &mut self,
+        anchor: &AnchorInput<'_>,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.time_source_anchor(anchor)
+    }
+
     /// Lower and key the state clause `clause`, recording its `claim`
     /// occurrence at its root and, for a `pre` or `post` clause, one
     /// `anchor` occurrence of the operation's anchor node.

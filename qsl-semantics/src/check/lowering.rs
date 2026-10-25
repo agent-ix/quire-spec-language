@@ -89,6 +89,7 @@ use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
 mod hybrid;
+mod hyper;
 mod model;
 mod protocol;
 mod state;
@@ -111,6 +112,7 @@ pub(crate) use state::{
     state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
     OperationBinding, StateClauseInput,
 };
+pub(crate) use hyper::{HyperClauseInput, LoweredHyperClause};
 pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the

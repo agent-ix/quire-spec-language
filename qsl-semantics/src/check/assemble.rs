@@ -3609,13 +3609,28 @@ impl PackageDeclarations {
                 continue;
             };
             use super::hyper_clause::lowering::{hyper_site, Site};
+            declared_type_spans.insert(hyper_site(behaviours, Site::Claim), form.name.span);
+            declared_type_spans.insert(hyper_site(behaviours, Site::Body), form.span);
             for (id, node) in form.body.iter() {
-                if let qsl_forms::TemporalNodeForm::Holds { condition, .. } = node {
-                    declared_site_spans.insert(
-                        hyper_site(behaviours, Site::Atom(id.index())),
-                        condition.spans.clone(),
-                    );
-                }
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            hyper_site(behaviours, Site::Atom(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                };
+                declared_type_spans.insert(hyper_site(behaviours, Site::Node(id.index())), span);
+            }
+            let (universal_trees, existential_trees) = super::hyper_clause::conjunct_trees(form);
+            for (k, tree) in universal_trees.into_iter().enumerate() {
+                declared_site_spans.insert(hyper_site(behaviours, Site::Universal(k)), tree);
+            }
+            for (k, tree) in existential_trees.into_iter().enumerate() {
+                declared_site_spans.insert(hyper_site(behaviours, Site::Existential(k)), tree);
             }
             let (universal, existential) = super::hyper_clause::conjunct_spans(form);
             for (k, span) in universal.into_iter().enumerate() {

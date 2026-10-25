@@ -22,6 +22,8 @@
 //! parameter's name, each formula node's span, each fairness constraint's
 //! span, and each `holds` condition's own expression tree.
 
+use std::collections::BTreeMap;
+
 use quire_exact::{Identifier, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -32,10 +34,11 @@ use crate::check::node_key::{
     OperationLaw, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
+use crate::check::ir::CheckedNode;
 use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
-    UnaryTemporal,
+    BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
+    FormulaNodeId, UnaryTemporal,
 };
 use crate::value::member::Member;
 
@@ -95,6 +98,29 @@ pub(crate) struct TemporalClauseInput<'a> {
     pub(crate) conditions: &'a TypedConditions,
 }
 
+/// A `holds` atom's checked condition and the name each of its slots was
+/// bound under.
+pub(super) struct FormulaCondition<'c> {
+    /// The checked Boolean condition.
+    pub(super) root: CheckedNode<'c>,
+    /// The name each slot of the condition was bound under.
+    pub(super) slot_names: &'c [String],
+}
+
+/// A temporal formula to key (FR-337, FR-488 "The body"): the formula, the
+/// site each node is located at, and the typed condition of each `holds`
+/// atom by its arena index.
+pub(super) struct FormulaInput<'a, 'c> {
+    /// The checked formula.
+    pub(super) formula: &'a CheckedFormula,
+    /// The site of the formula node at an arena index.
+    pub(super) node_site: &'a dyn Fn(usize) -> Location,
+    /// Each `holds` atom's condition, by arena index.
+    pub(super) conditions: &'a BTreeMap<usize, FormulaCondition<'c>>,
+    /// Where a fault of the formula as a whole is located.
+    pub(super) root_site: &'a Location,
+}
+
 /// A lowered temporal clause's keys.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LoweredTemporalClause {
@@ -130,7 +156,30 @@ impl Lowering<'_> {
             semantic_type: over_type,
         }];
 
-        let formula = self.temporal_formula(input, boolean, &scope)?;
+        let conditions: BTreeMap<usize, FormulaCondition<'_>> = input
+            .conditions
+            .holds
+            .iter()
+            .map(|(index, condition)| {
+                (
+                    *index,
+                    FormulaCondition {
+                        root: condition.body.root(),
+                        slot_names: &condition.slot_names,
+                    },
+                )
+            })
+            .collect();
+        let formula = self.temporal_formula(
+            &FormulaInput {
+                formula: clause.formula(),
+                node_site: &|node| temporal_location(input.index, TemporalSite::Node(node)),
+                conditions: &conditions,
+                root_site: &claim,
+            },
+            boolean,
+            &scope,
+        )?;
 
         if clause.fairness().len() != clause.fairness_sources().len() {
             return Err(stage_fault(&claim, "fairness-member-has-a-source"));
@@ -240,16 +289,16 @@ impl Lowering<'_> {
     /// Key every node of `input`'s formula, each operand before its
     /// operator, and return the root's key. The arena puts an operator
     /// before its operands, so one reverse pass keys every operand first.
-    fn temporal_formula(
+    pub(super) fn temporal_formula(
         &mut self,
-        input: &TemporalClauseInput<'_>,
+        input: &FormulaInput<'_, '_>,
         boolean: NodeKey,
         scope: &[Binder],
     ) -> Result<NodeKey, CheckRefusal> {
-        let formula = input.clause.formula();
+        let formula = input.formula;
         let mut keys: Vec<Option<NodeKey>> = vec![None; formula.nodes().len()];
         for (index, node) in formula.nodes().iter().enumerate().rev() {
-            let location = temporal_location(input.index, TemporalSite::Node(index));
+            let location = (input.node_site)(index);
             let operand = |id: FormulaNodeId| -> Result<MemberTerm, CheckRefusal> {
                 keys.get(id.index())
                     .copied()
@@ -263,11 +312,10 @@ impl Lowering<'_> {
                 FormulaNode::Holds { .. } => {
                     let condition = input
                         .conditions
-                        .holds
                         .get(&index)
                         .ok_or_else(|| stage_fault(&location, "holds-condition-typed"))?;
-                    let mut binders = Binders::new(&condition.slot_names, scope);
-                    let operand = self.expression(condition.body.root(), &mut binders)?;
+                    let mut binders = Binders::new(condition.slot_names, scope);
+                    let operand = self.expression(condition.root, &mut binders)?;
                     (
                         "quire.op.temporal.holds",
                         None,
@@ -338,12 +386,7 @@ impl Lowering<'_> {
         keys.get(formula.root().index())
             .copied()
             .flatten()
-            .ok_or_else(|| {
-                stage_fault(
-                    &temporal_location(input.index, TemporalSite::Claim),
-                    "formula-root-keyed",
-                )
-            })
+            .ok_or_else(|| stage_fault(input.root_site, "formula-root-keyed"))
     }
 }
 
@@ -368,7 +411,7 @@ const fn binary_identity(operator: BinaryTemporal) -> &'static str {
 }
 
 /// A broken invariant of this lowering, never a refusal of the input.
-fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     fault(
         location,
         KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
