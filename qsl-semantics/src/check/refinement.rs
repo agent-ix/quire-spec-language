@@ -73,6 +73,8 @@ use crate::model::clause_observation::Observation;
 use crate::model::domain_package::PopulationRecord;
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
+use crate::value::definition::DefinitionLock;
+use crate::value::layer::HeaderLayer;
 use quire_checked::key::DeclarationKey;
 
 /// One `refinement` declaration the assembler resolved: its form and the
@@ -228,6 +230,13 @@ pub enum RefinementCause {
         /// feature alone does not say.
         subject: Option<&'static str>,
     },
+    /// A row expression uses a form outside the value and model layers that
+    /// the governing infinite-trace profile requires: `unsupported_construct`/
+    /// `expression-form` (QSpec FR-375 "Row layers").
+    UnsupportedRowForm {
+        /// The identity of the layer that admits the expression form.
+        layer: &'static str,
+    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -307,7 +316,9 @@ impl RefinementCause {
                     Code::InvalidModelBinding
                 }
             },
-            Self::Unsupported { .. } => Code::UnsupportedConstruct,
+            Self::Unsupported { .. } | Self::UnsupportedRowForm { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -331,6 +342,7 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
+            Self::UnsupportedRowForm { .. } => Some("expression-form"),
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -1302,6 +1314,8 @@ fn resolve_protocol(
         checked.roles.iter().any(|role| {
             role.context
                 .is_some_and(|context| object_types.iter().any(|object| object.id == context))
+                || role.model_selection.as_deref()
+                    == Some(abstract_side.model.selection().identity.as_str())
         })
     };
     if !acts_on_abstract_model {
@@ -1418,6 +1432,50 @@ struct Checker<'c, 'a> {
     /// The classes the internal list makes internal, each with the pointer
     /// of the entry that names it.
     internal: Vec<(AbstractStepClass, String)>,
+}
+
+/// The first expression form in a refinement row that the governing
+/// infinite-trace profile does not admit, with the token span and the layer
+/// that admits it (QSpec FR-375 "Row layers").
+fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
+    let lock = DefinitionLock::pinned();
+    let required: std::collections::BTreeSet<_> = lock
+        .admitted_forms(HeaderLayer::ValueComplete)
+        .into_iter()
+        .chain(lock.admitted_forms(HeaderLayer::ModelComplete))
+        .collect();
+    let predicates = std::collections::BTreeSet::new();
+    let mut unsupported = None;
+    super::layer::visit_located(
+        &expression.expression,
+        &expression.spans,
+        expression
+            .spans
+            .at(&[])
+            .unwrap_or(Span { start: 0, end: 0 }),
+        |node, span| {
+            let layer = match node {
+                qsl_forms::ExprNode::ProtocolReference { .. } => Some("quire.protocol.complete/v1"),
+                qsl_forms::ExprNode::StepLabel { .. } | qsl_forms::ExprNode::Stutter => {
+                    Some("quire.temporal.complete/v1")
+                }
+                _ => super::layer::expression_form(node, &predicates).and_then(|form| {
+                    if required.contains(&form) {
+                        None
+                    } else {
+                        HeaderLayer::ALL
+                            .into_iter()
+                            .find(|layer| lock.admits(*layer, form))
+                            .map(HeaderLayer::identity)
+                    }
+                }),
+            };
+            let layer = layer?;
+            unsupported = Some((layer, span));
+            Some(())
+        },
+    );
+    unsupported
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -1885,6 +1943,11 @@ impl<'c, 'a> Checker<'c, 'a> {
         context: RowContext,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Option<CheckedRow> {
+        if let Some((layer, span)) = unsupported_row_form(expression) {
+            self.findings
+                .refuse(span, RefinementCause::UnsupportedRowForm { layer });
+            return None;
+        }
         let declarations = self.declarations;
         let location = Location::root(Origin::Expression);
         let RowContext {
