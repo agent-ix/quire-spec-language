@@ -20,7 +20,7 @@ use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
     protocol_constraints, FairnessOrigin, MemorySelection, ProtocolFairness, ProtocolState,
-    ProtocolSystem, ProtocolTarget, ProtocolTransition, Sc, StepKind, Tso,
+    ProtocolSystem, ProtocolTarget, ProtocolTransition, Ra, Sc, StepKind, Tso,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
@@ -650,7 +650,7 @@ fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
     let prefix: Vec<ModelStep<ProtocolTransition>> = stem
         .iter()
         .map(|(transition, at)| ModelStep {
-            reported: system
+            transition: system
                 .reported(transition.clone(), &states[*at].0)
                 .expect("the step reports"),
             post_state: system.state_key(&states[*at].0).expect("a key").1,
