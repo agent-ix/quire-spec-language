@@ -30,3 +30,14 @@ Examined units: FR-487 (statement, Outputs, Behavior), FR-487-AC-1 to FR-487-AC-
 ## Verdict
 
 Conditionally acceptable on integrity: the change is internally consistent, ids are unique, and TC-1264 covers all nine criteria step by step. FND-001 and FND-002 should be fixed before coding, because a literal implementation would fault, or a test would not pin the refusal.
+
+## Dispositions
+
+Round 1, head bd9361749 (fix commit be4e0bad6).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The label-vector length is now stated per part: one label per universal variable for `Universal`, and every variable, universal ones first, for `Existential`. The fault is "not the length this section gives for `part`", and slot `k` is read at its variable's quantifier index. |
+| FND-002 | fixed | AC-5's refusing conjunct is named: `quire::value::ieee::sqrt` under `Float64[exact]` of a non-square constant (FR-397-AC-20), with outcome the kernel `Refused` `ieee_not_exact`. TC-1264 step 5 follows. |
+| FND-003 | fixed | Replaced by "This requirement adds no conjunct field to those outcomes. The conjunct is observable through `StepMatch` and through FR-315's `match-conjunct` refusal." |
+| FND-004 | fixed | AC-4 now asks for the charge log over `(step(0), step(1))` (conjuncts 0 and 1), and AC-5 for "a charge log holding no charge of conjunct 2". |

@@ -26,3 +26,12 @@ Examined units: FR-487 (statement and every Behavior bullet), plus FR-315 Joint 
 ## Verdict
 
 Conforms, with two low wording findings.
+
+## Dispositions
+
+Round 1, head bd9361749 (fix commit be4e0bad6).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Now "`StepMatch::universal` and `StepMatch::existential` SHALL return `Result<MatchReading, MatchIncomplete>` with these shapes ..." |
+| FND-002 | fixed | The subject is now "FR-315's `encode_hyper_query` SHALL read these nodes", and atoms are read "through FR-315's expression reader (`Reader::boolean`)". |
