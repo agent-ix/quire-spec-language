@@ -24,7 +24,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use quire_exact::{Integer, Rational, ValueType};
+use quire_exact::{Integer, IntegerInterval, Rational, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -400,10 +400,11 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
 }
 
-/// TC-620 step 1: `Service` checks, and the checked graph records each
-/// random parameter's support and probabilities in declared order, the
-/// `duration` reward's value type and `Steady`'s weight per operation.
-#[trace("TC-620")]
+/// TC-620 step 1 (FR-185-AC-1): `Service` checks, and the checked graph
+/// records each random parameter's support and probabilities in declared
+/// order, the `duration` reward's value type `Millis = Int[1, 12]` and
+/// `Steady`'s weight per operation.
+#[trace("TC-620", "FR-185-AC-1")]
 #[test]
 fn the_service_model_checks_and_records_its_declarations() {
     let graph = checked(&service(None, ""));
@@ -441,7 +442,10 @@ fn the_service_model_checks_and_records_its_declarations() {
     };
     assert_eq!(duration.name(), "duration");
     assert_eq!(duration.operation(), d.operation());
-    assert!(matches!(duration.value_type(), ValueType::Int(_)));
+    assert_eq!(
+        duration.value_type(),
+        &ValueType::Int(IntegerInterval::new(1_i64.into(), 12_i64.into()).expect("an interval"))
+    );
     assert_eq!(duration.parameters().len(), 2);
 
     let steady = model.workload("Steady").expect("Steady is recorded");
@@ -488,8 +492,9 @@ fn names_parameter(cause: &ProbabilisticCause, expected: &str) -> bool {
 
 /// TC-620 step 2 (FR-185 "Random parameters"): each random-parameter variant
 /// of `Service` refuses with a diagnostic naming the parameter and carrying
-/// its cause, at the value, weight or declaration it names.
-#[trace("TC-620")]
+/// its cause, at the value, weight or declaration it names. FR-185-AC-2
+/// (with the precondition, exact-value and S1 tests below).
+#[trace("TC-620", "FR-185-AC-2")]
 #[test]
 fn random_parameter_variants_refuse_naming_the_parameter() {
     for (replacement, cause, at) in [
@@ -557,8 +562,8 @@ fn random_parameter_variants_refuse_naming_the_parameter() {
 
 /// TC-620 step 2: a precondition of `Server::attempt` that reads `d`
 /// refuses `random-read-in-precondition` at the read, naming the parameter
-/// and the precondition; a postcondition may read it.
-#[trace("TC-620")]
+/// and the precondition; a postcondition may read it. FR-185-AC-2.
+#[trace("TC-620", "FR-185-AC-2")]
 #[test]
 fn a_precondition_that_reads_a_random_parameter_refuses_at_the_read() {
     let pre = "pre Busy using v on Service::Server::attempt \
@@ -729,8 +734,8 @@ fn a_configured_rational_bits_ceiling_is_named_by_the_refusal() {
 /// TC-620 step 2 (FR-185 "Exact values"), each as the weight of
 /// `Server::request`: a value past 65,536 bits as written refuses before it
 /// is reduced or expanded, with the limit refusal, even when it reduces to
-/// 1; one within the ceiling is admitted and recorded reduced.
-#[trace("TC-620")]
+/// 1; one within the ceiling is admitted and recorded reduced. FR-185-AC-2.
+#[trace("TC-620", "FR-185-AC-2")]
 #[test]
 fn exact_values_are_bounded_as_written() {
     let n = integer_of_bits(70_000);
@@ -746,6 +751,7 @@ fn exact_values_are_bounded_as_written() {
         let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
             panic!("a limit refusal: {:?}", refusals[0].cause);
         };
+        assert_eq!(limit.kind.setting().name(), "s3.rational_bits");
         assert_eq!(limit.limit, 65_536);
         assert!(limit.actual > 65_536, "{value:.40}");
     }
@@ -783,8 +789,8 @@ fn exact_values_are_bounded_as_written() {
 }
 
 /// TC-620 step 2: a bare `-1` is no `exact-value`, so S1 refuses it and S3
-/// never sees it.
-#[trace("TC-620")]
+/// never sees it. FR-185-AC-2.
+#[trace("TC-620", "FR-185-AC-2")]
 #[test]
 fn a_bare_negative_weight_is_refused_at_s1() {
     let (unit, _) = service_unit("random Server::attempt(d) ~ { 1: -1 };");
