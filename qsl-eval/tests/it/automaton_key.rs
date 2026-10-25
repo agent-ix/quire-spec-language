@@ -17,9 +17,9 @@
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
     BoundedTranslation, BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
-    HistoryOperand, KeyRefusal, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
-    SafetyState, SafetyStates, SafetyTranslation, StateContext, SubjectKind, TranslationRefusal,
-    Window,
+    DistanceBucket, HistoryOperand, KeyRefusal, Obligation, Occurrence, PastMemory, PastOperator,
+    Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext, SubjectKind,
+    TranslationRefusal, Window,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -1176,19 +1176,68 @@ fn the_writer_retains_one_counter_per_occurrence_and_refuses_what_admit_refuses(
     assert_eq!(open.key(&[shifts]), Err(KeyRefusal::Members));
 }
 
-/// A protocol subject's past and acceptance forms differ from the ordinary
-/// ones (`distance-history`, finite `F`/`U` acceptance), and this algebra
-/// does not carry them: it refuses to translate such a subject rather than
-/// admit the ordinary forms as if they were its own.
+/// FR-338's protocol-subject rows: the subject kind selects the forms, so a
+/// protocol clause is translated and its keys are not the ordinary subject's.
 #[trace("TC-525")]
 #[test]
-fn a_protocol_subject_has_no_safety_states_yet() {
+fn a_protocol_subject_is_translated_with_its_own_forms() {
     let fixture = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
     let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
-    assert!(matches!(
-        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol),
-        Err(TranslationRefusal::NotTranslated(_))
-    ));
+    let protocol =
+        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol).expect("translates");
+    let ordinary =
+        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Ordinary).expect("translates");
+    // The same past facts are `distance-history` for the protocol subject and
+    // `history` for the ordinary one, and each refuses the other's key.
+    let window = "always (holds(c.level = 1) implies once[1,2] holds(c.level = 2))";
+    let window = self::fixture(INFINITE, "c: Counter", "on origin", window);
+    let context = StateContext::clause(&window.clause, occurrence(0), Vec::new());
+    let protocol_window =
+        SafetyStates::clause(&window.clause, &context, SubjectKind::Protocol).expect("translates");
+    let ordinary_window =
+        SafetyStates::clause(&window.clause, &context, SubjectKind::Ordinary).expect("translates");
+    let distance = Configuration {
+        past: vec![PastMemory::DistanceHistory {
+            path: vec![0, 1],
+            buckets: vec![bucket(1, [false, true])],
+            tail: None,
+        }],
+        ..Configuration::default()
+    };
+    let history = Configuration {
+        past: vec![PastMemory::History {
+            path: vec![0, 1],
+            operands: vec![HistoryOperand {
+                path: vec![0, 1, 0],
+                offsets: vec![1],
+            }],
+        }],
+        ..Configuration::default()
+    };
+    assert!(protocol_window.key(std::slice::from_ref(&distance)).is_ok());
+    assert!(ordinary_window.key(std::slice::from_ref(&history)).is_ok());
+    assert_eq!(
+        ordinary_window.key(std::slice::from_ref(&distance)),
+        Err(KeyRefusal::Unresolved)
+    );
+    assert_eq!(
+        protocol_window.key(std::slice::from_ref(&history)),
+        Err(KeyRefusal::Unresolved)
+    );
+    // A finite `eventually` not carried is an acceptance member only for the
+    // protocol subject.
+    let free = [Configuration::default()];
+    let member = [Configuration {
+        acceptance: vec![at(&[0, 1], Polarity::Positive)],
+        ..Configuration::default()
+    }];
+    assert!(ordinary.key(&free).is_ok());
+    assert_eq!(protocol.key(&free), Err(KeyRefusal::NonNormal));
+    assert!(protocol.key(&member).is_ok());
+    assert_eq!(ordinary.key(&member), Err(KeyRefusal::Unresolved));
+    let live = self::fixture(INFINITE, "c: Counter", "on origin", LIVE);
+    let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
+    assert!(BuchiStates::clause(&live.clause, &context, SubjectKind::Protocol).is_ok());
 }
 
 /// Subsumption compares facts as sets: an obligation-free branch whose past
@@ -1488,12 +1537,6 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
         SafetyTranslation::reachable_invariant(&guarded_invariant.clause, &context),
         Err(TranslationRefusal::NotTranslated(_))
     ));
-    let live = fixture(INFINITE, "c: Counter", "on origin", LIVE);
-    let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
-    assert!(matches!(
-        BuchiStates::clause(&live.clause, &context, SubjectKind::Protocol),
-        Err(TranslationRefusal::NotTranslated(_))
-    ));
     assert_eq!(
         plain.key(&BuchiState::Guarded(
             BuchiPhase::Active,
@@ -1714,12 +1757,15 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
         ),
         states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
     );
-    // The positive F carry is a different state: it is not a `buchi` body.
+    // The positive F carry is a different state: the `buchi` key the engine
+    // writes for the negated carry is not the `safety` carry of the root.
     let positive_carry = states_key(r#"["safety",[[[[[],"positive"]],[],[],[]]]]"#);
-    assert_ne!(
-        positive_carry,
-        states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    let written = text_of(
+        &live
+            .key(&BuchiState::Elementary(carry.clone()))
+            .expect("encodes"),
     );
+    assert_ne!(written, positive_carry);
     assert_eq!(
         live.admit(positive_carry.as_bytes()).map(|_| ()),
         Err(KeyRefusal::WrongForm("safety".into()))
@@ -1753,8 +1799,8 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
 }
 
 /// A TP-4 clause is not translated when its key form is not derived: an
-/// unguarded `on each` (ruling R-5 pending), an open-upper least fixed point
-/// in the negated closure (R-2 pending), a clause checked under another
+/// unguarded `on each` and an open-upper least fixed point in the negated
+/// closure (both ruled by #1516 and not implemented yet), a clause checked under another
 /// profile, and any clause the safety key cannot carry.
 #[trace("TC-525")]
 #[test]
@@ -1880,5 +1926,327 @@ fn a_model_subject_is_keyed_by_its_checked_property_form() {
     assert_eq!(
         keyed("always (holds(c.level = 1) implies eventually[0,3] holds(c.level = 2))"),
         (true, false)
+    );
+}
+
+/// The protocol subject's `states(_)`.
+fn protocol(body: &str) -> SafetyStates {
+    let fixture = fixture(INFINITE, "c: Counter", "on origin", body);
+    let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+    SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol)
+        .unwrap_or_else(|why| panic!("{body}: {why}"))
+}
+
+fn bucket(distance: u64, transform: [bool; 2]) -> DistanceBucket {
+    DistanceBucket {
+        distance,
+        transform,
+    }
+}
+
+/// FR-338: on a protocol subject a general finite past window and a shifted
+/// open one are `[o,"distance-history",buckets,tail]`, buckets of
+/// `[distance,[false_result,true_result]]` sorted by complete bytes, the
+/// distances `0..b` (`0..a`), `null` tail for a finite window and a Boolean
+/// for a shift. The ordinary `history`/`shift-history` are refused there,
+/// `distance-history` is refused on an ordinary subject, and the flag and
+/// age forms are the same on both.
+#[trace("TC-525")]
+#[test]
+fn a_protocol_past_window_is_distance_history() {
+    let entry = |states: &SafetyStates, memory: PastMemory, text: &str| {
+        let configuration = Configuration {
+            past: vec![memory],
+            ..Configuration::default()
+        };
+        let key = octets(states, std::slice::from_ref(&configuration));
+        assert_eq!(
+            key,
+            states_key(&format!(r#"["safety",[[[],[{text}],[],[]]]]"#)),
+            "{text}"
+        );
+        assert_eq!(
+            states.admit(key.as_bytes()).map(|(_, branches)| branches),
+            Ok(vec![configuration]),
+            "{text}"
+        );
+    };
+    let path = vec![0, 1];
+    // Distance 10 sorts before distance 2 by complete bytes.
+    let finite = protocol("always (holds(c.level = 1) implies once[1,10] holds(c.level = 2))");
+    entry(
+        &finite,
+        PastMemory::DistanceHistory {
+            path: path.clone(),
+            buckets: vec![bucket(10, [false, true]), bucket(2, [true, true])],
+            tail: None,
+        },
+        r#"[["0","1"],"distance-history",[["10",[false,true]],["2",[true,true]]],null]"#,
+    );
+    entry(
+        &finite,
+        PastMemory::DistanceHistory {
+            path: path.clone(),
+            buckets: vec![bucket(0, [true, true])],
+            tail: None,
+        },
+        r#"[["0","1"],"distance-history",[["0",[true,true]]],null]"#,
+    );
+    let shifted =
+        protocol("always (holds(c.level = 1) implies historically[2,*] holds(c.level = 2))");
+    entry(
+        &shifted,
+        PastMemory::DistanceHistory {
+            path: path.clone(),
+            buckets: vec![bucket(0, [false, true]), bucket(2, [false, false])],
+            tail: Some(true),
+        },
+        r#"[["0","1"],"distance-history",[["0",[false,true]],["2",[false,false]]],true]"#,
+    );
+    // The same facts in another bucket order write the same bytes.
+    assert_eq!(
+        octets(
+            &finite,
+            &[Configuration {
+                past: vec![PastMemory::DistanceHistory {
+                    path: path.clone(),
+                    buckets: vec![bucket(2, [true, true]), bucket(10, [false, true])],
+                    tail: None,
+                }],
+                ..Configuration::default()
+            }]
+        ),
+        states_key(
+            r#"["safety",[[[],[[["0","1"],"distance-history",[["10",[false,true]],["2",[true,true]]],null]],[],[]]]]"#
+        )
+    );
+    assert_eq!(
+        octets(
+            &shifted,
+            &[Configuration {
+                past: vec![PastMemory::DistanceHistory {
+                    path: path.clone(),
+                    buckets: vec![bucket(2, [false, false]), bucket(0, [false, true])],
+                    tail: Some(true),
+                }],
+                ..Configuration::default()
+            }]
+        ),
+        states_key(
+            r#"["safety",[[[],[[["0","1"],"distance-history",[["0",[false,true]],["2",[false,false]]],true]],[],[]]]]"#
+        )
+    );
+
+    let state = |text: &str| states_key(&format!(r#"["safety",[[[],[{text}],[],[]]]]"#));
+    let ordinary = states("always (holds(c.level = 1) implies once[1,10] holds(c.level = 2))");
+    let ordinary_shift =
+        states("always (holds(c.level = 1) implies historically[2,*] holds(c.level = 2))");
+    let history = r#"[["0","1"],"history",[[["0","1","0"],["1"]]]]"#;
+    let shift_history = r#"[["0","1"],"shift-history",[[["0","1","0"],["1"]]],false]"#;
+    let wide = r#"[["0","1"],"distance-history",[["0",[false,true]]],null]"#;
+    let shift = r#"[["0","1"],"distance-history",[["0",[false,true]]],false]"#;
+    let cases = [
+        (&finite, history, KeyRefusal::Unresolved),
+        (&shifted, shift_history, KeyRefusal::Unresolved),
+        (&ordinary, wide, KeyRefusal::Unresolved),
+        (&ordinary_shift, shift, KeyRefusal::Unresolved),
+        // a distance beyond b, or beyond a
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["11",[false,true]]],null]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            r#"[["0","1"],"distance-history",[["3",[false,true]]],true]"#,
+            KeyRefusal::Unresolved,
+        ),
+        // a finite window has a null tail; a shift a Boolean one
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[],false]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            r#"[["0","1"],"distance-history",[],null]"#,
+            KeyRefusal::Members,
+        ),
+        // a transform no composition of the operator's update gives: a
+        // negation, constant false for once, constant true for historically
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[false,false]]],null]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            r#"[["0","1"],"distance-history",[["0",[true,true]]],true]"#,
+            KeyRefusal::Unresolved,
+        ),
+        // two buckets at one distance, unsorted, malformed transforms
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[false,true]],["0",[true,true]]],null]"#,
+            KeyRefusal::Members,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["2",[true,true]],["10",[false,true]]],null]"#,
+            KeyRefusal::Order,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[false]]],null]"#,
+            KeyRefusal::Members,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[0,1]]],null]"#,
+            KeyRefusal::Members,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["01",[false,true]]],null]"#,
+            KeyRefusal::Decimal("01".into()),
+        ),
+    ];
+    for (states, text, refusal) in cases {
+        assert_eq!(
+            states.admit(state(text).as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{text}"
+        );
+    }
+
+    // Since and triggered compose all three non-negating transforms.
+    let since = protocol(
+        "always (holds(c.level = 1) implies (holds(c.level = 2) since[1,3] holds(c.level = 3)))",
+    );
+    for transform in ["[false,true]", "[true,true]", "[false,false]"] {
+        let text = format!(r#"[["0","1"],"distance-history",[["0",{transform}]],null]"#);
+        assert!(since.admit(state(&text).as_bytes()).is_ok(), "{text}");
+    }
+    assert_eq!(
+        since
+            .admit(state(r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::Unresolved)
+    );
+
+    // The flag and age forms are the subject's own on both.
+    let age = protocol("always (holds(c.level = 1) implies once[0,2] holds(c.level = 2))");
+    assert!(age
+        .admit(state(r#"[["0","1"],"last-true","3"]"#).as_bytes())
+        .is_ok());
+    let flag = protocol("always (holds(c.level = 1) implies once holds(c.level = 2))");
+    assert!(flag
+        .admit(state(r#"[["0","1"],"once",true]"#).as_bytes())
+        .is_ok());
+}
+
+/// FR-338: on a protocol subject a finite `F`/`U` (and a signed dual, and a
+/// debt before its lower shift) has a least-fixed-point acceptance set: a
+/// carry excludes membership, not carrying includes it. An ordinary subject
+/// has none for a finite deadline, and `F[a,open]` has none on either until
+/// the follow-up implements #1516's ruling.
+#[trace("TC-525")]
+#[test]
+fn a_protocol_finite_eventuality_has_an_acceptance_set() {
+    let member = at(&[0, 1], Polarity::Positive);
+    let carried = |window: Window| Configuration {
+        obligations: vec![root()],
+        windows: vec![window],
+        ..Configuration::default()
+    };
+    let free = Configuration {
+        acceptance: vec![member.clone()],
+        ..Configuration::default()
+    };
+    let deadline = Window::Deadline(member.clone(), 1);
+    let finite = protocol(FUTURE);
+    assert!(finite.key(&[carried(deadline.clone())]).is_ok());
+    assert_eq!(
+        octets(&finite, std::slice::from_ref(&free)),
+        states_key(r#"["safety",[[[],[],[],[[["0","1"],"positive"]]]]]"#)
+    );
+    assert_eq!(
+        finite
+            .admit(octets(&finite, std::slice::from_ref(&free)).as_bytes())
+            .map(|(_, branches)| branches),
+        Ok(vec![free.clone()])
+    );
+    // Carried and a member, or neither.
+    let both = Configuration {
+        acceptance: vec![member.clone()],
+        ..carried(deadline.clone())
+    };
+    assert_eq!(finite.key(&[both]), Err(KeyRefusal::NonNormal));
+    assert_eq!(
+        finite.key(&[Configuration::default()]),
+        Err(KeyRefusal::NonNormal),
+        "not carried, yet not a member"
+    );
+    // A debt before its lower shift is carried as an offsets window; one
+    // carried as a remaining interval obligation is too.
+    let shifted = protocol(SHIFTED);
+    let offsets = Window::Offsets(member.clone(), vec![(0, 2), (1, 3)]);
+    assert!(shifted.key(&[carried(offsets.clone())]).is_ok());
+    assert_eq!(
+        shifted.key(&[Configuration {
+            acceptance: vec![member.clone()],
+            ..carried(offsets)
+        }]),
+        Err(KeyRefusal::NonNormal)
+    );
+    let interval = Obligation::Interval {
+        occurrence: member.clone(),
+        lower: 0,
+        upper: Some(2),
+    };
+    let pending = |acceptance: Vec<Occurrence>| Configuration {
+        obligations: vec![root(), interval.clone()],
+        acceptance,
+        ..Configuration::default()
+    };
+    assert!(shifted.key(&[pending(Vec::new())]).is_ok());
+    assert_eq!(
+        shifted.key(&[pending(vec![member.clone()])]),
+        Err(KeyRefusal::NonNormal)
+    );
+
+    // An ordinary subject keeps its finite deadlines out of acceptance.
+    let ordinary = states(FUTURE);
+    assert_eq!(ordinary.key(&[free]), Err(KeyRefusal::Unresolved));
+    assert!(ordinary.key(&[carried(deadline)]).is_ok());
+
+    // A signed dual in the negated formula of a TP-4 clause.
+    let negated = "eventually always[0,3] holds(c.level = 1)";
+    let dual = at(&[0], Polarity::Negative);
+    let on = |subject: SubjectKind| {
+        let fixture = fixture(INFINITE, "c: Counter", "on origin", negated);
+        let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+        BuchiStates::clause(&fixture.clause, &context, subject).expect("translates")
+    };
+    let waiting = |acceptance: Vec<Occurrence>| {
+        BuchiState::Elementary(Configuration {
+            acceptance,
+            ..Configuration::default()
+        })
+    };
+    let protocol_states = on(SubjectKind::Protocol);
+    assert!(protocol_states.key(&waiting(vec![dual.clone()])).is_ok());
+    assert_eq!(
+        protocol_states.key(&waiting(Vec::new())),
+        Err(KeyRefusal::NonNormal)
+    );
+    assert_eq!(
+        on(SubjectKind::Ordinary).key(&waiting(vec![dual])),
+        Err(KeyRefusal::Unresolved)
     );
 }

@@ -59,17 +59,16 @@ pub struct BuchiStates {
     max_bytes: u64,
     shape: FormulaShape,
     guarded: bool,
+    subject: SubjectKind,
 }
 
 impl BuchiStates {
-    /// The Büchi states of the TP-4 clause `clause` over an ordinary
-    /// `subject` under `context`; guarded when the context's activation is
+    /// The Büchi states of the TP-4 clause `clause` over `subject` under `context`; guarded when the context's activation is
     /// `"each-when"`.
     ///
     /// # Errors
     ///
-    /// [`TranslationRefusal::NotTranslated`] when the subject is a protocol,
-    /// the clause is not TP-4 (a bounded profile, or a formula in the safety
+    /// [`TranslationRefusal::NotTranslated`] when the clause is not TP-4 (a bounded profile, or a formula in the safety
     /// fragment), holds a timed interval, has more operand paths than the
     /// path bound, or `context` names another profile or an activation that
     /// is neither `"infinite"` nor `"each-when"`;
@@ -85,13 +84,13 @@ impl BuchiStates {
             ContextActivation::Infinite => false,
             ContextActivation::Origin | ContextActivation::Each => return Err(not_translated()),
         };
-        // Spec ruling R-5 pending: an unguarded `on each` TP-4 clause is the
-        // selection of one violating activation, a form FR-338 does not key.
+        // An unguarded `on each` TP-4 clause is `["each-buchi", phase,
+        // branch]` under activation "each" (#1516); until the follow-up
+        // implements it the clause is not translated.
         let form_agrees = clause
             .property_form()
             .is_none_or(|form| form == PropertyForm::Liveness);
-        if subject == SubjectKind::Protocol
-            || clause.profile() != TemporalProfile::InfiniteTrace
+        if clause.profile() != TemporalProfile::InfiniteTrace
             || context.profile != clause.profile()
             || matches!(clause.activation(), Activation::Each { guarded: false })
             || !form_agrees
@@ -119,6 +118,7 @@ impl BuchiStates {
             max_bytes,
             shape,
             guarded,
+            subject,
         })
     }
 
@@ -182,6 +182,7 @@ impl BuchiStates {
         let reader = Reader {
             shape: &self.shape,
             max_bytes: self.max_bytes,
+            subject: self.subject,
         };
         match (tag, self.guarded) {
             ("buchi", false) => {
