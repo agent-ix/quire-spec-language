@@ -710,6 +710,91 @@ pub struct StepRow {
     pub target: StepTarget,
 }
 
+/// The origin of a checked refinement fairness member (FR-137).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementFairnessOrigin {
+    /// Written as an `assume` or `ensure` row.
+    Authored,
+    /// Derived from default scheduler fairness over a concrete protocol.
+    Scheduler,
+}
+
+/// A protocol thread target for a derived scheduler fairness member (FR-137).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementThreadTarget {
+    /// The protocol's root thread.
+    Root,
+    /// One branch of a `parallel`, named by the parallel's static path and
+    /// the branch label.
+    Branch {
+        /// The `parallel` node's static declaration path.
+        parallel: String,
+        /// The branch label.
+        branch: String,
+    },
+    /// One compensation template's thread target.
+    CompensationTemplate {
+        /// The compensation template's name.
+        name: String,
+    },
+}
+
+/// One member of a checked refinement fairness set (FR-137).
+///
+/// Authored members retain FR-123's operation constraint. Scheduler members
+/// name a protocol thread target and are always `weak whole`; keeping the two
+/// forms distinct prevents a thread obligation from being treated as an
+/// operation fairness constraint by model-refinement consumers.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementFairness {
+    /// An authored operation constraint.
+    Authored(FairnessConstraint),
+    /// A scheduler constraint over a protocol thread.
+    Scheduler(RefinementThreadTarget),
+}
+
+impl RefinementFairness {
+    /// The origin of this fairness member.
+    pub const fn origin(&self) -> RefinementFairnessOrigin {
+        match self {
+            Self::Authored(_) => RefinementFairnessOrigin::Authored,
+            Self::Scheduler(_) => RefinementFairnessOrigin::Scheduler,
+        }
+    }
+
+    /// The fairness kind; scheduler members are always weak.
+    pub fn kind(&self) -> FairnessKind {
+        match self {
+            Self::Authored(constraint) => constraint.kind(),
+            Self::Scheduler(_) => FairnessKind::Weak,
+        }
+    }
+
+    /// The fairness granularity; scheduler members are always whole.
+    pub fn granularity(&self) -> FairnessGranularity {
+        match self {
+            Self::Authored(constraint) => constraint.granularity(),
+            Self::Scheduler(_) => FairnessGranularity::Whole,
+        }
+    }
+
+    /// The authored operation constraint, or `None` for a scheduler member.
+    pub fn operation_constraint(&self) -> Option<&FairnessConstraint> {
+        match self {
+            Self::Authored(constraint) => Some(constraint),
+            Self::Scheduler(_) => None,
+        }
+    }
+
+    /// The scheduler thread target, or `None` for an authored member.
+    pub fn thread_target(&self) -> Option<&RefinementThreadTarget> {
+        match self {
+            Self::Authored(_) => None,
+            Self::Scheduler(target) => Some(target),
+        }
+    }
+}
+
 /// A refinement between two models that checked (ADR-020 RM-1 to RM-6).
 #[derive(Debug)]
 pub struct CheckedRefinement {
@@ -723,8 +808,8 @@ pub struct CheckedRefinement {
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
     pub(crate) history: Vec<HistoryRow>,
-    pub(crate) concrete_fairness: Vec<FairnessConstraint>,
-    pub(crate) abstract_fairness: Vec<FairnessConstraint>,
+    pub(crate) concrete_fairness: Vec<RefinementFairness>,
+    pub(crate) abstract_fairness: Vec<RefinementFairness>,
     pub(crate) concrete_object_types: Vec<EffectiveId>,
     /// The protocol clause the step rows select; absent for a model subject.
     /// The clause's node exists once the unit's protocol nodes are minted
@@ -792,16 +877,33 @@ impl CheckedRefinement {
         &self.history
     }
 
-    /// The concrete fairness set `F_C`: every `assume` row once, in source
-    /// order.
-    pub fn concrete_fairness(&self) -> &[FairnessConstraint] {
+    /// The concrete fairness set `F_C`, with the origin of each member.
+    pub fn concrete_fairness(&self) -> &[RefinementFairness] {
         &self.concrete_fairness
     }
 
-    /// The abstract fairness set `F_A`: every `ensure` row once, in source
-    /// order.
-    pub fn abstract_fairness(&self) -> &[FairnessConstraint] {
+    /// The authored operation constraints of `F_C`.
+    ///
+    /// Scheduler members of a concrete protocol subject do not name model
+    /// operations and are omitted. Model-refinement engines consume this
+    /// iterator while protocol consumers retain the complete set through
+    /// [`Self::concrete_fairness`].
+    pub fn concrete_operation_fairness(&self) -> impl Iterator<Item = &FairnessConstraint> + '_ {
+        self.concrete_fairness
+            .iter()
+            .filter_map(RefinementFairness::operation_constraint)
+    }
+
+    /// The abstract fairness set `F_A`, with the origin of each member.
+    pub fn abstract_fairness(&self) -> &[RefinementFairness] {
         &self.abstract_fairness
+    }
+
+    /// The authored operation constraints of `F_A`.
+    pub fn abstract_operation_fairness(&self) -> impl Iterator<Item = &FairnessConstraint> + '_ {
+        self.abstract_fairness
+            .iter()
+            .filter_map(RefinementFairness::operation_constraint)
     }
 
     /// Every object type of the concrete model, mapped by an object row or
@@ -1355,6 +1457,9 @@ pub(crate) struct RefinementEnv<'e> {
     pub(crate) lists: &'e ParsedLists,
     /// The unit's protocol clauses, which a protocol subject selects among.
     pub(crate) protocols: &'e [ProtocolView<'e>],
+    /// Whether an abstract protocol header is intentionally deferred because
+    /// another unit refusal stops the check before protocol clauses run.
+    pub(crate) defer_abstract_protocol_resolution: bool,
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1399,7 +1504,7 @@ fn resolve_protocol(
         .iter()
         .find(|view| view.form.name.name == clause.name)
     else {
-        if report {
+        if report && !env.defer_abstract_protocol_resolution {
             findings.unresolved(&clause.name, clause.span, None);
         }
         return ListSubject::Unresolved;
@@ -2585,7 +2690,7 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 
     /// FR-137: the rows of `side`, each constraint once, in source order.
-    fn fairness(&mut self, form: &RefinementForm, side: FairnessSide) -> Vec<FairnessConstraint> {
+    fn fairness(&mut self, form: &RefinementForm, side: FairnessSide) -> Vec<RefinementFairness> {
         let scope = self.declarations.scope;
         let abstract_types = {
             let found = self.abstract_side.object_types(self.types());
@@ -2599,7 +2704,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             FairnessSide::Assume => (&concrete_types, &abstract_types, self.abstract_side.alias),
             FairnessSide::Ensure => (&abstract_types, &concrete_types, self.concrete_side.alias),
         };
-        let mut set: Vec<(FairnessConstraint, Span)> = Vec::new();
+        let mut set: Vec<(RefinementFairness, Span)> = Vec::new();
         for row in &form.rows {
             let RefinementRowForm::Fairness(row) = row else {
                 continue;
@@ -2648,7 +2753,8 @@ impl<'c, 'a> Checker<'c, 'a> {
             );
             // FR-137: two rows of one set with one kind, operation and
             // granularity conflict; neither is dropped.
-            if let Some((_, first)) = set.iter().find(|(earlier, _)| *earlier == constraint) {
+            let member = RefinementFairness::Authored(constraint);
+            if let Some((_, first)) = set.iter().find(|(earlier, _)| *earlier == member) {
                 self.findings.refuse(
                     written.span,
                     RefinementCause::Conflicting {
@@ -2658,7 +2764,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 );
                 continue;
             }
-            set.push((constraint, written.span));
+            set.push((member, written.span));
         }
         set.into_iter().map(|(constraint, _)| constraint).collect()
     }

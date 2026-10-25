@@ -1335,10 +1335,10 @@ fn an_abstract_application_checks_its_arguments_and_result() {
 }
 
 fn constraints(refinement: &CheckedRefinement, concrete: bool) -> Vec<String> {
-    let set = if concrete {
-        refinement.concrete_fairness()
+    let set: Vec<_> = if concrete {
+        refinement.concrete_operation_fairness().collect()
     } else {
-        refinement.abstract_fairness()
+        refinement.abstract_operation_fairness().collect()
     };
     set.iter()
         .map(|constraint| {
@@ -1625,8 +1625,7 @@ fn a_strong_row_checks_as_strong() {
     let refinement = only_refinement(&graph);
     assert_eq!(constraints(refinement, false), ["Strong Each inc"]);
     let retry = refinement
-        .concrete_fairness()
-        .iter()
+        .concrete_operation_fairness()
         .find(|constraint| constraint.operation().name() == "retryA")
         .expect("retryA is assumed");
     assert_eq!(retry.kind(), FairnessKind::Strong);
