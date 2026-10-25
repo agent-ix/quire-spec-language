@@ -44,12 +44,13 @@ pub use liveness::LivenessRefusal;
 pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,
 };
+pub use qsl_replay::{SubjectIdentity, SubjectIdentityRefusal};
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
     ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, TableForm,
 };
 pub use refine::{check_refinement, RefinementCheckRequest};
-pub use request::{RequestRefusal, SubjectContext, SubjectIdentity};
+pub use request::{RequestRefusal, SubjectContext};
 pub use scc::Component;
 pub use state_graph::{
     check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,

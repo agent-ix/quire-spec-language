@@ -200,6 +200,7 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
     STEP_INDUCTION_DEPTH,
 };
+pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
