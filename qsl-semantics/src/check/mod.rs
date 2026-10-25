@@ -646,6 +646,9 @@ pub struct TemporalClauseNode {
     /// Each `holds` atom's checked condition and its slot count, by the
     /// atom's formula node index.
     conditions: BTreeMap<usize, (CheckedBody, usize)>,
+    /// An `on each ... when (g)` activation's checked guard and its slot
+    /// count.
+    guard: Option<(CheckedBody, usize)>,
 }
 
 impl TemporalClauseNode {
@@ -679,14 +682,26 @@ impl TemporalClauseNode {
             .map(|(body, slots)| (body.root(), *slots))
     }
 
+    /// The checked Boolean guard of an `on each ... when (g)` activation and
+    /// its evaluation slot count (FR-337). The guard reads the `over`
+    /// parameter at slot 0 and the trigger binder at slot 1, each a model
+    /// read of the activation position's current state. `None` when the
+    /// activation is `on origin` or writes no `when`.
+    pub fn guard(&self) -> Option<(CheckedNode<'_>, usize)> {
+        self.guard
+            .as_ref()
+            .map(|(body, slots)| (body.root(), *slots))
+    }
+
     /// The declaration identities of the populations the clause's `holds`
-    /// atoms name (FR-391), ascending and each once: each is required
+    /// atoms and guard name (FR-391), ascending and each once: each is required
     /// (FR-106 check 7) in every snapshot of the trace the clause is read
     /// over.
     pub fn named_populations(&self) -> Vec<String> {
         let mut named: Vec<String> = self
             .conditions
             .values()
+            .chain(self.guard.as_ref())
             .flat_map(|(body, _)| body.root().descendants())
             .filter_map(|node| match node.kind() {
                 NodeKind::NamedPopulation { population, .. } => Some(population.node.clone()),
@@ -2634,9 +2649,9 @@ impl PackageDeclarations {
             .unzip();
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
-        // FR-337: its `holds` conditions typed over its `over` parameter,
-        // now that every function signature is known. A clause S4 does not
-        // emit (an `on each` activation or a capture) is refused rather
+        // FR-337: its `holds` conditions and `on each` guard typed over its
+        // `over` parameter, now that every function signature is known. A
+        // clause S4 does not emit (a capture) is refused rather
         // than compiled and silently missing from the package
         // (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
@@ -2972,7 +2987,7 @@ impl PackageDeclarations {
             units.append(std::mem::take(&mut clause.formed_units));
         }
         for (_, _, conditions) in &mut checked_temporal {
-            for condition in conditions.values_mut() {
+            for condition in conditions.all_mut() {
                 units.append(std::mem::take(&mut condition.formed_units));
             }
         }
@@ -3718,14 +3733,14 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let objects: std::collections::BTreeSet<_> = conditions
-                    .values()
+                    .all()
                     .flat_map(|condition| references::body_objects(condition.body.root()))
                     .collect();
                 // FR-391 "Requirements": every unbounded population a `holds`
                 // atom names is a domain of the clause's record.
                 let named_keys = {
                     let mut domains = std::collections::BTreeSet::new();
-                    for condition in conditions.values() {
+                    for condition in conditions.all() {
                         domains.extend(
                             state_clause::named_domains(condition.body.root(), &named_scope)
                                 .into_iter()
@@ -3780,7 +3795,11 @@ impl PackageDeclarations {
                     identity: lowered.key,
                     claim,
                     over: lowered.over,
+                    guard: conditions
+                        .guard
+                        .map(|condition| (condition.body, condition.slots)),
                     conditions: conditions
+                        .holds
                         .into_iter()
                         .map(|(atom, condition)| (atom, (condition.body, condition.slots)))
                         .collect(),

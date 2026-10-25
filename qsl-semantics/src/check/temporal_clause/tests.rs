@@ -407,33 +407,34 @@ fn package_refusal(text: &str) -> TemporalCause {
     (**cause).clone()
 }
 
-/// FR-326, FR-337: a clause that activates `on origin` and declares no
-/// capture checks and compiles into the package; one that activates `on
-/// each`, or declares a capture, checks but no S4 emission writes it, so
-/// `check` refuses it as `unsupported_construct`/`not-yet-implemented` at
-/// the clause; a clause that does not check reports its own refusal.
-#[trace("FR-326")]
+/// FR-326, FR-337: a clause that activates `on origin` or `on each` and
+/// declares no capture checks and compiles into the package; one that
+/// declares a capture checks but no S4 emission writes it, so `check`
+/// refuses it as `unsupported_construct`/`not-yet-implemented` at the
+/// clause; a clause that does not check reports its own refusal.
+#[trace("FR-326", "FR-337-AC-7")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes() {
-    let graph = assemble(&source(
-        &[INFINITE],
-        "Counter",
-        "eventually holds(c.level = 3)",
-    ))
-    .check(CheckingLimits::default())
-    .expect("an `on origin` clause compiles");
-    let [clause] = graph.temporal_clauses() else {
-        panic!("one emitted clause");
-    };
-    assert_eq!(clause.clause().name(), "C");
-
     let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
     let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
+    for text in [&origin, &each] {
+        let graph = assemble(text)
+            .check(CheckingLimits::default())
+            .expect("an emitted clause compiles");
+        let [clause] = graph.temporal_clauses() else {
+            panic!("one emitted clause");
+        };
+        assert_eq!(clause.clause().name(), "C");
+    }
+
     let captured = origin.replace(
         "{ eventually",
         "{ capture before: Int[0, 9] = c.level; eventually",
     );
-    for text in [each, captured] {
+    for text in [
+        captured.clone(),
+        captured.replace("on origin", "on each (d: Counter)"),
+    ] {
         let cause = package_refusal(&text);
         assert!(
             matches!(cause, TemporalCause::NotEmitted { .. }),
@@ -449,6 +450,39 @@ fn the_package_check_refuses_a_clause_no_emission_writes() {
         package_refusal(&bounded),
         TemporalCause::MissingInterval { .. }
     ));
+}
+
+/// FR-337-AC-7: a guard whose divisor has no S3 law checks, the guard is
+/// kept beside the `holds` conditions, and an unguarded `on each` clause
+/// keeps none.
+#[trace("TC-1265", "FR-337-AC-7")]
+#[test]
+fn an_on_each_guard_is_kept_with_the_emitted_clause() {
+    let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
+    for (activation, guarded) in [
+        ("on each (d: Counter) when (6 mod (2 - c.level) = 0)", true),
+        ("on each (d: Counter) when (d.level = c.level)", true),
+        ("on each (d: Counter)", false),
+        ("on origin", false),
+    ] {
+        let text = origin
+            .replace("on origin", activation)
+            // A complete-value function in the unit admits integer `mod`.
+            .replace(
+                "record Counter",
+                "function Noop using v(): Boolean pure { true }\nrecord Counter",
+            );
+        let graph = assemble(&text)
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{activation}: {refusals:?}"));
+        let [clause] = graph.temporal_clauses() else {
+            panic!("one emitted clause");
+        };
+        assert_eq!(clause.guard().is_some(), guarded, "{activation}");
+        if let Some((_, slots)) = clause.guard() {
+            assert!(slots >= 2, "{activation}: the guard binds `c` and `d`");
+        }
+    }
 }
 
 /// FR-325 and FR-337: S2 preserves indexed-read syntax, while an ordinary

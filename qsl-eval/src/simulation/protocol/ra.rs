@@ -1465,10 +1465,16 @@ impl MemoryModel for Ra {
         Cow::Borrowed(model)
     }
 
-    /// MF-2's visibility fairness is FR-228's; no infinite-trace clause over
-    /// a protocol subject is decided yet (FR-215), so none is added here.
-    fn fairness(&self, _branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
-        Vec::new()
+    /// MF-2: one visibility member covers all loaded (thread, location)
+    /// pairs in each RA-governed parallel; the transition graph resolves it
+    /// to one Streett constraint per observed pair.
+    fn fairness(&self, branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
+        branches
+            .iter()
+            .any(|branch| branch.model == MemoryModelName::Ra)
+            .then(|| ProtocolFairness::visibility(MemoryModelName::Ra))
+            .into_iter()
+            .collect()
     }
 
     /// MR-1 under `ra`, for a thread with views:

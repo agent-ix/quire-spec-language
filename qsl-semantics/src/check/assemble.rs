@@ -3566,6 +3566,18 @@ impl PackageDeclarations {
                 temporal_site(index, TemporalSite::Over),
                 form.over.name.span,
             );
+            if let qsl_forms::ActivationForm::Each { parameter, when } = &form.activation {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Trigger),
+                    parameter.name.span,
+                );
+                if let Some(when) = when {
+                    declared_site_spans.insert(
+                        temporal_site(index, TemporalSite::Guard),
+                        when.spans.clone(),
+                    );
+                }
+            }
             for (id, node) in form.formula.iter() {
                 let span = match node {
                     qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,

@@ -1212,6 +1212,13 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::ParameterType { parameter, .. } => {
                     format!("{message}: the type of `{parameter}` does not resolve")
                 }
+                TemporalCause::TriggerType { parameter, .. } => format!(
+                    "{message}: the type of `on each` parameter `{parameter}` is not the type of \
+                     the `over` parameter"
+                ),
+                TemporalCause::DuplicateTrigger { name, .. } => format!(
+                    "{message}: the `on each` parameter `{name}` repeats the `over` parameter's name"
+                ),
                 TemporalCause::UnresolvedFairnessOperation { name, .. } => {
                     format!("{message}: the fairness operation `{name}` names no model operation")
                 }
