@@ -25,3 +25,7 @@ Examined units: FR-487-AC-1 to FR-487-AC-8 and FR-315-AC-43 (examined).
 ## Verdict
 
 Clean: every authored method agrees with the catalog's recommendation.
+
+## Dispositions
+
+Round 1, head bd9361749. `quoin advise --json` re-run: FR-487-AC-9 to FR-487-AC-12 and FR-172-AC-7 are authored `Test`, with `mismatch: false` and `inconclusive: false`. The SR is still clean, so there is no finding to dispose.

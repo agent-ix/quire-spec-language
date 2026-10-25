@@ -39,3 +39,22 @@ Changes requested: FND-001 is a contradiction with merged FR-172. Fix it, and FN
 These parts are sound: the refusal contract (`Refused { conjunct, outcome }`, `MatchIncomplete { conjunct, incomplete }`, short-circuit in index order); the removal of every seam from `HyperQueryRequest`; the SMT reading of atoms through the checked condition and of other safety bodies through a `MonitorTable` constructor shared with `MonitorTable::of`; the `monitor-atoms`/`monitor-states` refusal order, which matches FR-315's temporal table; and the identity rule. Together they resolve all three #1484 rejection reasons (SR-17048 FND-001 and FND-002, and CG reaching the request through qsl-replay). AC-8's tuple arithmetic over FR-315-AC-7's joint-step order checks out: (1,1) is the first tuple past conjuncts 0, 1 and the new one. AC-3's and AC-43's vectors match FR-176-AC-1/AC-5 and `monitor.rs`'s m0 convention. FR-093, FR-107, FR-120, FR-173, FR-176, FR-262, FR-337 and FR-485 are not contradicted.
 
 Sequencing: rebase this PR on main, since #1521 has landed with no spec conflict. Then code QSL-1072 on top of #1521, replacing its hyper roots per FND-005, and then QSL-1071.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The rewritten Dependencies bullet says the lowering replaces "main's `hyper_typing` `type_condition` pass, and the QSL-867 `type_body` route", then says "Those roots are one root per object parameter, `Boolean` placeholders with `HyperType` markers ..., a private node counter, and a typed node that is discarded". That describes only the reverted #1521 route. Main (after the #1525 revert) types with `hyper_typing::type_condition`, a forward `Ty` pass with real label types that builds no checked node and has no `HyperType` markers. A coder on main would look for markers that do not exist. Describe each base in one clause, or say "on the QSL-867 route". | FR-487:449-455 |
+
+## Dispositions
+
+Round 1, head bd9361749 (fix commit be4e0bad6), checked against origin/main f8cfd238d.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | "Typing at S3" keeps FR-172's operation-or-`stutter` label type. A label is compared only by `=`/`!=` with a label of the same model, a label constant or `stutter`, and every other use (ordering, `size`, call argument, text literal, label of another model) is refused `ill_typed`/`type-mismatch`. `String` is now the lowered form only. FR-487-AC-2 adds the three refusals. |
+| FND-002 | fixed | FR-172 "Indexed atoms and step labels" now types the receiver `Option<Reference<T>>` and refuses a read over several declaring types. FR-172-AC-7 (TC-1264 step 12) covers it. |
+| FND-003 | fixed | FR-172 "Match" and FR-487 "Calls" now check a declared call as a value call, with arguments under the `match` rules and a state-reading argument refused at the read. Covered by FR-172-AC-7 and FR-487-AC-11. |
+| FND-004 | fixed | FR-487's Description and "Label constants" bullet state that this requirement delivers FR-172-AC-5 and that `check_match` refuses `ExprNode::Name` today. |
+| FND-005 | fixed | Dependencies now says the lowering replaces the S3 hyper typing roots on either base, keeps FR-172-AC-6, and gives the sequencing. A residual inaccuracy is FND-006. |
+| FND-006 | fixed | Round 2, head b23f84fdd: Dependencies now describes each base separately. Main's `hyper_typing::type_condition` is a forward `Ty` pass with real label types, no `HyperType` markers and no kept node; the reverted QSL-867 route is described apart from it; and the lowering replaces either. |
