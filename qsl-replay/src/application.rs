@@ -55,6 +55,13 @@ impl CheckedClosureCompilation {
 }
 
 /// The checked package and exact linked dependency closure of one acquisition.
+/// A consumer cannot reach the checked package through the facade:
+///
+/// ```compile_fail
+/// fn inspect(handle: &qsl_replay::CheckedClosureHandle) {
+///     let _ = &handle.package;
+/// }
+/// ```
 #[derive(Clone)]
 pub struct CheckedClosureHandle {
     package: Arc<CheckedPackage>,
@@ -150,6 +157,12 @@ fn has_node(package: &CheckedPackage, node: WireNodeId) -> bool {
 }
 
 /// A checker-issued callable bound to one acquisition, with no public constructor.
+///
+/// ```compile_fail
+/// fn forge(selection: &qsl_replay::CallableSelection) {
+///     let _ = selection.acquisition;
+/// }
+/// ```
 #[derive(Clone)]
 pub struct CallableSelection {
     owner_package_id: DigestRecord,
@@ -485,6 +498,25 @@ mod tests {
             .expect("run");
         assert_eq!(completed(&result), Some(3));
         assert!(meter.consumed(LimitKind::WorkUnits) > 0);
+        use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+        let mut reference_meter = meter(1000);
+        let reference = handle
+            .package
+            .call(
+                &QualifiedName::unqualified("f").expect("function name"),
+                vec![int(3)],
+                &ObjectEnvironment::default(),
+                &mut reference_meter,
+            )
+            .expect("reference call");
+        assert_eq!(format!("{result:?}"), format!("{reference:?}"));
+        for kind in LimitKind::ALL {
+            assert_eq!(
+                meter.consumed(kind),
+                reference_meter.consumed(kind),
+                "{kind:?}"
+            );
+        }
     }
 
     /// Owner selection precedes node lookup, including an imported callable.
@@ -619,6 +651,17 @@ mod tests {
                 InputRefusal::Arity { .. }
             )))
         ));
+        assert!(matches!(
+            registry.begin_call(
+                &selection,
+                vec![Value::Boolean(true)],
+                &environment,
+                &mut meter
+            ),
+            Err(ApplicationBeginRefusal::Call(CallFailure::Input(
+                InputRefusal::WrongValueKind { parameter: 0 }
+            )))
+        ));
         assert!(!registry.is_sealed());
         assert_eq!(meter.admission_count(), 0);
         assert!(matches!(
@@ -648,6 +691,13 @@ mod tests {
         assert_eq!(completed(&result), Some(7));
         assert_eq!(begun.load(Ordering::SeqCst), 1);
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+        let later = registry
+            .begin_call(&selection, vec![int(5)], &environment, &mut meter)
+            .expect("later begin")
+            .run()
+            .expect("later host run");
+        assert_eq!(completed(&later), Some(7));
+        assert_eq!(begun.load(Ordering::SeqCst), 2);
     }
 
     /// Refusals and cancellation never create a handle or charge at Begin.
@@ -708,22 +758,18 @@ mod tests {
     #[trace("TC-1263", "FR-485-AC-2", "FR-485-AC-4")]
     #[test]
     fn public_lookup_and_private_malformed_selection_have_distinct_refusals() {
-        let acquired = acquire(
-            &format!("{HEADER}enum Color {{ RED, BLUE }}\n{FUNCTIONS}"),
-            &DependencyInput::default(),
-        );
+        let source = format!("{HEADER}enum Color {{ RED, BLUE }}\n{FUNCTIONS}");
+        let acquired = acquire(&source, &DependencyInput::default());
         let handle = acquired.handle();
         let own = handle
             .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
             .expect("own selection");
-        let enum_key = handle
-            .package
-            .graph()
-            .semantic_graph()
-            .nodes()
-            .map(|node| node.key())
-            .find(|key| handle.package.graph().callable_by_identity(*key).is_none())
-            .expect("non-callable node");
+        let enum_key = acquired
+            .context()
+            .enums()
+            .next()
+            .expect("enum declaration")
+            .key();
         assert_eq!(
             handle
                 .lookup_callable(
@@ -731,6 +777,23 @@ mod tests {
                     WireNodeId::from_digest(*enum_key.as_bytes())
                 )
                 .err(),
+            Some(CallableLookupRefusal::WrongKind)
+        );
+        let name =
+            crate::QualifiedName::new(vec![crate::Identifier::new("f").expect("identifier")])
+                .expect("function name");
+        let site = crate::call_site(
+            identity("unit"),
+            "unit.native",
+            source.as_bytes(),
+            [],
+            &DependencyInput::default(),
+            &name,
+        )
+        .expect("function site");
+        let parameter = site.site.parameters[0].1;
+        assert_eq!(
+            handle.lookup_callable(handle.package_id(), parameter).err(),
             Some(CallableLookupRefusal::WrongKind)
         );
         let unrelated = acquire(

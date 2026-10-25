@@ -38,6 +38,7 @@ impl Body for GeneratedCall {
     }
 }
 
+/// Exercise the complete public facade path as an external consumer.
 pub fn run() {
     let source = SourceIdentity::new("a", "consumer", "git", "1");
     let name = QualifiedName::new(vec![Identifier::new("f").expect("identifier")]).expect("name");
@@ -100,6 +101,7 @@ pub fn run() {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(ref n))) if n.to_u64() == Some(7)));
 }
 
+#[cfg(not(test))]
 fn main() {
     run();
 }
