@@ -108,6 +108,7 @@ pub fn applications<'s, 'a>(
             measure: Measure::Applications,
             value: total,
             limit: max_applications,
+            setting: Measure::Applications.setting(),
         }
         .into());
     }
@@ -550,6 +551,7 @@ impl<'a> Application<'_, 'a> {
                         measure: Measure::Candidates,
                         value: count,
                         limit: max_candidates,
+                        setting: Measure::Candidates.setting(),
                     }
                     .into());
                 }

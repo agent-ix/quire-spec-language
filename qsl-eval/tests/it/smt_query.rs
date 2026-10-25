@@ -388,6 +388,39 @@ fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
         Ok(default.clone())
     );
 
+    limits.max_applications = 1;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_applications = 0;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::Applications,
+            value: 1,
+            limit: 0,
+            setting: "smt_encoding.max_applications",
+        }))
+    ));
+
+    limits.max_applications = 1 << 16;
+    limits.max_candidates = 4;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_candidates = 3;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::Candidates,
+            value: 4,
+            limit: 3,
+            setting: "smt_encoding.max_candidates",
+        }))
+    ));
+
     for max_constants in [7, 0] {
         limits.max_constants = max_constants;
         assert!(matches!(
@@ -426,6 +459,59 @@ fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
             limit,
             ..
         })) if limit == script_bytes - 1
+    ));
+}
+
+/// FR-315-AC-44: monitor atom and state caps are supplied by the same request.
+#[trace("TC-1250", "FR-315-AC-44")]
+#[test]
+fn monitor_encoding_limits_accept_exact_and_reject_zero_or_one_short() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let kind = SmtQueryKind::Unrolling { depth: 1 };
+    let default = world.query(0, kind).expect("default monitor limits encode");
+    let mut limits = SmtEncodingLimits {
+        max_monitor_atoms: 1,
+        ..SmtEncodingLimits::default()
+    };
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_monitor_atoms = 0;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::MonitorAtoms,
+            value: 1,
+            limit: 0,
+            setting: "smt_encoding.max_monitor_atoms",
+        }))
+    ));
+
+    let exact_states = (1..=64)
+        .find(|max_monitor_states| {
+            limits.max_monitor_atoms = 8;
+            limits.max_monitor_states = *max_monitor_states;
+            world.query_with_limits(0, kind, &limits).is_ok()
+        })
+        .expect("a monitor fits the published default");
+    limits.max_monitor_states = exact_states;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_monitor_states = exact_states - 1;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::MonitorStates,
+            limit,
+            setting: "smt_encoding.max_monitor_states",
+            ..
+        })) if limit == exact_states - 1
     ));
 }
 

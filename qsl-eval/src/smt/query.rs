@@ -106,6 +106,7 @@ fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
         measure,
         value,
         limit,
+        setting: measure.setting(),
     }
     .into()
 }

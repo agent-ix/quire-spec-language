@@ -42,6 +42,7 @@ impl MonitorTable {
                 measure: Measure::MonitorStates,
                 value: limit.saturating_add(1),
                 limit,
+                setting: Measure::MonitorStates.setting(),
             }
             .into(),
             other => Refusal::ItemTranslation(other).into(),
@@ -67,6 +68,7 @@ impl MonitorTable {
                 measure: Measure::MonitorAtoms,
                 value: atoms.len() as u64,
                 limit: max_atoms,
+                setting: Measure::MonitorAtoms.setting(),
             }
             .into());
         }
