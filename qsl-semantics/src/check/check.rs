@@ -1637,6 +1637,8 @@ struct Local {
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
     complete_value: bool,
+    /// The derived StateModel family of a helper function body.
+    model_family: bool,
     signatures: &'a Signatures,
     context: Option<crate::family::CheckContext<'a, Scope>>,
     limits: CheckingLimits,
@@ -2044,6 +2046,7 @@ impl<'a> Typer<'a> {
         Self {
             scope,
             complete_value: scope.complete_value,
+            model_family: false,
             signatures,
             context: None,
             limits,
@@ -2107,6 +2110,13 @@ impl<'a> Typer<'a> {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    /// Type this body as a derived StateModel helper family.
+    #[must_use]
+    pub(crate) fn with_model_family(mut self) -> Self {
+        self.model_family = true;
         self
     }
 
@@ -2965,6 +2975,7 @@ impl<'a> Typer<'a> {
         match value_type {
             ValueType::Reference(object) => {
                 self.in_state_clause()
+                    || self.model_family
                     || self
                         .scope
                         .relationships()
@@ -3044,7 +3055,7 @@ impl<'a> Typer<'a> {
                 ));
             }
         }
-        let field_reads = derefed || self.in_state_clause();
+        let field_reads = derefed || self.in_state_clause() || self.model_family;
         let value_type = reference.value_type.clone();
         let on_self = self.state.as_ref().is_some_and(
             |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),

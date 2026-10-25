@@ -218,12 +218,14 @@ impl StateClauseDeclaration {
     }
 }
 
-/// Whether `selection` is the complete-value profile.
+/// Whether `selection`'s requires closure includes the complete-value layer.
 pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
-    selection.identity
-        == crate::value::definition::DefinitionLock::pinned()
-            .entry(crate::value::definition::CatalogRole::Root)
-            .identity
+    let Some(layer) = crate::value::layer::HeaderLayer::from_identity(&selection.identity) else {
+        return false;
+    };
+    crate::value::definition::DefinitionLock::pinned()
+        .closure(&[layer])
+        .contains(&crate::value::layer::HeaderLayer::ValueComplete)
 }
 
 /// What [`check_clause`] reads of a clause: a unit's state clause
