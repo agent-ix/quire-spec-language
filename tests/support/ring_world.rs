@@ -703,7 +703,12 @@ pub struct MapWorld {
 impl MapWorld {
     /// The world of `RingIsQueue` whose `Queue` object row holds `rows`.
     pub fn new(rows: &str) -> Self {
-        let checked = ring_queue::checked(&ring_queue::ring_is_queue(rows));
+        Self::with_cell_rows(rows, "value = self.value;")
+    }
+
+    /// [`Self::new`] whose `Cell` object row holds `cell_rows`.
+    pub fn with_cell_rows(rows: &str, cell_rows: &str) -> Self {
+        let checked = ring_queue::checked(&ring_queue::ring_is_queue_over(rows, cell_rows));
         Self {
             package: CheckedPackage::link(checked.graph),
             packages: checked.packages,

@@ -981,6 +981,29 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     assert_eq!(refused.stage(), SpineStage::Check);
 }
 
+/// FR-362-AC-2 / TC-1026: the production parser uses the complete-V1 source
+/// grammar and refuses composed-only profile version and digest tails.
+#[trace("TC-1026", "FR-362-AC-2")]
+#[test]
+fn the_producer_refuses_profile_version_and_digest_tails_as_invalid_syntax() {
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    for tail in [
+        "version \"1\"",
+        "digest \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+        "version \"1\" digest \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+    ] {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" {tail};\n"
+        );
+        let failure = parse(&request(source.as_bytes()), limits.source, &cancel)
+            .expect_err("the producer rejects profile revision and digest tails");
+        let syntax = refusal(failure);
+        assert_eq!(syntax.code().as_str(), "invalid_syntax", "{tail}");
+        assert_eq!(syntax.stage(), SpineStage::Source, "{tail}");
+    }
+}
+
 /// FR-278-AC-3 (TC-759 step 3): the `EmittedUnit` carries a source
 /// provision whose digests name every source the package was compiled from.
 /// (Replaying through that provision is checked beside the replay executor.)

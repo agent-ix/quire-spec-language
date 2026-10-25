@@ -14,9 +14,10 @@
 //! `qsl-route` reads by their literal spelling.
 
 use qsl_foundation::bound::DomainKind;
+use qsl_foundation::MemoryModelName;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
-    ManifestDigest, Mode, ProviderOrigin, RegistrationRefusal,
+    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -39,8 +40,15 @@ pub const DOMAINS: [&str; 2] = [
 pub const FAIRNESS_KINDS: [FairnessLabel<'static>; 2] =
     [FairnessLabel::Text("weak"), FairnessLabel::Text("strong")];
 
-/// EN-1's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`] and
-/// [`FAIRNESS_KINDS`] by FR-288's conversion. `origin` and `manifest_digest`
+/// The memory models EN-1 decides (FR-226, QSpec FR-331-AC-30).
+pub const MEMORY_MODELS: [MemoryModelName; 3] = [
+    MemoryModelName::Sc,
+    MemoryModelName::Tso,
+    MemoryModelName::Ra,
+];
+
+/// EN-1's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`],
+/// [`FAIRNESS_KINDS`] and [`MEMORY_MODELS`] by FR-288's conversion. `origin` and `manifest_digest`
 /// are the host's facts (ADR-029 PV-1).
 ///
 /// # Errors
@@ -56,8 +64,11 @@ pub fn descriptor(
         origin,
         manifest_digest,
         ADVERTISED,
-        Some(&DOMAINS),
-        Some(FairnessKindsMember::List(&FAIRNESS_KINDS)),
-        None,
+        ManifestMembers {
+            domains: Some(&DOMAINS),
+            fairness_kinds: Some(FairnessKindsMember::List(&FAIRNESS_KINDS)),
+            evidence_kinds: None,
+            memory_models: Some(&MEMORY_MODELS),
+        },
     )
 }

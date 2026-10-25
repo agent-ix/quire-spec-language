@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::evaluate_refinement_row;
+use qsl_foundation::Code;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::CheckedRefinement;
+use qsl_semantics::check::{CheckedRefinement, PopulationValue};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead, ReadLog};
 use qsl_semantics::model::observation::{declared_type_universe_for, DocumentRef};
@@ -16,14 +17,18 @@ use qsl_semantics::model::state::{ModelState, StateModel, StateObject};
 use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
-    ChargePoint, Integer, Meter, ObjectId, ObjectReference, Outcome, ScalarLimits, Value,
+    ChargePoint, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Outcome, ScalarLimits,
+    Value, ValueType,
 };
 use quire_semantic_value::catalog::UndefinedReason;
 
 #[path = "../../../tests/support/ring_queue.rs"]
 mod ring_queue;
 
-use ring_queue::{all_rows, checked, key, ring_is_queue, Checked, RING};
+use ring_queue::{
+    all_rows, check_over, checked, checked_over, key, node, queue_spec, ranged, ring_is_queue,
+    Checked, QUEUE, RING,
+};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: 1 << 20,
@@ -59,7 +64,10 @@ struct World {
 
 impl World {
     fn new() -> Self {
-        let Checked { graph, packages } = checked(&ring_is_queue(&all_rows()));
+        Self::of(checked(&ring_is_queue(&all_rows())))
+    }
+
+    fn of(Checked { graph, packages }: Checked) -> Self {
         Self {
             package: CheckedPackage::link(graph),
             packages,
@@ -327,8 +335,16 @@ fn undefined(world: &World, state: &ModelState, row: usize) -> (UndefinedReason,
 /// FR-139-AC-4 (TC-544 step 4): `only(s in R::slots where s.ring = self:
 /// s.value)` is undefined at every state of the fixture (two slots satisfy
 /// it), and `only(s in R::slots where s.ring = self and s.index = self.head +
-/// 2: s.value)` is undefined (no slot satisfies it).
-#[trace("TC-544", "FR-139-AC-4", "QSpec-TC-311", "QSpec-FR-376-AC-3")]
+/// 2: s.value)` is undefined (no slot satisfies it). FR-139-AC-7 (TC-544):
+/// each carries an `UndefinedRecord` with reason `only-not-one`, for two
+/// objects and for none.
+#[trace(
+    "TC-544",
+    "FR-139-AC-4",
+    "FR-139-AC-7",
+    "QSpec-TC-311",
+    "QSpec-FR-376-AC-3"
+)]
 #[test]
 fn only_is_undefined_for_no_object_and_for_several() {
     let world = World::new();
@@ -372,4 +388,101 @@ fn a_sum_adds_the_matching_objects_and_each_form_visits_an_object_once() {
     };
     assert_eq!(visits(TOTAL), 2);
     assert_eq!(visits(ITEMS), 6);
+}
+
+/// The abstract package of the fixture with `Queue.total` typed `Int[lower,
+/// upper]`.
+fn queue_with_total(lower: u32, upper: u32) -> Vec<u8> {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&queue_spec()).expect("a document");
+    let range = format!("Range{lower}To{upper}");
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(ranged(QUEUE, &range, lower, upper));
+    let queue = types
+        .iter_mut()
+        .find(|declared| declared["identity"] == node(QUEUE, "Queue"))
+        .expect("the queue");
+    let total = queue["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .iter_mut()
+        .find(|field| field["name"] == "total")
+        .expect("the total field");
+    total["typeRef"] = serde_json::Value::String(node(QUEUE, &range));
+    document.to_string().into_bytes()
+}
+
+/// `RingIsQueue`'s rows with `total` summing `s.value + 1`.
+fn shifted_sum_rows() -> String {
+    let rows = all_rows();
+    let from = "total = sum(s in R::slots where s.ring = self: s.value);";
+    assert_eq!(rows.matches(from).count(), 1);
+    rows.replace(
+        from,
+        "total = sum(s in R::slots where s.ring = self: s.value + 1);",
+    )
+}
+
+/// FR-139 (`sum`, TC-544): `sum(s in R::slots where s.ring = self: s.value +
+/// 1)`, whose summand lies in `[1, 2]`, has the bound `[0, 4]` at `slots =
+/// {s0, s1}`, not `[2, 4]`; a row of it mapped to an abstract field of type
+/// `Int[0, 4]` is admitted at that universe, and one mapped to `Int[2, 4]`
+/// refuses `ill_typed`/`type-mismatch`, at S3 and at the row, for the bound
+/// includes 0 whatever the universe size. At a state where no slot satisfies
+/// the condition it evaluates to 0.
+#[trace("TC-544")]
+#[test]
+fn a_sum_with_a_positive_summand_includes_zero_in_its_bound() {
+    let wide = World::of(checked_over(
+        &queue_with_total(0, 4),
+        &ring_is_queue(&shifted_sum_rows()),
+    ));
+    let total = &wide.refinement().objects()[0].fields[TOTAL].expression;
+    let [used] = total.population_uses() else {
+        panic!("the sum row records its bound");
+    };
+    assert!(matches!(used.value(), PopulationValue::Sum { .. }));
+    let bound = IntegerInterval::new(0_i64.into(), 4_i64.into()).expect("an interval");
+    assert_eq!(used.admitted_type(2), Some(ValueType::Int(bound)));
+    let universe = BTreeMap::from([(key(RING, "slots"), 2)]);
+    assert_eq!(wide.refinement().admit_universes(&universe), Ok(()));
+
+    let narrow = check_over(&queue_with_total(2, 4), &ring_is_queue(&shifted_sum_rows()))
+        .err()
+        .expect("Int[2, 4] excludes the empty sum");
+    let [refusal] = &narrow[..] else {
+        panic!("one refusal");
+    };
+    assert_eq!(
+        (refusal.refusal.cause.code(), refusal.refusal.cause.cause()),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(
+        refusal.at,
+        "sum(s in R::slots where s.ring = self: s.value + 1)"
+    );
+
+    // Both slots satisfy the condition: (0 + 1) + (1 + 1).
+    let full = wide.state(1, 2, [0, 1]);
+    assert_eq!(render(&wide.value(&full, TOTAL)), render(&integer(3)));
+    // Move both slots to a ring `q`, so none satisfies `s.ring = self`.
+    let mut moved = full;
+    let rings = moved
+        .populations
+        .get_mut(&key(RING, "rings"))
+        .expect("rings");
+    let ring = rings["r"].clone();
+    rings.insert("q".to_owned(), ring);
+    for slot in moved
+        .populations
+        .get_mut(&key(RING, "slots"))
+        .expect("slots")
+        .values_mut()
+    {
+        slot.fields.insert(
+            key(RING, "Slot/ring"),
+            Value::Reference(wide.reference("Ring", "q")),
+        );
+    }
+    assert_eq!(render(&wide.value(&moved, TOTAL)), render(&integer(0)));
 }

@@ -40,7 +40,9 @@ fn program_source(program: &[u8]) -> Value {
 fn front_end_package_is_independent_of_provider_registry() {
     use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
-    use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin, Registry};
+    use qsl_route::{
+        descriptor_from_manifest, Candidate, ManifestMembers, ProviderOrigin, Registry,
+    };
 
     let program = std::fs::read(SEVEN_FIXTURE).unwrap();
     let source = qsl_foundation::SourceIdentity::new(
@@ -83,9 +85,12 @@ fn front_end_package_is_independent_of_provider_registry() {
                         ByteDigest::of(format!("fr-289-manifest-{index}").as_bytes()).as_bytes(),
                     ),
                     [(Some(capability), Some(mode))],
-                    Some(&["collection"]),
-                    None,
-                    None,
+                    ManifestMembers {
+                        domains: Some(&["collection"]),
+                        fairness_kinds: None,
+                        evidence_kinds: None,
+                        memory_models: None,
+                    },
                 )
                 .unwrap(),
             )
