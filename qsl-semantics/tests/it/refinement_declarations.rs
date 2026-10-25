@@ -1327,6 +1327,36 @@ fn a_refinement_is_not_refused_by_the_model_profile_gate() {
     assert_eq!(graph.refinements().len(), 1);
 }
 
+/// FR-135-AC-8 (TC-540): refinement rows use the governing profile's
+/// required value and model layers regardless of the unit's own header
+/// selections, and refuse a protocol reference at its first token.
+#[trace("TC-540", "FR-135-AC-8")]
+#[test]
+fn refinement_rows_use_the_governing_layers_and_refuse_protocol_references() {
+    let (spec, cas) = counters();
+    let body = cas_refines_counter();
+    // The unit selects only `value.complete`; the row's reference to a
+    // protocol construct is outside the refinement's required layers.
+    let source = format!(
+        "{}{}",
+        mutated(&body, "value = self.value;", "value = protocol Twice;"),
+        super::refinement_protocol::twice("Spec")
+    );
+    let found = refused(&[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &source);
+    let refusal = only(&found);
+    assert_eq!(
+        refusal.code_and_cause(),
+        (Code::UnsupportedConstruct, Some("expression-form"))
+    );
+    assert_eq!(refusal.at, "protocol Twice");
+    assert_eq!(
+        refusal.refinement(),
+        &RefinementCause::UnsupportedRowForm {
+            layer: "quire.protocol.complete/v1"
+        }
+    );
+}
+
 /// FR-137-AC-4 (TC-542 step 4): a `strong` row checks as `Strong`, with its
 /// granularity.
 #[trace("TC-542", "FR-137-AC-4")]
