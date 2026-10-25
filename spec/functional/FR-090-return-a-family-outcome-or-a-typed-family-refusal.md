@@ -135,8 +135,9 @@ This requirement carries testable criteria for decisions already taken:
     `cause.undefined_record()` is the family cause's `UndefinedRecord`: its
     undefined reason and that reason's catalog payload.
 - `e.location`, the `quire_semantic_value::location::ExpressionLocation` of the node at which an evaluation that
-  did not complete stopped, or `None` when the evaluation completed or
-  stopped before any node ran (a meter charge denied at call entry).
+  did not complete stopped. A root `function.call` charge denied or cancelled
+  after successful Begin carries the checked body root location
+  (FR-262-AC-13). A completed evaluation carries `None`.
 - `e.losses`, the loss records of the operations a completed evaluation
   performed, in evaluation order; empty unless `e.outcome` is
   `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
@@ -211,11 +212,12 @@ location.
 `location` is `quire_semantic_value::location::ExpressionLocation`, the declaration
 origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
-not complete stopped, or `None` when the evaluation completed or stopped
-before any node ran (a meter charge denied at call entry). A consumer
-reports `None` as "unavailable" (`quire.native.diagnostics/v1` common
-context). `losses` holds the loss records of the operations a completed
-evaluation performed, in evaluation order, as QSpec FR-140-AC-3 requires
+not complete stopped. A root `function.call` charge denied or cancelled after
+successful Begin carries the checked body root location (FR-262-AC-13). A
+completed evaluation carries `None`; a consumer reports `None` as
+"unavailable" (`quire.native.diagnostics/v1` common context). `losses` holds
+the loss records of operations a completed evaluation performed, in
+evaluation order, as QSpec FR-140-AC-3 requires
 ("the rounded value plus a canonical-rational loss record"); it is empty
 unless the outcome is `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
 `Evaluation` is a layer-E `quire-eval` type, because the shared evaluation
