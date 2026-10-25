@@ -865,13 +865,46 @@ pub fn read_clause_run_request(
 mod tests {
     use super::snapshot_value;
     use super::{
-        selection, ClauseRunSelection, ClauseSelectionParts, ClauseSelectionPartsKind,
-        SuppliedObservation,
+        selection, ClauseRunSelection, ClauseRunSelectionWire, ClauseSelectionParts,
+        ClauseSelectionPartsKind, SuppliedObservation, TemporalTraceParts,
     };
     use qsl_semantics::model::observation::{ClauseSelectionInput, DocumentRef, SelectedObject};
     use qsl_semantics::model::observation::{NativeKind, RawForm, RawNativeKind};
     use quire_exact::CollectionKind;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn temporal_wire_selection_reads_finite_and_lasso_key_order() {
+        let finite: ClauseRunSelectionWire = serde_json::from_str(
+            r#"{"temporal":{"name":"Reaches","trace":{"finite":["s0","s1"]},"over":{"reference":{"population":"P","key":"c1"}}}}"#,
+        )
+        .unwrap();
+        let ClauseSelectionPartsKind::Temporal {
+            name,
+            trace: TemporalTraceParts::Finite(keys),
+            over,
+        } = finite.into_parts().unwrap()
+        else {
+            panic!("expected finite temporal selection");
+        };
+        assert_eq!(name, "Reaches");
+        assert_eq!(keys, ["s0", "s1"]);
+        assert_eq!(over, ("P".to_owned(), "c1".to_owned()));
+
+        let lasso: ClauseRunSelectionWire = serde_json::from_str(
+            r#"{"temporal":{"name":"Reaches","trace":{"lasso":{"prefix":["s0"],"loop":["s1","s2"]}},"over":{"reference":{"population":"P","key":"c1"}}}}"#,
+        )
+        .unwrap();
+        let ClauseSelectionPartsKind::Temporal {
+            trace: TemporalTraceParts::Lasso { prefix, repeat },
+            ..
+        } = lasso.into_parts().unwrap()
+        else {
+            panic!("expected lasso temporal selection");
+        };
+        assert_eq!(prefix, ["s0"]);
+        assert_eq!(repeat, ["s1", "s2"]);
+    }
 
     #[test]
     fn parameter_value_reader_uses_heap_stack_past_128_levels() {
