@@ -819,6 +819,9 @@ pub struct Scope {
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
+    /// The selected package behind each source model alias, used by static
+    /// protocol roles that act on a whole model.
+    model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// FR-150: each object type a `symmetric` population covers, with that
     /// population's declaration key.
@@ -1024,6 +1027,7 @@ impl Scope {
             known_populations: Vec::new(),
             history_names: Vec::new(),
             complete_model: false,
+            model_selections: BTreeMap::new(),
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
             index,
@@ -1154,6 +1158,23 @@ impl Scope {
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
         self.complete_model = complete_model;
         self
+    }
+
+    /// The selected domain package for each model alias in this unit.
+    pub(crate) fn with_model_selections(
+        mut self,
+        selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
+    ) -> Self {
+        self.model_selections = selections;
+        self
+    }
+
+    /// The selected package of a source model alias.
+    pub(crate) fn model_selection(
+        &self,
+        alias: &str,
+    ) -> Option<&crate::model::domain_package::DomainPackageRef> {
+        self.model_selections.get(alias)
     }
 
     /// This scope with the unit's admitted dimension and unit declarations
