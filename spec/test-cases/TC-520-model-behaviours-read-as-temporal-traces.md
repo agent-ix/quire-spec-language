@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-125
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-361
+    type: verifies
 ---
 # TC-520: A model subject's behaviours read as temporal traces, with terminal stutter and interval wrap
 
