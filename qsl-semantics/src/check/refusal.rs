@@ -1673,7 +1673,18 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::I2Diagnostics
             | Setting::I2WorkUnits
             | Setting::ExploreStates
-            | Setting::ExploreTransitions => Err(setting),
+            | Setting::ExploreTransitions
+            | Setting::ModelCheckMaxStates
+            | Setting::ModelCheckMaxTransitions
+            | Setting::ModelCheckMaxAutomatonStates
+            | Setting::ModelCheckWitnessSamples
+            | Setting::ModelCheckMaxWalkSteps
+            | Setting::ModelCheckMaxWitnessSet
+            | Setting::ModelCheckMaxRelationTuples
+            | Setting::ModelCheckMaxLiveInstances
+            | Setting::ModelCheckMaxStoreBuffer
+            | Setting::ModelCheckMaxMessages
+            | Setting::ExpansionMaxCandidates => Err(setting),
         }
     }
 }
