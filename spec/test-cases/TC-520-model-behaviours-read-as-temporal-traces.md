@@ -98,7 +98,9 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-18; FR-361-AC-16.
     the two infinite-trace clauses over `Counter`, replaying the
     `c.value >= 3` counterexample; read that clause's guard footprint and run
     it under partial-order reduction; then, over step 11's subject, the
-    `x.age >= 1` and `G` activation guards (FR-125-AC-18).
+    `x.age >= 1` activation guard; read the seam's `G` activation reading at
+    the initial state for `k`, `t` and `d`, and check `always holds(false)`
+    `when (G)` (FR-125-AC-18).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -153,5 +155,6 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   to `reproduced-with-evaluated-witness`; `Violated` with
   `kind: UndefinedEvaluation` at position 2, cause `division-by-zero`, at
   the activation; the footprint is `c`'s `value` and `inc` is visible. Over
-  step 11's subject, `undefined-evaluation` naming `t` for `x.age >= 1`, and
-  `proved` for `G`.
+  step 11's subject, `undefined-evaluation` naming `t` for `x.age >= 1`;
+  the `G` reading is true for `k`, false for `t` and true for `d`; the
+  `always holds(false)` clause refutes naming `k` at position 0.

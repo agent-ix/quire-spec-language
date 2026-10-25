@@ -21,6 +21,10 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-383
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-447
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-218
+    type: references
 ---
 # FR-337: Emit a checked temporal clause as a v2 temporal clause node
 
@@ -140,23 +144,30 @@ reader returns.
 An `on each (q: T) [when (g)]` activation, written over an `over (c: U)`
 parameter, names the clause's trigger binder `q` and, optionally, its guard
 `g`. Over a model subject every position the clause reads is a candidate
-activation and `c` already names the instance's object at that position, so
-QSL gives `q` no value of its own: `q` is the trigger binder FR-370's
-`trigger` member references, and the guard reads the activation position
-through `c`.
+activation, and `q` names the activation's object: the instance's object at
+the activation position, the object `c` names there. `q` is an alias of
+that object that the guard may read, as a hybrid claim's guard reads its
+`on each` parameter (FR-447).
 
 - S3 SHALL resolve `T` as it resolves every parameter type of the clause
   (`TemporalCause::ParameterType`, with the type-form fault's code and tag:
   `missing_declaration`/`missing-name` for a name that resolves to nothing).
-  S3 adds no rule relating `T` to `U`.
-- S3 SHALL type `g` as it types a `holds` condition of the clause: with the
-  `over` parameter bound at slot 0 and nothing else of the clause in scope,
-  no `self`, each field read through `c` a model read of the activation
+- S3 SHALL refuse an `on each` parameter whose resolved type `T` is not
+  `U`, the `over` parameter's resolved type, with `ill_typed`/
+  `type-mismatch` at `T`'s type form, as FR-447 refuses a hybrid claim's
+  `on each` parameter of another model (FR-447-AC-9).
+- S3 SHALL refuse an `on each` parameter named as the `over` parameter is
+  with `conflicting_declaration`/`duplicate-declaration` at the binder's
+  name, naming both declarations, as FR-447 refuses a repeated capture name.
+- S3 SHALL type `g` as it types a `holds` condition of the clause, with the
+  `over` parameter bound at slot 0 and the trigger binder `q` at slot 1,
+  both of type `U`, and nothing else of the clause in scope: no `self`,
+  each field read through `c` or `q` a model read of the activation
   position's current state, and the guard a population position (FR-391),
   so the populations it names join the clause's named populations. Its
   nodes are located at the guard's own expression tree.
-- The trigger binder is in the scope of no guard and no `holds` condition:
-  S3 SHALL refuse a read of `q` in `g` with `missing_declaration`/
+- The trigger binder SHALL be in the scope of the guard alone: S3 SHALL
+  refuse a read of `q` in a `holds` condition with `missing_declaration`/
   `missing-name` at the read, the cause an unresolved name has.
 - S3 SHALL refuse a guard whose type is not `Boolean` with `ill_typed`/
   `non-boolean-root` at the guard, as it refuses such a `holds` condition
@@ -166,16 +177,18 @@ through `c`.
   undischarged obligation with `undefined_expression` and FR-104's tag
   (`unproved-range`, `unproved-nonzero`, `unproved-presence`) at the
   operation that carries it. Two undefined readings remain possible at run
-  time, and neither is an S3 obligation: a read through `c` at a key whose
-  object does not conform to `U`, or at which no object is held, which is
-  FR-125's `absent-key` undefined value; and a kernel undefined value of an
-  operation S3 types with no definedness law, such as an integer `mod` by a
-  divisor that may be zero (`division-by-zero`, as for a `holds` condition,
-  FR-125-AC-6). Either ends the run with `kind: UndefinedEvaluation` located
-  at the activation (FR-126), never a false guard.
-- S3 SHALL type the guard before the clause's `holds` conditions, the
-  activation preceding the body in source, so a clause with a defect in both
-  refuses at the guard.
+  time, and neither is an S3 obligation: a read through `c` or `q` at a key
+  whose object does not conform to `U`, or at which no object is held,
+  which is FR-125's `absent-key` undefined value; and a kernel undefined
+  value of an operation S3 types with no definedness law, such as an
+  integer `mod` by a divisor that may be zero (`division-by-zero`, as for a
+  `holds` condition, FR-125-AC-6). Either ends the run with
+  `kind: UndefinedEvaluation` located at the activation (FR-126), never a
+  false guard.
+- S3 SHALL check the activation, the binder's type and name and then the
+  guard, before the clause's `holds` conditions, the activation preceding
+  the body in source, so a clause with a defect in both refuses at the
+  activation.
 - An absent guard is the guard that is always true, and S3 SHALL record it
   as absent: `on each (q: T)` checks to `Activation::Each { guarded: false
   }` with no guard, and `on each (q: T) when (true)` to `Activation::Each {
@@ -187,8 +200,11 @@ through `c`.
   count, beside its `holds` conditions, so the letter seam (FR-125) and the
   certificate checkers (FR-338, FR-339) read the guard from the checked
   package.
-- These are existing causes; this requirement adds no refusal cause and no
-  wire-visible field.
+- Every refusal above uses an existing code and tag; this requirement adds
+  no refusal cause and no wire-visible field. The `T`-is-not-`U` and
+  repeated-name refusals are new sites of the existing `ill_typed`/
+  `type-mismatch` and `conflicting_declaration`/`duplicate-declaration`
+  causes.
 
 ### `on each` activation at S4
 
@@ -197,22 +213,27 @@ through `c`.
 - The emitter SHALL write the activation argument of an `on each (q: T)`
   clause as the aggregate that binds `kind` to the text `each` and
   `trigger` to a reference to the `value`/`parameter` node of `q` (name
-  `q`, level 1, `semantic_type` `T`'s type node), as FR-447 writes a hybrid
-  claim's trigger and FR-383 a protocol's. The `over` parameter stays at
-  level 0.
+  `q`, level 1, `semantic_type` `T`'s type node, which is `U`'s), as FR-447
+  writes a hybrid claim's trigger and FR-383 a protocol's. The `over`
+  parameter stays at level 0.
+- The emitter SHALL record the trigger node's one `expression` occurrence,
+  and a `type` occurrence of its type node, at the binder's name, as it
+  records the `over` parameter node's at the `over` parameter's name.
 - When the clause writes `when (g)`, the emitter SHALL also bind `guard` to
   `g`'s term, lowered as FR-093 lowers a Boolean expression and as a `holds`
   condition is lowered: a read of `c` is a reference to the `over`
-  parameter's node. With no `when`, the aggregate binds no `guard`
-  (QSpec FR-370: absent otherwise).
-- The guard and the trigger node enter the clause node's content identity
+  parameter's node, and a read of `q` a reference to the level-1 trigger
+  node, as FR-447 lowers `ActivationVariable`. With no `when`, the aggregate
+  binds no `guard` (QSpec FR-370: absent otherwise).
+- The emitter SHALL key the clause node over the guard and the trigger node
   by FR-322's application-node rule, so `on each (q: T)` with no guard,
   `on each (q: T) when (true)` and `on origin` emit three different clause
   keys and `package_id`s, a different guard or a renamed trigger binder
   emits a different clause key, and reformatting emits the same bytes, as
   FR-383-AC-2 and FR-383-AC-14 state for a protocol.
-- The emitted clause's identity triple and `over` node are those of
-  "Outputs"; the trigger node is not the `over` node.
+- The I2 reader SHALL return for an emitted `each` clause the identity
+  triple and `over` node of "Outputs", never the trigger node as the `over`
+  node.
 - The I2 reader SHALL admit an emitted `each` clause node. QSpec FR-370
   states no reader refusal for the activation argument, so this requirement
   adds none.
@@ -227,6 +248,27 @@ through `c`.
   compiled into a package, since S4 writes no capture, no protocol fairness
   member and no timed interval. An `on each` activation, guarded or not, is
   not a reason to refuse a clause `NotEmitted`.
+- The capture refusal is an interim state. FR-218-AC-16 and TC-1056 row 23a
+  require a clause with an `on each` activation and a capture to check and
+  S4 to mint its node key; they stay the goal and become satisfiable when S4
+  emits captures. Remaining work: QSL-1081 ("S4: emit temporal clauses with
+  a capture").
+
+### Notes for the implementation (QSL-1037)
+
+- `qsl-analyze/src/model_check/liveness.rs` still returns
+  `ModelCheckRefusal::GuardedActivation` for a guarded TP-4 clause (lines
+  176 and 283). FR-126 decides such a clause over FR-338's guarded automaton
+  and FR-126-AC-16's TP-4 halves require it, so the coding change removes
+  that refusal.
+- `ModelLetters::activation` (`qsl-eval/src/model_subject.rs`, lines
+  178-183) returns `Result<AtomReading, Incomplete>`. FR-125 requires a
+  guard evaluation that gives no reading to stop the check as a `holds`
+  atom's does, so its error type widens to `AtomStop`.
+- `qsl-semantics/src/check/temporal_clause/tests.rs`'s
+  `the_package_check_refuses_a_clause_no_emission_writes` expects
+  `NotEmitted` for `on each (d: Counter) when (d.level = 1)`; that clause
+  now checks and emits.
 
 ## Acceptance Criteria
 
@@ -237,8 +279,8 @@ through `c`.
 | FR-337-AC-3 | `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension emits `quire.op.temporal.eventually` with member `temporal_interval` `{lower: "0", upper: "5"}` and an empty fairness argument; strong previous emits `quire.op.temporal.once` with `{lower: "1", upper: "1"}`; under infinite-trace `eventually[3,*] holds(c.versionNumber = 2)` emits `{lower: "3", upper: null}`. | Test (TC-524) |
 | FR-337-AC-4 | Fed to QSL's I2 reader, AC-1's node with its arguments reordered fails the schema; with a `null` interval under a bounded profile it refuses `invalid_package`/`operation-member-mismatch`; with a fairness member naming an absent operation it refuses `missing_declaration`/`missing-name`; with a `quire.op.temporal.fair` application inside the formula it refuses `ill_typed`/`operator-ineligible`, each at FR-370's locus. | Test (TC-524) |
 | FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause. Two structurally identical clause declarations share one node and the reader returns two triples with distinct ordinals, each resolving to its own declaration. A temporal clause written with no `over` parameter refuses `invalid_syntax`/`unexpected-token` at the token that stands where `over` is required, with no node. A triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal returns `clause-root-unresolved` at that triple. | Test (TC-1079) |
-| FR-337-AC-6 | Over FR-124-AC-1's `Counter` unit (`over (c: M::Counter)`), under infinite-trace, `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` compiles with no `NotEmitted` refusal and emits a `temporal`/`temporal_clause` node whose activation argument binds `kind` `each`, `trigger` a reference to the `value`/`parameter` node named `q` at level 1 typed by `Counter`'s type node, and `guard` the term of `c.value >= 3` whose field read references `c`'s parameter node at level 0; the same clause `on each (q: M::Counter)` binds `kind` and `trigger` and no `guard`, `when (true)` binds `guard` the lowered term of `true`, and `on origin` binds `kind` `origin` alone. The four give four different clause keys and `package_id`s; `when (c.value >= 2)` and the binder renamed `r` each change the clause key; reformatting changes neither. QSL's I2 reader admits each package and returns each clause's triple and `over` node. | Test (TC-1265) |
-| FR-337-AC-7 | Over the same unit, a refused clause gives no package: `when (c.value)` refuses `ill_typed`/`non-boolean-root` at the guard; `when (q.value = 1)` refuses `missing_declaration`/`missing-name` at the read of `q`; `when (c.value = c.value + 1)` refuses `undefined_expression`/`unproved-range` at `c.value + 1`, as FR-104-AC-12 refuses the unguarded sum; `when (6 mod (2 - c.value) = 0)` checks, its divisor having no S3 law; `on each (q: M::Absent)` refuses `missing_declaration`/`missing-name` at `Absent`; a clause whose guard is `c.value` and whose `holds` condition is non-Boolean refuses once, at the guard. An `on each (q: M::Counter)` clause whose body begins `capture n: Int[0, 3] = c.value;` still refuses `unsupported_construct`/`not-yet-implemented` (`NotEmitted`) at the clause. | Test (TC-1265) |
+| FR-337-AC-6 | Over FR-124-AC-1's `Counter` unit (`over (c: M::Counter)`), under infinite-trace, `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` compiles with no `NotEmitted` refusal and emits a `temporal`/`temporal_clause` node whose activation argument binds `kind` `each`, `trigger` a reference to the `value`/`parameter` node named `q` at level 1 typed by `Counter`'s type node, and `guard` the term of `c.value >= 3` whose field read references `c`'s parameter node at level 0; the same clause `on each (q: M::Counter)` binds `kind` and `trigger` and no `guard`, `when (true)` binds `guard` the lowered term of `true`, and `on origin` binds `kind` `origin` alone. The four give four different clause keys and `package_id`s; `when (c.value >= 2)` and the binder renamed `r` each change the clause key; reformatting changes neither. The trigger node's `expression` occurrence and its type node's `type` occurrence are located at the binder's name `q`. QSL's I2 reader admits each package and returns each clause's triple and `over` node. | Test (TC-1265) |
+| FR-337-AC-7 | Over the same unit: `when (q.value = 1)` checks, and its guard term's field read references the level-1 trigger node; a refused clause gives no package: `when (c.value)` refuses `ill_typed`/`non-boolean-root` at the guard; `holds(q.value <= 1)` in the body refuses `missing_declaration`/`missing-name` at the read of `q`; `when (c.value = c.value + 1)` refuses `undefined_expression`/`unproved-range` at `c.value + 1`, as FR-104-AC-12 refuses the unguarded sum; `when (6 mod (2 - c.value) = 0)` checks, its divisor having no S3 law; `on each (q: M::Absent)` refuses `missing_declaration`/`missing-name` at `Absent`; `on each (q: Integer)` refuses `ill_typed`/`type-mismatch` at `Integer`; `on each (c: M::Counter)` refuses `conflicting_declaration`/`duplicate-declaration` at the binder `c`, naming both declarations; a clause whose guard is `c.value` and whose `holds` condition is non-Boolean refuses once, at the guard. An `on each (q: M::Counter)` clause whose body begins `capture n: Int[0, 3] = c.value;` still refuses `unsupported_construct`/`not-yet-implemented` (`NotEmitted`) at the clause, the interim state QSL-1081 removes. | Test (TC-1265) |
 
 ## Dependencies
 
@@ -264,5 +306,7 @@ through `c`.
   STD-131.
 - QSpec FR-370-AC-13 owns the rule that a temporal clause always names an
   `over` parameter, which FR-337-AC-5 and TC-1079 step 3 apply.
-- Owning ticket: Linear QSL-366. The `on each` activation rules: Linear
-  QSL-926; the letter seam's guard read: QSL-1037.
+- Owning ticket: Linear QSL-366. The `on each` activation rules are
+  specified under Linear QSL-926; their implementation (the S3 guard check,
+  the S4 emission and the letter seam's guard read) is owned by QSL-1037.
+  Capture emission: QSL-1081.
