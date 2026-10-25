@@ -624,9 +624,9 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
 
     /// FR-487 "Evaluating an atom": evaluate the condition of the `holds`
     /// atom `atom` of the hyper clause `clause`, with slot `k` bound from
-    /// `slots[k]`, one per [`CheckedHyperClause::atom_slots`] entry. Each model
+    /// `slots[k]`, one per [`qsl_semantics::check::CheckedHyperClause::atom_slots`] entry. Each model
     /// read observes the component environment `components[r]`, `r` being the
-    /// component that [`CheckedHyperClause::component_reads`] records for the
+    /// component that [`qsl_semantics::check::CheckedHyperClause::component_reads`] records for the
     /// read. A slot bound `HyperSlot::Absent` reads as the absent-key reading
     /// of FR-125 Instancing; any number of slots may be absent.
     ///
