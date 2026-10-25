@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use qsl_semantics::model::observation::{
-    AnchorKind, ClauseSelection, ClauseSelectionInput, DocumentRef, NativeKind, ObservationLimits,
-    PostStateRange, RawNativeKind, SelectedAnchor, SelectedObject, SnapshotValue,
+    collection_kind_of_tag, AnchorKind, ClauseSelection, ClauseSelectionInput, DocumentRef,
+    NativeKind, ObservationLimits, PostStateRange, RawNativeKind, SelectedAnchor, SelectedObject,
+    SnapshotValue,
 };
 use quire_canonical::{Node, NodeRef};
-use quire_exact::{Identifier, ScalarLimits};
+use quire_exact::{CollectionKind, Identifier, ScalarLimits};
 use serde_json::value::RawValue;
 
 use super::{
@@ -375,7 +376,7 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
     enum Work<'a> {
         Read(NodeRef<'a>),
         Present,
-        Sequence(usize),
+        Collection(CollectionKind, usize),
     }
     let mut work = vec![Work::Read(value)];
     let mut values = Vec::new();
@@ -387,12 +388,12 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                     .ok_or_else(|| invalid("parameters", "missing present value"))?;
                 values.push(SnapshotValue::present(inner));
             }
-            Work::Sequence(len) => {
+            Work::Collection(kind, len) => {
                 if values.len() < len {
-                    return Err(invalid("parameters.sequence", "missing sequence value"));
+                    return Err(invalid("parameters.collection", "missing collection value"));
                 }
                 let items = values.split_off(values.len() - len);
-                values.push(SnapshotValue::sequence(items));
+                values.push(SnapshotValue::collection(kind, items));
             }
             Work::Read(value) => {
                 let Node::Object(mut object) = value.node() else {
@@ -499,11 +500,17 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                             extra_member,
                         ));
                     }
-                    "sequence" => {
-                        let Node::Array(items) = content.node() else {
-                            return Err(invalid("parameters.sequence", "expected array"));
+                    "sequence" | "set" | "bag" | "ordered-set" => {
+                        let Some(collection) = collection_kind_of_tag(kind) else {
+                            return Err(invalid(
+                                format!("parameters.{kind}"),
+                                "unknown value form",
+                            ));
                         };
-                        work.push(Work::Sequence(items.len()));
+                        let Node::Array(items) = content.node() else {
+                            return Err(invalid(format!("parameters.{kind}"), "expected array"));
+                        };
+                        work.push(Work::Collection(collection, items.len()));
                         work.extend(items.collect::<Vec<_>>().into_iter().rev().map(Work::Read));
                     }
                     _ => return Err(invalid(format!("parameters.{kind}"), "unknown value form")),
@@ -728,6 +735,7 @@ mod tests {
     };
     use qsl_semantics::model::observation::{ClauseSelectionInput, DocumentRef, SelectedObject};
     use qsl_semantics::model::observation::{NativeKind, RawForm, RawNativeKind};
+    use quire_exact::CollectionKind;
     use std::collections::BTreeMap;
 
     #[test]
@@ -783,6 +791,36 @@ mod tests {
                 panic!("{text}: expected a native object");
             };
             assert_eq!(native.kind(), kind, "{text}");
+        }
+    }
+
+    /// FR-106: a `set`, `bag` or `ordered-set` parameter keeps its kind and its
+    /// items in document order, as a `sequence` does, so admission judges the
+    /// kind against the declared one and decides duplicates itself.
+    #[test]
+    fn parameter_value_reader_keeps_the_kind_and_items_of_a_collection() {
+        for (tag, kind) in [
+            ("sequence", CollectionKind::Sequence),
+            ("set", CollectionKind::Set),
+            ("bag", CollectionKind::Bag),
+            ("ordered-set", CollectionKind::OrderedSet),
+        ] {
+            let text =
+                format!(r#"{{"{tag}":[{{"integer":"2"}},{{"integer":"1"}},{{"integer":"2"}}]}}"#);
+            let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
+            let decoded = snapshot_value(document.root()).unwrap();
+            let RawForm::Collection(read_kind, items) = decoded.form() else {
+                panic!("{tag}: a collection, not {:?}", decoded.form());
+            };
+            assert_eq!(read_kind, kind, "{tag}");
+            let spellings: Vec<_> = items
+                .iter()
+                .map(|item| match item.form() {
+                    RawForm::Integer(spelling) => spelling,
+                    other => panic!("{tag}: an integer, not {other:?}"),
+                })
+                .collect();
+            assert_eq!(spellings, ["2", "1", "2"], "{tag}");
         }
     }
 
