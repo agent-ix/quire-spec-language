@@ -754,6 +754,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-404
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-485
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1287,6 +1289,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-399](functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md) | FR |
 | [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
 | [FR-404](functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md) | FR |
+| [FR-485](functional/FR-485-supplied-admission-and-conversion-owner-allocation.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

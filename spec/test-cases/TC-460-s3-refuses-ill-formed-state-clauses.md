@@ -5,8 +5,6 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/FR-104-AC-9
-    type: verifies
 ---
 # TC-460: S3 refuses ill-formed state clauses with their catalog codes
 
