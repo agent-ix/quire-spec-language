@@ -71,7 +71,10 @@ fn is_hyper(node: &CheckedSemanticNodeV2) -> bool {
         == Some(CheckedNodeKind::Claim(ClaimForm::Hyperproperty))
 }
 
-/// The digest the `body` binding of the hyper node `node` references.
+/// The digest the `body` binding of the hyper node `node` references. The
+/// binding's wire name is the one place the written text is read (FR-064's
+/// string-edge): FR-402 names the member `body`.
+#[ix_trace_rs::string_edge]
 fn body_digest(node: &CheckedSemanticNodeV2) -> Option<&str> {
     let CheckedTerm::Aggregate { members } = &node.body else {
         return None;
