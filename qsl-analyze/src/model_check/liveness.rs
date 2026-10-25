@@ -117,7 +117,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::check::{
-    not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
+    atom_refusal, not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest,
+    BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop, PermuterOf};
 use super::fair_walk::{fairness_constraints, tree_path, FairModel};
@@ -870,7 +871,10 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             let value = self
                 .letters
                 .atom(*atom, self.binding, state, &mut meter)
-                .map_err(|incomplete| self.record(Halt::Meter(incomplete.limit_kind)))?;
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => self.record(Halt::Refusal(refusal)),
+                    Err(incomplete) => self.record(Halt::Meter(incomplete.limit_kind)),
+                })?;
             match value {
                 AtomReading::True => {
                     let atom = Atom::new(index)

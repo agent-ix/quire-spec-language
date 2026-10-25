@@ -107,8 +107,9 @@ pub(crate) use model::{
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
 pub(crate) use protocol::{compensation_origin, declaration_origin, ProtocolInput};
 pub(crate) use state::{
-    state_operation_location, state_operation_site, AnchorInput, AttemptInput, LoweredAttempt,
-    LoweredClause, OperationBinding, StateClauseInput,
+    protocol_attempt_operation_location, protocol_attempt_operation_site, state_operation_location,
+    state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
+    OperationBinding, StateClauseInput,
 };
 pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 

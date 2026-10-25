@@ -12,7 +12,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     check_model, check_protocol, ModelCheckRequest, ProtocolCheckRequest,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState};
 use qsl_eval::simulation::protocol::{
     PositionAnchor, ProtocolSystem, ProtocolTransition, Sc, StepKind,
@@ -34,7 +34,7 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Cancel, Incomplete, Meter};
+use quire_exact::{Cancel, Meter};
 
 use crate::counter::UNLIMITED;
 use crate::fill::{
@@ -186,7 +186,7 @@ impl ModelLetters for CellV {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if (self.0)(v(state, &instance.key)) {
             AtomReading::True
         } else {

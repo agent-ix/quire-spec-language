@@ -24,7 +24,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::UndefinedCause;
@@ -590,7 +590,7 @@ impl ModelLetters for MeteredLetters<'_> {
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         if self.charge_atom {
             self.charge(meter)?;
         }

@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest, Reductions};
 use qsl_eval::automaton::translate;
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
@@ -34,7 +34,7 @@ use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Incomplete, Meter, Value};
+use quire_exact::{Cancel, Meter, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -614,7 +614,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(match (self.atoms[self.index(atom)])(state, &instance.key) {
             Some(true) => AtomReading::True,
             Some(false) => AtomReading::False,

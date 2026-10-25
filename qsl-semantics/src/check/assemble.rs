@@ -3532,6 +3532,20 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-105-AC-11: a frame's generated occurrence uses the qualified
+        // operation reference in a protocol attempt, while the attempt's
+        // other occurrences remain rooted at its declared name.
+        for (protocol_index, protocol) in unit.protocols.iter().enumerate() {
+            for (attempt_index, attempt) in protocol.attempts.iter().enumerate() {
+                declared_type_spans.insert(
+                    super::lowering::protocol_attempt_operation_site(protocol_index, attempt_index),
+                    Span {
+                        start: attempt.context.span.start,
+                        end: attempt.operation.span.end,
+                    },
+                );
+            }
+        }
         // FR-105: a clause's frame `generated` occurrence is located at the
         // clause's operation reference.
         declared_type_spans.extend(
