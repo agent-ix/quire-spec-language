@@ -1011,7 +1011,7 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
     ));
 }
 
-/// FR-125-AC-18 and FR-337: the guard of `on each (y: Dog) when (g)` is read
+/// FR-337: the guard of `on each (y: Dog) when (g)` is read
 /// through the production letters at every instance, with `y` bound to the
 /// same reference as the clause's `over`. Over `animals` (`k` a `Dog`, `t` a
 /// `Cat`) and `dogs` (`d`), the guard `G` reads false at `t` and true at `k`
@@ -1019,7 +1019,7 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
 /// whose guard holds) while a `when (false)` guard makes the same property
 /// hold vacuously. A guard that reads a field through the absent `Cat` is
 /// undefined there, naming `t`.
-#[trace("TC-520", "FR-125-AC-18")]
+#[trace("TC-520", "FR-337")]
 #[test]
 fn a_guarded_activation_is_read_through_the_production_letters_at_each_instance() {
     let world = world(
@@ -1086,8 +1086,9 @@ fn a_guarded_activation_is_read_through_the_production_letters_at_each_instance(
 /// `x: Dog`, covered by `animals` and `dogs`, a body that names no
 /// population has those two population domains; a guard that names `lamps`,
 /// which does not cover `Dog`, adds `lamps` to the clause's named populations
-/// and to its unbounded population domains, as a `holds` atom naming it does.
-#[trace("TC-520", "FR-125-AC-18")]
+/// and to its unbounded population domains, as a `holds` atom naming it does;
+/// a guard that reads a `Dog` field adds that object to the record's elements.
+#[trace("TC-520", "FR-337")]
 #[test]
 fn the_populations_a_guard_names_join_the_clauses() {
     let world = world(
@@ -1146,6 +1147,29 @@ fn the_populations_a_guard_names_join_the_clauses() {
     );
     assert_eq!(domains(&atom), 3);
     assert_eq!(populations(&atom), populations(&guarded));
+
+    let elements = |package: &CheckedPackage| {
+        package
+            .graph()
+            .requirements()
+            .keys()
+            .flat_map(|key| {
+                package
+                    .graph()
+                    .item_elements(key)
+                    .expect("a record")
+                    .expect("resolves")
+            })
+            .filter(|element| matches!(element, qsl_semantics::check::AbstractionKey::Object(_)))
+            .count()
+    };
+    let reading = world.clause_text(
+        "M::Dog",
+        "on each (y: M::Dog) when (y.age >= 0)",
+        "always holds(true)",
+    );
+    assert_eq!(elements(&plain), 0);
+    assert_eq!(elements(&reading), 1);
 }
 
 /// FR-125-AC-17: an absent `x` remains a guard when forwarded through a let

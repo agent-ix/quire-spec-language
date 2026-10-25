@@ -171,7 +171,7 @@ impl ObservedLetters<'_> {
                 Err(LetterStop::Incomplete(incomplete))
             }
             FamilyOutcome::Evaluated(Outcome::Refused(_))
-            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(stop(boolean)),
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(stop(refused_code)),
             FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
                 AtomReading::Undefined(UndefinedCause::Family(cause.undefined_record())),
             ),
