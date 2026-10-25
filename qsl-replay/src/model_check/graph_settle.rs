@@ -213,6 +213,7 @@ pub fn settle_state_graph(
             }
         }
         StateGraphOutcome::NoInitialState => Row::inconclusive(InconclusiveCause::NoInitialState),
+        StateGraphOutcome::NoInstance => Row::inconclusive(InconclusiveCause::NoInstance),
     };
     StateGraphRecord {
         value: row.value,
