@@ -345,7 +345,10 @@ fn a_deadlock_counterexample_reproduces_and_a_truncated_one_disagrees() {
         matches!(cause, DisagreementCause::Verdicts { .. }),
         "{cause:?}"
     );
-    assert_eq!(cause.replayed().category(), Category::Success);
+    assert_eq!(
+        cause.replayed().map(|verdict| verdict.category()),
+        Some(Category::Success)
+    );
 }
 
 fn refusal(

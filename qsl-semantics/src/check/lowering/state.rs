@@ -167,6 +167,21 @@ pub(crate) struct LoweredClause {
 }
 
 impl Lowering<'_> {
+    /// Lower one resolved tick operation to the same operation anchor and
+    /// frame used by state clauses and protocol attempts.
+    pub(crate) fn time_source_anchor(
+        &mut self,
+        anchor: &AnchorInput<'_>,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let binding = self.operation_anchor(anchor, anchor.location)?;
+        self.record(
+            binding.anchor,
+            OccurrenceRole::Anchor,
+            anchor.location.clone(),
+        );
+        Ok(binding.anchor)
+    }
+
     /// Lower and key the state clause `clause`, recording its `claim`
     /// occurrence at its root and, for a `pre` or `post` clause, one
     /// `anchor` occurrence of the operation's anchor node.

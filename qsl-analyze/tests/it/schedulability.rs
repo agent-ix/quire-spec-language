@@ -458,7 +458,10 @@ fn altered_evidence_settles_inconclusive_replay_parity() {
     else {
         panic!("a disagreement settles replay-parity");
     };
-    assert_eq!(cause.proved().category(), Category::Violation);
+    assert_eq!(
+        cause.proved().map(|verdict| verdict.category()),
+        Some(Category::Violation)
+    );
 }
 
 /// `a` (`C = 1`, `T = D = 2`, priority 1) and `b` (`C = 1`, `T = 3`,

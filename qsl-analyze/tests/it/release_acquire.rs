@@ -675,22 +675,28 @@ fn seq_cst_iriw_is_forbidden_and_release_acquire_iriw_is_not() {
     assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
 }
 
-/// The looping protocol of FR-223-AC-3: two threads each running a
-/// `repeat` of maximum 3 over a `seq_cst` store to `x` and a `seq_cst` load
-/// of `y`.
+/// The looping protocol of FR-223-AC-3: two threads each repeat a
+/// `seq_cst` store to `x` and a `seq_cst` load of `y` up to three times.
+/// One initial `seq_cst` store to `y` makes the loads shared under EN-1.
 fn sc_loops() -> String {
-    let body = |label: &str, store: &str, load: &str, register: u8| {
+    let body = |label: &str, store: &str, load: &str, register: u8, seed_y: bool| {
+        let seed_y = if seed_y {
+            put("SySeed", "y", "seq_cst")
+        } else {
+            String::new()
+        };
         format!(
-            "branch {label} repeat L{label} by w visible () max 3 while {{ true }} \
-             sequence B{label} {{ {} {} }} exhausted sequence O{label} {{ }}",
+            "branch {label} sequence P{label} {{ {seed_y} \
+             repeat L{label} by w visible () max 3 while {{ true }} \
+             sequence B{label} {{ {} {} }} exhausted sequence O{label} {{ }} }}",
             put(store, "x", "seq_cst"),
             load_ordered(load, "y", register, "seq_cst"),
         )
     };
     format!(
         "sequence Main {{ parallel Both {{ {} {} }} join all [a, b]; }}",
-        body("a", "Sxa", "Lya", 1),
-        body("b", "Sxb", "Lyb", 2),
+        body("a", "Sxa", "Lya", 1, true),
+        body("b", "Sxb", "Lyb", 2, false),
     )
 }
 
@@ -804,7 +810,9 @@ fn the_sc_event_graph_is_deterministic_and_coalesces_removed_events() {
 
 /// FR-229-AC-3 (TC-674): a `compare_exchange` on `x` at 0 that leaves it
 /// unchanged applies as a load under `ra`: it adds no message and moves
-/// only the acting thread's view.
+/// only the acting thread's view. The other branch reads `x` so its enabled
+/// footprint makes the location shared; its unrelated `y` store is local and
+/// therefore has no ordering.
 #[trace("TC-674", "FR-229-AC-3")]
 #[test]
 fn a_read_modify_write_that_changes_nothing_applies_as_a_load() {
@@ -817,8 +825,9 @@ fn a_read_modify_write_that_changes_nothing_applies_as_a_load() {
             "SB",
             &format!(
                 "parallel Both {{ branch left sequence L {{ {cas} }} \
-                 branch right sequence R {{ {} }} }} join all [left, right];",
-                put("Sy", "y", "release"),
+                 branch right sequence R {{ {} {} }} }} join all [left, right];",
+                attempt("Lx", "c", "Core::read2", "", "ReadsX2, Read2"),
+                put("Sy", "y", ""),
             ),
         ),
     );
@@ -1088,7 +1097,7 @@ fn a_second_fence_with_no_store_between_removes_the_first_from_the_sc_event_grap
         "fence F1 ordering seq_cst;".to_owned(),
         "fence F2 ordering seq_cst;".to_owned(),
     ];
-    let reader = attempt("Acq", "c", "Core::read1", "acquire", "ReadsX1, ReadFlag1");
+    let reader = attempt("Acq", "c", "Core::read1", "", "ReadsX1, ReadFlag1");
     let case = no_both_zero_unit(&run(&[("a", fences), ("b", vec![reader])], ""));
     let system = case.system(&ra_main(), Ra::default()).expect("builds");
     let mut state = forked(&system);

@@ -1266,6 +1266,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::MissingTimedModel { name, .. } => {
                     format!("{message}: the time source names no admitted model `{name}`")
                 }
+                TemporalCause::AmbiguousTimedModel { name, .. } => {
+                    format!(
+                        "{message}: the time source names more than one admitted model `{name}`"
+                    )
+                }
                 TemporalCause::UrgencyWithoutTimeSource { .. } => {
                     format!("{message}: `urgent when` needs a model with a time source")
                 }

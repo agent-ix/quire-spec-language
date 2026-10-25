@@ -21,6 +21,7 @@ use qsl_foundation::witness::{
     ValuePathSubject,
 };
 use qsl_package::CheckedPackage;
+use qsl_semantics::check::CheckedHybridModel;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
 use quire_semantic_value::declaration::EnvironmentFailure;
@@ -29,8 +30,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 
 use super::{
-    DisagreementCause, SeparatingWitnessRecord, SeparationReason, SeparationRefusal, Verdict,
-    WitnessFailure,
+    DisagreementCause, HybridTraceDisagreement, SeparatingWitnessRecord, SeparationReason,
+    SeparationRefusal, Verdict, WitnessFailure,
+};
+use crate::hybrid_replay::{
+    ExactInterval, HybridCounterexample, HybridCounterexampleKind, HybridTrace, TraceBefore,
+    TraceJump, TraceState,
 };
 use crate::identity::TracePosition;
 use quire_semantic_value::catalog::Category;
@@ -92,6 +97,15 @@ pub enum CauseCodecError {
         /// The kernel's storage failure.
         failure: EnvironmentFailure,
     },
+    /// A hybrid trace cause requires the checked model whose names it uses.
+    #[error("a hybrid trace cause requires its checked model")]
+    MissingHybridModel,
+    /// A typed trace index does not name an entry in its checked model.
+    #[error("the hybrid trace's {0} index is not present in the checked model")]
+    HybridIndex(&'static str),
+    /// This cause codec currently admits only the formula counterexample arm.
+    #[error("the hybrid counterexample kind is not supported by this codec")]
+    HybridKind,
 }
 
 /// A [`CauseCodecError::Shape`] refusal.
@@ -101,16 +115,24 @@ fn malformed(detail: &'static str) -> CauseCodecError {
 
 impl DisagreementCause {
     /// FR-269: this cause's JSON document.
-    pub fn to_json(&self) -> Result<String, CauseCodecError> {
+    pub fn to_json(
+        &self,
+        hybrid_model: Option<&CheckedHybridModel>,
+    ) -> Result<String, CauseCodecError> {
         Ok(serde_json::to_string(&CauseWire::<Box<RawValue>>::of(
             self,
+            hybrid_model,
         )?)?)
     }
 
     /// FR-269: read a cause from `text`, refusing any document that is not
     /// exactly a cause this codec writes. Declaration identities resolve
     /// among those `package` admitted.
-    pub fn from_json(text: &str, package: &CheckedPackage) -> Result<Self, CauseCodecError> {
+    pub fn from_json(
+        text: &str,
+        package: &CheckedPackage,
+        hybrid_model: Option<&CheckedHybridModel>,
+    ) -> Result<Self, CauseCodecError> {
         // The deciding element nests as deep as the value it holds, which
         // serde_json's recursive reader refuses past 128 levels. The shared
         // reader keeps it as a document on the heap; the cause's own members
@@ -131,7 +153,7 @@ impl DisagreementCause {
             .into_iter()
             .map(|node| decode_element(node, keys).map(Some))
             .collect::<Result<Vec<_>, _>>()?;
-        wire.read(keys, &mut elements)
+        wire.read(keys, &mut elements, hybrid_model)
     }
 }
 
@@ -241,10 +263,16 @@ enum CauseWire<E> {
         derived: Option<Box<RecordWire<E>>>,
         failure: FailureWire,
     },
+    HybridTrace {
+        disagreement: HybridDisagreementWire,
+    },
 }
 
 impl CauseWire<Box<RawValue>> {
-    fn of(cause: &DisagreementCause) -> Result<Self, CauseCodecError> {
+    fn of(
+        cause: &DisagreementCause,
+        hybrid_model: Option<&CheckedHybridModel>,
+    ) -> Result<Self, CauseCodecError> {
         Ok(match cause {
             DisagreementCause::Verdicts { proved, replayed } => Self::Verdicts {
                 proved: VerdictWire::of(*proved),
@@ -275,6 +303,12 @@ impl CauseWire<Box<RawValue>> {
                     .map(Box::new),
                 failure: FailureWire::of(failure),
             },
+            DisagreementCause::HybridTrace(disagreement) => Self::HybridTrace {
+                disagreement: HybridDisagreementWire::of(
+                    disagreement,
+                    hybrid_model.ok_or(CauseCodecError::MissingHybridModel)?,
+                )?,
+            },
         })
     }
 }
@@ -284,6 +318,7 @@ impl CauseWire<ElementSlot> {
         self,
         keys: Keys<'_>,
         elements: &mut Elements,
+        hybrid_model: Option<&CheckedHybridModel>,
     ) -> Result<DisagreementCause, CauseCodecError> {
         Ok(match self {
             Self::Verdicts { proved, replayed } => DisagreementCause::Verdicts {
@@ -313,8 +348,344 @@ impl CauseWire<ElementSlot> {
                     .map(Box::new),
                 failure: failure.read()?,
             },
+            Self::HybridTrace { disagreement } => DisagreementCause::HybridTrace(
+                disagreement.read(hybrid_model.ok_or(CauseCodecError::MissingHybridModel)?)?,
+            ),
         })
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+enum HybridDisagreementWire {
+    NotReproduced {
+        counterexample: HybridCounterexampleWire,
+    },
+    NotExact {
+        counterexample: HybridCounterexampleWire,
+    },
+}
+
+impl HybridDisagreementWire {
+    fn of(
+        disagreement: &HybridTraceDisagreement,
+        model: &CheckedHybridModel,
+    ) -> Result<Self, CauseCodecError> {
+        match disagreement {
+            HybridTraceDisagreement::NotReproduced { counterexample } => Ok(Self::NotReproduced {
+                counterexample: HybridCounterexampleWire::of(counterexample, model)?,
+            }),
+            HybridTraceDisagreement::NotExact { counterexample } => Ok(Self::NotExact {
+                counterexample: HybridCounterexampleWire::of(counterexample, model)?,
+            }),
+        }
+    }
+
+    fn read(self, model: &CheckedHybridModel) -> Result<HybridTraceDisagreement, CauseCodecError> {
+        match self {
+            Self::NotReproduced { counterexample } => Ok(HybridTraceDisagreement::NotReproduced {
+                counterexample: Box::new(counterexample.read(model)?),
+            }),
+            Self::NotExact { counterexample } => Ok(HybridTraceDisagreement::NotExact {
+                counterexample: Box::new(counterexample.read(model)?),
+            }),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridCounterexampleWire {
+    #[serde(rename = "type")]
+    kind_tag: HybridCounterexampleTag,
+    kind: HybridCounterexampleKindWire,
+    trace: HybridTraceWire,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum HybridCounterexampleTag {
+    HybridCounterexample,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum HybridCounterexampleKindWire {
+    Formula,
+}
+
+impl HybridCounterexampleWire {
+    fn of(
+        counterexample: &HybridCounterexample,
+        model: &CheckedHybridModel,
+    ) -> Result<Self, CauseCodecError> {
+        let HybridCounterexampleKind::Formula = counterexample.kind else {
+            return Err(CauseCodecError::HybridKind);
+        };
+        Ok(Self {
+            kind_tag: HybridCounterexampleTag::HybridCounterexample,
+            kind: HybridCounterexampleKindWire::Formula,
+            trace: HybridTraceWire::of(&counterexample.trace, model)?,
+        })
+    }
+
+    fn read(self, model: &CheckedHybridModel) -> Result<HybridCounterexample, CauseCodecError> {
+        let HybridCounterexampleTag::HybridCounterexample = self.kind_tag;
+        Ok(HybridCounterexample {
+            kind: match self.kind {
+                HybridCounterexampleKindWire::Formula => HybridCounterexampleKind::Formula,
+            },
+            trace: self.trace.read(model)?,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridTraceWire {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delta: Option<RationalWire>,
+    jumps: Vec<HybridJumpWire>,
+    #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    loop_to: Option<u64>,
+    start: HybridStateWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridStateWire {
+    enclosure: BTreeMap<String, HybridIntervalWire>,
+    mode: String,
+    time: HybridIntervalWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridBeforeWire {
+    enclosure: BTreeMap<String, HybridIntervalWire>,
+    time: HybridIntervalWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridJumpWire {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<HybridBeforeWire>,
+    state: HybridStateWire,
+    transition: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HybridIntervalWire {
+    lower: RationalWire,
+    upper: RationalWire,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RationalWire {
+    numerator: String,
+    denominator: String,
+}
+
+impl RationalWire {
+    fn of(value: &quire_exact::Rational) -> Self {
+        Self {
+            numerator: value.numerator().to_string(),
+            denominator: value.denominator().to_string(),
+        }
+    }
+
+    fn read(self) -> Result<quire_exact::Rational, CauseCodecError> {
+        let numerator =
+            canonical_integer(&self.numerator).ok_or(CauseCodecError::Value("rational"))?;
+        let denominator =
+            canonical_integer(&self.denominator).ok_or(CauseCodecError::Value("rational"))?;
+        let value = quire_exact::Rational::new(numerator.clone(), denominator.clone())
+            .map_err(|_| CauseCodecError::Value("rational"))?;
+        if value.numerator() != &numerator || value.denominator() != &denominator {
+            return Err(CauseCodecError::Value("rational"));
+        }
+        Ok(value)
+    }
+}
+
+impl HybridIntervalWire {
+    fn of(interval: &ExactInterval) -> Self {
+        Self {
+            lower: RationalWire::of(&interval.lower),
+            upper: RationalWire::of(&interval.upper),
+        }
+    }
+
+    fn read(self) -> Result<ExactInterval, CauseCodecError> {
+        Ok(ExactInterval::new(self.lower.read()?, self.upper.read()?))
+    }
+}
+
+impl HybridTraceWire {
+    fn of(trace: &HybridTrace, model: &CheckedHybridModel) -> Result<Self, CauseCodecError> {
+        crate::hybrid_replay::admit(model, trace)
+            .map_err(|_| CauseCodecError::HybridIndex("trace"))?;
+        let state = |state: &TraceState| state_wire(state, model);
+        let jumps = trace
+            .jumps
+            .iter()
+            .map(|jump| {
+                Ok(HybridJumpWire {
+                    before: jump
+                        .before
+                        .as_ref()
+                        .map(|before| before_wire(before, model))
+                        .transpose()?,
+                    state: state(&jump.state)?,
+                    transition: jump.transition,
+                })
+            })
+            .collect::<Result<_, CauseCodecError>>()?;
+        Ok(Self {
+            delta: trace.delta.as_ref().map(RationalWire::of),
+            jumps,
+            loop_to: trace.loop_to,
+            start: state(&trace.start)?,
+        })
+    }
+
+    fn read(self, model: &CheckedHybridModel) -> Result<HybridTrace, CauseCodecError> {
+        let trace = HybridTrace {
+            start: read_state(self.start, model)?,
+            jumps: self
+                .jumps
+                .into_iter()
+                .map(|jump| {
+                    Ok(TraceJump {
+                        transition: jump.transition,
+                        before: jump
+                            .before
+                            .map(|before| read_before(before, model))
+                            .transpose()?,
+                        state: read_state(jump.state, model)?,
+                    })
+                })
+                .collect::<Result<_, CauseCodecError>>()?,
+            delta: self.delta.map(RationalWire::read).transpose()?,
+            loop_to: self.loop_to,
+        };
+        crate::hybrid_replay::admit(model, &trace)
+            .map_err(|_| CauseCodecError::HybridIndex("trace"))?;
+        Ok(trace)
+    }
+}
+
+fn state_wire(
+    state: &TraceState,
+    model: &CheckedHybridModel,
+) -> Result<HybridStateWire, CauseCodecError> {
+    let mode = model
+        .modes
+        .get(state.mode.get())
+        .ok_or(CauseCodecError::HybridIndex("mode"))?;
+    let enclosure = model
+        .variables
+        .iter()
+        .zip(&state.enclosure)
+        .map(|(variable, interval)| {
+            (
+                variable.name.as_str().to_owned(),
+                HybridIntervalWire::of(interval),
+            )
+        })
+        .collect();
+    if state.enclosure.len() != model.variables.len() {
+        return Err(CauseCodecError::HybridIndex("variable"));
+    }
+    Ok(HybridStateWire {
+        enclosure,
+        mode: mode.name.as_str().to_owned(),
+        time: HybridIntervalWire::of(&state.time),
+    })
+}
+
+fn before_wire(
+    before: &TraceBefore,
+    model: &CheckedHybridModel,
+) -> Result<HybridBeforeWire, CauseCodecError> {
+    let enclosure = model
+        .variables
+        .iter()
+        .zip(&before.enclosure)
+        .map(|(variable, interval)| {
+            (
+                variable.name.as_str().to_owned(),
+                HybridIntervalWire::of(interval),
+            )
+        })
+        .collect();
+    if before.enclosure.len() != model.variables.len() {
+        return Err(CauseCodecError::HybridIndex("variable"));
+    }
+    Ok(HybridBeforeWire {
+        enclosure,
+        time: HybridIntervalWire::of(&before.time),
+    })
+}
+
+fn read_state(
+    state: HybridStateWire,
+    model: &CheckedHybridModel,
+) -> Result<TraceState, CauseCodecError> {
+    let mode = model
+        .modes
+        .iter()
+        .position(|mode| mode.name.as_str() == state.mode)
+        .map(qsl_semantics::check::ModeIndex::new)
+        .ok_or(CauseCodecError::HybridIndex("mode"))?;
+    let enclosure = read_enclosure(state.enclosure, model)?;
+    Ok(TraceState {
+        mode,
+        time: state.time.read()?,
+        enclosure,
+    })
+}
+
+fn read_before(
+    before: HybridBeforeWire,
+    model: &CheckedHybridModel,
+) -> Result<TraceBefore, CauseCodecError> {
+    Ok(TraceBefore {
+        time: before.time.read()?,
+        enclosure: read_enclosure(before.enclosure, model)?,
+    })
+}
+
+fn read_enclosure(
+    values: BTreeMap<String, HybridIntervalWire>,
+    model: &CheckedHybridModel,
+) -> Result<Vec<ExactInterval>, CauseCodecError> {
+    if values.len() != model.variables.len() {
+        return Err(CauseCodecError::HybridIndex("variable"));
+    }
+    model
+        .variables
+        .iter()
+        .map(|variable| {
+            values
+                .get(variable.name.as_str())
+                .ok_or(CauseCodecError::HybridIndex("variable"))?
+                .clone()
+                .read()
+        })
+        .collect()
+}
+
+fn canonical_integer(text: &str) -> Option<quire_exact::Integer> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    let canonical = !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'))
+        && text != "-0";
+    canonical.then(|| text.parse().ok()).flatten()
 }
 
 /// A verdict on the wire: its category's [`Category::as_str`] label. A

@@ -252,7 +252,7 @@ fn duplicate_source_time_dimensions_refuse_at_assembly() {
     assert!(refusal.errors.iter().any(|error| matches!(&error.cause, AssemblyCause::DuplicateQuantityName { name, spans } if name == "Time" && spans.len() == 2) && error.cause.catalog_code().to_string() == "ambiguous_declaration/ambiguous-name"), "{refusal:?}");
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
 fn time_source_names_an_admitted_model() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Missing dense unit ms;\n";
@@ -319,7 +319,7 @@ fn duplicate_time_source_refuses_at_the_second_declaration() {
     )), "{refusals:?}");
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
 fn tick_source_resolves_its_operation_and_exact_period() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick ConfigVersion::attemptUpdate period rational(1,2) ms unit ms;\n";
@@ -335,9 +335,11 @@ fn tick_source_resolves_its_operation_and_exact_period() {
     assert!(
         matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, period } if operation == &config_version_identity("attemptUpdate") && *period == quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half"))
     );
+    assert!(checked.time_sources()[0].tick_operation_anchor.is_some());
+    assert!(checked.time_sources()[0].tick_operation_span.is_some());
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
 fn unqualified_tick_operation_resolves_to_its_declaration_identity() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick attemptUpdate period 1 ms unit ms;\n";
@@ -353,11 +355,12 @@ fn unqualified_tick_operation_resolves_to_its_declaration_identity() {
     assert!(
         matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == &config_version_identity("attemptUpdate"))
     );
+    assert!(checked.time_sources()[0].tick_operation_anchor.is_some());
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
-fn tick_operation_on_a_derived_object_resolves_its_inherited_declaration() {
+fn a_model_with_multiple_object_nodes_refuses_a_tick_source_on_a_derived_object() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick Deep1::attemptUpdate period 1 ms unit ms;\n";
     let declarations = admit_and_assemble_with_profiles(
         &tc465_deep_hierarchy_document(1),
@@ -365,11 +368,12 @@ fn tick_operation_on_a_derived_object_resolves_its_inherited_declaration() {
         body,
     )
     .expect("S2 keeps the derived owner name");
-    let checked = declarations
+    let refusals = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
-        .expect("S3 resolves the inherited operation");
+        .expect_err("the model alias has multiple semantic nodes");
     assert!(
-        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == &config_version_identity("attemptUpdate"))
+        refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::AmbiguousTimedModel { name, .. } if name == "Config"))),
+        "{refusals:?}"
     );
 }
 
@@ -506,23 +510,20 @@ fn tick_over(
     .map(|checked| checked.time_sources().to_vec())
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
-fn an_unqualified_tick_operation_declared_twice_is_ambiguous() {
+fn a_timed_model_with_multiple_object_nodes_refuses_an_unqualified_tick_operation() {
     let refusals = tick_over(&overriding_document(), "attemptUpdate")
-        .expect_err("two declarations share the name");
-    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::AmbiguousTickOperation { name, .. } if name == "attemptUpdate"))), "{refusals:?}");
+        .expect_err("the model alias has multiple semantic nodes");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::AmbiguousTimedModel { name, .. } if name == "Config"))), "{refusals:?}");
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-38")]
 #[test]
-fn a_qualified_tick_operation_resolves_to_the_overriding_declaration() {
-    let sources = tick_over(&overriding_document(), "Sub::attemptUpdate")
-        .expect("the override hides the inherited declaration");
-    assert!(
-        matches!(&sources[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == "ix://example/config-version/Sub/attemptUpdate"),
-        "{sources:?}"
-    );
+fn a_timed_model_with_multiple_object_nodes_refuses_a_qualified_tick_operation() {
+    let refusals = tick_over(&overriding_document(), "Sub::attemptUpdate")
+        .expect_err("the model alias has multiple semantic nodes");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::AmbiguousTimedModel { name, .. } if name == "Config"))), "{refusals:?}");
 }
 
 #[trace("TC-685")]

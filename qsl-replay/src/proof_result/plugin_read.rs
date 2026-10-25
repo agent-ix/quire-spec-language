@@ -30,6 +30,15 @@ mod trace;
 
 pub use trace::read_plugin_inconclusive_cause_over;
 
+/// Read a process-provider `refuted` entry's hybrid counterexample.
+#[ix_trace_rs::string_edge]
+pub fn read_plugin_hybrid_counterexample(
+    entry: &Value,
+    model: Option<&qsl_semantics::check::CheckedHybridModel>,
+) -> Result<crate::hybrid_replay::HybridCounterexample, PluginResultRefusal> {
+    trace::read_hybrid_counterexample(entry, model)
+}
+
 /// The largest FR-331 count, 2^53 - 1.
 const MAX_COUNT: u64 = (1 << 53) - 1;
 
