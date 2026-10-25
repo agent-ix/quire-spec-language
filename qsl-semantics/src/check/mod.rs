@@ -1755,6 +1755,14 @@ impl PackageDeclarations {
                     .copied()
                     .unwrap_or(false)
                     .then(|| model_scope.clone()),
+                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false)
+                    && self
+                        .function_selections
+                        .get(&index)
+                        .is_some_and(|selection| {
+                            crate::value::layer::HeaderLayer::from_identity(&selection.identity)
+                                == Some(crate::value::layer::HeaderLayer::ValueComplete)
+                        }),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
