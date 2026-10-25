@@ -287,6 +287,17 @@ impl CheckedFormula {
     }
 }
 
+/// Where a clause fixes its captures (FR-337 "Capture observation").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureSite {
+    /// The clause declares no capture.
+    Never,
+    /// An `on origin` clause: at position 0.
+    Origin,
+    /// An `on each` clause: at each position its guard admits.
+    Activations,
+}
+
 /// How a clause activates (FR-325 "Outputs").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Activation {
@@ -566,6 +577,17 @@ impl CheckedTemporalClause {
         self.captures
             .iter()
             .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// Where the clause fixes its captures (FR-337 "Capture observation").
+    pub fn capture_site(&self) -> CaptureSite {
+        if self.captures.is_empty() {
+            CaptureSite::Never
+        } else if matches!(self.activation, Activation::Origin) {
+            CaptureSite::Origin
+        } else {
+            CaptureSite::Activations
+        }
     }
 
     /// Whether the activation reads the state beyond the trigger: it has a
@@ -894,6 +916,11 @@ fn check_clause(
     // The parameters before the first capture: `over`, and the trigger
     // binder of an `on each` activation.
     let binders = 1 + usize::from(matches!(form.activation, ActivationForm::Each { .. }));
+    // Every parameter's type is resolved in this pass, before any initializer
+    // is typed, because `types` is the extent every later stage binds. A
+    // capture whose declared type does not resolve is therefore reported
+    // before an earlier capture's ill-typed initializer; both are single
+    // refusals with their own code, and AC-8's vectors hold.
     for (position, parameter) in parameters(form).into_iter().enumerate() {
         let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
             .map_err(|error| {

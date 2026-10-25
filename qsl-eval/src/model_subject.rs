@@ -195,8 +195,11 @@ pub trait ModelLetters {
     /// earlier capture bound to its value. The engine calls it at position 0
     /// of an `on origin` clause and at each position an `on each` clause
     /// activates (its guard, when it has one, read true), and only for a
-    /// clause with a capture. A clause with none answers
-    /// [`CaptureReading::Fixed`]. The stops are those of [`Self::atom`].
+    /// clause with a capture. The stops are those of [`Self::atom`].
+    ///
+    /// The default fails closed: letters that do not read captures stop with
+    /// a fault rather than treat a capture as defined. The engines ask only
+    /// for a clause that declares one.
     ///
     /// # Errors
     ///
@@ -207,7 +210,10 @@ pub trait ModelLetters {
         _state: &ModelSimState,
         _meter: &mut Meter,
     ) -> Result<CaptureReading, AtomStop> {
-        Ok(CaptureReading::Fixed)
+        Err(AtomStop::Fault(InternalFault::new(
+            "model-letters",
+            "letters-of-a-captured-clause-read-its-captures",
+        )))
     }
 
     /// FR-337 "Capture observation": the first capture, by its index in source
