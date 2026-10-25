@@ -31,3 +31,9 @@ Plan completion: not assessed.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The test tags FR-091-AC-28, but it asserts only rejection of an absent type name. That AC's missing-declaration case is an absent `Status::GONE` enum member in a package with an admitted `Status` enum; the binding overstates coverage. | qsl-semantics/tests/it/enum_type_admission.rs:11 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At e6e45e491ee7f83b6b8946fe983e287385d7c35f, the false `#[trace("TC-481", "FR-091-AC-28")]` tag is removed. The test doc comment names RT TC-024 procedure 3 as provenance without claiming QSL FR-091-AC-28 coverage. |

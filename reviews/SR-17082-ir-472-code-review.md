@@ -38,3 +38,9 @@ Reviewed QSL PR #1503 at 52eef62c88f6dd32b54bf69e728ab5e80fbe6a79. The new test 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The fixture contains only a function with an unresolved bare type name and no admitted enum. It would pass for generic missing type resolution even if the enum-specific admission path were broken, so it does not prove the TC-024 enum ownership control. | qsl-semantics/tests/it/enum_type_admission.rs:14 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At e6e45e491ee7f83b6b8946fe983e287385d7c35f, `admitted_status()` creates a real admitted `Status` enum binding. The test first checks `Status` positively, then checks `AbsentStatus` in the same admitted enum scope and asserts typed `MissingName` and `MissingDeclaration`. |
