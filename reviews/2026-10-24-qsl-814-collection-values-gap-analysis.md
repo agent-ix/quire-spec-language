@@ -89,3 +89,19 @@ dispatching brief directs.
 - Stubs / coverage inflation: none.
 - Semantic review: run, for AC-50..52 intent against test against code, at the dispatching brief's request.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1. The fix landed in PR #1480 (head aa5276432, code commit 854387bf3).
+#1478 had already merged to main at 19a1d3a63.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_context_set_field_follows_the_collection_rules_of_an_object_field` now carries `#[trace("TC-1171", "FR-106-AC-51")]` and asserts that an uppercase-UUID element refuses `invalid-value` at Index(0), naming the machine and the field. It passes at aa5276432. With the native_snapshot_values test, AC-51's field, parameter and context roots are all bound. |
+| FND-002 | deferred | Spec edit outside a code PR. PR #1480's body lists it as spec follow-up 1: amend or drop FR-106-AC-3's "set of `String`" clause. It needs a spec ticket. |
+| FND-003 | deferred | AC wording only; the test's deviation is justified. Spec follow-up 2 in PR #1480's body: change "reversed" to "in another order". |
+| FND-004 | deferred | TC-1171's fixture should declare `restock`; the test's deviation is justified. Spec follow-up 3 in PR #1480's body. |
+| FND-005 | deferred | FR-106 should state the cardinality rule for Sequence too. Spec follow-up 4 in PR #1480's body. |
+| FND-006 | deferred | The wire-spelling reconciliation between FR-106 and QSpec FR-144 crosses repos and is owned by the spec authors. Spec follow-up 5 in PR #1480's body. |
+| FND-007 | deferred | FR-106's "typed observation" order wording. Spec follow-up 6 in PR #1480's body. |
+| FND-008 | deferred | Tracked by QSL-1068 (FR-106-AC-53..61 element forms). |

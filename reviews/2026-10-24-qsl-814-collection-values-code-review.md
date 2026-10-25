@@ -68,3 +68,22 @@ the constant-stack guarantee FR-106 gives every other form.
 | FND-003 | low | The `cardinality_out_of_bound` record names the collection by its wire tag (`collection: "bag"`), not by the collection type FR-106 requires ("naming the collection type, the bound and the supplied count"). | qsl-semantics/src/model/observation/document.rs:2001-2014 |
 | FND-004 | low | Check 6.2/6.12 refuses a set/bag/ordered-set of a population by naming the `field`, not the element type that FR-106's last bullet requires ("SHALL refuse ... naming the element type"). | qsl-semantics/src/model/observation/document.rs:1961-1972, 2385-2392, 2606-2613 |
 | FND-005 | low | `canonical_bytes` silently falls back to serde_json bytes when the canonical read or write fails, and does so under `u64::MAX` limits, so any failure would quietly produce a non-RFC-8785 order. It should be an internal fault, or an infallible canonical encoder should be used. | qsl-semantics/src/model/observation/encode.rs:273-280 |
+
+## Dispositions
+
+Round 1. The fix landed in PR #1480 (head aa5276432, code commit 854387bf3).
+#1478 had already merged to main at 19a1d3a63. The reviewer checked a git
+archive of aa5276432 in a private target dir:
+- The touched tests pass. `variant_fields::each_mistyped_use_of_a_variant_type_refuses_with_its_cause` fails, but that is the main NameForm baseline (#1467) and the PR does not touch that test.
+- `cargo check --workspace --all-targets` is clean.
+- Clippy `--no-deps` shows only the baseline lints, in untouched files.
+- string-edge shows only the 3 baseline occurrences.
+- The diff adds no `#[allow]`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `forms_equal` now reduces both sides to a hash-consed `structure_identity` with an explicit heap stack. Set and bag child identities are sorted, every other form keeps its order, and the length-prefixed encoding is injective. Cost is O(n log n). `SnapshotValue::collection` keeps the first item's arena, so building a chain is linear. `raw_comparison_of_deeply_nested_sets_does_not_grow_the_stack` (depth 20,000, for Set, Bag and Sequence, equal and unequal cases) passes at aa5276432. The reviewer's earlier probe aborted with a stack overflow on 1393f5efa for the same construction. |
+| FND-002 | fixed | `the_first_duplicate_in_array_order_is_the_one_refused`: `[1, 2, 2, 1]` refuses at Index(2) with earlier-index 1, for Set and OrderedSet, both ways. Under the reviewer's mutation (`Some(_) => {}`) it would refuse at Index(3) naming 0, so the mutation is killed. |
+| FND-003 | accepted-no-change | `collection` is the member that FR-096's kernel catalog row defines as "the collection kind", and the kernel emitters use it that way. Changing admission alone would split the vocabulary. FR-106's "naming the collection type" wording is the divergence and needs a spec follow-up. That same FR-096 row also names a single `bound` member (`[minimum, maximum]`), whereas admission writes `minimum` and `maximum`. The `kernel_fields` validator only reads evaluate-stage outcomes, never admission refusals, so no reader rejects this. |
+| FND-004 | fixed | Checks 6.2 and 6.12 now add `feature = "Population"`, the member that names an unsupported element type elsewhere. No model document can declare such a field, so only the predicate unit test covers it. |
+| FND-005 | fixed | `to_json` returns `Result<_, AdmissionFailure>` and `canonical_bytes` faults (`collection-element-reads-back` / `collection-element-has-a-canonical-form`), with no serde fallback. The one production caller, `write_environment_document` (write.rs:88), propagates with `?`. Callers in tests `.expect`. The workspace compiles with all targets. |
