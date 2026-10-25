@@ -876,27 +876,86 @@ mod tests {
     #[trace("TC-1263", "FR-485-AC-6")]
     #[test]
     fn cancellation_after_begin_and_work_denial_preserve_leaf_accounting() {
-        let acquired = acquire(&format!("{HEADER}{FUNCTIONS}"), &DependencyInput::default());
+        let dependencies = DependencyInput::new([SuppliedLibrary {
+            identity: "test/lib".to_owned(),
+            source: identity("lib"),
+            path: "lib.native".to_owned(),
+            bytes: format!(
+                "{HEADER}function imported using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+            )
+            .into_bytes(),
+        }])
+        .expect("dependency input");
+        let acquired = acquire(
+            &format!("{HEADER}import \"test/lib\" as l;\n{FUNCTIONS}"),
+            &dependencies,
+        );
         let handle = acquired.handle();
         let selection = handle
             .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
             .expect("f");
+        let own_location = handle
+            .package
+            .graph()
+            .function_by_identity(selection.key())
+            .expect("own checked function")
+            .body
+            .location()
+            .clone();
+        let imported_package = handle
+            .package
+            .dependencies()
+            .values()
+            .next()
+            .expect("retained checked dependency");
+        let imported = handle
+            .lookup_callable(
+                imported_package.package_id().record(),
+                wire(imported_package, "imported"),
+            )
+            .expect("imported function");
+        let imported_location = imported_package
+            .graph()
+            .function_by_identity(imported.key())
+            .expect("imported checked function")
+            .body
+            .location()
+            .clone();
+        assert_ne!(own_location, imported_location);
         let environment = ApplicationEnvironment::new(ObjectClosure::default());
-        let cancel = Cancel::new();
-        let mut cancelled_meter = meter(1000).with_cancel(cancel.clone());
-        let mut registry = handle.registry();
-        let session = registry
-            .begin_call(&selection, vec![int(3)], &environment, &mut cancelled_meter)
-            .expect("begin");
-        cancel.cancel(CancelCause::Requested);
-        let result = session.run().expect("located incomplete");
-        assert!(matches!(
-            result.outcome,
-            FamilyOutcome::Evaluated(Outcome::Incomplete(_))
-        ));
-        assert!(result.location.is_some());
-        assert_eq!(cancelled_meter.admission_count(), 0);
-        assert_eq!(cancel.tripped(), Some(CancelCause::Requested));
+        for (callable, expected_location) in
+            [(&selection, &own_location), (&imported, &imported_location)]
+        {
+            let cancel = Cancel::new();
+            let mut cancelled_meter = meter(1000).with_cancel(cancel.clone());
+            let mut registry = handle.registry();
+            let session = registry
+                .begin_call(callable, vec![int(3)], &environment, &mut cancelled_meter)
+                .expect("begin");
+            cancel.cancel(CancelCause::Requested);
+            let result = session.run().expect("located cancelled outcome");
+            assert!(matches!(
+                result.outcome,
+                FamilyOutcome::Evaluated(Outcome::Incomplete(_))
+            ));
+            assert_eq!(result.location.as_ref(), Some(expected_location));
+            assert_eq!(cancelled_meter.admission_count(), 0);
+            assert_eq!(cancel.tripped(), Some(CancelCause::Requested));
+
+            let mut denied_meter = meter(0);
+            let result = handle
+                .registry()
+                .begin_call(callable, vec![int(3)], &environment, &mut denied_meter)
+                .expect("begin root work denial")
+                .run()
+                .expect("located root work denial");
+            assert!(matches!(
+                result.outcome,
+                FamilyOutcome::Evaluated(Outcome::Incomplete(_))
+            ));
+            assert_eq!(result.location.as_ref(), Some(expected_location));
+            assert_eq!(denied_meter.admission_count(), 0);
+        }
 
         let mut baseline = meter(1000);
         let successful = handle
@@ -929,6 +988,104 @@ mod tests {
             .run()
             .expect("exact run");
         assert_eq!(completed(&result), Some(3));
+    }
+
+    /// Dropping a runnable session does not resume a generated body again.
+    #[trace("TC-1263", "FR-485-AC-6")]
+    #[test]
+    fn dropping_runnable_session_abandons_later_body_transition() {
+        struct YieldingHost {
+            begun: Arc<AtomicUsize>,
+            started: Arc<AtomicUsize>,
+            continued: Arc<AtomicUsize>,
+        }
+        struct YieldingBody {
+            started: Arc<AtomicUsize>,
+            continued: Arc<AtomicUsize>,
+        }
+        impl BodyFactory for YieldingHost {
+            fn begin(&self) -> Box<dyn Body> {
+                self.begun.fetch_add(1, Ordering::SeqCst);
+                Box::new(YieldingBody {
+                    started: Arc::clone(&self.started),
+                    continued: Arc::clone(&self.continued),
+                })
+            }
+        }
+        impl Body for YieldingBody {
+            fn resume(
+                &mut self,
+                input: Resume,
+                _meter: &mut Meter,
+            ) -> Result<Transition, InternalFault> {
+                match input {
+                    Resume::Start(_) => {
+                        self.started.fetch_add(1, Ordering::SeqCst);
+                        Ok(Transition::Continue)
+                    }
+                    Resume::Again => {
+                        self.continued.fetch_add(1, Ordering::SeqCst);
+                        Ok(Transition::Done(Evaluation {
+                            outcome: FamilyOutcome::Evaluated(Outcome::Completed(int(9))),
+                            location: None,
+                            losses: vec![],
+                        }))
+                    }
+                    Resume::Child(_) => unreachable!("this body never requests a child"),
+                }
+            }
+        }
+
+        let acquired = acquire(&format!("{HEADER}{FUNCTIONS}"), &DependencyInput::default());
+        let handle = acquired.handle();
+        let selection = handle
+            .lookup_callable(handle.package_id(), wire(&handle.package, "f"))
+            .expect("f");
+        let begun = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(AtomicUsize::new(0));
+        let continued = Arc::new(AtomicUsize::new(0));
+        let mut registry = handle.registry();
+        assert_eq!(
+            registry.register(
+                &selection,
+                selection.signature(),
+                YieldingHost {
+                    begun: Arc::clone(&begun),
+                    started: Arc::clone(&started),
+                    continued: Arc::clone(&continued),
+                },
+            ),
+            Ok(Admission::Accepted)
+        );
+        let environment = ApplicationEnvironment::new(ObjectClosure::default());
+        let mut meter = meter(1000);
+        let session = registry
+            .begin_call(&selection, vec![int(3)], &environment, &mut meter)
+            .expect("begin");
+        let session = match session.step() {
+            CheckedApplicationProgress::Runnable(session) => session,
+            CheckedApplicationProgress::Terminal(_) => panic!("root entry must remain runnable"),
+        };
+        assert_eq!(begun.load(Ordering::SeqCst), 1);
+        assert_eq!(started.load(Ordering::SeqCst), 0);
+        let session = match session.step() {
+            CheckedApplicationProgress::Runnable(session) => session,
+            CheckedApplicationProgress::Terminal(_) => panic!("yield must remain runnable"),
+        };
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        assert_eq!(continued.load(Ordering::SeqCst), 0);
+        drop(session);
+        assert_eq!(continued.load(Ordering::SeqCst), 0);
+        assert_eq!(meter.admission_count(), 1);
+
+        let result = registry
+            .begin_call(&selection, vec![int(4)], &environment, &mut meter)
+            .expect("second begin")
+            .run()
+            .expect("second run");
+        assert_eq!(completed(&result), Some(9));
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+        assert_eq!(continued.load(Ordering::SeqCst), 1);
     }
 
     /// Acquisition shares the exact refusal classification of compile_admitted.
