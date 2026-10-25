@@ -17,6 +17,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations};
 use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::CallFailure;
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
@@ -156,6 +157,89 @@ fn assert_missing_field_at_check(package: &CheckedPackage, static_type: &str, fi
     assert_eq!(
         owner.cause,
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+/// FR-090-AC-22: an object reference retained after the current state drops
+/// that object produces the evaluator's attributed internal fault.
+#[trace("TC-917", "FR-090-AC-17", "FR-090-AC-22")]
+#[test]
+fn an_attribute_read_of_an_object_absent_from_the_current_state_is_a_fault() {
+    let peer = FieldDeclaration::new(
+        "peer",
+        ValueType::Reference(effective("M::A")),
+        Presence::Required,
+    );
+    let (package, types) = package(vec![object("M::A", vec![integer_field("x"), peer], &[])]);
+    let root = reference("M::A", "root");
+    let removed = reference("M::A", "removed");
+    let root_attributes = vec![
+        ("x", int(1)),
+        (
+            "peer",
+            FieldValue::Present(Value::Reference(removed.clone())),
+        ),
+    ];
+    let previous_state = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (root.clone(), root_attributes.clone()),
+                (
+                    removed.clone(),
+                    vec![
+                        ("x", int(2)),
+                        (
+                            "peer",
+                            FieldValue::Present(Value::Reference(removed.clone())),
+                        ),
+                    ],
+                ),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
+    assert!(previous_state.objects().contains(&removed));
+    let current_state = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [(root.clone(), root_attributes)],
+            std::slice::from_ref(&removed),
+        )
+        .expect("the incomplete current population may retain this dangling reference"),
+    );
+    assert!(!current_state.objects().contains(&removed));
+    let checked = package
+        .graph()
+        .check_expression(
+            vec![("r".to_owned(), ValueType::Reference(effective("M::A")))],
+            &Expression::field(
+                Expression::deref(Expression::field(
+                    Expression::deref(Expression::name("r".to_owned())),
+                    "peer".to_owned(),
+                )),
+                "x".to_owned(),
+            ),
+            None,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect("the nested attribute access is admitted");
+    let failure = package.evaluate(
+        &checked,
+        vec![Value::Reference(root)],
+        &current_state,
+        &mut Meter::new(UNLIMITED),
+    );
+    let Err(CallFailure::Fault(fault)) = failure else {
+        panic!("an absent-state attribute read faults, got {failure:?}");
+    };
+    assert_eq!(fault.stage(), "S6a");
+    assert_eq!(fault.invariant(), "attribute-slot-unresolved");
+    assert_eq!(
+        fault.category(),
+        quire_semantic_value::catalog::Category::InternalFailure
     );
 }
 
