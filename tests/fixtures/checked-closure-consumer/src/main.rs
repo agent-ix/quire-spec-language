@@ -105,3 +105,15 @@ pub fn run() {
 fn main() {
     run();
 }
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    /// The independently compiled consumer exercises the public facade path.
+    #[trace("TC-1263", "FR-485-AC-3")]
+    #[test]
+    fn checked_closure_external_consumer_runs() {
+        super::run();
+    }
+}

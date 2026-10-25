@@ -105,7 +105,6 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
-quire-eval = { workspace = true }
 serde_json_canonicalizer = "0.3.2"
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's

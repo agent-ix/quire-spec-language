@@ -9,8 +9,7 @@
 //!
 //! Shared helpers live in `tests/support/` and are reached as
 //! `crate::support::<name>` from any module below (see `tests/support/
-//! mod.rs`). Independently compiled consumer fixtures remain under
-//! `tests/fixtures/`.
+//! mod.rs`). `tests/fixtures/` is unchanged.
 //!
 //! Modules that call `qsl-semantics`' test-only fixtures
 //! (`DeclarationKey::fixture`, `ReaderAuthority::fixture` and friends) reach
@@ -34,7 +33,6 @@ mod abstraction_relation_inert;
 mod assessment_artifact_kinds;
 mod call_replay_context_items;
 mod call_requirements_items;
-mod checked_closure_consumer;
 mod clause_kind_canonical;
 mod cli;
 mod compile_command;
