@@ -214,3 +214,23 @@ pub fn assert_unsat(script: &str) {
     }
     assert!(!satisfiable(script));
 }
+
+/// Some assertion of `script` is outside linear integer arithmetic: a `*`
+/// of two non-literals, or a `mod` or `div` whose divisor is not a literal.
+pub fn nonlinear(script: &str) -> bool {
+    fn literal(term: &Sexp) -> bool {
+        matches!(term, Sexp::Atom(atom) if atom.parse::<i64>().is_ok())
+    }
+    fn walk(term: &Sexp) -> bool {
+        let Sexp::List(items) = term else {
+            return false;
+        };
+        let local = match items.as_slice() {
+            [Sexp::Atom(op), left, right] if op == "*" => !literal(left) && !literal(right),
+            [Sexp::Atom(op), _, divisor] if op == "mod" || op == "div" => !literal(divisor),
+            _ => false,
+        };
+        local || items.iter().any(walk)
+    }
+    parse(script).iter().any(walk)
+}

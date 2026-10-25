@@ -54,7 +54,7 @@ pub struct HyperQuery {
 /// `encode_hyper_query` make one: a caller cannot write one as a struct
 /// literal, serialize one or deserialize one (FR-315-AC-14).
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// use qsl_replay::HyperProductIdentity;
 ///
 /// fn minted() -> HyperProductIdentity {
@@ -66,14 +66,14 @@ pub struct HyperQuery {
 /// }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_replay::HyperProductIdentity;
 ///
 /// fn serializes<T: serde::Serialize>() {}
 /// serializes::<HyperProductIdentity>();
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_replay::HyperProductIdentity;
 ///
 /// fn deserializes<T: serde::de::DeserializeOwned>() {}

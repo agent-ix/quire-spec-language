@@ -34,9 +34,7 @@ use crate::smt::monitor::MonitorTable;
 use crate::smt::query::{
     fault, joined, letter_term, monitor_constant, script_bytes, too_large, Disjuncts,
 };
-use crate::smt::relation::{
-    applications, check_domains, count_applications, Application, CopyFacts, StepRelation,
-};
+use crate::smt::relation::{applications, check_domains, Application, CopyFacts, StepRelation};
 use crate::smt::script::{Script, Sort, Term};
 use crate::smt::{Measure, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind};
 
@@ -155,11 +153,14 @@ pub fn encode_hyper_script(
     // `too-large` for `constants`, over every copy.
     let depth = kind.depth();
     let monitored = property.is_none();
-    let per_position = dense
-        .iter()
-        .map(|at| fields_of(&symbolics[*at]))
-        .sum::<u64>()
-        + u64::from(monitored);
+    let mut per_position = u64::from(monitored);
+    for at in &dense {
+        per_position += fields_of(
+            symbolics
+                .get(*at)
+                .ok_or_else(|| fault("a subject reading for each trace variable"))?,
+        );
+    }
     let constants = depth.saturating_add(1).saturating_mul(per_position);
     if constants > limits.max_constants {
         return Err(too_large(
@@ -177,24 +178,26 @@ pub fn encode_hyper_script(
     for symbolic in &symbolics {
         check_domains(symbolic)?;
     }
-    let mut built: Vec<Option<Vec<Application<'_, '_>>>> = Vec::new();
+    // The component applications are built whole: `applications` counts the
+    // joint disjuncts `mu_universal` keeps, so no component count refuses
+    // before `match-conjunct` is decided.
+    let mut apps_of: Vec<Vec<Application<'_, '_>>> = Vec::new();
     for symbolic in &symbolics {
-        built.push(
-            (count_applications(symbolic) <= limits.max_applications)
-                .then(|| applications(symbolic, limits.max_applications))
-                .transpose()?,
-        );
+        apps_of.push(applications(symbolic, u64::MAX)?);
     }
     let mut firsts = Vec::new();
     for (variable, quantifier) in quantifiers.iter().enumerate() {
         let at = dense[variable];
-        let Some(apps) = &built[at] else {
-            firsts.push(None);
-            continue;
+        let (Some(symbolic), Some(layout), Some(apps)) =
+            (symbolics.get(at), layouts.get(at), apps_of.get(at))
+        else {
+            return Err(fault(
+                "a reading, layout and applications for each variable",
+            ));
         };
         let read = CopyFacts::read(
-            &symbolics[at],
-            &layouts[at],
+            symbolic,
+            layout,
             apps,
             &StateCopy::hyper(0, &quantifier.variable),
             false,
@@ -203,30 +206,17 @@ pub fn encode_hyper_script(
         if let Err(refusal @ SmtEncodingRefusal::Refused(Refusal::FieldDomain { .. })) = &read {
             return Err(refusal.clone());
         }
-        firsts.push(Some(read));
+        firsts.push(read);
     }
 
     // `match-conjunct`: every tuple of component disjuncts, `μ_U` evaluated
     // on each.
-    let mut apps_of = Vec::new();
-    for (at, symbolic) in symbolics.iter().enumerate() {
-        match &built[at] {
-            Some(apps) => apps_of.push(apps),
-            None => {
-                return Err(too_large(
-                    Measure::Applications,
-                    count_applications(symbolic),
-                    limits.max_applications,
-                ))
-            }
-        }
-    }
     let mut transitions: Vec<Vec<ModelTransition>> = Vec::new();
     let mut names: Vec<Vec<String>> = Vec::new();
     for (at, symbolic) in symbolics.iter().enumerate() {
         let mut shown = Vec::new();
         let mut identities = Vec::new();
-        for application in apps_of[at] {
+        for application in &apps_of[at] {
             identities.push(application.transition(symbolic)?);
             shown.push(application.label(symbolic));
         }
@@ -234,7 +224,15 @@ pub fn encode_hyper_script(
         transitions.push(identities);
         names.push(shown);
     }
-    let sizes: Vec<usize> = dense.iter().map(|at| names[*at].len()).collect();
+    let mut sizes = Vec::new();
+    for at in &dense {
+        sizes.push(
+            names
+                .get(*at)
+                .ok_or_else(|| fault("tuple names for each trace variable"))?
+                .len(),
+        );
+    }
     let universal = clause.mu_universal();
     let mut bindings = Vec::new();
     for (parameter, (_, key)) in clause.parameters().iter().zip(instance) {
@@ -282,7 +280,9 @@ pub fn encode_hyper_script(
             digits
                 .iter()
                 .enumerate()
-                .map(|(variable, digit)| names[dense[variable]][*digit].clone())
+                .filter_map(|(variable, digit)| {
+                    names.get(*dense.get(variable)?)?.get(*digit).cloned()
+                })
                 .collect()
         };
         let refused = |conjunct: usize, digits: &[usize]| -> SmtEncodingRefusal {
@@ -340,11 +340,14 @@ pub fn encode_hyper_script(
         let mut position = variables;
         while let Some(previous) = position.checked_sub(1) {
             position = previous;
-            digits[position] += 1;
-            if digits[position] < sizes[position] {
+            let (Some(digit), Some(size)) = (digits.get_mut(position), sizes.get(position)) else {
+                return Err(fault("a digit and a size for each trace variable"));
+            };
+            *digit += 1;
+            if *digit < *size {
                 break;
             }
-            digits[position] = 0;
+            *digit = 0;
         }
         if digits.iter().all(|digit| *digit == 0) {
             break;
@@ -383,7 +386,7 @@ pub fn encode_hyper_script(
     let mut first_facts = Vec::new();
     let mut pending = None;
     for read in firsts {
-        match read.ok_or_else(|| fault("applications read before their count"))? {
+        match read {
             Ok(facts) => first_facts.push(facts),
             Err(refusal @ SmtEncodingRefusal::Refused(Refusal::OutOfFragment { .. })) => {
                 pending.get_or_insert(refusal);
@@ -404,7 +407,7 @@ pub fn encode_hyper_script(
         dense,
         symbolics: &symbolics,
         layouts: &layouts,
-        apps: apps_of,
+        apps: &apps_of,
         kept,
         property,
         first_facts,
@@ -472,7 +475,7 @@ struct Product<'q, 'a> {
     dense: Vec<usize>,
     symbolics: &'q [SymbolicSubject<'a>],
     layouts: &'q [StateLayout],
-    apps: Vec<&'q Vec<Application<'q, 'a>>>,
+    apps: &'q [Vec<Application<'q, 'a>>],
     kept: Vec<Joint>,
     property: Property,
     /// The facts of each trace variable's copy 0.
@@ -488,6 +491,33 @@ impl Product<'_, '_> {
             Property::Monitor(table) => Some(table),
             Property::Predicate(..) => None,
         }
+    }
+
+    /// The reading index of trace variable `variable`'s subject.
+    fn at(&self, variable: usize) -> Result<usize, SmtEncodingRefusal> {
+        self.dense
+            .get(variable)
+            .copied()
+            .ok_or_else(|| fault("a trace variable has a subject reading"))
+    }
+
+    fn symbolic(&self, variable: usize) -> Result<&SymbolicSubject<'_>, SmtEncodingRefusal> {
+        self.symbolics
+            .get(self.at(variable)?)
+            .ok_or_else(|| fault("a subject reading for each trace variable"))
+    }
+
+    fn layout(&self, variable: usize) -> Result<&StateLayout, SmtEncodingRefusal> {
+        self.layouts
+            .get(self.at(variable)?)
+            .ok_or_else(|| fault("a layout for each trace variable"))
+    }
+
+    fn applications(&self, variable: usize) -> Result<&[Application<'_, '_>], SmtEncodingRefusal> {
+        self.apps
+            .get(self.at(variable)?)
+            .map(Vec::as_slice)
+            .ok_or_else(|| fault("applications for each trace variable"))
     }
 
     fn copy(&self, position: u64, variable: usize) -> StateCopy {
@@ -536,10 +566,9 @@ impl Product<'_, '_> {
             .map(|variable| StateRef::Copy(self.copy(position, variable)))
             .collect();
         let views = Views::of(states[0].clone());
-        let first = self.dense[0];
         Reader::new(
-            &self.layouts[first],
-            &self.symbolics[first],
+            self.layout(0)?,
+            self.symbolic(0)?,
             &site,
             Observation::Current,
             Vec::new(),
@@ -547,11 +576,9 @@ impl Product<'_, '_> {
             bound,
         )
         .in_components(Components {
-            layouts: self
-                .dense
-                .iter()
-                .map(|at| (&self.layouts[*at], &self.symbolics[*at]))
-                .collect(),
+            layouts: (0..self.variables.len())
+                .map(|variable| Ok((self.layout(variable)?, self.symbolic(variable)?)))
+                .collect::<Result<Vec<_>, SmtEncodingRefusal>>()?,
             states,
             reads,
             variables: self
@@ -574,7 +601,9 @@ impl Product<'_, '_> {
         let key = self
             .instance_key(&declared.name)
             .ok_or_else(|| fault("the instance binds every parameter"))?;
-        self.symbolics[at]
+        self.symbolics
+            .get(at)
+            .ok_or_else(|| fault("a subject reading for each atom slot"))?
             .objects
             .iter()
             .position(|object| object.key == key)
@@ -612,41 +641,40 @@ impl Product<'_, '_> {
         for step in 0..depth {
             let mut components = Vec::new();
             for variable in 0..variables {
-                let at = self.dense[variable];
                 let relation = StepRelation::build(
-                    &self.symbolics[at],
-                    &self.layouts[at],
-                    self.apps[at],
+                    self.symbolic(variable)?,
+                    self.layout(variable)?,
+                    self.applications(variable)?,
                     &self.copy(step, variable),
                     &self.copy(step + 1, variable),
                     true,
                 )?;
                 components.push(relation.disjuncts().cloned().collect::<Vec<_>>());
             }
-            joint.push(
-                self.kept
-                    .iter()
-                    .map(|tuple| {
-                        Term::all(
-                            tuple
-                                .digits
-                                .iter()
-                                .enumerate()
-                                .map(|(variable, digit)| components[variable][*digit].clone()),
-                        )
-                    })
-                    .collect(),
-            );
+            let mut tuples = Vec::new();
+            for tuple in &self.kept {
+                let mut parts = Vec::new();
+                for (variable, digit) in tuple.digits.iter().enumerate() {
+                    parts.push(
+                        components
+                            .get(variable)
+                            .and_then(|disjuncts| disjuncts.get(*digit))
+                            .cloned()
+                            .ok_or_else(|| fault("a kept tuple names a component disjunct"))?,
+                    );
+                }
+                tuples.push(Term::all(parts));
+            }
+            joint.push(tuples);
         }
         let mut facts = vec![self.first_facts.clone()];
         for position in 1..=depth {
             let mut at_position = Vec::new();
             for variable in 0..variables {
-                let at = self.dense[variable];
                 at_position.push(CopyFacts::read(
-                    &self.symbolics[at],
-                    &self.layouts[at],
-                    self.apps[at],
+                    self.symbolic(variable)?,
+                    self.layout(variable)?,
+                    self.applications(variable)?,
                     &self.copy(position, variable),
                     false,
                     self.limits.max_candidates,
@@ -658,7 +686,7 @@ impl Product<'_, '_> {
         let mut script = Script::with_max_bytes(self.limits.max_script_bytes);
         for position in 0..=depth {
             for variable in 0..variables {
-                self.layouts[self.dense[variable]]
+                self.layout(variable)?
                     .declare(&self.copy(position, variable), &mut script);
             }
             if self.monitor().is_some() {
@@ -668,8 +696,9 @@ impl Product<'_, '_> {
         }
         for position in 0..=depth {
             for variable in 0..variables {
-                for range in
-                    self.layouts[self.dense[variable]].ranges(&self.copy(position, variable))
+                for range in self
+                    .layout(variable)?
+                    .ranges(&self.copy(position, variable))
                 {
                     script.assert(&range);
                 }
@@ -684,9 +713,10 @@ impl Product<'_, '_> {
         }
         if self.kind.starts_initial() {
             for variable in 0..variables {
-                let at = self.dense[variable];
                 script.assert(
-                    &self.layouts[at].initial(&self.copy(0, variable), &self.symbolics[at])?,
+                    &self
+                        .layout(variable)?
+                        .initial(&self.copy(0, variable), self.symbolic(variable)?)?,
                 );
             }
         }
@@ -806,7 +836,7 @@ impl Product<'_, '_> {
                 let mut agreements = Vec::new();
                 for variable in 0..self.variables.len() {
                     agreements.extend(
-                        self.layouts[self.dense[variable]]
+                        self.layout(variable)?
                             .agreements(&self.copy(right, variable), &self.copy(left, variable)),
                     );
                 }

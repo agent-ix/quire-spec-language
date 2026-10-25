@@ -392,6 +392,16 @@ pub struct World {
     /// The keys of the universe of the second model's `vaults`, when it has
     /// one.
     pub other_universe: Option<Vec<String>>,
+    /// The subject of alias `N` of a world built by [`World::two_aliases`]:
+    /// its own universes and initial states.
+    alias_n: Option<AliasN>,
+}
+
+/// The universes and initial states of the second alias's subject.
+struct AliasN {
+    universe: Vec<String>,
+    other_universe: Vec<String>,
+    initial: Vec<DocumentRef>,
 }
 
 impl World {
@@ -408,6 +418,37 @@ impl World {
 
     /// As [`World::new`], with the vault declared as `build` says.
     pub fn build(universe: &[&str], second: bool, declaration: &str, build: &Build<'_>) -> Self {
+        Self::assemble(
+            universe,
+            second.then_some(universe),
+            None,
+            declaration,
+            build,
+        )
+    }
+
+    /// A clause over two aliases whose subjects have disjoint universes:
+    /// alias `V`'s subject holds the vaults `v` of `V` and `n` of `N`, alias
+    /// `N`'s subject the vaults `v` of `V` and `m` of `N`, each from
+    /// `(h, l) = (0, 0)` and `(1, 0)`.
+    pub fn two_aliases(declaration: &str, build: &Build<'_>) -> Self {
+        Self::assemble(
+            &["v"],
+            Some(&["n"]),
+            Some((&["v"], &["m"])),
+            declaration,
+            build,
+        )
+    }
+
+    fn assemble(
+        universe: &[&str],
+        other_universe: Option<&[&str]>,
+        alias_n: Option<(&[&str], &[&str])>,
+        declaration: &str,
+        build: &Build<'_>,
+    ) -> Self {
+        let second = other_universe.is_some();
         let document = document(false, build.reset);
         let other = second.then(|| other_document(&document));
         let other = other.as_deref();
@@ -427,22 +468,32 @@ impl World {
         };
         let mut snapshots = BTreeMap::new();
         let starts = [(0, 0), (1, 0)];
-        let initial = starts
-            .iter()
-            .enumerate()
-            .map(|(index, start)| {
-                let vaults: Vec<(&str, (i64, i64))> =
-                    universe.iter().map(|key| (*key, *start)).collect();
-                snapshot(
-                    &document,
-                    &mut snapshots,
-                    &format!("s{index}"),
-                    &vaults,
-                    None,
-                    other.map(|_| &vaults[..]),
-                )
-            })
-            .collect();
+        let mut initials = |name: &str, universe: &[&str], other_universe: Option<&[&str]>| {
+            starts
+                .iter()
+                .enumerate()
+                .map(|(index, start)| {
+                    let vaults: Vec<(&str, (i64, i64))> =
+                        universe.iter().map(|key| (*key, *start)).collect();
+                    let others: Option<Vec<(&str, (i64, i64))>> =
+                        other_universe.map(|keys| keys.iter().map(|key| (*key, *start)).collect());
+                    snapshot(
+                        &document,
+                        &mut snapshots,
+                        &format!("{name}{index}"),
+                        &vaults,
+                        None,
+                        others.as_deref(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let initial = initials("s", universe, other_universe);
+        let alias_n = alias_n.map(|(universe, other_universe)| AliasN {
+            universe: universe.iter().map(|key| (*key).to_owned()).collect(),
+            other_universe: other_universe.iter().map(|key| (*key).to_owned()).collect(),
+            initial: initials("n", universe, Some(other_universe)),
+        });
         let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
         Self {
             package,
@@ -452,7 +503,8 @@ impl World {
             no_snapshots: BTreeMap::new(),
             initial,
             universe: keys(universe),
-            other_universe: second.then(|| keys(universe)),
+            other_universe: other_universe.map(keys),
+            alias_n,
         }
     }
 
@@ -472,16 +524,45 @@ impl World {
         package: &'a CheckedPackage,
         bounds: Vec<ProofBound>,
     ) -> ModelSubject<'a> {
+        self.subject_with(
+            package,
+            bounds,
+            &self.initial,
+            &self.universe,
+            self.other_universe.as_ref(),
+        )
+    }
+
+    /// The subject of alias `N` of a [`World::two_aliases`] world.
+    pub fn subject_n(&self) -> ModelSubject<'_> {
+        let alias = self.alias_n.as_ref().expect("a two-alias world");
+        self.subject_with(
+            &self.package,
+            Vec::new(),
+            &alias.initial,
+            &alias.universe,
+            Some(&alias.other_universe),
+        )
+    }
+
+    fn subject_with<'a>(
+        &'a self,
+        package: &'a CheckedPackage,
+        bounds: Vec<ProofBound>,
+        initial: &[DocumentRef],
+        universe: &'a Vec<String>,
+        other_universe: Option<&'a Vec<String>>,
+    ) -> ModelSubject<'a> {
         ModelSubject {
             simulation: ModelSimulationRequest {
                 package,
                 packages: &self.packages,
                 normalization: ModelNormalizationLimits::default(),
                 snapshots: &self.snapshots,
-                initial: self.initial.clone(),
-                universes: [(key("vaults"), Some(&self.universe))]
+                initial: initial.to_vec(),
+                universes: [(key("vaults"), Some(universe))]
                     .into_iter()
-                    .chain([(other_key("vaults"), self.other_universe.as_ref())])
+                    .chain([(other_key("vaults"), other_universe)])
                     .filter_map(|(population, keys)| {
                         keys.map(|keys| PopulationUniverse {
                             population,

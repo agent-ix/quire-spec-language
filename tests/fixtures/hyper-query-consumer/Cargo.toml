@@ -8,3 +8,6 @@ publish = false
 [dependencies]
 qsl-replay = { path = "../../../qsl-replay" }
 quire-exact = { workspace = true }
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

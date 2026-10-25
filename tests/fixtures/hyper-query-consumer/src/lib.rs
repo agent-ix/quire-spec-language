@@ -43,3 +43,31 @@ pub fn identified_query(
 pub fn subjects(identity: &HyperProductIdentity) -> &[SubjectIdentity] {
     identity.subjects()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// The encoder half of FR-315-AC-14: this crate, whose only QSL
+    /// dependency is `qsl-replay`, names the identity, the query, the request
+    /// and the subject identity and calls the identity and the encoder with
+    /// their public signatures. The settle half is FR-182's.
+    #[trace("TC-1190", "FR-315-AC-14")]
+    #[test]
+    fn the_hyper_query_types_and_calls_are_named_from_qsl_replay() {
+        let _identity: fn(
+            &HyperQueryRequest<'_>,
+        ) -> Result<HyperProductIdentity, SmtEncodingRefusal> = HyperProductIdentity::of;
+        let _encode: fn(
+            HyperQueryRequest<'_>,
+            SmtQueryKind,
+        ) -> Result<HyperQuery, SmtEncodingRefusal> = encode_hyper_query;
+        let _identified: fn(
+            HyperQueryRequest<'_>,
+            SmtQueryKind,
+        )
+            -> Result<(HyperProductIdentity, HyperQuery), SmtEncodingRefusal> = identified_query;
+        let _subjects: fn(&HyperProductIdentity) -> &[SubjectIdentity] = subjects;
+    }
+}

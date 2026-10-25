@@ -457,15 +457,35 @@ impl<'r, 'a> Reader<'r, 'a> {
             Value::Boolean(value) => Sym::Bool(Term::literal(*value)),
             Value::Integer(value) => Sym::Int(Term::Int(value.clone())),
             Value::Enum(member) => Sym::Int(Term::Int(Integer::from(u64::from(member.rank())))),
-            Value::Reference(reference) => Sym::Object(
-                self.subject
-                    .objects
-                    .iter()
-                    .position(|object| object.reference == *reference)
-                    .ok_or_else(|| {
-                        self.refuse(node, "reference to an object outside the universe")
-                    })?,
-            ),
+            Value::Reference(reference) => {
+                // A literal belongs to no model read, so under components it
+                // names an object only if every component's layout puts that
+                // object at one index.
+                let subjects: Vec<&SymbolicSubject<'_>> = match &self.components {
+                    Some(components) => components.layouts.iter().map(|(_, s)| *s).collect(),
+                    None => vec![self.subject],
+                };
+                let mut found: Option<usize> = None;
+                for subject in subjects {
+                    let at = subject
+                        .objects
+                        .iter()
+                        .position(|object| object.reference == *reference)
+                        .ok_or_else(|| {
+                            self.refuse(node, "reference to an object outside the universe")
+                        })?;
+                    if found.is_some_and(|earlier| earlier != at) {
+                        return Err(self.refuse(
+                            node,
+                            "reference to an object the components' layouts index differently",
+                        ));
+                    }
+                    found = Some(at);
+                }
+                Sym::Object(found.ok_or_else(|| {
+                    SmtEncodingRefusal::fault("a reference literal has a subject")
+                })?)
+            }
             _ => return Err(self.refuse(node, "literal of an unsupported sort")),
         };
         Ok(Encoded::total(sym))

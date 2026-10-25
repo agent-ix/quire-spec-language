@@ -14,7 +14,7 @@ use qsl_replay::{
 use quire_exact::{LimitKind, Meter};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::script_search::{assert_unsat, assertions, operands, satisfiable};
+use crate::script_search::{assert_unsat, assertions, nonlinear, operands, satisfiable};
 use crate::vault_world::{
     non_interference, with_body, Build, World, EQUAL_INPUTS, FORALL_EXISTS, LIVENESS, MONITORED,
     SAVES_POWER, SECURE, UNLIMITED,
@@ -260,10 +260,27 @@ fn the_secure_vault_is_inductive_and_the_leaky_vault_has_a_matched_bad_prefix() 
             ..SECURE
         },
     );
-    assert!(satisfiable(&script(
-        &leaky,
-        SmtQueryKind::InductionBase { depth: 1 }
-    )));
+    let base = script(&leaky, SmtQueryKind::InductionBase { depth: 1 });
+    assert!(satisfiable(&base));
+    // The bad prefix is the one the requirement names: from the initial tuple
+    // `((0, 0), (1, 0))` the matched step sets `l` to `h` in each copy, so
+    // the copies' `l` differ at position 1; from equal highs they cannot.
+    let pinned = |values: &[(&str, u8)]| -> String {
+        let pins: String = values
+            .iter()
+            .map(|(name, value)| format!("(assert (= {name} {value}))\n"))
+            .collect();
+        base.replace("(check-sat)", &format!("{pins}(check-sat)"))
+    };
+    assert!(satisfiable(&pinned(&[
+        ("s0.a.v.h", 0),
+        ("s0.a.v.l", 0),
+        ("s0.b.v.h", 1),
+        ("s0.b.v.l", 0),
+        ("s1.a.v.l", 0),
+        ("s1.b.v.l", 1),
+    ])));
+    assert!(!satisfiable(&pinned(&[("s0.a.v.h", 0), ("s0.b.v.h", 0)])));
 }
 
 /// FR-487-AC-7: the step query asserts the property at position 0 as
@@ -429,10 +446,14 @@ fn each_refusal_names_its_code_and_construct() {
     );
 }
 
-/// FR-315-AC-47: a conjunct the kernel refuses names `match-conjunct` at
-/// that conjunct, its site and the first tuple on which the conjuncts before
-/// it hold; so does the exhausting conjunct, and `HyperProductIdentity::of`
-/// returns its identity and charges nothing.
+/// FR-315-AC-47: a conjunct the checker cannot finish names `match-conjunct`
+/// at that conjunct, its site and the first tuple on which the conjuncts
+/// before it hold, and `HyperProductIdentity::of` returns its identity and
+/// charges nothing. Only the exhausting-function conjunct is exercised here:
+/// the `ieee_not_exact` conjunct of the AC's text needs a float literal,
+/// which S2 does not represent, so the `MatchReading::Refused` arm, which
+/// shares the refusal's construction with the exhausting arm, has no test
+/// until it does.
 #[trace("TC-1120", "FR-315-AC-47")]
 #[test]
 fn a_refused_conjunct_names_the_first_tuple_on_which_the_earlier_ones_hold() {
@@ -542,24 +563,50 @@ fn a_divisor_outside_the_fragment_is_refused_after_the_match_conjuncts() {
     );
     assert_eq!(refusal.code(), Some("match-conjunct"));
 
-    for text in [
-        script(
-            &secure(EQUAL_INPUTS),
-            SmtQueryKind::InductionBase { depth: 1 },
+    // The scripts of AC-7, AC-9 and AC-43 are linear and the checker reads
+    // them to the answers the vault has: the secure vault is unsat, and the
+    // base query of the divided `match` is sat by the undefined `step(0)`
+    // tuple of AC-9, and the monitored body with an empty `match` pairs
+    // steps that differ, so it is sat too.
+    for (text, expected) in [
+        (
+            script(
+                &secure(EQUAL_INPUTS),
+                SmtQueryKind::InductionBase { depth: 1 },
+            ),
+            false,
         ),
-        script(&secure(DIVIDED), SmtQueryKind::InductionBase { depth: 1 }),
-        script(
-            &World::build(&["v"], false, &with_body("", "", MONITORED), &SECURE),
-            SmtQueryKind::InductionBase { depth: 1 },
+        (
+            script(&secure(DIVIDED), SmtQueryKind::InductionBase { depth: 1 }),
+            true,
+        ),
+        (
+            script(
+                &World::build(&["v"], false, &with_body("", "", MONITORED), &SECURE),
+                SmtQueryKind::InductionBase { depth: 1 },
+            ),
+            true,
         ),
     ] {
-        satisfiable(&text);
+        assert!(!nonlinear(&text), "{text}");
+        assert_eq!(satisfiable(&text), expected, "{text}");
     }
+    // A divisor that is not a literal is what the detector sees as outside
+    // linear arithmetic.
+    assert!(nonlinear("(assert (= (mod 1 s0.a.v.h) 1))"));
+    assert!(nonlinear("(assert (= (* s0.a.v.h s0.b.v.h) 1))"));
+    assert!(!nonlinear("(assert (= (mod s0.a.v.h 2) (* 2 s0.b.v.h)))"));
 }
 
 /// FR-315-AC-46: the meter ends with the charges of the `μ_U` evaluations of
 /// the nine tuples in order, whatever the kind, depth or instance, and no
 /// other charge.
+///
+/// The universe holds only the instance's vault (`{v}`, or `{w}` for the
+/// request at `w`), not FR-315-AC-12's `{v, w}`: with two vaults each
+/// component has more disjuncts and the count is not nine. The counters
+/// compared are the work units and the admission count, the two a
+/// `universal` call charges.
 #[trace("TC-1120", "FR-315-AC-46")]
 #[test]
 fn the_meter_is_charged_for_the_nine_tuples_and_nothing_else() {
@@ -851,4 +898,223 @@ fn an_unknown_alias_is_the_same_fault_in_both_calls() {
     let fault = identity.expect_err("a fault");
     assert!(matches!(fault, SmtEncodingRefusal::Fault(_)), "{fault:?}");
     assert_eq!(query.expect_err("a fault"), fault);
+}
+
+// ---------------------------------------------------------------------------
+// `too-large` of the hyper product.
+// ---------------------------------------------------------------------------
+
+fn too_large(refusal: &SmtEncodingRefusal) -> (Measure, u64, u64) {
+    match refusal {
+        SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure,
+            value,
+            limit,
+            ..
+        }) => (*measure, *value, *limit),
+        other => panic!("expected too-large, got {other:?}"),
+    }
+}
+
+fn limited(encoding: SmtEncodingLimits, world: &World) -> SmtEncodingRefusal {
+    query(
+        world,
+        "v",
+        SmtQueryKind::InductionBase { depth: 1 },
+        &mut Meter::new(UNLIMITED),
+        encoding,
+    )
+    .expect_err("the limit refuses")
+}
+
+/// FR-315-AC-10: `applications` counts the joint disjuncts the match keeps
+/// (three of the nine tuples of the vault), not the component applications
+/// (two), so `max_applications` 1 refuses on 3; and `constants` and
+/// `monitor-atoms` refuse with the values of the product.
+#[trace("TC-1120", "FR-315-AC-10")]
+#[test]
+fn the_hyper_limits_count_the_product() {
+    let world = secure(EQUAL_INPUTS);
+    let applications = SmtEncodingLimits {
+        max_applications: 1,
+        ..SmtEncodingLimits::default()
+    };
+    assert_eq!(
+        too_large(&limited(applications, &world)),
+        (Measure::Applications, 3, 1)
+    );
+    // Four fields (`h` and `l`, two copies each) at two positions, per
+    // trace variable.
+    let constants = SmtEncodingLimits {
+        max_constants: 1,
+        ..SmtEncodingLimits::default()
+    };
+    let (measure, value, limit) = too_large(&limited(constants, &world));
+    assert_eq!((measure, limit), (Measure::Constants, 1));
+    assert_eq!(value % 2, 0, "{value}: one count per trace variable");
+    let monitored = World::build(&["v"], false, &with_body("", "", MONITORED), &SECURE);
+    let atoms = SmtEncodingLimits {
+        max_monitor_atoms: 1,
+        ..SmtEncodingLimits::default()
+    };
+    assert_eq!(
+        too_large(&limited(atoms, &monitored)).0,
+        Measure::MonitorAtoms
+    );
+}
+
+/// FR-315: `match-conjunct` is decided before `applications`: with
+/// `max_applications` 1 over a vault whose `match` the meter cannot finish,
+/// the refusal names the conjunct, not the count.
+#[trace("TC-1120", "FR-315-AC-10")]
+#[test]
+fn a_match_conjunct_is_refused_before_the_application_count() {
+    let calling = secure(CALLING);
+    let encoding = SmtEncodingLimits {
+        max_applications: 1,
+        ..SmtEncodingLimits::default()
+    };
+    let refusal = query(
+        &calling,
+        "v",
+        SmtQueryKind::InductionBase { depth: 1 },
+        &mut two_conjuncts_budget(),
+        encoding,
+    )
+    .expect_err("the conjunct refuses");
+    assert_eq!(conjunct_refusal(&refusal).0, 2);
+}
+
+/// FR-315: a subject that holds more than one object names a refused
+/// tuple's components led by the receiver's key, `v.step(0)`.
+#[trace("TC-1120", "FR-315-AC-47")]
+#[test]
+fn a_tuple_of_a_multi_object_subject_is_led_by_the_receivers_key() {
+    let world = World::build(&["v", "w"], false, &non_interference(CALLING, ""), &SECURE);
+    let refusal = refusal_of(
+        &world,
+        SmtQueryKind::InductionBase { depth: 1 },
+        &mut two_conjuncts_budget(),
+    );
+    let (conjunct, _, tuple) = conjunct_refusal(&refusal);
+    assert_eq!(conjunct, 2);
+    assert_eq!(tuple, ["v.step(0)", "v.step(0)"]);
+}
+
+/// FR-315-AC-7 over two aliases: `SavesPower` with disjoint universes
+/// encodes, each trace variable reading its own alias's subject. Alias `V`'s
+/// subject holds the vaults `n` and `v` and alias `N`'s holds `m` and `v`, so
+/// the same layout index names different objects in the two components.
+#[trace("TC-1120", "FR-315-AC-7")]
+#[test]
+fn two_aliases_with_disjoint_universes_encode_per_component() {
+    let world = World::two_aliases(
+        SAVES_POWER,
+        &Build {
+            reset: true,
+            ..SECURE
+        },
+    );
+    let subjects = [world.subject(), world.subject_n()];
+    let encode = |instance: &[(String, String)], kind| {
+        let mut meter = Meter::new(UNLIMITED);
+        encode_hyper_query(
+            HyperQueryRequest {
+                clause: world.clause(),
+                subjects: &subjects,
+                instance,
+                meter: &mut meter,
+                encoding: SmtEncodingLimits::default(),
+            },
+            kind,
+        )
+    };
+    let instance = vec![
+        ("d".to_owned(), "v".to_owned()),
+        ("e".to_owned(), "m".to_owned()),
+    ];
+    let script_of = |kind| {
+        String::from_utf8(encode(&instance, kind).expect("two aliases encode").script)
+            .expect("a script is UTF-8")
+    };
+
+    // Per-component layouts: each variable declares its own subject's objects.
+    let base = script_of(SmtQueryKind::InductionBase { depth: 1 });
+    let declared: Vec<&str> = base
+        .lines()
+        .filter_map(|line| line.strip_prefix("(declare-const "))
+        .filter_map(|rest| rest.strip_suffix(" Int)"))
+        .collect();
+    let expected: Vec<String> = [0, 1]
+        .into_iter()
+        .flat_map(|position| {
+            [("s", ["n", "v"]), ("n", ["m", "v"])]
+                .into_iter()
+                .flat_map(move |(t, objects)| {
+                    objects.into_iter().flat_map(move |object| {
+                        ["h", "l"].map(|field| format!("s{position}.{t}.{object}.{field}"))
+                    })
+                })
+        })
+        .collect();
+    assert_eq!(declared, expected);
+
+    // Slot binding: `d` is `v` read in `s`'s copy, `e` is `m` read in `n`'s.
+    assert!(
+        assertions(&base)
+            .iter()
+            .any(|text| text == "(or (not (= s0.s.v.l s0.n.m.l)) (not (= s1.s.v.l s1.n.m.l)))"),
+        "{base}"
+    );
+    let step = script_of(SmtQueryKind::InductionStep { depth: 1 });
+    for text in [
+        "(not (not (= s0.s.v.l s0.n.m.l)))",
+        "(not (= s1.s.v.l s1.n.m.l))",
+    ] {
+        assert!(
+            assertions(&step).iter().any(|found| found == text),
+            "{step}"
+        );
+    }
+    for text in [&base, &step] {
+        assert!(
+            !text.contains("s0.s.m.") && !text.contains("s0.n.n."),
+            "{text}"
+        );
+    }
+
+    // Alias mapping: each joint disjunct holds a disjunct of `s` over `s`'s
+    // constants and then one of `n` over `n`'s.
+    let steps: Vec<_> = assertions(&base)
+        .into_iter()
+        .filter(|text| text.starts_with("(or (and (and (= s1.s."))
+        .collect();
+    assert_eq!(steps.len(), 1, "{base}");
+    let disjuncts = operands(&steps[0]);
+    assert!(!disjuncts.is_empty());
+    for disjunct in disjuncts {
+        let parts = operands(&disjunct);
+        let [first, second] = &parts[..] else {
+            panic!("two components: {disjunct}");
+        };
+        assert!(
+            first.contains("s1.s.") && !first.contains("s1.n.") && !first.contains("s0.n."),
+            "{first}"
+        );
+        assert!(
+            second.contains("s1.n.") && !second.contains("s1.s.") && !second.contains("s0.s."),
+            "{second}"
+        );
+    }
+
+    // The parameter's universe is its own alias's: `n` is a vault of alias
+    // `V`'s subject, not of `N`'s.
+    let wrong = vec![
+        ("d".to_owned(), "v".to_owned()),
+        ("e".to_owned(), "n".to_owned()),
+    ];
+    let refusal = encode(&wrong, SmtQueryKind::InductionBase { depth: 1 })
+        .expect_err("`n` is not in alias N's universe");
+    assert_eq!(refusal.code(), Some("instance-binding"));
+    assert!(refusal.to_string().contains("`e`"), "{refusal}");
 }
