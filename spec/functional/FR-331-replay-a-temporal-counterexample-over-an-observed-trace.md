@@ -32,9 +32,9 @@ relationships:
 
 ## Description
 
-The layer-6 replay facade `qsl_replay::replay` (FR-098) SHALL replay a
-`WitnessEnvelope<TemporalCounterexample>` whose steps are observed
-documents: it recompiles the package, resolves the clause, checks that the
+The layer-6 replay facade `qsl_replay::replay` (FR-098) SHALL dispatch an
+observed `WitnessEnvelope<TemporalCounterexample>` and its already-recompiled
+checked package to this replay path: it resolves the clause, checks that the
 recompiled clause's profile selection, fairness set and failing interval key
 equal the packet's, reconstructs the trace, and re-evaluates the formula at
 the packet's `trace_position` with the TemporalTrace evaluator (ADR-014 §10
@@ -54,8 +54,9 @@ formula is false on it.
 
 ## Inputs
 
-- FR-098's request: package reference, byte provision holding each observed
-  document by `sha256-jcs` digest, limits, and `over`, the object reference
+- FR-098's decoded request and already-recompiled checked package, including
+  its byte provision holding each observed document by `sha256-jcs` digest,
+  limits, and `over`, the object reference
   `{"reference":{"population":P,"key":K}}` that binds the recompiled
   clause's `over` parameter in the first observed document.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070) whose payload is
@@ -76,9 +77,15 @@ formula is false on it.
 
 ## Behavior
 
-- The facade SHALL recompile and check the package by FR-098's rules and in
-  FR-098's order, and SHALL resolve the occurrence key to the clause's
-  operator node.
+- FR-098 SHALL complete its common decode, dependency validation, recompile
+  and package-identity checks once before dispatch. This path SHALL use the
+  resulting checked package and SHALL NOT repeat that prelude.
+- This path SHALL resolve the occurrence key to the clause's operator node.
+- The facade SHALL require the request's `state_clause` target, envelope
+  replay target, clause node and occurrence key to resolve to the same
+  recompiled clause and occurrence. A mismatch SHALL refuse
+  `stale_dependency`/`content-mismatch`, naming the differing member, before
+  observed-document admission.
 - The facade SHALL resolve the request's `over` reference in the first
   observed document and use that object when evaluating the clause. It SHALL
   refuse an absent object as `invalid_runtime_input`/`wrong-role-mapping`.
@@ -109,14 +116,17 @@ formula is false on it.
 - When the evaluation is `Completed(false)` at the packet's
   `trace_position`, the facade SHALL settle
   `reproduced-with-evaluated-witness`. When it is anything else (true,
-  pending, or false at another position), the facade SHALL settle
-  `inconclusive` with `InconclusiveCause::ReplayParity` (ADR-013 C-09,
+  pending, `InsufficientData`, `Incomplete`, or false at another position),
+  the facade SHALL retain that typed evaluation in the FR-072 result and
+  settle `inconclusive` with `InconclusiveCause::ReplayParity` (ADR-013 C-09,
   O-27).
 - For a packet whose refutation is `UndefinedEvaluation`, an evaluation
   that returns `Undefined` at the packet's `trace_position`, at the
   expression `where.locus` names, with an equal cause SHALL settle `reproduced-with-evaluated-witness`: the reproduced
   undefined value is the witness (ADR-018 UE-5). Anything else SHALL settle
-  `inconclusive`, `ReplayParity`.
+  `inconclusive`, `ReplayParity`, retaining the typed undefined value and its
+  actual position, locus and cause, including when only the locus or only the
+  cause differs at the same position.
 - Replay SHALL need no backend and no solver.
 
 ## Acceptance Criteria
@@ -129,6 +139,8 @@ formula is false on it.
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome (`always[0,2] holds(3 mod (2 - c.value) >= 0)`, an interval-carrying clause, with the undefined-evaluation envelope and no interval check) with `trace_position` 2 settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` 1 settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 | FR-331-AC-6 | An observed temporal replay request for AC-1 carries `over` `{"reference":{"population":"Counters","key":"c1"}}`; decoding and re-encoding preserves both values, and the replay resolves that object in the first observed document before evaluation. A request that carries `over` for a function or frame target refuses `invalid_runtime_input`/`unknown-member` at `/replay/over`. | Test (TC-841) |
+| FR-331-AC-7 | An observed request whose `clause_node` resolves to a different clause from its state-clause target refuses `stale_dependency`/`content-mismatch`, naming `clause_node`, before any observed document is admitted. | Test (TC-847) |
+| FR-331-AC-8 | An undefined-evaluation packet whose replayed `Undefined` has the same position but a different source locus or catalogued cause settles `inconclusive`, `ReplayParity`, and preserves the actual typed undefined value. A packet whose replayed outcome is `InsufficientData` or `Incomplete` likewise settles `inconclusive`, `ReplayParity`, preserving the complete outcome fields or charge point. | Test (TC-847) |
 
 ## Dependencies
 

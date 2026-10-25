@@ -1019,6 +1019,48 @@ fn a_disagreeing_or_stopped_replay_never_settles_decisively() {
     assert_eq!(replays, 2);
 }
 
+/// FR-169-AC-16 (TC-594): a claim with no FR-125 instances gets one
+/// item-level NoInstance marker and terminal record before any graph state
+/// is explored; it does not invoke evidence replay.
+#[trace("TC-594", "FR-169-AC-16")]
+#[test]
+fn a_claim_with_no_instances_settles_no_instance_without_exploration() {
+    let world = config_world_over("", REACHES_TWO, &[], &[vec![]]);
+    let result = run(world.request(&[], vec![world.item("ReachesTwo")], no_samples()));
+    assert!(result.graph.nodes.is_empty());
+    let [marker] = result.items[0].as_slice() else {
+        panic!(
+            "expected one item-level NoInstance marker: {:?}",
+            result.items[0]
+        );
+    };
+    assert_eq!(marker.outcome, StateGraphOutcome::NoInstance);
+
+    let mut replays = 0;
+    let record = settle(
+        &world,
+        &[],
+        "ReachesTwo",
+        marker,
+        no_samples(),
+        &mut replays,
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInstance)
+    );
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+    assert_eq!(record.truth, Truth::Pending);
+    assert_eq!(record.basis, SettlementBasis::Unsettled);
+    assert_eq!(record.execution, Execution::Completed);
+    assert_eq!(record.limit_reached, None);
+    assert_eq!(record.value.category(), Category::Inconclusive);
+    assert_eq!(record.method, EXPLICIT_STATE);
+    assert_eq!(record.seed, DEFAULT_WITNESS_SEED);
+    assert_eq!(record.walks_stopped, 0);
+    assert_eq!(replays, 0, "NoInstance carries no evidence to replay");
+}
+
 /// FR-169-AC-6: FR-168-AC-5's `Undefined` outcome settles `refuted`,
 /// `decisive-counterexample`, violation, after its replay reproduces it,
 /// with cause `UndefinedEvaluation` naming the node `(2, 0)` and division

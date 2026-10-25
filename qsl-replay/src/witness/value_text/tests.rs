@@ -410,7 +410,7 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
         let witness = Witness::parse(transcript).unwrap();
 
         let mut packet = full_packet(0);
-        packet.source = Some(ReplaySource::Witness(witness.clone()));
+        packet.source = Some(crate::EnvelopeSource::Witness(witness.clone()));
         let size = measured_encoded_bytes(&packet);
         assert!(
             size > crate::DEFAULT_REPLAY_INPUT_BYTES as usize,
@@ -438,7 +438,7 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
         )
         .unwrap();
 
-        let ReplaySource::Witness(carried) = envelope.source() else {
+        let crate::EnvelopeSource::Witness(carried) = envelope.source() else {
             panic!("a witness source");
         };
         let decoded = carried.decode(&[canonical(id(1))]).unwrap().remove(0);

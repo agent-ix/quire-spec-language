@@ -19,8 +19,8 @@ use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TemporalRefusal, TemporalTrace, UndefinedCause,
+    AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
+    TemporalTrace, UndefinedCause,
 };
 use crate::value::CheckedPackageEvaluation;
 use quire_eval::{CallFailure, Evaluation};
@@ -44,6 +44,8 @@ pub struct ObservedRun {
     pub result: Result<TemporalOutcome, TemporalRefusal>,
     /// The condition stop that ended the run, if one did.
     pub stopped: Option<HoldsStop>,
+    /// The first undefined atom read, with its trace position and cause.
+    pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
 }
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
@@ -61,6 +63,50 @@ pub fn evaluate_observed(
     over: &ObjectReference,
     meter: &mut Meter,
 ) -> ObservedRun {
+    evaluate_observed_goal(
+        package,
+        clause,
+        environments,
+        trace,
+        over,
+        super::engine::Goal::Clause,
+        meter,
+    )
+}
+
+/// Evaluate the temporal formula at one represented position of an
+/// observed trace. Unlike [`evaluate_observed`], this does not apply the
+/// clause's activation rule: a replay packet names the position whose
+/// claimed value is being checked (FR-331).
+pub fn evaluate_observed_at(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: TemporalTrace,
+    over: &ObjectReference,
+    position: TemporalPosition,
+    meter: &mut Meter,
+) -> ObservedRun {
+    evaluate_observed_goal(
+        package,
+        clause,
+        environments,
+        trace,
+        over,
+        super::engine::Goal::At(position),
+        meter,
+    )
+}
+
+fn evaluate_observed_goal(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: TemporalTrace,
+    over: &ObjectReference,
+    goal: super::engine::Goal,
+    meter: &mut Meter,
+) -> ObservedRun {
     let mut letters = ObservedLetters {
         package,
         clause,
@@ -68,11 +114,19 @@ pub fn evaluate_observed(
         trace,
         over,
         stopped: None,
+        undefined: None,
     };
-    let result = evaluate(clause.clause(), trace, &mut letters, meter);
+    let result = super::engine::run(
+        super::engine::Subject::of_clause(clause.clause()),
+        trace,
+        goal,
+        &mut letters,
+        meter,
+    );
     ObservedRun {
         result,
         stopped: letters.stopped,
+        undefined: letters.undefined,
     }
 }
 
@@ -98,6 +152,7 @@ struct ObservedLetters<'a> {
     trace: TemporalTrace,
     over: &'a ObjectReference,
     stopped: Option<HoldsStop>,
+    undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
 }
 
 impl ObservedLetters<'_> {
@@ -197,7 +252,13 @@ impl TemporalLetters for ObservedLetters<'_> {
             objects,
             meter,
         );
-        self.reading(evaluation, HOLDS_CODES)
+        let reading = self.reading(evaluation, HOLDS_CODES)?;
+        if let AtomReading::Undefined(cause) = &reading {
+            if self.undefined.is_none() {
+                self.undefined = Some((atom, position, cause.clone()));
+            }
+        }
+        Ok(reading)
     }
 
     fn activation(

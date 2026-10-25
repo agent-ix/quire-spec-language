@@ -21,13 +21,17 @@
 //! also offers the symmetry reduction of that swap (FR-174, ADR-023 CS-2): the
 //! canonical form of a state is the least member of its orbit.
 
+mod checked;
 mod copy_swap;
 mod joint;
 mod product;
 mod projected;
 mod seam;
+mod step_value;
 mod witness;
 
+pub use crate::simulation::model::CheckedHyperLetters;
+pub use checked::CheckedStepMatch;
 pub use copy_swap::{copy_population, copy_symmetry, CopySwapInputs};
 pub use joint::cartesian;
 pub use product::{
@@ -35,5 +39,9 @@ pub use product::{
     HyperTransition, Property,
 };
 pub use projected::{ProjectedInputs, ProjectedProduct};
-pub use seam::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
+pub use seam::{
+    HyperLetters, HyperSlot, MatchIncomplete, MatchPart, MatchReading, ParameterBinding, StepLabel,
+    StepMatch,
+};
+pub(crate) use step_value::slot_value;
 pub use witness::{Member, Partner, PartnerStep, WitnessInputs, WitnessProduct, WitnessSet};

@@ -50,6 +50,10 @@ pub enum LettersRefusal {
     /// subject, so no reference to an object of it can be formed.
     #[error("the clause's `over` object type is declared by no model of the subject")]
     OverTypeUndeclared,
+    /// A hyper clause's letters were given other than one system for each of
+    /// the clause's trace variables (FR-487).
+    #[error("a hyper clause needs one model system for each of its trace variables")]
+    ComponentsMismatch,
 }
 
 /// The `holds` atoms of one checked temporal clause, read at the states of a
@@ -79,9 +83,9 @@ pub struct ClauseLetters<'s, 'a> {
 
 /// One state as the letters read it: its synthesized observation and its
 /// objects.
-struct Observed {
-    observation: Observation,
-    rows: Vec<Row>,
+pub(super) struct Observed {
+    pub(super) observation: Observation,
+    pub(super) rows: Vec<Row>,
 }
 
 impl<'a> ModelSystem<'a> {

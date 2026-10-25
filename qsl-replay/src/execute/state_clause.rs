@@ -42,7 +42,7 @@ use crate::spine::{
     ClauseDisposition, CompiledRun,
 };
 use crate::target::{ReplayEntry, TargetMember};
-use crate::witness::{ReplaySource, StateClauseCounterexample};
+use crate::witness::{EnvelopeSource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
 use qsl_eval::value::{
     CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
@@ -320,15 +320,14 @@ pub fn replay_state_clause(
     };
     if !range_violations.is_empty() {
         let charges = consumed(&meter);
-        let result =
-            match envelope.source() {
-                ReplaySource::Witness(_) => ReplayResult::Witness(
-                    WitnessArmResult::settle_range_violation(value, Vec::new(), charges),
-                ),
-                ReplaySource::Input(_) => ReplayResult::Input(
-                    InputArmResult::settle_range_violation(value, Vec::new(), charges),
-                ),
-            };
+        let result = match envelope.source() {
+            EnvelopeSource::Witness(_) => ReplayResult::Witness(
+                WitnessArmResult::settle_range_violation(value, Vec::new(), charges),
+            ),
+            EnvelopeSource::Input(_) => ReplayResult::Input(
+                InputArmResult::settle_range_violation(value, Vec::new(), charges),
+            ),
+        };
         return Ok(StateClauseReplayResult {
             result,
             source: source.clone(),
@@ -373,7 +372,7 @@ pub fn replay_state_clause(
     };
     let charges = consumed(&meter);
     let result = match envelope.source() {
-        ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
+        EnvelopeSource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,
@@ -382,7 +381,7 @@ pub fn replay_state_clause(
             Vec::new(),
             charges,
         )),
-        ReplaySource::Input(_) => ReplayResult::Input(InputArmResult::settle(
+        EnvelopeSource::Input(_) => ReplayResult::Input(InputArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,

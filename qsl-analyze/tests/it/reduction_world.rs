@@ -26,10 +26,10 @@ use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
-    CertificateRequest, DependencyInput, DigestDomain, DigestRecord, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, QualifiedName,
-    ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment, TemporalCounterexample,
-    WireNodeId, Witness, WitnessEnvelope, WitnessPacket,
+    CertificateRequest, DependencyInput, DigestDomain, DigestRecord, EnvelopeSource,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject,
+    QualifiedName, ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment,
+    TemporalCounterexample, WireNodeId, Witness, WitnessEnvelope, WitnessPacket,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -464,6 +464,12 @@ fn witness_source() -> ReplaySource {
     )
 }
 
+fn envelope_witness_source() -> EnvelopeSource {
+    EnvelopeSource::Witness(
+        Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
+    )
+}
+
 fn selected() -> QualifiedName {
     QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
 }
@@ -597,7 +603,7 @@ pub(crate) fn replay_unit_result(
             declared_domains: Some(Vec::new()),
             backend: Some("qsl-en-1".to_owned()),
             trace_position: Some(None),
-            source: Some(witness_source()),
+            source: Some(envelope_witness_source()),
             family_payload: Some(payload),
         },
         ReplayLimits::default(),

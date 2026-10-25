@@ -907,7 +907,6 @@ fn check_clause(
         }
         types.push(resolved);
     }
-
     let bounded = profile.is_bounded();
     // FR-234: the timed profile reads its intervals in the clause's
     // `model-time` binding's unit, so the binding comes first.

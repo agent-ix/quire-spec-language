@@ -349,6 +349,10 @@ impl World {
         let [instances] = run.items.as_slice() else {
             panic!("one item");
         };
+        if matches!(instances.as_slice(), [instance] if instance.outcome == qsl_replay::StateGraphOutcome::NoInstance)
+        {
+            return Ok(Vec::new());
+        }
         Ok(instances
             .iter()
             .map(|instance| {

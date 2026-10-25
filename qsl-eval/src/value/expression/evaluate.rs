@@ -639,16 +639,32 @@ pub(crate) struct Machine<'a, 'm> {
     /// under its key no object conforming to the parameter's type. Every
     /// read through it is `absent-key` undefined, except the reference
     /// operand of a `lookup` (the guard).
-    absent_parameter: Option<AbsentParameter>,
+    absent_parameters: Vec<AbsentParameter>,
+    /// FR-487: the component environment each model read of a hyper atom's
+    /// condition observes, when the machine runs one.
+    components: Option<ComponentReads<'a>>,
 }
 
-/// The `over` parameter of a claim at a key with no conforming object.
+/// The component environments a hyper atom's condition reads (FR-487
+/// "Evaluating an atom").
+#[derive(Clone, Copy)]
+pub(crate) struct ComponentReads<'a> {
+    /// One observation per trace variable, in quantifier order.
+    pub(crate) environments: &'a [&'a ObjectEnvironment],
+    /// The component each model read observes, keyed by the read's location.
+    pub(crate) reads: &'a std::collections::BTreeMap<Location, usize>,
+}
+
+/// A parameter of a claim at a key with no conforming object.
 struct AbsentParameter {
-    /// The local slots holding the parameter.
-    slots: Vec<Slot>,
+    /// The local slot holding the parameter.
+    slot: Slot,
     /// The population the instance was listed under, named in the
     /// `absent-key` value.
     binding: String,
+    /// The key the slot holds, which tells several absent slots apart; `None`
+    /// for a claim's one `over` parameter.
+    key: Option<ObjectReference>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -742,20 +758,51 @@ impl<'a, 'm> Machine<'a, 'm> {
             trail: None,
             iterations: 0,
             witnessed_reads: std::collections::BTreeSet::new(),
-            absent_parameter: None,
+            absent_parameters: Vec::new(),
+            components: None,
         }
     }
 
     /// FR-125 Instancing: `slot` carries absent-key guard provenance when the
     /// instance has no conforming object; `binding` names its population.
-    pub(crate) fn with_absent_parameter(self, slot: Slot, binding: String) -> Self {
-        self.with_absent_parameters(vec![slot], binding)
+    pub(crate) fn with_absent_parameter(mut self, slot: Slot, binding: String) -> Self {
+        self.absent_parameters.push(AbsentParameter {
+            slot,
+            binding,
+            key: None,
+        });
+        self
     }
 
     /// [`Self::with_absent_parameter`] for several slots that alias the one
     /// absent object (an `on each` guard's `over` and trigger binders).
     pub(crate) fn with_absent_parameters(mut self, slots: Vec<Slot>, binding: String) -> Self {
-        self.absent_parameter = Some(AbsentParameter { slots, binding });
+        for slot in slots {
+            self = self.with_absent_parameter(slot, binding.clone());
+        }
+        self
+    }
+
+    /// FR-487: `slot` holds `key`, which names no object of `binding`'s
+    /// population in its component; any number of slots may be absent.
+    pub(crate) fn with_absent_key(
+        mut self,
+        slot: Slot,
+        binding: String,
+        key: ObjectReference,
+    ) -> Self {
+        self.absent_parameters.push(AbsentParameter {
+            slot,
+            binding,
+            key: Some(key),
+        });
+        self
+    }
+
+    /// FR-487: read each model read of the condition in the component
+    /// `components` records for it.
+    pub(crate) fn with_components(mut self, components: ComponentReads<'a>) -> Self {
+        self.components = Some(components);
         self
     }
 
@@ -858,11 +905,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
         frame.resize(slots.max(frame.len()), None);
         let mut provenance = vec![false; frame.len()];
-        if let Some(absent) = &self.absent_parameter {
-            for slot in &absent.slots {
-                if let Some(marked) = provenance.get_mut(*slot) {
-                    *marked = true;
-                }
+        for absent in &self.absent_parameters {
+            if let Some(slot) = provenance.get_mut(absent.slot) {
+                *slot = true;
             }
         }
         self.frames.push(frame);
@@ -1090,13 +1135,15 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn absent_key_halt(&self, value: &Value) -> Result<Halt, Halt> {
-        let absent = self
-            .absent_parameter
-            .as_ref()
-            .ok_or_else(|| invariant("guard-provenance-without-absent-parameter"))?;
         let Value::Reference(reference) = value else {
             return Err(invariant("absent-parameter-reference-expected"));
         };
+        let absent = self
+            .absent_parameters
+            .iter()
+            .find(|absent| absent.key.as_ref() == Some(reference))
+            .or_else(|| self.absent_parameters.first())
+            .ok_or_else(|| invariant("guard-provenance-without-absent-parameter"))?;
         let key = render_identity(reference.object().as_str().as_bytes());
         Ok(Halt::Family(FamilyResult::Undefined(Box::new(
             StateModelUndefined::AbsentKey {
@@ -2455,6 +2502,15 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `select_anchor` above already documents for the population-read
     /// case (SR-750 FND-013).
     fn objects_for(&self, node: CheckedNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
+        if let Some(components) = &self.components {
+            if let Some(component) = components.reads.get(node.location()) {
+                return components
+                    .environments
+                    .get(*component)
+                    .copied()
+                    .ok_or_else(|| invariant("component-environment-resolved"));
+            }
+        }
         match self.reads {
             Some(reads)
                 if reads.get(node.location())

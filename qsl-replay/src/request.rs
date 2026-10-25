@@ -294,7 +294,8 @@ impl ReplayRequest {
     pub fn over(&self) -> Option<&ReplayOverBinding> {
         self.over.as_ref()
     }
-    /// The witness or input replay source.
+    /// The replay source: a witness transcript, canonical inputs, or an
+    /// observed temporal counterexample envelope (FR-331).
     pub fn source(&self) -> &ReplaySource {
         &self.source
     }
@@ -394,7 +395,8 @@ pub struct ReplayRequestWire {
     /// The replay target: the QSpec FR-323 target members, exactly one of
     /// which a decodable request carries.
     pub replay_target: RequestTargetWire,
-    /// The witness or input replay source.
+    /// The replay source: a witness transcript, canonical inputs, or an
+    /// observed temporal counterexample envelope (FR-331).
     pub source: ReplaySource,
     /// The obligation this request replays: the ADR-013 O-09 obligation
     /// digest.
@@ -1946,6 +1948,7 @@ mod tests {
                 );
             }
             ReplaySource::Witness(_) => panic!("expected the Input arm"),
+            ReplaySource::ObservedTemporal(_) => panic!("expected the Input arm"),
         }
     }
 }

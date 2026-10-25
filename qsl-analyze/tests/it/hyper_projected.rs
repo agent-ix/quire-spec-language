@@ -24,7 +24,7 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{FormulaNodeId, OperationKey};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Charge, ChargePoint, Identifier, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, Charge, ChargePoint, Identifier, Meter, Undefined};
 use std::cell::RefCell;
 
 use crate::counter::ZERO;
@@ -44,7 +44,7 @@ const AGREE: &str = "(if present(a.step.Vault::step.i) and present(b.step.Vault:
 /// The conjunct of FR-178-AC-5, which has no value where `a`'s step is
 /// `step(0)`.
 const INVERSE: &str = "(if present(a.step.Vault::step.i) \
-     then 1 / value(a.step.Vault::step.i) else 1) = 1";
+     then 1 mod value(a.step.Vault::step.i) else 0) = 0";
 
 /// The vault's two idle initial states `(h, l, busy)`.
 pub(crate) const IDLE: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 0)];
@@ -506,7 +506,7 @@ impl HyperLetters for Probe<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         let tuple: Vec<i64> = states
             .iter()
             .flat_map(|state| [high(state), low(state), busy_of(state)])
@@ -514,9 +514,11 @@ impl HyperLetters for Probe<'_> {
         let again = self.log.borrow().contains(&tuple);
         self.log.borrow_mut().push(tuple);
         if again && self.incomplete_again {
-            return Err(Meter::new(ZERO)
-                .charge(Charge::new(ChargePoint::GraphExpand))
-                .expect_err("a meter that admits no work refuses a charge"));
+            return Err(qsl_eval::model_subject::AtomStop::Incomplete(
+                Meter::new(ZERO)
+                    .charge(Charge::new(ChargePoint::GraphExpand))
+                    .expect_err("a meter that admits no work refuses a charge"),
+            ));
         }
         self.inner.atom(atom, instance, states, meter)
     }
@@ -609,7 +611,7 @@ impl StepMatch for UndefinedOnOne<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         Ok(match self.0.universal(instance, steps, meter)? {
             MatchReading::Holds if input_of(&steps[0]) == Some(1) => MatchReading::Undefined {
                 conjunct: 1,
@@ -624,7 +626,7 @@ impl StepMatch for UndefinedOnOne<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-6 clause has no existential conjunct")
     }
 }

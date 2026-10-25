@@ -386,9 +386,6 @@ pub(crate) fn type_condition(
             ExprNode::Case(_)
             | ExprNode::Quantity(_)
             | ExprNode::Call { .. }
-            | ExprNode::Present(_)
-            | ExprNode::Value(_)
-            | ExprNode::Deref(_)
             | ExprNode::Record { .. }
             | ExprNode::Collection { .. }
             | ExprNode::Convert { .. }
@@ -411,6 +408,12 @@ pub(crate) fn type_condition(
                 if !silent {
                     faults.push(BodyFault::Unsupported { span: at });
                 }
+                Ty::Unknown
+            }
+            // The value typer types these over the lowered condition, which
+            // refuses an unproved presence or an ill-typed operand itself.
+            ExprNode::Present(operand) | ExprNode::Value(operand) | ExprNode::Deref(operand) => {
+                child(*operand);
                 Ty::Unknown
             }
             #[cfg(seam_probe)]

@@ -307,6 +307,7 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
     match result.result() {
         ReplayResult::Witness(arm) => arm,
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
     }
 }
 
@@ -1279,6 +1280,7 @@ fn a_range_violation_settles_even_when_the_clause_completes_no_value() {
                 arm.value(),
                 arm.settlement() == InputSettlement::ReproducedWithoutWitness,
             ),
+            ReplayResult::ObservedTemporal(_) => panic!("state-clause replay returned temporal"),
         };
         assert!(reproduced);
         assert_eq!(category, Category::Violation);

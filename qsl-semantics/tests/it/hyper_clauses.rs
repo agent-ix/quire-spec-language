@@ -1281,3 +1281,273 @@ fn a_let_binder_may_not_shadow_a_binder_or_a_variable() {
     ))
     .expect("sibling binders");
 }
+
+/// The one `holds` atom of `clause`'s body.
+fn the_atom(clause: &CheckedHyperClause) -> qsl_semantics::check::FormulaNodeId {
+    let nodes = clause.body().nodes();
+    let atoms: Vec<_> = nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .collect();
+    let [(index, _)] = atoms[..] else {
+        panic!("one holds atom");
+    };
+    clause
+        .body()
+        .node_id(index)
+        .expect("the atom is in the arena")
+}
+
+fn behaviours(quantifiers: &str, conjuncts: &str, body: &str) -> String {
+    format!(
+        "hyper H using inf over behaviours (v: V::ConfigVersion) {quantifiers} \
+         {conjuncts} {{ {body} }}"
+    )
+}
+
+/// FR-487-AC-1: the atom's slots are the (trace, parameter) pairs in
+/// quantifier-then-parameter order, its condition is typed over them, each
+/// model read is attributed to its component, and a second check gives the
+/// same clause.
+#[trace("TC-1264", "FR-487-AC-1")]
+#[test]
+fn an_atom_lowers_to_a_condition_over_per_trace_parameter_slots() {
+    let declaration = non_interference();
+    let noninterference = clause(&["V"], &declaration);
+    let slots: Vec<_> = noninterference
+        .atom_slots()
+        .iter()
+        .map(|slot| (slot.trace, slot.parameter))
+        .collect();
+    assert_eq!(slots, [(0, 0), (1, 0)]);
+    let atom = the_atom(&noninterference);
+    let (_, count) = noninterference.condition(atom).expect("a lowered atom");
+    assert_eq!(count, 2);
+    let components: std::collections::BTreeSet<usize> = noninterference
+        .component_reads(atom)
+        .expect("the atom's reads")
+        .values()
+        .copied()
+        .collect();
+    assert_eq!(components, [0, 1].into());
+    // A node that is not a `holds` atom has no condition.
+    let root = noninterference.body().root();
+    assert!(noninterference.condition(root).is_none() || root == atom);
+
+    // Two parameters over two models: each trace pairs with its model's parameter.
+    let power = clause(&["S", "N"], SAVES_POWER);
+    let slots: Vec<_> = power
+        .atom_slots()
+        .iter()
+        .map(|slot| (slot.trace, slot.parameter))
+        .collect();
+    assert_eq!(slots, [(0, 0), (1, 1)]);
+    assert_eq!(power.condition(the_atom(&power)).expect("lowered").1, 2);
+
+    // The check is deterministic: a second check gives the same lowering.
+    let again = clause(&["V"], &declaration);
+    assert_eq!(again.identity(), noninterference.identity());
+    assert_eq!(again.atom_slots(), noninterference.atom_slots());
+    assert_eq!(
+        again.condition(the_atom(&again)).map(|(_, slots)| slots),
+        Some(2)
+    );
+}
+
+/// FR-487-AC-2: a conjunct's slots are its step reads, and a label misused
+/// by the form around it refuses `ill_typed`/`type-mismatch`.
+#[trace("TC-1264", "FR-487-AC-2")]
+#[test]
+fn a_match_conjunct_lowers_to_slots_and_a_misused_label_refuses() {
+    let noninterference = clause(&["V"], &non_interference());
+    let [operations, inputs] = noninterference.mu_universal() else {
+        panic!("two conjuncts");
+    };
+    assert_eq!(
+        operations.slots(),
+        [
+            StepRead::Operation { trace: "a".into() },
+            StepRead::Operation { trace: "b".into() }
+        ]
+    );
+    assert_eq!(operations.condition().1, 2);
+    assert_eq!(inputs.slots().len(), 2);
+    assert_eq!(inputs.condition().1, 2);
+
+    let constant = clause(
+        &["V"],
+        &behaviours(
+            "forall trace a of V forall trace b of V",
+            "match { a.step.op = V::ConfigVersion::step and b.step.op = stutter }",
+            "always holds(true)",
+        ),
+    );
+    let [step, stutter] = constant.mu_universal() else {
+        panic!("two conjuncts");
+    };
+    assert_eq!(step.slots(), [StepRead::Operation { trace: "a".into() }]);
+    assert_eq!(step.condition().1, 1);
+    assert_eq!(stutter.slots(), [StepRead::Operation { trace: "b".into() }]);
+    assert_eq!(stutter.condition().1, 1);
+
+    let receivers = clause(
+        &["V"],
+        &behaviours(
+            "forall trace a of V forall trace b of V",
+            "match { a.step.receiver = b.step.receiver }",
+            "always holds(true)",
+        ),
+    );
+    let [receiver] = receivers.mu_universal() else {
+        panic!("one conjunct");
+    };
+    assert_eq!(receiver.slots().len(), 2);
+    assert_eq!(receiver.condition().1, 2);
+
+    for (aliases, conjunct) in [
+        (&["V"][..], "a.step.op = \"x\""),
+        (&["V"][..], "size(a.step.op) > 0"),
+    ] {
+        let declaration = behaviours(
+            "forall trace a of V forall trace b of V",
+            &format!("match {{ {conjunct} }}"),
+            "always holds(true)",
+        );
+        let (text, cause) = hyper_cause(aliases, &declaration);
+        let at = first(&text, conjunct);
+        assert!(
+            matches!(cause, HyperCause::BodyIllTyped { span } if span == at),
+            "{conjunct}: {cause:?}"
+        );
+    }
+    // Labels of two models do not compare.
+    let (text, cause) = hyper_cause(
+        &["S", "N"],
+        "hyper H using inf over behaviours (d: S::ConfigVersion) \
+         forall trace s of S forall trace n of N match { s.step.op = n.step.op } \
+         { always holds(true) }",
+    );
+    let at = first(&text, "s.step.op = n.step.op");
+    assert!(matches!(cause, HyperCause::BodyIllTyped { span } if span == at));
+}
+
+/// FR-487-AC-10: presence is a fact about one component.
+#[trace("TC-1264", "FR-487-AC-10")]
+#[test]
+fn presence_proved_in_one_component_does_not_cover_another() {
+    let atom = |body: &str| {
+        behaviours(
+            "forall trace a of V forall trace b of V",
+            "",
+            &format!("always holds({body})"),
+        )
+    };
+    clause(
+        &["V"],
+        &atom("present(v.parent @ a) and value(v.parent @ a) = value(v.parent @ a)"),
+    );
+    let (_, cause) = refusal(
+        &["V"],
+        &atom("present(v.parent @ a) and value(v.parent @ b) = value(v.parent @ a)"),
+    );
+    assert_eq!(cause.code(), Code::UndefinedExpression, "{cause:?}");
+    assert_eq!(cause.cause(), Some("unproved-presence"), "{cause:?}");
+}
+
+/// FR-172-AC-5: a qualified operation name beside `t.step.op` is a label
+/// constant; elsewhere or misresolved it refuses.
+#[trace("TC-597", "FR-172-AC-5")]
+#[test]
+fn a_label_constant_checks_beside_its_trace_s_operation_and_refuses_elsewhere() {
+    let conjunct = |text: &str| {
+        behaviours(
+            "forall trace a of V forall trace b of V",
+            &format!("match {{ {text} }}"),
+            "always holds(true)",
+        )
+    };
+    for accepted in [
+        "a.step.op = V::ConfigVersion::step and b.step.op = stutter",
+        "V::ConfigVersion::step != a.step.op",
+        "a.step.op != V::ConfigVersion::step",
+    ] {
+        clause(&["V", "N"], &conjunct(accepted));
+    }
+    for (text, refused) in [
+        (
+            "a.step.op = N::ConfigVersion::tick",
+            "N::ConfigVersion::tick",
+        ),
+        (
+            "a.step.receiver = V::ConfigVersion::step",
+            "V::ConfigVersion::step",
+        ),
+        ("V::ConfigVersion::step", "V::ConfigVersion::step"),
+    ] {
+        let (unit, cause) = hyper_cause(&["V", "N"], &conjunct(text));
+        assert!(
+            matches!(cause, HyperCause::BodyIllTyped { span } if span.start <= first(&unit, refused).start && first(&unit, refused).end <= span.end),
+            "{text}: {cause:?}"
+        );
+    }
+    let (_, cause) = hyper_cause(&["V", "N"], &conjunct("a.step.op = V::ConfigVersion::nope"));
+    assert!(matches!(cause, HyperCause::BodyMissing { .. }), "{cause:?}");
+    let (_, cause) = hyper_cause(
+        &["V", "N"],
+        &conjunct("a.step.op = V::ConfigVersion::versionNumber"),
+    );
+    assert!(
+        matches!(cause, HyperCause::MatchReadsState { .. }),
+        "{cause:?}"
+    );
+}
+
+/// FR-172-AC-7: a call in a conjunct takes step labels as its arguments, and
+/// an argument that reads state refuses.
+#[trace("TC-1264", "FR-172-AC-7")]
+#[test]
+fn a_conjunct_may_call_a_declared_function_of_step_labels() {
+    let function = "function f using v(x: Option<Int[0, 1000]>): Boolean pure { present(x) }\n";
+    let declaration = |argument: &str| {
+        format!(
+            "{function}{}",
+            behaviours(
+                "forall trace a of V forall trace b of V",
+                &format!("match {{ f({argument}) }}"),
+                "always holds(true)",
+            )
+        )
+    };
+    let checked = clause(&["V"], &declaration("a.step.ConfigVersion::step.i"));
+    assert_eq!(checked.mu_universal().len(), 1);
+    let declaration = declaration("v.versionNumber @ a");
+    let (unit, cause) = hyper_cause(&["V"], &declaration);
+    assert!(
+        matches!(cause, HyperCause::MatchReadsState { span } if span == first(&unit, "v.versionNumber @ a")),
+        "{cause:?}"
+    );
+}
+
+/// FR-172-AC-8: `@ a` scopes over the compound operand it follows, so the
+/// reads inside carry `a`; a read no `@` encloses refuses.
+#[trace("TC-1264", "FR-172-AC-8")]
+#[test]
+fn an_at_scopes_over_a_compound_operand() {
+    let atom = |body: &str| {
+        behaviours(
+            "forall trace a of V forall trace b of V",
+            "",
+            &format!("always holds({body})"),
+        )
+    };
+    clause(
+        &["V"],
+        &atom("(let r = v.parent in present(r) and value(r) = value(r)) @ a"),
+    );
+    let (unit, cause) = hyper_cause(&["V"], &atom("present(v.parent @ a) and present(v.parent)"));
+    assert!(
+        matches!(cause, HyperCause::UnindexedRead { span } if span == after(&unit, "present(v.parent @ a) and present(", "v.parent")),
+        "{cause:?}"
+    );
+}

@@ -29,7 +29,7 @@ use qsl_replay::{
     ReplayRefusal, UndecidedCause, DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET,
 };
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, Undefined};
 
 use crate::counter::ZERO;
 use crate::hyper::{input, inputs, positions, refuted};
@@ -300,8 +300,8 @@ fn a_witness_set_over_its_budget_stops_the_run() {
 }
 
 /// FR-177-AC-5: `Opaque` over the secure vault with the added `match`
-/// conjunct `(if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i)
-/// else 1) = 1` on the existential variable `b`, which has no value on a joint
+/// conjunct `(if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i)
+/// else 0) = 0` on the existential variable `b`, which has no value on a joint
 /// step whose `b` step is `step(0)`: the item returns `Violated` with an
 /// `Undefined` counterexample whose traces hold a path for `a` and for `b`,
 /// ending at the first such joint step in canonical order, with cause
@@ -311,8 +311,8 @@ fn a_witness_set_over_its_budget_stops_the_run() {
 #[trace("TC-602", "FR-177-AC-5")]
 #[test]
 fn an_undefined_existential_match_ends_the_item_with_a_path_for_b() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -364,7 +364,7 @@ impl StepMatch for ExhaustedExistential<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.universal(instance, steps, meter)
     }
 
@@ -373,8 +373,13 @@ impl StepMatch for ExhaustedExistential<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Meter::new(ZERO).charge(Charge::new(ChargePoint::GraphExpand))?;
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Meter::new(ZERO)
+            .charge(Charge::new(ChargePoint::GraphExpand))
+            .map_err(|incomplete| qsl_eval::hyper::MatchIncomplete {
+                conjunct: 0,
+                incomplete,
+            })?;
         Ok(MatchReading::Holds)
     }
 }
@@ -414,8 +419,8 @@ fn an_incomplete_existential_match_leaves_the_item_undecided() {
 #[trace("TC-602")]
 #[test]
 fn an_undefined_universal_match_with_a_witness_ends_the_item_with_the_partners_path() {
-    let divided = " and (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -455,7 +460,7 @@ impl StepMatch for UndefinedUniversal<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         Ok(MatchReading::Undefined {
             conjunct: 0,
             cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
@@ -467,7 +472,7 @@ impl StepMatch for UndefinedUniversal<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.existential(instance, steps, meter)
     }
 }
@@ -519,7 +524,7 @@ impl StepMatch for LateUndefined<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         let calls = self.calls.get() + 1;
         self.calls.set(calls);
         let one = matches!(steps[0], StepLabel::Operation(step)
@@ -539,7 +544,7 @@ impl StepMatch for LateUndefined<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }
@@ -594,7 +599,7 @@ impl HyperLetters for UndefinedWhereB<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         let partner = states[1];
         let undefined = if self.at_start {
             high(partner) == 1
@@ -958,8 +963,8 @@ fn two_instances(vault: Vault, limits: &[(i64, i64)], conjuncts: &str) -> World 
 #[trace("TC-602")]
 #[test]
 fn a_later_instance_wins_only_with_a_strictly_earlier_finding() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = two_instances(Vault::Secure, &[(0, 0), (1, 0)], divided);
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     assert!(matches!(
@@ -1128,11 +1133,14 @@ impl StepMatch for RefuseThenHold<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         let calls = self.calls.get() + 1;
         self.calls.set(calls);
         match calls {
-            5 => Ok(MatchReading::Refused),
+            5 => Ok(MatchReading::Refused {
+                conjunct: 0,
+                outcome: qsl_eval::simulation::model::ClauseOutcome::NotBoolean,
+            }),
             6 => Ok(MatchReading::Holds),
             _ => self.seams.universal(instance, steps, meter),
         }
@@ -1143,7 +1151,7 @@ impl StepMatch for RefuseThenHold<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }
@@ -1197,7 +1205,7 @@ fn an_undefined_contract_at_position_one_comes_before_a_refused_match_at_positio
 fn an_undefined_universal_match_names_every_variable_with_two_universals() {
     let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
          forall trace a of V forall trace c of V exists trace b of V \
-         match { (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 \
+         match { (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 \
          and a.step.Vault::step.i = b.step.Vault::step.i } \
          { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
     let world = World::new(Vault::Secure, false, &STARTS, clause);
@@ -1237,7 +1245,7 @@ impl HyperLetters for PerInstance<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         match (instance[0].instance.key.as_str(), self.undefined_at_w) {
             ("v", false) => Ok(AtomReading::False),
             ("w", true) => Ok(AtomReading::Undefined(UndefinedCause::Kernel(
@@ -1254,7 +1262,7 @@ impl StepMatch for PerInstance<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         if instance[0].instance.key == "v" && !self.undefined_at_w {
             return Ok(MatchReading::Undefined {
                 conjunct: 0,
@@ -1269,7 +1277,7 @@ impl StepMatch for PerInstance<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.seams.existential(instance, steps, meter)
     }
 }
@@ -1341,8 +1349,8 @@ fn refusal(result: Result<ModelTraceSettlement, ReplayRefusal>) -> ModelTraceRef
 #[trace("TC-602", "FR-183-AC-6")]
 #[test]
 fn an_undefined_existential_match_counterexample_replays_and_needs_its_existential_path() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(claimed) = counterexample.kind.clone() else {

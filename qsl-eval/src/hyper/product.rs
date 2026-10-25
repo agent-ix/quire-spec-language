@@ -321,6 +321,9 @@ pub enum Halt {
     },
     /// An atom's evaluation exhausted the meter.
     Meter(quire_exact::LimitKind),
+    /// An atom gave no reading but an exhausted meter: it was refused, its
+    /// state cannot be observed or the evaluator faulted (FR-487).
+    Atom(crate::model_subject::AtomStop),
     /// HP-3: a witness set would hold more members than `max_witness_set`
     /// (FR-184); the count is the size it would have reached.
     WitnessSet(u64),

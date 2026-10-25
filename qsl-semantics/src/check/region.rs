@@ -245,6 +245,12 @@ pub struct DeclarationRegions {
 }
 
 impl DeclarationRegions {
+    /// The source region for an authored span, including an embedded
+    /// specification document when one supplied the declaration.
+    pub(crate) fn at_span(&self, span: Span) -> Option<SourceRegion> {
+        region(&self.source, self.embedding.as_deref(), span)
+    }
+
     /// FR-096: the region `location` names, by the same rule as
     /// [`PackageDeclarations::region`] over the declarations taken.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {

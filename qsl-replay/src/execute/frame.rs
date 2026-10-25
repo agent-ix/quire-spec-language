@@ -35,7 +35,7 @@ use crate::spine::{
     check_frame, CallOutcome, CallValue, ClauseDisposition, CompiledRun, FrameCheck, OperationName,
 };
 use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
-use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
+use crate::witness::{ClaimedChange, EnvelopeSource, FrameCounterexample, FrameOperation};
 use crate::WitnessEnvelope;
 use quire_semantic_value::catalog::Category;
 
@@ -312,7 +312,7 @@ pub fn replay_frame(
     // The frame check reports no evaluation location, so the result cites
     // no region; its identities are the payload's and the documents'.
     let result = match envelope.source() {
-        ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
+        EnvelopeSource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,
@@ -323,7 +323,7 @@ pub fn replay_frame(
             Vec::new(),
             charges,
         )),
-        ReplaySource::Input(_) => ReplayResult::Input(InputArmResult::settle(
+        EnvelopeSource::Input(_) => ReplayResult::Input(InputArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,

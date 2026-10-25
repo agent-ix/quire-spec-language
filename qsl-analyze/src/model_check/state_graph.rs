@@ -192,10 +192,13 @@ impl ExploredStateGraph {
 /// What one state-graph run returns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateGraphRun {
-    /// The explored graph; empty when the run stopped before exploring.
+    /// The explored graph; empty when the run stopped before exploring or
+    /// every requested claim had no instances and deadlock freedom was not
+    /// requested.
     pub graph: ExploredStateGraph,
-    /// Each item's decision, per instance, in request order. An item with no
-    /// instance has none (FR-125 `NoInstance`).
+    /// Each item's decisions in request order. Instances have one decision
+    /// each; an item with no instances has one item-level `NoInstance`
+    /// marker, not a per-instance decision (FR-125).
     pub items: Vec<Vec<StateGraphInstanceOutcome>>,
     /// The deadlock-freedom item's outcome, when the request asked for it.
     pub deadlock: Option<ModelCheckOutcome>,
@@ -415,12 +418,23 @@ pub fn check_state_graph(
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(bounds_refusal)?;
     let views = instances(&request.items, &system)?;
+    if views.iter().all(Vec::is_empty) && !request.deadlock_freedom {
+        return Ok(StateGraphRun {
+            graph: explore::empty(RunEnd::Completed),
+            items: views.iter().map(|_| vec![no_instance()]).collect(),
+            deadlock: None,
+            seed,
+        });
+    }
     if no_initial {
         return Ok(StateGraphRun {
             graph: explore::empty(RunEnd::Completed),
             items: views
                 .iter()
                 .map(|item| {
+                    if item.is_empty() {
+                        return vec![no_instance()];
+                    }
                     item.iter()
                         .map(|view| StateGraphInstanceOutcome {
                             over: view.over.clone(),
@@ -479,6 +493,9 @@ pub fn check_state_graph(
         .iter()
         .zip(&request.items)
         .map(|(item, entry)| {
+            if item.is_empty() {
+                return Ok(vec![no_instance()]);
+            }
             item.iter()
                 .map(|view| {
                     let outcome = decide::decide(
@@ -517,6 +534,9 @@ fn stopped_before_exploring(
         items: views
             .iter()
             .map(|item| {
+                if item.is_empty() {
+                    return vec![no_instance()];
+                }
                 item.iter()
                     .map(|view| StateGraphInstanceOutcome {
                         over: view.over.clone(),
@@ -537,5 +557,15 @@ fn stopped_before_exploring(
             stats: qsl_replay::RunStats::default(),
         }),
         seed,
+    }
+}
+
+/// An item-level FR-125 outcome when no universe key instantiates its claim.
+fn no_instance() -> StateGraphInstanceOutcome {
+    StateGraphInstanceOutcome {
+        over: None,
+        outcome: StateGraphOutcome::NoInstance,
+        sampled: Vec::new(),
+        walks_stopped: 0,
     }
 }

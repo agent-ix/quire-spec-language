@@ -13,11 +13,15 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
 use qsl_eval::simulation::SubjectTransition;
+use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::bound::TemporalInterval;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
+use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Origin, Role};
+use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
@@ -254,6 +258,75 @@ impl<T: SubjectTransition> FamilyPayload for TemporalCounterexample<T> {
                     .map(blocked_bytes)
                     .fold(0, usize::saturating_add),
             )
+    }
+}
+
+/// One step in QSpec FR-364's observed temporal counterexample. The
+/// `document` is a digest-addressed admitted snapshot; its bytes are
+/// supplied by the replay request's byte provision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedTemporalStep {
+    /// The observed snapshot at this trace position.
+    pub document: DocumentRef,
+}
+
+/// The refutation kind carried by an observed temporal counterexample.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObservedTemporalKind {
+    /// A formula evaluated false.
+    Formula,
+    /// An undefined formula evaluation, naming its first undefined atom.
+    UndefinedEvaluation {
+        /// The expression that had no value.
+        locus: FormulaNodeId,
+        /// Why that expression had no value.
+        cause: UndefinedCause,
+    },
+}
+
+/// QSpec FR-364's observed arm of the typed temporal-counterexample
+/// payload (FR-331). It shares the envelope with the model arm while keeping
+/// its distinct trace representation: observed document references, never
+/// model states or transitions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedTemporalCounterexample {
+    /// The finite prefix, in trace-position order.
+    pub prefix: Vec<ObservedTemporalStep>,
+    /// The loop's first represented position, or `None` for a finite trace.
+    pub loop_start: Option<u64>,
+    /// The checked clause's fairness set, in canonical order.
+    pub fairness: Vec<FairnessConstraint>,
+    /// The failing operator interval for a formula counterexample.
+    pub interval: Option<TemporalInterval>,
+    /// What the packet claims the evaluator found.
+    pub kind: ObservedTemporalKind,
+    /// The position whose value the packet reports.
+    pub trace_position: TemporalPosition,
+}
+
+impl FamilyPayload for ObservedTemporalCounterexample {
+    fn measured_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            .saturating_add(
+                self.prefix
+                    .len()
+                    .saturating_mul(std::mem::size_of::<ObservedTemporalStep>()),
+            )
+            .saturating_add(
+                self.fairness
+                    .len()
+                    .saturating_mul(std::mem::size_of::<FairnessConstraint>()),
+            )
+            .saturating_add(self.prefix.iter().fold(0_usize, |bytes, step| {
+                bytes
+                    .saturating_add(step.document.authority.len())
+                    .saturating_add(step.document.identity.len())
+                    .saturating_add(step.document.revision_namespace.len())
+                    .saturating_add(step.document.revision.len())
+            }))
+            .saturating_add(self.fairness.iter().fold(0_usize, |bytes, constraint| {
+                bytes.saturating_add(constraint.operation().name().len())
+            }))
     }
 }
 

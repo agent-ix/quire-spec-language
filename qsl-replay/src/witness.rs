@@ -389,7 +389,7 @@ fn parse_block(block: &str) -> Option<BlockFields<'_>> {
 // ---------------------------------------------------------------------------
 
 /// A counterexample's canonical assignment when it did not come from a
-/// backend transcript (the `ReplaySource::Input` arm): a parameter's wire
+/// backend transcript (the `EnvelopeSource::Input` arm): a parameter's wire
 /// node id and its typed concrete value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAssignment {
@@ -399,8 +399,7 @@ pub struct CanonicalAssignment {
     pub value: WitnessValue,
 }
 
-/// ADR-013 O-25: the packet's `source`, an enum with two variants that
-/// never both hold data at once. `Witness` derives replay input from its
+/// FR-071: the request's `source` arm. `Witness` derives replay input from its
 /// transcript; `Input` is replayed from its own stored canonical
 /// assignments (a corpus counterexample), and settles
 /// `reproduced-without-witness`, never backend evidence (FR-072).
@@ -412,31 +411,109 @@ pub enum ReplaySource {
     /// counterexample); settles `reproduced-without-witness`, never backend
     /// evidence.
     Input(Vec<CanonicalAssignment>),
+    /// An observed temporal counterexample, whose envelope carries its
+    /// counterexample payload and checked-item identity (FR-331).
+    ObservedTemporal(Box<ObservedTemporalEnvelope>),
 }
 
 impl ReplaySource {
     /// This source's measured encoded size: a witness transcript's length,
     /// or per assignment a 32-byte node id plus its value, which is 8 bytes
     /// for a Boolean, 16 for an i128 integer and the byte length of the escaped witness value
-    /// text for any other (FR-070).
+    /// text for any other (FR-070), or the nested temporal envelope's size.
     pub(crate) fn measured_bytes(&self) -> usize {
         match self {
             Self::Witness(witness) => witness.transcript().len(),
-            Self::Input(assignments) => assignments
-                .iter()
-                .map(|assignment| {
-                    32_usize.saturating_add(match &assignment.value {
-                        WitnessValue::Boolean(_) => 8,
-                        WitnessValue::Integer(_) => 16,
-                        other => other.value_text_len(),
-                    })
-                })
-                .fold(0, usize::saturating_add),
+            Self::Input(assignments) => measured_assignments(assignments),
+            Self::ObservedTemporal(envelope) => envelope.measured_bytes(),
         }
     }
 }
 
-/// FR-073-AC-2/AC-3: neither arm's rendering reproduces its full content.
+/// The non-recursive source nested inside a counterexample envelope. An
+/// observed temporal envelope may be a request source, but cannot itself
+/// contain another observed temporal envelope (FR-070/FR-331).
+#[derive(Clone, Eq, PartialEq)]
+pub enum EnvelopeSource {
+    /// Replay derives its input from a backend transcript.
+    Witness(Witness),
+    /// Replay derives its input from canonical assignments.
+    Input(Vec<CanonicalAssignment>),
+}
+
+impl EnvelopeSource {
+    pub(crate) fn measured_bytes(&self) -> usize {
+        match self {
+            Self::Witness(witness) => witness.transcript().len(),
+            Self::Input(assignments) => measured_assignments(assignments),
+        }
+    }
+}
+
+fn measured_assignments(assignments: &[CanonicalAssignment]) -> usize {
+    assignments
+        .iter()
+        .map(|assignment| {
+            32_usize.saturating_add(match &assignment.value {
+                WitnessValue::Boolean(_) => 8,
+                WitnessValue::Integer(_) => 16,
+                other => other.value_text_len(),
+            })
+        })
+        .fold(0, usize::saturating_add)
+}
+
+fn fmt_input_source(
+    assignments: &[CanonicalAssignment],
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    let mut buf = Vec::with_capacity(assignments.len() * 40);
+    for assignment in assignments {
+        buf.extend_from_slice(assignment.parameter.as_bytes());
+        match &assignment.value {
+            WitnessValue::Boolean(value) => buf.extend_from_slice(&[0, u8::from(*value)]),
+            WitnessValue::Integer(value) => {
+                buf.push(1);
+                buf.extend_from_slice(&value.to_le_bytes());
+            }
+            other => {
+                buf.push(2);
+                match other.to_value_text() {
+                    Ok(text) => buf.extend_from_slice(text.as_bytes()),
+                    Err(_) => buf.push(0xff),
+                }
+            }
+        }
+    }
+    f.debug_struct("Input")
+        .field("entries", &assignments.len())
+        .field("digest", &ByteDigest::of(&buf))
+        .finish()
+}
+
+impl From<EnvelopeSource> for ReplaySource {
+    fn from(source: EnvelopeSource) -> Self {
+        match source {
+            EnvelopeSource::Witness(witness) => Self::Witness(witness),
+            EnvelopeSource::Input(assignments) => Self::Input(assignments),
+        }
+    }
+}
+
+impl fmt::Debug for EnvelopeSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Witness(witness) => f.debug_tuple("Witness").field(witness).finish(),
+            Self::Input(assignments) => fmt_input_source(assignments, f),
+        }
+    }
+}
+
+/// The family-specific envelope for an observed temporal counterexample.
+pub type ObservedTemporalEnvelope =
+    WitnessEnvelope<crate::model_check::counterexample::ObservedTemporalCounterexample>;
+
+/// FR-073-AC-2/AC-3: no arm's rendering reproduces its full content.
 /// The `Witness` arm delegates to [`Witness`]'s own redacted `Debug`; the
 /// `Input` arm renders only its entry count and a content digest, never any
 /// [`CanonicalAssignment::value`] (the concrete-argument payload FR-073's
@@ -445,32 +522,11 @@ impl fmt::Debug for ReplaySource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Witness(witness) => f.debug_tuple("Witness").field(witness).finish(),
-            Self::Input(assignments) => {
-                let mut buf = Vec::with_capacity(assignments.len() * 40);
-                for assignment in assignments {
-                    buf.extend_from_slice(assignment.parameter.as_bytes());
-                    match &assignment.value {
-                        WitnessValue::Boolean(value) => {
-                            buf.extend_from_slice(&[0, u8::from(*value)])
-                        }
-                        WitnessValue::Integer(value) => {
-                            buf.push(1);
-                            buf.extend_from_slice(&value.to_le_bytes());
-                        }
-                        other => {
-                            buf.push(2);
-                            match other.to_value_text() {
-                                Ok(text) => buf.extend_from_slice(text.as_bytes()),
-                                Err(_) => buf.push(0xff),
-                            }
-                        }
-                    }
-                }
-                f.debug_struct("Input")
-                    .field("entries", &assignments.len())
-                    .field("digest", &ByteDigest::of(&buf))
-                    .finish()
-            }
+            Self::Input(assignments) => fmt_input_source(assignments, f),
+            Self::ObservedTemporal(envelope) => f
+                .debug_struct("ObservedTemporal")
+                .field("envelope", envelope)
+                .finish(),
         }
     }
 }
@@ -517,9 +573,9 @@ pub(crate) use derivation::Derived;
 ///
 /// `derive(Debug)` is safe here for FR-073: the bulk-content fields this
 /// type can carry are the transcript (through `source`'s
-/// `ReplaySource::Witness(Witness)` arm) and the canonical assignment
-/// values (through `source`'s `ReplaySource::Input(Vec<CanonicalAssignment>)`
-/// arm), and [`ReplaySource`] implements its own redacted `Debug` covering
+/// `EnvelopeSource::Witness(Witness)` arm) and the canonical assignment
+/// values (through `source`'s `EnvelopeSource::Input(Vec<CanonicalAssignment>)`
+/// arm), and [`EnvelopeSource`] implements its own redacted `Debug` covering
 /// both arms -- the derive here delegates to that impl for the nested field
 /// rather than dumping raw content itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -535,7 +591,7 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     declared_domains: Vec<DeclaredDomain>,
     backend: BackendId,
     trace_position: Option<TracePosition>,
-    source: ReplaySource,
+    source: EnvelopeSource,
     family_payload: P,
 }
 
@@ -588,8 +644,8 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     pub fn trace_position(&self) -> Option<&TracePosition> {
         self.trace_position.as_ref()
     }
-    /// The witness or input replay source.
-    pub fn source(&self) -> &ReplaySource {
+    /// The witness or input source nested in the counterexample envelope.
+    pub fn source(&self) -> &EnvelopeSource {
         &self.source
     }
     /// The family-owned typed extension payload (FR-070-AC-5).
@@ -830,7 +886,7 @@ mod witness_tests {
 /// (FR-070-AC-4/TC-183). `trace_position` is `Option<Option<TracePosition>>`
 /// because ADR-013 O-25 distinguishes "the packet did not say" (outer
 /// `None`, refuses) from "this family has none" (`Some(None)`, admitted).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct WitnessPacket<P: FamilyPayload> {
     /// The CG-computed obligation identity, as raw digest bytes.
     pub obligation_identity: Option<[u8; 32]>,
@@ -860,9 +916,29 @@ pub struct WitnessPacket<P: FamilyPayload> {
     /// (admitted).
     pub trace_position: Option<Option<TracePosition>>,
     /// The witness or input replay source.
-    pub source: Option<ReplaySource>,
+    pub source: Option<EnvelopeSource>,
     /// The family-owned typed extension payload.
     pub family_payload: Option<P>,
+}
+
+impl<P: FamilyPayload> Default for WitnessPacket<P> {
+    fn default() -> Self {
+        Self {
+            obligation_identity: None,
+            occurrence_key: None,
+            clause_node: None,
+            replay_target: ReplayTargetMembers::default(),
+            package_id: None,
+            source_digests: None,
+            profile_selections: None,
+            run_limits: None,
+            declared_domains: None,
+            backend: None,
+            trace_position: None,
+            source: None,
+            family_payload: None,
+        }
+    }
 }
 
 /// The reader's own measurement of `packet`'s encoded size (FR-070-AC-7):
@@ -902,8 +978,8 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .and_then(|position| position.as_ref())
         .map_or(0, |position| position.as_str().len());
     total += match &packet.source {
-        Some(source @ ReplaySource::Witness(_)) => source.measured_bytes(),
-        Some(source @ ReplaySource::Input(_)) => source.measured_bytes(),
+        Some(source @ EnvelopeSource::Witness(_)) => source.measured_bytes(),
+        Some(source @ EnvelopeSource::Input(_)) => source.measured_bytes(),
         None => 0,
     };
     total += packet
@@ -968,6 +1044,37 @@ fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> Witn
 }
 
 impl<P: FamilyPayload> WitnessEnvelope<P> {
+    pub(crate) fn measured_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            .saturating_add(self.occurrence_key.to_string().len())
+            .saturating_add(
+                self.source_digests
+                    .iter()
+                    .map(|source| {
+                        source.authority().len()
+                            + source.identity().len()
+                            + source.revision_namespace().len()
+                            + source.revision().len()
+                            + source.digest().hex().len()
+                    })
+                    .sum::<usize>(),
+            )
+            .saturating_add(
+                self.profile_selections
+                    .iter()
+                    .map(|selection| selection.profile().len() + selection.value().len())
+                    .sum::<usize>(),
+            )
+            .saturating_add(self.backend.as_str().len())
+            .saturating_add(
+                self.trace_position
+                    .as_ref()
+                    .map_or(0, |position| position.as_str().len()),
+            )
+            .saturating_add(self.source.measured_bytes())
+            .saturating_add(self.family_payload.measured_bytes())
+    }
+
     /// Reconstruct a positive envelope from `packet`. Refuses (with no
     /// partially-built envelope returned) if the encoded size is over the
     /// configured bound, if any O-25 member is absent, or if a digest names a domain outside the closed FR-201 set.
@@ -1170,7 +1277,7 @@ mod envelope_tests {
             )]),
             backend: Some("kani-backend-1".to_owned()),
             trace_position: Some(Some(TracePosition::new("frame-0".to_owned()))),
-            source: Some(ReplaySource::Witness(
+            source: Some(EnvelopeSource::Witness(
                 Witness::parse("<<<assertion|h|c|x=1>>>").unwrap(),
             )),
             family_payload: Some(NoPayload),
@@ -1215,7 +1322,7 @@ mod envelope_tests {
 
         // `Input`-arm envelope round trip too.
         let mut input_packet = full_packet(0);
-        input_packet.source = Some(ReplaySource::Input(vec![CanonicalAssignment {
+        input_packet.source = Some(EnvelopeSource::Input(vec![CanonicalAssignment {
             parameter: WireNodeId::from_digest(digest(9)),
             value: WitnessValue::Integer(42),
         }]));
