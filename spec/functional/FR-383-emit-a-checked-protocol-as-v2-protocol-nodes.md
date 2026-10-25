@@ -88,8 +88,11 @@ requirements that S4 derives from these nodes.
 ## Outputs
 
 One node for each row below, for every checked protocol. Every node has
-`node_tag` `protocol`, the Boolean scalar type node as `semantic_type`, and
-`recursion` `null`. Every body is one `quire.op.protocol.control`
+`node_tag` `protocol` and the Boolean scalar type node as `semantic_type`.
+Under the pending Option A cycle proposal below, a node outside a cyclic
+reference component has `recursion` `null`; every node in a cyclic component
+uses FR-322's existing recursion-group encoding. Every body is one
+`quire.op.protocol.control`
 application whose `protocol_profile` law equals the lock's row, whose member
 is `{kind: "profile_operator", operator}` and whose arguments are the
 operator's bindings in the order QSpec FR-464, FR-465 or FR-466 fixes. `P` is
@@ -133,11 +136,25 @@ the protocol's qualified name.
 
 ## Behavior
 
+### Pending cycle ruling: Option A (unconfirmed)
+
+This proposal is **unconfirmed pending Peter's ruling**. A protocol node that
+belongs to a cyclic strongly connected component of checked-node references
+uses the same `recursion_group`, `{size, ordinal}` preimage coordinates and
+in-group `group_reference` terms that FR-092 and QSpec FR-322 define for other
+recursive nodes. The group includes every node in that component, regardless
+of its `node_tag`. A protocol node outside a cyclic component keeps
+`recursion_group` absent and `recursion` `null`. Acyclic node keys and bodies
+are unchanged. This option admits a predicate-join function that refers back
+to its own protocol when those references form a cycle.
+
 ### Nodes and keys
 
 - `check` SHALL mint the key of every protocol node by FR-092 rule 2
   (`quire.application-node/v1`: tag, form, semantic type, declaration,
-  `recursion` `null` and body, with the body's references by node key), and
+  `recursion` `null` for acyclic nodes or the FR-322 group coordinate for a
+  cyclic component, and body with same-group references represented by
+  `group_reference`), and
   S4 SHALL emit exactly the nodes `check` built. A node's key therefore
   depends on its own content, on the content of every node it references and
   on its place in its protocol (its declaration path), and on nothing else
@@ -301,6 +318,7 @@ FR-105).
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
 | FR-383-AC-22 | **W** with `Shipments` joined `predicate(both) [west, east]` over `function both using v(x: Boolean, y: Boolean): Boolean pure { x and y }` emits a `parallel` node whose join Group holds `policy` `predicate` and a `predicate` reference to `both`'s `function` node, which the package holds, and `joined` `east`, `west`; the same unit written `[east, west]` emits the same bytes and the same `package_id`; a second `parallel` joined on `both` references the same node; the read-back of each `parallel` node gives `Predicate{function}` with `both`'s key. Renaming `both` to `either` keeps the `parallel` node's reference equal to the renamed function's node key. | Test (TC-1061) |
 | FR-383-AC-23 | ADR-027 §7's `Fill` with `role w on M` emits a `role` node whose `model` argument is the text `identity` of `M`'s `model_selections` row, with an empty `replication` Group and no `model` dependency, and QSL's I2 reader admits it (QSpec FR-465-AC-9); a clause with `role w on M` and `role u on N` emits two role nodes whose texts are the two selections' identities, with different keys, and a role on the whole model and `role v on M::Cell` have different keys. | Test (TC-1061) |
+| FR-383-AC-24 | Under pending Option A, a protocol whose predicate-join function refers to that protocol emits the full cyclic reference component with one shared `recursion_group`, `{size, ordinal}` coordinates and `group_reference` edges; the I2 reader admits it. An acyclic protocol in the same package has no `recursion_group` and `recursion` `null`, and its key inputs are unchanged. | Test (TC-1062) |
 
 ## Dependencies
 

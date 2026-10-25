@@ -11,11 +11,13 @@ relationships:
 ## Description
 
 Verify the declaration paths, occurrences and binder levels of the protocol
-nodes, that every set and sorted list is canonical whatever order the source
+nodes, recursion-group handling for the proposed cyclic-protocol case, that
+every set and sorted list is canonical whatever order the source
 declares it in, that only a sequence's children and the captures carry order,
 that repeats collapse, that keys are the application-node digest and stable
 under reformatting, and that equal sources give equal bytes. Scope:
-FR-383-AC-9 to FR-383-AC-16.
+FR-383-AC-9 to FR-383-AC-16 and the pending Option A proposal in
+FR-383-AC-24.
 
 Catches a declaration path that spells a branch label, equal-named role,
 channel, template and control that collide, a binder numbered by source
@@ -26,7 +28,10 @@ written into a node, and a derived causal relation that differs from the one
 S3 compiled.
 
 Fixture **W** is TC-1061's. Fixture **N**: a protocol `Names` with a role
-`X`, a channel `X`, a template `X` and a control `X`.
+`X`, a channel `X`, a template `X` and a control `X`. Fixture **C**: a
+protocol `Flow` with a predicate-join function whose body references
+`protocol Flow`, producing a cycle through the clause and control nodes; the
+same package also contains an acyclic protocol `Plain`.
 
 ## Test Procedure
 
@@ -43,6 +48,7 @@ Fixture **W** is TC-1061's. Fixture **N**: a protocol `Names` with a role
 | 9 | **W** with a role renamed; a reference retargeted; one literal changed; the capacity changed to 5; the loss selector changed; a join policy changed; the loop-proof variant changed; `scheduling adversarial` added or removed | each changes the changed node's key, the clause key and the `package_id`, and no unrelated node's key |
 | 10 | **W** emitted twice; **W** in a unit with an unrelated protocol declared before it and one after it | the same protocol nodes, bytes and `package_id` for **W** each time |
 | 11 | **W** | no node holds a causal edge, relationship alias, runtime subject, instance, ordinal, delivery or clock observation or an `internal`/`external` member; the (source port, target port) pairs QSpec FR-464's rules derive from the emitted nodes equal the compiled edge relation of the checked clause, back edges of the `repeat` included |
+| 12 | **C** | the complete cyclic reference component shares one `recursion_group`; each member carries the FR-322 `{size, ordinal}` coordinate and in-component edges use `group_reference`; QSL's I2 reader admits the package. `Plain` has no group, `recursion` `null`, and unchanged acyclic key inputs |
 
 ## Expected Results
 
