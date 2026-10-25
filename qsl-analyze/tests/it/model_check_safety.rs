@@ -821,6 +821,7 @@ fn a_guarded_invariant_clause_is_read_from_its_activating_positions() {
     let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
+    let qsl_replay::ProofCertificate::Closure(certificate) = certificate;
     assert!(certificate.states.is_empty(), "{certificate:?}");
 }
 

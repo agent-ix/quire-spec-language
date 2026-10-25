@@ -27,8 +27,8 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     check_protocol_closure, replay_protocol_trace, settle_protocol_check, CertificateLocus,
-    CertificateRejection, CertificateRule, ClosureCertificate, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelTraceSubject, ProductStateRef, ProtocolCertificateRequest,
+    CertificateRejection, CertificateRule, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceSubject, ProductStateRef, ProofCertificate, ProtocolCertificateRequest,
     ProtocolTraceSubject, ReplayLimits, ResultLabel, TemporalCertificateCheck,
     TemporalCounterexample,
 };
@@ -670,8 +670,9 @@ fn an_uncounted_cycle_that_keeps_an_interval_open_refutes_it_under_adversarial_s
 fn closure_check(
     case: &Case,
     letters: &dyn ModelLetters,
-    certificate: &ClosureCertificate,
+    certificate: &ProofCertificate,
 ) -> TemporalCertificateCheck {
+    let ProofCertificate::Closure(certificate) = certificate;
     check_protocol_closure(
         &ProtocolCertificateRequest {
             subject: case.subject("P"),
@@ -734,6 +735,7 @@ fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
         .iter()
         .map(|step| step.post_state)
         .collect();
+    let ProofCertificate::Closure(certificate) = &certificate;
     let owing: Vec<&ProductStateRef> = certificate
         .states
         .iter()

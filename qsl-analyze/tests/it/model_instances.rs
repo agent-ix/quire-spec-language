@@ -380,7 +380,13 @@ impl World {
                 },
                 smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
-            &ClosureCertificate::default(),
+            &ClosureCertificate {
+                package_id: qsl_package::emit_checked(&package)
+                    .expect("the package emits")
+                    .package()
+                    .package_id(),
+                states: Vec::new(),
+            },
             &ModelCheckLimits::default(),
             &Cancel::new(),
         )
