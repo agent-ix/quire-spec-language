@@ -61,7 +61,7 @@ use qsl_eval::fairness::{
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{
-    CertificateRejection, ProductStateRef, TemporalCertificateCheck,
+    CertificateRejection, ClosureCertificate, ProductStateRef, TemporalCertificateCheck,
 };
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::proof_result::IncompleteCause;
@@ -74,6 +74,13 @@ pub struct Component {
     pub states: Vec<ProductStateRef>,
     /// Why no fair accepting cycle stays inside it.
     pub witness: ComponentWitness,
+}
+
+/// A proof certificate carried by an EN-1 holding outcome (FR-126).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProofCertificate {
+    /// A closure certificate for an item checked by FR-338.
+    Closure(ClosureCertificate),
 }
 
 /// FR-339's component witness.

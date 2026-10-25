@@ -134,7 +134,13 @@ impl Bounded {
             .map(|(v, state)| self.at(*v, *state))
             .collect();
         states.sort();
-        ClosureCertificate { states }
+        ClosureCertificate {
+            package_id: qsl_package::emit_checked(&self.fixture.package)
+                .expect("the package emits")
+                .package()
+                .package_id(),
+            states,
+        }
     }
 }
 
@@ -148,7 +154,10 @@ fn is_at_least_one(v: i64) -> Option<bool> {
 
 fn certificate(outcome: &ModelCheckOutcome) -> ClosureCertificate {
     match outcome {
-        ModelCheckOutcome::Holds { certificate, .. } => certificate.clone(),
+        ModelCheckOutcome::Holds {
+            certificate: qsl_replay::ProofCertificate::Closure(certificate),
+            ..
+        } => certificate.clone(),
         other => panic!("expected Holds, got {other:?}"),
     }
 }
