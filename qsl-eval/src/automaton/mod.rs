@@ -64,7 +64,7 @@ pub use gba::{Gba, GbaBuilder, Transition};
 pub use key::{
     invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextRoot, KeyRefusal,
     NotTranslated, SafetyItem, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+    SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
 };
 pub use key_state::{
     Configuration, HistoryOperand, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
