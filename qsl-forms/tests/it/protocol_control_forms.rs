@@ -600,11 +600,11 @@ fn a_replicated_role_a_channel_and_an_activation_build_as_written() {
     }
 }
 
-/// A `parallel` with `memory tso` builds `Some(Tso)` with the span of its
-/// whole clause, and one with no `memory` clause builds `None`. A `fence`
+/// A `parallel` with `memory tso` builds `Some(Tso)` with the span of `tso`,
+/// and one with no `memory` clause builds `None`. A `fence`
 /// control builds as a protocol node beside the controls around it; the
 /// `memory` words do not become the parallel's name or join labels.
-#[trace("TC-888")]
+#[trace("TC-888", "FR-309-AC-1")]
 #[test]
 fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     let run = format!(
@@ -633,7 +633,7 @@ fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     assert_eq!(fences, ["Barrier"]);
     let memory = parallel.memory.as_ref().expect("a memory clause");
     assert_eq!(memory.value, MemoryModelName::Tso);
-    assert_eq!(slice(&text, memory.span), "memory tso");
+    assert_eq!(slice(&text, memory.span), "tso");
     let run = format!("sequence Main {{ parallel P {PARALLEL_BRANCHES} join all [a, b]; }}");
     let unit = build(&source("", &run));
     assert!(protocol(&unit).parallels[0].memory.is_none());
