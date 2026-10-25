@@ -873,8 +873,9 @@ fn check_clause(
         DefinitionRef::new(super::profile::CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| fault("profile-identity-valid"))?;
 
-    let mut types = Vec::new();
-    for parameter in parameters(form) {
+    let mut types: Vec<ValueType> = Vec::new();
+    let mut trigger = None;
+    for (position, parameter) in parameters(form).into_iter().enumerate() {
         let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
             .map_err(|error| {
                 refuse(TemporalCause::ParameterType {
@@ -883,13 +884,13 @@ fn check_clause(
                     span: error.span,
                 })
             })?;
-        types.push(resolved);
-    }
-    // FR-337 "`on each` activation at S3": the trigger binder is typed as the
-    // `over` parameter is, and is named otherwise.
-    let trigger = match (&form.activation, types.as_slice()) {
-        (ActivationForm::Each { parameter, .. }, [over, trigger, ..]) => {
-            if trigger != over {
+        // FR-337 "`on each` activation at S3": the activation is checked
+        // before the captures, its binder typed as the `over` parameter is
+        // and named otherwise.
+        if let (1, ActivationForm::Each { .. }, Some(over)) =
+            (position, &form.activation, types.first())
+        {
+            if &resolved != over {
                 return Err(refuse(TemporalCause::TriggerType {
                     parameter: parameter.name.name.clone(),
                     span: parameter.value_type.span,
@@ -902,10 +903,10 @@ fn check_clause(
                     span: parameter.name.span,
                 }));
             }
-            Some((parameter.name.name.clone(), trigger.clone()))
+            trigger = Some((parameter.name.name.clone(), resolved.clone()));
         }
-        _ => None,
-    };
+        types.push(resolved);
+    }
 
     let bounded = profile.is_bounded();
     // FR-234: the timed profile reads its intervals in the clause's
@@ -1553,6 +1554,19 @@ pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalCla
     form.captures.is_empty()
         && checked.protocol_fairness.is_empty()
         && checked.time_binding.is_none()
+}
+
+/// Whether `refusal` of the clause `form` is located after its `on each`
+/// activation's binder, in the guard or the body, so that the guard is checked
+/// first (FR-337 "`on each` activation at S3").
+pub(crate) fn refuses_after_activation(form: &TemporalClauseForm, refusal: &CheckRefusal) -> bool {
+    let ActivationForm::Each { parameter, .. } = &form.activation else {
+        return false;
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        return false;
+    };
+    cause.span().start > parameter.name.span.end
 }
 
 /// The refusal for a clause that checked but that no S4 emission writes

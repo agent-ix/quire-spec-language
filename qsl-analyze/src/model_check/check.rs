@@ -62,8 +62,8 @@
 //! closure certificate, which the core checker cannot admit, so it never
 //! settles `proved`. A liveness clause (TP-4) is decided by `liveness`,
 //! which adds the second phase; an `on each` activation with a `when`
-//! condition is refused before any state is explored, as [`ModelLetters`]
-//! does not read it. A clause with no instance is `Undecided(NoInstance)`
+//! condition is read through [`ModelLetters::activation`] at each position
+//! the clause reads. A clause with no instance is `Undecided(NoInstance)`
 //! before any state is explored (FR-125).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -159,12 +159,6 @@ pub enum ModelCheckRefusal {
         /// The clause's property form.
         form: Option<PropertyForm>,
     },
-    /// A liveness clause (TP-4) with a guarded `on each` activation: the
-    /// liveness engine does not read the `when` condition yet
-    /// (`unsupported_construct/not-yet-implemented`, FR-126 "Unsupported
-    /// liveness clauses").
-    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause with a guarded `on each` activation yet")]
-    GuardedActivation,
     /// The clause has no property automaton: a past operator over a future
     /// one, or more atoms than a letter holds.
     #[error("the clause has no property automaton: {0}")]
@@ -2320,13 +2314,15 @@ impl<S: SubjectSystem> Run<'_, S> {
             let mut meter = Meter::new(self.meter);
             let reading = letters
                 .activation(binding, &self.system.atom_state(&node.state), &mut meter)
-                .map_err(|incomplete| {
-                    Self::stopped(
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => Halt::Refusal(refusal),
+                    Err(incomplete) => Self::stopped(
                         ModelCheckLimit::EvaluationMeter {
                             counter: incomplete.limit_kind,
                         },
                         incomplete.limit,
                     )
+                    .into(),
                 })?;
             match reading {
                 AtomReading::True => letter = letter.with(when),

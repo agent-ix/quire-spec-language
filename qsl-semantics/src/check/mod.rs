@@ -2683,7 +2683,50 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
+            let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
+            // FR-337: the activation precedes the body in source, so a defect
+            // of an `on each` guard refuses ahead of a refusal of the body.
+            let body_refused = match &outcome {
+                Ok(staged) => !temporal_clause::is_emitted(&clause.form, staged.value()),
+                Err(StageFailure::Refused(refusal)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
+                Err(_) => false,
+            };
+            if body_refused {
+                let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                let condition_declarations = state_clause::ClauseDeclarations {
+                    scope: &scope,
+                    signatures: &signatures,
+                    dispatch_tables: &dispatch_tables,
+                    models: &models,
+                    checking_limits: limits,
+                    location: &location,
+                    nodes_used,
+                    cancel: Some(cancel),
+                    staged: None,
+                };
+                let mut condition_cx = crate::family::CheckContext::new(
+                    &condition_declarations,
+                    contract_limits,
+                    &mut contract_meter,
+                    &mut contract_diagnostics,
+                    &mut contract_scopes,
+                );
+                if let Some(refusal) = temporal_clause::condition::guard_refusal(
+                    index,
+                    &clause.form,
+                    &condition_declarations,
+                    &mut condition_cx.reborrow(&scope),
+                ) {
+                    refusals.push(refusal);
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                    continue;
+                }
+            }
+            match outcome {
                 Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }

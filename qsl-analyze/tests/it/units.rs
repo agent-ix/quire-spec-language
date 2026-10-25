@@ -320,7 +320,7 @@ macro_rules! unguarded {
             _instance: &qsl_eval::model_subject::ModelInstance,
             _state: &qsl_eval::simulation::model::ModelSimState,
             _meter: &mut quire_exact::Meter,
-        ) -> Result<qsl_eval::temporal::AtomReading, quire_exact::Incomplete> {
+        ) -> Result<qsl_eval::temporal::AtomReading, qsl_eval::model_subject::AtomStop> {
             unreachable!("an unguarded clause has no activation condition")
         }
 

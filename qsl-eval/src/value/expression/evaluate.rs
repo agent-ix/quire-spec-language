@@ -644,8 +644,8 @@ pub(crate) struct Machine<'a, 'm> {
 
 /// The `over` parameter of a claim at a key with no conforming object.
 struct AbsentParameter {
-    /// The local slot holding the parameter.
-    slot: Slot,
+    /// The local slots holding the parameter.
+    slots: Vec<Slot>,
     /// The population the instance was listed under, named in the
     /// `absent-key` value.
     binding: String,
@@ -748,8 +748,14 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// FR-125 Instancing: `slot` carries absent-key guard provenance when the
     /// instance has no conforming object; `binding` names its population.
-    pub(crate) fn with_absent_parameter(mut self, slot: Slot, binding: String) -> Self {
-        self.absent_parameter = Some(AbsentParameter { slot, binding });
+    pub(crate) fn with_absent_parameter(self, slot: Slot, binding: String) -> Self {
+        self.with_absent_parameters(vec![slot], binding)
+    }
+
+    /// [`Self::with_absent_parameter`] for several slots that alias the one
+    /// absent object (an `on each` guard's `over` and trigger binders).
+    pub(crate) fn with_absent_parameters(mut self, slots: Vec<Slot>, binding: String) -> Self {
+        self.absent_parameter = Some(AbsentParameter { slots, binding });
         self
     }
 
@@ -853,8 +859,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         frame.resize(slots.max(frame.len()), None);
         let mut provenance = vec![false; frame.len()];
         if let Some(absent) = &self.absent_parameter {
-            if let Some(slot) = provenance.get_mut(absent.slot) {
-                *slot = true;
+            for slot in &absent.slots {
+                if let Some(marked) = provenance.get_mut(*slot) {
+                    *marked = true;
+                }
             }
         }
         self.frames.push(frame);
