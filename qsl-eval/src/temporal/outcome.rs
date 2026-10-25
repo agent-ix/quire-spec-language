@@ -2,7 +2,7 @@
 //! What the temporal evaluator returns: an outcome that settles the clause
 //! on the trace, and the typed refusals of a trace it cannot read.
 
-use qsl_semantics::check::TemporalProfile;
+use qsl_semantics::check::{FormulaNodeId, TemporalProfile};
 use quire_exact::Incomplete;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -10,7 +10,7 @@ use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::letters::UndefinedCause;
 use super::position::{PositionRefusal, TemporalPosition};
-use super::window::{WindowLimitReached, WindowRefusal};
+use super::window::{InsufficientData, WindowLimitReached, WindowRefusal};
 
 /// A claim that is not defined on the trace (ADR-018 UE-2): where it first
 /// reads an undefined atom, and why.
@@ -20,6 +20,17 @@ pub struct UndefinedEvaluation {
     pub at: TemporalPosition,
     /// The first undefined atom at `at`, in clause-node order.
     pub cause: UndefinedCause,
+}
+
+/// A window aggregate activation that lacks its required data (FR-327).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InsufficientDataEvaluation {
+    /// The first position whose activation lacked data.
+    pub at: TemporalPosition,
+    /// The first short window atom at `at`, in clause-node order.
+    pub atom: FormulaNodeId,
+    /// The window's available and required counts.
+    pub data: InsufficientData,
 }
 
 /// The settlement of a clause on one trace (FR-327 "Outputs").
@@ -36,6 +47,8 @@ pub enum TemporalOutcome {
     },
     /// The claim is not defined on the trace; it does not hold on it.
     Undefined(UndefinedEvaluation),
+    /// No activation decides the clause because a window has too little data.
+    InsufficientData(InsufficientDataEvaluation),
     /// A finite prefix that neither shows a bad prefix nor can show more
     /// (FR-328): O-16 inconclusive.
     Pending,
@@ -58,11 +71,8 @@ impl TemporalOutcome {
     pub fn category(&self) -> Category {
         match self {
             Self::Holds => Category::Success,
-            Self::Undefined(UndefinedEvaluation {
-                cause: UndefinedCause::InsufficientData(_),
-                ..
-            }) => Category::Undefined,
             Self::Violated { .. } | Self::Undefined(_) => Category::Violation,
+            Self::InsufficientData(_) => Category::Undefined,
             Self::Pending => Category::Inconclusive,
             Self::MissingFairnessPremise { .. } => Category::Unsupported,
             Self::Incomplete(_) | Self::WindowLimitReached(_) => Category::Incomplete,

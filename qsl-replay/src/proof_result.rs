@@ -583,6 +583,7 @@ impl UnavailabilityCause {
             TemporalOutcome::Holds
             | TemporalOutcome::Violated { .. }
             | TemporalOutcome::Undefined(_)
+            | TemporalOutcome::InsufficientData(_)
             | TemporalOutcome::Pending
             | TemporalOutcome::Incomplete(_)
             | TemporalOutcome::WindowLimitReached(_) => None,

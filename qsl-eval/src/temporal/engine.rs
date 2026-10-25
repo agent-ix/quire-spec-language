@@ -26,7 +26,7 @@
 //! Evaluation keeps an explicit frame stack: a formula of any depth, and any
 //! window length, evaluates without recursion.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, TemporalProfile};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
@@ -35,7 +35,9 @@ use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::input::TemporalTrace;
 use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
-use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
+use super::outcome::{
+    InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
+};
 use super::plan::{fault, slot, Direction, Node, Plan, Scan, Window};
 use super::position::TemporalPosition;
 use super::steps::{LoopShape, ReadStop, Steps};
@@ -498,7 +500,9 @@ struct Evaluator<'a> {
     /// distance is the distance in positions.
     steps: Option<Steps>,
     /// The atoms read, by (node, represented position).
-    letters: HashMap<(usize, u64), bool>,
+    letters: HashMap<(usize, u64), Tri>,
+    /// Positions whose activation has at least one short window atom.
+    insufficient_positions: HashSet<u64>,
     /// The first represented position the letter does not supply.
     unknown_from: Option<u64>,
     memo: HashMap<(usize, i128), Tri>,
@@ -543,6 +547,7 @@ impl<'a> Evaluator<'a> {
             },
             steps,
             letters: HashMap::new(),
+            insufficient_positions: HashSet::new(),
             unknown_from: None,
             memo: HashMap::new(),
         })
@@ -570,7 +575,14 @@ impl<'a> Evaluator<'a> {
         read: u64,
         guarded: bool,
         whens: &mut HashMap<u64, bool>,
-    ) -> Result<Option<UndefinedEvaluation>, Stop> {
+    ) -> Result<
+        (
+            Option<UndefinedEvaluation>,
+            Option<InsufficientDataEvaluation>,
+        ),
+        Stop,
+    > {
+        let mut insufficient = None;
         for position in 0..read {
             let at = TemporalPosition::new(position);
             if guarded {
@@ -582,10 +594,11 @@ impl<'a> Evaluator<'a> {
                         whens.insert(position, false);
                     }
                     AtomReading::Undefined(cause) => {
-                        return Ok(Some(Self::undefined(position, cause)))
+                        return Ok((Some(Self::undefined(position, cause)), insufficient))
                     }
                 }
             }
+            let mut undefined_at_position = None;
             for index in 0..self.plan.atoms.len() {
                 let node = slot(&self.plan.atoms, index)?;
                 self.charge()?;
@@ -595,18 +608,30 @@ impl<'a> Evaluator<'a> {
                     .ok_or_else(|| fault("atom-has-node-id"))?;
                 match source.atom(id, at, &mut *self.meter)? {
                     AtomReading::True => {
-                        self.letters.insert((node, position), true);
+                        self.letters.insert((node, position), Tri::True);
                     }
                     AtomReading::False => {
-                        self.letters.insert((node, position), false);
+                        self.letters.insert((node, position), Tri::False);
+                    }
+                    AtomReading::Undefined(UndefinedCause::InsufficientData(data)) => {
+                        self.insufficient_positions.insert(position);
+                        self.letters.insert((node, position), Tri::Unknown);
+                        if insufficient.is_none() {
+                            insufficient = Some(InsufficientDataEvaluation { at, atom: id, data });
+                        }
                     }
                     AtomReading::Undefined(cause) => {
-                        return Ok(Some(Self::undefined(position, cause)))
+                        if undefined_at_position.is_none() {
+                            undefined_at_position = Some(cause);
+                        }
                     }
                 }
             }
+            if let Some(cause) = undefined_at_position {
+                return Ok((Some(Self::undefined(position, cause)), insufficient));
+            }
         }
-        Ok(None)
+        Ok((None, insufficient))
     }
 
     fn execute<L: TemporalLetters>(
@@ -625,7 +650,7 @@ impl<'a> Evaluator<'a> {
         };
         let guarded = clause_goal && matches!(activation, Activation::Each { guarded: true });
         let mut whens = HashMap::new();
-        let undefined = self.read_letters(source, read, guarded, &mut whens)?;
+        let (undefined, insufficient) = self.read_letters(source, read, guarded, &mut whens)?;
         self.unknown_from = undefined.as_ref().map(|undefined| undefined.at.index());
         let safety = self.plan.is_safety()?;
         // A prefix decides a violation only for a safety formula whose bad
@@ -677,6 +702,19 @@ impl<'a> Evaluator<'a> {
                         None => return Err(fault("activation-condition-read").into()),
                     }
                 }
+                let represented_position =
+                    match self.geometry.site(self.geometry.canon(position))? {
+                        Site::Real(represented) => represented,
+                        Site::Sentinel => {
+                            position += 1;
+                            continue;
+                        }
+                    };
+                if self.insufficient_positions.contains(&represented_position) {
+                    every_activation_true = false;
+                    position += 1;
+                    continue;
+                }
                 match self.solve(self.plan.root, position)? {
                     Tri::True => {}
                     Tri::False => {
@@ -692,6 +730,9 @@ impl<'a> Evaluator<'a> {
         }
         if let Some(undefined) = undefined {
             return Ok(TemporalOutcome::Undefined(undefined));
+        }
+        if let Some(insufficient) = insufficient {
+            return Ok(TemporalOutcome::InsufficientData(insufficient));
         }
         match self.mode {
             Mode::Prefix => Ok(TemporalOutcome::Pending),
@@ -714,7 +755,6 @@ impl<'a> Evaluator<'a> {
                 self.letters
                     .get(&(node, position))
                     .copied()
-                    .map(Tri::of)
                     .ok_or_else(|| fault("letter-read").into())
             }
         }
