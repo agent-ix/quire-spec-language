@@ -51,7 +51,34 @@ pub struct HyperQuery {
 ///
 /// It is made of existing canonical identities only, has no digest of its
 /// own and no wire form, and only [`HyperProductIdentity::of`] and
-/// `encode_hyper_query` make one.
+/// `encode_hyper_query` make one: a caller cannot write one as a struct
+/// literal, serialize one or deserialize one (FR-315-AC-14).
+///
+/// ```compile_fail
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn minted() -> HyperProductIdentity {
+///     HyperProductIdentity {
+///         clause: todo!(),
+///         subjects: Vec::new(),
+///         instance: Vec::new(),
+///     }
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn serializes<T: serde::Serialize>() {}
+/// serializes::<HyperProductIdentity>();
+/// ```
+///
+/// ```compile_fail
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn deserializes<T: serde::de::DeserializeOwned>() {}
+/// deserializes::<HyperProductIdentity>();
+/// ```
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct HyperProductIdentity {
     clause: OccurrenceKey,

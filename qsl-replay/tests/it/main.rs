@@ -23,4 +23,5 @@ mod refinement_step;
 mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
+mod script_search;
 mod vault_world;

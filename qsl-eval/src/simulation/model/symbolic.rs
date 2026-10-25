@@ -114,10 +114,13 @@ impl SymbolicOperation<'_> {
     pub(crate) fn label(&self, receiver: Option<&str>, arguments: &[Value]) -> String {
         let texts: Vec<String> = arguments
             .iter()
-            .map(|value| {
-                value_enc(value)
+            .map(|value| match value {
+                Value::Integer(integer) => integer.to_string(),
+                Value::Boolean(boolean) => boolean.to_string(),
+                Value::Enum(member) => format!("#{}", member.rank()),
+                other => value_enc(other)
                     .canonical_text(text_limits())
-                    .unwrap_or_else(|_| "?".to_owned())
+                    .unwrap_or_else(|_| "?".to_owned()),
             })
             .collect();
         match receiver {

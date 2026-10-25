@@ -30,9 +30,6 @@ const OTHER: &str = "test/vault-other";
 const OTHER_ALIAS: &str = "N";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-/// The key of the vault in `vaults`.
-pub const KEY: &str = "v";
-
 pub const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: 1 << 20,
     decimal_digits: 1 << 20,
@@ -387,6 +384,8 @@ pub struct World {
     pub unassembled: CheckedHyperClause,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    /// A provision that holds no document.
+    no_snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: Vec<DocumentRef>,
     /// The keys of the universe of `vaults`.
     pub universe: Vec<String>,
@@ -432,16 +431,15 @@ impl World {
             .iter()
             .enumerate()
             .map(|(index, start)| {
+                let vaults: Vec<(&str, (i64, i64))> =
+                    universe.iter().map(|key| (*key, *start)).collect();
                 snapshot(
                     &document,
                     &mut snapshots,
                     &format!("s{index}"),
-                    &[(KEY, *start)],
+                    &vaults,
                     None,
-                    other
-                        .map(|_| [(KEY, *start)])
-                        .as_ref()
-                        .map(|second| &second[..]),
+                    other.map(|_| &vaults[..]),
                 )
             })
             .collect();
@@ -451,6 +449,7 @@ impl World {
             unassembled,
             packages: package_input(documents.iter().copied()),
             snapshots,
+            no_snapshots: BTreeMap::new(),
             initial,
             universe: keys(universe),
             other_universe: second.then(|| keys(universe)),
@@ -498,6 +497,14 @@ impl World {
             },
             proof_bounds: bounds,
         }
+    }
+
+    /// The vault's subject over a `snapshots` provision that lacks the
+    /// document an initial state names, which FR-120 does not admit.
+    pub fn unadmitted_subject(&self) -> ModelSubject<'_> {
+        let mut subject = self.subject();
+        subject.simulation.snapshots = &self.no_snapshots;
+        subject
     }
 
     /// The vault's subject.

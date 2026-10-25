@@ -1064,7 +1064,9 @@ HV-3 reads.
     `meter` ran out during its one evaluation), at the conjunct it names (its
     index in `mu_universal()` and its site `hyper <c> match <k>`), naming
     the first such tuple in the joint-step order by its component disjuncts
-    in quantifier order;
+    in quantifier order, each as the operation's declared name applied to its
+    arguments in decimal, `step(0)`, led by the receiver's key and a dot,
+    `v.step(0)`, when the subject holds more than one object, or `stutter`;
   - and this requirement's `field-sort`, `parameter-domain`, `field-domain`
     and `out-of-fragment` refusals, per copy, the last also for an atom
     outside the fragment, located at the atom's site `hyper <c> holds <n>`

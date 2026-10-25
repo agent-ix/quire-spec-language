@@ -338,10 +338,7 @@ pub fn encode_hyper_script(
         }
         // The first variable varies slowest.
         let mut position = variables;
-        loop {
-            let Some(previous) = position.checked_sub(1) else {
-                break;
-            };
+        while let Some(previous) = position.checked_sub(1) {
             position = previous;
             digits[position] += 1;
             if digits[position] < sizes[position] {
