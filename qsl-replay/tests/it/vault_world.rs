@@ -464,10 +464,3 @@ impl World {
         self.subject_over(&self.package, Vec::new())
     }
 }
-
-fn key(suffix: &str) -> DeclarationKey {
-    DeclarationKey {
-        package: PACKAGE.to_owned(),
-        node: ident(suffix),
-    }
-}

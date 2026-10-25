@@ -41,7 +41,7 @@ fn identity(
     })
 }
 
-fn code(refusal: &SmtEncodingRefusal) -> (&'static str, String) {
+fn named(refusal: &SmtEncodingRefusal) -> (&'static str, String) {
     (
         refusal.code().expect("a refusal, not a fault"),
         refusal.to_string(),
@@ -120,7 +120,8 @@ fn the_identity_is_the_clause_the_subjects_and_the_instance() {
 }
 
 /// FR-315-AC-12: a clause that differs only in a fairness set is a different
-/// item, so its identity differs in `clause()`.
+/// item, so its identity differs in `clause()` and in the checked package of
+/// `subjects()`, and not in `instance()`.
 #[trace("TC-1190", "FR-315-AC-12")]
 #[test]
 fn a_fairness_set_changes_the_clause_member() {
@@ -133,6 +134,10 @@ fn a_fairness_set_changes_the_clause_member() {
     let plain = identity(&plain, &instance("v")).expect("identified");
     let fair = identity(&fair, &instance("v")).expect("identified");
     assert_ne!(plain.clause(), fair.clause());
+    // The clause is a node of the subject's checked package, so the package
+    // member of `subjects()` changes with it.
+    assert_ne!(plain.subjects(), fair.subjects());
+    assert_eq!(plain.instance(), fair.instance());
 }
 
 /// FR-315-AC-13: an `instance` that is not one pair for the parameter, with a
@@ -143,12 +148,12 @@ fn a_malformed_instance_names_the_parameter() {
     let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
     for bad in [Vec::new(), instance("x"), pairs("u", "v")] {
         let refusal = refused(identity(&world, &bad));
-        let (code, text) = code(&refusal);
+        let (code, text) = named(&refusal);
         assert_eq!(code, "instance-binding", "{bad:?}");
         assert!(text.contains("`v`"), "{text}");
     }
     let liveness = World::new(&["v"], false, LIVENESS);
-    let (code, _) = code(&refused(identity(&liveness, &[])));
+    let (code, _) = named(&refused(identity(&liveness, &[])));
     assert_eq!(code, "instance-binding");
 }
 
@@ -157,7 +162,7 @@ fn a_malformed_instance_names_the_parameter() {
 #[test]
 fn an_hp3_clause_names_hyper_form() {
     let world = World::new(&["v"], false, FORALL_EXISTS);
-    let (code, text) = code(&refused(identity(&world, &[])));
+    let (code, text) = named(&refused(identity(&world, &[])));
     assert_eq!(code, "hyper-form");
     assert!(text.contains("HP-3"), "{text}");
 }
@@ -191,18 +196,18 @@ fn a_missing_or_foreign_subject_names_its_alias() {
         .collect();
     assert_eq!(aliases, ["V", "N"]);
 
-    let (code, text) = code(&refused(run(&[world.subject()])));
+    let (code, text) = named(&refused(run(&[world.subject()])));
     assert_eq!(code, "subject-binding");
     assert!(text.contains("`N`"), "{text}");
 
     let elsewhere = World::new(&["v"], true, SAVES_POWER);
     let foreign = [world.subject(), elsewhere.subject()];
-    let (code, text) = code(&refused(run(&foreign)));
+    let (code, text) = named(&refused(run(&foreign)));
     assert_eq!(code, "subject-binding");
     assert!(text.contains("`N`"), "{text}");
 
     let three = [world.subject(), world.subject(), world.subject()];
-    let (code, text) = code(&refused(run(&three)));
+    let (code, text) = named(&refused(run(&three)));
     assert_eq!(code, "subject-binding");
     assert!(text.contains("more subjects"), "{text}");
 
@@ -234,7 +239,7 @@ fn a_package_with_no_emission_names_product_identity() {
         meter: &mut meter,
         encoding: SmtEncodingLimits::default(),
     }));
-    let (code, text) = code(&refusal);
+    let (code, text) = named(&refusal);
     assert_eq!(code, "product-identity");
     assert!(text.contains("NonInterference"), "{text}");
 }
@@ -256,7 +261,7 @@ fn an_unassembled_clause_names_product_identity_and_charges_nothing() {
         meter: &mut meter,
         encoding: SmtEncodingLimits::default(),
     }));
-    assert_eq!(code(&refusal).0, "product-identity");
+    assert_eq!(named(&refusal).0, "product-identity");
     assert_eq!(meter.admission_count(), 0);
     identity(&world, &instance("v")).expect("the assembled clause is identified");
 }
