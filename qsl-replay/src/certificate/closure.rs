@@ -63,7 +63,7 @@ use qsl_eval::automaton::{
     AutomatonStateKey, BoundedKind, BoundedState, BoundedTranslation, SafetyItem, SafetyState,
     SafetyTranslation,
 };
-use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
+use qsl_eval::model_subject::{AtomStop, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
     activates_on_each, check_protocol_bounds, live_instance_bound, ProtocolFairnessError,
@@ -1132,12 +1132,15 @@ impl<S: SubjectSystem> Check<'_, S> {
             Ok(AtomReading::True) => Ok(Some(true)),
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),
-            Err(incomplete) => Err(stopped(
+            Err(AtomStop::Incomplete(incomplete)) => Err(stopped(
                 ModelCheckLimit::EvaluationMeter {
                     counter: incomplete.limit_kind,
                 },
                 crate::meter_bound(&self.meter, incomplete.limit_kind),
             )),
+            Err(AtomStop::Fault(_)) => Err(fault("a-holds-atom-reads").into()),
+            Err(AtomStop::Refused(_)) => Err(fault("a-holds-atom-is-not-refused").into()),
+            Err(AtomStop::Unobservable(stop)) => Err(self.expansion_stop(stop)),
         }
     }
 

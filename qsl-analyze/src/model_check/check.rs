@@ -74,9 +74,11 @@ use qsl_eval::automaton::{
     SafetyState, StateId,
 };
 use qsl_eval::fairness::{EdgeLabel, Vertex};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
+use qsl_eval::model_subject::{
+    AtomStop, ModelInstance, ModelLetters, ModelSubject, ProtocolSubject,
+};
 use qsl_eval::simulation::model::{
-    check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
+    check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
     activates_on_each, check_protocol_bounds, live_instance_bound, MemoryModel,
@@ -101,7 +103,7 @@ use qsl_replay::{
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
-use quire_exact::{Cancel, Meter};
+use quire_exact::{Cancel, Incomplete, Meter};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -167,6 +169,15 @@ pub enum ModelCheckRefusal {
     /// one, or more atoms than a letter holds.
     #[error("the clause has no property automaton: {0}")]
     Translation(AutomatonError),
+    /// A `holds` evaluation was refused, or completed no Boolean with none
+    /// undefined, so the position has no letter (QSL-1039): for example an
+    /// authored population bound exceeded (FR-380).
+    #[error("a `holds` evaluation was refused: {0:?}")]
+    AtomRefused(ClauseOutcome),
+    /// A state the check reached cannot be observed, so its `holds` atoms
+    /// have no reading (QSL-1039).
+    #[error("a state cannot be observed: {0:?}")]
+    StateUnobservable(ExpansionStop),
     /// A state or transition identity has no canonical encoding.
     #[error(transparent)]
     Encoding(#[from] EncodingRefusal),
@@ -385,6 +396,18 @@ impl From<ProtocolFairnessError> for ModelCheckRefusal {
             }
             ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
         }
+    }
+}
+
+/// What a `holds` atom that gave no reading refuses the check with
+/// (QSL-1039); the exhausted meter, which stops the check with a limit
+/// instead, is returned as the `Err`.
+pub(super) fn atom_refusal(stop: AtomStop) -> Result<ModelCheckRefusal, Incomplete> {
+    match stop {
+        AtomStop::Incomplete(incomplete) => Err(incomplete),
+        AtomStop::Refused(outcome) => Ok(ModelCheckRefusal::AtomRefused(outcome)),
+        AtomStop::Unobservable(stop) => Ok(ModelCheckRefusal::StateUnobservable(stop)),
+        AtomStop::Fault(fault) => Ok(ModelCheckRefusal::Fault(fault)),
     }
 }
 
@@ -2332,13 +2355,15 @@ impl<S: SubjectSystem> Run<'_, S> {
                     &self.system.atom_state(&node.state),
                     &mut meter,
                 )
-                .map_err(|incomplete| {
-                    Self::stopped(
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => Halt::Refusal(refusal),
+                    Err(incomplete) => Self::stopped(
                         ModelCheckLimit::EvaluationMeter {
                             counter: incomplete.limit_kind,
                         },
                         incomplete.limit,
                     )
+                    .into(),
                 })?;
             match reading {
                 AtomReading::True => {
