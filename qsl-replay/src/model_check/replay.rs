@@ -54,7 +54,7 @@ use qsl_eval::simulation::{
     ConstraintValue, Cut, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
     TransitionSystem, BOUND_POSITIONS,
 };
-use qsl_eval::temporal::AtomReading;
+use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_eval::temporal::{
     evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TemporalTrace,
@@ -1268,6 +1268,17 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
             .letters
             .activation(self.instance, &self.system.atom_state(&state.state), meter)?)
     }
+
+    fn captures(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        let state = self.state_at(position)?;
+        Ok(self
+            .letters
+            .captures(self.instance, &self.system.atom_state(&state.state), meter)?)
+    }
 }
 
 /// FR-128 for `kind: Formula`: a lasso is checked against the fairness set,
@@ -1702,6 +1713,7 @@ fn undefined<S: SubjectSystem>(
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
         UndefinedLocus::Atom(_)
         | UndefinedLocus::Activation
+        | UndefinedLocus::Capture(_)
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
         | UndefinedLocus::Protocol(_)

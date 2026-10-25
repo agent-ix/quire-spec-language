@@ -568,6 +568,12 @@ impl CheckedTemporalClause {
             .map(|(name, value_type)| (name.as_str(), value_type))
     }
 
+    /// Whether the activation reads the state beyond the trigger: it has a
+    /// `when` guard or the clause declares a capture (FR-337).
+    pub fn reads_at_activation(&self) -> bool {
+        matches!(self.activation, Activation::Each { guarded: true }) || !self.captures.is_empty()
+    }
+
     /// The clause's fairness set, each constraint once, in source order of
     /// first occurrence (FR-123).
     pub fn fairness(&self) -> &[FairnessConstraint] {

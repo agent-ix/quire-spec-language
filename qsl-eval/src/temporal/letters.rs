@@ -10,6 +10,23 @@ use quire_semantic_value::catalog::{InternalFault, UndefinedRecord};
 use super::position::TemporalPosition;
 use super::window::{InsufficientData, WindowLimitReached, WindowRefusal};
 
+/// What reading the captures of an activation gave (FR-337 "Capture
+/// observation").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CaptureReading {
+    /// Every capture has a value for the activation: the clause has none, or
+    /// each initializer is defined.
+    Fixed,
+    /// The capture `capture` has no value at the activation: its initializer
+    /// is undefined.
+    Undefined {
+        /// The capture's name.
+        capture: String,
+        /// Why the initializer is undefined.
+        cause: UndefinedCause,
+    },
+}
+
 /// Why an atom has no value at a position (ADR-018 UE-2): the kernel's
 /// undefined outcome, a family's `UndefinedRecord`, or a window aggregate
 /// that found too few values (ADR-024 WA-4).
@@ -87,6 +104,20 @@ pub trait TemporalLetters {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop>;
+
+    /// FR-337 "Capture observation": fix the clause's captures, in source
+    /// order, at the represented `position`, where an instance of the clause
+    /// activates: the evaluator calls it at position 0 of an `on origin`
+    /// clause and at each position an `on each` clause activates (where its
+    /// guard, when it has one, is true), once per activation. A clause with
+    /// no capture answers [`CaptureReading::Fixed`].
+    fn captures(
+        &mut self,
+        _position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        Ok(CaptureReading::Fixed)
+    }
 
     /// Whether the step into the represented `position` counts for interval
     /// distance (ADR-027 PB-3, QSpec FR-431). Every step of a model subject

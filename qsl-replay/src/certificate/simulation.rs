@@ -307,6 +307,7 @@ fn locus_kind(locus: &UndefinedLocus) -> &'static str {
     match locus {
         UndefinedLocus::Atom(_) => "atom",
         UndefinedLocus::Activation => "activation",
+        UndefinedLocus::Capture(_) => "capture",
         UndefinedLocus::Contract(_) => "contract",
         UndefinedLocus::Terminal(_) => "terminal",
         UndefinedLocus::Constraint(_) => "constraint",

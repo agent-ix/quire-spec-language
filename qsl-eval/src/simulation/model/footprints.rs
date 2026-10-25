@@ -674,26 +674,22 @@ impl<'a> ModelSystem<'a> {
         derive_atom_reads(self.package.graph(), &self.model, over, condition)
     }
 
-    /// FR-125-AC-18: the symbolic locations the `when` guard `condition` of an
-    /// `on each` activation reads, with the `over` parameter and the trigger
-    /// binder `trigger` as the receiver.
+    /// FR-125-AC-18, FR-337: the symbolic locations the activation's
+    /// expression `condition` (the `when` guard of an `on each` activation,
+    /// or a capture's initializer) reads, with the `over` parameter first of
+    /// `binders` as the receiver, then the trigger binder and the earlier
+    /// captures in slot order.
     ///
     /// # Errors
     ///
-    /// [`FootprintRefusal`] when the guard reads through a form QSpec FR-383
-    /// gives no footprint rule.
+    /// [`FootprintRefusal`] when the expression reads through a form QSpec
+    /// FR-383 gives no footprint rule.
     pub fn guard_reads(
         &self,
-        over: &(String, ValueType),
-        trigger: &(String, ValueType),
         condition: CheckedNode<'_>,
+        binders: &[(String, ValueType)],
     ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
-        derive_guard_reads(
-            self.package.graph(),
-            &self.model,
-            &[over.clone(), trigger.clone()],
-            condition,
-        )
+        derive_guard_reads(self.package.graph(), &self.model, binders, condition)
     }
 
     /// FR-156 "Atom footprints": the locations an atom reads for `instance`

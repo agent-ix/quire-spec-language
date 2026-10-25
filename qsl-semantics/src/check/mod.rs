@@ -706,6 +706,27 @@ impl TemporalClauseNode {
             .map(|(body, slots)| (body.root(), *slots))
     }
 
+    /// The first capture, in source order, that a `holds` condition of the
+    /// clause reads (FR-337 "Capture observation"): its index among the
+    /// captures. A condition binds the `over` parameter, the trigger binder
+    /// of an `on each` activation and then the captures, so a read of the
+    /// local at slot `first + j` is a read of capture `j`; the locals a
+    /// condition binds itself follow them.
+    pub fn captured_read(&self) -> Option<usize> {
+        let first = 1 + usize::from(self.clause.trigger().is_some());
+        let count = self.clause.captures().len();
+        self.conditions
+            .values()
+            .flat_map(|(body, _)| body.root().descendants())
+            .filter_map(|node| match node.kind() {
+                NodeKind::Local(slot) => slot
+                    .checked_sub(first)
+                    .filter(|capture| *capture < count),
+                _ => None,
+            })
+            .min()
+    }
+
     /// The declaration identities of the populations the clause's `holds`
     /// atoms, guard and captures name (FR-391), ascending and each once: each is required
     /// (FR-106 check 7) in every snapshot of the trace the clause is read
