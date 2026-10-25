@@ -523,7 +523,7 @@ fn outstanding(
     }))
 }
 
-/// A `memory sc | tso | ra` clause (FR-219): the model and the clause's
+/// A `memory sc | tso | ra` clause (FR-219): the model and the model token's
 /// span.
 fn memory_model(
     cst: &LosslessCst,
@@ -542,7 +542,7 @@ fn memory_model(
     };
     Ok(Spanned {
         value,
-        span: clause.span(),
+        span: model.span(),
     })
 }
 
