@@ -71,8 +71,8 @@ bind a graph, a type report and a selected formal source only when the
    `claim`/`step_relation` node (FR-180) and is never refused `NotEmitted`.
    A checked `hyper` clause is refused only as not emitted, the typed
    temporal cause `NotEmitted` that a checked `temporal` clause S4 does not
-   write (FR-337 "Clauses S4 does not emit": one with a capture or under
-   the timed profile) is refused with, because no S4
+   write (FR-337 "Clauses S4 does not emit": one under
+   the timed profile or with a protocol-target fairness constraint) is refused with, because no S4
    emission writes it. A clause with a fault keeps
    the refusal of its own fault (FR-172, FR-173), a typed hyper cause or, for
    its temporal operators, fairness and profile selection, a typed temporal

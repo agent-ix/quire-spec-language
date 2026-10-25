@@ -38,8 +38,6 @@ infinite-trace and the formula `always holds(c.value <= 1)`.
    `holds(q.value <= 1)`; the binder types `M::Absent` and `Integer`; the
    binder `on each (c: M::Counter)`; a clause whose guard is `c.value` and
    whose `holds` condition is `c.value`.
-4. Compile an `on each (q: M::Counter)` clause whose body begins
-   `capture n: Int[0, 3] = c.value;`.
 
 Tag the tests `#[trace("TC-1265", "FR-337-AC-n")]`.
 
@@ -65,5 +63,3 @@ Tag the tests `#[trace("TC-1265", "FR-337-AC-n")]`.
   `type-mismatch` at `Integer`; `conflicting_declaration`/
   `duplicate-declaration` at the binder `c`, naming both declarations; one
   refusal, at the guard. No refused clause gives a package.
-- Step 4: `unsupported_construct`/`not-yet-implemented` (`NotEmitted`) at
-  the clause, the interim state QSL-1081 removes.

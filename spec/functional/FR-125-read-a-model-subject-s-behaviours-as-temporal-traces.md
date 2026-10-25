@@ -287,6 +287,10 @@ formula guard and is read as an ordinary `holds` condition.
   an empty guard footprint.
 - FR-128's replay and FR-338's and FR-339's checkers SHALL read the guard
   through the same seam, from the recompiled package.
+- A clause's captures are read at the activation through the same seam, in
+  source order and only where the guard is true, as FR-337 "Capture
+  observation" states; an undefined capture is `kind: UndefinedEvaluation`
+  located at the capture, and a capture is never read as a default.
 
 ### Reading a lasso
 

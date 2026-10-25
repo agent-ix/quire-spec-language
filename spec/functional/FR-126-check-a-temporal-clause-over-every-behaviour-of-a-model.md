@@ -115,7 +115,10 @@ FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelSubject` (FR-125).
 
 `ModelCheckRefusal` holds FR-106's `AdmissionFailure` from building the
-subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
+subject's `ModelSystem`, FR-101's `NotSimulated::RequiresBound`, or
+`CaptureRead { clause, capture }` (FR-337 "Capture observation"), the
+clause's checked `holds` condition reading a capture, which the engine does
+not yet decide.
 
 ## Outputs
 
@@ -164,6 +167,13 @@ automaton states and the depth reached.
   unbounded, then the engine SHALL return
   `ModelCheckRefusal::RequiresBound` with FR-101's `RequiresBound` and
   explore no state.
+- After that classification and before any expansion, the engine SHALL
+  return `ModelCheckRefusal::CaptureRead` for a clause some `holds`
+  condition of which reads a capture, under every profile, property form and
+  activation (`on origin` included), exploring no state, and naming the first
+  capture in source order that a `holds` condition reads. An admission
+  failure or `RequiresBound` is returned instead when it applies, because the
+  system is built, and the domains classified, first.
 
 ### Property automaton
 
