@@ -95,3 +95,22 @@ raised as a finding.
 | FND-002 | low | AC-12's second clause needs the other instance's empty `X` to be at the same position as the refusal. The test does not assert that `w`'s empty `X` is at position 1. If the fixture drifted so that `w` emptied later, the refusal would win by position, not by rank, and the test would still pass. Mutation MA shows the rank is what decides at this head. Assert the premise, as the AC-8 test does for its own (`WitnessExhausted{position: 1}` for the leaky world with the same conjunct) | qsl-analyze/tests/it/hyper_witness.rs:1704-1718 |
 | FND-003 | low | Most of the new test bodies copy existing untagged TC-602 tests nearly line for line: `a_later_undefined_evaluation_does_not_replace_an_earlier_empty_witness_set`, `the_lasso_reaches_its_fair_cycle_by_a_connecting_path`, `an_undefined_universal_match_with_a_witness_ends_the_item_with_the_partners_path`, `a_later_instance_wins_only_with_a_strictly_earlier_finding`, `a_later_instance_with_an_undefined_evaluation_at_position_zero_beats_an_empty_witness_set`, `an_undefined_universal_match_with_no_witness_is_refused_not_guessed` and `an_unstated_undefined_evaluation_ranks_before_an_empty_witness_set_at_its_position`. Each fixture now lives in two places that can drift. Folding the old tests into the tagged ones (or removing them) keeps one copy | qsl-analyze/tests/it/hyper_witness.rs:1415-1719 |
 | FND-004 | low | In the AC-10 and AC-11 tests, the `division-by-zero` cause comes from the test's own hand-modelled match reader (the new `mod` arm). No production `StepMatch` exists. The tests check how the engine ranks, places and passes on that reading, not how `1 mod 0` is evaluated. The AC-6 test's doc comment says it is "the engine half"; the AC-10 and AC-11 doc comments do not | qsl-analyze/tests/it/hyper_witness.rs:1530-1540, 1601-1612; qsl-analyze/tests/it/hyper_world.rs:970-990 |
+
+## Dispositions
+
+Round 1, checked at follow-up PR #1493 head 945493aba. #1485 merged before
+the fix round, so the fixes are in that PR's commit b5393c87e (test and doc
+comments only), plus 945493aba, which adds the review artifacts under
+`reviews/`. Those two copies are byte-identical to the round-0 SR files.
+Checks on an exported copy of the head with its own target dir:
+`cargo test -p qsl-analyze --test it hyper_witness` gives 38 passed. With
+`LateUndefined` changed so it never returns `Undefined`
+(`if false && calls >= 5 && one`), the AC-8 test fails and only that test
+fails. The new counter assert is real.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `LateUndefined` counts the `Undefined` readings it returns, and the AC-8 test asserts `late.undefined.get() >= 1` (hyper_witness.rs:1449-1452). A never-`Undefined` seam fails it |
+| FND-002 | fixed | Before the `PerInstance` run, the AC-12 test runs the same two-instance leaky world with the default seams and asserts `WitnessExhausted{position: 1}` and `trace_position` 1 (hyper_witness.rs:1718-1730). The returned counterexample is the first instance's. `w` is an exact copy of `v` (`two_instances`), so this fixes `w`'s empty `X` at position 1 |
+| FND-003 | deferred | Not changed in #1493. The PR says the existing untagged tests are not refactored there. Its claim that only AC-9's clause string is duplicated understates the overlap: the seven old tests named in the finding still repeat the new tagged tests' bodies. This is low, maintenance-only and out of scope for a test-hardening follow-up; no ticket is filed |
+| FND-004 | fixed | The AC-10 and AC-11 doc comments now say that no production `StepMatch` exists and that the division-by-zero cause comes from the hand-modelled match reader in `hyper_world`. The tests check the engine's handling and ranking of that reading (hyper_witness.rs:1543-1546, 1619-1622) |
