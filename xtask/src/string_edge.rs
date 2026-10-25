@@ -87,8 +87,12 @@ mod tests {
     use std::fs;
 
     /// Workspace members `crate_roots` does not scan: `tools/arch-lint`,
-    /// which the scan has never covered.
-    const UNSCANNED_MEMBERS: [&str; 1] = ["tools/arch-lint"];
+    /// which the scan has never covered, and the checked-closure consumer
+    /// test fixture, a downstream-consumer stand-in that is not QSL code.
+    const UNSCANNED_MEMBERS: [&str; 2] = [
+        "tools/arch-lint",
+        "tests/fixtures/checked-closure-consumer",
+    ];
 
     fn workspace_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
