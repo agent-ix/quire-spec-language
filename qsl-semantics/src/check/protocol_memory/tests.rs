@@ -123,7 +123,7 @@ fn models(graph: &CheckedGraph) -> Vec<MemoryModelName> {
 /// A `parallel` with no `memory` clause records `Sc` and one with `memory
 /// tso` records `Tso`; a nested `parallel` with no clause or with the
 /// outermost default checks, and another default refuses
-/// `invalid_model_binding`/`conflicting-binding` at the nested clause,
+/// `invalid_model_binding`/`conflicting-binding` at the nested model token,
 /// naming both controls.
 #[trace("TC-664", "FR-219-AC-1")]
 #[test]
@@ -191,7 +191,7 @@ fn a_memory_default_is_recorded_and_a_nested_one_must_match_the_outermost() {
             ),
             ("Both", outer_model, "Inner", inner_model)
         );
-        assert_eq!(located(&text, &cause), inner);
+        assert_eq!(located(&text, &cause), inner_model.label());
     }
 }
 
