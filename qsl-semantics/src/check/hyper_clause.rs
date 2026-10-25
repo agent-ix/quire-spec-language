@@ -17,13 +17,13 @@
 //! A clause that checks is refused as not emitted until S4 writes its node,
 //! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use qsl_forms::{
-    BinaryOperator, ExprId, ExprNode, ExprRef, Expression, ExpressionSpans, HyperBehavioursForm,
-    HyperFiniteForm, IntervalUpper, ModelRelationForm, NameForm, OperatorInterval, QuantifierForm,
-    QuantifierKind, SpanId, StepLabelForm, TemporalFormulaForm, TemporalNodeForm, TemporalOperator,
-    TypeFormHead,
+    BinaryOperator, ClauseKind, ExprId, ExprNode, ExprRef, Expression, ExpressionSpans,
+    HyperBehavioursForm, HyperFiniteForm, IntervalUpper, ModelRelationForm, NameForm,
+    OperatorInterval, QuantifierForm, QuantifierKind, SpanId, StepLabelForm, TemporalFormulaForm,
+    TemporalNodeForm, TemporalOperator, TypeFormHead,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
@@ -31,20 +31,19 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, ValueType};
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
-use super::check::Signatures;
-use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
+use super::check::{HyperExecution, HyperRoot, HyperType, Signatures, Typer};
 use super::profile::TemporalProfile;
-use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
+use super::refusal::{CheckCause, CheckRefusal, Obligation, TemporalCause};
 use super::state_clause::{population_of, PopulationDomain};
 use super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, in_safety_fragment, CheckedFormula,
     CheckedOperator, IntervalReading, TemporalClaim, TemporalDeclarations, TemporalSelection,
 };
-#[cfg(any(test, feature = "test-support"))]
 use super::Scope;
 use super::{AdmittedModel, Capability};
 use crate::family::requirements::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
@@ -690,6 +689,18 @@ pub enum HyperCause {
         /// The operand's span.
         span: Span,
     },
+    /// A contextual rational literal that has no expected type.
+    BodyAmbiguousLiteral {
+        /// The literal's span.
+        span: Span,
+    },
+    /// A value expression whose obligation cannot be proved.
+    BodyUnproved {
+        /// The failed obligation.
+        obligation: Obligation,
+        /// The obligation's expression span.
+        span: Span,
+    },
     /// A `let` binder that names a binder in scope or a variable of the
     /// clause, as the value typer refuses it. `ambiguous_declaration`/
     /// `ambiguous-name`, at the `let`.
@@ -738,6 +749,8 @@ impl HyperCause {
             | Self::DuplicateName { span, .. }
             | Self::BodyMissing { span, .. }
             | Self::BodyIllTyped { span }
+            | Self::BodyAmbiguousLiteral { span }
+            | Self::BodyUnproved { span, .. }
             | Self::BodyShadows { span, .. }
             | Self::BodyUnsupported { span } => Some(*span),
             Self::OutsideHyperClause => None,
@@ -769,10 +782,12 @@ impl HyperCause {
             Self::AmbiguousPopulation { .. } | Self::BodyShadows { .. } => {
                 Code::AmbiguousDeclaration
             }
+            Self::BodyUnproved { .. } => Code::UndefinedExpression,
             Self::UnboundParameterAlias { .. }
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
             | Self::BodyIllTyped { .. }
+            | Self::BodyAmbiguousLiteral { .. }
             | Self::MismatchedTrace { .. } => Code::IllTyped,
         }
     }
@@ -805,6 +820,14 @@ impl HyperCause {
             | Self::UnindexedRead { .. }
             | Self::BodyIllTyped { .. }
             | Self::MismatchedTrace { .. } => "type-mismatch",
+            Self::BodyAmbiguousLiteral { .. } => "ambiguous-literal",
+            Self::BodyUnproved { obligation, .. } => match obligation {
+                Obligation::Nonzero => "unproved-nonzero",
+                Obligation::Presence => "unproved-presence",
+                Obligation::Range { .. }
+                | Obligation::RationalRange
+                | Obligation::NonemptyReduction { .. } => "unproved-range",
+            },
         }
     }
 }
@@ -931,13 +954,19 @@ fn check_behaviours(
     };
     let (operators, _) = checked_operators(&form.body, &reading, &mut temporal_causes)?;
     found.extend(temporal_causes.into_iter().map(Found::Temporal));
-    let atom_roots = || -> BTreeMap<&str, Root> {
-        parameters
+    let atom_roots = || -> BTreeMap<String, HyperRoot> {
+        let mut roots: BTreeMap<String, HyperRoot> = parameters
             .iter()
-            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(*object)))
-            .collect()
+            .map(|(parameter, object)| (parameter.name.clone(), HyperRoot::Object(*object)))
+            .collect();
+        roots.extend(
+            variables
+                .by_name
+                .keys()
+                .map(|name| ((*name).to_owned(), HyperRoot::Trace)),
+        );
+        roots
     };
-    let no_label = |_: &str, _: &StepLabelForm| None;
     for (_, node) in form.body.iter() {
         if let TemporalNodeForm::Holds { condition, .. } = node {
             check_atom(
@@ -947,48 +976,38 @@ fn check_behaviours(
                 &variables,
                 &mut found,
             );
-            let env = Env {
+            if let Err(refusal) = type_body(
                 scope,
-                signatures: declarations.signatures,
-                roots: atom_roots(),
-                site: Site::Body,
-                label: &no_label,
-            };
-            found.extend(
-                type_condition(&env, &condition.expression, &condition.spans)
-                    .into_iter()
-                    .map(body_fault),
-            );
+                declarations.signatures,
+                &condition.expression,
+                atom_roots(),
+                HashMap::new(),
+                false,
+            ) {
+                found.push(body_refusal(refusal, &condition.spans));
+            }
         }
     }
 
     let (match_expression, mu_universal, mu_existential) = match &form.match_block {
         Some(block) => {
             let split = check_match(block, &variables, declarations, &mut found)?;
-            let label = |trace: &str, label: &StepLabelForm| match step_read(
-                trace,
-                label,
+            let labels = step_label_types(
+                &block.expression,
                 &variables,
                 declarations,
                 root_span(&block.spans),
-            ) {
-                Ok(StepRead::Operation { .. } | StepRead::Stutter) => Some(Ty::Label),
-                Ok(StepRead::Receiver { .. }) => Some(Ty::Receiver),
-                Ok(StepRead::Argument(argument)) => Some(Ty::Argument(argument.parameter_type)),
-                Err(_) => None,
-            };
-            let env = Env {
-                scope,
-                signatures: declarations.signatures,
-                roots: BTreeMap::new(),
-                site: Site::Match,
-                label: &label,
-            };
-            found.extend(
-                type_condition(&env, &block.expression, &block.spans)
-                    .into_iter()
-                    .map(body_fault),
             );
+            if let Err(refusal) = type_body(
+                scope,
+                declarations.signatures,
+                &block.expression,
+                BTreeMap::new(),
+                labels,
+                true,
+            ) {
+                found.push(body_refusal(refusal, &block.spans));
+            }
             (Some(block.expression.clone()), split.0, split.1)
         }
         None => (None, Vec::new(), Vec::new()),
@@ -1313,14 +1332,85 @@ fn root_span(spans: &ExpressionSpans) -> Span {
         .unwrap_or(Span { start: 0, end: 0 })
 }
 
-/// A body fault as the cause it is reported as.
-fn body_fault(fault: BodyFault) -> Found {
-    Found::Hyper(match fault {
-        BodyFault::Missing { name, span } => HyperCause::BodyMissing { name, span },
-        BodyFault::IllTyped { span } => HyperCause::BodyIllTyped { span },
-        BodyFault::Unsupported { span } => HyperCause::BodyUnsupported { span },
-        BodyFault::Shadows { name, span } => HyperCause::BodyShadows { name, span },
-    })
+/// Map a value-typer refusal's child path back to the source span of its
+/// expression node, keeping hyper diagnostics at the same site.
+fn body_refusal(refusal: CheckRefusal, spans: &ExpressionSpans) -> Found {
+    let span = spans
+        .at(&refusal.location.path())
+        .or_else(|| spans.span(spans.root()))
+        .unwrap_or(Span { start: 0, end: 0 });
+    let cause = match refusal.cause {
+        CheckCause::MissingName(name) => HyperCause::BodyMissing { name, span },
+        CheckCause::MissingQualifiedName(name) => HyperCause::BodyMissing {
+            name: name.name,
+            span,
+        },
+        CheckCause::MissingSegment { name, .. } => HyperCause::BodyMissing { name, span },
+        CheckCause::AmbiguousName { name, .. } => HyperCause::BodyShadows { name, span },
+        CheckCause::IllTyped(quire_exact::IllTypedCause::AmbiguousLiteral) => {
+            HyperCause::BodyAmbiguousLiteral { span }
+        }
+        CheckCause::Unproved(obligation) => HyperCause::BodyUnproved { obligation, span },
+        CheckCause::Hyper(_) => HyperCause::BodyUnsupported { span },
+        CheckCause::UnsupportedNavigation(_)
+        | CheckCause::ObjectReadInValueInvariant
+        | CheckCause::PopulationFormOutsideRefinement
+        | CheckCause::PopulationFormNotChecked { .. } => HyperCause::BodyUnsupported { span },
+        CheckCause::ProfileProhibitedOperator(_) => HyperCause::BodyIllTyped { span },
+        _ => HyperCause::BodyIllTyped { span },
+    };
+    Found::Hyper(cause)
+}
+
+/// Type one hyper/relation body through the shared value `Typer`.
+fn type_body(
+    scope: &Scope,
+    signatures: &Signatures,
+    expression: &Expression,
+    roots: BTreeMap<String, HyperRoot>,
+    labels: HashMap<ExprId, (ValueType, Option<HyperType>)>,
+    match_only: bool,
+) -> Result<(), CheckRefusal> {
+    let mut nodes = 0;
+    let mut typer = Typer::new(
+        scope,
+        signatures,
+        CheckingLimits::default(),
+        &mut nodes,
+        ClauseKind::Body,
+    );
+    let root = Location::root(Origin::Expression);
+    typer.hyper_context(roots, labels, match_only, &root)?;
+    let _ = typer.check_as(expression, &ValueType::Boolean, &root)?;
+    Ok(())
+}
+
+fn step_label_types(
+    expression: &Expression,
+    trace_variables: &Variables<'_>,
+    declarations: &HyperDeclarations<'_>,
+    at: Span,
+) -> HashMap<ExprId, (ValueType, Option<HyperType>)> {
+    expression
+        .iter()
+        .filter_map(|node| {
+            let ExprNode::StepLabel { trace, label } = node.node() else {
+                return None;
+            };
+            let (value_type, special) =
+                match step_read(trace, label, trace_variables, declarations, at) {
+                    Ok(StepRead::Operation { .. } | StepRead::Stutter) => {
+                        (ValueType::Boolean, Some(HyperType::StepLabel))
+                    }
+                    Ok(StepRead::Receiver { .. }) => {
+                        (ValueType::Boolean, Some(HyperType::StepReceiver))
+                    }
+                    Ok(StepRead::Argument(argument)) => (argument.read_type(), None),
+                    Err(_) => (ValueType::Boolean, Some(HyperType::Unknown)),
+                };
+            Some((node.id(), (value_type, special)))
+        })
+        .collect()
 }
 
 /// Visit every node of `expression` in source order, on an explicit stack.
@@ -2296,9 +2386,9 @@ fn check_relation(
     let mut found: Vec<Found> = Vec::new();
     let mut executions = Vec::with_capacity(form.executions.len());
     let mut roots: Vec<ValueType> = Vec::new();
-    let mut body_roots: BTreeMap<&str, Root> = BTreeMap::new();
+    let mut body_roots: BTreeMap<String, HyperRoot> = BTreeMap::new();
     for binding in &form.executions {
-        if body_roots.contains_key(binding.variable.name.as_str()) {
+        if body_roots.contains_key(&binding.variable.name) {
             found.push(Found::Hyper(HyperCause::DuplicateName {
                 name: binding.variable.name.clone(),
                 span: binding.variable.span,
@@ -2331,8 +2421,8 @@ fn check_relation(
                 .map(|(_, value_type)| value_type.clone()),
         );
         body_roots.insert(
-            &binding.variable.name,
-            Root::Execution(Box::new(ExecutionRoot {
+            binding.variable.name.clone(),
+            HyperRoot::Execution(Box::new(HyperExecution {
                 declaring: operation.declaring_type(),
                 parameters: declaration.parameters().to_vec(),
                 result: declaration.result().cloned(),
@@ -2340,19 +2430,16 @@ fn check_relation(
         );
         executions.push((binding.variable.name.clone(), key));
     }
-    let no_label = |_: &str, _: &StepLabelForm| None;
-    let env = Env {
+    if let Err(refusal) = type_body(
         scope,
-        signatures: declarations.signatures,
-        roots: body_roots,
-        site: Site::Body,
-        label: &no_label,
-    };
-    found.extend(
-        type_condition(&env, &form.body.expression, &form.body.spans)
-            .into_iter()
-            .map(body_fault),
-    );
+        declarations.signatures,
+        &form.body.expression,
+        body_roots,
+        HashMap::new(),
+        false,
+    ) {
+        found.push(body_refusal(refusal, &form.body.spans));
+    }
     earliest(found)?;
     let root_refs: Vec<&ValueType> = roots.iter().collect();
     let code_domains = classify_domains(&root_refs, scope.types(), temporal.position_limit)
