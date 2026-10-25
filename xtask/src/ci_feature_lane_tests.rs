@@ -182,8 +182,12 @@ impl Recipe {
         list_count: Option<&str>,
     ) -> std::process::Output {
         let log = self.directory.path().join("calls");
+        let incremental_log = self.directory.path().join("incremental");
         if log.exists() {
             fs::remove_file(&log).unwrap();
+        }
+        if incremental_log.exists() {
+            fs::remove_file(&incremental_log).unwrap();
         }
         let mut make = Command::new("make");
         make.current_dir(self.directory.path())
@@ -199,6 +203,7 @@ impl Recipe {
             .env_remove("CI_CLEAN_TARGET_DIR")
             .env("FEATURE_LANE_PATH_VALUE", "expanded-canary")
             .env("FEATURE_LANE_CALL_LOG", &log)
+            .env("FEATURE_LANE_INCREMENTAL_LOG", &incremental_log)
             .env(
                 "PATH",
                 std::env::join_paths(
@@ -308,6 +313,28 @@ fn every_feature_recipe_uses_its_child_and_preserves_complete_argv() {
     assert!(
         !helper_directory.exists(),
         "fixture teardown removes its compiled helper"
+    );
+}
+
+#[test]
+#[trace("TC-915", "NFR-013-AC-6")]
+fn aggregate_ci_disables_incremental_metadata_and_debug_symbols() {
+    let recipe = Recipe::new();
+    let output = recipe.run_raw(&["-o", "check-spec-validation", "ci"], None, &[], None);
+    assert!(
+        output.status.success(),
+        "aggregate recipe reaches Cargo: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(recipe.directory.path().join("incremental")).unwrap(),
+        "CARGO_INCREMENTAL=0\nCARGO_PROFILE_DEV_DEBUG=0\nCARGO_PROFILE_TEST_DEBUG=0\nCARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true\nCARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true\n",
+        "the xtask wrapper inherits the aggregate's compact build settings"
+    );
+    assert_eq!(
+        fs::read_to_string(recipe.directory.path().join("calls")).unwrap(),
+        "\trun\t--locked\t--package\txtask\t--\tci\n",
+        "the optimization preserves the aggregate Cargo command"
     );
 }
 

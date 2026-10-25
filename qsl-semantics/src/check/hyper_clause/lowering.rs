@@ -15,6 +15,7 @@
 //! label is a `String` there, `stutter` and a label constant are `String`
 //! literals.
 
+use quire_checked::key::DeclarationKey;
 use std::collections::BTreeMap;
 
 use qsl_forms::{ExprId, ExprNode, Expression, ExpressionSpans, StepLabelForm};
@@ -66,16 +67,14 @@ fn atom_slot_name(parameter: &str, trace: &str) -> String {
 /// operation declaration, which `node` of its declaring type extends with the
 /// operation's name.
 pub fn operation_text(operation: &OperationKey) -> String {
-    let quoted = |text: &str| serde_json::to_string(text).unwrap_or_default();
-    format!(
-        "{{\"digest_domain\":\"sha256-jcs\",\"node\":{},\"package\":{}}}",
-        quoted(&format!(
+    crate::model::key::declaration_identity_text(&DeclarationKey {
+        package: operation.declaring.package.clone(),
+        node: format!(
             "{}/{}",
             operation.declaring.node,
             operation.operation.as_str()
-        )),
-        quoted(&operation.declaring.package),
-    )
+        ),
+    })
 }
 
 /// One slot of every atom of a clause (FR-487 "Atom slots"): the object
@@ -405,7 +404,10 @@ pub(crate) fn lower_conjunct<'a>(
     let refused = |refusal: CheckRefusal| {
         let span = locate(&refusal.location);
         Refused {
-            refusal: Box::new(refusal),
+            refusal: Box::new(CheckRefusal {
+                location: location.clone(),
+                cause: refusal.cause,
+            }),
             span,
         }
     };

@@ -20,15 +20,13 @@ use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::TemporalCounterexample;
-use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Incomplete, Meter, ScalarLimits, Value};
+use quire_exact::{Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -56,7 +54,7 @@ impl Domain {
         format!("ix://{}/{suffix}", self.package)
     }
 
-    fn key(&self, suffix: &str) -> DeclarationKey {
+    pub(crate) fn key(&self, suffix: &str) -> DeclarationKey {
         DeclarationKey {
             package: self.package.to_owned(),
             node: self.node(suffix),
@@ -279,33 +277,16 @@ impl World {
             )
             .expect("the unit assembles")
         };
-        // S4 emits no `on each` clause (FR-337), so the package check refuses
-        // one: a world with one checks its clauses by the family alone, and
-        // its package holds none of them.
-        let emitted = clauses
-            .iter()
-            .all(|clause| clause.activation == "on origin");
-        let unit = if emitted {
-            format!("{text}{declared}")
-        } else {
-            text.clone()
-        };
+        let unit = format!("{text}{declared}");
         let graph = declarations(&unit)
             .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{unit}: the unit checks: {refusals:?}"));
-        let checked: Vec<CheckedTemporalClause> = if emitted {
-            graph
-                .temporal_clauses()
-                .iter()
-                .map(|node| node.clause().clone())
-                .collect()
-        } else {
-            check_clauses(&declarations(&format!("{text}{declared}")))
-                .into_iter()
-                .map(|clause| clause.unwrap_or_else(|why| panic!("{declared}: {why:?}")))
-                .collect()
-        };
+        let checked: Vec<CheckedTemporalClause> = graph
+            .temporal_clauses()
+            .iter()
+            .map(|node| node.clause().clone())
+            .collect();
         assert_eq!(checked.len(), clauses.len(), "{declared}");
         let mut world = Self {
             domain,
@@ -487,7 +468,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let guard = self
             .guard
             .as_ref()

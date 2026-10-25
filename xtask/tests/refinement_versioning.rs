@@ -67,16 +67,16 @@ fn broken() -> String {
     broken
 }
 
-/// The unit with a checked `on each` temporal clause. S3 checks it, but S4
-/// has no emitter for that activation and refuses it as not yet implemented.
+/// The unit with a timed temporal interval. S2 reads it, but S3 currently
+/// refuses the interval as not yet implemented.
 fn unsupported() -> String {
     unit().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.infinite-trace/v1\";\n",
     ) + "temporal Unemitted using t over (c: Config::ConfigVersion) \
-           clock \"model-steps\" on each (d: Config::ConfigVersion) \
-           when (d.versionNumber >= 0) { eventually holds(c.versionNumber <= 1000) }\n"
+           clock \"model-steps\" on origin { eventually[0 ms, 3 ms] \
+           holds(c.versionNumber <= 1000) }\n"
 }
 
 /// The unit with more work in `ParentOrder` and the same meaning.

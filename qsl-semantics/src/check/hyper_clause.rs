@@ -1102,7 +1102,7 @@ fn check_behaviours<'a>(
                 scope,
                 signatures: declarations.signatures,
                 roots: atom_roots(),
-                site: Site::Body,
+                site: Site::Atom,
                 label: &no_label,
             };
             found.extend(
@@ -1746,19 +1746,12 @@ fn qualify(declarations: &HyperDeclarations<'_>, name: &NameForm) -> Qualified {
     }
 }
 
-/// FR-172 "Match": `mu` reads step labels only, and splits into its top-level
-/// conjuncts (ADR-023 HM-3): the ones that read universal variables only, and
-/// the ones that read an existential variable.
-#[allow(clippy::type_complexity)]
-fn check_match(
-    block: &qsl_forms::ExpressionForm,
-    variables: &Variables<'_>,
-    declarations: &HyperDeclarations<'_>,
-    found: &mut Vec<Found>,
-) -> Result<(Vec<ConjunctDraft>, Vec<ConjunctDraft>), StageFailure<CheckRefusal>> {
-    let expression = &block.expression;
-    let mut conjuncts: Vec<(ExprRef<'_>, Option<SpanId>)> = Vec::new();
-    let mut pending = vec![(expression.root(), Some(block.spans.root()))];
+/// The top-level conjuncts of a `match` block, left to right, each with the
+/// span node that locates it: the one split `check_match` and
+/// [`conjunct_spans`] share.
+fn split_conjuncts(block: &qsl_forms::ExpressionForm) -> Vec<(ExprRef<'_>, Option<SpanId>)> {
+    let mut conjuncts = Vec::new();
+    let mut pending = vec![(block.expression.root(), Some(block.spans.root()))];
     while let Some((node, located)) = pending.pop() {
         match node.node() {
             ExprNode::Binary {
@@ -1778,6 +1771,63 @@ fn check_match(
             _ => conjuncts.push((node, located)),
         }
     }
+    conjuncts
+}
+
+/// Whether the conjunct rooted at `node` reads the step of a trace variable
+/// for which `existential` holds (ADR-023 HM-3): the one classification that
+/// splits `mu` into `mu_U` and `mu_E`.
+fn reads_existential(node: ExprRef<'_>, existential: impl Fn(&str) -> bool) -> bool {
+    let mut subtree = vec![node];
+    while let Some(current) = subtree.pop() {
+        if let ExprNode::StepLabel { trace, .. } = current.node() {
+            if existential(trace) {
+                return true;
+            }
+        }
+        subtree.extend(current.children());
+    }
+    false
+}
+
+/// The spans of the `match` conjuncts of `form`: the universal ones and the
+/// existential ones, each in source order, split and classified as
+/// [`check_match`] does.
+pub(crate) fn conjunct_spans(form: &qsl_forms::HyperBehavioursForm) -> (Vec<Span>, Vec<Span>) {
+    let Some(block) = &form.match_block else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut universal, mut existential) = (Vec::new(), Vec::new());
+    for (node, located) in split_conjuncts(block) {
+        let Some(span) = located.and_then(|id| block.spans.span(id)) else {
+            continue;
+        };
+        let exists = reads_existential(node, |name| {
+            form.quantifiers.iter().any(|quantifier| {
+                quantifier.kind == QuantifierKind::Exists && quantifier.variable.name == name
+            })
+        });
+        if exists {
+            existential.push(span);
+        } else {
+            universal.push(span);
+        }
+    }
+    (universal, existential)
+}
+
+/// FR-172 "Match": `mu` reads step labels only, and splits into its top-level
+/// conjuncts (ADR-023 HM-3): the ones that read universal variables only, and
+/// the ones that read an existential variable.
+#[allow(clippy::type_complexity)]
+fn check_match(
+    block: &qsl_forms::ExpressionForm,
+    variables: &Variables<'_>,
+    declarations: &HyperDeclarations<'_>,
+    found: &mut Vec<Found>,
+) -> Result<(Vec<ConjunctDraft>, Vec<ConjunctDraft>), StageFailure<CheckRefusal>> {
+    let expression = &block.expression;
+    let conjuncts = split_conjuncts(block);
     let mut parents: Vec<Option<ExprId>> = vec![None; expression.len()];
     for node in expression.iter() {
         for child in node.node().children() {
@@ -1891,9 +1941,9 @@ fn check_match(
                 keep
             });
         }
-        let existential_conjunct = variable_names
-            .iter()
-            .any(|name| variables.kind_of(name) == Some(QuantifierKind::Exists));
+        let existential_conjunct = reads_existential(conjunct, |name| {
+            variables.kind_of(name) == Some(QuantifierKind::Exists)
+        });
         let mut slots: Vec<StepRead> = Vec::new();
         for read in &reads {
             if !matches!(read, StepRead::Stutter) && !slots.contains(read) {
@@ -2036,6 +2086,9 @@ fn step_read(
                 .position(|(declared, _)| declared == parameter)
                 .ok_or_else(unresolved)?;
             let (_, value_type) = &declaration.parameters()[index];
+            if !decodable_argument(value_type) {
+                return Err(HyperCause::BodyUnsupported { span });
+            }
             Ok(StepRead::Argument(Box::new(ArgumentRead {
                 trace: trace.to_owned(),
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
@@ -2046,6 +2099,23 @@ fn step_read(
                 parameter_type: value_type.clone(),
             })))
         }
+    }
+}
+
+/// Whether the evaluator decodes a step argument of type `value_type` from
+/// the step's canonical argument text (FR-181): Booleans, integers, strings,
+/// references and options of them. The one statement of that list: S3 refuses
+/// a conjunct reading any other type, and the evaluator's decoder admits
+/// exactly these types.
+pub fn decodable_argument(value_type: &ValueType) -> bool {
+    match value_type {
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::String
+        | ValueType::Reference(_) => true,
+        ValueType::Option(payload) => decodable_argument(payload),
+        _ => false,
     }
 }
 
@@ -2971,4 +3041,25 @@ pub fn check_hyper_clauses(
             HyperTraceFamily::check(clause, &mut cx).map(Staged::into_value)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A step argument is decoded for the types the evaluator decodes, and
+    /// the conjunct that reads any other is refused at S3.
+    #[test]
+    fn only_the_types_the_evaluator_decodes_are_readable_arguments() {
+        assert!(decodable_argument(&ValueType::Boolean));
+        assert!(decodable_argument(&ValueType::String));
+        assert!(decodable_argument(&ValueType::Integer));
+        assert!(!decodable_argument(&ValueType::Uuid));
+        assert!(decodable_argument(&ValueType::Option(std::sync::Arc::new(
+            ValueType::Boolean
+        ))));
+        assert!(!decodable_argument(&ValueType::Option(
+            std::sync::Arc::new(ValueType::Timestamp)
+        )));
+    }
 }

@@ -304,6 +304,49 @@ pub fn derive_atom_reads(
         .collect())
 }
 
+/// FR-125-AC-18, FR-156: the locations the `when` guard of an `on each`
+/// activation reads. `parameters` are the `over` parameter (slot 0) and the
+/// trigger binder (slot 1), which alias the one object the activation names,
+/// so a read through either is a read of the receiver.
+///
+/// # Errors
+///
+/// As [`derive_atom_reads`].
+pub fn derive_guard_reads(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    parameters: &[(String, ValueType)],
+    condition: CheckedNode<'_>,
+) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+    let reader = Reader::new(graph.scope().types(), model)?;
+    let scope = BodyScope {
+        name: "guard",
+        binds_result: false,
+        parameters,
+        observations: None,
+        observation: Observation::Current,
+    };
+    let alias = |object: FootprintObject| match object {
+        FootprintObject::Param(_) => FootprintObject::Receiver,
+        receiver @ FootprintObject::Receiver => receiver,
+    };
+    Ok(reader
+        .body_reads(&scope, condition)?
+        .into_iter()
+        .map(|(location, _)| match location {
+            SymbolicLocation::Field { object, field } => SymbolicLocation::Field {
+                object: alias(object),
+                field,
+            },
+            SymbolicLocation::Membership { population, object } => SymbolicLocation::Membership {
+                population,
+                object: alias(object),
+            },
+            other => other,
+        })
+        .collect())
+}
+
 /// ADR-027 FT-1, FT-3: the locations a protocol expression `body` reads,
 /// typed over the binders `parameters` in slot order, such as an `activation
 /// on each` guard or a replicated role's `until` predicate. A field read is

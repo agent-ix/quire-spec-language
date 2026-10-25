@@ -167,7 +167,6 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         // The forms and subjects EN-1 does not decide yet.
         ModelCheckRefusal::ProtocolRefinement
         | ModelCheckRefusal::FormNotDecided { .. }
-        | ModelCheckRefusal::GuardedActivation
         | ModelCheckRefusal::WeakLiveness
         | ModelCheckRefusal::InstanceLiveness
         | ModelCheckRefusal::ReducedLiveness
@@ -367,7 +366,6 @@ mod tests {
             _ => None,
         };
         let not_yet = Some("unsupported_construct/not-yet-implemented".to_owned());
-        assert_eq!(unsupported(ModelCheckRefusal::GuardedActivation), not_yet);
         assert_eq!(unsupported(ModelCheckRefusal::ReducedLiveness), not_yet);
         assert_eq!(
             unsupported(ModelCheckRefusal::Liveness(

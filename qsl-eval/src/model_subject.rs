@@ -172,15 +172,21 @@ pub trait ModelLetters {
     /// activates the clause, false where it does not, undefined where the
     /// condition has no value. The engine calls it only for a clause whose
     /// activation has a condition, at each position the clause's monitor
-    /// reads. An exhausted meter is `Err(Incomplete)`, never a reading. The
-    /// reading is as invariant under a symmetry of the subject as a `holds`
-    /// atom's (FR-151).
+    /// reads. The `over` parameter and the trigger binder are both the
+    /// instance's object. The stops are those of [`Self::atom`]: an exhausted
+    /// meter is `Err(AtomStop::Incomplete)`, never a reading. The reading is
+    /// as invariant under a symmetry of the subject as a `holds` atom's
+    /// (FR-151).
+    ///
+    /// # Errors
+    ///
+    /// [`AtomStop`], as for [`Self::atom`].
     fn activation(
         &self,
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete>;
+    ) -> Result<AtomReading, AtomStop>;
 
     /// FR-156 "Atom footprints" for the guarded activation's condition: the
     /// locations it reads, with the clause's `over` parameter as the

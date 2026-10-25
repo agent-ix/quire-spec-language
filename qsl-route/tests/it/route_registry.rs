@@ -1781,7 +1781,7 @@ mod cargo_deny_bans_the_three_registry_crates {
             tempfile::tempdir().expect("create a scratch directory for the throwaway manifest");
         let deps: String = DENIED_CRATES
             .iter()
-            .map(|name| format!("{name} = \"*\"\n"))
+            .map(|name| format!("{name} = {{ path = \"stubs/{name}\" }}\n"))
             .collect();
         std::fs::write(
             scratch.path().join("Cargo.toml"),
@@ -1799,6 +1799,16 @@ mod cargo_deny_bans_the_three_registry_crates {
         .expect("write the throwaway manifest");
         std::fs::create_dir_all(scratch.path().join("src")).expect("create src/");
         std::fs::write(scratch.path().join("src/lib.rs"), "").expect("write an empty lib.rs");
+        for name in DENIED_CRATES {
+            let stub = scratch.path().join("stubs").join(name);
+            std::fs::create_dir_all(stub.join("src")).expect("create the local banned crate");
+            std::fs::write(
+                stub.join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            )
+            .expect("write the local banned crate manifest");
+            std::fs::write(stub.join("src/lib.rs"), "").expect("write its empty library");
+        }
 
         // The workspace's own `deny.toml`, one level above this crate.
         let deny_toml = Path::new(env!("CARGO_MANIFEST_DIR"))

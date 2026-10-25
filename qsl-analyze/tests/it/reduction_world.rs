@@ -37,7 +37,7 @@ use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Identifier, Incomplete, Meter, ScalarLimits, Value};
+use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -673,6 +673,7 @@ impl World {
                     clause: &self.clauses[clause],
                     letters: &letters,
                 },
+                smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
             &Cancel::new(),
             |counterexample| {
@@ -808,7 +809,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let (guard, _) = self
             .guard
             .as_ref()

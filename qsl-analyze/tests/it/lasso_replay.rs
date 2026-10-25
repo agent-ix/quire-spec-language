@@ -374,6 +374,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 clause: &fixture.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |counterexample| {
@@ -417,6 +418,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 clause: &fixture.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |counterexample| {

@@ -93,6 +93,7 @@ fn settled(
                 clause: &world.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         replay,

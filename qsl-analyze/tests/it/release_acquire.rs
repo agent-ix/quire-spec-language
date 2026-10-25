@@ -1107,6 +1107,34 @@ fn a_second_fence_with_no_store_between_removes_the_first_from_the_sc_event_grap
     }
 }
 
+/// FR-223-AC-10's release-message case: the release store between the fences
+/// retains the first fence in its message view after the second fence runs.
+#[trace("TC-668", "FR-223-AC-10")]
+#[test]
+fn a_release_message_keeps_the_first_sc_fence_live() {
+    let program = run(
+        &[
+            (
+                "a",
+                vec![
+                    "fence F1 ordering seq_cst;".to_owned(),
+                    put_value("Flag", "x", "StoreOne", "release"),
+                    "fence F2 ordering seq_cst;".to_owned(),
+                ],
+            ),
+            ("b", vec![load_ordered("Read", "x", 1, "acquire")]),
+        ],
+        "",
+    );
+    let case = no_both_zero_unit(&program);
+    let system = case.system(&ra_main(), Ra::default()).expect("builds");
+    let mut state = forked(&system);
+    state = step(&system, &state, "Main/Both/a/A/F1", None).1;
+    state = step(&system, &state, "Main/Both/a/A/Flag", None).1;
+    state = step(&system, &state, "Main/Both/a/A/F2", None).1;
+    assert_eq!(state.memory().live_events(), 2);
+}
+
 /// SR-12255 FND-003 (MB-2): `max_messages` bounds the live messages after
 /// garbage collection. `c` leaves four live messages of `x` while `a`'s
 /// view is at the first; `a`'s store moves its view and collects, so no

@@ -90,6 +90,7 @@ use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
+use qsl_eval::smt::SmtEncodingLimits;
 
 /// One product state of a certificate: its model state's
 /// `quire.simulation.state-key/v1` digest and its automaton state's
@@ -187,6 +188,9 @@ pub struct CertificateRequest<'a> {
     pub subject: ModelSubject<'a>,
     /// The item.
     pub item: ModelCheckItem<'a>,
+    /// The encoding limits used by the backend for this item's queries
+    /// (FR-315); certificate checks rebuild queries under these same limits.
+    pub smt_encoding: SmtEncodingLimits,
 }
 
 /// Why [`check_closure`] checked nothing: the request, not the certificate,

@@ -329,9 +329,9 @@ pub use hybrid::{
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
-    operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause, CheckedModelRelation,
-    CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause,
-    HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
+    decodable_argument, operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause,
+    CheckedModelRelation, CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup,
+    HyperCause, HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
     HyperUnsupported, ModelAlias, ObjectParameter, OperationContractClaim, StepRead, STUTTER_TEXT,
 };
 pub use identity::{
@@ -1377,11 +1377,152 @@ impl PackageDeclarations {
         let model_selected = crate::value::definition::DefinitionLock::pinned()
             .closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
-        let model_function_bodies: Vec<bool> = self
+        let mut model_context_calls = Vec::new();
+        if model_selected {
+            for clause in &self.state_clauses {
+                model_context_calls.extend(layer::called_functions(&clause.body));
+            }
+            for clause in &self.operation_clauses {
+                model_context_calls.extend(layer::called_functions(&clause.clause.expression));
+            }
+            for temporal in &self.temporal_clauses {
+                add_temporal_model_calls(&temporal.form, &mut model_context_calls);
+            }
+            for claim in &self.state_graph_claims {
+                let mut include_predicate = |predicate: &qsl_forms::StateGraphPredicateForm| {
+                    for operand in &predicate.operands {
+                        model_context_calls.extend(layer::called_functions(&operand.expression));
+                    }
+                    for scope in &predicate.scopes {
+                        for (_, value) in scope {
+                            model_context_calls.extend(layer::called_functions(&value.expression));
+                        }
+                    }
+                };
+                match &claim.form.kind {
+                    qsl_forms::StateGraphClaimKind::Possible { target } => {
+                        include_predicate(target);
+                    }
+                    qsl_forms::StateGraphClaimKind::AlwaysPossible { from, target } => {
+                        if let Some(from) = from {
+                            include_predicate(from);
+                        }
+                        include_predicate(target);
+                    }
+                    qsl_forms::StateGraphClaimKind::UniquePath { from, to } => {
+                        include_predicate(from);
+                        include_predicate(to);
+                    }
+                }
+            }
+            for invariant in &self.type_invariants {
+                model_context_calls
+                    .extend(layer::called_functions(&invariant.invariant.expression));
+            }
+            for terminal in &self.terminals {
+                if let terminal::TerminalClauseKind::When { predicate, .. } = &terminal.kind {
+                    model_context_calls.extend(layer::called_functions(&predicate.expression));
+                }
+            }
+            for claim in &self.hybrid_claims {
+                add_temporal_model_calls(&claim.form, &mut model_context_calls);
+            }
+            for hybrid in &self.hybrids {
+                if let Some(initial) = &hybrid.form.initial {
+                    for entry in &initial.entries {
+                        model_context_calls
+                            .extend(layer::called_functions(&entry.condition.expression));
+                    }
+                }
+                for mode in &hybrid.form.modes {
+                    model_context_calls.extend(layer::called_functions(&mode.invariant.expression));
+                    for equation in &mode.equations {
+                        model_context_calls
+                            .extend(layer::called_functions(&equation.rate.expression));
+                    }
+                    for transition in &mode.transitions {
+                        model_context_calls
+                            .extend(layer::called_functions(&transition.guard.expression));
+                        model_context_calls
+                            .extend(layer::called_functions(&transition.reset.expression));
+                    }
+                }
+            }
+            for declaration in &self.probabilistic {
+                match declaration {
+                    ProbabilisticDeclaration::Random(random) => {
+                        for value in &random.support {
+                            model_context_calls
+                                .extend(layer::called_functions(&value.value.expression));
+                        }
+                    }
+                    ProbabilisticDeclaration::Reward(reward) => {
+                        model_context_calls
+                            .extend(layer::called_functions(&reward.expression.expression));
+                    }
+                    ProbabilisticDeclaration::Claim(claim) => {
+                        add_activation_model_calls(&claim.activation, &mut model_context_calls);
+                        add_probabilistic_body_model_calls(&claim.body, &mut model_context_calls);
+                    }
+                    ProbabilisticDeclaration::Workload(_) => {}
+                }
+            }
+            for hyper in &self.hyper_clauses {
+                match hyper {
+                    HyperDeclaration::Behaviours(form) => {
+                        if let Some(matched) = &form.match_block {
+                            model_context_calls
+                                .extend(layer::called_functions(&matched.expression));
+                        }
+                        add_temporal_formula_model_calls(&form.body, &mut model_context_calls);
+                    }
+                    HyperDeclaration::Finite(form) => {
+                        model_context_calls.extend(layer::called_functions(&form.body.expression));
+                    }
+                    HyperDeclaration::Relation(form) => {
+                        model_context_calls.extend(layer::called_functions(&form.body.expression));
+                    }
+                }
+            }
+            for refinement in &self.refinements {
+                for row in &refinement.form.rows {
+                    match row {
+                        qsl_forms::RefinementRowForm::Object(row) => {
+                            for field in &row.fields {
+                                model_context_calls
+                                    .extend(layer::called_functions(&field.value.expression));
+                            }
+                        }
+                        qsl_forms::RefinementRowForm::History(row) => {
+                            for update in &row.updates {
+                                model_context_calls
+                                    .extend(layer::called_functions(&update.value.expression));
+                            }
+                        }
+                        qsl_forms::RefinementRowForm::Population(_)
+                        | qsl_forms::RefinementRowForm::Step(_)
+                        | qsl_forms::RefinementRowForm::Fairness(_) => {}
+                    }
+                }
+            }
+        }
+        let function_indices: std::collections::BTreeMap<_, _> = self
             .functions
             .iter()
-            .map(|function| model_selected && layer::body_needs_model_family(&function.body))
+            .enumerate()
+            .map(|(index, function)| (function.name.as_str(), index))
             .collect();
+        let mut model_function_bodies = vec![false; self.functions.len()];
+        while let Some(name) = model_context_calls.pop() {
+            let Some(index) = function_indices.get(name.as_str()).copied() else {
+                continue;
+            };
+            if model_function_bodies[index] {
+                continue;
+            }
+            model_function_bodies[index] = true;
+            model_context_calls.extend(layer::called_functions(&self.functions[index].body));
+        }
         let model_scope = check::NamedScope::of(&self.models, &scope);
         let symmetric_objects = self
             .models
@@ -2688,7 +2829,50 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
+            let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
+            // FR-337: the activation precedes the body in source, so a defect
+            // of an `on each` guard refuses ahead of a refusal of the body.
+            let body_refused = match &outcome {
+                Ok(staged) => !temporal_clause::is_emitted(&clause.form, staged.value()),
+                Err(StageFailure::Refused(refusal)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
+                Err(_) => false,
+            };
+            if body_refused {
+                let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                let condition_declarations = state_clause::ClauseDeclarations {
+                    scope: &scope,
+                    signatures: &signatures,
+                    dispatch_tables: &dispatch_tables,
+                    models: &models,
+                    checking_limits: limits,
+                    location: &location,
+                    nodes_used,
+                    cancel: Some(cancel),
+                    staged: None,
+                };
+                let mut condition_cx = crate::family::CheckContext::new(
+                    &condition_declarations,
+                    contract_limits,
+                    &mut contract_meter,
+                    &mut contract_diagnostics,
+                    &mut contract_scopes,
+                );
+                if let Some(refusal) = temporal_clause::condition::guard_refusal(
+                    index,
+                    &clause.form,
+                    &condition_declarations,
+                    &mut condition_cx.reborrow(&scope),
+                ) {
+                    refusals.push(refusal);
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                    continue;
+                }
+            }
+            match outcome {
                 Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }
@@ -2936,6 +3120,9 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // The nodes the hyper conditions checked count against the package's
+        // ceiling beside every other declaration's.
+        nodes_used = hyper_declarations.nodes_used.get();
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -4106,6 +4293,88 @@ impl PackageDeclarations {
 }
 
 /// `found` with the refusals a protocol subject kept for its clause's check.
+/// Add the function calls written in a temporal model-context claim. A helper
+/// is typed through the StateModel family only when one of these calls (or a
+/// transitive helper call) reaches it.
+fn add_temporal_model_calls(form: &qsl_forms::TemporalClauseForm, calls: &mut Vec<String>) {
+    add_activation_model_calls(&form.activation, calls);
+    for capture in &form.captures {
+        calls.extend(layer::called_functions(&capture.value.expression));
+    }
+    add_temporal_formula_model_calls(&form.formula, calls);
+}
+
+fn add_activation_model_calls(activation: &qsl_forms::ActivationForm, calls: &mut Vec<String>) {
+    if let qsl_forms::ActivationForm::Each {
+        when: Some(when), ..
+    } = activation
+    {
+        calls.extend(layer::called_functions(&when.expression));
+    }
+}
+
+fn add_temporal_formula_model_calls(
+    formula: &qsl_forms::TemporalFormulaForm,
+    calls: &mut Vec<String>,
+) {
+    for (_, node) in formula.iter() {
+        if let qsl_forms::TemporalNodeForm::Holds { condition, .. } = node {
+            calls.extend(layer::called_functions(&condition.expression));
+        }
+    }
+}
+
+fn add_measure_model_calls(measure: &qsl_forms::MeasureForm, calls: &mut Vec<String>) {
+    match measure {
+        qsl_forms::MeasureForm::Accumulate { window, .. }
+        | qsl_forms::MeasureForm::Steps { window, .. }
+        | qsl_forms::MeasureForm::Elapsed { window, .. } => {
+            calls.extend(layer::called_functions(&window.from.expression));
+            calls.extend(layer::called_functions(&window.until.expression));
+        }
+        qsl_forms::MeasureForm::Fraction(fraction) => {
+            calls.extend(layer::called_functions(&fraction.predicate.expression));
+        }
+    }
+}
+
+fn add_probabilistic_body_model_calls(
+    body: &qsl_forms::ProbabilisticBody,
+    calls: &mut Vec<String>,
+) {
+    match body {
+        qsl_forms::ProbabilisticBody::Probability { event, .. } => match event {
+            qsl_forms::EventForm::Temporal(formula) => {
+                add_temporal_formula_model_calls(formula, calls);
+            }
+            qsl_forms::EventForm::Compare {
+                measure, threshold, ..
+            } => {
+                add_measure_model_calls(measure, calls);
+                calls.extend(layer::called_functions(&threshold.expression));
+            }
+        },
+        qsl_forms::ProbabilisticBody::Quantile {
+            measure, threshold, ..
+        } => {
+            add_measure_model_calls(measure, calls);
+            calls.extend(layer::called_functions(&threshold.expression));
+        }
+        qsl_forms::ProbabilisticBody::MeanOfFraction { fraction, .. } => {
+            calls.extend(layer::called_functions(&fraction.predicate.expression));
+        }
+        qsl_forms::ProbabilisticBody::LongRunFraction { predicate, .. } => {
+            calls.extend(layer::called_functions(&predicate.expression))
+        }
+        qsl_forms::ProbabilisticBody::ExpectedUntil {
+            target, threshold, ..
+        } => {
+            calls.extend(layer::called_functions(&target.expression));
+            calls.extend(layer::called_functions(&threshold.expression));
+        }
+    }
+}
+
 fn with_deferred(mut found: Vec<CheckRefusal>, deferred: &[CheckRefusal]) -> Vec<CheckRefusal> {
     found.extend_from_slice(deferred);
     found

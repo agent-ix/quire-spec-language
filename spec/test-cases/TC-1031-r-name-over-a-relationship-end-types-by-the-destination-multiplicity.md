@@ -24,7 +24,9 @@ every refusal.
 Compile one unit per vector over fixture **N** with model alias `M` and
 profile alias `V`, writing the expression in
 `invariant I using V on M::<owner> at current { ... }` with `self` the
-receiver, except N13 and N14, which are function declarations as written.
+receiver, except N13, N14 and N16, which are function declarations as written.
+N16 has no model-context caller, so it does not derive StateModel-family
+typing under FR-125-AC-17.
 Compare the checked node's static type, or the refusal's code, cause and
 family, with the vector.
 
@@ -68,13 +70,15 @@ the field `code` typed `Int[0,9]`.
 | N13 | `function f using V(o: Option<Reference<M::Order>>): Boolean pure { o.lines = o.lines }`; the same with `o: Set<Reference<M::Order>>[0, 2]` | each `refused { code: ill_typed, cause: type-mismatch }` at the receiver operand `o`, as in an invariant |
 | N14 | `function f using V(o: Reference<M::Order>): Boolean pure { size(o.lines) >= 0 }` | admitted: a `Reference` receiver navigates in a function body |
 | N15 | In a unit whose refinement declares the history field `last` on another model's object type, `self.last` and then `self.nope` in an invariant on `M::Order` | `self.last` refuses `refused { code: missing_declaration, cause: missing-name }` (a history field name of a refinement of the unit, FR-138); `self.nope` refuses `refused { code: ill_typed, cause: type-mismatch }` |
+| N16 | `function f using V(o: Reference<M::Order>): Boolean pure { o.code = o.code }` with no model-context call site referencing `f` | `refused { code: ill_typed, cause: type-mismatch }` at the field form in the declared `Value` family; the model profile alone does not derive the StateModel family for an uncalled function (FR-125-AC-17) |
 
-Each refusal's family is `StateModel` and its catalog code carries the
-`state-model` prefix (FR-300).
+Refusals in N01-N15 are `StateModel` refusals and their catalog codes carry
+the `state-model` prefix (FR-300). N16 is a `Value`-family
+`ill_typed`/`type-mismatch` refusal at the bare field form.
 
 ## Expected Results
 
 Every vector gives exactly its type or refusal. A mutant that removes the
 relationship-end typing fails N01 to N06; a mutant that skips the direction
 check fails N09 and N11; a mutant that skips the bound check fails N10; a mutant that types a non-`Reference` receiver by context fails
-N13; a mutant that refuses `self.nope` as `missing-name`, or `self.last` as `type-mismatch`, fails N15.
+N13; a mutant that refuses `self.nope` as `missing-name`, or `self.last` as `type-mismatch`, fails N15. A mutant that derives StateModel typing for every function in a model-profile unit fails N16; a mutant that does not derive it for reachable model-context helpers fails FR-125-AC-17/TC-520.

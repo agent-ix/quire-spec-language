@@ -26,6 +26,15 @@ from Make's working directory. An explicit GNU Make command-line assignment
 of `CI_DEFAULT_TARGET_DIR` or `CI_ALL_TARGET_DIR` selects that lane's complete
 directory instead of appending a child.
 
+When the public `make ci` aggregate invokes its Cargo wrapper and descendant
+Cargo commands, it sets `CARGO_INCREMENTAL=0`,
+`CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`,
+`CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true`, and
+`CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true`. This avoids retaining incremental
+compilation metadata and debug symbols in the local CI target tree while
+keeping debug assertions enabled. The settings do not change Cargo features or
+commands.
+
 Environment `CARGO_TARGET_DIR` values supply literal path bytes. GNU Make
 command-line assignments use Make's assignment grammar: a literal dollar is
 encoded as `$$`, including before braces or parentheses. After that decoding,
@@ -96,6 +105,7 @@ product feature or changing the hosted-workflow policy.
 | NFR-013-AC-3 | Feature routing preserves the nine Cargo argument vectors and their order above, default versus all-feature selection, default-before-all reachability from `ci`, and the existing non-feature and clean artifact/feature policy. | Test (TC-915) |
 | NFR-013-AC-4 | On the host platform, the packages the all-features lane's test command excludes leave every remaining package with the same per-unit resolved feature sets as the full `--all-features` workspace, and a package whose absence would change them, through a dev-dependency or other dependency chain, a build dependency, `default-features = false` or a request a remaining package makes only for another platform, is not excluded. | Test (TC-915) |
 | NFR-013-AC-5 | A package is excluded only if it and everything below it are the same compile units with the same feature sets in the default workspace resolve as in the `--all-features` resolve on the host platform, including when `cargo metadata` gives every dependency the same merged feature set in both. | Test (TC-915) |
+| NFR-013-AC-6 | The public `make ci` wrapper and its descendant Cargo commands receive `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, `CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true` and `CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true`; the aggregate retains the Cargo command vectors in AC-3. | Test (TC-915) |
 
 ## Verification
 
