@@ -63,6 +63,7 @@ use crate::simulation::explore::{explore_request, Exploration, Limits, Transitio
 use crate::simulation::footprint::Footprint;
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use crate::simulation::protocol::WeakAccessShape;
 use crate::simulation::reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
 };
@@ -303,6 +304,9 @@ impl ModelFinding {
 /// "Invariants"); FR-101 records these for expanded states.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelFinding {
+    /// EN-1 found one or more weak-memory access shapes at this reachable
+    /// protocol state (FR-220, ADR-025 MA-4).
+    WeakAccessShape(Box<WeakAccessShape>),
     /// An invariant was false for an object of the state.
     InvariantViolated {
         /// The clause's name.

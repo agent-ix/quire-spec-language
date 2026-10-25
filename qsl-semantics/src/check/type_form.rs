@@ -114,8 +114,10 @@ impl IntegerOutsideI128 {
 /// Why a type form did not resolve.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeFormFault {
-    /// The qualified name binds no type.
+    /// An unqualified name binds no type.
     MissingName(String),
+    /// A qualified name binds no type.
+    MissingQualifiedName(qsl_forms::NameForm),
     /// The qualified name binds more than one type.
     AmbiguousName(String),
     /// A bound is missing, is not a number or a grammar spelling, or the
@@ -156,6 +158,7 @@ impl TypeFormError {
     fn into_refusal(self, location: &Location) -> CheckRefusal {
         let cause = match self.fault {
             TypeFormFault::MissingName(name) => CheckCause::MissingName(name),
+            TypeFormFault::MissingQualifiedName(name) => CheckCause::MissingQualifiedName(name),
             TypeFormFault::AmbiguousName(name) => CheckCause::AmbiguousName {
                 name,
                 loci: vec![location.clone()],
@@ -396,9 +399,16 @@ fn resolve_builtin<'f>(
                 return Err(malformed(form));
             };
             names
-                .object_type_named(name)
+                .object_type_named(&name.name)
                 .map(ValueType::Reference)
-                .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
+                .ok_or_else(|| {
+                    let cause = if name.is_qualified() {
+                        TypeFormFault::MissingQualifiedName(name.clone())
+                    } else {
+                        TypeFormFault::MissingName(name.name.clone())
+                    };
+                    fault(target, cause)
+                })
         }
         BuiltinType::Quantity => {
             let target = only_argument(form)?;
@@ -406,9 +416,16 @@ fn resolve_builtin<'f>(
                 return Err(malformed(form));
             };
             names
-                .unit_named(name)
+                .unit_named(&name.name)
                 .map(ValueType::Quantity)
-                .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
+                .ok_or_else(|| {
+                    let cause = if name.is_qualified() {
+                        TypeFormFault::MissingQualifiedName(name.clone())
+                    } else {
+                        TypeFormFault::MissingName(name.name.clone())
+                    };
+                    fault(target, cause)
+                })
         }
     };
     leaf.map(Step::Leaf)
@@ -480,7 +497,7 @@ fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'
                 .transpose()?;
             Ok(Step::Leaf(ValueType::Population(maximum)))
         }
-        TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
+        TypeFormHead::Name(name) => named_type(names, &name.name, form).map(Step::Leaf),
     }
 }
 
@@ -867,7 +884,9 @@ mod tests {
             ValueType::Reference(EffectiveId::from_digest([7; 32]))
         );
         let refusal = resolve_in(&scope, &reference("M::B")).unwrap_err();
-        assert!(matches!(refusal.cause, CheckCause::MissingName(name) if name == "M::B"));
+        assert!(
+            matches!(refusal.cause, CheckCause::MissingQualifiedName(name) if name.name == "M::B")
+        );
     }
 
     /// A name bound by both an alias and an object type is ambiguous; a

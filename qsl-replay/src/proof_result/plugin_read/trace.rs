@@ -10,11 +10,71 @@ use super::{
     at_index, canonical_integer, child, count_of, first_undefined, invalid, malformed, member,
     read_plugin_inconclusive_cause, unknown_member, wrong_kind,
 };
-use crate::hybrid_replay::{admit, ExactInterval, HybridTrace, TraceBefore, TraceJump, TraceState};
+use crate::hybrid_replay::{
+    admit, ExactInterval, HybridCounterexample, HybridCounterexampleKind, HybridTrace, TraceBefore,
+    TraceJump, TraceState,
+};
 use crate::proof_result::plugin::PluginResultRefusal;
 use crate::proof_result::InconclusiveCause;
 use qsl_semantics::check::{CheckedHybridModel, ModeIndex};
 use quire_exact::Rational;
+
+/// Read a provider's FR-331 `hybrid-counterexample` for a hybrid claim.
+pub(super) fn read_hybrid_counterexample(
+    entry: &Value,
+    model: Option<&CheckedHybridModel>,
+) -> Result<HybridCounterexample, PluginResultRefusal> {
+    const BASE: &str = "/counterexample";
+    let Value::Object(members) = entry else {
+        return Err(wrong_kind(String::new()));
+    };
+    if let Some(extra) = first_undefined(members, &["backend", "counterexample", "request_index"]) {
+        return Err(unknown_member(child("", extra)));
+    }
+    let Some(counterexample) = members.get("counterexample") else {
+        return Err(PluginResultRefusal::MissingCounterexample {
+            pointer: BASE.to_owned(),
+            cause: crate::proof_result::plugin::ValueFault::MissingMember,
+        });
+    };
+    let Some(model) = model else {
+        return Err(PluginResultRefusal::MissingCounterexample {
+            pointer: child(BASE, "type"),
+            cause: crate::proof_result::plugin::ValueFault::InvalidValue,
+        });
+    };
+    let pointer = BASE.to_owned();
+    let fields = object(counterexample, &["kind", "trace", "type"], &pointer)?;
+    let type_value = member(fields, "type", &pointer)?;
+    match type_value.as_str() {
+        Some("hybrid-counterexample") => {}
+        Some(_) => {
+            return Err(PluginResultRefusal::MissingCounterexample {
+                pointer: child(BASE, "type"),
+                cause: crate::proof_result::plugin::ValueFault::InvalidValue,
+            });
+        }
+        None => {
+            return Err(PluginResultRefusal::MissingCounterexample {
+                pointer: child(BASE, "type"),
+                cause: crate::proof_result::plugin::ValueFault::WrongValueKind,
+            });
+        }
+    }
+    let kind_pointer = child(BASE, "kind");
+    let kind_value = member(fields, "kind", &pointer)?;
+    match kind_value.as_str() {
+        Some("formula") => {}
+        Some(_) => return Err(invalid(kind_pointer)),
+        None => return Err(wrong_kind(kind_pointer)),
+    }
+    let trace_pointer = child(BASE, "trace");
+    let trace = read_trace(model, member(fields, "trace", &pointer)?, &trace_pointer)?;
+    Ok(HybridCounterexample {
+        kind: HybridCounterexampleKind::Formula,
+        trace,
+    })
+}
 
 /// A plugin's `inconclusive` `cause` over an item whose claim is a hybrid
 /// claim over `model`, or over any other item when `model` is `None`

@@ -66,7 +66,8 @@ use crate::value::evaluate_protocol_slot;
 use steps::ProtocolExpansion;
 
 pub use access::{
-    AccessShape, AttemptInstance, InstanceAccess, WeakAccessShape, WeakAccesses, WeakAttempt,
+    AccessShape, AttemptInstance, InstanceAccess, WeakAccessFailure, WeakAccessShape, WeakAccesses,
+    WeakAttempt,
 };
 pub use fairness::{
     protocol_constraints, FairnessOrigin, ProtocolClass, ProtocolFairness, ProtocolFairnessError,
@@ -80,8 +81,8 @@ pub use identity::{
     RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
-    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryChoice, MemoryModel, MemoryStep,
-    MemoryStepId, Read, ReadChoice, Sc, ScComponent, SharedCell, Written,
+    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,
+    MemoryStep, MemoryStepId, Read, ReadChoice, Sc, ScComponent, SharedCell, Written,
 };
 use program::{Program, Rest};
 pub use ra::{CarriedView, Ra, RaComponent};
@@ -736,6 +737,7 @@ pub fn classify_accesses(
         &governing,
         model.initial().first(),
         &over,
+        access::ClassificationMode::Enabled,
     )
 }
 
@@ -749,9 +751,12 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     /// The model governing each `parallel`: its outermost `parallel`'s
     /// resolved model (FR-219, ADR-025 MM-3).
     governing: BTreeMap<qsl_semantics::check::ProtocolNodeId, qsl_foundation::MemoryModelName>,
-    /// EN-1's classification of the attempts of every weak `parallel`
-    /// (FR-220).
-    weak: WeakAccesses,
+    /// EN-1's initial enabled-footprint classification of the attempts of
+    /// every weak `parallel` (FR-220).
+    initial_enabled: WeakAccesses,
+    /// EN-1's potential footprints, used to reserve memory backing for
+    /// operations that may become enabled (ADR-025 MA-1).
+    potential: WeakAccesses,
     /// The `over` parameter's bound value.
     over: Value,
     /// Each static role's binding: role name, then model identity.
@@ -843,19 +848,16 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         {
             return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
         }
-        if let Some(node) = selection::weak_join(protocol, &governing) {
-            let site = protocol
-                .controls
-                .controls
-                .iter()
-                .find(|control| control.node == node)
-                .map(|control| control.path.join("/"))
-                .ok_or_else(|| ProtocolRefusal::fault("a-parallel-is-a-control"))?;
-            return Err(ProtocolRefusal::WeakAccessShape(Box::new(
-                WeakAccessShape::join_policy(site),
-            )));
-        }
         let program = Program::new(protocol)?;
+        let enabled = access::classify(
+            &model,
+            protocol,
+            &program,
+            &governing,
+            model.initial().first(),
+            &over,
+            access::ClassificationMode::Enabled,
+        )?;
         let weak = access::classify(
             &model,
             protocol,
@@ -863,10 +865,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &governing,
             model.initial().first(),
             &over,
+            access::ClassificationMode::Potential,
         )?;
-        if let Some(shape) = weak.first_shape() {
-            return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
-        }
         let mut system = Self {
             model,
             package,
@@ -874,7 +874,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             program,
             memory,
             governing,
-            weak,
+            potential: weak,
+            initial_enabled: enabled,
             over,
             roles,
             universes: Vec::new(),
@@ -966,9 +967,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
 
     /// FR-212 (ADR-027 PA-3, QSpec FR-430): the fairness set of an
     /// infinite-trace clause whose authored constraints are `authored`
-    /// over this subject: the authored members and, unless the protocol
-    /// declares `scheduling adversarial`, its scheduler constraints, in
-    /// ascending JCS bytes.
+    /// over this subject: the authored members, unless the protocol
+    /// declares `scheduling adversarial` its scheduler constraints, and the
+    /// `memory` constraints of its memory model (FR-228), in ascending JCS
+    /// bytes.
     ///
     /// # Errors
     ///
@@ -978,11 +980,19 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self,
         authored: &[quire_semantic_value::fairness::FairnessConstraint],
     ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
-        fairness::fairness_set(self.protocol, authored, |constraint| {
-            let operation = constraint.operation();
-            self.model
-                .operation_text(operation.declaring_type(), operation.name())
-        })
+        let memory = self
+            .memory
+            .fairness(&fairness::memory_branches(self.protocol, &self.governing));
+        fairness::fairness_set(
+            self.protocol,
+            authored,
+            |constraint| {
+                let operation = constraint.operation();
+                self.model
+                    .operation_text(operation.declaring_type(), operation.name())
+            },
+            memory,
+        )
     }
 
     /// The memory model it runs under.
@@ -990,10 +1000,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self.memory
     }
 
-    /// EN-1's sharing and classification of the attempts of every weak
-    /// `parallel` (FR-220).
+    /// Initial-observation EN-1 access snapshot, retained for inspection.
+    /// Runtime expansion derives a fresh classification for each reachable
+    /// protocol state and thread observation (FR-220, ADR-025 MA-1).
     pub fn weak_accesses(&self) -> &WeakAccesses {
-        &self.weak
+        &self.initial_enabled
     }
 
     /// The live threads of `state`, by instance and path.

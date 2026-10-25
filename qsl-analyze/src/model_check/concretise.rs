@@ -196,7 +196,10 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
             self.digest = self.system.state_key(target)?.1;
             self.concrete = target.clone();
             self.steps.push(ModelStep {
-                transition: transition.clone(),
+                transition: self
+                    .system
+                    .reported(transition.clone(), target)
+                    .map_err(LiftStop::Expansion)?,
                 post_state: self.digest,
             });
             return Ok(());

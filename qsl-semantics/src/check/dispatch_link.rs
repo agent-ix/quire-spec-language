@@ -119,6 +119,9 @@ fn unresolved_call(refusal: &CheckRefusal) -> Option<(&str, EffectiveId)> {
     match &refusal.cause {
         CheckCause::StateModel(model) => match (&model.cause, model.receiver) {
             (CheckCause::MissingName(name), Some(receiver)) => Some((name, receiver)),
+            (CheckCause::MissingQualifiedName(name), Some(receiver)) => {
+                Some((name.name.as_str(), receiver))
+            }
             _ => None,
         },
         _ => None,
@@ -546,7 +549,7 @@ fn receiver_as_parameter(expression: &Expression) -> Option<Expression> {
     expression
         .respelled(|_, node| {
             if matches!(node, ExprNode::SelfRef) {
-                *node = ExprNode::Name("self".to_owned());
+                *node = ExprNode::Name("self".into());
             }
         })
         .ok()

@@ -30,7 +30,7 @@ use crate::model::domain_package::{
 };
 use crate::model::normalize::EffectiveView;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
-use qsl_forms::DeclaredClauseKind;
+use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
@@ -550,22 +550,14 @@ impl AdmittedModel {
     /// `Owner::operation`, or `M::Owner::operation` name can denote. The
     /// returned declaration identities distinguish a resolved operation
     /// from merely retaining its source spelling.
-    pub(crate) fn tick_operation_keys(&self, written: &str) -> Vec<&DeclarationKey> {
-        let (owner, operation) = match written.rsplit_once("::") {
-            Some((owner, operation)) => {
-                let owner = match owner.split_once("::") {
-                    Some((qualifier, owner))
-                        if self.alias() == Some(qualifier)
-                            && !super::is_qualified_spelling(owner) =>
-                    {
-                        owner
-                    }
-                    Some(_) => return Vec::new(),
-                    None => owner,
-                };
-                (Some(owner), operation)
+    pub(crate) fn tick_operation_keys(&self, written: &NameForm) -> Vec<&DeclarationKey> {
+        let (owner, operation) = match written.segments.as_slice() {
+            [operation] => (None, operation.as_str()),
+            [owner, operation] => (Some(owner.as_str()), operation.as_str()),
+            [qualifier, owner, operation] if self.alias() == Some(qualifier.as_str()) => {
+                (Some(owner.as_str()), operation.as_str())
             }
-            None => (None, written),
+            _ => return Vec::new(),
         };
         let owners: Vec<&DeclarationKey> = owner
             .into_iter()
@@ -624,6 +616,32 @@ impl AdmittedModel {
                 )
             })
             .map(|(id, key)| (key, *id))
+    }
+
+    /// Every semantic object-type model node in this selected package, in
+    /// declaration-key order. FR-230 resolves a time-source alias only when
+    /// this package names exactly one such node.
+    pub(crate) fn object_type_model_node_keys(
+        &self,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Vec<NodeKey> {
+        self.object_types()
+            .filter_map(|(declaration, _)| self.model_node_key(declaration, identity))
+            .collect()
+    }
+
+    /// The declaring object type's effective identity and operation name for
+    /// one admitted FCD operation member.
+    pub(crate) fn operation_anchor_declaration(
+        &self,
+        key: &DeclarationKey,
+    ) -> Option<(EffectiveId, String)> {
+        let Some(DomainPackageRecord::OperationMember(operation)) = self.records.get(key) else {
+            return None;
+        };
+        let declaring = self.effective_id(&operation.owner)?;
+        let name = crate::model::intake::member_identity_name(&operation.owner.node, &key.node)?;
+        Some((declaring, name.to_owned()))
     }
 
     /// Every operation owner of this package that `M::T::op` can name: an

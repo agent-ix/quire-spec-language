@@ -287,10 +287,8 @@ pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, F
 
 /// A `QualifiedName` node as a name form.
 pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsRefusal> {
-    Ok(NameForm {
-        name: spelled(cst, node)?,
-        span: node.span(),
-    })
+    let name = spelled(cst, node)?;
+    Ok(NameForm::new(name, node.span()))
 }
 
 /// `dimension Name;` and `dimension Name = T * U^-2 / V;` (FR-091
@@ -575,12 +573,18 @@ fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNod
 fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal> {
     let span = node.span();
     if node.production() == Production::QualifiedName {
-        return Ok(TypeForm::name(spelled(cst, node)?, span));
+        return Ok(TypeForm::new(
+            TypeFormHead::Name(name_form(cst, node)?),
+            span,
+        ));
     }
     let items = items(cst, node);
     let head = match items.first() {
         Some(Item::Node(name)) if name.production() == Production::QualifiedName => {
-            return Ok(TypeForm::name(spelled(cst, name)?, span));
+            return Ok(TypeForm::new(
+                TypeFormHead::Name(name_form(cst, name)?),
+                span,
+            ));
         }
         Some(Item::Token(token)) => token.spelling(),
         Some(Item::Node(_)) | None => return Err(unexpected(node)),
@@ -644,7 +648,7 @@ enum Shape {
     Rational(Integer, Integer),
     Quantity(QuantityForm),
     String(String),
-    Name(String),
+    Name(NameForm),
     Let(String),
     If,
     Case(Vec<ArmSyntax>, Span),
@@ -656,9 +660,9 @@ enum Shape {
     Value,
     Deref,
     Pre,
-    Call(String),
+    Call(NameForm),
     /// Field names in source order, each with whether its value is `null`.
-    Record(String, Vec<(String, bool)>),
+    Record(NameForm, Vec<(String, bool)>),
     Collection(CollectionKind),
     Convert(TypeForm),
     AllInstances(TypeForm),
@@ -1621,7 +1625,11 @@ impl<'c> Mapping<'c> {
                 }
                 TokenKind::Identifier => {
                     // `name(arguments)`: a call of an unqualified name.
-                    self.with_children(Shape::Call(text(token, node)?), &task, operands)
+                    self.with_children(
+                        Shape::Call(NameForm::new(text(token, node)?, token.span())),
+                        &task,
+                        operands,
+                    )
                 }
                 TokenKind::Grammar
                 | TokenKind::HexPrefix
@@ -1732,7 +1740,7 @@ impl<'c> Mapping<'c> {
         let items = items(self.cst, child);
         match child.production() {
             Production::QualifiedName | Production::EnumValue => {
-                let name = spelled(self.cst, child)?;
+                let name = name_form(self.cst, child)?;
                 self.leaf(Shape::Name(name), &task)
             }
             Production::ExactNumber => {
@@ -1767,7 +1775,7 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Collection(kind), &task, elements)
             }
             Production::RecordValue => {
-                let name = spelled(self.cst, only(&items, Production::QualifiedName, child)?)?;
+                let name = name_form(self.cst, only(&items, Production::QualifiedName, child)?)?;
                 let mut fields = Vec::new();
                 let mut values = Vec::new();
                 for field in nodes_of(&items, Production::FieldValue) {
@@ -1786,7 +1794,7 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Record(name, fields), &task, values)
             }
             Production::TupleValue => {
-                let name = spelled(self.cst, only(&items, Production::QualifiedName, child)?)?;
+                let name = name_form(self.cst, only(&items, Production::QualifiedName, child)?)?;
                 let arguments = nodes_of(&items, Production::Expression);
                 self.with_children(Shape::Call(name), &task, arguments)
             }
