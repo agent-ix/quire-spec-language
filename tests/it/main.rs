@@ -75,6 +75,7 @@ mod fairness_item_path;
 mod handoff_writer;
 mod hybrid_request_items;
 mod layer_crate_reexports;
+mod limit_name_patterns;
 mod linking;
 mod located_json;
 mod mapped;
