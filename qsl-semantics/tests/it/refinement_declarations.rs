@@ -887,6 +887,207 @@ fn a_field_row_is_typed_against_the_abstract_field_after_reference_lifting() {
     assert_eq!(slot.at, "self.next");
 }
 
+const NESTED_SPEC: &str = "example/nested-spec";
+const NESTED_IMPL: &str = "example/nested-impl";
+
+/// `field` with the multiplicity `lower..upper` and the presence `presence`.
+fn shaped(mut value: Value, (lower, upper, ordered): (u32, u32, bool), presence: &str) -> Value {
+    value["multiplicity"] = json!({
+        "lower": lower, "upper": upper, "ordered": ordered, "unique": !ordered,
+    });
+    value["presence"] = json!(presence);
+    value
+}
+
+/// An abstract `Queue { size, head, chain, link, cells }` over `Cell {
+/// value }`, whose `head` is a `Reference<Queue>`, `chain` a
+/// `Sequence<Reference<Queue>>[0, 2]`, `link` an `Option<Reference<Queue>>`
+/// and `cells` a `Set<Reference<Cell>>[0, 2]`, and a concrete `Ring { size,
+/// chain, link }` over `Slot { value }`, whose `chain` is a
+/// `Sequence<Reference<Ring>>[0, 2]` and `link` an `Option<Reference<Ring>>`.
+fn nested_models() -> (Vec<u8>, Vec<u8>) {
+    /// The record value type `Box { target }`, holding a `Reference<object>`.
+    fn boxed(package: &str, object: &str) -> Value {
+        declaration(
+            package,
+            "Box",
+            "record_value_type",
+            json!({"fields": [field(package, "Box", "target", &node(package, object))]}),
+        )
+    }
+
+    let (queue, cell) = (node(NESTED_SPEC, "Queue"), node(NESTED_SPEC, "Cell"));
+    let single = (1, 1, false);
+    let spec = document_with(
+        NESTED_SPEC,
+        vec![construct(
+            NESTED_SPEC,
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+        )],
+        vec![
+            boxed(NESTED_SPEC, "Queue"),
+            object_type(
+                NESTED_SPEC,
+                "Queue",
+                &[
+                    ("size", INTEGER),
+                    ("head", &queue),
+                    ("chain", &queue),
+                    ("link", &queue),
+                    ("cells", &cell),
+                    ("box", &node(NESTED_SPEC, "Box")),
+                ],
+                Vec::new(),
+            ),
+            object_type(NESTED_SPEC, "Cell", &[("value", INTEGER)], Vec::new()),
+        ],
+        vec![
+            population(NESTED_SPEC, "queues", "Queue"),
+            population(NESTED_SPEC, "cells", "Cell"),
+        ],
+    );
+    let mut spec: Value = serde_json::from_slice(&spec).expect("a document");
+    for declared in spec["types"].as_array_mut().expect("types") {
+        if let Some(fields) = declared["fields"].as_array_mut() {
+            for member in fields {
+                let shape = match member["name"].as_str() {
+                    Some("chain") => ((0, 2, true), "required"),
+                    Some("link") => (single, "optional"),
+                    Some("cells") => ((0, 2, false), "required"),
+                    _ => continue,
+                };
+                *member = shaped(member.clone(), shape.0, shape.1);
+            }
+        }
+    }
+    let ring = node(NESTED_IMPL, "Ring");
+    let concrete = document_with(
+        NESTED_IMPL,
+        vec![construct(
+            NESTED_IMPL,
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+        )],
+        vec![
+            boxed(NESTED_IMPL, "Ring"),
+            object_type(
+                NESTED_IMPL,
+                "Ring",
+                &[
+                    ("size", INTEGER),
+                    ("chain", &ring),
+                    ("link", &ring),
+                    ("box", &node(NESTED_IMPL, "Box")),
+                ],
+                Vec::new(),
+            ),
+            object_type(NESTED_IMPL, "Slot", &[("value", INTEGER)], Vec::new()),
+        ],
+        vec![
+            population(NESTED_IMPL, "rings", "Ring"),
+            population(NESTED_IMPL, "slots", "Slot"),
+        ],
+    );
+    let mut concrete: Value = serde_json::from_slice(&concrete).expect("a document");
+    for declared in concrete["types"].as_array_mut().expect("types") {
+        if let Some(fields) = declared["fields"].as_array_mut() {
+            for member in fields {
+                match member["name"].as_str() {
+                    Some("chain") => *member = shaped(member.clone(), (0, 2, true), "required"),
+                    Some("link") => *member = shaped(member.clone(), single, "optional"),
+                    _ => {}
+                }
+            }
+        }
+    }
+    (
+        spec.to_string().into_bytes(),
+        concrete.to_string().into_bytes(),
+    )
+}
+
+/// A refinement of the nested models whose `Queue` object row holds `rows`.
+fn nested_refinement(rows: &str) -> String {
+    format!(
+        "refinement NestedRows using inf abstract Q concrete R {{\n\
+         population Q::queues from R::rings;\n\
+         population Q::cells from R::slots;\n\
+         object Q::Queue from R::Ring {{ size = self.size; {rows} }}\n\
+         object Q::Cell from R::Slot {{ value = self.value; }}\n\
+         }}"
+    )
+}
+
+/// FR-135-AC-6 (TC-540 step 6): a `Sequence<Reference<Queue>>[0, 2]` field
+/// mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses
+/// `unsupported_construct`/`not-yet-implemented` naming `nested-reference-row`
+/// at the row's expression, and so do an option, a record, a tuple and a
+/// union holding a reference, before any check of the row's type; a
+/// population-reference row `cells = R::slots` checks, as does the same field
+/// as a plain `Reference<Queue>` mapped by `self`.
+#[trace("TC-540", "FR-135-AC-6")]
+#[test]
+fn a_row_nesting_a_reference_other_than_a_whole_population_is_unsupported() {
+    let (spec, concrete) = nested_models();
+    let models = [
+        ("Q", NESTED_SPEC, &spec[..]),
+        ("R", NESTED_IMPL, &concrete[..]),
+    ];
+
+    let graph = check_with(
+        "",
+        &models,
+        &nested_refinement("head = self; cells = R::slots;"),
+    )
+    .unwrap_or_else(|refusals| {
+        panic!(
+            "{:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(only_refinement(&graph).objects().len(), 2);
+
+    for (declarations, row, at) in [
+        ("", "chain = self.chain;", "self.chain"),
+        ("", "link = self.link;", "self.link"),
+        ("", "box = self.box;", "self.box"),
+        (
+            "tuple Pair(Reference<R::Ring>, Boolean);",
+            "box = Pair(self, true);",
+            "Pair(self, true)",
+        ),
+        (
+            "union Holder { Empty, Has(Reference<R::Ring>) }",
+            "box = Holder::Has(self);",
+            "Holder::Has(self)",
+        ),
+    ] {
+        let found = refused(
+            &models,
+            &format!("{declarations}\n{}", nested_refinement(row)),
+        );
+        let nested = only(&found);
+        assert_eq!(
+            nested.code_and_cause(),
+            (Code::UnsupportedConstruct, Some("not-yet-implemented")),
+            "{row}"
+        );
+        assert_eq!(nested.at, at);
+        let RefinementCause::Unsupported {
+            feature,
+            profile,
+            subject,
+        } = nested.refinement()
+        else {
+            panic!("an unsupported feature: {:?}", nested.refinement());
+        };
+        assert_eq!(feature.name(), "nested-reference-row");
+        assert_eq!(profile, "quire.temporal.infinite-trace/v1");
+        assert_eq!(subject, &None);
+    }
+}
+
 /// FR-135-AC-4 (TC-540 step 4): with the `value` row removed, the refinement
 /// checks with `value` hidden. The node-identity half needs S4 emission and
 /// is not tested.
@@ -1134,10 +1335,10 @@ fn an_abstract_application_checks_its_arguments_and_result() {
 }
 
 fn constraints(refinement: &CheckedRefinement, concrete: bool) -> Vec<String> {
-    let set = if concrete {
-        refinement.concrete_fairness()
+    let set: Vec<_> = if concrete {
+        refinement.concrete_operation_fairness().collect()
     } else {
-        refinement.abstract_fairness()
+        refinement.abstract_operation_fairness().collect()
     };
     set.iter()
         .map(|constraint| {
@@ -1424,8 +1625,7 @@ fn a_strong_row_checks_as_strong() {
     let refinement = only_refinement(&graph);
     assert_eq!(constraints(refinement, false), ["Strong Each inc"]);
     let retry = refinement
-        .concrete_fairness()
-        .iter()
+        .concrete_operation_fairness()
         .find(|constraint| constraint.operation().name() == "retryA")
         .expect("retryA is assumed");
     assert_eq!(retry.kind(), FairnessKind::Strong);
@@ -1822,4 +2022,72 @@ fn reordering_step_rows_does_not_change_the_row_a_reference_names() {
     let mut positions: Vec<_> = before.values().map(|reference| reference.index()).collect();
     positions.sort_unstable();
     assert_eq!(positions, (0..7).collect::<Vec<_>>());
+}
+
+/// The step rows of `graph` in the order their `StepRowRef`s give, each as
+/// its concrete operation and what it maps to.
+fn rows_in_reference_order(graph: &CheckedGraph) -> Vec<(DeclarationKey, String)> {
+    let refinement = only_refinement(graph);
+    let refs = step_row_refs(refinement, operation_key).expect("the rows fit");
+    let mut ordered: Vec<_> = refinement
+        .steps()
+        .iter()
+        .zip(refs)
+        .map(|(row, reference)| {
+            let StepClass::Operation(operation) = &row.class else {
+                panic!("an operation row: {:?}", row.class);
+            };
+            let target = match &row.target {
+                StepTarget::Abstract { operation, .. } => operation.node.clone(),
+                StepTarget::Stutter => "stutter".to_owned(),
+                other => panic!("an abstract operation or stutter: {other:?}"),
+            };
+            (reference.index(), (operation.clone(), target))
+        })
+        .collect();
+    ordered.sort_by_key(|(index, _)| *index);
+    ordered.into_iter().map(|(_, row)| row).collect()
+}
+
+/// FR-136 "Order of the checked rows" (TC-541): `CasRefinesCounter` checked
+/// with its seven `step` rows in source order and in the exact reverse gives
+/// each row the same `StepRowRef`, and the rows in `StepRowRef` order are
+/// equal and ascend by the node-key digest of the concrete operation. The
+/// emitted `steps` array needs the refinement's S4 emission, which is not
+/// built, so it is not tested.
+#[trace("TC-541")]
+#[test]
+fn the_full_reverse_of_the_step_rows_gives_the_same_references_in_digest_order() {
+    let base = cas_refines_counter();
+    let mut lines: Vec<&str> = base.split('\n').collect();
+    let steps: Vec<usize> = (0..lines.len())
+        .filter(|index| lines[*index].starts_with("step "))
+        .collect();
+    assert_eq!(steps.len(), 7);
+    let forward: Vec<&str> = steps.iter().map(|index| lines[*index]).collect();
+    for (index, line) in steps.iter().zip(forward.iter().rev()) {
+        lines[*index] = line;
+    }
+    let reversed = lines.join("\n");
+    assert_ne!(base, reversed);
+
+    let source = checked_counter(&base);
+    let backward = checked_counter(&reversed);
+    assert_eq!(
+        row_refs_by_operation(&source),
+        row_refs_by_operation(&backward)
+    );
+    let ordered = rows_in_reference_order(&source);
+    assert_eq!(ordered, rows_in_reference_order(&backward));
+    let digests: Vec<_> = ordered
+        .iter()
+        .map(|(operation, _)| operation_key(operation))
+        .collect();
+    assert!(
+        digests
+            .windows(2)
+            .all(|pair| pair[0].as_bytes() < pair[1].as_bytes()),
+        "{ordered:?}"
+    );
+    assert_eq!(ordered.len(), 7);
 }

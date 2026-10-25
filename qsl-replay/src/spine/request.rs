@@ -15,7 +15,7 @@ use serde_json::value::RawValue;
 
 use super::{
     ClauseArgument, ClauseArgumentValue, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
-    DependencyInput, OperationName, SpineLimits,
+    DependencyInput, OperationName, OverObject, SpineLimits, TraceInput,
 };
 
 /// A selected observation whose bytes and document identity were admitted by
@@ -170,6 +170,57 @@ pub struct FunctionSelectionWire {
     pub snapshot: String,
 }
 
+/// One temporal trace shape in an FR-312 request.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalTraceWire {
+    /// Finite observations in position order.
+    pub finite: Option<Vec<String>>,
+    /// A lasso's finite prefix and repeating loop.
+    pub lasso: Option<TemporalLassoWire>,
+}
+
+/// The prefix and loop of a temporal lasso.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalLassoWire {
+    /// Positions before the loop.
+    pub prefix: Vec<String>,
+    /// Repeating positions.
+    #[serde(rename = "loop")]
+    pub repeat: Vec<String>,
+}
+
+/// The temporal member of an FR-312 request.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalSelectionWire {
+    /// The declared temporal clause name.
+    pub name: String,
+    /// The supplied trace.
+    pub trace: TemporalTraceWire,
+    /// The object binding for the clause's `over` parameter.
+    pub over: TemporalOverWire,
+}
+
+/// A temporal clause's object binding.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalOverWire {
+    /// The object reference.
+    pub reference: TemporalObjectWire,
+}
+
+/// A temporal clause's population and object key.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalObjectWire {
+    /// The population declaration identity.
+    pub population: String,
+    /// The object's key.
+    pub key: String,
+}
+
 /// FR-312's closed clause-run selection: exactly one of its members.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -183,6 +234,9 @@ pub struct ClauseRunSelectionWire {
     /// A function run as a claim.
     #[serde(default, deserialize_with = "from_object_opt")]
     pub function: Option<FunctionSelectionWire>,
+    /// A temporal clause over an observed trace.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub temporal: Option<TemporalSelectionWire>,
 }
 
 fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
@@ -197,10 +251,11 @@ impl ClauseRunSelectionWire {
         let count = usize::from(self.clause.is_some())
             + usize::from(self.frame.is_some())
             + usize::from(self.function.is_some());
+        let count = count + usize::from(self.temporal.is_some());
         if count != 1 {
             return Err(invalid(
                 "selection",
-                "select exactly one clause, frame or function",
+                "select exactly one clause, frame, function or temporal clause",
             ));
         }
         if let Some(clause) = &self.clause {
@@ -229,6 +284,27 @@ impl ClauseRunSelectionWire {
             return Ok(ClauseSelectionPartsKind::Frame {
                 operation: frame.operation.clone(),
                 invocation: frame.invocation.clone(),
+            });
+        }
+        if let Some(temporal) = &self.temporal {
+            let trace = match (
+                temporal.trace.finite.as_ref(),
+                temporal.trace.lasso.as_ref(),
+            ) {
+                (Some(keys), None) => TemporalTraceParts::Finite(keys.clone()),
+                (None, Some(lasso)) => TemporalTraceParts::Lasso {
+                    prefix: lasso.prefix.clone(),
+                    repeat: lasso.repeat.clone(),
+                },
+                _ => return Err(invalid("trace", "select exactly one finite or lasso trace")),
+            };
+            return Ok(ClauseSelectionPartsKind::Temporal {
+                name: temporal.name.clone(),
+                trace,
+                over: (
+                    temporal.over.reference.population.clone(),
+                    temporal.over.reference.key.clone(),
+                ),
             });
         }
         let function = self.function.as_ref().expect("exactly one variant");
@@ -318,6 +394,26 @@ pub enum ClauseSelectionPartsKind {
         arguments: Vec<(String, Box<RawValue>)>,
         /// Key of the current snapshot.
         snapshot: String,
+    },
+    /// A temporal clause over a supplied trace.
+    Temporal {
+        /// Clause name.
+        name: String,
+        /// Trace shape and its observation keys.
+        trace: TemporalTraceParts,
+        /// Population and object key for the clause's `over` binding.
+        over: (String, String),
+    },
+}
+
+/// An FR-312 finite or lasso trace before observation lookup.
+pub enum TemporalTraceParts {
+    /// Finite observations in position order.
+    Finite(Vec<String>),
+    /// Prefix and repeating loop.
+    Lasso {
+        prefix: Vec<String>,
+        repeat: Vec<String>,
     },
 }
 
@@ -678,6 +774,45 @@ fn selection(
                 snapshot: document.reference.clone(),
             })
         }
+        ClauseSelectionPartsKind::Temporal { name, trace, over } => {
+            let document = |key: &str| -> Result<DocumentRef, ClauseRequestReadError> {
+                let observation = named(observations, key)?;
+                if observation.format != "quire.state.snapshot/v1"
+                    || observation.role.as_deref() != Some("current")
+                {
+                    return Err(invalid(
+                        "trace",
+                        "temporal trace requires current snapshots",
+                    ));
+                }
+                Ok(observation.reference.clone())
+            };
+            let trace = match trace {
+                TemporalTraceParts::Finite(keys) => TraceInput::Finite(
+                    keys.iter()
+                        .map(|key| document(key))
+                        .collect::<Result<_, _>>()?,
+                ),
+                TemporalTraceParts::Lasso { prefix, repeat } => TraceInput::Lasso {
+                    prefix: prefix
+                        .iter()
+                        .map(|key| document(key))
+                        .collect::<Result<_, _>>()?,
+                    repeat: repeat
+                        .iter()
+                        .map(|key| document(key))
+                        .collect::<Result<_, _>>()?,
+                },
+            };
+            Ok(ClauseRunSelection::Temporal {
+                name,
+                trace,
+                over: OverObject {
+                    population: over.0,
+                    key: over.1,
+                },
+            })
+        }
     }
 }
 
@@ -730,13 +865,46 @@ pub fn read_clause_run_request(
 mod tests {
     use super::snapshot_value;
     use super::{
-        selection, ClauseRunSelection, ClauseSelectionParts, ClauseSelectionPartsKind,
-        SuppliedObservation,
+        selection, ClauseRunSelection, ClauseRunSelectionWire, ClauseSelectionParts,
+        ClauseSelectionPartsKind, SuppliedObservation, TemporalTraceParts,
     };
     use qsl_semantics::model::observation::{ClauseSelectionInput, DocumentRef, SelectedObject};
     use qsl_semantics::model::observation::{NativeKind, RawForm, RawNativeKind};
     use quire_exact::CollectionKind;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn temporal_wire_selection_reads_finite_and_lasso_key_order() {
+        let finite: ClauseRunSelectionWire = serde_json::from_str(
+            r#"{"temporal":{"name":"Reaches","trace":{"finite":["s0","s1"]},"over":{"reference":{"population":"P","key":"c1"}}}}"#,
+        )
+        .unwrap();
+        let ClauseSelectionPartsKind::Temporal {
+            name,
+            trace: TemporalTraceParts::Finite(keys),
+            over,
+        } = finite.into_parts().unwrap()
+        else {
+            panic!("expected finite temporal selection");
+        };
+        assert_eq!(name, "Reaches");
+        assert_eq!(keys, ["s0", "s1"]);
+        assert_eq!(over, ("P".to_owned(), "c1".to_owned()));
+
+        let lasso: ClauseRunSelectionWire = serde_json::from_str(
+            r#"{"temporal":{"name":"Reaches","trace":{"lasso":{"prefix":["s0"],"loop":["s1","s2"]}},"over":{"reference":{"population":"P","key":"c1"}}}}"#,
+        )
+        .unwrap();
+        let ClauseSelectionPartsKind::Temporal {
+            trace: TemporalTraceParts::Lasso { prefix, repeat },
+            ..
+        } = lasso.into_parts().unwrap()
+        else {
+            panic!("expected lasso temporal selection");
+        };
+        assert_eq!(prefix, ["s0"]);
+        assert_eq!(repeat, ["s1", "s2"]);
+    }
 
     #[test]
     fn parameter_value_reader_uses_heap_stack_past_128_levels() {
