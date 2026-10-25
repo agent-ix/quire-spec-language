@@ -104,3 +104,26 @@ The PR body's "Mutation-checked (order-dependent hash ...)" was a lucky run.
 | --- | --- | --- | --- |
 | FND-001 | medium | The equal-hash assertion does not reliably kill an order-dependent proof-bound hash. The facade test builds two subjects with two proof bounds each; `HashSet` iteration order depends on each set's own random `RandomState`, not on the listing order, so with two members both sets iterate alike in roughly half the runs. Reviewer mutation M1 (hash `len` then each bound in iteration order, dropping the fold) passed the test in 25 of 40 runs. Listing the bounds "in reverse order" is therefore not what the test exercises, and the equal-hash clause of FR-336-AC-6 is evidenced only probabilistically. Fix: make the check deterministic, for example use 6 to 8 proof bounds (so a same-order coincidence is below 1 in 720) and also rebuild the reversed identity in a loop (say 32 times) asserting every hash equal, or assert hash equality between identities whose sets were built by inserting into a `HashSet` with differing capacities. Re-run M1 many times to confirm it is killed every run. | qsl-analyze/tests/it/universe_obligation.rs:251,254,267; qsl-replay/src/model_check/subject_identity.rs:100-119 |
 | FND-002 | low | The proof-bound fold pre-hashes each member with a fixed-key `DefaultHasher::new()` before feeding the 64-bit sum to the caller's hasher, so for that component the outer hasher's random keys no longer protect against constructed collisions: two different proof-bound sets with equal digest sums collide in every `HashMap<SubjectIdentity, _>`, whatever its `RandomState`. Not a correctness issue (Hash still agrees with Eq) and only relevant if proof bounds come from untrusted input and identities key a hash map (FR-315's `HyperProductIdentity` is the expected consumer). Fix, if wanted: derive `Ord` on `FiniteBound` (and `IntegerInterval` if needed) and `ProofBound` (`DomainKey` and `DomainKind` already derive it) and store `BTreeSet<ProofBound>`, which makes the derived `Hash` correct and removes the hand-written impl; or note the trade-off in the comment. | qsl-replay/src/model_check/subject_identity.rs:105-118 |
+
+## New findings (disposition pass 1)
+
+Found reviewing follow-up PR #1498 (head 812890fe3, fix commit b5171a0b5).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The new hand-written `bound_key` projection (`ProofBound` to `(DomainKey, Option<DomainKind>, Bound)`) is correct by reading: each `FiniteBound` arm maps injectively (`IntegerInterval` is exactly `lower`/`upper`, `NonZeroU64` to `u64` is lossless, and `Cardinality`/`Depth` are separate `Bound` variants), and the `match` is exhaustive so a new variant is a compile error. But only the `Cardinality` arm is exercised: every proof bound in `universe_obligation.rs` is `FiniteBound::Cardinality`. A lossy edit to the `IntegerRange`, `Depth` or `Variants` arm (for example keying `IntegerRange` on `lower` twice, or mapping `Depth` to `Bound::Cardinality`) would make two subjects with different proof bounds share one identity, against FR-336-AC-5, with no test failing. Not mutation-run by the reviewer (shell unavailable during this pass); judged by reading the test file. Fix: in the AC-5 test, add `assert_ne!` pairs for two `IntegerRange` bounds differing only in `upper`, and for a `Depth` versus a `Cardinality` bound with the same maximum. | qsl-replay/src/model_check/subject_identity.rs:52-62; qsl-analyze/tests/it/universe_obligation.rs:219-229 |
+
+## Dispositions
+
+Round 1, against follow-up PR #1498 (branch
+qsl-1010-subject-identity-review-fixes, head 812890fe3, fix commit
+b5171a0b5). PR #1488 had already merged. At the head, the reviewer's own copy
+passed: `cargo test -p qsl-analyze --test it universe_obligation` 4 of 4,
+`cargo clippy -p qsl-replay -p qsl-analyze --all-targets -- -D warnings`
+clean, `cargo fmt --all --check` clean. `reviews/qsl-1010-pr1488-*.md` on
+the branch are byte-identical to the review-pass SR files.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The proof bounds are a `BTreeSet<BoundKey>`, so no `HashSet` iteration order or per-set seed remains, and the test checks 8 bounds over all 8 rotations and their reversals, each rebuilt identity equal with an equal hash. The original order-dependent-hash mutation no longer applies, because nothing is hashed in an unspecified order. |
+| FND-002 | fixed | The hand-written `Hash` and its fixed-key `DefaultHasher` fold are removed; `SubjectIdentity` derives `Hash` over B-tree fields, so the caller's hasher sees every member. `Ord` is on a private `Bound` mirror because `IntegerInterval` (quire-exact) has no `Ord`. |

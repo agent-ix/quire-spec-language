@@ -73,3 +73,13 @@ independence for the proof bounds is gated only by chance (FND-001).
   head (4 of 4 in `universe_obligation`).
 - Semantic review: run, limited to FR-336-AC-6 (requested in the brief).
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, against follow-up PR #1498 (branch
+qsl-1010-subject-identity-review-fixes, head 812890fe3, fix commit
+b5171a0b5). PR #1488 had already merged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `SubjectIdentity` now stores `BTreeSet<BoundKey>` (no `HashSet`, derived `Hash`), so the hash is order-independent by construction; the FR-336-AC-6 test checks 8 bounds over all 8 rotations and their reversals (16 orderings), each rebuilt identity equal with an equal hash. The equal-hash clause is now deterministically evidenced. |
