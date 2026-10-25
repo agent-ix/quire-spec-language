@@ -25,8 +25,8 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
     CertificateRequest, CounterexampleKind, DependencyInput, DigestDomain, DigestRecord,
-    DisagreementCause, Execution, IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
+    DisagreementCause, EnvelopeSource, Execution, IncompleteCause, InconclusiveCause,
+    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
     QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
     ResultLabel, RunStats, SettlementBasis, StateEnvironment, TemporalCounterexample,
@@ -171,6 +171,12 @@ fn witness_source() -> ReplaySource {
     )
 }
 
+fn envelope_witness_source() -> EnvelopeSource {
+    EnvelopeSource::Witness(
+        Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
+    )
+}
+
 fn selected() -> QualifiedName {
     QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
 }
@@ -269,7 +275,7 @@ pub(crate) fn envelope_at<T: SubjectTransition>(
             declared_domains: Some(Vec::new()),
             backend: Some("qsl-en-1".to_owned()),
             trace_position: Some(None),
-            source: Some(witness_source()),
+            source: Some(envelope_witness_source()),
             family_payload: Some(payload),
         },
         ReplayLimits::default(),

@@ -382,7 +382,13 @@ pub(super) fn packet<P: FamilyPayload>(
         declared_domains: Some(Vec::new()),
         backend: Some("kani-backend-1".to_owned()),
         trace_position: Some(None),
-        source: Some(source),
+        source: Some(match source {
+            ReplaySource::Witness(witness) => crate::EnvelopeSource::Witness(witness),
+            ReplaySource::Input(assignments) => crate::EnvelopeSource::Input(assignments),
+            ReplaySource::ObservedTemporal(_) => {
+                panic!("a counterexample envelope cannot recursively carry an observed source")
+            }
+        }),
         family_payload: Some(payload),
     }
 }
@@ -476,6 +482,7 @@ fn witness_arm(result: &FrameReplayResult) -> &crate::WitnessArmResult {
     match result.result() {
         ReplayResult::Witness(arm) => arm,
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
     }
 }
 
