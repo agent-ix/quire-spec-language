@@ -13,9 +13,10 @@
 use ix_trace_rs::trace;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    AbstractSide, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement, RefinementCause,
-    RefinementSupport, StepTarget,
+    AbstractSide, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement, RefinementCatalogNode,
+    RefinementCause, RefinementSupport, StepTarget,
 };
+use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -872,6 +873,28 @@ fn full() -> String {
     .to_owned()
 }
 
+fn impl_protocol() -> String {
+    "protocol Local using v over (i: Impl::Counter) on origin {\n\
+     role worker on Impl::Counter;\n\
+     run sequence Main { event E by worker as (e: Boolean) { true }; }\n\
+     finish Done as (d: Boolean) { true };\n\
+     }\n"
+    .to_owned()
+}
+
+fn impl_parallel_protocol() -> String {
+    "protocol ParallelLocal using v over (i: Impl::Counter) on origin {\n\
+     role worker on Impl::Counter;\n\
+     run sequence Main {\n\
+     parallel par memory tso {\n\
+     branch left sequence Left { } branch right sequence Right { }\n\
+     } join all [left, right];\n\
+     }\n\
+     finish Done as (d: Boolean) { true };\n\
+     }\n"
+    .to_owned()
+}
+
 /// FR-147-AC-8 (TC-552 step 8; the `timeout`, `cattempt`, `cend` and
 /// `activate` classes are `the_timeout_cattempt_cend_and_activate_classes_resolve`):
 /// each class spells and resolves over `Full` and makes exactly its own class
@@ -984,6 +1007,136 @@ fn the_timeout_cattempt_cend_and_activate_classes_resolve() {
         RefinementSupport::BUILD,
     );
     assert_eq!(only(&found).code_and_cause(), MISSING);
+}
+
+/// The class catalog is derived from the checked subjects, includes classes
+/// with no authored row, and retains their node, binder and source-memory
+/// facts in canonical alias-free order.
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn class_catalog_is_complete_and_independent_of_refinement_rows() {
+    let graph = checked(
+        &format!(
+            "{}{}{}{}",
+            full(),
+            impl_protocol(),
+            impl_parallel_protocol(),
+            refinement("Spec", "Full")
+        ),
+        None,
+    );
+    let catalog = the_refinement(&graph)
+        .class_catalog()
+        .expect("protocol subject contributes a class catalog");
+
+    let concrete: Vec<&str> = catalog
+        .concrete()
+        .iter()
+        .map(|class| class.class())
+        .collect();
+    let mut expected_concrete = vec![
+        "Counter::beginA",
+        "Counter::beginB",
+        "Counter::commitA",
+        "Counter::commitB",
+        "Counter::peek",
+        "Counter::retryA",
+        "Counter::retryB",
+        "Local::Done",
+        "Local::E",
+        "ParallelLocal::Done",
+        "fork ParallelLocal::par",
+        "join ParallelLocal::par",
+        "memory flush",
+    ];
+    expected_concrete.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    assert_eq!(concrete, expected_concrete);
+    assert!(catalog
+        .concrete()
+        .iter()
+        .take(7)
+        .all(|class| matches!(class.node(), Some(RefinementCatalogNode::Operation(_)))));
+    assert_eq!(the_refinement(&graph).steps().len(), 7);
+    assert_eq!(
+        catalog
+            .concrete()
+            .iter()
+            .filter(|class| class.class() == "memory flush")
+            .count(),
+        1
+    );
+    assert!(catalog
+        .concrete()
+        .iter()
+        .filter(|class| class.class().starts_with("Local::"))
+        .all(|class| matches!(
+            class.node(),
+            Some(RefinementCatalogNode::ProtocolNode { protocol, .. }) if protocol == "Local"
+        )));
+
+    let abstract_classes: Vec<&str> = catalog
+        .abstract_side()
+        .iter()
+        .map(|class| class.class())
+        .collect();
+    let mut expected = [
+        "Full::att",
+        "Full::ev",
+        "Full::fe",
+        "Full::Done",
+        "Full::rx",
+        "Full::tx",
+        "fork Full::par",
+        "join Full::par",
+        "duplicate Full::ch",
+        "lose Full::ch",
+        "spawn Full::pool",
+        "retire Full::pool",
+        "memory flush",
+    ];
+    expected.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    assert_eq!(abstract_classes, expected);
+
+    let fork = catalog
+        .abstract_side()
+        .iter()
+        .find(|class| class.class() == "fork Full::par")
+        .expect("fork class");
+    let join = catalog
+        .abstract_side()
+        .iter()
+        .find(|class| class.class() == "join Full::par")
+        .expect("join class");
+    assert_eq!(fork.node(), join.node());
+
+    let event = catalog
+        .abstract_side()
+        .iter()
+        .find(|class| class.class() == "Full::ev")
+        .expect("event class");
+    assert!(matches!(
+        event.node(),
+        Some(RefinementCatalogNode::ProtocolNode { protocol, .. }) if protocol == "Full"
+    ));
+    assert_eq!(event.binder_types(), [ValueType::Boolean]);
+
+    let memory = catalog
+        .abstract_side()
+        .iter()
+        .find(|class| class.class() == "memory flush")
+        .expect("memory class");
+    assert_eq!(
+        memory.memory_model(),
+        Some(qsl_foundation::MemoryModelName::Tso)
+    );
+    assert_eq!(memory.node(), None);
+    assert!(memory.binder_types().is_empty());
+
+    let model_only = checked(
+        &refinement("Spec", "Full").replace("abstract Spec::Full", "abstract Spec"),
+        None,
+    );
+    assert!(the_refinement(&model_only).class_catalog().is_none());
 }
 
 /// FR-135-AC-9 (TC-540): a non-empty resolved list refuses

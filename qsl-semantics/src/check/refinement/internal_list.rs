@@ -19,6 +19,7 @@ use serde_json::Value;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
+use super::catalog::{RefinementCatalogClass, RefinementCatalogNode};
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_slots::CheckedLifetime;
 
@@ -438,6 +439,7 @@ pub(crate) enum NodeClass {
 pub(crate) struct ProtocolClasses {
     pub(crate) protocol: String,
     nodes: BTreeMap<String, NodeClass>,
+    node_ids: BTreeMap<String, ProtocolNodeId>,
     /// The binder record of each node that has one (QSpec FR-432 "The
     /// binder record of an abstract node"): the field types in order.
     records: BTreeMap<String, Vec<ValueType>>,
@@ -447,6 +449,7 @@ pub(crate) struct ProtocolClasses {
     roles: BTreeMap<String, bool>,
     activates: bool,
     memory: BTreeSet<&'static str>,
+    memory_models: BTreeMap<&'static str, MemoryModelName>,
     /// The names of the protocol's own state: its binders, nodes and
     /// channels (queues), which no object row's field names.
     state_names: BTreeSet<String>,
@@ -505,7 +508,8 @@ impl ProtocolClasses {
             }
         }
         let mut nodes = BTreeMap::new();
-        for declaration in &form.declarations {
+        let mut node_ids = BTreeMap::new();
+        for (index, declaration) in form.declarations.iter().enumerate() {
             let class = match declaration.kind {
                 ProtocolNodeKind::Attempt
                 | ProtocolNodeKind::Effect
@@ -526,6 +530,9 @@ impl ProtocolClasses {
                 | ProtocolNodeKind::Check => continue,
             };
             nodes.entry(declaration.name.name.clone()).or_insert(class);
+            node_ids
+                .entry(declaration.name.name.clone())
+                .or_insert(ProtocolNodeId(index));
         }
         let channels = checked
             .channels
@@ -560,6 +567,12 @@ impl ProtocolClasses {
             .iter()
             .filter_map(|parallel| memory_step(parallel.memory))
             .collect();
+        let memory_models = checked
+            .memory
+            .parallels
+            .iter()
+            .filter_map(|parallel| memory_step(parallel.memory).map(|kind| (kind, parallel.memory)))
+            .collect();
         let state_names = form
             .binders
             .iter()
@@ -571,11 +584,13 @@ impl ProtocolClasses {
             protocol: form.name.name.clone(),
             state_names,
             nodes,
+            node_ids,
             records,
             channels,
             roles,
             activates: matches!(form.activation, ActivationForm::Each { .. }),
             memory,
+            memory_models,
         }
     }
 
@@ -587,6 +602,99 @@ impl ProtocolClasses {
     /// The field types of the binder record of the node `name`.
     pub(crate) fn record(&self, name: &str) -> Option<&[ValueType]> {
         self.records.get(name).map(Vec::as_slice)
+    }
+
+    /// The source classes represented by this checked protocol clause,
+    /// independent of any refinement step rows.
+    pub(crate) fn catalog_classes(
+        &self,
+    ) -> Result<Vec<RefinementCatalogClass>, quire_semantic_value::catalog::InternalFault> {
+        let mut classes = BTreeMap::new();
+        for (name, class_kind) in &self.nodes {
+            let Some(&node) = self.node_ids.get(name) else {
+                return Err(quire_semantic_value::catalog::InternalFault::new(
+                    "check.refinement-class-catalog",
+                    "checked-protocol-step-class-has-node-identity",
+                ));
+            };
+            let binder_types = self.records.get(name).cloned().unwrap_or_default();
+            let mut add_node = |spelling: String| {
+                classes.insert(
+                    spelling.clone(),
+                    RefinementCatalogClass::declared(
+                        spelling,
+                        RefinementCatalogNode::ProtocolNode {
+                            protocol: self.protocol.clone(),
+                            node,
+                        },
+                        binder_types.clone(),
+                    ),
+                );
+            };
+            match class_kind {
+                NodeClass::Bare(_) => add_node(format!("{}::{name}", self.protocol)),
+                NodeClass::Parallel => {
+                    add_node(format!("fork {}::{name}", self.protocol));
+                    add_node(format!("join {}::{name}", self.protocol));
+                }
+                NodeClass::Template => {
+                    add_node(format!("{}::{name}", self.protocol));
+                    add_node(format!("cend {}::{name}", self.protocol));
+                }
+            }
+        }
+        for (channel, (duplicate, lose)) in &self.channels {
+            for (enabled, prefix) in [(*duplicate, "duplicate"), (*lose, "lose")] {
+                if enabled {
+                    let class = format!("{prefix} {}::{channel}", self.protocol);
+                    classes.insert(
+                        class.clone(),
+                        RefinementCatalogClass::declared(
+                            class,
+                            RefinementCatalogNode::Channel {
+                                protocol: self.protocol.clone(),
+                                channel: channel.clone(),
+                            },
+                            Vec::new(),
+                        ),
+                    );
+                }
+            }
+        }
+        for (role, retires) in &self.roles {
+            for (enabled, prefix) in [(true, "spawn"), (*retires, "retire")] {
+                if enabled {
+                    let class = format!("{prefix} {}::{role}", self.protocol);
+                    classes.insert(
+                        class.clone(),
+                        RefinementCatalogClass::declared(
+                            class,
+                            RefinementCatalogNode::Role {
+                                protocol: self.protocol.clone(),
+                                role: role.clone(),
+                            },
+                            Vec::new(),
+                        ),
+                    );
+                }
+            }
+        }
+        if self.activates {
+            let class = format!("activate {}", self.protocol);
+            classes.insert(
+                class.clone(),
+                RefinementCatalogClass::declared(
+                    class,
+                    RefinementCatalogNode::Trigger(self.protocol.clone()),
+                    Vec::new(),
+                ),
+            );
+        }
+        for (kind, model) in &self.memory_models {
+            let class = format!("memory {kind}");
+            classes.insert(class.clone(), RefinementCatalogClass::memory(class, *model));
+        }
+        Ok(classes.into_values().collect())
     }
 
     /// What the node `name` is, when it has a step class.
