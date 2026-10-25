@@ -21,10 +21,12 @@ use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::FormulaNodeId;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Incomplete, Meter};
+use quire_semantic_value::catalog::InternalFault;
 
-use crate::simulation::model::{ModelSimState, ModelSimulationRequest};
+use crate::simulation::model::{ClauseOutcome, ModelSimState, ModelSimulationRequest};
 use crate::simulation::protocol::ResolvedMemory;
-use crate::temporal::AtomReading;
+use crate::simulation::ExpansionStop;
+use crate::temporal::{AtomReading, LetterStop};
 
 /// FR-125's model subject.
 pub struct ModelSubject<'a> {
@@ -76,6 +78,48 @@ pub struct ModelInstance {
     pub key: String,
 }
 
+/// Why [`ModelLetters::atom`] gives no reading: the check reaches no truth
+/// value for the position (QSL-1039).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AtomStop {
+    /// The evaluation meter ran out, in the state's observation or in the
+    /// evaluation (ADR-014 TR-5).
+    Incomplete(Incomplete),
+    /// The `holds` evaluation was refused, or completed no Boolean, with
+    /// none undefined: for example an authored population bound exceeded
+    /// (FR-380) or a population a snapshot does not list complete.
+    Refused(ClauseOutcome),
+    /// The state cannot be observed.
+    Unobservable(ExpansionStop),
+    /// An invariant of the letters broke: the atom is no `holds` atom of the
+    /// clause, the instance names no reference, or the evaluator faulted.
+    Fault(InternalFault),
+}
+
+impl From<Incomplete> for AtomStop {
+    fn from(incomplete: Incomplete) -> Self {
+        Self::Incomplete(incomplete)
+    }
+}
+
+impl From<AtomStop> for LetterStop {
+    /// A trace letter has no refusal, so a refused or unobservable atom is a
+    /// fault of the letter.
+    fn from(stop: AtomStop) -> Self {
+        match stop {
+            AtomStop::Incomplete(incomplete) => Self::Incomplete(incomplete),
+            AtomStop::Fault(fault) => Self::Fault(fault),
+            AtomStop::Refused(_) => Self::Fault(InternalFault::new(
+                "model-letters",
+                "a-holds-atom-is-not-refused",
+            )),
+            AtomStop::Unobservable(_) => {
+                Self::Fault(InternalFault::new("model-letters", "a-state-is-observable"))
+            }
+        }
+    }
+}
+
 /// Reads the letter of a clause over a model subject at one state: the
 /// value of each `holds` atom for one instance of the clause's `over`
 /// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding). The instances
@@ -89,14 +133,21 @@ pub trait ModelLetters {
     /// population that overlaps the parameter's type and holds there an
     /// object conforming to it (FR-125 Instancing: the key identifies the
     /// instance, not its population); where no overlapping population does,
-    /// the read is `absent-key` undefined. An exhausted meter is `Err(Incomplete)`, never a reading.
+    /// the read is `absent-key` undefined. An exhausted meter is
+    /// `Err(AtomStop::Incomplete)`; a refused evaluation, an unobservable
+    /// state and a broken invariant are the other [`AtomStop`]s, never a
+    /// reading and never a panic.
+    ///
+    /// # Errors
+    ///
+    /// [`AtomStop`], as above.
     fn atom(
         &self,
         atom: FormulaNodeId,
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete>;
+    ) -> Result<AtomReading, AtomStop>;
 
     /// The `when` condition of the clause's guarded `on each` activation for
     /// `instance` at `state`, charging `meter`: true where the position

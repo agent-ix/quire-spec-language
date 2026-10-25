@@ -14,7 +14,9 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     check_protocol, ModelCheckRefusal, ProtocolCheckRequest, SubjectContext, SubjectIdentity,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject, RoleBinding};
+use qsl_eval::model_subject::{
+    AtomStop, ModelInstance, ModelLetters, ProtocolSubject, RoleBinding,
+};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, TerminalClass};
 use qsl_eval::simulation::protocol::{
     visible, AnchorName, BlockedThread, ClaimReads, ProtocolLocation, ProtocolSystem,
@@ -36,7 +38,7 @@ use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Cancel, Incomplete, Meter};
+use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
@@ -1006,7 +1008,7 @@ impl ModelLetters for CellV {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if (self.holds)(v(state, &instance.key)) {
             AtomReading::True
         } else {

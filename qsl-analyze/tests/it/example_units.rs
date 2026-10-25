@@ -19,7 +19,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
@@ -464,7 +464,7 @@ impl ModelLetters for Versions<'_> {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let index = self
             .atoms
             .iter()
@@ -750,10 +750,10 @@ impl ModelLetters for Interfering<'_> {
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         if instance.key == "b" {
             if let Some(stop) = (self.on_b)() {
-                return Err(stop);
+                return Err(stop.into());
             }
         }
         self.inner.atom(atom, instance, state, meter)
@@ -912,7 +912,7 @@ impl ModelLetters for Joint<'_> {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let index = self
             .atoms
             .iter()
