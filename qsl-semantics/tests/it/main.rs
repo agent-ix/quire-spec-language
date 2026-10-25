@@ -15,6 +15,8 @@ mod child_composite;
 mod complete_value_lock;
 mod dispatch_linking;
 #[cfg(feature = "test-support")]
+mod enum_type_admission;
+#[cfg(feature = "test-support")]
 mod hyper_clauses;
 mod identity_golden_vectors;
 mod ieee_profiles;
