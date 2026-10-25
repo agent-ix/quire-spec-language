@@ -181,7 +181,7 @@ pub(super) fn visit_located(
 #[ix_trace_rs::string_edge]
 pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<LayerForm> {
     match node {
-        ExprNode::Call { name, .. } => Some(if predicates.contains(name.as_str()) {
+        ExprNode::Call { name, .. } => Some(if predicates.contains(name.name.as_str()) {
             LayerForm::NamedPredicateCall
         } else {
             LayerForm::ValueConstruct

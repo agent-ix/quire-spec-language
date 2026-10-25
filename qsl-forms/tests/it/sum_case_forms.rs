@@ -230,7 +230,7 @@ fn construction_stays_name_or_call_and_duplicate_arms_stay_authored() {
     let ExprNode::Call { name, arguments } = expression.root_node() else {
         panic!("call")
     };
-    assert_eq!(name, "Shape::Circle");
+    assert_eq!(name.name, "Shape::Circle");
     assert_eq!(arguments.len(), 1);
     assert_eq!(
         expression.at(arguments[0]).node(),
@@ -270,7 +270,7 @@ fn expression_and_real_protocol_choice_cases_coexist_in_one_admitted_unit() {
     let (text, parsed, unit) = build(&format!("{} {protocol}", body(expression_source)));
     let expression = &function(&unit, 0).body;
     assert!(
-        matches!(expression.at(case(expression).scrutinee).node(), ExprNode::Record { name, .. } if name == "R")
+        matches!(expression.at(case(expression).scrutinee).node(), ExprNode::Record { name, .. } if name.name == "R")
     );
     let expressions = parsed
         .cst()
@@ -377,7 +377,7 @@ fn arena_walks_and_rewrites_reach_case_children_and_arm_binders() {
     assert_eq!(expression.root_node().children().len(), 3);
     let rewritten = expression.respell_names(|_, spellings| {
         if let Some(name) = spellings.reference {
-            *name = format!("renamed_{name}");
+            name.set_spelling(format!("renamed_{}", name.name));
         }
         for binder in spellings.binders {
             *binder = format!("renamed_{binder}");
@@ -424,7 +424,7 @@ fn arena_walks_and_rewrites_reach_case_children_and_arm_binders() {
     assert!(expression
         .respelled(|_, node| {
             if let ExprNode::Name(name) = node {
-                *name = format!("{name}_copy");
+                name.set_spelling(format!("{}_copy", name.name));
             }
         })
         .is_ok());

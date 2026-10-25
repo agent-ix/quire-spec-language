@@ -9,7 +9,7 @@ use qsl_forms::{BinaryOperator, ExprId, ExprNode, Expression};
 use qsl_foundation::Span;
 use quire_exact::ValueType;
 
-use super::term::{is_qualified, Kind, Lowered};
+use super::term::{Kind, Lowered};
 use super::{CheckedFunctionRef, HybridCause};
 use crate::check::Signatures;
 
@@ -100,7 +100,7 @@ impl Callees<'_> {
                     | ExprNode::Negate(_)
                     | ExprNode::Not(_) => {}
                     ExprNode::Name(name) => {
-                        if is_qualified(name) {
+                        if name.is_qualified() {
                             return Some("a qualified name");
                         }
                     }
@@ -123,7 +123,7 @@ impl Callees<'_> {
                         | BinaryOperator::Implies => {}
                     },
                     ExprNode::Call { name, .. } => {
-                        let Some((callee, _)) = self.signatures.callable(name) else {
+                        let Some((callee, _)) = self.signatures.callable(&name.name) else {
                             return Some("a call of a function not in scope");
                         };
                         if visited.insert(callee) {
