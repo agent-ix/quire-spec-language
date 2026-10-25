@@ -553,6 +553,8 @@ pub struct CheckedGraph {
     header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
+    /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
+    time_units: time_units::TimeUnits,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
     /// FR-366: every checked type-level invariant, in declaration order of
@@ -4462,6 +4464,7 @@ impl PackageDeclarations {
             model_selections,
             header_layers,
             time_sources: self.time_sources,
+            time_units: time_units.clone(),
             state_clauses,
             type_invariants,
             terminals,
@@ -4800,6 +4803,12 @@ impl CheckedGraph {
     /// Checked time sources of this package, in declaration order.
     pub fn time_sources(&self) -> &[ModelTimeSource] {
         &self.time_sources
+    }
+
+    /// FR-251: the exact scale of a checked time unit to seconds, or the
+    /// checked reason the name is not a linear time unit.
+    pub fn time_unit_scale(&self, unit: &str) -> Result<&quire_exact::Rational, TimeUnitCause> {
+        self.time_units.scale(unit)
     }
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
