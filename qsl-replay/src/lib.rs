@@ -315,8 +315,8 @@ pub use result::{
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.
 pub use target::{
-    NamedKind, ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
-    TargetSelectionRefusal,
+    NamedKind, ReplayEntry, ReplayOverBinding, ReplayTarget, ReplayTargetMembers,
+    RequestTargetWire, TargetMember, TargetSelectionRefusal,
 };
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
