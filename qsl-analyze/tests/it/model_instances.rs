@@ -1191,14 +1191,22 @@ fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
         ],
     );
     let bounded = universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
-    let helpers = "\
-        function same using v(r: Reference<M::Dog>): Reference<M::Dog> pure { r }\n\
-        function isDog using v(r: Reference<M::Dog>): Boolean pure {\n\
-            present(lookup<M::Dog>(M::animals, same(r)) absent empty) or\n\
-            present(lookup<M::Dog>(M::dogs, same(r)) absent empty)\n\
-        }\n\
-        function ageOK using v(r: Reference<M::Dog>): Boolean pure { r.age >= 0 }\n";
     let package_for = |formula: &str| {
+        let mut helpers = String::new();
+        if formula.contains("isDog") {
+            helpers.push_str(
+                "function same using v(r: Reference<M::Dog>): Reference<M::Dog> pure { r }\n\
+                 function isDog using v(r: Reference<M::Dog>): Boolean pure {\n\
+                     present(lookup<M::Dog>(M::animals, same(r)) absent empty) or\n\
+                     present(lookup<M::Dog>(M::dogs, same(r)) absent empty)\n\
+                 }\n",
+            );
+        }
+        if formula.contains("ageOK") {
+            helpers.push_str(
+                "function ageOK using v(r: Reference<M::Dog>): Boolean pure { r.age >= 0 }\n",
+            );
+        }
         let body = format!(
             "{helpers}temporal C using t0 over (x: M::Dog) clock \"model-steps\" on origin {{ {formula} }}\n"
         );
