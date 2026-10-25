@@ -119,40 +119,6 @@ The liveness and POR changes are sound:
 |----|----------|---------|------|
 | FND-004 | low | The refactor into `ObservedLetters::reading` relabels the `Evaluated(Refused) / FamilyEvaluated(Refused)` arm from the refused code (`holds-condition-refused`) to the Boolean code (`holds-condition-boolean` / `activation-condition-boolean`). The arm is unreachable today because `refused` returns first, but it now names the wrong fault if it ever becomes reachable | qsl-eval/src/temporal/observed.rs:173-174 |
 
-## New findings (disposition pass 2)
-
-Disposition pass 2 reviews follow-up PR quire-spec-language#1538 at head
-`3637c7461` (branch `qsl-1037-guarded-activation`). #1527 was merged at
-`763d8b525`, before the round-1 fixes. #1538 contains `16a052900` plus a
-merge of main through #1535.
-
-Probes re-run on `3637c7461`:
-
-- P1 gives `Holds`.
-- P2 over the traces 0,1,2 / 0,0,0 / 1,1,1 / 1,2,2 gives Holds / Holds /
-  Violated at 0 / Holds.
-
-Merge-resolution regions reviewed:
-
-- `evaluate.rs`. Main changed the absent-parameter state to a per-slot
-  `Vec<AbsentParameter>`. `with_absent_parameters` now pushes one
-  `key: None` entry per slot with the same binding, so slots 0 and 1 both
-  carry provenance and `absent_key_halt` falls back to the first entry's
-  binding. Sound.
-- `temporal_clause.rs`. The check order is unchanged: the trigger type and
-  name are checked at loop position 1, before the capture types. Only a
-  blank line was lost.
-- `expression/mod.rs`. `evaluate_guard` sits beside main's
-  `evaluate_hyper_holds` and `evaluate_step_predicate`, unchanged.
-- `condition.rs` and the emit test are taken from the branch side, with no
-  semantic change.
-- `observed.rs`. The resolution keeps main's (#1531, QSL-902) first-undefined
-  recording in `atom` only. FND-005 below.
-
-| ID | Severity | Summary | Refs |
-|----|----------|---------|------|
-| FND-005 | medium | After the merge with QSL-902, `ObservedLetters` records `ObservedRun.undefined` only from `atom`, and that record is typed `(FormulaNodeId, ..)`. An `on each` guard that is undefined at the deciding position (`activation`) records nothing, or a later undefined atom is recorded in its place. FR-331 observed replay settles an `UndefinedEvaluation` packet only when `actual_locus` is `Some` and equal to the packet's `locus`, so a guarded clause whose guard is undefined can never be `reproduced-with-evaluated-witness`; it always settles `inconclusive`/`ReplayParity`. The packet's `locus: FormulaNodeId` also has no way to name the activation, and FR-331 states no activation locus, so this needs a spec ruling (an activation locus, like `UndefinedLocus::Activation` in EN-1) or an explicit refusal of guarded clauses in observed replay. Deferral to a ticket is acceptable | qsl-eval/src/temporal/observed.rs:47-48,250-276; qsl-replay/src/result.rs:849-858; qsl-replay/src/execute.rs:1049 |
-
 ## Dispositions
 
 | FND | outcome | reason |
@@ -160,4 +126,3 @@ Merge-resolution regions reviewed:
 | FND-001 | fixed | GuardedActivation is removed. `ClauseLetters::activation` evaluates the guard (`evaluate_activation_guard`, including the absent-key form), and `activation_reads` gives its footprint. `ObservedLetters::activation` evaluates the guard through `evaluate_guard`. Liveness reads `when`. Probes P1 and P2 are now correct |
 | FND-002 | fixed | The trigger type and name are checked at position 1 of the parameter loop, before the capture types. When the body refuses (a `Temporal` cause after the binder, or `NotEmitted`), `guard_refusal` types the guard first. Covered by `the_activation_is_checked_before_the_captures_and_the_body` |
 | FND-003 | fixed | The stale comments are rewritten (letters.rs, observed.rs, model_world.rs, model_check_safety.rs, check.rs module doc). A grep finds none left |
-| FND-004 | fixed | `Evaluated(Refused) / FamilyEvaluated(Refused) => Err(stop(refused_code))` (16a052900) |
