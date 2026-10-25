@@ -18,7 +18,7 @@ use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
     classify_accesses, visible, AccessShape, CarriedComponent, ClaimReads, InstanceAccess,
     MemoryModel, MemorySelection, MemorySelectionRefusal, PositionAnchor, ProtocolLocation,
-    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind, Sc, StepKind,
+    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, RestKind, Sc, StepKind,
     ThreadPath, Tso, WaitCause, WeakAccesses,
 };
 use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
@@ -961,6 +961,8 @@ fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
         else {
             panic!("{outcome:?}");
         };
+        // Fork-time preview gives EN-1 the child observations before it
+        // emits the fork, so this initial-state refusal explores nothing.
         assert_eq!(stats.product_states, 1);
         assert_eq!(shape.site, "Both/right/R/Seen");
         let AccessShape::MultiLocation { locations } = &shape.shape else {
@@ -1026,19 +1028,93 @@ fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
     ));
 }
 
-/// The refusal `case` settles under `tso` before exploring: the shape's
-/// site, whether it names a transition, and the names of its locations.
+/// EN-1 derives sharing again after every transition. The first guarded
+/// store is shared while enabled; after its write makes the guard false, a
+/// still-enabled reader of that field becomes local in both memory models.
+#[trace("TC-665", "FR-220-AC-11")]
+#[test]
+fn enabled_sharing_is_recomputed_after_a_guarded_store() {
+    fn check<M: MemoryModel>(case: &Case, memory: M, model: MemoryModelName) {
+        let selection = [select("SB::Both", model)];
+        let system = case.system(&selection, memory).expect("builds");
+        let step = |state: &ProtocolState<M>, node: &str| {
+            let expansion = system.successors(state).expect("expands");
+            expansion
+                .successors
+                .into_iter()
+                .find(|(transition, _)| transition.node() == Some(node))
+                .unwrap_or_else(|| panic!("no step at {node}; findings={:?}", expansion.findings))
+        };
+        let (_, forked) = step(&system.initial()[0], "Both");
+        let (left_transition, after_left) = step(&forked, "Both/left/L/Sx");
+        let left_footprint = system
+            .footprint(&forked, &left_transition)
+            .expect("footprint");
+        let static_accesses = case.accesses(&selection);
+        let x = static_accesses
+            .shared()
+            .iter()
+            .find(|location| {
+                static_accesses
+                    .cell(location)
+                    .is_some_and(|cell| cell.key == "x" && cell.name == "v")
+            })
+            .expect("x.v is potentially shared");
+        match model {
+            MemoryModelName::Tso => {
+                let left_buffer = Location::Protocol(ProtocolLocation::Buffer(branch("left")));
+                assert!(left_footprint.writes.contains(&left_buffer));
+                assert_eq!(field(after_left.model(), "cells", "x", "v"), 0);
+            }
+            MemoryModelName::Ra => {
+                assert!(left_footprint.writes.contains(&Location::Protocol(
+                    ProtocolLocation::Messages(Box::new(x.clone(),))
+                )));
+            }
+            MemoryModelName::Sc => unreachable!(),
+        }
+        let (right_transition, after_right) = step(&after_left, "Both/right/R/RightLx");
+        let right_footprint = system
+            .footprint(&after_left, &right_transition)
+            .expect("footprint");
+        match model {
+            MemoryModelName::Tso => {
+                let right_buffer = Location::Protocol(ProtocolLocation::Buffer(branch("right")));
+                assert!(!right_footprint.writes.contains(&right_buffer));
+            }
+            MemoryModelName::Ra => {
+                assert!(!right_footprint.writes.contains(&Location::Protocol(
+                    ProtocolLocation::Messages(Box::new(x.clone(),))
+                )));
+            }
+            MemoryModelName::Sc => unreachable!(),
+        }
+        assert_eq!(field(after_right.model(), "cores", "core", "r2"), 0);
+    }
+
+    let first = attempt("Sx", "w", "Cell::both", "", "XWZeroBoth, BothOne");
+    let second = attempt("RightLx", "c", "Core::read2", "", "ReadsX2, Read2");
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {first} }} \
+         branch right sequence R {{ {second} }} }} join all [left, right];"
+    );
+    let case = Case::with_letters(&sb_unit(&run), &NoBothZero);
+    check(&case, Tso::default(), MemoryModelName::Tso);
+    check(&case, Ra::default(), MemoryModelName::Ra);
+}
+
+/// The refusal `case` settles on its first branch-observation state: the
+/// shape's site, whether it names a transition, and the names of its locations.
 fn tso_shape(case: &Case) -> (String, bool, Vec<(String, String)>) {
     let selection = [select("SB::Both", MemoryModelName::Tso)];
     let outcome = case.check(&selection, ModelCheckItem::DeadlockFreedom, None);
     let ModelCheckOutcome::Memory {
         cause: MemoryCause::WeakAccessShape(shape),
-        stats,
+        ..
     } = &outcome
     else {
         panic!("{outcome:?}");
     };
-    assert_eq!(stats.product_states, 1);
     let AccessShape::MultiLocation { locations } = &shape.shape else {
         panic!("{shape:?}");
     };

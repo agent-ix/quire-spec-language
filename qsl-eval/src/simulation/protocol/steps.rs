@@ -22,7 +22,9 @@ use qsl_semantics::check::{
 };
 use quire_exact::Value;
 
-use super::access::InstanceAccess;
+use super::access::{
+    EnabledApplication, EnabledReader, InstanceAccess, StateWeakAccesses, ThreadAttempt,
+};
 use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
 use super::memory::{Access, GatedStep, MemoryModel, Read, ReadChoice, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
@@ -45,6 +47,14 @@ struct Observation<'s> {
     applied: Applied,
     observed: Cow<'s, ModelSimState>,
     read: Option<ReadChoice>,
+}
+
+/// A control step owned by one protocol thread.
+#[derive(Clone, Copy)]
+struct ThreadStep<'a> {
+    ordinal: u64,
+    path: &'a ThreadPath,
+    node: ProtocolNodeId,
 }
 
 /// One successor of a protocol state.
@@ -106,7 +116,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         &self,
         state: &ProtocolState<M>,
     ) -> Result<(ProtocolExpansion<M>, Cut), ExpansionStop> {
-        if let Some(shape) = self.state_access_shape(state)? {
+        let mut budget = self.model.budget();
+        let accesses = self.state_accesses(state, &mut budget)?;
+        if let Some(shape) = self.state_access_shape(state, &accesses)? {
             return Ok((
                 Expansion {
                     successors: Vec::new(),
@@ -116,7 +128,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             ));
         }
         let mut gathered = Gathered {
-            budget: self.model.budget(),
+            budget,
             successors: Vec::new(),
             findings: self.model.invariant_findings(&state.model)?,
             cut: Cut::default(),
@@ -153,10 +165,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         |gathered| {
                             self.event_node(
                                 state,
-                                ordinal,
-                                path,
-                                node,
+                                ThreadStep {
+                                    ordinal,
+                                    path,
+                                    node,
+                                },
                                 Cursor::Exit(node),
+                                &accesses,
                                 gathered,
                             )
                         },
@@ -187,10 +202,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         |gathered| {
                             self.event_node(
                                 state,
-                                ordinal,
-                                path,
-                                awaited.event,
+                                ThreadStep {
+                                    ordinal,
+                                    path,
+                                    node: awaited.event,
+                                },
                                 Cursor::Enter(awaited.then),
+                                &accesses,
                                 gathered,
                             )
                         },
@@ -244,9 +262,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     fn state_access_shape(
         &self,
         state: &ProtocolState<M>,
+        accesses: &StateWeakAccesses,
     ) -> Result<Option<super::access::WeakAccessShape>, ExpansionStop> {
-        let mut failures = self
-            .enabled
+        let mut failures = accesses
             .first_shape()?
             .map_or_else(Vec::new, |shape| shape.failures);
 
@@ -285,38 +303,313 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(super::access::WeakAccessShape::from_failures(failures)?)
     }
 
+    /// EN-1 MA-1: classify the applications admitted at each live thread's
+    /// current observation. Potential footprints are used only to enumerate
+    /// memory-model reads that may back a later enabled application.
+    pub(super) fn state_accesses(
+        &self,
+        state: &ProtocolState<M>,
+        budget: &mut Budget,
+    ) -> Result<StateWeakAccesses, ExpansionStop> {
+        let mut applications = Vec::new();
+        let mut readers = Vec::new();
+        for (instance_ordinal, instance) in &state.instances {
+            for (path, thread) in &instance.threads {
+                if thread.disposition == Disposition::Cancelled {
+                    continue;
+                }
+                let mut observations = Vec::new();
+                match thread.rest {
+                    Rest::Node(_) => observations.push(path.clone()),
+                    Rest::Fork(node) => {
+                        let join = self
+                            .program
+                            .joins
+                            .get(&node)
+                            .ok_or_else(|| ProtocolRefusal::fault("a-fork-has-a-join"))?;
+                        let text = self.program.text(node)?;
+                        let fork_ordinal = Self::free_ordinal(instance, path, node, text, join)?;
+                        let inherited: Vec<_> = instance
+                            .environment(path)
+                            .map(|(node, bound)| (node, bound.clone()))
+                            .collect();
+                        for (label, body) in &join.branches {
+                            let child = path.child(text, label, fork_ordinal);
+                            observations.push(child.clone());
+                            let mut preview = instance.clone();
+                            for (bound_node, bound) in &inherited {
+                                Self::bind(&mut preview, *bound_node, &child, bound.clone());
+                            }
+                            if let super::settle::Settled::Rest(Rest::Node(reader)) = self
+                                .settle(&mut preview, &child, Cursor::Enter(*body), &state.model)
+                                .map_err(ExpansionStop::from)?
+                            {
+                                if self.program.events.contains_key(&reader)
+                                    || self.program.messages.contains_key(&reader)
+                                {
+                                    readers.push(EnabledReader {
+                                        instance: *instance_ordinal,
+                                        path: child,
+                                        node: reader,
+                                        locations: self
+                                            .initial_enabled
+                                            .node_reads(self.program.text(reader)?)
+                                            .iter()
+                                            .cloned()
+                                            .collect(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Rest::End if thread.disposition == Disposition::Completed => {
+                        observations.push(path.clone());
+                    }
+                    _ => {}
+                }
+                for observation_path in observations {
+                    for node in self.program.attempts.keys().copied() {
+                        if !self.weak_context_matches(node, &observation_path)? {
+                            continue;
+                        }
+                        let Some(attempt) = self.program.attempts.get(&node) else {
+                            continue;
+                        };
+                        let operation = self.operation(node)?;
+                        let select = |clause| attempt.contracts.contains(&clause);
+                        let probe =
+                            self.memory
+                                .observe(&state.memory, &observation_path, &state.model);
+                        let mut observations = vec![(probe.clone(), None)];
+                        let mut read_locations = BTreeSet::new();
+                        if let Some(potential) = self.potential.of(node) {
+                            let mut locations = BTreeSet::new();
+                            for candidate in &potential.instances {
+                                if let InstanceAccess::Access {
+                                    class: AccessClass::Load | AccessClass::Rmw,
+                                    location: Some(location),
+                                } = &candidate.access
+                                {
+                                    locations.insert(location.clone());
+                                } else if let InstanceAccess::Shape { locations: shape } =
+                                    &candidate.access
+                                {
+                                    locations.extend(shape.iter().cloned());
+                                }
+                            }
+                            for location in locations {
+                                let Some(cell) = self.potential.cell(&location) else {
+                                    continue;
+                                };
+                                let shared = super::memory::SharedCell {
+                                    location: &location,
+                                    cell,
+                                };
+                                let reads = self.memory.reads(
+                                    &state.memory,
+                                    &observation_path,
+                                    &state.model,
+                                    &shared,
+                                );
+                                if !reads.is_empty() {
+                                    observations.extend(
+                                        reads
+                                            .into_iter()
+                                            .map(|read| (read.observed, Some(location.clone()))),
+                                    );
+                                    read_locations.insert(location);
+                                }
+                            }
+                        }
+                        for (observed, read_location) in observations {
+                            let applied = self
+                                .model
+                                .apply_operation(&observed, &operation, &select, budget)?;
+                            for applied in applied.successors {
+                                let potential_access = self
+                                    .potential
+                                    .of(node)
+                                    .and_then(|potential| potential.instance(&applied.transition));
+                                let potential_read = match potential_access {
+                                    Some(InstanceAccess::Access {
+                                        class: AccessClass::Load | AccessClass::Rmw,
+                                        location: Some(location),
+                                    }) => Some(location),
+                                    Some(InstanceAccess::Shape { locations }) => read_location
+                                        .as_ref()
+                                        .filter(|location| locations.contains(location)),
+                                    _ => None,
+                                };
+                                if let Some(location) = &read_location {
+                                    if potential_read != Some(location) {
+                                        continue;
+                                    }
+                                } else if potential_read
+                                    .is_some_and(|location| read_locations.contains(location))
+                                {
+                                    continue;
+                                }
+                                if let Some(constraint) = attempt.constraint {
+                                    let mut frame = self.frame(instance, &observation_path, node);
+                                    if let (Some(slot), Some(result)) =
+                                        (self.program.binder_of.get(&node), &applied.result)
+                                    {
+                                        if let Some(entry) = frame.get_mut(*slot) {
+                                            *entry = Some(result.clone());
+                                        }
+                                    }
+                                    if !matches!(
+                                        self.evaluate(constraint, frame, &observed)?,
+                                        Verdict::True
+                                    ) {
+                                        continue;
+                                    }
+                                }
+                                let footprint = self
+                                    .model
+                                    .footprint_selecting(
+                                        &applied.transition,
+                                        Some(&attempt.contracts),
+                                    )
+                                    .map_err(|_| {
+                                        ProtocolRefusal::Unsupported(
+                                            super::Unsupported::AccessFootprint,
+                                        )
+                                    })?;
+                                let model_only =
+                                    |locations: BTreeSet<Location>| -> BTreeSet<Location> {
+                                        locations
+                                            .into_iter()
+                                            .filter(|location| {
+                                                !matches!(location, Location::Protocol(_))
+                                            })
+                                            .collect()
+                                    };
+                                applications.push(EnabledApplication {
+                                    key: ThreadAttempt {
+                                        instance: *instance_ordinal,
+                                        path: observation_path.clone(),
+                                        node,
+                                    },
+                                    transition: applied.transition,
+                                    reads: model_only(footprint.reads),
+                                    writes: model_only(footprint.writes),
+                                });
+                            }
+                        }
+                    }
+                }
+                if let Rest::Node(node) = thread.rest {
+                    if self.program.events.contains_key(&node)
+                        || self.program.messages.contains_key(&node)
+                    {
+                        readers.push(EnabledReader {
+                            instance: *instance_ordinal,
+                            path: path.clone(),
+                            node,
+                            locations: self
+                                .initial_enabled
+                                .node_reads(self.program.text(node)?)
+                                .iter()
+                                .cloned()
+                                .collect(),
+                        });
+                    }
+                }
+            }
+        }
+        super::access::classify_enabled_state(
+            &self.model,
+            self.protocol,
+            &self.program,
+            &self.governing,
+            &state.model,
+            applications,
+            readers,
+        )
+        .map_err(ExpansionStop::from)
+    }
+
+    /// Whether `path` carries exactly the weak-branch observations that
+    /// govern `node`. Attempts in a nested weak parallel are not classified
+    /// until that parallel has forked and its branch steps are in the path.
+    fn weak_context_matches(
+        &self,
+        node: ProtocolNodeId,
+        path: &ThreadPath,
+    ) -> Result<bool, ProtocolRefusal> {
+        let mut context = Vec::new();
+        let mut below = node;
+        while let Some(parent) = self.program.parent(below)? {
+            if self
+                .governing
+                .get(&parent)
+                .is_some_and(|model| model.is_weak())
+                && self.program.control(parent)?.step == ControlStep::Parallel
+                && self.program.control(below)?.step == ControlStep::Branch
+            {
+                context.push((
+                    self.program.text(parent)?.to_owned(),
+                    self.program.control(below)?.name.clone(),
+                ));
+            }
+            below = parent;
+        }
+        context.reverse();
+        if context.is_empty() {
+            return Ok(false);
+        }
+        let mut observed = Vec::new();
+        for step in &path.steps {
+            let super::identity::PathStep::Branch { node, branch, .. } = step else {
+                continue;
+            };
+            for (parallel, model) in &self.governing {
+                if model.is_weak()
+                    && self.program.control(*parallel)?.step == ControlStep::Parallel
+                    && self.program.text(*parallel)? == node
+                {
+                    observed.push((node.clone(), branch.clone()));
+                    break;
+                }
+            }
+        }
+        Ok(context == observed)
+    }
+
     /// The steps of the thread `path` at the event node `node`, by its kind,
     /// each settling the thread from `after`.
     fn event_node(
         &self,
         state: &ProtocolState<M>,
-        ordinal: u64,
-        path: &ThreadPath,
-        node: ProtocolNodeId,
+        step: ThreadStep<'_>,
         after: Cursor,
+        accesses: &StateWeakAccesses,
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
-        match self.program.control(node)?.step {
+        match self.program.control(step.node)?.step {
             ControlStep::Attempt => {
-                if self.gate(state, path, GatedStep::Attempt) {
-                    self.attempt(state, ordinal, path, node, after, gathered)?;
+                if self.gate(state, step.path, GatedStep::Attempt) {
+                    self.attempt(state, step, after, accesses, gathered)?;
                 }
             }
             ControlStep::Send => {
-                if self.gate(state, path, GatedStep::Send) {
-                    self.send(state, ordinal, path, node, after, gathered)?;
+                if self.gate(state, step.path, GatedStep::Send) {
+                    self.send(state, step.ordinal, step.path, step.node, after, gathered)?;
                 }
             }
             ControlStep::Receive => {
-                if self.gate(state, path, GatedStep::Receive) {
-                    self.receive(state, ordinal, path, node, after, gathered)?;
+                if self.gate(state, step.path, GatedStep::Receive) {
+                    self.receive(state, step.ordinal, step.path, step.node, after, gathered)?;
                 }
             }
-            ControlStep::Event => self.event(state, ordinal, path, node, after, gathered)?,
+            ControlStep::Event => {
+                self.event(state, step.ordinal, step.path, step.node, after, gathered)?
+            }
             ControlStep::Fence => {
-                let ordering = self.program.fence_ordering(node)?;
-                if self.gate(state, path, GatedStep::Fence(ordering)) {
-                    self.fence(state, ordinal, path, node, after, gathered)?;
+                let ordering = self.program.fence_ordering(step.node)?;
+                if self.gate(state, step.path, GatedStep::Fence(ordering)) {
+                    self.fence(state, step.ordinal, step.path, step.node, after, gathered)?;
                 }
             }
             ControlStep::Sequence
@@ -633,13 +926,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .copied()
             .ok_or_else(|| ProtocolRefusal::fault("a-forked-parallel-has-a-model"))?;
         let cells: Vec<SharedCell<'_>> = self
-            .weak
+            .potential
             .shared()
             .iter()
             .filter_map(|location| {
                 Some(SharedCell {
                     location,
-                    cell: self.weak.cell(location)?,
+                    cell: self.potential.cell(location)?,
                 })
             })
             .collect();
@@ -832,12 +1125,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     fn attempt(
         &self,
         state: &ProtocolState<M>,
-        ordinal: u64,
-        path: &ThreadPath,
-        node: ProtocolNodeId,
+        step: ThreadStep<'_>,
         after: Cursor,
+        accesses: &StateWeakAccesses,
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
+        let ThreadStep {
+            ordinal,
+            path,
+            node,
+        } = step;
         let attempt = self
             .program
             .attempts
@@ -846,7 +1143,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let text = self.program.text(node)?.to_owned();
         let operation = self.operation(node)?;
         let select = |clause| attempt.contracts.contains(&clause);
-        let reading = self.reading(state, path, node);
+        let reading = self.reading(state, ordinal, path, node, accesses);
         let probe = self.memory.observe(&state.memory, path, &state.model);
         let applications =
             self.model
@@ -856,7 +1153,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .successors
             .into_iter()
             .filter(|applied| {
-                self.loaded(node, applied)
+                self.loaded(ordinal, path, node, applied, accesses)
                     .is_none_or(|at| !reading.contains_key(at))
             })
             .map(|applied| Observation {
@@ -881,7 +1178,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     applications
                         .successors
                         .into_iter()
-                        .filter(|applied| self.loaded(node, applied) == Some(location))
+                        .filter(|applied| {
+                            self.loaded(ordinal, path, node, applied, accesses) == Some(location)
+                        })
                         .map(|applied| Observation {
                             applied,
                             observed: read.observed.clone(),
@@ -941,7 +1240,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     ),
                 })
             });
-            let access = self.access(node, &applied, &observed)?;
+            let access = self.access(ordinal, path, node, &applied, &observed, accesses)?;
             let written = self.memory.write(
                 &state.memory,
                 path,
@@ -988,14 +1287,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// in a weak `parallel`, each with the messages the memory model lets
     /// `path` read there (FR-229); empty for a location the model gives one
     /// observation of.
-    fn reading<'s>(
+    fn reading<'s, 'a>(
         &self,
         state: &'s ProtocolState<M>,
+        ordinal: u64,
         path: &ThreadPath,
         node: ProtocolNodeId,
-    ) -> BTreeMap<&Location, Vec<Read<'s>>> {
+        accesses: &'a StateWeakAccesses,
+    ) -> BTreeMap<&'a Location, Vec<Read<'s>>> {
         let mut reading = BTreeMap::new();
-        let Some(weak) = self.weak.of(node) else {
+        let key = ThreadAttempt {
+            instance: ordinal,
+            path: path.clone(),
+            node,
+        };
+        let Some(weak) = accesses.attempt(&key) else {
             return reading;
         };
         for instance in &weak.instances {
@@ -1006,7 +1312,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             else {
                 continue;
             };
-            let Some(cell) = self.weak.cell(location) else {
+            let Some(cell) = accesses.cell(location) else {
                 continue;
             };
             if reading.contains_key(location) {
@@ -1027,8 +1333,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
 
     /// The shared location the application `applied` of the attempt `node`
     /// loads or reads-modifies-writes (FR-220).
-    fn loaded(&self, node: ProtocolNodeId, applied: &Applied) -> Option<&Location> {
-        match self.weak.of(node)?.instance(&applied.transition)? {
+    fn loaded<'a>(
+        &self,
+        ordinal: u64,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+        applied: &Applied,
+        accesses: &'a StateWeakAccesses,
+    ) -> Option<&'a Location> {
+        let key = ThreadAttempt {
+            instance: ordinal,
+            path: path.clone(),
+            node,
+        };
+        match accesses.attempt(&key)?.instance(&applied.transition)? {
             InstanceAccess::Access {
                 class: AccessClass::Load | AccessClass::Rmw,
                 location: Some(location),
@@ -1043,11 +1361,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// at the value `observed` gives it applies as a load (ADR-025 MA-5).
     fn access<'s>(
         &'s self,
+        ordinal: u64,
+        path: &ThreadPath,
         node: ProtocolNodeId,
         applied: &Applied,
         observed: &ModelSimState,
+        accesses: &'s StateWeakAccesses,
     ) -> Result<Access<'s>, ProtocolRefusal> {
-        let Some(weak) = self.weak.of(node) else {
+        let key = ThreadAttempt {
+            instance: ordinal,
+            path: path.clone(),
+            node,
+        };
+        let Some(weak) = accesses.attempt(&key) else {
             return Ok(Access::local());
         };
         let Some(InstanceAccess::Access { class, location }) = weak.instance(&applied.transition)
@@ -1059,8 +1385,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let shared = match location {
             Some(location) => Some(SharedCell {
                 location,
-                cell: self
-                    .weak
+                cell: accesses
                     .cell(location)
                     .ok_or_else(|| ProtocolRefusal::fault("a-shared-location-has-a-cell"))?,
             }),
