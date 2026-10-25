@@ -234,7 +234,9 @@ impl HybridProcessRequest {
     }
 
     /// Read the process request body, admit the package from its base64url
-    /// bytes and bind every item's index and claim node to that package.
+    /// bytes and bind every item's index and claim node to that package. The
+    /// member and kind names are the wire's, so this reader is a string edge.
+    #[ix_trace_rs::string_edge]
     pub fn read(
         bytes: &[u8],
         context: &HybridProcessPackageContext,
@@ -364,7 +366,9 @@ impl AdmittedHybridProcessRequest {
     }
 
     /// Read a process provider's `no-initial-state` result against the
-    /// admitted request item and produce its terminal record.
+    /// admitted request item and produce its terminal record. The member and
+    /// kind names are the wire's, so this reader is a string edge.
+    #[ix_trace_rs::string_edge]
     pub fn read_no_initial_state_result(
         &self,
         entry: &Value,
