@@ -180,7 +180,7 @@ fn run<'a>(
 ) -> (TemporalOutcome, Letters<'a>) {
     let mut letters = Letters::new(fixture, observations);
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-    let outcome = evaluate_tuple(&fixture.clause, components, &mut letters, &mut meter, None)
+    let outcome = evaluate_tuple(&fixture.clause, components, &mut letters, &mut meter)
         .expect("the tuple is readable");
     (outcome, letters)
 }
@@ -348,8 +348,8 @@ fn locating_the_false_position_costs_no_more_work_than_the_evaluation() {
     let consumed = |limits: ScalarLimits, values: Vec<Vec<i64>>| {
         let mut letters = Letters::new(&fixture, values);
         let mut meter = Meter::new(limits);
-        let outcome = evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter, None)
-            .expect("readable");
+        let outcome =
+            evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
         (outcome, meter.consumed(LimitKind::WorkUnits), letters.reads)
     };
     let (held, held_work, _) = consumed(SCALAR_LIMITS_UNLIMITED, holding);
@@ -383,7 +383,7 @@ fn a_cancellation_during_the_position_search_stops_the_evaluation() {
     // The charges the evaluation itself polls, with a handle that never trips.
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED).with_cancel(Cancel::new());
     let mut letters = Letters::new(&fixture, values.clone());
-    evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter, None).expect("readable");
+    evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
     let own = meter.admission_count();
 
     // A handle that cancels at the first poll after those.
@@ -402,14 +402,8 @@ fn a_cancellation_during_the_position_search_stops_the_evaluation() {
     handle.set(cancel.clone()).expect("set once");
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED).with_cancel(cancel.clone());
     let mut letters = Letters::new(&fixture, values);
-    let outcome = evaluate_tuple(
-        &fixture.clause,
-        &shape,
-        &mut letters,
-        &mut meter,
-        Some(&cancel),
-    )
-    .expect("readable");
+    let outcome =
+        evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
     assert!(
         matches!(outcome, TemporalOutcome::Incomplete(_)),
         "{outcome:?}"
@@ -455,7 +449,7 @@ fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_positi
     let mut letters = Letters::new(&fixture, vec![vec![1, 0], vec![0, 0, 0]]);
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     let outcome =
-        evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter, None).expect("readable");
+        evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
     let TemporalOutcome::Undefined(undefined) = outcome else {
         panic!("{outcome:?}");
     };
@@ -483,7 +477,6 @@ fn a_clause_with_align_skip_is_refused_in_lockstep() {
         &[lasso(0, 1), lasso(0, 1)],
         &mut letters,
         &mut meter,
-        None,
     )
     .expect_err("align skip is not lockstep");
     assert_eq!(refusal, TemporalRefusal::AlignSkipNotLockstep);
@@ -567,13 +560,7 @@ fn a_tuple_of_the_wrong_size_or_with_an_empty_component_is_refused() {
     let mut letters = Letters::new(&fixture, vec![vec![0]]);
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     assert_eq!(
-        evaluate_tuple(
-            &fixture.clause,
-            &[lasso(0, 1)],
-            &mut letters,
-            &mut meter,
-            None
-        ),
+        evaluate_tuple(&fixture.clause, &[lasso(0, 1)], &mut letters, &mut meter,),
         Err(TemporalRefusal::TupleArity {
             expected: 2,
             found: 1
@@ -585,7 +572,6 @@ fn a_tuple_of_the_wrong_size_or_with_an_empty_component_is_refused() {
             &[lasso(0, 1), lasso(0, 0)],
             &mut letters,
             &mut meter,
-            None
         ),
         Err(TemporalRefusal::EmptyLoop)
     );

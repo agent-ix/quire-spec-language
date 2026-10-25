@@ -275,7 +275,6 @@ impl<'w> Oracle<'w> {
             &[component],
             &mut letters,
             &mut Meter::new(UNLIMITED),
-            None,
         )
         .expect("the evaluator reads the lasso");
         outcome == TemporalOutcome::Holds
