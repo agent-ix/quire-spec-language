@@ -14,8 +14,8 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 use qsl_route::request::{items_with_evidence, EvidenceSelection, RequirementItem};
 use qsl_route::{
-    descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ManifestDigest, Mode,
-    ProviderOrigin, Registry,
+    descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ManifestDigest,
+    ManifestMembers, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::family::{ClaimEvidence, ClaimExtent, Requirements};
@@ -102,9 +102,12 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
             Some(Capability::ProbabilisticSatisfaction.to_wire()),
             Some(Mode::Bounded.to_wire()),
         )],
-        Some(&[DomainKind::Population.to_wire()]),
-        None,
-        Some(&[EvidenceKind::Exact.to_wire()]),
+        ManifestMembers {
+            domains: Some(&[DomainKind::Population.to_wire()]),
+            fairness_kinds: None,
+            evidence_kinds: Some(&[EvidenceKind::Exact.to_wire()]),
+            memory_models: None,
+        },
     )
     .expect("a well-formed exact backend")
 }

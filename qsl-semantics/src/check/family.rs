@@ -1233,7 +1233,7 @@ pub(crate) fn check_declaration_body(
     .with_context(cx.reborrow(input.scope));
     if let Some(model_scope) = &input.model_scope {
         typer = typer
-            .with_model_family(input.derived_model_family)
+            .with_model_family()
             .with_named_populations(model_scope.clone());
     }
     bind_parameters(&mut typer, parameters, input.location)?;
@@ -1509,9 +1509,6 @@ pub struct ValueDeclarations<'a> {
     /// The derived StateModel body family and its population-name scope.
     /// `None` for a value-only function body.
     pub(crate) model_scope: Option<super::check::NamedScope>,
-    /// Whether this body was admitted in the derived model family from a
-    /// `quire.value.complete/v1` function selection (FR-361-AC-16).
-    pub(crate) derived_model_family: bool,
     pub(crate) location: &'a CheckLocation,
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.
@@ -2144,7 +2141,6 @@ pub mod fixtures {
             checking_limits,
             complete_value: false,
             model_scope: None,
-            derived_model_family: false,
             location,
             measure_location: location,
             nodes_used: 0,

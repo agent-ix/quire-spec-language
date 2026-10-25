@@ -92,6 +92,18 @@ impl WeakAttempt {
     }
 }
 
+/// A load-buffering shape of a branch under `ra` (FR-226, ADR-025 MX-4): a
+/// `relaxed` or non-atomic load of a shared location followed in program
+/// order by a store to another shared location, with no acquire-or-stronger
+/// load or acquire fence between them.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct LoadBufferingShape {
+    /// The load's transition identity.
+    pub load: ModelTransition,
+    /// The store's transition identity.
+    pub store: ModelTransition,
+}
+
 /// A pre-check's `WeakAccessShape` shape (QSpec FR-439).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AccessShape {
@@ -1052,4 +1064,148 @@ fn classify_instance(instance: Footprinted, shared: &BTreeSet<Location>) -> Atte
         access,
         local: local.into_iter().cloned().collect(),
     }
+}
+
+/// FR-226 (ADR-025 MX-4): every load-buffering shape of a `parallel` that
+/// `governing` resolves to `ra`, over the classification `accesses`.
+///
+/// A branch is read in program order: a `sequence` runs its children in
+/// order, the cases of a `choice` are alternatives, a `repeat` body may
+/// follow itself, and a nested `parallel` starts each branch afresh. A
+/// shared location is touched by another branch, as `accesses` decides.
+///
+/// # Errors
+///
+/// [`ProtocolRefusal`] when the program names a node it does not hold.
+pub(crate) fn load_buffering_shapes(
+    program: &Program<'_>,
+    governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
+    accesses: &WeakAccesses,
+) -> Result<BTreeSet<LoadBufferingShape>, ProtocolRefusal> {
+    let walk = Walk {
+        program,
+        governing,
+        accesses,
+    };
+    let mut found = BTreeSet::new();
+    walk.node(program.root, false, Pending::new(), &mut found)?;
+    Ok(found)
+}
+
+/// The relaxed or non-atomic loads of a branch not yet followed by an
+/// acquire: each with its shared location.
+type Pending = BTreeSet<(Location, ModelTransition)>;
+
+struct Walk<'a, 'p> {
+    program: &'a Program<'p>,
+    governing: &'a BTreeMap<ProtocolNodeId, MemoryModelName>,
+    accesses: &'a WeakAccesses,
+}
+
+impl Walk<'_, '_> {
+    /// Walk `node` with the loads `pending` before it; the loads pending
+    /// after it. Shapes found are added to `found` when `ra` governs.
+    fn node(
+        &self,
+        node: ProtocolNodeId,
+        ra: bool,
+        pending: Pending,
+        found: &mut BTreeSet<LoadBufferingShape>,
+    ) -> Result<Pending, ProtocolRefusal> {
+        use qsl_semantics::check::ControlStep;
+        let control = self.program.control(node)?;
+        match control.step {
+            ControlStep::Parallel => {
+                let ra = self
+                    .governing
+                    .get(&node)
+                    .map_or(ra, |model| *model == MemoryModelName::Ra);
+                for child in &control.children {
+                    self.node(*child, ra, Pending::new(), found)?;
+                }
+                Ok(pending)
+            }
+            ControlStep::Attempt => Ok(self.attempt(node, ra, pending, found)),
+            ControlStep::Fence => {
+                if acquires(Some(self.program.fence_ordering(node)?)) {
+                    Ok(Pending::new())
+                } else {
+                    Ok(pending)
+                }
+            }
+            ControlStep::Choice => {
+                let mut after = pending.clone();
+                for child in &control.children {
+                    after.extend(self.node(*child, ra, pending.clone(), found)?);
+                }
+                Ok(after)
+            }
+            ControlStep::Repeat => {
+                let once = self.sequence(&control.children, ra, pending, found)?;
+                self.sequence(&control.children, ra, once, found)
+            }
+            _ => self.sequence(&control.children, ra, pending, found),
+        }
+    }
+
+    fn sequence(
+        &self,
+        children: &[ProtocolNodeId],
+        ra: bool,
+        mut pending: Pending,
+        found: &mut BTreeSet<LoadBufferingShape>,
+    ) -> Result<Pending, ProtocolRefusal> {
+        for child in children {
+            pending = self.node(*child, ra, pending, found)?;
+        }
+        Ok(pending)
+    }
+
+    fn attempt(
+        &self,
+        node: ProtocolNodeId,
+        ra: bool,
+        pending: Pending,
+        found: &mut BTreeSet<LoadBufferingShape>,
+    ) -> Pending {
+        let Some(attempt) = self.accesses.of(node).filter(|_| ra) else {
+            return pending;
+        };
+        let mut after = Pending::new();
+        let acquiring = acquires(attempt.ordering);
+        for instance in &attempt.instances {
+            let InstanceAccess::Access { class, location } = &instance.access else {
+                continue;
+            };
+            match (class, location) {
+                (AccessClass::Load, Some(location)) if !acquiring => {
+                    after.insert((location.clone(), instance.transition.clone()));
+                }
+                (AccessClass::Store, Some(location)) => {
+                    for (loaded, load) in &pending {
+                        if loaded != location {
+                            found.insert(LoadBufferingShape {
+                                load: load.clone(),
+                                store: instance.transition.clone(),
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if acquiring {
+            return after;
+        }
+        after.extend(pending);
+        after
+    }
+}
+
+/// Whether `ordering` is `acquire` or stronger on the load side.
+fn acquires(ordering: Option<AccessOrdering>) -> bool {
+    matches!(
+        ordering,
+        Some(AccessOrdering::Acquire | AccessOrdering::AcqRel | AccessOrdering::SeqCst)
+    )
 }

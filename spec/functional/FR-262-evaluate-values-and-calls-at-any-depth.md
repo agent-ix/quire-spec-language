@@ -143,31 +143,13 @@ belong to the interface implementation.
 | Operation | Inputs | Result and responsibility |
 | --- | --- | --- |
 | Register host body | Open or sealed checked-closure-bound registry; admitted callable identity and signature; resumable body factory | Typed internal admission result under the ordered policy above; accepted factory supplies fresh invocation state for each call |
-| Begin application | The registry, which holds its one selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`, whose installed `Cancel` handle, if it has one, is the session's handle | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry; for a callable root, the closure supplies the checked-source root call location before the session is created |
+| Begin application | The registry, which holds its one selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`, whose installed `Cancel` handle, if it has one, is the session's handle | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry |
 | Step session | Exclusive access to that live session | Still runnable, or terminal `Evaluation` / `CallFailure` under the existing S6a contract |
 | Resume body | Invocation state; initial arguments or the matching child's evaluation; scoped access to the session meter | Continue with saved state, request a child application, or return an evaluation |
 
 Begin SHALL take no `Cancel` of its own. Cancellation reaches a session
 only through its meter's installed handle, which is the handle the caller
 cancels; a session whose meter has no installed handle cannot be cancelled.
-For a callable root, the checked-closure contract's
-`root_call_site(&NodeKey) -> Option<quire_semantic_value::location::Location>`
-accessor SHALL return the
-`quire_semantic_value::location::Location` of that callable's checked body
-root node from the package that declares it. In QSL this is the location
-`CheckedGraph::function_by_identity(callable).body.location()` reads from the
-declaring checked package, including an imported dependency; it carries the
-checker's `Origin::Body { function, index }` and root path. The core SHALL
-obtain this location from the closure after successful argument admission and
-before sealing the registry, and SHALL retain it in the root session entry.
-The core SHALL use it as `Evaluation.location` when the root
-`function.call` charge is denied, including by the meter's cancellation
-handle. It SHALL NOT accept a caller-provided location for Begin, synthesize
-one from a function name or package id, use the selected unit's location for
-an imported callable, or substitute a nested `ChildRequest.site`. If an
-admitted callable has no checked body root location, Begin SHALL return
-`CallFailure::Fault` with stage `quire-eval` and invariant
-`root-call-site-absent`, no session or charge, leaving the registry open.
 Begin's argument admission, for a callable's arguments and for a checked
 expression's parameter values, SHALL take the session's meter. The
 supplied-value run it admits arguments with
@@ -309,7 +291,6 @@ and JIT preparation retain their existing contracts.
 | FR-262-AC-10 | Begin takes no `Cancel` argument. With a meter whose installed handle is cancelled with `Deadline` at the first kernel charge a registered body makes, the session terminates with that charge's located incomplete result (`limit_kind: work_units`, `limit` equal to `consumed`), not `CallFailure::Cancelled`; `tripped()` returns `Deadline`. With the handle cancelled at a `function.call` charge, the result has the same form at that charge. When a caller cancels between two steps and the next transition makes no charge, that transition runs and the session terminates at the first charge after it. | Test |
 | FR-262-AC-11 | A registered body requests, in five runs: a `NodeKey` that no function of the closure has; the admitted `f(x: Int[0, 9]): Boolean` with two arguments; `f` with the argument `10`; a function `h(p: Population<T>[3]): Boolean` with a `Population` value whose `PopulationId` the environment does not resolve; and `h` with a `Population` value the environment resolves to a binding of declared maximum `4`. Each run terminates with `CallFailure::Fault` whose `InternalFault` has stage `quire-eval` and invariant `child-request-not-admitted`, category `internal failure`. The run makes no `function.call` charge for the child, invokes no callee body, does not resume the requesting body, and keeps the charges made before the request. In a sixth run, `h` requested with a `Population` value the environment resolves to a binding of declared maximum `3` is applied, with one `function.call` charge for it. Begin of `f` with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, and Begin of `f` with `10` returns `CallFailure::Input` from argument admission, each with no charge. | Test |
 | FR-262-AC-12 | Begin of the admitted `g(x: Int[0, 9], y: Int[0, 9]): Boolean` with arguments `3` and `4`, and Begin of a checked expression with those two parameter values, each return `CallFailure::Cancelled` with no session, all of the meter's consumed counters zero and no `function.call` charge recorded, in two runs: the meter's installed handle cancelled with `Requested` before Begin (cause `Requested`); and the meter's handle tripping with `Deadline` at the supplied-value run's first poll point for the second argument (cause `Deadline`). With no handle cancelled, both Begins return a session; with a meter that has no installed handle, both Begins return a session. This criterion binds `quire-eval`'s Begin with contract admission only; the pre-admitted Begin, which `qsl-eval`'s `call`, `evaluate` and `call_supplied` use, is FR-401-AC-9's. | Test (TC-1191) |
-| FR-262-AC-13 | Begin of an own callable and of an imported dependency callable obtains each callable's checked body root `Location` from its declaring checked graph. After successful Begin, cancelling the meter's installed handle before the first `function.call` charge returns a terminal incomplete evaluation whose `location` is exactly that graph's checked body root location, with no admitted charge and no body invocation; a work-limit denial at that charge has the same location. An admitted callable whose closure cannot return that location makes Begin return `CallFailure::Fault` with stage `quire-eval`, invariant `root-call-site-absent`, no session or charge, and an open registry. Begin has no caller-supplied location parameter; nested child requests continue to use their own `site`. | Test |
 
 ## Dependencies
 

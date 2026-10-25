@@ -8,8 +8,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, EvidenceKind,
-    EvidenceKindsDefect, FairnessKindsMember, ItemEvidence, ManifestDigest, Mode, ProviderOrigin,
-    RegistrationCause, RegistrationRefusal, Registry,
+    EvidenceKindsDefect, FairnessKindsMember, ItemEvidence, ManifestDigest, ManifestMembers, Mode,
+    ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -27,10 +27,13 @@ fn admit(
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         [(Some(kind), Some("unbounded"))],
-        None,
-        // A temporal backend must state its (possibly empty) fairness kinds.
+        ManifestMembers {
+ domains: None,
+ fairness_kinds: // A temporal backend must state its (possibly empty) fairness kinds.
         Some(FairnessKindsMember::List(&[])),
-        evidence,
+ evidence_kinds: evidence,
+ memory_models: None,
+ },
     )
 }
 
@@ -393,10 +396,13 @@ fn evidence_is_judged_after_pairs_domains_and_fairness() {
             ProviderOrigin::Linked,
             ManifestDigest::from_digest([1; 32]),
             advertised,
-            domains,
-            fairness,
-            // Always defective: absent for a probabilistic backend.
+            ManifestMembers {
+ domains,
+ fairness_kinds: fairness,
+ evidence_kinds: // Always defective: absent for a probabilistic backend.
             None,
+ memory_models: None,
+ },
         )
         .expect_err("refused")
     };

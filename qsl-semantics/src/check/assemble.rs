@@ -822,7 +822,7 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
-                DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
+                DeclarationForm::Unit(quantity) => unit.units.push(quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);

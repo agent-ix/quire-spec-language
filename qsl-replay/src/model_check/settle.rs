@@ -38,8 +38,11 @@ use crate::proof_result::{
     TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
     WeakAccessFailure as OutcomeWeakAccessFailure,
 };
+use qsl_eval::model_subject::ProtocolSubject;
+use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::protocol::{
-    activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
+    activates_on_each, live_instance_bound, load_buffering_shapes, ProtocolTransition,
+    SubjectMemory, WeakAccessShape,
 };
 use qsl_eval::simulation::SubjectTransition;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -104,6 +107,32 @@ pub enum Truth {
     Unavailable,
 }
 
+/// A warning on an EN-1 terminal record's `warnings` (QSpec FR-331).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecordWarning {
+    /// FR-226: a branch of a `parallel` resolved to `ra` has a `relaxed` or
+    /// non-atomic load followed by a store to another shared location, with
+    /// no acquire between them.
+    LoadBufferingShape {
+        /// The load's transition identity.
+        load: ModelTransition,
+        /// The store's transition identity.
+        store: ModelTransition,
+    },
+}
+
+impl RecordWarning {
+    /// The diagnostic code of a load-buffering warning.
+    pub const LOAD_BUFFERING_SHAPE: &'static str = "memory.load-buffering-shape";
+
+    /// This warning's diagnostic code.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::LoadBufferingShape { .. } => Self::LOAD_BUFFERING_SHAPE,
+        }
+    }
+}
+
 /// One EN-1 item's terminal record (FR-127 Outputs). Only the settlement maps
 /// of this crate construct one, so a `refuted` record always came from a
 /// reproduced replay.
@@ -135,6 +164,10 @@ pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// They are outside it, its replay identity and the obligation
     /// identity, and change no verdict.
     pub hints: Vec<StrongFairnessHint>,
+    /// The warnings EN-1's pre-check raised (FR-226): each beside the
+    /// value, outside the counterexample, its replay identity and the
+    /// obligation identity, and changing no verdict.
+    pub warnings: Vec<RecordWarning>,
     /// The memory bound the run used and whether it was reached (ADR-025
     /// MB-2, FR-225); `None` for a subject whose memory model has no bound,
     /// such as one under `sc`.
@@ -249,6 +282,7 @@ pub fn settle_protocol_check(
             value: ra.max_messages(),
         }),
     };
+    record.warnings = load_buffering_warnings(&certificate.subject);
     record.memory_bound = bound.map(|bound| StatedMemoryBound {
         bound,
         // Reached whenever a store was cut: by the engine's run, whatever
@@ -283,6 +317,32 @@ pub fn settle_protocol_check(
             ),
     });
     record
+}
+
+/// FR-226: EN-1's pre-check warnings for `subject`, one per load-buffering
+/// shape of a `parallel` resolved to `ra`. A subject the pre-check cannot
+/// classify raises none: its access failure settles the item itself.
+fn load_buffering_warnings(subject: &ProtocolSubject<'_>) -> Vec<RecordWarning> {
+    let Some(protocol) = subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&subject.protocol)
+    else {
+        return Vec::new();
+    };
+    let Ok(model) = ModelSystem::new(subject.model.simulation.clone()) else {
+        return Vec::new();
+    };
+    load_buffering_shapes(&model, protocol, &subject.memory, &subject.over)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|shape| RecordWarning::LoadBufferingShape {
+            load: shape.load,
+            store: shape.store,
+        })
+        .collect()
 }
 
 /// FR-439's `weak-access-shape` cause of `shape`: its site, its
@@ -451,6 +511,7 @@ fn settle<T: SubjectTransition>(
         limit_reached: row.limit_reached,
         counterexample,
         hints,
+        warnings: Vec::new(),
         memory_bound: None,
         instance_bound: None,
     }

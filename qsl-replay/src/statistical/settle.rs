@@ -437,7 +437,7 @@ mod tests {
         let max_samples = ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples);
         assert_eq!(budget.value, incomplete(max_samples, 5));
         assert_eq!(max_samples.setting(), "statistical.max_samples");
-        assert_eq!(max_samples.as_str(), "max_samples");
+        assert_eq!(max_samples.as_str(), "max-samples");
         assert_eq!(budget.category(), Category::Incomplete);
         assert_eq!(budget.measured(), None);
         let json = wire(budget);

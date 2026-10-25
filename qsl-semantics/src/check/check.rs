@@ -2136,8 +2136,8 @@ impl<'a> Typer<'a> {
 
     /// Type this body as a derived StateModel helper family.
     #[must_use]
-    pub(crate) fn with_model_family(mut self, derived: bool) -> Self {
-        self.model_family = derived;
+    pub(crate) fn with_model_family(mut self) -> Self {
+        self.model_family = true;
         self
     }
 

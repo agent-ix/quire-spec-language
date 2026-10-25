@@ -679,9 +679,6 @@ fn read_enclosure(
         .collect()
 }
 
-/// Whether `text` spells an integer in canonical decimal form.
-/// `#[string_edge]`: validates an integer spelling received from the wire.
-#[string_edge]
 fn canonical_integer(text: &str) -> Option<quire_exact::Integer> {
     let digits = text.strip_prefix('-').unwrap_or(text);
     let canonical = !digits.is_empty()

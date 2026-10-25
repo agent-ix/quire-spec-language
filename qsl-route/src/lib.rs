@@ -287,6 +287,20 @@ pub struct BackendDescriptor {
     solver_bounds: Option<SolverBounds>,
 }
 
+/// The optional FR-331 manifest members [`descriptor_from_manifest`] reads
+/// beside the advertised pairs, each `None` when the manifest has none.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ManifestMembers<'a> {
+    /// The `domains` member.
+    pub domains: Option<&'a [&'a str]>,
+    /// The `fairness_kinds` member exactly as supplied.
+    pub fairness_kinds: Option<FairnessKindsMember<'a>>,
+    /// The evidence-kind labels.
+    pub evidence_kinds: Option<&'a [&'a str]>,
+    /// The `memory_models` member (QSpec FR-331-AC-30).
+    pub memory_models: Option<&'a [MemoryModelName]>,
+}
+
 /// Convert one already-read FR-331 provider manifest into its routed
 /// descriptor. The driver supplies the manifest fields as data; this is the
 /// sole manifest conversion entry point shared by linked and process
@@ -302,6 +316,11 @@ pub struct BackendDescriptor {
 /// in member order) or `duplicate-label`. An empty list is admitted and
 /// advertises none.
 ///
+/// `memory_models` is the manifest's `memory_models` member (QSpec
+/// FR-331-AC-30), `None` when it has none. Only a backend that advertises
+/// `temporal-satisfaction` reads it; a descriptor with no member advertises
+/// `sc` only (FR-226-AC-2).
+///
 /// `evidence_kinds` is the manifest's evidence-kind labels, `None` when it
 /// has none. It is judged last (after every advertised pair, `domains` and
 /// `fairness_kinds`), and only for a backend that advertises
@@ -314,10 +333,14 @@ pub fn descriptor_from_manifest<'a>(
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
-    domains: Option<&[&str]>,
-    fairness_kinds: Option<FairnessKindsMember<'_>>,
-    evidence_kinds: Option<&[&str]>,
+    members: ManifestMembers<'_>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
+    let ManifestMembers {
+        domains,
+        fairness_kinds,
+        evidence_kinds,
+        memory_models,
+    } = members;
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
         manifest_digest,
@@ -349,6 +372,11 @@ pub fn descriptor_from_manifest<'a>(
     } else {
         BTreeSet::new()
     };
+    let memory_models = if advertises_temporal {
+        memory_models.unwrap_or_default().iter().copied().collect()
+    } else {
+        BTreeSet::new()
+    };
     let evidence_kinds = if advertises_probabilistic(&advertises) {
         admit_evidence_kinds(evidence_kinds)
             .map_err(|defect| refuse(RegistrationCause::UnknownEvidenceKind(defect)))?
@@ -365,10 +393,7 @@ pub fn descriptor_from_manifest<'a>(
         evidence_kinds,
         dynamics: None,
         solver_bounds: None,
-        // Remaining work: QSpec FR-331-AC-30's `memory_models` member is not
-        // read here yet, so a manifest descriptor advertises `sc` only, as a
-        // descriptor without the member does (FR-226).
-        memory_models: BTreeSet::new(),
+        memory_models,
     })
 }
 
@@ -401,9 +426,12 @@ pub fn descriptor_from_manifest_with_dynamics<'a>(
         origin,
         manifest_digest,
         advertised,
-        domains,
-        fairness_kinds,
-        evidence_kinds,
+        ManifestMembers {
+            domains,
+            fairness_kinds,
+            evidence_kinds,
+            memory_models: None,
+        },
     )?;
     if !descriptor.advertises_kind(Capability::TemporalSatisfaction) {
         return Ok(descriptor);

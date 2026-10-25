@@ -967,27 +967,6 @@ impl Seams<'_> {
                         None => true,
                     }
                 }
-                ["(if", present, "then", "1", "mod", value, "else", "0)", "=", "0"]
-                    if present.starts_with("present(") && value.starts_with("value(") =>
-                {
-                    let variable = present
-                        .trim_start_matches("present(")
-                        .split('.')
-                        .next()
-                        .expect("a variable");
-                    match input_of(label(variable)) {
-                        Some(input) => match 1i64.checked_rem(input) {
-                            Some(remainder) => remainder == 0,
-                            None => {
-                                return MatchReading::Undefined {
-                                    conjunct: index,
-                                    cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
-                                }
-                            }
-                        },
-                        None => true,
-                    }
-                }
                 other => panic!("unmodelled match conjunct {other:?}"),
             };
             if !holds {

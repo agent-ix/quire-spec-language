@@ -9,7 +9,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_foundation::MemoryModelName::{self, Ra, Sc, Tso};
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, FairnessKindsMember,
+    FairnessLabel, ManifestDigest, ManifestMembers, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind::Weak;
@@ -85,4 +86,40 @@ fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
     assert_eq!(candidates(&unadvertised, Ra), []);
     let tso_only = registry([temporal("tso-only", 4, &[Tso])]);
     assert_eq!(candidates(&tso_only, Sc), []);
+}
+
+/// FR-226-AC-2 (TC-671 step 2) at the manifest conversion: a temporal
+/// manifest carrying `memory_models` advertises exactly them, and one
+/// without the member advertises `sc` only, so it is no candidate for a
+/// `tso` or `ra` item.
+#[trace("TC-671", "FR-226-AC-2")]
+#[test]
+fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() {
+    let converted = |id: &str, seed: u8, models: Option<&[MemoryModelName]>| {
+        descriptor_from_manifest(
+            candidate(id),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest([seed; 32]),
+            [(Some("temporal-satisfaction"), Some("unbounded"))],
+            ManifestMembers {
+                domains: None,
+                fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
+                evidence_kinds: None,
+                memory_models: models,
+            },
+        )
+        .expect("a well-formed manifest")
+    };
+    let with = converted("with", 1, Some(&[Sc, Tso, Ra]));
+    assert_eq!(with.memory_models(), &BTreeSet::from([Sc, Tso, Ra]));
+    let without = converted("without", 2, None);
+    assert!(without.memory_models().is_empty());
+
+    let routed = registry([with, without]);
+    assert_eq!(
+        candidates(&routed, Sc),
+        [candidate("with"), candidate("without")]
+    );
+    assert_eq!(candidates(&routed, Tso), [candidate("with")]);
+    assert_eq!(candidates(&routed, Ra), [candidate("with")]);
 }

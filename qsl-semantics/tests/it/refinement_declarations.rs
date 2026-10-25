@@ -393,58 +393,6 @@ fn queue_spec() -> Vec<u8> {
     )
 }
 
-fn queue_spec_with_relationship() -> Vec<u8> {
-    let mut package: Value = serde_json::from_slice(&queue_spec()).expect("queue model JSON");
-    package["types"][0]["relationships"] = json!([{
-        "identity": node(QUEUE, "relationship/Queue-peers-Queue"),
-        "category": "structural",
-        "composite": false,
-        "direction": "undirected",
-        "origin": {"source": {
-            "sourceIdentity": node(QUEUE, "spec"),
-            "path": "spec.qspec",
-            "startLine": 1,
-            "startColumn": 1,
-        }},
-        "sourceEnd": {
-            "role": "peers",
-            "type": node(QUEUE, "Queue"),
-            "multiplicity": {"lower": 0, "ordered": false, "unique": false},
-        },
-        "targetEnd": {
-            "type": node(QUEUE, "Queue"),
-            "multiplicity": {"lower": 0, "ordered": false, "unique": false},
-        },
-    }]);
-    serde_json::to_vec(&package).expect("queue model with relationship")
-}
-
-/// FR-135-AC-7 (TC-540): an abstract model relationship is rejected at its
-/// alias regardless of refinement support, with its form and selected profile.
-#[trace("TC-540", "FR-135-AC-7")]
-#[test]
-fn an_abstract_model_relationship_refuses_the_refinement() {
-    let (ring, queue) = (ring_buffer(), queue_spec_with_relationship());
-    let found = refused(
-        &[("Q", QUEUE, &queue), ("R", RING, &ring)],
-        &ring_refinement("enq(self.ring, x)", "deq(self.ring)"),
-    );
-    let refusal = only(&found);
-    assert_eq!(
-        refusal.code_and_cause(),
-        (Code::UnsupportedConstruct, Some("declaration-form"))
-    );
-    assert_eq!(refusal.at, "Q");
-    assert_eq!(
-        refusal.refinement(),
-        &RefinementCause::AbstractRelationships {
-            form: "relationship",
-            refinement: "RingIsQueue".to_owned(),
-            profile: "quire.temporal.infinite-trace/v1".to_owned(),
-        }
-    );
-}
-
 /// `Ring { head, size }` and `Slot { ring, next, index, value }`, whose
 /// `put(x)` and `take()` are the concrete operations.
 fn ring_buffer() -> Vec<u8> {

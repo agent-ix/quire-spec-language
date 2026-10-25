@@ -11,7 +11,7 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ItemEvidence,
-    ManifestDigest, Mode, ProviderOrigin, Registry,
+    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -30,9 +30,12 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
             Some(Capability::ProbabilisticSatisfaction.to_wire()),
             Some(Mode::Bounded.to_wire()),
         )],
-        Some(&[DomainKind::Population.to_wire()]),
-        None,
-        Some(&[EvidenceKind::Exact.to_wire()]),
+        ManifestMembers {
+            domains: Some(&[DomainKind::Population.to_wire()]),
+            fairness_kinds: None,
+            evidence_kinds: Some(&[EvidenceKind::Exact.to_wire()]),
+            memory_models: None,
+        },
     )
     .expect("a well-formed exact backend")
 }

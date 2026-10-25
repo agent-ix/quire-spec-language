@@ -168,10 +168,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Seq { binder, .. } => format!("Seq[{binder}]"),
         ExprNode::Size(_) => "Size".into(),
         ExprNode::Contains { .. } => "Contains".into(),
-        ExprNode::AllInstances { target, .. } => match &target.head {
-            TypeFormHead::Name(name) => format!("AllInstances[Name({:?})]", name.name),
-            head => format!("AllInstances[{head:?}]"),
-        },
+        ExprNode::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
         ExprNode::Lookup { .. } => "Lookup".into(),
         ExprNode::Dispatch { .. } => "Dispatch".into(),
         ExprNode::Pre(_) => "Pre".into(),

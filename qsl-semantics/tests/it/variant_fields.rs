@@ -576,7 +576,7 @@ fn each_mistyped_use_of_a_variant_type_refuses_with_its_cause() {
         &[],
         name("Config::Nope::Gold"),
         None,
-        CheckCause::MissingQualifiedName("Config::Nope::Gold".into()),
+        CheckCause::MissingName("Config::Nope::Gold".to_owned()),
         "a case of no variant type",
     );
     for operator in [

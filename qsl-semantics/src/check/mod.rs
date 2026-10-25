@@ -1085,7 +1085,7 @@ impl PackageDeclarations {
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
-                                        let operations = model.tick_operation_keys(operation);
+                                        let operations = model.tick_operation_keys(&operation);
                                         let [resolved] = operations.as_slice() else {
                                             let cause = if operations.is_empty() {
                                                 TemporalCause::MissingTickOperation {
@@ -1755,14 +1755,6 @@ impl PackageDeclarations {
                     .copied()
                     .unwrap_or(false)
                     .then(|| model_scope.clone()),
-                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false)
-                    && self
-                        .function_selections
-                        .get(&index)
-                        .is_some_and(|selection| {
-                            crate::value::layer::HeaderLayer::from_identity(&selection.identity)
-                                == Some(crate::value::layer::HeaderLayer::ValueComplete)
-                        }),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -2110,7 +2102,6 @@ impl PackageDeclarations {
                     &declarations,
                     &mut contract_cx,
                     &env,
-                    self.identity,
                 );
                 nodes_used = used;
                 // A limit or a cancellation stops the unit at a refusal, as

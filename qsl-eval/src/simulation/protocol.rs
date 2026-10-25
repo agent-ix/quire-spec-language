@@ -66,8 +66,8 @@ use crate::value::evaluate_protocol_slot;
 use steps::ProtocolExpansion;
 
 pub use access::{
-    AccessShape, AttemptInstance, InstanceAccess, WeakAccessFailure, WeakAccessShape, WeakAccesses,
-    WeakAttempt,
+    AccessShape, AttemptInstance, InstanceAccess, LoadBufferingShape, WeakAccessFailure,
+    WeakAccessShape, WeakAccesses, WeakAttempt,
 };
 pub use fairness::{
     protocol_constraints, FairnessOrigin, ProtocolClass, ProtocolFairness, ProtocolFairnessError,
@@ -738,6 +738,38 @@ pub fn classify_accesses(
         model.initial().first(),
         &over,
         access::ClassificationMode::Enabled,
+    )
+}
+
+/// FR-226 (ADR-025 MX-4): EN-1's pre-check of the load-buffering shapes of
+/// `protocol` under `memory`, one per distinct (load, store) pair of a
+/// `parallel` resolved to `ra`, in ascending order. A subject resolving no
+/// `parallel` to `ra` has none.
+///
+/// # Errors
+///
+/// As [`classify_accesses`].
+pub fn load_buffering_shapes(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+    memory: &ResolvedMemory,
+    over: &ModelInstance,
+) -> Result<Vec<LoadBufferingShape>, ProtocolRefusal> {
+    let governing = memory
+        .governing(protocol)
+        .map_err(ProtocolRefusal::Memory)?;
+    if !governing
+        .values()
+        .any(|model| *model == qsl_foundation::MemoryModelName::Ra)
+    {
+        return Ok(Vec::new());
+    }
+    let program = Program::new(protocol)?;
+    let accesses = classify_accesses(model, protocol, memory, over)?;
+    Ok(
+        access::load_buffering_shapes(&program, &governing, &accesses)?
+            .into_iter()
+            .collect(),
     )
 }
 

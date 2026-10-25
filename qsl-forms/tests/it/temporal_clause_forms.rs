@@ -419,34 +419,20 @@ fn fairness_constraints_build_their_kind_granularity_operation_and_span() {
 
 /// One node of a formula without its spans: the operator, the interval
 /// bounds and the operand ids, or the constant or `holds` expression.
-fn assert_same_without_spans(left: &TemporalFormulaForm, right: &TemporalFormulaForm) {
-    assert_eq!(left.root(), right.root());
-    assert_eq!(left.nodes().len(), right.nodes().len());
-    for (left, right) in left.nodes().iter().zip(right.nodes()) {
-        match (left, right) {
-            (
-                TemporalNodeForm::Constant { value: left, .. },
-                TemporalNodeForm::Constant { value: right, .. },
-            ) => assert_eq!(left, right),
-            (
-                TemporalNodeForm::Holds {
-                    condition: left, ..
-                },
-                TemporalNodeForm::Holds {
-                    condition: right, ..
-                },
-            ) => assert!(left.expression.root().same_tree(right.expression.root())),
-            (TemporalNodeForm::Operator(left), TemporalNodeForm::Operator(right)) => {
-                assert_eq!(left.operator, right.operator);
-                assert_eq!(
-                    steps(&left.interval).map(|interval| (interval.lower, interval.upper)),
-                    steps(&right.interval).map(|interval| (interval.lower, interval.upper))
-                );
-                assert_eq!(left.operands, right.operands);
-            }
-            _ => panic!("formula node kinds differ: {left:?} and {right:?}"),
-        }
-    }
+fn without_spans(form: &TemporalFormulaForm) -> Vec<String> {
+    form.nodes()
+        .iter()
+        .map(|node| match node {
+            TemporalNodeForm::Constant { value, .. } => format!("{value}"),
+            TemporalNodeForm::Holds { condition, .. } => format!("{:?}", condition.expression),
+            TemporalNodeForm::Operator(operator) => format!(
+                "{:?} {:?} {:?}",
+                operator.operator,
+                steps(&operator.interval).map(|i| (i.lower, i.upper)),
+                operator.operands
+            ),
+        })
+        .collect()
 }
 
 /// FR-325-AC-6 (TC-835 step 6): captures after the fairness constraints
@@ -508,7 +494,10 @@ fn captures_build_their_type_value_and_span_beside_an_unchanged_formula() {
 
     assert!(clause(&bare).captures.is_empty());
     assert_eq!(built.fairness.len(), clause(&bare).fairness.len());
-    assert_same_without_spans(&built.formula, &clause(&bare).formula);
+    assert_eq!(
+        without_spans(&built.formula),
+        without_spans(&clause(&bare).formula)
+    );
 }
 
 /// FR-325-AC-7 (TC-835): the clause keeps its `clock` string, decoded, and

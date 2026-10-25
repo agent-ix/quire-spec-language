@@ -1757,10 +1757,7 @@ fn enum_types_and_members_check_and_a_case_the_enum_lacks_refuses() {
         refusals.iter().any(|refusal| {
             refusal.cause.code() == qsl_foundation::Code::MissingDeclaration
                 && refusal.cause.cause() == Some("missing-name")
-                && matches!(
-                    &refusal.cause,
-                    CheckCause::MissingQualifiedName(name) if name.name == "Status::GONE"
-                )
+                && matches!(&refusal.cause, CheckCause::MissingName(name) if name == "Status::GONE")
         }),
         "{refusals:?}"
     );

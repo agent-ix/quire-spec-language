@@ -28,9 +28,8 @@ use quire_exact::LimitKind;
 
 mod process_request;
 pub use process_request::{
-    AdmittedHybridProcessItem, AdmittedHybridProcessRequest, HybridProcessDependencyPackage,
-    HybridProcessItem, HybridProcessPackageContext, HybridProcessRequest,
-    HybridProcessRequestRefusal,
+    AdmittedHybridProcessItem, AdmittedHybridProcessRequest, HybridProcessItem,
+    HybridProcessRequest, HybridProcessRequestRefusal,
 };
 
 /// The kind of method a provider ran. QSL decides soundness from the kind
@@ -105,7 +104,7 @@ pub enum SolverStop {
     /// The wall-clock budget ran out: settles `incomplete`, `timed-out`.
     Time,
     /// The step budget ran out after this many steps: settles `incomplete`,
-    /// `limit-reached` naming `max_solver_steps`.
+    /// `limit-reached` naming `solver-steps`.
     Steps(u64),
 }
 
@@ -939,10 +938,10 @@ mod tests {
         )
     }
 
-    fn process_package_context() -> HybridProcessPackageContext {
-        let mut context = HybridProcessPackageContext::new();
-        context.support_feature("quire.value.complete/v1");
-        context
+    fn process_package_evidence() -> quire_contract_model::CheckedPackageEvidence {
+        let mut evidence = quire_contract_model::CheckedPackageEvidence::default();
+        evidence.support_feature("quire.value.complete/v1");
+        evidence
     }
 
     /// QSpec FR-193's verdict map, FR-250's table: a sound `Unsat` settles
@@ -1035,7 +1034,7 @@ mod tests {
 
     /// A solver stopped by its time budget settles `incomplete`,
     /// `timed-out`, carrying no seconds; one stopped by its step budget
-    /// settles `incomplete`, `limit-reached` naming `max_solver_steps`.
+    /// settles `incomplete`, `limit-reached` naming `solver-steps`.
     #[trace("TC-705", "FR-250-AC-2", "FR-250-AC-3")]
     #[test]
     fn a_stopped_solver_settles_incomplete_by_the_budget_that_stopped_it() {
@@ -1077,7 +1076,7 @@ mod tests {
                 "result": "incomplete",
                 "cause": {
                     "kind": "limit-reached",
-                    "limit": "max_solver_steps",
+                    "limit": "solver-steps",
                     "value": 1000,
                     "setting": "hybrid.max_solver_steps",
                 },
@@ -1261,9 +1260,11 @@ mod tests {
         let budget = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000))
             .expect("the budget is admitted");
         let item = process_item(package_bytes, budget);
-        let context = process_package_context();
-        let request = HybridProcessRequest::compose(package_bytes, &context, 20_000, &[item])
-            .expect("the process request composes");
+        let evidence = process_package_evidence();
+        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
+        let request =
+            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
+                .expect("the process request composes");
         let wire: serde_json::Value =
             serde_json::from_slice(request.bytes()).expect("the request is JSON");
         use base64::Engine as _;
@@ -1275,7 +1276,7 @@ mod tests {
             wire["items"][0]["hybrid"]["limits"],
             json!({"max_solver_time": 2, "max_solver_steps": 1000})
         );
-        let admitted = HybridProcessRequest::read(request.bytes(), &context)
+        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
             .expect("the process request reads against its package");
         assert_eq!(admitted.hybrids().claims.len(), 1);
         assert_eq!(admitted.items()[0].budget(), budget);
@@ -1285,7 +1286,7 @@ mod tests {
         let wrong_occurrence =
             serde_json::to_vec(&wrong_occurrence).expect("wrong occurrence serializes");
         assert!(matches!(
-            HybridProcessRequest::read(&wrong_occurrence, &context),
+            HybridProcessRequest::read(&wrong_occurrence, &evidence, limits),
             Err(HybridProcessRequestRefusal::ClaimMismatch)
         ));
 
@@ -1293,7 +1294,7 @@ mod tests {
         malformed["items"][0]["hybrid"]["limits"]["max_solver_time"] = json!(1.5);
         let malformed = serde_json::to_vec(&malformed).expect("malformed request serializes");
         assert!(matches!(
-            HybridProcessRequest::read(&malformed, &context),
+            HybridProcessRequest::read(&malformed, &evidence, limits),
             Err(HybridProcessRequestRefusal::Budget(
                 BudgetRefusal::NotAWholeNumber("max_solver_time")
             ))
@@ -1396,10 +1397,12 @@ mod tests {
         let package_bytes = emission.package().bytes();
         let unset = SolverBudget::from_request(None, None).expect("unset budget is valid");
         let item = process_item(package_bytes, unset);
-        let context = process_package_context();
-        let request = HybridProcessRequest::compose(package_bytes, &context, 20_000, &[item])
-            .expect("the process request composes");
-        let admitted = HybridProcessRequest::read(request.bytes(), &context)
+        let evidence = process_package_evidence();
+        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
+        let request =
+            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
+                .expect("the process request composes");
+        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
             .expect("the process request admits its v2 package");
         let request_wire: serde_json::Value =
             serde_json::from_slice(request.bytes()).expect("the process request is JSON");

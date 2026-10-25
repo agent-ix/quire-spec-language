@@ -2308,43 +2308,21 @@ pub struct CaseForm {
 }
 
 /// A qualified name as written, with its ordered identifier segments and span.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NameForm {
     /// The name as written.
     pub name: String,
     /// The identifier segments, in source order.
-    pub segments: Box<[String]>,
+    pub segments: Vec<String>,
     /// The span of the name.
     pub span: Span,
-}
-
-// Source locations are carried for diagnostics, but they do not change the
-// identity or meaning of a name. Keeping them out of equality also lets
-// callers compare a parsed name with a synthesized expected form.
-impl PartialEq for NameForm {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.segments == other.segments
-    }
-}
-
-impl Eq for NameForm {}
-
-impl std::hash::Hash for NameForm {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.segments.hash(state);
-    }
 }
 
 impl NameForm {
     /// Construct a name form from its spelling and source span.
     pub fn new(name: impl Into<String>, span: Span) -> Self {
         let name = name.into();
-        let segments = name
-            .split("::")
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let segments = name.split("::").map(str::to_owned).collect();
         Self {
             name,
             segments,
@@ -2361,12 +2339,7 @@ impl NameForm {
     /// segment values. Source forms are otherwise built from the CST.
     pub fn set_spelling(&mut self, spelling: impl Into<String>) {
         self.name = spelling.into();
-        self.segments = self
-            .name
-            .split("::")
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        self.segments = self.name.split("::").map(str::to_owned).collect();
     }
 
     /// Build a name form for a name synthesized without a source span.
@@ -3294,7 +3267,7 @@ pub struct TimedIntervalForm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TimedUpper {
     /// A quantity literal.
-    Finite(Box<QuantityForm>),
+    Finite(QuantityForm),
     /// `*`: the interval has no upper bound.
     Open,
 }
@@ -3434,8 +3407,8 @@ pub enum ActivationForm {
     Origin,
     /// `on each (p: T) [when (e)]`.
     Each {
-        /// The activation parameter, boxed to keep `Origin` compact.
-        parameter: Box<ParameterForm>,
+        /// The activation parameter.
+        parameter: ParameterForm,
         /// The `when` condition, when written.
         when: Option<ExpressionForm>,
     },
@@ -4125,8 +4098,8 @@ pub enum DeclarationForm {
     Enum(EnumForm),
     /// A `dimension` declaration.
     Dimension(DimensionForm),
-    /// A `unit` declaration, boxed to keep the declaration sum compact.
-    Unit(Box<UnitForm>),
+    /// A `unit` declaration.
+    Unit(UnitForm),
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
@@ -4309,10 +4282,7 @@ mod tests {
             assert_eq!(copy, tree);
             let rendered = format!("{tree:?}");
             assert!(rendered.starts_with(&format!("#{} ", tree.len() - 1)));
-            assert_eq!(
-                rendered.matches("Name(NameForm { name: \"bottom\"").count(),
-                1
-            );
+            assert_eq!(rendered.matches("Name(\"bottom\")").count(), 1);
             drop(copy);
             drop(tree);
         });
@@ -4337,7 +4307,7 @@ mod tests {
             format!("{tree:?}"),
             "#5 Binary { operator: Add, left: #2, right: #4 } \
              [#2 Binary { operator: Subtract, left: #0, right: #1 } \
-             [#0 Name(NameForm { name: \"a\", segments: [\"a\"], span: Span { start: 0, end: 0 } }), #1 Name(NameForm { name: \"b\", segments: [\"b\"], span: Span { start: 0, end: 0 } })], #4 Not(#3) [#3 Name(NameForm { name: \"c\", segments: [\"c\"], span: Span { start: 0, end: 0 } })]]"
+             [#0 Name(\"a\"), #1 Name(\"b\")], #4 Not(#3) [#3 Name(\"c\")]]"
         );
         let built = {
             let mut builder = ExpressionBuilder::new();
