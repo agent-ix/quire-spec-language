@@ -1437,13 +1437,15 @@ mod tests {
 
     /// FR-088-AC-8 (TC-260, partial: steps 1 and 2, and step 3 for fields
     /// whose name says they hold a type): `ValueTypeRef` is defined once in
-    /// the QSL crates, as exactly `{Native(NativeValueType),
-    /// Package(DeclarationKey)}`; in `model`, every struct field and enum variant field whose name
-    /// contains `type` names no `NodeKey` or string (bar the raw wire views), and each of the three
+    /// the QSL crates, as exactly `{Clock, Native(NativeValueType),
+    /// Package(DeclarationKey), Unit(String)}`. `Clock` is a place in a timed
+    /// model (FR-230) and carries no field; `Unit`'s string is a unit name the
+    /// assembler resolves (FR-056-AC-42), not a type name. In `model`, every
+    /// struct field and enum variant field whose name contains `type` names no `NodeKey` or string (bar the raw wire views), and each of the three
     /// value-type records carries a `ValueTypeRef`.
     #[trace("TC-260", "FR-088-AC-8")]
     #[test]
-    fn tc_260_value_type_ref_is_the_two_member_union() {
+    fn tc_260_value_type_ref_is_the_four_member_union() {
         let items = qsl_items();
         let definitions: Vec<&Enum> = items
             .enums
@@ -1463,9 +1465,15 @@ mod tests {
             .collect();
         let native: BTreeSet<String> = ["NativeValueType".to_owned()].into();
         let package: BTreeSet<String> = ["DeclarationKey".to_owned()].into();
+        let unit: BTreeSet<String> = ["String".to_owned()].into();
         assert_eq!(
             variants,
-            [("Native", vec![&native]), ("Package", vec![&package])]
+            [
+                ("Clock", vec![]),
+                ("Native", vec![&native]),
+                ("Package", vec![&package]),
+                ("Unit", vec![&unit]),
+            ]
         );
 
         let model_structs = || {
