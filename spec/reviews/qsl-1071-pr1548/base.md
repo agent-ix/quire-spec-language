@@ -1,5 +1,5 @@
 ---
-id: SR-17220
+id: SR-17221
 title: "spec-review of hyper emission FR-488 and TC-1266 (quire-spec-language PR 1548)"
 type: SpecReview
 analysis: base
