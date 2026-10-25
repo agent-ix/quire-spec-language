@@ -1056,11 +1056,21 @@ fn e3_resolves_an_imported_name_only_through_its_qualifier() {
         let CompileRefusal::Check { refusals, .. } = &*refusal else {
             panic!("{call}: expected a check refusal, got {refusal:?}");
         };
-        assert!(
-            matches!(&refusals[0].cause, qsl_semantics::check::CheckCause::MissingName(missing) if missing == name),
-            "{call}: {:?}",
-            refusals[0].cause
-        );
+        let missing_name_matches = if call.contains("::") {
+            matches!(
+                &refusals[0].cause,
+                qsl_semantics::check::CheckCause::MissingQualifiedName(missing)
+                    if missing.name == call.split('(').next().unwrap_or_default()
+                        && missing.segments.iter().map(String::as_str).collect::<Vec<_>>()
+                            == call.split('(').next().unwrap_or_default().split("::").collect::<Vec<_>>()
+            )
+        } else {
+            matches!(
+                &refusals[0].cause,
+                qsl_semantics::check::CheckCause::MissingName(missing) if missing == name
+            )
+        };
+        assert!(missing_name_matches, "{call}: {:?}", refusals[0].cause);
         assert_eq!(refusals[0].cause.cause(), Some("missing-name"), "{call}");
     }
 }

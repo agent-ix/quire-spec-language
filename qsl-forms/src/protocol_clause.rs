@@ -274,7 +274,7 @@ pub(crate) fn protocol_declaration(
     let activation_form = match nodes_of(&activation_items, Production::Parameter).first() {
         None => ActivationForm::Origin,
         Some(parameter) => ActivationForm::Each {
-            parameter: parameter_form(cst, parameter)?,
+            parameter: Box::new(parameter_form(cst, parameter)?),
             when: nodes_of(&activation_items, Production::Expression)
                 .first()
                 .map(|condition| expression_form(cst, condition))
