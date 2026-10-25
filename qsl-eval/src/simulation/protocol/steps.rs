@@ -1260,26 +1260,25 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     applied.arguments.iter().map(value_enc).collect(),
                 )
                 .choosing(chosen.choice);
-                if matches!(access.class, AccessClass::Load | AccessClass::Rmw)
-                    && let Some(shared) = access.shared
-                    && let Some(read_depth) = chosen
-                        .choice
-                        .as_ref()
-                        .and_then(|choice| choice.read_depth)
-                {
-                    let limits = quire_canonical::Limits::new(u64::MAX);
-                    let thread = quire_canonical::to_vec(path, limits)
-                        .map_err(|_| ProtocolRefusal::fault("a-visibility-thread-encodes"))?;
-                    let location = quire_canonical::to_vec(
-                        &super::access::location_enc(shared.location, Some(shared.cell)),
-                        limits,
-                    )
-                    .map_err(|_| ProtocolRefusal::fault("a-visibility-location-encodes"))?;
-                    identity = identity.observing_visibility(VisibilityRead {
-                        thread,
-                        location,
-                        fresh: read_depth == 0,
-                    });
+                if matches!(access.class, AccessClass::Load | AccessClass::Rmw) {
+                    if let (Some(shared), Some(read_depth)) = (
+                        access.shared,
+                        chosen.choice.as_ref().and_then(|choice| choice.read_depth),
+                    ) {
+                        let limits = quire_canonical::Limits::new(u64::MAX);
+                        let thread = quire_canonical::to_vec(path, limits)
+                            .map_err(|_| ProtocolRefusal::fault("a-visibility-thread-encodes"))?;
+                        let location = quire_canonical::to_vec(
+                            &super::access::location_enc(shared.location, Some(shared.cell)),
+                            limits,
+                        )
+                        .map_err(|_| ProtocolRefusal::fault("a-visibility-location-encodes"))?;
+                        identity = identity.observing_visibility(VisibilityRead {
+                            thread,
+                            location,
+                            fresh: read_depth == 0,
+                        });
+                    }
                 }
                 let (model, memory) = match chosen.written {
                     Written::Applied(model, memory) => (model, memory),
