@@ -755,6 +755,34 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// FR-336: every population whose member type overlaps `target` by
+    /// subtyping, for temporal requirement records. A population can overlap
+    /// from either direction; this is broader than `populations_of`, whose
+    /// coverage direction is used by state-clause resolution.
+    pub(crate) fn populations_overlapping(
+        &self,
+        target: EffectiveId,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> {
+        let overlaps = |member: &DeclarationKey| {
+            self.types.iter().any(|(id, declared)| {
+                declared == member
+                    && (*id == target || conforms(target, *id) || conforms(*id, target))
+            })
+        };
+        self.population_domains()
+            .filter(|(_, population, _)| population.member_types.iter().any(overlaps))
+            .map(|(ordinal, population, canonical)| {
+                (
+                    ordinal,
+                    &population.key,
+                    canonical,
+                    self.population_bounds.get(&population.key),
+                )
+            })
+            .collect()
+    }
+
     /// FR-391: every population of this package as a population position
     /// names it: the name past the package's identity, its ordinal and
     /// canonical member (as [`Self::population_domains`] gives them), the

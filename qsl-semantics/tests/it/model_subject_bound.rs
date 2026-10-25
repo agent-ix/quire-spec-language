@@ -13,9 +13,10 @@ use qsl_semantics::check::{
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use quire_exact::Identifier;
 use quire_semantic_value::checking::CheckingLimits;
+use serde_json::json;
 
 use crate::model_operations::{
-    admit_and_assemble, admit_and_assemble_with_profiles, archive_population,
+    add_sub_type, admit_and_assemble, admit_and_assemble_with_profiles, archive_population,
     attempt_update_modifies_version_number, config_version_document,
     config_version_document_with_population,
 };
@@ -207,4 +208,121 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
             &[],
         )
         .is_err());
+}
+
+/// FR-336-AC-7: a subtype population overlaps the `over` type for temporal
+/// requirement records, while an unrelated population contributes no domain.
+#[trace("TC-846", "FR-336-AC-7")]
+#[test]
+fn subtype_populations_overlap_temporal_domains_but_unrelated_ones_do_not() {
+    let mut archive = archive_population();
+    archive["members"] = json!(["ix://example/config-version/Sub"]);
+    let document =
+        config_version_document_with_population(attempt_update_modifies_version_number(), archive);
+    let document = add_sub_type(document, &["ix://example/config-version/config_history"]);
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&document).expect("the model fixture is valid JSON");
+    let unrelated = "ix://example/config-version/Unrelated";
+    envelope["types"]
+        .as_array_mut()
+        .expect("types is an array")
+        .push(json!({
+            "identity": unrelated,
+            "displayName": unrelated,
+            "kind": {"module": "example/config-version", "name": "object_type"},
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": unrelated,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [unrelated]
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [],
+            "fields": [],
+            "operations": []
+        }));
+    let unrelated_population = "ix://example/config-version/unrelated_history";
+    envelope["populations"]
+        .as_array_mut()
+        .expect("populations is an array")
+        .push(json!({
+            "identity": unrelated_population,
+            "displayName": unrelated_population,
+            "kind": {"module": "example/config-version", "name": "population"},
+            "members": [unrelated],
+            "extent": "closed",
+            "origin": {"generated": {
+                "generatorIdentity": unrelated_population,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [unrelated_population]
+            }}
+        }));
+    let document = serde_json::to_vec(&envelope).expect("the model fixture serializes");
+    let clause = "temporal ReachesTwo using t over (c: Config::ConfigVersion) \
+         clock \"model-steps\" on origin { always eventually holds(c.versionNumber = 2) }";
+    let package = admit_and_assemble_with_profiles(
+        &document,
+        &format!("profile t = \"{INFINITE}\";\n"),
+        clause,
+    )
+    .unwrap_or_else(|refusal| panic!("the unit assembles: {refusal:?}"));
+    let checked = match check_clauses(&package).pop() {
+        Some(Ok(checked)) => checked,
+        other => panic!("the clause is admitted: {other:?}"),
+    };
+    let [claim] = TemporalTraceFamily::requirements(&checked)
+        .try_into()
+        .expect("one claim");
+    let graph = package
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let keys: Vec<DomainKey> = ["archive", "config_history"]
+        .iter()
+        .map(|name| {
+            graph
+                .population_domain(&identifier("Config"), &identifier(name))
+                .expect("keyed")
+                .expect("the population resolves")
+        })
+        .collect();
+    let actual: Vec<DomainKey> = claim
+        .populations()
+        .iter()
+        .map(|domain| graph.population_key(*domain).expect("population key"))
+        .collect();
+    assert_eq!(
+        actual, keys,
+        "both matching populations appear in declaration order"
+    );
+    assert_eq!(
+        claim.populations().len(),
+        2,
+        "each matching population appears once"
+    );
+
+    let [record] = graph
+        .requirements()
+        .values()
+        .filter(|record| record.requirements().kind() == Capability::TemporalSatisfaction)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap_or_else(|records: Vec<_>| panic!("one clause record: {}", records.len()));
+    let ClaimExtent::Unbounded(domains) = record.requirements().extent() else {
+        panic!("unbounded: {:?}", record.requirements().extent());
+    };
+    assert_eq!(
+        domains.len(),
+        3,
+        "two populations and the infinite-trace domain"
+    );
+    for key in &keys {
+        assert_eq!(domains.kind(key), Some(DomainKind::Population));
+    }
+    let unrelated_key = graph
+        .population_domain(&identifier("Config"), &identifier("unrelated_history"))
+        .expect("keyed")
+        .expect("unrelated population resolves");
+    assert_eq!(domains.kind(&unrelated_key), None);
 }
