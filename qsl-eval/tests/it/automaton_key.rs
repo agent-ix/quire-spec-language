@@ -1200,3 +1200,47 @@ fn a_protocol_subject_has_no_safety_states_yet() {
         Err(TranslationRefusal::NotTranslated(_))
     ));
 }
+
+/// Subsumption compares facts as sets: an obligation-free branch whose past
+/// memory arrives in another order than a root-carrying branch's still
+/// subsumes it, in the writer and in the reader.
+#[trace("TC-525")]
+#[test]
+fn subsumption_ignores_the_order_the_facts_arrive_in() {
+    let both = states(
+        "always (holds(c.level = 1) implies (once holds(c.level = 2) and historically holds(c.level = 3)))",
+    );
+    let once = PastMemory::Flag {
+        path: vec![0, 1, 0],
+        operator: PastOperator::Once,
+        value: true,
+    };
+    let historically = PastMemory::Flag {
+        path: vec![0, 1, 1],
+        operator: PastOperator::Historically,
+        value: true,
+    };
+    let free = Configuration {
+        past: vec![once.clone(), historically.clone()],
+        ..Configuration::default()
+    };
+    let carried = Configuration {
+        obligations: vec![root()],
+        past: vec![historically, once],
+        ..Configuration::default()
+    };
+    assert_eq!(
+        both.key(&[free.clone(), carried.clone()]),
+        both.key(&[free]),
+        "the writer drops the subsumed branch"
+    );
+    let past = r#"[[["0","1","0"],"once",true],[["0","1","1"],"historically",true]]"#;
+    let key = states_key(&format!(
+        r#"["safety",[[[[[],"positive"]],{past},[],[]],[[],{past},[],[]]]]"#
+    ));
+    assert_eq!(
+        both.admit(key.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::NonNormal),
+        "the reader refuses the pair"
+    );
+}

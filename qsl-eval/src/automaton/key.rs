@@ -28,7 +28,9 @@
 //! another shape is not translated here.
 //!
 //! [`SafetyStates`] is the general `["safety", branches]` algebra of any
-//! unbounded-profile clause: obligations, past memory, interval windows and
+//! unbounded-profile clause over an ordinary subject (a protocol subject is
+//! [`TranslationRefusal::NotTranslated`] until its past and acceptance forms
+//! are written): obligations, past memory, interval windows and
 //! acceptance membership (`key_state.rs`), which it writes sorted and admits
 //! by resolving every member in the clause's formula.
 

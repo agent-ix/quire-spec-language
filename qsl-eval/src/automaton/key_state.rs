@@ -367,7 +367,7 @@ impl Configuration {
 /// `["safety", branches]` for `branches` written as a sorted duplicate-free
 /// set, each configuration with its own sets sorted.
 pub(super) fn safety_enc(branches: &[Configuration], max_bytes: u64) -> Result<Enc, KeyRefusal> {
-    let branches = normal(branches)
+    let branches = normal(branches, max_bytes)?
         .iter()
         .map(|branch| branch.enc(max_bytes))
         .collect::<Result<_, _>>()?;
@@ -676,15 +676,31 @@ fn set<'d, T>(
 }
 
 /// Whether two configurations differ at most in their obligations.
-fn same_facts(left: &Configuration, right: &Configuration) -> bool {
-    left.past == right.past && left.windows == right.windows && left.acceptance == right.acceptance
+///
+/// The facts are compared as the canonical sets they encode to, so the order
+/// they were given in does not matter.
+fn same_facts(
+    left: &Configuration,
+    right: &Configuration,
+    max_bytes: u64,
+) -> Result<bool, KeyRefusal> {
+    let facts = |branch: &Configuration| -> Result<Vec<u8>, KeyRefusal> {
+        let enc = branch.enc(max_bytes)?;
+        let Enc::Array(mut members) = enc else {
+            return Err(KeyRefusal::Encoding);
+        };
+        members.remove(0);
+        quire_canonical::to_vec(&Enc::Array(members), Limits::new(max_bytes))
+            .map_err(|_| KeyRefusal::Encoding)
+    };
+    Ok(facts(left)? == facts(right)?)
 }
 
 /// The branches of a state in FR-338's normal form: the windows of one
 /// occurrence merged to the one retained counter (the earliest deadline, the
 /// furthest extent, the union of offsets), and every branch an obligation-free
 /// branch subsumes removed.
-fn normal(branches: &[Configuration]) -> Vec<Configuration> {
+fn normal(branches: &[Configuration], max_bytes: u64) -> Result<Vec<Configuration>, KeyRefusal> {
     let merged: Vec<Configuration> = branches
         .iter()
         .map(|branch| {
@@ -713,16 +729,19 @@ fn normal(branches: &[Configuration]) -> Vec<Configuration> {
             }
         })
         .collect();
-    merged
-        .iter()
-        .filter(|branch| {
-            branch.obligations.is_empty()
-                || !merged
-                    .iter()
-                    .any(|free| free.obligations.is_empty() && same_facts(free, branch))
-        })
-        .cloned()
-        .collect()
+    let mut kept = Vec::with_capacity(merged.len());
+    for branch in &merged {
+        let mut subsumed = false;
+        if !branch.obligations.is_empty() {
+            for free in merged.iter().filter(|other| other.obligations.is_empty()) {
+                subsumed |= same_facts(free, branch, max_bytes)?;
+            }
+        }
+        if !subsumed {
+            kept.push(branch.clone());
+        }
+    }
+    Ok(kept)
 }
 
 /// The reader of one safety state over one formula shape.
@@ -737,14 +756,12 @@ impl Reader<'_> {
         let parsed = set(branches, self.max_bytes, |branch| {
             self.configuration(branch)
         })?;
-        let subsumed = parsed.iter().any(|free| {
-            free.obligations.is_empty()
-                && parsed
-                    .iter()
-                    .any(|other| !other.obligations.is_empty() && same_facts(free, other))
-        });
-        if subsumed {
-            return Err(KeyRefusal::NonNormal);
+        for free in parsed.iter().filter(|free| free.obligations.is_empty()) {
+            for other in parsed.iter().filter(|other| !other.obligations.is_empty()) {
+                if same_facts(free, other, self.max_bytes)? {
+                    return Err(KeyRefusal::NonNormal);
+                }
+            }
         }
         Ok(parsed)
     }
