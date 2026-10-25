@@ -602,6 +602,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
+        (
+            K::Temporal(TemporalForm::Terminal),
+            "IR admits terminal declarations; QSL-983 adds their S4 emission",
+        ),
         (K::Protocol(ProtocolForm::Role), NO_TAG),
         (K::Protocol(ProtocolForm::Channel), NO_TAG),
         (K::Protocol(ProtocolForm::Queue), NO_TAG),
@@ -611,6 +615,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
+        (
+            K::Claim(ClaimForm::StateGraph),
+            "IR admits state-graph claims; QSL-987 adds their S4 emission",
+        ),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (
             K::Correspondence(CorrespondenceForm::ModelCorrespondence),
