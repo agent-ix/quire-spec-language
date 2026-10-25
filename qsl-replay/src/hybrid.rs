@@ -28,8 +28,9 @@ use quire_exact::LimitKind;
 
 mod process_request;
 pub use process_request::{
-    AdmittedHybridProcessItem, AdmittedHybridProcessRequest, HybridProcessItem,
-    HybridProcessRequest, HybridProcessRequestRefusal,
+    AdmittedHybridProcessItem, AdmittedHybridProcessRequest, HybridProcessDependencyPackage,
+    HybridProcessItem, HybridProcessPackageContext, HybridProcessRequest,
+    HybridProcessRequestRefusal,
 };
 
 /// The kind of method a provider ran. QSL decides soundness from the kind
@@ -938,10 +939,10 @@ mod tests {
         )
     }
 
-    fn process_package_evidence() -> quire_contract_model::CheckedPackageEvidence {
-        let mut evidence = quire_contract_model::CheckedPackageEvidence::default();
-        evidence.support_feature("quire.value.complete/v1");
-        evidence
+    fn process_package_context() -> HybridProcessPackageContext {
+        let mut context = HybridProcessPackageContext::new();
+        context.support_feature("quire.value.complete/v1");
+        context
     }
 
     /// QSpec FR-193's verdict map, FR-250's table: a sound `Unsat` settles
@@ -1260,11 +1261,9 @@ mod tests {
         let budget = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000))
             .expect("the budget is admitted");
         let item = process_item(package_bytes, budget);
-        let evidence = process_package_evidence();
-        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
-        let request =
-            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
-                .expect("the process request composes");
+        let context = process_package_context();
+        let request = HybridProcessRequest::compose(package_bytes, &context, 20_000, &[item])
+            .expect("the process request composes");
         let wire: serde_json::Value =
             serde_json::from_slice(request.bytes()).expect("the request is JSON");
         use base64::Engine as _;
@@ -1276,7 +1275,7 @@ mod tests {
             wire["items"][0]["hybrid"]["limits"],
             json!({"max_solver_time": 2, "max_solver_steps": 1000})
         );
-        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
+        let admitted = HybridProcessRequest::read(request.bytes(), &context)
             .expect("the process request reads against its package");
         assert_eq!(admitted.hybrids().claims.len(), 1);
         assert_eq!(admitted.items()[0].budget(), budget);
@@ -1286,7 +1285,7 @@ mod tests {
         let wrong_occurrence =
             serde_json::to_vec(&wrong_occurrence).expect("wrong occurrence serializes");
         assert!(matches!(
-            HybridProcessRequest::read(&wrong_occurrence, &evidence, limits),
+            HybridProcessRequest::read(&wrong_occurrence, &context),
             Err(HybridProcessRequestRefusal::ClaimMismatch)
         ));
 
@@ -1294,7 +1293,7 @@ mod tests {
         malformed["items"][0]["hybrid"]["limits"]["max_solver_time"] = json!(1.5);
         let malformed = serde_json::to_vec(&malformed).expect("malformed request serializes");
         assert!(matches!(
-            HybridProcessRequest::read(&malformed, &evidence, limits),
+            HybridProcessRequest::read(&malformed, &context),
             Err(HybridProcessRequestRefusal::Budget(
                 BudgetRefusal::NotAWholeNumber("max_solver_time")
             ))
@@ -1397,12 +1396,10 @@ mod tests {
         let package_bytes = emission.package().bytes();
         let unset = SolverBudget::from_request(None, None).expect("unset budget is valid");
         let item = process_item(package_bytes, unset);
-        let evidence = process_package_evidence();
-        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
-        let request =
-            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
-                .expect("the process request composes");
-        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
+        let context = process_package_context();
+        let request = HybridProcessRequest::compose(package_bytes, &context, 20_000, &[item])
+            .expect("the process request composes");
+        let admitted = HybridProcessRequest::read(request.bytes(), &context)
             .expect("the process request admits its v2 package");
         let request_wire: serde_json::Value =
             serde_json::from_slice(request.bytes()).expect("the process request is JSON");
