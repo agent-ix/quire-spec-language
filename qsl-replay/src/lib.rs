@@ -106,7 +106,7 @@ pub use certificate::closure::{
     ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
     TemporalCertificateCheck,
 };
-pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::scc::{Component, ComponentWitness, ProofCertificate};
 pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
     IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
