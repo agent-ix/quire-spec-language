@@ -10,9 +10,9 @@ relationships:
 
 ## Description
 
-Check NFR-013-AC-1 to NFR-013-AC-3 at the actual Make-to-Cargo
-process boundary. `xtask/src/ci_feature_lane_tests.rs` copies the repository's
-Makefile into an isolated fixture and compiles the Rust recorder
+Check NFR-013-AC-1 to NFR-013-AC-3 and NFR-013-AC-6 at the actual
+Make-to-Cargo process boundary. `xtask/src/ci_feature_lane_tests.rs` copies
+the repository's Makefile into an isolated fixture and compiles the Rust recorder
 `ci_feature_lane_tests/cargo_double.rs` under the owned target. The recorder
 reports the received `CARGO_TARGET_DIR`, Cargo build settings and full Cargo
 argument vector; it does not compile a workspace or qualify compiler feature
