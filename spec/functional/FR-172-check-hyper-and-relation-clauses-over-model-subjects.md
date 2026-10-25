@@ -108,12 +108,24 @@ pub struct CheckedModelRelation {
 - S3 SHALL type `t.step.op` as the operation-or-`stutter` label of `t`'s
   model, `t.step.receiver` as its receiver key, and `t.step.O.p` as
   `Option<T>` for parameter `p: T` of operation `O` of `t`'s model.
+- The receiver key SHALL be typed `Option<Reference<T>>`, `T` being the one
+  object type that declares every operation of `t`'s model that has a
+  receiver (QSpec FR-395 "Step labels"). If those operations are declared by
+  more than one object type, then S3 SHALL refuse a read of
+  `t.step.receiver` with `unsupported_construct`/`expression-form` at the
+  read, because no single receiver type exists for it
+  ([FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)).
 
 ### Match
 
 - S3 SHALL refuse a `match` conjunct that reads state,
   `unsupported_construct`/`expression-form` at the read: `μ` reads step
   labels only (ADR-023 HS-5, QSpec FR-395).
+- S3 SHALL check a call of a declared function in a `match` conjunct as a
+  value call, not as a state read. Each of its arguments SHALL obey the same
+  `match` rules, reading step labels, literals and calls only. An argument
+  that reads state SHALL be refused `unsupported_construct`/`expression-form`
+  at that read ([FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)).
 - S3 SHALL flatten `μ` into its top-level conjuncts and place each conjunct
   that reads only universal variables in `mu_universal` and every other
   conjunct in `mu_existential` (ADR-023 HM-3).
@@ -195,11 +207,15 @@ pub struct CheckedModelRelation {
 | FR-172-AC-4 | FR-171-AC-3's `Det` checks with two model execution bindings to `step`. `NonInterference` and the same clause with its quantifiers' fairness sets swapped between `a` and `b` (one empty, one `weak step`) have different node identities, as do the clause and the same clause with an extra `match` conjunct. | Test (TC-597) |
 | FR-172-AC-5 | In a unit that declares alias `V` (the vault model, object type `Vault` with fields `h` and `l` and operation `step`) and alias `N` (the device model, object type `Device` with operation `tick`), `NonInterference` over `V` with `match { a.step.op = V::Vault::step and b.step.op = stutter }` checks with both conjuncts in `mu_universal`. `match { V::Vault::step != a.step.op }` checks with its one conjunct in `mu_universal` and holds at exactly the joint steps at which `match { a.step.op != V::Vault::step }` holds. Refusals at the qualified name: `a.step.op = N::Device::tick` with `a` of `V` (`ill_typed`/`type-mismatch`); `a.step.receiver = V::Vault::step` and a bare conjunct `V::Vault::step` (`ill_typed`/`type-mismatch`); `a.step.op = V::Vault::nope` (`missing_declaration`/`missing-name`); `a.step.op = V::Vault::l`, naming a field of `Vault` (`unsupported_construct`/`expression-form`, the state-read refusal). | Test (TC-597) |
 | FR-172-AC-6 | FR-171-AC-3's `Det` with body `half(x.i) < rational(3, 4)`, for a function `half` over `x.i`'s type whose declared result is `Rational[0, 1; 1, 2]`, refuses `undefined_expression`/`unproved-range` at `rational(3, 4)`, as a value clause over a parameter `x` of a record type with one field `i` of `x.i`'s type refuses the same body. `Det` with body `rational(1, 2) < rational(3, 4)`, and `NonInterference` with that comparison in its body, each refuse `ill_typed`/`ambiguous-literal` at the literal a value clause with that body is refused at. `NonInterference` with `let a = 1 in a = 1` in its body refuses `ambiguous_declaration`/`ambiguous-name` at that `let`, naming trace variable `a`; with `let v = 1 in v = 1` it refuses the same at that `let`, naming object parameter `v`. `Det` with body `let x = 1 in x = 1` refuses the same at that `let`, naming execution variable `x`. | Test (TC-597) |
+| FR-172-AC-7 | Over a model whose operations with a receiver are declared by two object types, a `match` conjunct reading `a.step.receiver` refuses `unsupported_construct`/`expression-form` at that read; over the vault, `a.step.receiver = b.step.receiver` checks. `NonInterference` with the conjunct `f(a.step.Vault::step.i)`, for a declared `f(x: Option<Int[0, 1]>): Boolean`, checks with that conjunct in `mu_universal`. With `f(v.l @ a)` it refuses `unsupported_construct`/`expression-form` at `v.l @ a`. | Test (TC-1264) |
 
 ## Dependencies
 
 - ADR-023 §1 HS-1 to HS-9, §2 HM-3, §6 HV-7, §13 PA-1 and PA-3; ADR-018
   FA-1, FA-6, QS-5; ADR-013 O-09.
+- [FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)
+  (the lowering of the checked atoms and conjuncts; the receiver and call
+  rules above).
 - [FR-171](FR-171-build-forms-for-hyper-clauses-over-behaviours.md),
   [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
   (fairness and interval checking),
