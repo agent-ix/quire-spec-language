@@ -319,6 +319,34 @@ fn a_graph_of_another_source_identity_is_refused_with_full_references() {
 }
 
 #[test]
+fn a_type_report_with_the_same_labels_but_different_bytes_is_refused() {
+    let graph = matching_graph();
+    let model = setup::model("Primary");
+    typed(
+        CALLS,
+        BindingLimits::default(),
+        TypeLimits::default(),
+        |_, _, types| {
+            let changed = setup::formal_sources(&[setup::source(
+                "main",
+                &model,
+                "predicate Other using S (): Boolean { true }",
+            )]);
+            let refused = CheckedUnit::new(&changed[0], &graph, types)
+                .expect_err("the report covers different bytes");
+            let UnitSourceMismatch::TypeReport { selected, unit } = refused else {
+                panic!("expected type report source mismatch");
+            };
+            assert_eq!(selected.authority(), "test");
+            assert_eq!(selected.identity(), "unit:main");
+            assert_eq!(unit.authority(), "test");
+            assert_eq!(unit.identity(), "unit:main");
+            assert_ne!(selected.digest(), unit.digest());
+        },
+    );
+}
+
+#[test]
 fn a_formal_source_that_is_not_the_reports_unit_is_refused() {
     let graph = matching_graph();
     let model = setup::model("Primary");
