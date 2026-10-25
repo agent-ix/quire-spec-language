@@ -68,3 +68,13 @@ coder's three "not covered" calls are right; two of them lack a live tracker
 | FND-001 | medium | FR-185-AC-1 is now credited to `the_service_model_checks_and_records_its_declarations`, but its clause "`outcome` with `Ok` at `49/50` and `Fail` at `1/50`" is only half asserted: the probabilities are checked, the support values are not, and swapping `Ok` and `Fail` in the fixture passes (SR-17130 FND-001). Fix: assert outcome's values. | qsl-semantics/tests/it/probabilistic_declarations.rs:426-434 |
 | FND-002 | low | FR-304-AC-6 is unimplemented (no `invalid_model_binding`/`malformed-declaration` for `type`, `9lives`, `01` or receiver `0`; abstraction.rs:16-19 says the module "checks no Rust syntax (FR-304-AC-6)", citing the AC as if it required no check) and no open ticket tracks it. Fix: file an implementation ticket for the segment, index and receiver checks and correct the module doc. | qsl-semantics/src/check/abstraction.rs:16-19 |
 | FND-003 | low | FR-185-AC-9's reference-literal clause stays untestable, but its trackers QSL-971 and STD-395 are both Done and the test doc still points at QSL-971 (probabilistic_declarations.rs:612-617). Fix: reopen QSL-971 or file a live follow-up and point the doc at it. | qsl-semantics/tests/it/probabilistic_declarations.rs:612-617 |
+
+## Dispositions
+
+Round 1, verified at PR #1511 head 2963ff6d6. FR-185-AC-1's outcome clause now has a killing assertion (SR-17130 FND-001). The two tracker findings need ticket actions, not code in this test-only PR, and the head does not change abstraction.rs:16-19 or probabilistic_declarations.rs:614.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Outcome's (rank, probability) pairs are asserted in declared order, rank 1 (`Ok`) at 49/50 and rank 0 (`Fail`) at 1/50; the Ok/Fail swap mutant now fails. |
+| FND-002 | deferred | Tracker action outside this test-only PR: the coordinator files an implementation ticket for FR-304-AC-6's segment, index and receiver checks, and that ticket corrects abstraction.rs:16-19. |
+| FND-003 | deferred | Tracker action outside this test-only PR: reopen QSL-971 (or file a live follow-up) for FR-185-AC-9's reference-literal clause, then repoint probabilistic_declarations.rs:614. |
