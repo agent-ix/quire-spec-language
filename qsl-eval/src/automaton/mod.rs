@@ -69,8 +69,8 @@ pub use key::{
 };
 pub use key_buchi::{BuchiPhase, BuchiState, BuchiStates};
 pub use key_state::{
-    Configuration, HistoryOperand, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
-    Window,
+    Configuration, DistanceBucket, HistoryOperand, Obligation, Occurrence, PastMemory,
+    PastOperator, Polarity, Window,
 };
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};

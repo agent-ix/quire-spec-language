@@ -28,9 +28,9 @@
 //! another shape is not translated here.
 //!
 //! [`SafetyStates`] is the general `["safety", branches]` algebra of any
-//! unbounded-profile clause over an ordinary subject (a protocol subject is
-//! [`TranslationRefusal::NotTranslated`] until its past and acceptance forms
-//! are written): obligations, past memory, interval windows and
+//! unbounded-profile clause over an ordinary or a protocol subject (the
+//! subject selects the past-window and finite `F`/`U` acceptance forms):
+//! obligations, past memory, interval windows and
 //! acceptance membership (`key_state.rs`), which it writes sorted and admits
 //! by resolving every member in the clause's formula.
 
@@ -606,6 +606,7 @@ pub struct SafetyStates {
     context_octets: Vec<u8>,
     max_bytes: u64,
     shape: FormulaShape,
+    subject: SubjectKind,
 }
 
 impl SafetyStates {
@@ -614,9 +615,8 @@ impl SafetyStates {
     ///
     /// # Errors
     ///
-    /// [`TranslationRefusal::NotTranslated`] when the subject is a protocol
-    /// (its `distance-history` past form and finite `F`/`U` acceptance are
-    /// not written or read yet), the clause is under a bounded profile,
+    /// [`TranslationRefusal::NotTranslated`] when the clause is under a
+    /// profile other than infinite-trace, is a liveness clause,
     /// holds a timed interval, has more operand paths than the path bound,
     /// or `context` names another profile; [`TranslationRefusal::Key`] when
     /// the context does not encode.
@@ -626,9 +626,7 @@ impl SafetyStates {
         subject: SubjectKind,
     ) -> Result<Self, TranslationRefusal> {
         let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
-        if subject == SubjectKind::Protocol
-            || clause.profile() != TemporalProfile::InfiniteTrace
-            || context.profile != clause.profile()
+        if clause.profile() != TemporalProfile::InfiniteTrace || context.profile != clause.profile()
         {
             return Err(not_translated());
         }
@@ -651,6 +649,7 @@ impl SafetyStates {
             context_octets,
             max_bytes,
             shape,
+            subject,
         })
     }
 
@@ -716,6 +715,7 @@ impl SafetyStates {
         Reader {
             shape: &self.shape,
             max_bytes: self.max_bytes,
+            subject: self.subject,
         }
         .branches(branches)
     }
