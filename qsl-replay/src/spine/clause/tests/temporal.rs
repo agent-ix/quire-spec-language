@@ -28,6 +28,9 @@ enum Unit {
     Bounded,
     /// `Reaches` and `Fair`, under infinite-trace.
     Infinite,
+    /// `Undefined`, under the bounded profile, with integer modulo by zero
+    /// at position 2 (FR-330-AC-5).
+    Undefined,
 }
 
 impl Unit {
@@ -35,6 +38,9 @@ impl Unit {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+            Self::Undefined => {
+                "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
+            }
         }
     }
 
@@ -50,6 +56,10 @@ impl Unit {
                  temporal Fair using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { fair weak Counters::Counter::noop; \
                  always eventually holds(c.value = 2) }\n"
+            }
+            Self::Undefined => {
+                "temporal Undefined using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always[0,2] holds(3 mod (2 - c.value) >= 0) }\n"
             }
         }
     }
@@ -166,6 +176,22 @@ fn a_bounded_clause_over_a_finite_trace_violates_at_its_position() {
     assert_eq!(report.disposition.category(), Category::Violation);
     assert_eq!(exit_code(&report), 10);
     assert!(report.package_id.is_some());
+}
+
+/// FR-330-AC-5 / TC-847: the third value makes the integer modulo divisor
+/// zero, and the undefined evaluation is reported as the temporal violation
+/// at position 2.
+#[trace("TC-847", "FR-330-AC-5")]
+#[test]
+fn an_undefined_evaluation_over_a_finite_trace_is_a_violation_at_its_position() {
+    let report = report(finite(Unit::Undefined, "Undefined", &[0, 1, 2]));
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+    assert!(matches!(
+        outcome(&report),
+        TemporalVerdict::Undefined { at: 2, .. }
+    ));
+    assert_eq!(report.disposition.category(), Category::Violation);
+    assert_eq!(exit_code(&report), 10);
 }
 
 /// `Reaches` over the same `Finite` trace is pending: inconclusive, exit 0,
