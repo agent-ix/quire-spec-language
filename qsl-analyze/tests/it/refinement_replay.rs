@@ -584,7 +584,12 @@ fn drifting_lasso(world: &AuxWorld<'_>) -> TemporalCounterexample {
             terminal_stutter: false,
         }),
         refinement: Some(RefinementFailure::AbstractUnfair {
-            constraint: world.refinement().abstract_fairness()[0].clone(),
+            constraint: world
+                .refinement()
+                .abstract_operation_fairness()
+                .next()
+                .expect("one abstract fairness constraint")
+                .clone(),
         }),
         blocked: Vec::new(),
     }
@@ -758,7 +763,12 @@ fn replay_probe(
     let subject = aux(&world);
     let system = world.concrete_system(AUX_UNLIMITED);
     let steps = walk(&system, &pair_operations(unit, loop_of));
-    let constraint = world.refinement().abstract_fairness()[constraint].clone();
+    let constraint = world
+        .refinement()
+        .abstract_operation_fairness()
+        .nth(constraint)
+        .expect("the selected abstract fairness constraint")
+        .clone();
     replay(&subject, &handmade(steps, 0, false, failure(constraint)))
 }
 
@@ -875,7 +885,12 @@ fn a_terminal_stutter_loop_is_read_at_its_mapped_state() {
         let system = world.concrete_system(AUX_UNLIMITED);
         let inc = operation_identity_text(&unit.concrete_key("Counter/inc")).expect("a text");
         let steps = walk(&system, &vec![inc; incs]);
-        let constraint = world.refinement().abstract_fairness()[0].clone();
+        let constraint = world
+            .refinement()
+            .abstract_operation_fairness()
+            .next()
+            .expect("one abstract fairness constraint")
+            .clone();
         replay(&subject, &handmade(steps, incs, true, failure(constraint)))
     };
     assert!(!agrees(replay_halt(2, 2, divergence)));
@@ -896,7 +911,12 @@ fn a_loop_open_in_the_concrete_model_is_refused() {
     let system = world.concrete_system(UNLIMITED);
     let begin = operation_identity_text(&key(CAS, "Counter/beginA")).expect("a text");
     let steps = walk(&system, &[begin]);
-    let constraint = world.refinement().abstract_fairness()[0].clone();
+    let constraint = world
+        .refinement()
+        .abstract_operation_fairness()
+        .next()
+        .expect("one abstract fairness constraint")
+        .clone();
     let payload = handmade(steps, 0, false, divergence(constraint));
     let Err(ReplayRefusal::ModelTrace(refusal)) = replay(&subject, &payload) else {
         panic!("the loop does not close");
@@ -1017,7 +1037,12 @@ fn an_unsupported_liveness_half_does_not_replace_a_safety_half_that_is_not_prove
 fn a_second_phase_fault_settles_the_item_failed_with_no_half_value() {
     let world = World::new(&cas_refines_counter());
     let swapped = world.concrete_system(UNLIMITED);
-    let Err(fault) = abstract_classes(&swapped, world.refinement().abstract_fairness(), &[]) else {
+    let abstract_fairness: Vec<_> = world
+        .refinement()
+        .abstract_operation_fairness()
+        .cloned()
+        .collect();
+    let Err(fault) = abstract_classes(&swapped, &abstract_fairness, &[]) else {
         panic!("the swapped system declares no operation of F_A");
     };
     assert_eq!(

@@ -161,7 +161,8 @@ pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
     ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
-    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementRefusal, RefinementSupport,
+    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementFairness,
+    RefinementFairnessOrigin, RefinementRefusal, RefinementSupport, RefinementThreadTarget,
     RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
     UnsupportedFeature,
 };
@@ -2079,7 +2080,7 @@ impl PackageDeclarations {
         // One refinement checked over the protocol clauses given: none
         // before the clauses are checked.
         macro_rules! check_one_refinement {
-            ($index:expr, $refinement:expr, $views:expr) => {{
+            ($index:expr, $refinement:expr, $views:expr, $defer_abstract:expr) => {{
                 let location = Location::root(Origin::Expression);
                 let declarations = state_clause::ClauseDeclarations {
                     scope: &scope,
@@ -2103,6 +2104,7 @@ impl PackageDeclarations {
                     support: self.refinement_support,
                     lists: &internal_lists,
                     protocols: $views,
+                    defer_abstract_protocol_resolution: $defer_abstract,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,
@@ -2155,7 +2157,7 @@ impl PackageDeclarations {
         };
         for (index, refinement) in self.refinements.iter().enumerate() {
             if !is_protocol_subject(refinement) {
-                check_one_refinement!(index, refinement, &[]);
+                check_one_refinement!(index, refinement, &[], false);
             }
         }
         // FR-218: a second reference to one protocol in the unit refuses at
@@ -2167,15 +2169,29 @@ impl PackageDeclarations {
                 .map(|(_, body, _)| &body.body)
                 .chain(typed_clauses.iter().map(|clause| &clause.body)),
         ));
-        // A protocol subject's own refusals are reported with the unit's
-        // other refusals, whichever stage stops the unit before its clause is
-        // checked (FR-136-AC-8).
         let deferred: Vec<CheckRefusal> = protocol_refinements
             .iter()
             .flat_map(|(_, pending)| pending.refusals().iter().cloned())
             .collect();
+        // A protocol subject's own refusals are reported with the unit's
+        // other refusals, whichever stage stops the unit before its clause is
+        // checked (FR-136-AC-8).
         if !refusals.is_empty() {
-            return Err(with_deferred(refusals, &deferred));
+            // FR-136: even though the unit cannot check protocol clauses,
+            // protocol-abstract refinements still check their model-only
+            // headers and rows. Their abstract protocol name is unresolved
+            // only because clause checking is deferred, so suppress that
+            // one refusal until the normal protocol pass can resolve it.
+            for (index, refinement) in self.refinements.iter().enumerate() {
+                if is_protocol_subject(refinement) {
+                    check_one_refinement!(index, refinement, &[], true);
+                }
+            }
+            let prechecked_deferred: Vec<CheckRefusal> = protocol_refinements
+                .iter()
+                .flat_map(|(_, pending)| pending.refusals().iter().cloned())
+                .collect();
+            return Err(with_deferred(refusals, &prechecked_deferred));
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -2547,7 +2563,7 @@ impl PackageDeclarations {
                 .collect();
             for (index, refinement) in self.refinements.iter().enumerate() {
                 if is_protocol_subject(refinement) {
-                    check_one_refinement!(index, refinement, &protocol_views);
+                    check_one_refinement!(index, refinement, &protocol_views, false);
                 }
             }
         }
