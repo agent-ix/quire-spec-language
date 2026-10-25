@@ -381,8 +381,10 @@ fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
     let world = counter(BOUNDED, &["always[0,3] holds(c.value <= 3)"]);
     let kind = SmtQueryKind::Unrolling { depth: 3 };
     let default = world.query(0, kind).expect("default limits encode");
-    let mut limits = SmtEncodingLimits::default();
-    limits.max_constants = 8;
+    let mut limits = SmtEncodingLimits {
+        max_constants: 8,
+        ..SmtEncodingLimits::default()
+    };
     assert_eq!(
         world.query_with_limits(0, kind, &limits),
         Ok(default.clone())
