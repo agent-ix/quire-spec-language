@@ -1310,18 +1310,21 @@ fn hyper_bodies_match_value_typing_for_ranges_literals_and_roots() {
         );
     }
 
-    for (declaration, binder) in [
+    for (declaration, binder, shadowed) in [
         (
             atom_over("let a = 1 in a = 1").replace("hyper H", "hyper NonInterference"),
             "let a = 1 in a = 1",
+            "a",
         ),
         (
             atom_over("let v = 1 in v = 1").replace("hyper H", "hyper NonInterference"),
             "let v = 1 in v = 1",
+            "v",
         ),
         (
             relation_over("let x = 1 in x = 1").replace("relation R", "relation Det"),
             "let x = 1 in x = 1",
+            "x",
         ),
     ] {
         let (text, package) = assemble(&["V"], INFINITE, &declaration);
@@ -1335,7 +1338,10 @@ fn hyper_bodies_match_value_typing_for_ranges_literals_and_roots() {
                 _ => None,
             })
             .unwrap_or_else(|| panic!("hyper body refusal: {refusals:?}"));
-        assert!(matches!(cause, HyperCause::BodyShadows { .. }), "{cause:?}");
+        assert!(
+            matches!(&cause, HyperCause::BodyShadows { name, .. } if name == shadowed),
+            "{cause:?}"
+        );
         assert_eq!(
             (cause.code(), cause.tag()),
             (Code::AmbiguousDeclaration, "ambiguous-name")
