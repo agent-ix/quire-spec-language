@@ -310,6 +310,7 @@ impl World {
                     clause: &clause,
                     letters: &letters,
                 },
+                smt_encoding: qsl_replay::SmtEncodingLimits::default(),
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
                 reductions: Default::default(),
