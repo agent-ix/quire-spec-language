@@ -9,11 +9,13 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::{
-    CertificateRequest, DeclineCode, ModelTraceReplayResult, ProofRefusalCause, ReplayRefusal,
-    TemporalCounterexample,
+    settle_hyper_form, CertificateRequest, DeclineCode, ModelTraceReplayResult, ProofRefusalCause,
+    ReplayRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
 };
+use qsl_route::request::RequirementItem;
 use qsl_route::Mode;
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, HyperForm};
+use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -23,6 +25,27 @@ use crate::model_check::{
     ModelCheckRequest,
 };
 use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest};
+
+/// The FR-396/FR-399 negotiation seam for a routed hyper item. HP-4 calls
+/// [`settle_hyper_form`] before an engine adapter is built, then becomes the
+/// existing unsupported-requested-capability disposition. The route writer
+/// supplies the matching typed cause and an empty candidate set; admitted
+/// forms and mismatched request items return `None` for their ordinary path.
+pub fn hyper_form_item(item: &RequirementItem, form: &HyperForm) -> Option<AnalyzeItem<'static>> {
+    if item.kind() != Capability::TemporalSatisfaction {
+        return None;
+    }
+    let UnsupportedItem::HyperForm { reason } = item.unsupported()? else {
+        return None;
+    };
+    let Some(TerminalValue::Unsupported(UnavailabilityCause::UnsupportedHyperForm {
+        reason: settled_reason,
+    })) = settle_hyper_form(form)
+    else {
+        return None;
+    };
+    (*reason == settled_reason).then(|| AnalyzeItem::unadapted(item.index(), item.kind()))
+}
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
 /// refusal whose own type names no code.
