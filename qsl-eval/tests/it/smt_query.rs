@@ -475,31 +475,28 @@ fn monitor_encoding_limits_accept_exact_and_reject_zero_or_one_short() {
     let kind = SmtQueryKind::Unrolling { depth: 1 };
     let default = world.query(0, kind).expect("default monitor limits encode");
     let mut limits = SmtEncodingLimits {
-        max_monitor_atoms: 1,
+        max_monitor_atoms: 2,
         ..SmtEncodingLimits::default()
     };
     assert_eq!(
         world.query_with_limits(0, kind, &limits),
         Ok(default.clone())
     );
-    limits.max_monitor_atoms = 0;
-    assert!(matches!(
-        world.query_with_limits(0, kind, &limits),
-        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
-            measure: Measure::MonitorAtoms,
-            value: 1,
-            limit: 0,
-            setting: "smt_encoding.max_monitor_atoms",
-        }))
-    ));
+    for max_monitor_atoms in [1, 0] {
+        limits.max_monitor_atoms = max_monitor_atoms;
+        assert!(matches!(
+            world.query_with_limits(0, kind, &limits),
+            Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+                measure: Measure::MonitorAtoms,
+                value: 2,
+                limit,
+                setting: "smt_encoding.max_monitor_atoms",
+            })) if limit == max_monitor_atoms
+        ));
+    }
 
-    let exact_states = (1..=64)
-        .find(|max_monitor_states| {
-            limits.max_monitor_atoms = 8;
-            limits.max_monitor_states = *max_monitor_states;
-            world.query_with_limits(0, kind, &limits).is_ok()
-        })
-        .expect("a monitor fits the published default");
+    let exact_states = 3;
+    limits.max_monitor_atoms = 2;
     limits.max_monitor_states = exact_states;
     assert_eq!(
         world.query_with_limits(0, kind, &limits),
