@@ -16,7 +16,7 @@ and past operators over a lasso, the `over` binding, its admitted and
 excluded keys, instance order and guard, and the order of the instancing
 outcomes.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-16.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17.
 
 ## Test Procedure
 
@@ -80,6 +80,12 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-16.
 15. Build FR-125-AC-16's `all` with `all = [c, e]` and check the unguarded
     `always holds(x.value <= 0)`; repeat with `all = [e, c]` and compare the
     request identities (FR-125-AC-16).
+16. Using AC-12's `dogs` and `animals` subject, define an immutable `let`
+    alias `y` of `x`, an identity helper that returns its reference argument,
+    a Boolean helper that performs the `animals`/`dogs` lookup disjunction
+    through that identity helper, and a property helper that reads the
+    reference's `age`. Check `always holds(isDog(y) implies ageOK(y))`, then
+    check the same property helper without the guard (FR-125-AC-17).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -125,3 +131,7 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   typed `Lamp` and typed `Switch`; the `V::Lamp` parameter reads `absent-key`
   undefined.
 - Step 15: `refuted` in both orders; `[c, e]` reports `c` with no undefined cause, `[e, c]` reports `e` with `undefined-evaluation`; the request identities differ.
+- Step 16: the guarded property is `proved`; at `t`, the helper guard returns
+  false without `absent-key` and short-circuits the property helper, and at `k`
+  and `d` both helpers return true. The unguarded property helper refutes at
+  `t` with `undefined-evaluation`/`absent-key`.
