@@ -33,3 +33,11 @@ FAIL by the mechanical rule, because nine criteria are untagged. This is not a m
 - Stubs and coverage inflation: not applicable.
 - Semantic review: skipped (spec-only diff, nothing to compare).
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, head bd9361749. `quire matrix --scope . --format json` at the head gives `untagged` for FR-487-AC-1 to FR-487-AC-12, FR-315-AC-43, FR-172-AC-7 and FR-172-AC-5, 15 rows in all.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Spec-only PR. The tests are owed by the QSL-1072 code PR and must read `tagged` before it merges. The set grew with FR-487-AC-9 to AC-12 and FR-172-AC-7 (TC-1264 steps 10 to 13 and 12), and still includes FR-172-AC-5 (TC-597), which QSL-1072 now delivers. |
