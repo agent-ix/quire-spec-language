@@ -219,6 +219,7 @@ macro_rules! system {
 /// scheduler constraints; resolved to `sc` it carries no `memory` member.
 /// Not covered: the `ra` visibility member, which waits on QSL-933.
 #[trace("TC-673")]
+#[trace("FR-228-AC-1")]
 #[test]
 fn a_tso_clause_carries_flush_fairness_beside_the_scheduler_constraints() {
     let unit = Unit::new(&sb_run("", "", ""), AT_MOST_ONE, &AT_MOST);
