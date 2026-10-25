@@ -20,6 +20,7 @@ mod s6a;
 mod value_invariants;
 
 use evaluate::Machine;
+use qsl_semantics::check::StepRead;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
 use quire_eval::Registry;
@@ -621,6 +622,42 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-487 "Evaluating an atom": evaluate the condition of the `holds`
+    /// atom `atom` of the hyper clause `clause`, with slot `k` bound from
+    /// `slots[k]`, one per [`qsl_semantics::check::CheckedHyperClause::atom_slots`] entry. Each model
+    /// read observes the component environment `components[r]`, `r` being the
+    /// component that [`qsl_semantics::check::CheckedHyperClause::component_reads`] records for the
+    /// read. A slot bound `HyperSlot::Absent` reads as the absent-key reading
+    /// of FR-125 Instancing; any number of slots may be absent.
+    ///
+    /// A `slots` or `components` of the wrong length, or a node that is no
+    /// `holds` atom of `clause`, is an `Err` fault that charges nothing.
+    fn evaluate_hyper_holds(
+        &self,
+        clause: &qsl_semantics::check::CheckedHyperClause,
+        atom: qsl_semantics::check::FormulaNodeId,
+        slots: Vec<crate::hyper::HyperSlot>,
+        components: &[&ObjectEnvironment],
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
+    /// FR-487 "Evaluating a match conjunct": evaluate conjunct `conjunct` of
+    /// `part` of the hyper clause `clause` over `labels`, the label vector
+    /// `StepMatch` receives for `part`. A step label is the step's transition
+    /// identity, so the conjunct reads no state.
+    ///
+    /// An out-of-range conjunct, a `labels` of the wrong length and a label
+    /// text that does not decode at its declared type are each an `Err` fault
+    /// that charges nothing.
+    fn evaluate_step_predicate(
+        &self,
+        clause: &qsl_semantics::check::CheckedHyperClause,
+        part: crate::hyper::MatchPart,
+        conjunct: usize,
+        labels: &[crate::hyper::StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// FR-107: evaluate one checked state clause over `observations`
     /// (FR-106's `AdmittedObservations`), the `ProtocolClause` S6a family's
     /// entry point beside [`Self::call`]'s `Value` one.
@@ -1035,6 +1072,122 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().dispatch_tables(),
         )
         .run(condition, slots, vec![over])
+        .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_hyper_holds(
+        &self,
+        clause: &qsl_semantics::check::CheckedHyperClause,
+        atom: qsl_semantics::check::FormulaNodeId,
+        slots: Vec<crate::hyper::HyperSlot>,
+        components: &[&ObjectEnvironment],
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        let fault = |invariant| CallFailure::Fault(InternalFault::new("S6a", invariant));
+        let (condition, count) = clause
+            .condition(atom)
+            .ok_or_else(|| fault("hyper-atom-resolved-by-clause"))?;
+        let reads = clause
+            .component_reads(atom)
+            .ok_or_else(|| fault("hyper-atom-resolved-by-clause"))?;
+        if slots.len() != clause.atom_slots().len() {
+            return Err(fault("hyper-atom-binds-one-value-per-slot"));
+        }
+        if components.len() != clause.quantifiers().len() {
+            return Err(fault("hyper-atom-observes-one-state-per-trace"));
+        }
+        let Some(first) = components.first().copied() else {
+            return Err(fault("hyper-atom-observes-one-state-per-trace"));
+        };
+        let mut machine = Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            first,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .with_components(evaluate::ComponentReads {
+            environments: components,
+            reads,
+        });
+        let mut values = Vec::with_capacity(slots.len());
+        for (slot, binding) in slots.into_iter().enumerate() {
+            match binding {
+                crate::hyper::HyperSlot::Bound(value) => values.push(value),
+                crate::hyper::HyperSlot::Absent { key, population } => {
+                    machine = machine.with_absent_key(slot, population, key.clone());
+                    values.push(Value::Reference(key));
+                }
+            }
+        }
+        machine
+            .run(condition, count, values)
+            .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_step_predicate(
+        &self,
+        clause: &qsl_semantics::check::CheckedHyperClause,
+        part: crate::hyper::MatchPart,
+        conjunct: usize,
+        labels: &[crate::hyper::StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        use crate::hyper::MatchPart;
+        let fault = |invariant| CallFailure::Fault(InternalFault::new("S6a", invariant));
+        let (conjuncts, expected) = match part {
+            MatchPart::Universal => (
+                clause.mu_universal(),
+                clause
+                    .quantifiers()
+                    .iter()
+                    .filter(|quantifier| quantifier.is_universal())
+                    .count(),
+            ),
+            MatchPart::Existential => (clause.mu_existential(), clause.quantifiers().len()),
+        };
+        let predicate = conjuncts
+            .get(conjunct)
+            .ok_or_else(|| fault("step-predicate-conjunct-in-range"))?;
+        if labels.len() != expected {
+            return Err(fault("step-predicate-reads-one-label-per-trace"));
+        }
+        let mut values = Vec::with_capacity(predicate.slots().len());
+        for read in predicate.slots() {
+            let trace = match read {
+                StepRead::Operation { trace } | StepRead::Receiver { trace, .. } => trace,
+                StepRead::Argument(argument) => &argument.trace,
+                StepRead::Stutter => return Err(fault("step-predicate-slot-is-a-read")),
+            };
+            let label = clause
+                .quantifiers()
+                .iter()
+                .position(|quantifier| &quantifier.variable == trace)
+                .and_then(|index| labels.get(index))
+                .ok_or_else(|| fault("step-predicate-label-of-a-trace"))?;
+            values.push(
+                crate::hyper::slot_value(read, label)
+                    .map_err(|_| fault("step-label-decodes-at-its-type"))?,
+            );
+        }
+        let (condition, count) = predicate.condition();
+        let no_objects: Vec<(quire_exact::ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
+        let objects = ObjectEnvironment::new(
+            quire_semantic_value::object_closure::ObjectClosure::new(
+                self.graph().scope().types(),
+                no_objects,
+                &[],
+            )
+            .map_err(|_| fault("empty-object-closure-admits"))?,
+        );
+        Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            &objects,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .run(condition, count, values)
         .map_err(CallFailure::Fault)
     }
 

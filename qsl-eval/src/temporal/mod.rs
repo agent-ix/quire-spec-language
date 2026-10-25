@@ -50,9 +50,11 @@ mod window;
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
-pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
+pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
-pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
+pub use outcome::{
+    InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
+};
 pub use position::{PositionRefusal, TemporalPosition};
 pub use timed::{evaluate_timed_at, TimedTrace};
 pub use tuple::{

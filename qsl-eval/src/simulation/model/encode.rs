@@ -137,7 +137,7 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
 /// the members in sorted order, so the text is matched member by member.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
 #[ix_trace_rs::string_edge]
-pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
+pub(crate) fn parse_reference(text: &str) -> Option<ObjectReference> {
     let rest = text.strip_prefix(r#"{"identity":""#)?;
     let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
     let (object_type, rest) = rest.split_once(r#"","type":"reference","universe":""#)?;
@@ -270,8 +270,11 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
             placeholder(reference).unwrap_or_else(|| reference_enc(reference))
         }
         Value::Decimal(_) => Enc::Unencodable("a decimal value"),
-        Value::Uuid(_) => Enc::Unencodable("a uuid value"),
-        Value::Timestamp(_) => Enc::Unencodable("a timestamp value"),
+        Value::Uuid(value) => Enc::tagged("uuid", vec![("value", Enc::text(value.to_string()))]),
+        Value::Timestamp(value) => Enc::tagged(
+            "timestamp",
+            vec![("nanoseconds", Enc::text(value.to_string()))],
+        ),
         Value::Enum(_) => Enc::Unencodable("an enum value"),
         Value::Population(_) => Enc::Unencodable("a population value"),
         Value::Composite(_) => Enc::Unencodable("a record or tuple value"),
@@ -407,7 +410,10 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use quire_exact::{Integer, NodeKey, Quantity, Rational, UnitId, ValueType};
+    use quire_exact::{
+        from_admitted, CollectionKind, CollectionType, Integer, NodeKey, Quantity, Rational,
+        Timestamp, UnitId, Uuid, ValueType,
+    };
 
     use super::*;
 
@@ -419,6 +425,63 @@ mod tests {
             .canonical_text(Limits::new(1024))
             .expect("an integer encodes");
         assert_eq!(text, r#"{"type":"integer","value":"-12"}"#);
+    }
+
+    /// FR-181-AC-19: UUID and Timestamp use their distinct typed forms.
+    #[trace("TC-1195", "FR-120-AC-16")]
+    #[test]
+    fn uuid_and_timestamp_encode_in_their_typed_forms() {
+        let uuid = Uuid::from_canonical_text("00112233-4455-6677-8899-aabbccddeeff")
+            .expect("canonical UUID");
+        let timestamp = Timestamp::from_canonical_text("-1").expect("canonical timestamp");
+
+        assert_eq!(
+            value_enc(&Value::Uuid(uuid))
+                .canonical_text(Limits::new(1024))
+                .expect("a UUID encodes"),
+            r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
+        );
+        assert_eq!(
+            value_enc(&Value::Timestamp(timestamp))
+                .canonical_text(Limits::new(1024))
+                .expect("a Timestamp encodes"),
+            r#"{"nanoseconds":"-1","type":"timestamp"}"#
+        );
+    }
+
+    /// FR-181-AC-19/20: UUID and Timestamp set members use their typed forms
+    /// and sets order those forms by their encoded JCS bytes.
+    #[trace("TC-1195", "FR-120-AC-17")]
+    #[test]
+    fn uuid_and_timestamp_sets_encode_in_canonical_byte_order() {
+        let uuid = |value| Value::Uuid(Uuid::from_canonical_text(value).expect("canonical UUID"));
+        let timestamp = |value| {
+            Value::Timestamp(Timestamp::from_canonical_text(value).expect("canonical timestamp"))
+        };
+        let ids = from_admitted(
+            CollectionType::new(CollectionKind::Set, ValueType::Uuid, None),
+            vec![
+                uuid("00112233-4455-6677-8899-aabbccddeeff"),
+                uuid("00112233-4455-6677-8899-aabbccddeefe"),
+            ],
+        );
+        let times = from_admitted(
+            CollectionType::new(CollectionKind::Set, ValueType::Timestamp, None),
+            vec![timestamp("2"), timestamp("10")],
+        );
+
+        assert_eq!(
+            value_enc(&ids)
+                .canonical_text(Limits::new(1024))
+                .expect("the UUID set encodes"),
+            r#"{"elements":[{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeefe"},{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}],"type":"set"}"#
+        );
+        assert_eq!(
+            value_enc(&times)
+                .canonical_text(Limits::new(1024))
+                .expect("the Timestamp set encodes"),
+            r#"{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}"#
+        );
     }
 
     /// FR-120-AC-16 / FR-189-AC-15: a quantity keeps its exact magnitude and

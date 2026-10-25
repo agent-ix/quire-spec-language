@@ -19,7 +19,7 @@ use qsl_semantics::check::{
 };
 use quire_canonical::{Limits, Node, NodeRef};
 
-use super::key::{ascending, canonical, decimal, decimal_wide, exactly, KeyRefusal};
+use super::key::{ascending, canonical, decimal, decimal_wide, exactly, KeyRefusal, SubjectKind};
 use crate::simulation::model::encode::Enc;
 
 /// The most operand paths a formula shape indexes: a shared checked node at
@@ -170,6 +170,18 @@ pub enum PastOperator {
 }
 
 impl PastOperator {
+    /// Whether `[false_result, true_result]` is a composition of the
+    /// operator's one-position updates (`z or A`, `z and A`,
+    /// `B or (A and z)`, `B and (A or z)`): once yields the identity or
+    /// constant true, historically the identity or constant false, since and
+    /// triggered all three; none yields a negation.
+    const fn composes(self, transform: [bool; 2]) -> bool {
+        !matches!(
+            (self, transform),
+            (_, [true, false]) | (Self::Once, [false, false]) | (Self::Historically, [true, true])
+        )
+    }
+
     /// The operator's operand count.
     const fn arity(self) -> usize {
         match self {
@@ -219,6 +231,27 @@ impl HistoryOperand {
     }
 }
 
+/// One bucket `[distance, transform]` of a `distance-history` entry: the
+/// operator's update over the chronological positions at that counted
+/// distance, as a function of the incoming truth.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct DistanceBucket {
+    /// The counted distance from the next position.
+    pub distance: u64,
+    /// `[false_result, true_result]`: the update for an incoming false and
+    /// an incoming true.
+    pub transform: [bool; 2],
+}
+
+impl DistanceBucket {
+    fn enc(self) -> Enc {
+        Enc::Array(vec![
+            number_enc(self.distance),
+            Enc::Array(self.transform.map(Enc::Bool).to_vec()),
+        ])
+    }
+}
+
 /// A `past` entry: the previous-position memory of one past occurrence.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum PastMemory {
@@ -261,6 +294,18 @@ pub enum PastMemory {
         /// retained window.
         tail: bool,
     },
+    /// `[o,"distance-history",buckets,tail]`: a protocol subject's general
+    /// finite past window or shifted open one, as one transform per counted
+    /// distance `0..=b` (or `0..=a`).
+    DistanceHistory {
+        /// The occurrence path.
+        path: Vec<u64>,
+        /// One bucket per distance holding a position.
+        buckets: Vec<DistanceBucket>,
+        /// `None` (written `null`) for a finite window; for an open shift,
+        /// the recurrence's result over all positions older than the buckets.
+        tail: Option<bool>,
+    },
 }
 
 impl PastMemory {
@@ -269,7 +314,8 @@ impl PastMemory {
             Self::Flag { path, .. }
             | Self::Age { path, .. }
             | Self::History { path, .. }
-            | Self::ShiftHistory { path, .. } => path,
+            | Self::ShiftHistory { path, .. }
+            | Self::DistanceHistory { path, .. } => path,
         }
     }
 
@@ -314,6 +360,19 @@ impl PastMemory {
                 Enc::text("shift-history"),
                 operands(held)?,
                 Enc::Bool(*tail),
+            ],
+            Self::DistanceHistory {
+                path,
+                buckets,
+                tail,
+            } => vec![
+                path_enc(path),
+                Enc::text("distance-history"),
+                sorted_set(
+                    buckets.iter().map(|bucket| bucket.enc()).collect(),
+                    max_bytes,
+                )?,
+                tail.map_or(Enc::Null, Enc::Bool),
             ],
         };
         Ok(Enc::Array(members))
@@ -766,6 +825,8 @@ pub(super) fn normal(
 pub(super) struct Reader<'s> {
     pub(super) shape: &'s FormulaShape,
     pub(super) max_bytes: u64,
+    /// FR-338 selects the past-window and acceptance forms by the subject.
+    pub(super) subject: SubjectKind,
 }
 
 impl Reader<'_> {
@@ -858,11 +919,22 @@ impl Reader<'_> {
         Ok(())
     }
 
+    /// Whether the occurrence has a least-fixed-point acceptance set on this
+    /// subject: an unbounded `F`/`U`, an open-upper `F`/`U[a,open]` (member
+    /// only once its shift completes: while a `shift` window is pending it is
+    /// carried), or on a protocol subject a finite one too.
+    fn has_acceptance(&self, node: &Shaped) -> bool {
+        match node.interval {
+            None => true,
+            Some(bounds) => bounds.upper.is_none() || self.subject == SubjectKind::Protocol,
+        }
+    }
+
     /// A branch belongs to a least-fixed-point occurrence's acceptance set
     /// exactly when that occurrence is not carried from this position.
     fn membership(&self, configuration: &Configuration) -> Result<(), KeyRefusal> {
         for (path, node) in &self.shape.nodes {
-            if node.interval.is_some() {
+            if !self.has_acceptance(node) {
                 continue;
             }
             for polarity in [Polarity::Positive, Polarity::Negative] {
@@ -873,10 +945,17 @@ impl Reader<'_> {
                     path: path.clone(),
                     polarity,
                 };
+                // A finite debt (protocol subjects) is carried as a window or
+                // an interval obligation; an unbounded one as a current
+                // obligation.
                 let carried = configuration
                     .obligations
                     .iter()
-                    .any(|obligation| *obligation.occurrence() == signed);
+                    .any(|obligation| *obligation.occurrence() == signed)
+                    || configuration
+                        .windows
+                        .iter()
+                        .any(|window| *window.occurrence() == signed);
                 if configuration.acceptance.contains(&signed) == carried {
                     return Err(KeyRefusal::NonNormal);
                 }
@@ -940,10 +1019,8 @@ impl Reader<'_> {
     fn accepted(&self, entry: NodeRef<'_>) -> Result<Occurrence, KeyRefusal> {
         let [path, polarity] = exactly(members(entry)?.into_iter()).ok_or(KeyRefusal::Members)?;
         let (occurrence, node) = self.occurrence(path, polarity)?;
-        // Spec ruling R-2 pending: an `F`/`U[a,open]` occurrence has no
-        // acceptance membership here; only an unbounded `F`/`U` does.
         if node.least_fixed_point(occurrence.polarity) == Some(true)
-            && node.interval.is_none()
+            && self.has_acceptance(node)
             && node.reached(occurrence.polarity)
         {
             Ok(occurrence)
@@ -1024,7 +1101,7 @@ impl Reader<'_> {
         let by_flag = flags.iter().find(|candidate| candidate.flag() == tag);
         let by_age = flags.iter().find(|candidate| candidate.age() == tag);
         let expected = match tag {
-            "shift-history" => 2,
+            "shift-history" | "distance-history" => 2,
             "history" => 1,
             _ if by_flag.is_some() || by_age.is_some() => 1,
             _ => return Err(KeyRefusal::Unresolved),
@@ -1049,13 +1126,38 @@ impl Reader<'_> {
                     age,
                 })
             }
-            (PastClass::History(bound), [operands]) if tag == "history" => {
+            (PastClass::History(bound), [operands])
+                if tag == "history" && self.subject == SubjectKind::Ordinary =>
+            {
                 Ok(PastMemory::History {
                     operands: self.operands(*operands, &held, operator, bound)?,
                     path: held,
                 })
             }
-            (PastClass::Shift(shift), [operands, tail]) if tag == "shift-history" => {
+            (PastClass::History(bound), [buckets, tail])
+                if tag == "distance-history" && self.subject == SubjectKind::Protocol =>
+            {
+                if !matches!(tail.node(), Node::Null) {
+                    return Err(KeyRefusal::Unresolved);
+                }
+                Ok(PastMemory::DistanceHistory {
+                    buckets: self.buckets(*buckets, bound, operator)?,
+                    tail: None,
+                    path: held,
+                })
+            }
+            (PastClass::Shift(shift), [buckets, tail])
+                if tag == "distance-history" && self.subject == SubjectKind::Protocol =>
+            {
+                Ok(PastMemory::DistanceHistory {
+                    buckets: self.buckets(*buckets, shift, operator)?,
+                    tail: Some(boolean(*tail)?),
+                    path: held,
+                })
+            }
+            (PastClass::Shift(shift), [operands, tail])
+                if tag == "shift-history" && self.subject == SubjectKind::Ordinary =>
+            {
                 Ok(PastMemory::ShiftHistory {
                     operands: self.operands(*operands, &held, operator, shift)?,
                     tail: boolean(*tail)?,
@@ -1064,6 +1166,44 @@ impl Reader<'_> {
             }
             _ => Err(KeyRefusal::Unresolved),
         }
+    }
+
+    /// The buckets of a `distance-history` entry: one `[distance,
+    /// [false_result,true_result]]` per counted distance in `0..=bound`, each
+    /// a transform `operator` can compose.
+    fn buckets(
+        &self,
+        node: NodeRef<'_>,
+        bound: u64,
+        operator: PastOperator,
+    ) -> Result<Vec<DistanceBucket>, KeyRefusal> {
+        let buckets = set(node, self.max_bytes, |bucket| {
+            let [distance, transform] =
+                exactly(members(bucket)?.into_iter()).ok_or(KeyRefusal::Members)?;
+            let distance = decimal(string(distance)?)?;
+            if distance > bound {
+                return Err(KeyRefusal::Unresolved);
+            }
+            let [false_result, true_result] =
+                exactly(members(transform)?.into_iter()).ok_or(KeyRefusal::Members)?;
+            let transform = [boolean(false_result)?, boolean(true_result)?];
+            // A transform is a composition of the operator's one-position
+            // update; one it cannot produce is not a reachable state.
+            if !operator.composes(transform) {
+                return Err(KeyRefusal::Unresolved);
+            }
+            Ok(DistanceBucket {
+                distance,
+                transform,
+            })
+        })?;
+        // One bucket per distance: two would name one position set twice.
+        let mut distances: Vec<u64> = buckets.iter().map(|bucket| bucket.distance).collect();
+        distances.sort_unstable();
+        if distances.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(KeyRefusal::Members);
+        }
+        Ok(buckets)
     }
 
     /// The operand vector of a history entry: one `[operand_path,

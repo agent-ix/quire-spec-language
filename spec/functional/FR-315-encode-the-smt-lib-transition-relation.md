@@ -37,6 +37,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-338
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-487
+    type: depends_on
 ---
 # FR-315: Encode a model subject's transition relation as SMT-LIB
 
@@ -928,8 +930,10 @@ HV-3 reads.
   its variable's copies `i` and `i+1`. A tuple SHALL be a joint disjunct
   exactly when `μ_U`, evaluated through the one clause evaluator (FR-107)
   over the tuple's step labels (HS-5) under the request's instance, is true
-  or undefined. `μ_U` reads no state, so the script prints no term for it.
-  An empty `μ_U` admits every tuple.
+  or undefined. The encoder evaluates `μ_U`'s conjuncts as
+  [FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)
+  lowers and evaluates them. `μ_U` reads no state, so the script prints no
+  term for it. An empty `μ_U` admits every tuple.
 - **Undefined match.** A tuple on which `μ_U` evaluates undefined SHALL be a
   definedness failure at position `i+1` when its component disjuncts hold
   between copies `i` and `i+1` (ADR-023 HV-8, ADR-018 UE-1).
@@ -942,7 +946,8 @@ HV-3 reads.
   monitor item (Monitors), the query's one instance's monitor being
   `m<i>` itself. An indexed atom `e @ t` SHALL read `t`'s copy at the position
   (ADR-023 HM-4), and it carries its definedness condition as any atom
-  does.
+  does. The encoder reads each atom through its FR-487 checked condition,
+  and builds and tabulates the monitor as FR-487 states.
 - **Negated property.** The query SHALL assert the negated property as for
   a temporal item's `InductionBase` and `InductionStep`, over joint
   positions and with the undefined-match failures among the definedness
@@ -1093,7 +1098,8 @@ impl HyperProductIdentity {
   `encode_hyper_query` SHALL apply these four checks first, in the same
   order, and then `hyper-body`, `query-kind`, `too-large` for `constants`,
   the `field-sort`, `parameter-domain` and `field-domain` refusals per copy,
-  `match-conjunct`, `too-large` for `applications` and `candidates`,
+  `match-conjunct`, `too-large` for `applications`, `monitor-atoms`,
+  `monitor-states` and `candidates`,
   `out-of-fragment` per copy, and `too-large` for `script-bytes`, refusing on the
   first that applies with no script. For one request, the two calls
   therefore give the same refusal whenever `of` refuses.
@@ -1160,6 +1166,7 @@ impl HyperProductIdentity {
 | FR-315-AC-40 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose script declares eight constants, encoded under `SmtEncodingLimits` with `max_constants` 8 gives a script byte-equal to the one the defaults give; with `max_constants` 7 it refuses `too-large` naming the measure `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, with no script; with `max_script_bytes` 1 it refuses `too-large` naming `script-bytes`, limit 1 and setting `smt_encoding.max_script_bytes`. FR-315-AC-23's TP-3 item with `max_monitor_states` 1 refuses `too-large` naming `monitor-states`, a value above 1, limit 1 and setting `smt_encoding.max_monitor_states`. FR-315-AC-21's `Unrolling{depth: 1048576}` under the defaults names the setting `smt_encoding.max_constants` with its measure, value and limit. ADR-023 §8's `NonInterference` `InductionBase{depth: 1}` for instance `v`, whose script declares eight constants (FR-315-AC-7), with `encoding.max_constants` 7 refuses `too-large` naming `constants`, value 8, limit 7 and `smt_encoding.max_constants`, and its `HyperProductIdentity::of` equals the identity under the default encoding limits. Each call twice gives equal results. | Test (TC-1250) |
 | FR-315-AC-41 | CG's SMT map, read against these vectors: AC-40's `max_constants` 7 refusal, the item's next query with no earlier query having settled it, settles `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: SmtMaxConstants, value: 7, setting: smt_encoding.max_constants})`, never `unsupported`, V-5 or V-6, and its terminal record states the encoding limits used. For `always holds(c.value <= 3)` over `Counter`, an `InductionBase{depth: 1}` query that the solver stops at `max_solver_steps` 1 settles `Incomplete(LimitReached{max_solver_steps, 1, smt.max_solver_steps})`, and one stopped at `max_solver_time` 1 settles `Incomplete(LimitReached{max_solver_time, 1, smt.max_solver_time})`, each never `InductionNotClosed` or `TimedOut`; the same step-limit stop with the cancellation handle tripped settles `Incomplete(Cancelled{source})`, and with the backend's own wall-clock limit expired `Incomplete(TimedOut)`; a solver `unknown` with no limit reached settles `InductionNotClosed{depth: 1}`. Two requests that differ only in `max_solver_time` have equal request identity, and two that differ only in `max_solver_steps` differ. | Analysis (TC-1250) |
 | FR-315-AC-42 | A `ModelCheckRequest` (FR-126) for `always holds(c.value <= 3)` over `Counter` carries `smt_encoding` and `smt_run`, each `Default` when the caller sets no `smt_encoding.*` or `smt.*` setting. Two requests that differ only in `smt_encoding.max_constants` (7 and 8) have different request identities and cache keys, and a result recorded for one is not reused for the other; two that differ only in `smt.max_solver_time` have equal ones. The `CertificateRequest` that the settlement builds for an SMT proof of that item carries `smt_encoding` equal to the run's `ModelCheckRequest.smt_encoding`. | Test (TC-1250) |
+| FR-315-AC-43 | Over ADR-023 §8's secure vault at instance `v`, `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, which is in the safety fragment but is not `always` over a state predicate, is read through a monitor. `InductionBase{depth: 1}` declares at each position `i` the copies `s<i>.a.v.h`, `s<i>.a.v.l`, `s<i>.b.v.h`, `s<i>.b.v.l` and then `m<i>`. It asserts `(and (<= 0 m<i>) (<= m<i> s-1))` at each position, `s` being the states of the FR-487 tabulation of the body with the initial state numbered 0. At position 0 it asserts one implication `(=> L (= m0 y))` per letter from the initial state, and at position 1 one implication `(=> (and (= m0 x) L) (= m1 y))` per tabulated move. Each `L` is built over the two atoms' terms `(= s<i>.a.v.h s<i>.b.v.h)` and `(= s<i>.a.v.l s<i>.b.v.l)`, bit `j` being the table's atom `j`. The violation at each position `p` is `(= m<p> r)`, `r` being the rejecting state's number. `InductionStep{depth: 1}` asserts no position-0 implication, and its distinctness assertion includes `(= m1 m0)`. Encoding either twice gives byte-equal scripts. With `encoding.max_monitor_states` 1, the request refuses `too-large` naming `monitor-states`, with no script. | Test (TC-1264) |
 
 ## Dependencies
 
@@ -1183,8 +1190,11 @@ impl HyperProductIdentity {
 - [FR-172](FR-172-check-hyper-and-relation-clauses-over-model-subjects.md)
   (the checked hyper clause), [FR-173](FR-173-classify-hyper-clauses-into-forms.md)
   (its form), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
-  (the product the hyper queries encode), [FR-182](FR-182-settle-a-hyper-verdict.md)
-  (the settlement of their outcomes).
+  (the product the hyper queries encode),
+  [FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)
+  (the checked atoms and `match` conjuncts the hyper queries read),
+  [FR-182](FR-182-settle-a-hyper-verdict.md) (the settlement of their
+  outcomes).
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) (the
   settings of the encoding and solver run limits).
 - [FR-336](FR-336-bound-a-model-subject-by-its-universes.md) (the subject
@@ -1203,4 +1213,6 @@ impl HyperProductIdentity {
   finite behaviours, deadlock-freedom, refusals and size limits: Linear
   STD-338; false-extension items, internal faults and violation order:
   Linear STD-340; monitor items (every bounded TP-2 formula, `on each`
-  activations, guarded clauses) and per-instance monitors: Linear STD-407.
+  activations, guarded clauses) and per-instance monitors: Linear STD-407;
+  the hyper queries' checked atoms, `match` conjuncts and body monitor:
+  Linear QSL-1072.

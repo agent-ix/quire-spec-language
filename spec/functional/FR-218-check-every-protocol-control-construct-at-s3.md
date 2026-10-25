@@ -138,7 +138,22 @@ protocol system only ever runs a protocol whose meaning is fixed.
   `repeat` with a cycle through no step node, such as a body `choice` with
   a step in one case and none in another, with
   `unsupported_construct`/`declaration-form` at the `repeat`, naming it
-  (QSpec FR-052).
+  (QSpec FR-052). For this progress proof, a nested guarded repeat contributes
+  its back edge and contributes its skip edge only when its guard can be false
+  under the independent-atom proof below. A nested repeat whose guard cannot
+  be false contributes the progress established by its entered body instead
+  of a skip edge.
+- When an enclosing repeat's progress depends on a nested guarded repeat,
+  S3 SHALL decide whether the nested repeat can exit before entering its
+  body by evaluating its guard over the same conservative independent-atom
+  Boolean abstraction used for choice partitioning. It SHALL use the exact
+  checked-term identity rule for atoms stated below. If at least one
+  valuation makes the nested guard false, that nested repeat contributes no
+  guaranteed progress to the enclosing repeat. If every valuation makes the
+  guard true, the nested repeat contributes the progress established by its
+  entered body. This proof concerns only whether the nested repeat may skip
+  its body; it does not claim termination or replace its authored maximum,
+  invariant, variant or exhaustion behavior.
 - S3 SHALL check a `repeat` with or without an iteration maximum and with or
   without an invariant and variant, and SHALL record the maximum, invariant
   and variant it has. A termination claim is the only reader of the
@@ -437,9 +452,19 @@ none of its operands.
   `work-budget-exceeded`, at the choice's span, naming
   the bound, the count the denied charge would reach and the setting
   `s3.work_units`, and SHALL NOT report `unproved-exhaustiveness` for that
-  choice. The proof has no atom or valuation ceiling of its own (ADR-030):
-  the caller's `s3.work_units` is its only bound, raised by FR-255's
-  setting at every entry point.
+  choice. The repeat-feasibility proof SHALL charge one unit of the same
+  `s3.work_units` meter before evaluating each valuation of its distinct
+  guard atoms. It MAY stop once it finds a valuation that makes the guard
+  false; proving that no such valuation exists requires evaluating all
+  `2^n` valuations. When a valuation's charge would exceed the budget, S3
+  SHALL stop with a `CheckRefusal`/`stage_limit_exceeded`, kind work budget
+  and cause `work-budget-exceeded`, at the nested repeat's span, naming the
+  bound, the count the denied charge would reach and the setting
+  `s3.work_units`; it SHALL NOT report a progress refusal for the enclosing
+  repeat. Neither proof has an atom or valuation ceiling of its own
+  (ADR-030): the caller's `s3.work_units` is its only bound, raised by
+  FR-255's setting at every entry point. Atom collection and comparison add
+  no charge beyond the checked guard-term node charges.
 
 ### Scopes
 
@@ -515,7 +540,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-13 | A channel written with delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss head` and `ordering unordered` records exactly those four premises, `Bound` unresolved and the selector `Head`; the same channel with delivery `at-most-once` is a different checked channel, so is the same channel with `loss tail` and with `loss new`, and no premise changes another. | Test (TC-1056) |
 | FR-218-AC-14 | `relationship Pipe = M::pipe;` over an exported relationship binds the checked relationship to the export's key and the types of its two ends; `M::nothing` refuses `missing_declaration`/`missing-name` at the name; `M::out`, a port, and `M::Node`, an object type, each refuse `invalid_model_binding`/`wrong-export` at the name retaining required kind `relationship`, the actual kind and the export's declaration key; two relationships `Pipe` refuse `ambiguous_declaration`/`ambiguous-name` at both. | Test (TC-1056) |
 | FR-218-AC-15 | `related by Pipe (a, b)` checks when `a` and `b` have the types of the relationship's first and second ends, and the node holds the clause; `related by Absent (a, b)` refuses `missing_declaration`/`missing-name` at `Absent`; swapped ends, or an end of another type, refuse `ill_typed`/`type-mismatch` at that end, retaining relationship, `end`, expected and actual. A node with `related by Pipe (a, b)` and `related by Owns (c, d)` holds two checked clauses in source order. | Test (TC-1056) |
-| FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key, the same for a clause with an `on each` activation and a capture; `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
+| FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key, the same for a clause with an `on each` activation and a capture (satisfiable once S4 emits a clause with a capture; until then FR-337 "Clauses S4 does not emit" refuses it `NotEmitted`, Remaining work: QSL-1081); `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
 | FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send` binder, an `effect` record, a `commit` record, the protocol's activation binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind` (for the four binder kinds), `unlisted`; a `finish` record read by a decision refuses `missing_declaration`/`missing-name` as an out-of-scope read, because no decision reaches it, and a read that is out of scope and also unlisted reports the scope refusal only. A discarded `let` that reads a fact still needs the fact listed. A read of the `over` input refuses `ill_typed`/`operator-ineligible` at the read, naming the guard; a read of a protocol capture checks without listing. | Test (TC-1056) |
 | FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. | Test (TC-1056) |
 | FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
@@ -531,6 +556,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` role `w` with its `Work` nodes inside `sequence S` and a `send` from `w` after `S` has the region that holds `S` and the `send`, which is `S`'s parent control and not `S`. | Test (TC-663) |
 | FR-218-AC-30 | Over three visible Boolean facts `a`, `b`, `c`: a two-case `choice` with guards `a and b and c` and `not (a and b and c)` checks, and its unit's measured `s3.work_units` spend exceeds that of the same unit with guards `a and a and a` and `not (a and a and a)` (one distinct atom, two valuations, the same guard nodes) by exactly 6, so the proof charges one unit per valuation and the atom comparison charges nothing beyond the node charges. A `choice` of the same shape over 24 distinct atoms (`2^24` valuations) stops under the default `s3.work_units` (16777216) with a `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, at the choice's span, naming bound 16777216 and setting `s3.work_units`, and no `unproved-exhaustiveness`; it checks with `s3.work_units` set to 33554432 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation. Guards `a and b and c` and `not a`, over the three atoms `a`, `b`, `c`, leave a valuation uncovered and refuse `unproved-exhaustiveness` with `failed` `[missing-arm]`. | Test (TC-1172) |
 | FR-218-AC-31 | Over branches `a`, `b` and `c`, with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and y }` declared in the unit, `join predicate(f) [a, c]` and `join predicate(f) [c, a, c]` each check to `Predicate{function}` holding `f`'s node key and the joined labels `a` and `c`, and a second join naming `f` holds the same key. `join predicate(g) [a, c]` with no `g` declared refuses `missing_declaration`/`missing-name` at `g`, retaining node and name; `g` declared as a `predicate` refuses `ill_typed`/`operator-ineligible` at `g`, naming the kind. `join predicate(f) [a, b, c]` (three labels, two parameters), a function `h(x: Boolean, y: Int[0, 1]): Boolean` joined on `[a, c]`, and a function `k(x: Boolean, y: Boolean): Int[0, 1]` joined on `[a, c]` each refuse `ill_typed`/`type-mismatch` at the name, retaining node, function, expected and actual. A unit whose joined function is `function r using v(x: Boolean, y: Boolean): Boolean pure { r(x, y) }`, which calls itself with no `decreases` measure, refuses `undefined_expression`/`unproved-decrease` (failed obligation `missing-measure`) at `r`'s declaration and gives no refusal at the join. Each refusal produces no package. | Test (TC-1065) |
+| FR-218-AC-32 | In an outer repeat whose only body is a nested repeat with an event in its body, `repeat max 1 while a` has a feasible false valuation, so its skip edge makes the outer repeat refuse `unsupported_construct`/`declaration-form` at the outer repeat for missing progress. Replacing its guard with `a or not a or b or not b` makes false infeasible over the two independent visible atoms, so its skip edge is absent and the outer repeat checks from the nested repeat's entered-body progress. The infeasible case evaluates four valuations, charging each before evaluation; it checks at the measured exact `s3.work_units` limit and, at one unit less, stops at the nested repeat's span with `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, naming the bound, denied charge count and setting `s3.work_units`, with no enclosing progress refusal. A run raised through each FR-255 entry point checks. | Test (TC-1172) |
 
 ## Dependencies
 

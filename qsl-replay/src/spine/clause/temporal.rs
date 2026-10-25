@@ -262,6 +262,13 @@ fn verdict(outcome: TemporalOutcome) -> TemporalVerdict {
                 },
             }
         }
+        TemporalOutcome::InsufficientData(insufficient) => TemporalVerdict::Undefined {
+            at: insufficient.at.index(),
+            cause: TemporalUndefinedCause::InsufficientData {
+                count: insufficient.data.count,
+                min_count: insufficient.data.min_count,
+            },
+        },
         TemporalOutcome::Pending => TemporalVerdict::Pending,
         TemporalOutcome::MissingFairnessPremise { constraint } => {
             TemporalVerdict::MissingFairnessPremise { constraint }

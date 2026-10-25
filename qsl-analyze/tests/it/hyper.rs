@@ -29,7 +29,7 @@ use qsl_replay::{
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ReachedLimit, UndecidedCause,
 };
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, Undefined};
 
 use crate::counter::ZERO;
 use crate::hyper_world::{
@@ -119,6 +119,7 @@ pub(crate) fn positions(
 /// through the differing outputs. The clause is symmetric in `a` and `b`, so
 /// the engine stores the quotient by the swap (FR-174): the same verdict over
 /// fewer states.
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601")]
 #[test]
 fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
@@ -172,6 +173,7 @@ fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
 /// the equal `l` pairs `(0, 0)` and `(1, 1)`, all in the one automaton
 /// state), and the item holds; the engine stores the 6 states of the quotient
 /// by the swap of `a` and `b` (FR-174).
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601")]
 #[test]
 fn the_secure_vault_holds_over_eight_product_states() {
@@ -189,15 +191,11 @@ fn the_secure_vault_holds_over_eight_product_states() {
     assert_eq!(world.explore().accepting_components(), 0);
 }
 
-/// Criterion 2 of FR-176, not claimed: `NonInterference` with its `match`
-/// block removed is refuted over the secure vault, which pairs `step(0)` with `step(1)`; and a `match`
-/// that no pair of runs satisfies, `b` stuttering where the vault has no
-/// terminal state, is `Undecided(VacuousMatch)`, never `Holds`. The AC writes
-/// the first conjunct `a.step.op = V::Vault::step`, which S3 refuses as
-/// `MatchReadsState` (FR-172 has no operation-constant operand yet), so the
-/// vacuous clause uses `a.step.op != stutter`, which is equivalent over this
-/// vault; the criterion is not claimed.
-#[trace("TC-601")]
+/// Criterion 2 of FR-176: `NonInterference` with its `match` block removed is
+/// refuted over the secure vault, which pairs `step(0)` with `step(1)`; and a
+/// `match` that no pair of runs satisfies, `b` stuttering where the vault has
+/// no terminal state, is `Undecided(VacuousMatch)`, never `Holds`.
+#[trace("TC-601", "FR-176-AC-2")]
 #[test]
 fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuous() {
     let unmatched = World::new(Vault::Secure, false, &STARTS, &non_interference(""));
@@ -215,7 +213,7 @@ fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuo
         Vault::Secure,
         false,
         &STARTS,
-        &non_interference("match { a.step.op != stutter and b.step.op = stutter }"),
+        &non_interference("match { a.step.op = V::Vault::step and b.step.op = stutter }"),
     );
     let HyperOutcome::Undecided { cause, .. } = run(&vacuous) else {
         panic!("expected the vacuous match to decide nothing");
@@ -372,16 +370,17 @@ fn a_subject_that_alone_exceeds_max_states_stops_before_the_product_is_built() {
 
 /// FR-176-AC-4, second sentence: `NonInterference` over the secure vault with
 /// the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 /
-/// value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint
+/// value(a.step.Vault::step.i) else 0) = 0`, which has no value on a joint
 /// step whose `a` step is `step(0)`, is refuted by an `Undefined`
 /// counterexample that ends at the first such joint step in canonical order,
 /// with a path for `a` and one for `b` and the cause `division-by-zero`.
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601", "FR-176-AC-4")]
 #[test]
 fn an_undefined_match_ends_the_item_at_the_first_such_joint_step() {
     let divided = "match { a.step.op = b.step.op and \
          a.step.Vault::step.i = b.step.Vault::step.i and \
-         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+         (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 }";
     let world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
     let counterexample = refuted(run(&world));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -473,8 +472,11 @@ impl StepMatch for Refusing {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Ok(MatchReading::Refused)
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Ok(MatchReading::Refused {
+            conjunct: 0,
+            outcome: qsl_eval::simulation::model::ClauseOutcome::NotBoolean,
+        })
     }
 
     fn existential(
@@ -482,7 +484,7 @@ impl StepMatch for Refusing {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }
@@ -497,8 +499,13 @@ impl StepMatch for Exhausted {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        Meter::new(ZERO).charge(Charge::new(ChargePoint::GraphExpand))?;
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
+        Meter::new(ZERO)
+            .charge(Charge::new(ChargePoint::GraphExpand))
+            .map_err(|incomplete| qsl_eval::hyper::MatchIncomplete {
+                conjunct: 0,
+                incomplete,
+            })?;
         Ok(MatchReading::Holds)
     }
 
@@ -507,7 +514,7 @@ impl StepMatch for Exhausted {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }
@@ -549,7 +556,7 @@ impl HyperLetters for UndefinedWhereBHigh<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         if low(states[1]) == 1 {
             return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                 Undefined::DivisionByZero,
@@ -912,7 +919,7 @@ impl HyperLetters for UndefinedFor<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         if instance[0].instance.key == self.key && low_of(states[0], self.key) == 1 {
             return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                 Undefined::DivisionByZero,
@@ -934,7 +941,7 @@ impl StepMatch for UndefinedMatchFor<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         if instance[0].instance.key == self.key {
             return Ok(MatchReading::Undefined {
                 conjunct: 0,
@@ -949,7 +956,7 @@ impl StepMatch for UndefinedMatchFor<'_> {
         _instance: &[ParameterBinding],
         _steps: &[StepLabel<'_>],
         _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         panic!("an HP-2 clause has no existential conjunct")
     }
 }
@@ -1283,7 +1290,7 @@ fn a_horizon_cuts_the_lockstep_search_before_its_lasso() {
 fn a_first_phase_finding_is_returned_only_inside_the_horizon() {
     let divided = "match { a.step.op = b.step.op and \
          a.step.Vault::step.i = b.step.Vault::step.i and \
-         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+         (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 }";
     let mut world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
     world.max_depth = Some(0);
     assert!(matches!(

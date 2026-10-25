@@ -2,18 +2,20 @@
 //! FR-176 (ADR-023 HC-1): the seams through which the self-composition
 //! product reads a hyper clause's letters and its `match` block.
 //!
-//! A hyper clause's `holds` atoms and `match` conjuncts are typed at S3 but
-//! not yet lowered to checked nodes the one clause evaluator (FR-107) can run,
-//! so the product reads them through these two traits, as a temporal clause's
-//! atoms are read through [`crate::model_subject::ModelLetters`]. Each
-//! implementation is the caller's seam to that evaluator.
+//! The product reads a hyper clause's `holds` atoms and `match` conjuncts
+//! through these two traits, as a temporal clause's atoms are read through
+//! [`crate::model_subject::ModelLetters`]. [`super::CheckedHyperLetters`] and
+//! [`super::CheckedStepMatch`] are the production implementations: the
+//! caller's seam to the one clause evaluator (FR-107), over the nodes S3
+//! lowered (FR-487).
 
-use quire_exact::{Incomplete, Meter};
+use quire_exact::{Incomplete, Meter, ObjectReference};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::FormulaNodeId;
 
-use crate::model_subject::ModelInstance;
+use crate::model_subject::{AtomStop, ModelInstance};
+use crate::simulation::model::ClauseOutcome;
 use crate::simulation::model::ModelSimState;
 use crate::temporal::{AtomReading, UndefinedCause};
 
@@ -45,15 +47,16 @@ pub trait HyperLetters {
     /// The `holds` atom `atom` for `instance` at the joint position whose
     /// component states are `states`, one per trace variable in quantifier
     /// order, charging `meter`. A member `e @ t` reads component `t`'s state
-    /// (ADR-023 HS-4). An exhausted meter is `Err(Incomplete)`, never a
-    /// reading.
+    /// (ADR-023 HS-4). An atom that gives no reading is an [`AtomStop`], as
+    /// [`crate::model_subject::ModelLetters::atom`] gives it: an exhausted
+    /// meter is `AtomStop::Incomplete`, never a reading.
     fn atom(
         &self,
         atom: FormulaNodeId,
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete>;
+    ) -> Result<AtomReading, AtomStop>;
 }
 
 /// What a `match` block's universal conjuncts say of one joint step.
@@ -73,7 +76,46 @@ pub enum MatchReading {
         cause: UndefinedCause,
     },
     /// A conjunct was refused at the joint step.
-    Refused,
+    Refused {
+        /// The index of the conjunct, as for `Undefined`.
+        conjunct: usize,
+        /// How the evaluation was refused.
+        outcome: ClauseOutcome,
+    },
+}
+
+/// A conjunct whose evaluation exhausted the meter (FR-487).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MatchIncomplete {
+    /// The index of the conjunct, as for [`MatchReading::Undefined`].
+    pub conjunct: usize,
+    /// The exhausted meter.
+    pub incomplete: Incomplete,
+}
+
+/// One atom slot's binding (FR-487 "Evaluating an atom").
+#[derive(Clone, Debug)]
+pub enum HyperSlot {
+    /// The parameter's object in the slot's component.
+    Bound(quire_exact::Value),
+    /// The instance key names no object of the slot's component's state
+    /// (FR-125 Instancing): `key` is its reference and `population` the
+    /// population it is drawn from.
+    Absent {
+        /// The reference of the parameter's type under the instance's key.
+        key: ObjectReference,
+        /// The population the key is drawn from.
+        population: String,
+    },
+}
+
+/// Which part of a `match` block a conjunct belongs to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MatchPart {
+    /// `mu_U`: the conjuncts that read universal variables only.
+    Universal,
+    /// `mu_E`: the conjuncts that read an existential variable.
+    Existential,
 }
 
 /// Reads a hyper clause's `match` block over a joint step: its universal part
@@ -83,24 +125,24 @@ pub trait StepMatch {
     /// `μ_U` for `instance` over `steps`, the labels of the universal
     /// components' steps into the joint position, one per universal trace
     /// variable in quantifier order. `μ` reads no state (ADR-023 HS-5). An
-    /// exhausted meter is `Err(Incomplete)`, which the product reads as a
+    /// exhausted meter is `Err(MatchIncomplete)`, which the product reads as a
     /// conjunct that is incomplete there.
     fn universal(
         &self,
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete>;
+    ) -> Result<MatchReading, MatchIncomplete>;
 
     /// `μ_E` for `instance` over `steps`, the labels of every component's
     /// step into the joint position, one per trace variable in quantifier
     /// order: the universal components' first, then the existential ones'.
     /// An `Undefined` reading names its conjunct among the clause's
-    /// existential conjuncts. An exhausted meter is `Err(Incomplete)`.
+    /// existential conjuncts. An exhausted meter is `Err(MatchIncomplete)`.
     fn existential(
         &self,
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete>;
+    ) -> Result<MatchReading, MatchIncomplete>;
 }

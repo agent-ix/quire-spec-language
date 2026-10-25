@@ -583,6 +583,7 @@ impl UnavailabilityCause {
             TemporalOutcome::Holds
             | TemporalOutcome::Violated { .. }
             | TemporalOutcome::Undefined(_)
+            | TemporalOutcome::InsufficientData(_)
             | TemporalOutcome::Pending
             | TemporalOutcome::Incomplete(_)
             | TemporalOutcome::WindowLimitReached(_) => None,
@@ -1157,7 +1158,9 @@ impl TerminalRecord {
                     ));
                 }
             },
-            ReplayResult::Input(_) => return Err(TerminalRecordRefusal::ReplayLacksWitness),
+            ReplayResult::Input(_) | ReplayResult::ObservedTemporal(_) => {
+                return Err(TerminalRecordRefusal::ReplayLacksWitness)
+            }
         }
         Ok(Self {
             request_index,

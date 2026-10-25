@@ -231,8 +231,9 @@ text. These points follow from it and are decided.
   construct. A unit is therefore never read by two parsers. S2
   builds a form for a `relation` clause and a `hyper` clause over
   `behaviours`, S3 checks them, and a checked clause is refused only as
-  `NotEmitted`, as a checked `temporal` clause is, until an S4 emission writes
-  it. A `hyper` clause over a finite trace domain and a `relation` over names
+  `NotEmitted`, as a checked `temporal` clause that S4 does not write is
+  (FR-337 "Clauses S4 does not emit"), until an S4 emission writes it. A
+  `hyper` clause over a finite trace domain and a `relation` over names
   that are not model operations keep the finite reading of QSpec FR-191.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` or `digest` after the

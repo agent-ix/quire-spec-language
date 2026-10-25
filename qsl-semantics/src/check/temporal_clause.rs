@@ -441,6 +441,9 @@ pub struct CheckedTemporalClause {
     claim: TemporalClaim,
     formula: CheckedFormula,
     activation: Activation,
+    /// An `on each` activation's trigger binder: its name and resolved type,
+    /// which is the `over` parameter's type (FR-337).
+    trigger: Option<(String, ValueType)>,
     fairness: Vec<FairnessConstraint>,
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
@@ -546,6 +549,14 @@ impl CheckedTemporalClause {
     /// How the clause activates (FR-325 "Outputs").
     pub fn activation(&self) -> Activation {
         self.activation
+    }
+
+    /// An `on each` activation's trigger binder, by name and type (FR-337).
+    /// `None` for an `on origin` clause.
+    pub fn trigger(&self) -> Option<(&str, &ValueType)> {
+        self.trigger
+            .as_ref()
+            .map(|(name, value_type)| (name.as_str(), value_type))
     }
 
     /// The clause's fairness set, each constraint once, in source order of
@@ -874,6 +885,27 @@ fn check_clause(
             })?;
         types.push(resolved);
     }
+    // FR-337 "`on each` activation at S3": the trigger binder is typed as the
+    // `over` parameter is, and is named otherwise.
+    let trigger = match (&form.activation, types.as_slice()) {
+        (ActivationForm::Each { parameter, .. }, [over, trigger, ..]) => {
+            if trigger != over {
+                return Err(refuse(TemporalCause::TriggerType {
+                    parameter: parameter.name.name.clone(),
+                    span: parameter.value_type.span,
+                }));
+            }
+            if parameter.name.name == form.over.name.name {
+                return Err(refuse(TemporalCause::DuplicateTrigger {
+                    name: parameter.name.name.clone(),
+                    first: form.over.name.span,
+                    span: parameter.name.span,
+                }));
+            }
+            Some((parameter.name.name.clone(), trigger.clone()))
+        }
+        _ => None,
+    };
 
     let bounded = profile.is_bounded();
     // FR-234: the timed profile reads its intervals in the clause's
@@ -983,6 +1015,7 @@ fn check_clause(
         },
         formula,
         activation,
+        trigger,
         fairness,
         fairness_sources,
         protocol_fairness,
@@ -1512,14 +1545,12 @@ fn formula_horizon(
 }
 
 /// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
-/// that activates `on origin`, declares no capture, names no protocol
-/// target and is not under the timed profile. The `on each` activation and
-/// the captures are not checked, no emitted member names a protocol target,
-/// and S4 writes no timed interval (QSpec FR-370's timed form), so a clause
-/// with any of them is [`not_emitted`].
+/// that declares no capture, names no protocol target and is not under the
+/// timed profile. S4 writes no capture, no emitted member names a protocol
+/// target, and S4 writes no timed interval (QSpec FR-370's timed form), so a
+/// clause with any of them is [`not_emitted`].
 pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
-    matches!(form.activation, ActivationForm::Origin)
-        && form.captures.is_empty()
+    form.captures.is_empty()
         && checked.protocol_fairness.is_empty()
         && checked.time_binding.is_none()
 }

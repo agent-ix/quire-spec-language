@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-338's two Büchi state alternatives (ADR-018 LA-2, §12): `["buchi",
-//! branch]` for a TP-4 clause, and `["guarded-buchi", phase, branch]` for a
-//! TP-4 clause whose `on each` activation has a `when` condition.
+//! FR-338's three Büchi state alternatives (ADR-018 LA-2, §12): `["buchi",
+//! branch]` for an `on origin` TP-4 clause, `["guarded-buchi", phase,
+//! branch]` for a TP-4 clause whose `on each` activation has a `when`
+//! condition, and `["each-buchi", phase, branch]` for an unguarded `on each`
+//! TP-4 clause (activation `"each"`).
 //!
 //! A branch is one elementary configuration of the negated formula, with the
 //! generalized Büchi membership of its acceptance sets. It is not a
@@ -10,8 +12,9 @@
 //! member of a key.
 
 use qsl_foundation::IdentityLimits;
-use qsl_semantics::check::CheckedTemporalClause;
+use qsl_semantics::check::{Activation, CheckedTemporalClause, TemporalProfile};
 use quire_canonical::{Limits, Node, NodeRef};
+use quire_semantic_value::fairness::PropertyForm;
 
 use super::key::{
     admit_envelope, exactly, AutomatonStateKey, ContextActivation, KeyRefusal, NotTranslated,
@@ -47,6 +50,30 @@ pub enum BuchiState {
     /// `["guarded-buchi", phase, branch]`. A waiting branch holds no
     /// obligation and no window.
     Guarded(BuchiPhase, Configuration),
+    /// `["each-buchi", phase, branch]`, only under activation `"each"`. A
+    /// waiting branch holds no obligation and no window.
+    Each(BuchiPhase, Configuration),
+}
+
+/// Which of the three alternatives a context's activation selects.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BuchiForm {
+    /// `"infinite"`: `["buchi", branch]`.
+    Origin,
+    /// `"each-when"`: `["guarded-buchi", phase, branch]`.
+    Guarded,
+    /// `"each"`: `["each-buchi", phase, branch]`.
+    Each,
+}
+
+impl BuchiForm {
+    const fn tag(self) -> &'static str {
+        match self {
+            Self::Origin => "buchi",
+            Self::Guarded => "guarded-buchi",
+            Self::Each => "each-buchi",
+        }
+    }
 }
 
 /// The Büchi translation of a TP-4 clause: the keys of its negated
@@ -57,21 +84,21 @@ pub struct BuchiStates {
     context_octets: Vec<u8>,
     max_bytes: u64,
     shape: FormulaShape,
-    guarded: bool,
+    form: BuchiForm,
+    subject: SubjectKind,
 }
 
 impl BuchiStates {
-    /// The Büchi states of the TP-4 clause `clause` over an ordinary
-    /// `subject` under `context`; guarded when the context's activation is
-    /// `"each-when"`.
+    /// The Büchi states of the TP-4 clause `clause` over `subject` under
+    /// `context`; the context's activation (`"infinite"`, `"each-when"` or
+    /// `"each"`) selects the alternative.
     ///
     /// # Errors
     ///
-    /// [`TranslationRefusal::NotTranslated`] when the subject is a protocol,
-    /// the clause is not TP-4 (a bounded profile, or a formula in the safety
+    /// [`TranslationRefusal::NotTranslated`] when the clause is not TP-4 (a bounded profile, or a formula in the safety
     /// fragment), holds a timed interval, has more operand paths than the
-    /// path bound, or `context` names another profile or an activation that
-    /// is neither `"infinite"` nor `"each-when"`;
+    /// path bound, or `context` names another profile or an activation the
+    /// clause does not have (`"origin"` is the bounded monitor's);
     /// [`TranslationRefusal::Key`] when the context does not encode.
     pub fn clause(
         clause: &CheckedTemporalClause,
@@ -79,14 +106,21 @@ impl BuchiStates {
         subject: SubjectKind,
     ) -> Result<Self, TranslationRefusal> {
         let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
-        let guarded = match context.activation {
-            ContextActivation::EachWhen => true,
-            ContextActivation::Infinite => false,
-            ContextActivation::Origin | ContextActivation::Each => return Err(not_translated()),
+        // The context's activation selects the form, and must be the one the
+        // checked clause's own activation gives.
+        let (form, activation) = match context.activation {
+            ContextActivation::EachWhen => (BuchiForm::Guarded, Activation::Each { guarded: true }),
+            ContextActivation::Each => (BuchiForm::Each, Activation::Each { guarded: false }),
+            ContextActivation::Infinite => (BuchiForm::Origin, Activation::Origin),
+            ContextActivation::Origin => return Err(not_translated()),
         };
-        if subject == SubjectKind::Protocol
-            || clause.profile().is_bounded()
+        let form_agrees = clause
+            .property_form()
+            .is_none_or(|form| form == PropertyForm::Liveness);
+        if clause.profile() != TemporalProfile::InfiniteTrace
             || context.profile != clause.profile()
+            || clause.activation() != activation
+            || !form_agrees
         {
             return Err(not_translated());
         }
@@ -107,7 +141,8 @@ impl BuchiStates {
             context_octets,
             max_bytes,
             shape,
-            guarded,
+            form,
+            subject,
         })
     }
 
@@ -120,10 +155,12 @@ impl BuchiStates {
     /// byte budget; any other [`KeyRefusal`] when the facts, normalized as
     /// for a safety branch, are a state this context would refuse.
     pub fn key(&self, state: &BuchiState) -> Result<AutomatonStateKey, KeyRefusal> {
-        let (tag, phase, branch) = match state {
-            BuchiState::Elementary(branch) => ("buchi", None, branch),
-            BuchiState::Guarded(phase, branch) => ("guarded-buchi", Some(*phase), branch),
+        let (form, phase, branch) = match state {
+            BuchiState::Elementary(branch) => (BuchiForm::Origin, None, branch),
+            BuchiState::Guarded(phase, branch) => (BuchiForm::Guarded, Some(*phase), branch),
+            BuchiState::Each(phase, branch) => (BuchiForm::Each, Some(*phase), branch),
         };
+        let tag = form.tag();
         let branch = normal(std::slice::from_ref(branch), self.max_bytes)?
             .into_iter()
             .next()
@@ -171,13 +208,14 @@ impl BuchiStates {
         let reader = Reader {
             shape: &self.shape,
             max_bytes: self.max_bytes,
+            subject: self.subject,
         };
-        match (tag, self.guarded) {
-            ("buchi", false) => {
+        match tag {
+            "buchi" if self.form == BuchiForm::Origin => {
                 let [branch] = exactly(items).ok_or(KeyRefusal::Members)?;
                 Ok(BuchiState::Elementary(reader.configuration(branch)?))
             }
-            ("guarded-buchi", true) => {
+            "guarded-buchi" | "each-buchi" if tag == self.form.tag() => {
                 let [phase, branch] = exactly(items).ok_or(KeyRefusal::Members)?;
                 let phase = match phase.node() {
                     Node::String("waiting") => BuchiPhase::Waiting,
@@ -190,12 +228,15 @@ impl BuchiStates {
                 {
                     return Err(KeyRefusal::Members);
                 }
-                Ok(BuchiState::Guarded(phase, branch))
+                Ok(if self.form == BuchiForm::Each {
+                    BuchiState::Each(phase, branch)
+                } else {
+                    BuchiState::Guarded(phase, branch)
+                })
             }
-            ("buchi" | "guarded-buchi" | "safety" | "bounded" | "accept" | "reject", _) => {
-                Err(KeyRefusal::WrongForm(tag.to_owned()))
-            }
-            (other, _) => Err(KeyRefusal::UnknownTag(other.to_owned())),
+            "buchi" | "guarded-buchi" | "each-buchi" | "safety" | "bounded" | "accept"
+            | "reject" => Err(KeyRefusal::WrongForm(tag.to_owned())),
+            other => Err(KeyRefusal::UnknownTag(other.to_owned())),
         }
     }
 }

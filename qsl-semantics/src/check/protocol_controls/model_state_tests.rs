@@ -5,7 +5,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Setting, SourceIdentity};
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -35,6 +35,13 @@ fn with_channel(carries: &str, ordering: &str) -> String {
 }
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    check_with_limits(text, CheckingLimits::default())
+}
+
+fn check_with_limits(
+    text: &str,
+    limits: CheckingLimits,
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -51,7 +58,7 @@ fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(limits)
 }
 
 /// The one channel's checked ordering.
@@ -179,6 +186,189 @@ fn attempted(binder_type: &str, visible: &str, yes: &str, no: &str) -> String {
          case yes when {{ {yes} }} sequence Yes {{ }} \
          case no when {{ {no} }} sequence No {{ }} }} }}"
     )
+}
+
+fn choice_with_guards(count: usize, yes: &str, no: &str) -> String {
+    let events = (0..count)
+        .map(|index| format!("event E{index} by Service as (a{index}: Boolean) {{ true }}; "))
+        .collect::<String>();
+    let visible = (0..count)
+        .map(|index| format!("a{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ {events} \
+             choice Pick by Service visible ({visible}) {{ \
+             case yes when {{ {yes} }} sequence Yes {{ }} \
+             case no when {{ {no} }} sequence No {{ }} }} }}"
+        ),
+    )
+}
+
+fn nested_repeat_with_guard(guard: &str) -> String {
+    nested_repeat_with_guard_and_outer_progress(guard, false)
+}
+
+fn nested_repeat_with_guard_and_outer_progress(guard: &str, outer_progress: bool) -> String {
+    let outer_progress = if outer_progress {
+        "event OuterProgress by Service as (outer_progress: Boolean) { true };"
+    } else {
+        ""
+    };
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             event A by Service as (a: Boolean) {{ true }}; \
+             event B by Service as (b: Boolean) {{ true }}; \
+             repeat Outer by Service visible () while {{ true }} \
+             sequence OuterBody {{ \
+             {outer_progress} \
+             repeat Inner by Service visible (a, b) max 1 while {{ {guard} }} \
+             sequence InnerBody {{ \
+             event Progress by Service as (progress: Boolean) {{ true }}; }} \
+             exhausted check Exhausted using v {{ true }}; \
+             }} }}"
+        ),
+    )
+}
+
+#[trace("TC-1172", "FR-218-AC-30")]
+#[test]
+fn choice_partition_charges_once_per_valuation() {
+    let three_atoms = choice_with_guards(3, "a0 and a1 and a2", "not (a0 and a1 and a2)");
+    let one_atom = choice_with_guards(1, "a0 and a0 and a0", "not (a0 and a0 and a0)");
+    for text in [&three_atoms, &one_atom] {
+        let graph = check(text).expect("the choice guards partition");
+        let [protocol] = graph.protocols() else {
+            panic!("one checked protocol");
+        };
+        assert_eq!(protocol.slots.choices.len(), 1);
+    }
+    for (text, budget, denied) in [(&one_atom, 1_u64, 2_u128), (&three_atoms, 7, 8)] {
+        let refusals = check_with_limits(text, CheckingLimits::default().with_work_budget(budget))
+            .expect_err("the next choice valuation exceeds the configured budget");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one limit refusal, got {refusals:?}");
+        };
+        let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+            panic!("a work-budget refusal, got {refusal:?}");
+        };
+        assert_eq!(limit.kind.setting(), Setting::S3WorkUnits);
+        assert_eq!(limit.limit, budget);
+        assert_eq!(limit.actual, denied);
+        let region = limit.region.as_ref().expect("the choice's region");
+        let start = usize::try_from(region.start()).expect("region start fits usize");
+        let end = usize::try_from(region.end()).expect("region end fits usize");
+        assert_eq!(&text[start..end], "Pick");
+    }
+}
+
+#[trace("TC-1172", "FR-218-AC-30")]
+#[test]
+fn raising_the_caller_work_budget_admits_the_partition() {
+    const RAISED_WORK_UNITS: u64 = 33_554_432;
+    let text = choice_with_guards(8, "a0", "not a0");
+    check_with_limits(
+        &text,
+        CheckingLimits::default().with_work_budget(RAISED_WORK_UNITS),
+    )
+    .expect("the caller can raise s3.work_units to admit the partition proof");
+}
+
+#[trace("TC-1172", "FR-218-AC-32", "FR-048-AC-5")]
+#[test]
+fn nested_repeat_feasibility_is_independent_and_budgeted() {
+    let feasible_exit = nested_repeat_with_guard("a");
+    let refusals = check(&feasible_exit).expect_err("the inner repeat may skip its body");
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer")
+    )));
+    check(&nested_repeat_with_guard("a or not a or b or not b"))
+        .expect("the nested repeat's infeasible false guard removes its skip edge");
+
+    let guard_false_infeasible =
+        nested_repeat_with_guard_and_outer_progress("a or not a or b or not b", true);
+    check(&guard_false_infeasible).expect("the nested repeat always enters its body");
+
+    // FR-048-AC-5: a two-atom proof needs four work units. Zero units refuses
+    // before the first valuation; three refuses on the fourth. At exactly
+    // four, the proof completes and any later work has a different locus.
+    let zero = check_with_limits(
+        &guard_false_infeasible,
+        CheckingLimits::default().with_work_budget(0),
+    )
+    .expect_err("zero proof budget refuses before evaluating its first valuation");
+    assert_resource_work_limit(&zero, 0);
+    assert_limit_region(&guard_false_infeasible, &zero, "Inner");
+
+    let one_short = check_with_limits(
+        &guard_false_infeasible,
+        CheckingLimits::default().with_work_budget(3),
+    )
+    .expect_err("the fourth independent valuation exceeds the one-short limit");
+    assert_resource_work_limit(&one_short, 3);
+    assert_limit_region(&guard_false_infeasible, &one_short, "Inner");
+
+    let exact = check_with_limits(
+        &guard_false_infeasible,
+        CheckingLimits::default().with_work_budget(4),
+    )
+    .expect_err("the proof completes at four units, before later S3 work");
+    assert!(!exact.is_empty(), "later S3 work still needs its own units");
+    for refusal in &exact {
+        let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+            panic!("a typed later work limit, got {refusal:?}");
+        };
+        assert_eq!(limit.kind.setting(), Setting::S3WorkUnits);
+        assert_eq!(limit.limit, 4);
+        assert_eq!(limit.actual, 5);
+        assert!(limit.region.is_none(), "the repeat proof already completed");
+    }
+    assert!(!exact.iter().any(|refusal| {
+        matches!(&refusal.cause, CheckCause::ResourceExhausted(limit) if limit.region.as_ref().is_some_and(|region| {
+            let start = usize::try_from(region.start()).expect("region start fits usize");
+            let end = usize::try_from(region.end()).expect("region end fits usize");
+            &guard_false_infeasible[start..end] == "Inner"
+        }))
+    }));
+    assert!(!exact.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer")
+    )));
+}
+
+fn assert_resource_work_limit(refusals: &[CheckRefusal], bound: u64) {
+    let [refusal] = refusals else {
+        panic!("one resource refusal, got {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a work-budget refusal, got {refusal:?}");
+    };
+    assert_eq!(limit.kind.setting(), Setting::S3WorkUnits);
+    assert_eq!(limit.limit, bound);
+    assert_eq!(limit.actual, u128::from(bound) + 1);
+}
+
+fn assert_limit_region(text: &str, refusals: &[CheckRefusal], expected: &str) {
+    let [refusal] = refusals else {
+        panic!("one limit refusal, got {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a work-budget refusal, got {refusal:?}");
+    };
+    let region = limit
+        .region
+        .as_ref()
+        .unwrap_or_else(|| panic!("resource refusal is not at the nested repeat: {limit:?}"));
+    let start = usize::try_from(region.start()).expect("region start fits usize");
+    let end = usize::try_from(region.end()).expect("region end fits usize");
+    assert_eq!(&text[start..end], expected);
 }
 
 /// FR-218-AC-2: a `choice` guard that reads the `over` input's field `k.v`

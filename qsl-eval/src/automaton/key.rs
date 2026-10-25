@@ -28,9 +28,9 @@
 //! another shape is not translated here.
 //!
 //! [`SafetyStates`] is the general `["safety", branches]` algebra of any
-//! unbounded-profile clause over an ordinary subject (a protocol subject is
-//! [`TranslationRefusal::NotTranslated`] until its past and acceptance forms
-//! are written): obligations, past memory, interval windows and
+//! unbounded-profile clause over an ordinary or a protocol subject (the
+//! subject selects the past-window and finite `F`/`U` acceptance forms):
+//! obligations, past memory, interval windows and
 //! acceptance membership (`key_state.rs`), which it writes sorted and admits
 //! by resolving every member in the clause's formula.
 
@@ -42,6 +42,7 @@ use qsl_semantics::check::{
 };
 use quire_canonical::{Limits, Node, NodeRef};
 use quire_exact::Value;
+use quire_semantic_value::fairness::PropertyForm;
 
 use super::key_state::{safety_enc, Configuration, FormulaShape, Polarity, Reader};
 use crate::simulation::model::encode::{hex, value_enc, Enc};
@@ -98,12 +99,14 @@ pub enum ContextRoot {
 
 /// A context's activation: `"origin"` or `"each"` for a bounded monitor,
 /// `"each-when"` for an `on each` activation with a `when` condition under
-/// any profile, `"infinite"` otherwise.
+/// any profile, `"each"` for an unguarded infinite-trace TP-4 `on each`
+/// clause, `"infinite"` otherwise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContextActivation {
     /// A bounded monitor activated at the origin.
     Origin,
-    /// A bounded monitor activated at each position.
+    /// A bounded monitor activated at each position, or an unguarded
+    /// infinite-trace TP-4 clause with `on each`.
     Each,
     /// An infinite-trace automaton.
     Infinite,
@@ -170,8 +173,14 @@ impl StateContext {
         binding: Vec<ContextBinding>,
     ) -> Self {
         let profile = clause.profile();
+        // An unguarded infinite-trace TP-4 `on each` clause is keyed under
+        // "each" (`["each-buchi", phase, branch]`).
+        let each_buchi = profile == TemporalProfile::InfiniteTrace
+            && clause.activation() == (Activation::Each { guarded: false })
+            && is_tp4(clause);
         let activation = match (profile.is_bounded(), clause.activation()) {
             (_, Activation::Each { guarded: true }) => ContextActivation::EachWhen,
+            (false, _) if each_buchi => ContextActivation::Each,
             (false, _) => ContextActivation::Infinite,
             (true, Activation::Origin) => ContextActivation::Origin,
             (true, Activation::Each { .. }) => ContextActivation::Each,
@@ -446,7 +455,7 @@ impl SafetyTranslation {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" | "each-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),
@@ -581,6 +590,18 @@ pub(super) fn admit_envelope<T>(
     Ok((AutomatonStateKey(octets.to_vec()), state))
 }
 
+/// Whether `clause` is a TP-4 (liveness) clause: its checked property form
+/// when it has one, else its formula's shape.
+pub(super) fn is_tp4(clause: &CheckedTemporalClause) -> bool {
+    clause.property_form().map_or_else(
+        || {
+            FormulaShape::of(clause.formula(), Polarity::Positive)
+                .is_some_and(|shape| shape.is_liveness())
+        },
+        |form| form == PropertyForm::Liveness,
+    )
+}
+
 /// The kind of subject a clause ranges over: FR-338 fixes its past-window
 /// and acceptance forms by it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -605,6 +626,7 @@ pub struct SafetyStates {
     context_octets: Vec<u8>,
     max_bytes: u64,
     shape: FormulaShape,
+    subject: SubjectKind,
 }
 
 impl SafetyStates {
@@ -613,9 +635,8 @@ impl SafetyStates {
     ///
     /// # Errors
     ///
-    /// [`TranslationRefusal::NotTranslated`] when the subject is a protocol
-    /// (its `distance-history` past form and finite `F`/`U` acceptance are
-    /// not written or read yet), the clause is under a bounded profile,
+    /// [`TranslationRefusal::NotTranslated`] when the clause is under a
+    /// profile other than infinite-trace, is a liveness clause,
     /// holds a timed interval, has more operand paths than the path bound,
     /// or `context` names another profile; [`TranslationRefusal::Key`] when
     /// the context does not encode.
@@ -625,14 +646,16 @@ impl SafetyStates {
         subject: SubjectKind,
     ) -> Result<Self, TranslationRefusal> {
         let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
-        if subject == SubjectKind::Protocol
-            || clause.profile().is_bounded()
-            || context.profile != clause.profile()
+        if clause.profile() != TemporalProfile::InfiniteTrace || context.profile != clause.profile()
         {
             return Err(not_translated());
         }
         let shape =
             FormulaShape::of(clause.formula(), Polarity::Positive).ok_or_else(not_translated)?;
+        // A TP-4 clause is keyed by `BuchiStates`, not as a safety state.
+        if is_tp4(clause) {
+            return Err(not_translated());
+        }
         let max_bytes = IdentityLimits::default().input_bytes;
         let (context, context_octets) = context
             .encoded(max_bytes)
@@ -642,6 +665,7 @@ impl SafetyStates {
             context_octets,
             max_bytes,
             shape,
+            subject,
         })
     }
 
@@ -698,7 +722,7 @@ impl SafetyStates {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" | "each-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),
@@ -707,6 +731,7 @@ impl SafetyStates {
         Reader {
             shape: &self.shape,
             max_bytes: self.max_bytes,
+            subject: self.subject,
         }
         .branches(branches)
     }

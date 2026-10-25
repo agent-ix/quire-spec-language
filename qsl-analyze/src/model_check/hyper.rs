@@ -138,7 +138,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
+use super::check::{atom_refusal, fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
 use super::fair_walk::{tree_path, FairModel};
 use super::graph::{
     retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
@@ -150,6 +150,13 @@ mod projected;
 mod single;
 
 pub use single::{check_single_existential, SingleExistentialRequest, SingleExistentialRun};
+
+/// The refusal that an atom's recorded stop settles, as the temporal check
+/// maps a letter stop (FR-487): the product records an exhausted meter as its
+/// own halt, so a stop here is never one.
+pub(super) fn atom_halt(stop: qsl_eval::model_subject::AtomStop) -> ModelCheckRefusal {
+    atom_refusal(stop).unwrap_or_else(|_| fault("an-exhausted-atom-meter-is-a-meter-halt"))
+}
 
 type HyperGraph = RetainedGraph<HyperState, HyperTransition, HyperFinding>;
 
@@ -1261,6 +1268,7 @@ impl<'a> Run<'_, 'a> {
                 }),
                 None,
             ),
+            Halt::Atom(stop) => return Err(atom_halt(stop)),
             Halt::Encoding(refusal) => return Err(ModelCheckRefusal::Encoding(refusal)),
             Halt::Fault(internal) => return Err(ModelCheckRefusal::Fault(internal)),
         })
@@ -2340,6 +2348,6 @@ impl TupleLetters for Positions<'_> {
         }
         self.letters
             .atom(atom, self.instance, &states, meter)
-            .map_err(LetterStop::Incomplete)
+            .map_err(LetterStop::from)
     }
 }

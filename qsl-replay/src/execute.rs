@@ -20,6 +20,7 @@
 //! settles `inconclusive` with its typed cause and is never repaired
 //! ([`crate::ReplayResult`]).
 
+use qsl_eval::temporal::{evaluate_observed, TemporalPosition, TemporalRefusal, TemporalTrace};
 use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
@@ -27,7 +28,7 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, CheckedInterval};
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -52,7 +53,8 @@ use crate::limits::CallerLimits;
 use crate::request::StageLimits;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
+    EvaluatedValue, InputArmResult, ObservedTemporalResult, ReplayResult, Verdict,
+    WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
     self, CompileRefusal, DependencyInput, DependencyInputRefusal, ParseRequest, SpineLimits,
@@ -60,12 +62,15 @@ use crate::spine::{
 };
 use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{
-    DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
+    DecodeRefusal, EnvelopeSource, FrameOperation, ReplaySource, WitnessBinding, WitnessValue,
+    WitnessValueType,
 };
 use argument::Stopped;
 use qsl_forms::StateClauseKind;
 use qsl_foundation::Setting;
-use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
+use qsl_semantics::model::observation::{
+    admit_trace_snapshot, population_universe_for, AdmissionFailure, DocumentRef, ObservationForm,
+};
 use quire_exact::Identifier;
 use quire_semantic_value::catalog::Category;
 use std::collections::BTreeSet;
@@ -329,6 +334,17 @@ pub enum ReplayRefusal {
         /// The member the entry reads.
         member: TargetMember,
     },
+    /// FR-331: a temporal counterexample arm requires a `state_clause`
+    /// target and reports the observed-counterexample member as the one
+    /// this entry cannot read.
+    #[error("invalid_runtime_input/unknown-member at /replay/observed_counterexample: replay target {target} is not a state clause")]
+    WrongObservedTemporalTarget {
+        /// The request's replay target.
+        target: Box<ReplayTarget>,
+    },
+    /// FR-331: observed temporal replay requires a witness source.
+    #[error("invalid_runtime_input/invalid-value at /replay/source: observed temporal replay requires a Witness source")]
+    WrongObservedTemporalSource,
     /// FR-116, FR-122: the envelope's replay target differs from the
     /// request's (`stale_dependency`/`content-mismatch`), naming both.
     #[error("stale_dependency/content-mismatch: the request's target is {request} but the envelope's is {envelope}")]
@@ -384,6 +400,31 @@ pub enum ReplayRefusal {
         /// The recompiled package it was looked up in.
         package: PackageId,
     },
+    /// FR-331: an observed trace carries no enabledness with which to check
+    /// this fairness constraint, so the formula is not evaluated.
+    #[error("unsupported_projection/missing-fairness-premise: observed trace cannot check {constraint:?}")]
+    MissingFairnessPremise {
+        /// The first member of the checked clause's fairness set.
+        constraint: quire_semantic_value::fairness::FairnessConstraint,
+    },
+    /// FR-331: a profile, interval or checked temporal identity in the
+    /// packet differs from the recompiled clause.
+    #[error("stale_dependency/content-mismatch: observed temporal {member} differs from the recompiled clause")]
+    ObservedTemporalMismatch {
+        /// The member that differs.
+        member: &'static str,
+    },
+    /// FR-331: the observed trace shape or requested position is invalid.
+    #[error("invalid_runtime_input/invalid-value at {pointer}: {reason}")]
+    ObservedTemporalInput {
+        /// The observed-counterexample member that failed.
+        pointer: &'static str,
+        /// Why the member is invalid.
+        reason: &'static str,
+    },
+    /// FR-331: a refusal from the temporal evaluator.
+    #[error(transparent)]
+    ObservedTemporalRefusal(#[from] TemporalRefusal),
     /// FR-122: a state-clause counterexample's envelope names a clause node
     /// or `claim` occurrence that is not the recompiled clause's (refused
     /// before any admission).
@@ -467,7 +508,15 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::ClaimOccurrence { .. } => Code::MissingDeclaration,
+            Self::MissingFairnessPremise { .. } => Code::UnsupportedProjection,
+            Self::ObservedTemporalMismatch { .. } => Code::StaleDependency,
+            Self::ObservedTemporalInput { .. } => Code::InvalidRuntimeInput,
+            Self::ObservedTemporalRefusal(TemporalRefusal::Fault(_)) => Code::RuntimeInvariant,
+            Self::ObservedTemporalRefusal(_) => Code::InvalidRuntimeInput,
             Self::WrongReplayTarget { .. } => Code::InvalidRuntimeInput,
+            Self::WrongObservedTemporalTarget { .. } | Self::WrongObservedTemporalSource => {
+                Code::InvalidRuntimeInput
+            }
             Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::FrameIdentity(_)
@@ -519,11 +568,18 @@ impl ReplayRefusal {
             | Self::UnknownOperation { .. }
             | Self::ClaimOccurrence { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
+            Self::MissingFairnessPremise { .. } => Some("missing-fairness-premise"),
+            Self::ObservedTemporalMismatch { .. } => Some("content-mismatch"),
+            Self::ObservedTemporalInput { .. } => Some("invalid-value"),
+            Self::ObservedTemporalRefusal(TemporalRefusal::Fault(_)) => None,
+            Self::ObservedTemporalRefusal(_) => Some("invalid-value"),
             Self::FrameIdentity(_)
             | Self::ClauseIdentity(_)
             | Self::ScalarIdentity(_)
             | Self::TargetMismatch { .. } => Some("content-mismatch"),
             Self::WrongReplayTarget { .. } => Some("unknown-member"),
+            Self::WrongObservedTemporalTarget { .. } => Some("unknown-member"),
+            Self::WrongObservedTemporalSource => Some("invalid-value"),
             Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
@@ -557,13 +613,24 @@ impl ReplayRefusal {
         }
     }
 
-    /// The RFC 6901 pointer of a refusal that names a request member: a
-    /// request-decode refusal's, or the `/replay/<member>` of
-    /// [`Self::WrongReplayTarget`]; `None` for every other refusal.
+    /// The RFC 6901 pointer of a refusal that names a request or observed
+    /// counterexample member.
     pub fn pointer(&self) -> Option<&'static str> {
         match self {
             Self::Request(refusal) => refusal.pointer(),
             Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
+            Self::WrongObservedTemporalTarget { .. } => Some("/replay/observed_counterexample"),
+            Self::WrongObservedTemporalSource => Some("/replay/source"),
+            Self::ObservedTemporalMismatch { member } => Some(match *member {
+                "clause_node" => "/replay/observed_counterexample/clause_node",
+                "occurrence_key" => "/replay/observed_counterexample/occurrence_key",
+                "fairness" => "/replay/observed_counterexample/fairness",
+                "interval" => "/replay/observed_counterexample/interval",
+                "profile_selections" => "/replay/profile_selections",
+                "obligation_identity" => "/replay/obligation_identity",
+                _ => "/replay/source",
+            }),
+            Self::ObservedTemporalInput { pointer, .. } => Some(pointer),
             _ => None,
         }
     }
@@ -767,6 +834,227 @@ pub enum DependencySelectionsCause {
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
 /// ```
+fn replay_observed_temporal(
+    request: ReplayRequest,
+    compiled: Recompiled,
+    caller: CallerLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
+    let ReplaySource::ObservedTemporal(envelope) = request.source() else {
+        return Err(ReplayRefusal::WrongObservedTemporalSource);
+    };
+    let envelope = envelope.as_ref();
+    let target = request.replay_target();
+    if target.member() != TargetMember::StateClause {
+        return Err(ReplayRefusal::WrongObservedTemporalTarget {
+            target: Box::new(target.clone()),
+        });
+    }
+    if !matches!(envelope.source(), EnvelopeSource::Witness(_)) {
+        return Err(ReplayRefusal::WrongObservedTemporalSource);
+    }
+    check_envelope_target(&request, envelope.replay_target())?;
+    let Some(name) = target.as_state_clause() else {
+        return Err(ReplayRefusal::Fault(InternalFault::new(
+            "replay.temporal",
+            "state-clause-target-has-a-name",
+        )));
+    };
+    if request.obligation_identity() != envelope.obligation_identity() {
+        return Err(ReplayRefusal::ObservedTemporalMismatch {
+            member: "obligation_identity",
+        });
+    }
+    if request.profile_selections() != envelope.profile_selections() {
+        return Err(ReplayRefusal::ObservedTemporalMismatch {
+            member: "profile_selections",
+        });
+    }
+    let package_id = compiled.emitted.package().package_id();
+    let package = compiled.checked.package();
+    let graph = package.graph();
+    let Some(clause_node) = graph
+        .temporal_clauses()
+        .iter()
+        .find(|candidate| candidate.clause().name() == name.to_string())
+    else {
+        return Err(ReplayRefusal::UnknownClause {
+            clause: name.clone(),
+            package: package_id,
+        });
+    };
+    let expected_node = WireNodeId::from_digest(*clause_node.identity().as_bytes());
+    let expected_occurrence = OccurrenceKey::new(expected_node, clause_node.claim().clone());
+    if envelope.clause_node() != expected_node || envelope.occurrence_key() != &expected_occurrence
+    {
+        return Err(ReplayRefusal::ObservedTemporalMismatch {
+            member: if envelope.clause_node() != expected_node {
+                "clause_node"
+            } else {
+                "occurrence_key"
+            },
+        });
+    }
+    let payload = envelope.family_payload();
+    let clause = clause_node.clause();
+    if payload.fairness.as_slice() != clause.fairness() {
+        return Err(ReplayRefusal::ModelTrace(Box::new(
+            crate::model_check::replay::ModelTraceRefusal::FairnessSet {
+                payload: payload.fairness.clone(),
+                recompiled: clause.fairness().to_vec(),
+            },
+        )));
+    }
+    let packet_position = envelope
+        .trace_position()
+        .and_then(|position| TemporalPosition::decode(position.as_str()).ok());
+    if packet_position != Some(payload.trace_position) {
+        return Err(ReplayRefusal::ObservedTemporalInput {
+            pointer: "/replay/observed_counterexample/trace_position",
+            reason: "the envelope and observed payload trace positions differ",
+        });
+    }
+    if matches!(
+        payload.kind,
+        crate::model_check::counterexample::ObservedTemporalKind::Formula
+    ) {
+        let checked_interval = clause
+            .operators()
+            .iter()
+            .find_map(|operator| operator.interval.as_ref());
+        let interval_matches = match (checked_interval, payload.interval) {
+            (None, None) => true,
+            (Some(CheckedInterval::Steps(interval)), Some(packet)) => *interval == packet,
+            _ => false,
+        };
+        if !interval_matches {
+            return Err(ReplayRefusal::ObservedTemporalMismatch { member: "interval" });
+        }
+    }
+
+    let documents: Vec<DocumentRef> = payload
+        .prefix
+        .iter()
+        .map(|step| step.document.clone())
+        .collect();
+    let len = u64::try_from(documents.len()).unwrap_or(u64::MAX);
+    if documents.is_empty() {
+        return Err(ReplayRefusal::ObservedTemporalInput {
+            pointer: "/replay/observed_counterexample/prefix",
+            reason: "an observed counterexample must contain at least one document",
+        });
+    }
+    if payload.trace_position.index() >= len {
+        return Err(ReplayRefusal::ObservedTemporalInput {
+            pointer: "/replay/observed_counterexample/trace_position",
+            reason: "trace_position lies outside the represented observed trace",
+        });
+    }
+    let trace = match payload.loop_start {
+        Some(prefix) if prefix < len => TemporalTrace::Lasso {
+            prefix,
+            loop_len: len - prefix,
+        },
+        Some(_) => {
+            return Err(ReplayRefusal::ObservedTemporalInput {
+                pointer: "/replay/observed_counterexample/loop",
+                reason: "an observed lasso must have a non-empty loop",
+            })
+        }
+        None => TemporalTrace::Finite { len },
+    };
+    if matches!(trace, TemporalTrace::Lasso { .. })
+        && clause.profile() != qsl_semantics::check::TemporalProfile::InfiniteTrace
+    {
+        return Err(ReplayRefusal::ObservedTemporalRefusal(
+            qsl_eval::temporal::TemporalRefusal::LassoUnderBoundedProfile {
+                profile: clause.profile(),
+            },
+        ));
+    }
+
+    let mut snapshots = std::collections::BTreeMap::new();
+    for (digest, bytes) in request.byte_provision().entries() {
+        if digest.domain() == DigestDomain::Sha256Jcs {
+            snapshots.insert(*digest.as_bytes(), bytes.to_vec());
+        }
+    }
+    let mut environments = Vec::with_capacity(documents.len());
+    for document in &documents {
+        let (environment, _) = admit_trace_snapshot(
+            graph.model_selections(),
+            graph.scope().types(),
+            &compiled.packages,
+            compiled.model_limits,
+            &snapshots,
+            document,
+            caller.observation,
+            &clause_node.named_populations(),
+        )
+        .map_err(ReplayRefusal::Admission)?;
+        environments.push(environment);
+    }
+    let Some(over) = request.over() else {
+        return Err(ReplayRefusal::Input(InputRefusal::ObservationsMismatch));
+    };
+    let (_, over_type) = clause.over();
+    let ValueType::Reference(type_identity) = over_type else {
+        return Err(ReplayRefusal::Fault(InternalFault::new(
+            "replay.temporal",
+            "checked-temporal-over-is-a-reference",
+        )));
+    };
+    let universe = population_universe_for(
+        graph.model_selections(),
+        &compiled.packages,
+        compiled.model_limits,
+        *type_identity,
+    )
+    .map_err(ReplayRefusal::Admission)?;
+    let reference = environments
+        .first()
+        .and_then(|environment| environment.objects().find(universe, &over.key))
+        .ok_or(ReplayRefusal::Input(InputRefusal::ObservationsMismatch))?;
+    if let Some(constraint) = clause.fairness().first() {
+        return Err(ReplayRefusal::MissingFairnessPremise {
+            constraint: constraint.clone(),
+        });
+    }
+    let mut meter = Meter::new(request.accounting_limits()).with_cancel(cancel.clone());
+    let evaluation = evaluate_observed(
+        package,
+        clause_node,
+        &environments,
+        trace,
+        reference,
+        &mut meter,
+    );
+    if evaluation.stopped.is_some() {
+        return Err(ReplayRefusal::Fault(InternalFault::new(
+            "replay.temporal",
+            "observed-holds-evaluation-stopped",
+        )));
+    }
+    let outcome = evaluation
+        .result
+        .map_err(ReplayRefusal::ObservedTemporalRefusal)?;
+    if let Some(cause) = cancel.tripped() {
+        return Err(ReplayRefusal::Cancelled(cause));
+    }
+    Ok(ReplayResult::ObservedTemporal(
+        ObservedTemporalResult::settle(
+            payload.kind.clone(),
+            payload.trace_position,
+            outcome,
+            evaluation.undefined.map(|(locus, _, _)| locus),
+            consumed(&meter),
+        ),
+    ))
+}
+
+/// FR-098: decode, recompile and replay a typed request. An observed
+/// temporal counterexample source dispatches to FR-331 after the common
+/// request and package checks.
 pub fn replay(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
@@ -795,7 +1083,12 @@ pub fn replay_with_cancel(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let function = function_target(&request, ReplayEntry::Replay)?;
+    let function = match request.source() {
+        ReplaySource::ObservedTemporal(_) => None,
+        ReplaySource::Witness(_) | ReplaySource::Input(_) => {
+            Some(function_target(&request, ReplayEntry::Replay)?)
+        }
+    };
     let caller = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -803,6 +1096,22 @@ pub fn replay_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
+    let package_id = compiled.emitted.package().package_id();
+    if let ReplaySource::ObservedTemporal(envelope) = request.source() {
+        if !package_id.matches(&envelope.package_id()) {
+            return Err(ReplayRefusal::PackageIdMismatch {
+                requested: envelope.package_id(),
+                recompiled: package_id,
+            });
+        }
+        return replay_observed_temporal(request, compiled, caller, cancel);
+    }
+    let function = function.ok_or_else(|| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "non-temporal-source-has-function-target",
+        ))
+    })?;
     let claim = function_claim(&compiled, function, request.replay_target())?;
     let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
@@ -1005,6 +1314,9 @@ fn settle(
             regions,
             charges,
         )),
+        ReplaySource::ObservedTemporal(_) => {
+            unreachable!("observed temporal requests dispatch before function replay settlement")
+        }
     }
 }
 
@@ -1681,6 +1993,12 @@ fn arguments(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?
+        }
+        ReplaySource::ObservedTemporal(_) => {
+            return Err(ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "observed-temporal-source-dispatched-by-replay-facade",
+            )))
         }
     };
     Ok(values)

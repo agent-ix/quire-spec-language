@@ -18,11 +18,13 @@ relationships:
 
 QSL SHALL implement a typed replay result, defined in the layer-6 `replay`
 module and part of its public API (ADR-013 O-27), as one per-item result
-whose `arm` member is a sum of two distinct, independently-typed arm
-results — a `Witness`-arm result and an `Input`-arm result — each carrying
-its own settlement, the O-16 category, the evaluated value, the nested QSpec FR-351
-separating-witness record when the settlement basis is decisive, the
-resolved nested regions (ADR-013 O-12), and the replay charges.
+whose `arm` member is a sum of distinct, independently-typed arm results —
+a `Witness`-arm result, an `Input`-arm result, and an observed-temporal
+result. The `Witness` and `Input` results each carry their own settlement,
+the O-16 category, evaluated value, decisive QSpec FR-351 record, resolved
+nested regions (ADR-013 O-12), and replay charges. The observed-temporal
+result carries its own settlement, O-16 category, decoded trace position,
+typed evaluated temporal value, resolved regions and replay charges.
 
 Parity is agreement between the proved and replayed verdicts, each verdict
 taken from the QSpec outcome-to-verdict map fixed per O-16 category
@@ -33,31 +35,38 @@ result. Agreement on an `Input`-sourced packet SHALL settle
 `reproduced-without-witness`, distinct from `reproduced-with-evaluated-witness`
 on the `Witness` arm and never counted as backend evidence.
 
-This requirement builds the result type and its round trip only; it
-performs no comparison against a live replay execution (#243 produces the
-executed native outcome this type carries) and defines no new witness or
-replay type for any consumer, including #217's function-application
-exemplar.
+This requirement defines the result type and safe settlement constructors.
+FR-331 performs the observed-temporal evaluation and parity comparison, then
+uses the observed-temporal constructor defined here. The function, frame and
+state-clause constructors continue to carry the native outcomes produced by
+their replay executors. This requirement defines no new witness or replay
+type for consumers such as #217's function-application exemplar.
 
 ## Inputs
 
 - A native execution outcome (kernel `Outcome`, ADR-013 O-16) for the
-  replayed item.
+  replayed item, or an observed temporal evaluation and its decoded
+  `trace_position` (FR-331).
 - The originating `ReplaySource` arm (`Witness` or `Input`) and, for the
   `Witness` arm, the QSpec FR-351 separating-witness record decoded from it.
+- For the observed-temporal arm, the shared `WitnessEnvelope` and observed
+  `TemporalCounterexample` payload, the decoded packet position, and the
+  typed temporal outcome at that position (FR-331).
 - Replay accounting charges.
 
 ## Outputs
 
 - A typed replay result carrying the O-16 category, arm-specific settlement,
-  nested QSpec FR-351 witness record where decisive, resolved regions and charges.
+  nested QSpec FR-351 witness record where decisive, resolved regions and
+  charges; the observed-temporal arm additionally carries its decoded trace
+  position and typed evaluated temporal value.
 
 ## Behavior
 
-- The result's `arm` member SHALL be a sum of a `Witness`-arm result and an
-  `Input`-arm result; each arm SHALL carry its own `settlement`, and no
-  shared, arm-agnostic Boolean or flag SHALL represent agreement across both
-  arms.
+- The result's `arm` member SHALL be a sum of `Witness`, `Input` and
+  observed-temporal results; each arm SHALL carry its own `settlement`, and
+  no shared, arm-agnostic Boolean or flag SHALL represent agreement across
+  the arms.
 - Agreement on the `Witness` arm SHALL settle `reproduced-with-evaluated-witness`.
 - Agreement on the `Input` arm SHALL settle `reproduced-without-witness`,
   never reported or convertible into backend evidence. AD-016's
@@ -71,13 +80,32 @@ exemplar.
   distinct types with no `From`, `TryFrom`, `Into` or blanket conversion
   between them in either direction, so that no call site typed to accept a
   `Witness`-arm result can be satisfied by an `Input`-arm result.
+- The observed-temporal result SHALL carry the packet's decoded
+  `trace_position` separately from its typed evaluated value. An undefined
+  evaluation is a completed temporal value and SHALL retain its actual
+  position, source locus and catalogued cause. It SHALL settle
+  `reproduced-with-evaluated-witness` only when FR-331 has established that
+  the observed value agrees with the packet's formula or undefined-evaluation
+  claim at the packet's position; otherwise its constructor SHALL settle
+  `inconclusive` with `InconclusiveCause::ReplayParity`. This arm SHALL
+  remain a distinct result type from both `Witness` and `Input` arms.
+- The observed temporal value SHALL use a closed typed representation of the
+  existing temporal outcome. `Holds` maps to O-16 success; `Violated` and
+  `Undefined` map to O-16 violation; `Pending` maps to O-16 inconclusive;
+  `InsufficientData` maps to O-16 undefined; and incomplete outcomes retain
+  their category and typed charge point assigned by FR-327, FR-328 and
+  FR-329. The result SHALL preserve the undefined value's own position,
+  source locus and catalogued cause; it SHALL NOT encode these as a rendered
+  diagnostic string. Its QSpec FR-323 `observed_temporal` encoding SHALL use
+  the closed member set and value union defined by FR-323-AC-24.
 - A disagreement between the proved and replayed verdicts (each taken from
   the fixed O-16-category-to-verdict map) SHALL settle `inconclusive` with a
   typed cause, with no public API path on the result type that constructs
   an agreement result from disagreeing verdicts.
-- An arm result's evaluated value, and a `Witness`-arm result's QSpec FR-351
-  record with it, SHALL be absent when the replay completed no value (a
-  `refused`, `incomplete` or `undefined` S6a outcome, or a family result).
+- A function, frame or state-clause arm result's evaluated value, and a
+  `Witness`-arm result's QSpec FR-351 record with it, SHALL be absent when
+  the replay completed no value (a `refused`, `incomplete` or `undefined`
+  S6a outcome, or a family result).
   A result with no value SHALL settle `inconclusive` with a `NoValue`
   cause whatever the two verdicts are; a result with a value settles
   `inconclusive` with a `Verdicts` cause when the verdicts differ. The
@@ -116,6 +144,7 @@ exemplar.
 | FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested QSpec FR-351 record's deciding quantifier, deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
 | FR-072-AC-4 | #217's function-application exemplar constructs and compares a replay result using only this type together with FR-070's witness envelope and FR-071's request type, with no new witness or replay type defined in #217's repository scope. | Test (TC-192) |
 | FR-072-AC-5 | A result whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated result is returned. | Test (TC-191) |
+| FR-072-AC-6 | The observed-temporal result constructor preserves the decoded packet position and typed temporal outcome; FR-331's undefined evaluation at the same position, source locus and cause settles `reproduced-with-evaluated-witness`, while one at another position settles `inconclusive` with `ReplayParity`. `Holds`, `Violated`, `Undefined`, `InsufficientData`, `Pending` and incomplete values retain the O-16 category and typed fields assigned by FR-327/328/329, with QSpec FR-323's closed `observed_temporal` encoding. | Test (TC-847) |
 
 ## Dependencies
 

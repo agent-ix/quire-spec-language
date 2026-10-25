@@ -26,7 +26,7 @@ use qsl_replay::{
     HyperReductionCause, ModelCheckLimits, ModelTraceSettlement, ReductionKind,
 };
 use qsl_semantics::check::{FormulaNodeId, HyperForm};
-use quire_exact::{Cancel, Incomplete, Meter, Undefined};
+use quire_exact::{Cancel, Meter, Undefined};
 
 use crate::hyper::{inputs, positions, refuted};
 use crate::hyper_projected::{aligned, IDLE};
@@ -404,7 +404,7 @@ impl HyperLetters for UndefinedWhereTheyDiffer<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         if low_of(states[0], KEY) != low_of(states[1], KEY) {
             return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                 Undefined::DivisionByZero,
@@ -428,7 +428,7 @@ impl HyperLetters for UndefinedForTheCopyAhead<'_> {
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         let own = if self.world.atom_text(atom).contains("@ a") {
             0
         } else {
@@ -499,7 +499,7 @@ fn an_undefined_atom_of_three_copies_names_the_atom_of_the_concrete_tuple() {
             instance: &[ParameterBinding],
             states: &[&ModelSimState],
             meter: &mut Meter,
-        ) -> Result<AtomReading, Incomplete> {
+        ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
             let own = ["@ a", "@ b", "@ c"]
                 .iter()
                 .position(|variable| self.0.atom_text(atom).contains(variable))
@@ -958,7 +958,7 @@ impl StepMatch for UndefinedForMixedSteps<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         let resets = steps
             .iter()
             .filter(|step| {
@@ -979,7 +979,7 @@ impl StepMatch for UndefinedForMixedSteps<'_> {
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
         meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
+    ) -> Result<MatchReading, qsl_eval::hyper::MatchIncomplete> {
         self.0.existential(instance, steps, meter)
     }
 }

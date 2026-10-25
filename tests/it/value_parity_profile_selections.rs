@@ -10,10 +10,10 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    call_site, replay_value_parity, CanonicalAssignment, DependencyInput, Identifier, NoPayload,
-    ProfileSelection, QualifiedName, ReplayLimits, ReplayRequest, ReplayRequestWire, ReplaySource,
-    RequestTargetWire, ScalarOutcome, StateEnvironment, TracePosition, ValueClaim,
-    ValueParityResult, WitnessEnvelope, WitnessValue,
+    call_site, replay_value_parity, CanonicalAssignment, DependencyInput, EnvelopeSource,
+    Identifier, NoPayload, ProfileSelection, QualifiedName, ReplayLimits, ReplayRequest,
+    ReplayRequestWire, RequestTargetWire, ScalarOutcome, StateEnvironment, TracePosition,
+    ValueClaim, ValueParityResult, WitnessEnvelope, WitnessValue,
 };
 use qsl_replay::{ReplayTargetMembers, WitnessPacket};
 use quire_exact::{Integer, ScalarLimits, Value};
@@ -114,10 +114,10 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
         source_digest.hex(),
     );
-    let bindings = ReplaySource::Input(vec![CanonicalAssignment {
+    let bindings = vec![CanonicalAssignment {
         parameter: site.parameters[0].1,
         value: WitnessValue::Integer(3),
-    }]);
+    }];
 
     // The packet's profile_selections is the empty list, whatever the lock.
     let packet = WitnessPacket {
@@ -135,7 +135,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         declared_domains: Some(Vec::new()),
         backend: Some("generator-under-test".to_owned()),
         trace_position: Some(None::<TracePosition>),
-        source: Some(bindings.clone()),
+        source: Some(EnvelopeSource::Input(bindings.clone())),
         family_payload: Some(NoPayload),
     };
     let envelope = WitnessEnvelope::reconstruct(packet, ReplayLimits::default()).expect("admitted");
@@ -154,7 +154,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             .collect(),
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
-        source: envelope.source().clone(),
+        source: envelope.source().clone().into(),
         obligation_identity: *envelope.obligation_identity().as_bytes(),
         backend: envelope.backend().as_str().to_owned(),
         state_environment: StateEnvironment::new(vec![]),

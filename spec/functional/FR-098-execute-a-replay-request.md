@@ -158,13 +158,22 @@ list.
   stage settings and SHALL NOT be passed through `stage_limits`.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
-- If the request's replay target is not `function`, then the executor SHALL
+- If the request's replay target is not `function` and it carries no observed
+  temporal counterexample arm, then the executor SHALL
   refuse `invalid_runtime_input`/`unknown-member` at that member's
   `/replay/<member>` pointer, naming the target, the entry `replay` and the
   member it reads (`function`), after the request decodes by FR-071 (QSpec FR-323 decode rule 1, then the byte-provision rule) and before it recompiles. The code
   and pointer tell this refusal apart from QSpec FR-323's refusal of a
   request carrying two targets (`invalid-value`). A frame or a state-clause
   target replays through its own entry (FR-116, FR-122).
+- When a decoded request carries the observed temporal counterexample arm
+  with a `state_clause` target, the executor SHALL dispatch it through
+  `qsl_replay::replay` to [FR-331](FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md)
+  after the shared request decode, dependency validation, recompile and
+  `package_id` comparison have completed once; the executor SHALL pass that
+  checked package and the typed request to FR-331 without recompiling them.
+- For requests without that typed arm, the function-only target refusal SHALL
+  continue to apply.
 - The executor SHALL resolve the `function` replay target by name lookup in the recompiled
   package's declarations (OQ-5), and then select the claim as "The claim a
   function request decides" states, which also states the `NotAPredicate`
@@ -622,6 +631,7 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-25 | Over AC-22's unit with `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` added, each of these refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `10 mod x` record (a record `r` owns); `p` with `r`'s `declaration` occurrence; `inc` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `10 mod x` record's occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
 | FR-098-AC-26 | Refusal order: AC-25's request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; with an assignment naming a node that is no parameter of `p` added, it still refuses `ClaimOccurrence`, not `UnknownParameter`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
 | FR-098-AC-27 | Over `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }`, each request at the occurrence of its `10 mod (n - 1)` record, from an `Input` assignment: `n = 1` settles `reproduced-without-witness` with value `false`, the selected call's own evaluation of the site being undefined (`frame_depth` 0) after `d(0)` completes `0`; `n = 2` and `n = 3` settle `inconclusive` with cause `NoValue`, the call stopping undefined at the same `Location` inside a nested call (`frame_depth` 1 for `n = 2`, 2 for `n = 3`), which is no observation; `n = 0` evaluates the site on no path and settles `inconclusive` with cause `Verdicts` and value `true`. Calling `d` through S6a directly, the `Evaluation` of `d(1)` is undefined at that `Location` with `frame_depth` 0 and that of `d(3)` with `frame_depth` 2. | Test (TC-444) |
+| FR-098-AC-28 | An observed temporal request with a `state_clause` target and the typed `TemporalCounterexample::Observed` payload is dispatched to FR-331 through `qsl_replay::replay` and reaches observed-document admission. | Test (TC-847) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union

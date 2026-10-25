@@ -30,14 +30,19 @@ use crate::model_simulation::{counters_document, increment, PACKAGE};
 const VALUE: &str = "quire.value.complete/v1";
 const TIMED: &str = "quire.temporal.timed/v1";
 
-struct Fixture {
+pub(crate) struct Fixture {
     text: String,
-    clause: CheckedTemporalClause,
+    pub(crate) clause: CheckedTemporalClause,
 }
 
 /// The clause `C` under the timed profile over `c: M::Counter`, `M` timed in
 /// `ms`, whose formula is `body`.
-fn timed(body: &str) -> Fixture {
+pub(crate) fn timed(body: &str) -> Fixture {
+    timed_on("on origin", body)
+}
+
+/// [`timed`] under `activation`.
+pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     let document = counters_document(vec![increment()], false);
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
@@ -49,7 +54,7 @@ fn timed(body: &str) -> Fixture {
          dimension Time;\n\
          unit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\
-         temporal C using t0 over (c: M::Counter) clock \"model-time\" on origin {{ {body} }}\n",
+         temporal C using t0 over (c: M::Counter) clock \"model-time\" {activation} {{ {body} }}\n",
         hex(&digest)
     );
     let parsed = qsl_cst::parse(
