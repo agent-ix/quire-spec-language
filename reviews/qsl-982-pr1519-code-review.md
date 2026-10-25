@@ -110,3 +110,12 @@ also depends on SR-17151's AC-4 trace finding (SR-17161).
 | --- | --- | --- | --- |
 | FND-001 | low | `"each-buchi"` was added to the `WrongForm` tags of `SafetyTranslation::state` and `SafetyStates`' tag check, but no test admits an `each-buchi` key there. Two reviewer mutants that remove it survive all 35 `automaton_key` tests: the key would then refuse `UnknownTag` instead of `WrongForm`. Add the case to `malformed_safety_keys_refuse_before_membership` and to `safety_states_refuse_foreign_contexts_and_other_forms`. | qsl-eval/src/automaton/key.rs:458; qsl-eval/src/automaton/key.rs:725 |
 | FND-002 | low | FR-338 says the `["activation"]` set "is derived from `phase` and is never a supplied member". The reader does refuse a supplied `["activation"]` acceptance member (`Members`; reviewer probe on `each-buchi`, waiting and active), but only as a side effect of the `[o,s]` arity check, and no test asserts it for `guarded-buchi` or `each-buchi`. A future acceptance-entry change could admit it unnoticed. Pin it with one negative per phased form. | qsl-eval/src/automaton/key_state.rs:1019-1021; spec/functional/FR-338-check-an-en-1-closure-certificate.md:268-280 |
+
+## Dispositions
+
+Round 1, verified at PR #1519 head `a464c59c` (fix `cac614e0a`, then a merge of main). The reviewer reran these gates after the merge: full `cargo test -p qsl-eval` (734 + 123 + 13 passed, 0 failed), clippy `-D warnings` clean, rustfmt clean, and `xtask string-edge` (only the 5 qsl-replay baseline hits). The two FND-001 mutants, which drop `"each-buchi"` from key.rs:458 and from key.rs:725, are now killed.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `malformed_safety_keys_refuse_before_membership` asserts that `["each-buchi"]` refuses `WrongForm("each-buchi")` under the deadlock `SafetyTranslation`. `safety_states_refuse_foreign_contexts_and_other_forms` now lists `each-buchi` among the other-form tags. Both mutants fail. |
+| FND-002 | fixed | A supplied `["activation"]` acceptance member is asserted refused `Members` for `buchi` and `guarded-buchi` (in `buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts`) and for an active `each-buchi` (in `an_unguarded_on_each_tp4_clause_is_keyed_each_buchi`). |

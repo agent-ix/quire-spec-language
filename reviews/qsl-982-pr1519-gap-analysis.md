@@ -68,3 +68,11 @@ one tag or two assertions. The AC-5 tag is correct.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The FR-338-AC-4 vector table now holds the `each-buchi` rows: `["each-buchi","waiting",[[],[],[],[]]]` with context activation `"each"`, and `["each-buchi","active",[[[[],"negative"]],[],[],[]]]`, which "differs from the phase-less origin `buchi` key". `every_canonical_octet_vector_is_the_authored_octets`, AC-4's only binder, has no `each-buchi` assertion. Its doc still claims "every canonical octet vector". The rows are asserted exactly in `an_unguarded_on_each_tp4_clause_is_keyed_each_buchi`, which is tagged FR-338-AC-5 only. Either add `FR-338-AC-4` to that test's tag, or assert the two rows in the aggregate. | qsl-eval/tests/it/automaton_key.rs:2373-2405; qsl-eval/tests/it/automaton_key.rs:1564-1580; spec/functional/FR-338-check-an-en-1-closure-certificate.md:781-782 |
+
+## Dispositions
+
+Round 1, verified at PR #1519 head `a464c59c` (fix `cac614e0a`).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `every_canonical_octet_vector_is_the_authored_octets`, the FR-338-AC-4 binder, now asserts both `each-buchi` rows as full keys under activation `"each"`: `["each-buchi","waiting",[[],[],[],[]]]` and `["each-buchi","active",[[[[],"negative"]],[],[],[]]]`. Its doc names them. The difference from the origin `buchi` key is asserted in the AC-5 test. |
