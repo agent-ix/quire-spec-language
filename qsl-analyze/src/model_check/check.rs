@@ -89,7 +89,7 @@ use qsl_eval::simulation::{
     NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup,
     TransitionSystem, ZeroProgress, ZeroProgressError,
 };
-use qsl_eval::temporal::AtomReading;
+use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
@@ -158,6 +158,16 @@ pub enum ModelCheckRefusal {
     FormNotDecided {
         /// The clause's property form.
         form: Option<PropertyForm>,
+    },
+    /// A `holds` condition of the clause reads a capture (FR-337 "Capture
+    /// observation"); what a read of a capture means is undecided (QSL-1092),
+    /// so no state is explored.
+    #[error("a `holds` condition of clause `{clause}` reads the capture `{capture}`")]
+    CaptureRead {
+        /// The clause's name.
+        clause: String,
+        /// The first capture, in source order, that a `holds` condition reads.
+        capture: String,
     },
     /// The clause has no property automaton: a past operator over a future
     /// one, or more atoms than a letter holds.
@@ -244,6 +254,9 @@ enum Item<'a> {
         /// The atom true where a guarded `on each` clause's `when`
         /// condition holds.
         when: Option<Atom>,
+        /// Where the clause fixes its captures (FR-337 "Capture
+        /// observation").
+        captured: CapturedAt,
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
@@ -264,6 +277,30 @@ enum Item<'a> {
         canonical: Vec<BoundedTranslation>,
     },
     Deadlock,
+}
+
+/// Where a clause fixes its captures (FR-337 "Capture observation").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CapturedAt {
+    /// The clause declares no capture.
+    Never,
+    /// An `on origin` clause: at position 0.
+    Origin,
+    /// An `on each` clause: at each position its guard admits.
+    Activations,
+}
+
+impl CapturedAt {
+    /// Where `clause` fixes its captures.
+    pub(super) fn of(clause: &qsl_semantics::check::CheckedTemporalClause) -> Self {
+        if clause.captures().len() == 0 {
+            Self::Never
+        } else if matches!(clause.activation(), Activation::Origin) {
+            Self::Origin
+        } else {
+            Self::Activations
+        }
+    }
 }
 
 impl Item<'_> {
@@ -426,6 +463,26 @@ enum Counting {
     ByKind,
 }
 
+/// FR-337 "Capture observation": refuse a clause whose `holds` condition
+/// reads a capture, before any state is explored or charged.
+pub(super) fn refuse_capture_read(item: ModelCheckItem<'_>) -> Result<(), ModelCheckRefusal> {
+    let ModelCheckItem::Clause { clause, letters } = item else {
+        return Ok(());
+    };
+    let Some(index) = letters.captured_read() else {
+        return Ok(());
+    };
+    let capture = clause
+        .captures()
+        .nth(index)
+        .map(|(name, _)| name.to_owned())
+        .ok_or_else(|| fault("a-read-capture-is-declared"))?;
+    Err(ModelCheckRefusal::CaptureRead {
+        clause: clause.name().to_owned(),
+        capture,
+    })
+}
+
 /// FR-126: decide `request`'s item over every behaviour of its subject,
 /// polling `cancel` before every expansion and every atom evaluation.
 ///
@@ -506,6 +563,7 @@ pub fn check_model(
             system.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
+    refuse_capture_read(request.item)?;
     let mut run = Run {
         system: &system,
         fairness: item.fairness(),
@@ -673,6 +731,7 @@ pub fn check_protocol(
             model.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
+    refuse_capture_read(request.item)?;
     let protocol_run = ProtocolRun {
         item: &item,
         instances: &instances,
@@ -994,6 +1053,7 @@ fn check_reduced(
             orbit: Vec::new(),
         }],
     };
+    refuse_capture_read(request.item)?;
     let mut total = RunStats::default();
     let mut boundary: usize = 0;
     let mut horizon = false;
@@ -1201,13 +1261,14 @@ fn ample_of<'r, 'a>(
             fairness,
             atoms,
             when,
+            captured,
             ..
         } => Por::new(
             system,
             Some(Atoms {
                 letters: *letters,
                 nodes: atoms,
-                guarded: when.is_some(),
+                guarded: when.is_some() || *captured != CapturedAt::Never,
             }),
             bindings,
             fairness,
@@ -1329,6 +1390,7 @@ fn prepare(
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
         when: automaton.when(),
+        captured: CapturedAt::of(clause),
         live: automaton.live(),
         uncounted: automaton.uncounted(),
         counting,
@@ -2291,6 +2353,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             letters,
             atoms,
             when,
+            captured,
             live,
             uncounted,
             last_read,
@@ -2335,6 +2398,36 @@ impl<S: SubjectSystem> Run<'_, S> {
                     });
                     return Ok((from, Some(kind), None));
                 }
+            }
+        }
+        // FR-337: the captures are fixed once, at an activation: position 0 of
+        // an `on origin` clause, each position an `on each` guard admits.
+        let activates = (*when).is_none_or(|when| letter.holds(when));
+        let capturing = match captured {
+            CapturedAt::Never => false,
+            CapturedAt::Origin => node.depth == 0,
+            CapturedAt::Activations => activates,
+        };
+        if capturing && reads_position {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            let reading = letters
+                .captures(binding, &self.system.atom_state(&node.state), &mut meter)
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => Halt::Refusal(refusal),
+                    Err(incomplete) => Self::stopped(
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
+                        incomplete.limit,
+                    )
+                    .into(),
+                })?;
+            if let CaptureReading::Undefined { capture, cause } = reading {
+                let site = Self::site(node, UndefinedLocus::Capture(capture), None);
+                let kind =
+                    CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause });
+                return Ok((from, Some(kind), None));
             }
         }
         // The first atom's reading, the one atom a canonical bounded clause

@@ -65,6 +65,9 @@ pub enum UndefinedLocus {
     /// The `when` condition of the authored clause's guarded `on each`
     /// activation.
     Activation,
+    /// The initializer of a capture of the authored clause (FR-337 "Capture
+    /// observation"), by the capture's name.
+    Capture(String),
     /// A `pre` or `post` clause of an application's contract conjunction,
     /// by its name.
     Contract(String),

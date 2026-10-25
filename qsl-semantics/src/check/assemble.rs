@@ -3578,6 +3578,16 @@ impl PackageDeclarations {
                     );
                 }
             }
+            for (capture, written) in form.captures.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Capture(capture)),
+                    written.parameter.name.span,
+                );
+                declared_site_spans.insert(
+                    temporal_site(index, TemporalSite::CaptureValue(capture)),
+                    written.value.spans.clone(),
+                );
+            }
             for (id, node) in form.formula.iter() {
                 let span = match node {
                     qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,

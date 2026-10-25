@@ -167,6 +167,7 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         // The forms and subjects EN-1 does not decide yet.
         ModelCheckRefusal::ProtocolRefinement
         | ModelCheckRefusal::FormNotDecided { .. }
+        | ModelCheckRefusal::CaptureRead { .. }
         | ModelCheckRefusal::WeakLiveness
         | ModelCheckRefusal::InstanceLiveness
         | ModelCheckRefusal::ReducedLiveness
