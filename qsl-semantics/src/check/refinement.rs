@@ -51,7 +51,7 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, FieldDeclaration, TypeEnvironment};
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
@@ -125,6 +125,11 @@ pub enum UnsupportedFeature {
     /// canonical form (an enum or a decimal), which a product state could not
     /// key (FR-138).
     HistoryRow,
+    /// A field row whose type nests a `Reference` in an option, record,
+    /// tuple (a record by position), union or collection, other than a whole-population `Set<Reference<T>>`
+    /// (FR-135): the lifting of ADR-020 RM-3 reaches no further than the
+    /// reference itself.
+    NestedReferenceRow,
     /// An abstract-operation application as the right side of a protocol
     /// step row: FR-136 binds `self` to the concrete receiver, and a
     /// protocol step has none that the requirement names.
@@ -138,6 +143,7 @@ impl UnsupportedFeature {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
             Self::RefinementInternalList => "refinement-internal-list",
             Self::HistoryRow => "history-row",
+            Self::NestedReferenceRow => "nested-reference-row",
             Self::ProtocolStepApplication => "protocol-step-application",
         }
     }
@@ -704,6 +710,91 @@ pub struct StepRow {
     pub target: StepTarget,
 }
 
+/// The origin of a checked refinement fairness member (FR-137).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementFairnessOrigin {
+    /// Written as an `assume` or `ensure` row.
+    Authored,
+    /// Derived from default scheduler fairness over a concrete protocol.
+    Scheduler,
+}
+
+/// A protocol thread target for a derived scheduler fairness member (FR-137).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementThreadTarget {
+    /// The protocol's root thread.
+    Root,
+    /// One branch of a `parallel`, named by the parallel's static path and
+    /// the branch label.
+    Branch {
+        /// The `parallel` node's static declaration path.
+        parallel: String,
+        /// The branch label.
+        branch: String,
+    },
+    /// One compensation template's thread target.
+    CompensationTemplate {
+        /// The compensation template's name.
+        name: String,
+    },
+}
+
+/// One member of a checked refinement fairness set (FR-137).
+///
+/// Authored members retain FR-123's operation constraint. Scheduler members
+/// name a protocol thread target and are always `weak whole`; keeping the two
+/// forms distinct prevents a thread obligation from being treated as an
+/// operation fairness constraint by model-refinement consumers.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RefinementFairness {
+    /// An authored operation constraint.
+    Authored(FairnessConstraint),
+    /// A scheduler constraint over a protocol thread.
+    Scheduler(RefinementThreadTarget),
+}
+
+impl RefinementFairness {
+    /// The origin of this fairness member.
+    pub const fn origin(&self) -> RefinementFairnessOrigin {
+        match self {
+            Self::Authored(_) => RefinementFairnessOrigin::Authored,
+            Self::Scheduler(_) => RefinementFairnessOrigin::Scheduler,
+        }
+    }
+
+    /// The fairness kind; scheduler members are always weak.
+    pub fn kind(&self) -> FairnessKind {
+        match self {
+            Self::Authored(constraint) => constraint.kind(),
+            Self::Scheduler(_) => FairnessKind::Weak,
+        }
+    }
+
+    /// The fairness granularity; scheduler members are always whole.
+    pub fn granularity(&self) -> FairnessGranularity {
+        match self {
+            Self::Authored(constraint) => constraint.granularity(),
+            Self::Scheduler(_) => FairnessGranularity::Whole,
+        }
+    }
+
+    /// The authored operation constraint, or `None` for a scheduler member.
+    pub fn operation_constraint(&self) -> Option<&FairnessConstraint> {
+        match self {
+            Self::Authored(constraint) => Some(constraint),
+            Self::Scheduler(_) => None,
+        }
+    }
+
+    /// The scheduler thread target, or `None` for an authored member.
+    pub fn thread_target(&self) -> Option<&RefinementThreadTarget> {
+        match self {
+            Self::Authored(_) => None,
+            Self::Scheduler(target) => Some(target),
+        }
+    }
+}
+
 /// A refinement between two models that checked (ADR-020 RM-1 to RM-6).
 #[derive(Debug)]
 pub struct CheckedRefinement {
@@ -717,8 +808,8 @@ pub struct CheckedRefinement {
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
     pub(crate) history: Vec<HistoryRow>,
-    pub(crate) concrete_fairness: Vec<FairnessConstraint>,
-    pub(crate) abstract_fairness: Vec<FairnessConstraint>,
+    pub(crate) concrete_fairness: Vec<RefinementFairness>,
+    pub(crate) abstract_fairness: Vec<RefinementFairness>,
     pub(crate) concrete_object_types: Vec<EffectiveId>,
     /// The protocol clause the step rows select; absent for a model subject.
     /// The clause's node exists once the unit's protocol nodes are minted
@@ -786,16 +877,33 @@ impl CheckedRefinement {
         &self.history
     }
 
-    /// The concrete fairness set `F_C`: every `assume` row once, in source
-    /// order.
-    pub fn concrete_fairness(&self) -> &[FairnessConstraint] {
+    /// The concrete fairness set `F_C`, with the origin of each member.
+    pub fn concrete_fairness(&self) -> &[RefinementFairness] {
         &self.concrete_fairness
     }
 
-    /// The abstract fairness set `F_A`: every `ensure` row once, in source
-    /// order.
-    pub fn abstract_fairness(&self) -> &[FairnessConstraint] {
+    /// The authored operation constraints of `F_C`.
+    ///
+    /// Scheduler members of a concrete protocol subject do not name model
+    /// operations and are omitted. Model-refinement engines consume this
+    /// iterator while protocol consumers retain the complete set through
+    /// [`Self::concrete_fairness`].
+    pub fn concrete_operation_fairness(&self) -> impl Iterator<Item = &FairnessConstraint> + '_ {
+        self.concrete_fairness
+            .iter()
+            .filter_map(RefinementFairness::operation_constraint)
+    }
+
+    /// The abstract fairness set `F_A`, with the origin of each member.
+    pub fn abstract_fairness(&self) -> &[RefinementFairness] {
         &self.abstract_fairness
+    }
+
+    /// The authored operation constraints of `F_A`.
+    pub fn abstract_operation_fairness(&self) -> impl Iterator<Item = &FairnessConstraint> + '_ {
+        self.abstract_fairness
+            .iter()
+            .filter_map(RefinementFairness::operation_constraint)
     }
 
     /// Every object type of the concrete model, mapped by an object row or
@@ -1027,6 +1135,63 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
     }
 }
 
+/// Whether `value_type` holds a `Reference` below its top level (FR-135
+/// "Refinement features the build does not check"). A plain `Reference<T>`
+/// is lifted by the object map; a reference inside an option, record, tuple,
+/// union or collection is not. A tuple is a record by position, so it is
+/// caught with the record and the union.
+fn nests_reference(types: &TypeEnvironment, value_type: &ValueType) -> Result<bool, &'static str> {
+    match value_type {
+        ValueType::Reference(_) => Ok(false),
+        other => holds_reference(types, other, &mut Vec::new()),
+    }
+}
+
+/// Whether `value_type` is or contains a `Reference`. `seen` holds the
+/// composite declarations being walked, so a declaration that names itself
+/// is walked once. A composite with no declaration is an internal fault.
+fn holds_reference(
+    types: &TypeEnvironment,
+    value_type: &ValueType,
+    seen: &mut Vec<NodeKey>,
+) -> Result<bool, &'static str> {
+    let any = |candidates: &mut dyn Iterator<Item = &ValueType>,
+               seen: &mut Vec<NodeKey>|
+     -> Result<bool, &'static str> {
+        for candidate in candidates {
+            if holds_reference(types, candidate, seen)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    match value_type {
+        ValueType::Reference(_) => Ok(true),
+        ValueType::Option(payload) => holds_reference(types, payload, seen),
+        ValueType::Collection(collection) => holds_reference(types, collection.element(), seen),
+        ValueType::Composite(key) => {
+            if seen.contains(key) {
+                return Ok(false);
+            }
+            seen.push(*key);
+            let declaration = types
+                .composite(*key)
+                .ok_or("composite-type-has-a-declaration")?;
+            match declaration.shape() {
+                CompositeShape::Record(fields) => {
+                    any(&mut fields.iter().map(FieldDeclaration::value_type), seen)
+                }
+                CompositeShape::Tuple(positions) => any(&mut positions.iter(), seen),
+                CompositeShape::Union(members) => any(
+                    &mut members.iter().flat_map(|member| member.positions()),
+                    seen,
+                ),
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 /// `value_type` with each reference to an abstract object type that an
 /// object row maps replaced by a reference to the concrete type it is mapped
 /// from (ADR-020 RM-3 reference lifting).
@@ -1170,6 +1335,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         lifting: BTreeMap::new(),
         maps_complete: true,
         baseline: 0,
+        profile: declaration.selection.identity.clone(),
         populations: None,
         history: Vec::new(),
         protocol_subject: matches!(form.abstract_side, AbstractSideForm::Protocol { .. }),
@@ -1291,6 +1457,9 @@ pub(crate) struct RefinementEnv<'e> {
     pub(crate) lists: &'e ParsedLists,
     /// The unit's protocol clauses, which a protocol subject selects among.
     pub(crate) protocols: &'e [ProtocolView<'e>],
+    /// Whether an abstract protocol header is intentionally deferred because
+    /// another unit refusal stops the check before protocol clauses run.
+    pub(crate) defer_abstract_protocol_resolution: bool,
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1335,7 +1504,7 @@ fn resolve_protocol(
         .iter()
         .find(|view| view.form.name.name == clause.name)
     else {
-        if report {
+        if report && !env.defer_abstract_protocol_resolution {
             findings.unresolved(&clause.name, clause.span, None);
         }
         return ListSubject::Unresolved;
@@ -1454,6 +1623,8 @@ struct Checker<'c, 'a> {
     /// How many refusals the header already holds, which say nothing of the
     /// maps.
     baseline: usize,
+    /// The identity of the profile the declaration selects.
+    profile: String,
     /// The concrete populations a row may name, resolved on first use.
     populations: Option<PopulationScope>,
     /// The history fields a row may read (FR-138), in scope once their rows'
@@ -1913,6 +2084,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                     operation: None,
                     label: format!("{}.{written}", target.name),
                     range_agnostic: false,
+                    field_row: true,
                 },
                 cx,
             );
@@ -2001,8 +2173,10 @@ impl<'c, 'a> Checker<'c, 'a> {
             operation,
             label,
             range_agnostic,
+            field_row,
         } = context;
         let populations = self.population_scope();
+        let mut outcome: Option<Nested> = None;
         let typed = (|| {
             let mut typer = Typer::new(
                 declarations.scope,
@@ -2034,6 +2208,30 @@ impl<'c, 'a> Checker<'c, 'a> {
             // coercion into it.
             let body = typer.infer(&expression.expression, required, &location)?;
             let types = declarations.scope.types();
+            if field_row {
+                let root = body.root();
+                // A whole population is the one nesting a row may have.
+                let whole_population = matches!(root.kind(), NodeKind::PopulationObjects { .. });
+                if !whole_population {
+                    match nests_reference(types, root.value_type()) {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            outcome = Some(Nested::Row);
+                            return Err(CheckRefusal::ill_typed(
+                                &location,
+                                IllTypedCause::TypeMismatch,
+                            ));
+                        }
+                        Err(invariant) => {
+                            outcome = Some(Nested::Fault(invariant));
+                            return Err(CheckRefusal::ill_typed(
+                                &location,
+                                IllTypedCause::TypeMismatch,
+                            ));
+                        }
+                    }
+                }
+            }
             let uses = match required {
                 None => Vec::new(),
                 Some(required)
@@ -2070,6 +2268,21 @@ impl<'c, 'a> Checker<'c, 'a> {
                     uses,
                     observations,
                 })
+            }
+            Err(_) if outcome.is_some() => {
+                match (outcome, expression.spans.at(&[])) {
+                    (Some(Nested::Row), Some(span)) => self.findings.refuse(
+                        span,
+                        RefinementCause::Unsupported {
+                            feature: UnsupportedFeature::NestedReferenceRow,
+                            profile: self.profile.clone(),
+                            subject: None,
+                        },
+                    ),
+                    (Some(Nested::Fault(invariant)), _) => self.fault(invariant),
+                    _ => self.fault("row-expression-has-a-span"),
+                }
+                None
             }
             Err(refusal) => {
                 match super::region::span_at(&expression.spans, &refusal.location)
@@ -2348,6 +2561,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                         operation: Some(concrete.name().to_owned()),
                         label: format!("step {}", concrete.name()),
                         range_agnostic: false,
+                        field_row: false,
                     };
                     let Some(row) = self.check_row_as(expression, None, context, cx) else {
                         complete = false;
@@ -2426,6 +2640,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             operation: Some(concrete.name().to_owned()),
             label: format!("step {}", concrete.name()),
             range_agnostic: false,
+            field_row: false,
         };
         let mut complete = true;
         let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id));
@@ -2475,7 +2690,7 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 
     /// FR-137: the rows of `side`, each constraint once, in source order.
-    fn fairness(&mut self, form: &RefinementForm, side: FairnessSide) -> Vec<FairnessConstraint> {
+    fn fairness(&mut self, form: &RefinementForm, side: FairnessSide) -> Vec<RefinementFairness> {
         let scope = self.declarations.scope;
         let abstract_types = {
             let found = self.abstract_side.object_types(self.types());
@@ -2489,7 +2704,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             FairnessSide::Assume => (&concrete_types, &abstract_types, self.abstract_side.alias),
             FairnessSide::Ensure => (&abstract_types, &concrete_types, self.concrete_side.alias),
         };
-        let mut set: Vec<(FairnessConstraint, Span)> = Vec::new();
+        let mut set: Vec<(RefinementFairness, Span)> = Vec::new();
         for row in &form.rows {
             let RefinementRowForm::Fairness(row) = row else {
                 continue;
@@ -2538,7 +2753,8 @@ impl<'c, 'a> Checker<'c, 'a> {
             );
             // FR-137: two rows of one set with one kind, operation and
             // granularity conflict; neither is dropped.
-            if let Some((_, first)) = set.iter().find(|(earlier, _)| *earlier == constraint) {
+            let member = RefinementFairness::Authored(constraint);
+            if let Some((_, first)) = set.iter().find(|(earlier, _)| *earlier == member) {
                 self.findings.refuse(
                     written.span,
                     RefinementCause::Conflicting {
@@ -2548,10 +2764,18 @@ impl<'c, 'a> Checker<'c, 'a> {
                 );
                 continue;
             }
-            set.push((constraint, written.span));
+            set.push((member, written.span));
         }
         set.into_iter().map(|(constraint, _)| constraint).collect()
     }
+}
+
+/// What the nesting check of a field row found.
+enum Nested {
+    /// The row's type nests a reference.
+    Row,
+    /// A composite type of the row has no declaration.
+    Fault(&'static str),
 }
 
 /// How a row expression is typed: its parameters, the clause kind it reads
@@ -2567,6 +2791,10 @@ struct RowContext {
     /// to run time: a history update (FR-138), whose value is computed and
     /// not a literal.
     range_agnostic: bool,
+    /// Whether the row defines an abstract field (FR-135), which a type that
+    /// nests a reference refuses `nested-reference-row` before any other
+    /// check of the row's type.
+    field_row: bool,
 }
 
 fn refuse_with(location: &Location, cause: CheckCause) -> CheckRefusal {
