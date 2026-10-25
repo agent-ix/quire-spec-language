@@ -372,7 +372,7 @@ fn a_subject_that_alone_exceeds_max_states_stops_before_the_product_is_built() {
 
 /// FR-176-AC-4, second sentence: `NonInterference` over the secure vault with
 /// the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 /
-/// value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint
+/// value(a.step.Vault::step.i) else 0) = 0`, which has no value on a joint
 /// step whose `a` step is `step(0)`, is refuted by an `Undefined`
 /// counterexample that ends at the first such joint step in canonical order,
 /// with a path for `a` and one for `b` and the cause `division-by-zero`.
