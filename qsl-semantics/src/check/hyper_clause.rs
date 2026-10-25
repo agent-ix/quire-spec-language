@@ -389,7 +389,9 @@ pub struct CheckedHyperClause {
     fairness_spans: Vec<Vec<Span>>,
     /// The `claim` occurrence of the clause's `hyperproperty` node, set when
     /// the package is assembled (FR-488 "Outputs").
-    occurrence: Option<OccurrenceKey>,
+    occurrence: OccurrenceKey,
+    /// Whether a package assembled the clause at [`Self::occurrence`].
+    assembled: bool,
 }
 
 impl CheckedHyperClause {
@@ -533,17 +535,18 @@ impl CheckedHyperClause {
     /// ([`Self::assembled_occurrence`]) and this returns the zero
     /// occurrence, which names no node.
     pub fn occurrence(&self) -> &OccurrenceKey {
-        self.occurrence.as_ref().unwrap_or(&UNASSEMBLED)
+        &self.occurrence
     }
 
     /// [`Self::occurrence`], or `None` for a clause no package assembled.
     pub fn assembled_occurrence(&self) -> Option<&OccurrenceKey> {
-        self.occurrence.as_ref()
+        self.assembled.then_some(&self.occurrence)
     }
 
     /// The same clause, assembled into a package at `occurrence`.
     pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
-        self.occurrence = Some(occurrence);
+        self.occurrence = occurrence;
+        self.assembled = true;
         self
     }
 
@@ -589,12 +592,12 @@ pub enum MatchPart {
 
 /// The occurrence of a clause no package assembled: node zero, `claim`
 /// ordinal zero. No package holds a node with the zero id.
-static UNASSEMBLED: std::sync::LazyLock<OccurrenceKey> = std::sync::LazyLock::new(|| {
+fn unassembled() -> OccurrenceKey {
     OccurrenceKey::new(
         WireNodeId::from_digest([0; 32]),
         quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
     )
-});
+}
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
 #[derive(Clone, Debug)]
@@ -1414,7 +1417,8 @@ fn check_behaviours<'a>(
         atoms,
         parameter_objects,
         fairness_spans,
-        occurrence: None,
+        occurrence: unassembled(),
+        assembled: false,
     })
 }
 
