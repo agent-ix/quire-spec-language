@@ -99,12 +99,14 @@ pub enum ContextRoot {
 
 /// A context's activation: `"origin"` or `"each"` for a bounded monitor,
 /// `"each-when"` for an `on each` activation with a `when` condition under
-/// any profile, `"infinite"` otherwise.
+/// any profile, `"each"` for an unguarded infinite-trace TP-4 `on each`
+/// clause, `"infinite"` otherwise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContextActivation {
     /// A bounded monitor activated at the origin.
     Origin,
-    /// A bounded monitor activated at each position.
+    /// A bounded monitor activated at each position, or an unguarded
+    /// infinite-trace TP-4 clause with `on each`.
     Each,
     /// An infinite-trace automaton.
     Infinite,
@@ -171,8 +173,14 @@ impl StateContext {
         binding: Vec<ContextBinding>,
     ) -> Self {
         let profile = clause.profile();
+        // An unguarded infinite-trace TP-4 `on each` clause is keyed under
+        // "each" (`["each-buchi", phase, branch]`).
+        let each_buchi = profile == TemporalProfile::InfiniteTrace
+            && clause.activation() == (Activation::Each { guarded: false })
+            && is_tp4(clause);
         let activation = match (profile.is_bounded(), clause.activation()) {
             (_, Activation::Each { guarded: true }) => ContextActivation::EachWhen,
+            (false, _) if each_buchi => ContextActivation::Each,
             (false, _) => ContextActivation::Infinite,
             (true, Activation::Origin) => ContextActivation::Origin,
             (true, Activation::Each { .. }) => ContextActivation::Each,
@@ -447,7 +455,7 @@ impl SafetyTranslation {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" | "each-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),
@@ -582,6 +590,18 @@ pub(super) fn admit_envelope<T>(
     Ok((AutomatonStateKey(octets.to_vec()), state))
 }
 
+/// Whether `clause` is a TP-4 (liveness) clause: its checked property form
+/// when it has one, else its formula's shape.
+pub(super) fn is_tp4(clause: &CheckedTemporalClause) -> bool {
+    clause.property_form().map_or_else(
+        || {
+            FormulaShape::of(clause.formula(), Polarity::Positive)
+                .is_some_and(|shape| shape.is_liveness())
+        },
+        |form| form == PropertyForm::Liveness,
+    )
+}
+
 /// The kind of subject a clause ranges over: FR-338 fixes its past-window
 /// and acceptance forms by it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -633,11 +653,7 @@ impl SafetyStates {
         let shape =
             FormulaShape::of(clause.formula(), Polarity::Positive).ok_or_else(not_translated)?;
         // A TP-4 clause is keyed by `BuchiStates`, not as a safety state.
-        let liveness = clause.property_form().map_or_else(
-            || shape.is_liveness(),
-            |form| form == PropertyForm::Liveness,
-        );
-        if liveness {
+        if is_tp4(clause) {
             return Err(not_translated());
         }
         let max_bytes = IdentityLimits::default().input_bytes;
@@ -706,7 +722,7 @@ impl SafetyStates {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" | "each-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),

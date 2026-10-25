@@ -246,6 +246,10 @@ fn malformed_safety_keys_refuse_before_membership() {
             deadlock_key(r#"["accept"]"#),
             KeyRefusal::WrongForm("accept".to_owned()),
         ),
+        (
+            deadlock_key(r#"["each-buchi"]"#),
+            KeyRefusal::WrongForm("each-buchi".to_owned()),
+        ),
         (deadlock_key(r#"["safety",0]"#), KeyRefusal::Members),
         (deadlock_key(r#"["safety"]"#), KeyRefusal::Members),
         (deadlock_key(r#"["safety",[],[]]"#), KeyRefusal::Members),
@@ -862,7 +866,14 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
         future.admit(foreign.as_bytes()).map(|_| ()),
         Err(KeyRefusal::ForeignContext)
     );
-    for tag in ["bounded", "accept", "reject", "buchi", "guarded-buchi"] {
+    for tag in [
+        "bounded",
+        "accept",
+        "reject",
+        "buchi",
+        "guarded-buchi",
+        "each-buchi",
+    ] {
         let other = states_key(&format!(r#"["{tag}"]"#));
         assert_eq!(
             future.admit(other.as_bytes()).map(|_| ()),
@@ -1423,9 +1434,24 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
     let plain = buchi(LIVE, "on origin");
     let guarded = buchi(LIVE, GUARD);
     let branch = r#"[[[[],"negative"]],[],[],[]]"#;
+    let activation = r#"[[[[],"negative"]],[],[],[["activation"]]]"#;
     let empty = "[[],[],[],[]]";
     let in_context = |activation: &str, body: String| buchi_key(activation, &body);
     let cases = [
+        // a supplied `["activation"]` member, which is derived from the phase
+        (
+            &plain,
+            in_context("infinite", format!(r#"["buchi",{activation}]"#)),
+            KeyRefusal::Members,
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                format!(r#"["guarded-buchi","active",{activation}]"#),
+            ),
+            KeyRefusal::Members,
+        ),
         (
             &plain,
             in_context(
@@ -1552,7 +1578,7 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
 /// `eventually[0,1]` row with its `accept` and `reject` successors, the
 /// deadlines 1 and 3 that retain deadline 1, two distinct interval
 /// occurrences, the general offset set and its reversal, the TP-4 `buchi`
-/// carry, both `guarded-buchi` rows and the deadlock item's complete key
+/// carry, both `guarded-buchi` rows, both `each-buchi` rows and the deadlock item's complete key
 /// with its refused profile and activation replacements. Reversing the
 /// insertion order of subsets and windows leaves the bytes equal, distinct
 /// occurrence paths and differing live facts leave them unequal, and no
@@ -1787,6 +1813,32 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
         );
     }
 
+    // Unguarded `on each` TP-4: the activation is "each", the waiting state
+    // is empty and the active one carries the negated root; neither is the
+    // phase-less origin `buchi` key.
+    let each = buchi(LIVE, "on each (q: Counter)");
+    for (state, body) in [
+        (
+            BuchiState::Each(BuchiPhase::Waiting, Configuration::default()),
+            r#"["each-buchi","waiting",[[],[],[],[]]]"#,
+        ),
+        (
+            BuchiState::Each(
+                BuchiPhase::Active,
+                Configuration {
+                    obligations: vec![Obligation::Current(self::at(&[], Polarity::Negative))],
+                    ..Configuration::default()
+                },
+            ),
+            r#"["each-buchi","active",[[[[],"negative"]],[],[],[]]]"#,
+        ),
+    ] {
+        assert_eq!(
+            text_of(&each.key(&state).expect("encodes")),
+            buchi_key("each", body)
+        );
+    }
+
     // No enumeration index: independent translations of the same facts
     // write the same octets.
     assert_eq!(
@@ -1798,10 +1850,9 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
     );
 }
 
-/// A TP-4 clause is not translated when its key form is not derived: an
-/// unguarded `on each` and an open-upper least fixed point in the negated
-/// closure (both ruled by #1516 and not implemented yet), a clause checked under another
-/// profile, and any clause the safety key cannot carry.
+/// A TP-4 clause is not translated when its key form is not derived: a
+/// clause checked under another profile, a context whose activation is not
+/// the clause's, and any clause the safety key cannot carry.
 #[trace("TC-525")]
 #[test]
 fn tp4_clauses_without_a_derived_key_form_are_not_translated() {
@@ -1811,10 +1862,9 @@ fn tp4_clauses_without_a_derived_key_form_are_not_translated() {
         BuchiStates::clause(&fixture.clause, &context, SubjectKind::Ordinary).map(|_| ())
     };
     for (activation, body) in [
-        ("on each (q: Counter)", "eventually[2,*] holds(c.level = 1)"),
-        ("on origin", "eventually always[2,*] holds(c.level = 1)"),
         // not unbounded, so a safety clause
         ("on origin", "eventually[0,3] holds(c.level = 1)"),
+        ("on each (q: Counter)", "eventually[0,3] holds(c.level = 1)"),
     ] {
         assert!(
             matches!(
@@ -1824,8 +1874,10 @@ fn tp4_clauses_without_a_derived_key_form_are_not_translated() {
             "{activation}: {body}"
         );
     }
-    // The same shapes with a closed upper bound are keyed.
+    // The same shapes with a closed upper bound are keyed, and so is an
+    // open-upper eventuality in the negated closure (#1516 R-2).
     for body in [
+        "eventually always[2,*] holds(c.level = 1)",
         "eventually always[0,3] holds(c.level = 1)",
         "eventually always holds(c.level = 1)",
         // an open-lower, open-upper eventuality is liveness
@@ -1833,6 +1885,26 @@ fn tp4_clauses_without_a_derived_key_form_are_not_translated() {
     ] {
         assert!(refused(INFINITE, "on origin", body).is_ok(), "{body}");
     }
+    // A context whose activation is not the clause's is refused.
+    let each = fixture(INFINITE, "c: Counter", "on each (q: Counter)", LIVE);
+    let each_context = StateContext::clause(&each.clause, occurrence(0), Vec::new());
+    assert_eq!(each_context.activation, ContextActivation::Each);
+    let origin = fixture(INFINITE, "c: Counter", "on origin", LIVE);
+    let origin_context = StateContext::clause(&origin.clause, occurrence(0), Vec::new());
+    assert_eq!(origin_context.activation, ContextActivation::Infinite);
+    for (clause, context) in [(&origin, &each_context), (&each, &origin_context)] {
+        assert!(matches!(
+            BuchiStates::clause(&clause.clause, context, SubjectKind::Ordinary),
+            Err(TranslationRefusal::NotTranslated(_))
+        ));
+    }
+    // A safety clause under `on each` keeps the "infinite" activation.
+    let safety_each = fixture(INFINITE, "c: Counter", "on each (q: Counter)", FUTURE);
+    assert_eq!(
+        StateContext::clause(&safety_each.clause, occurrence(0), Vec::new()).activation,
+        ContextActivation::Infinite
+    );
+
     // Another profile is not the context's.
     let live = fixture(INFINITE, "c: Counter", "on origin", LIVE);
     let other = fixture(
@@ -2128,16 +2200,23 @@ fn a_protocol_past_window_is_distance_history() {
     let since = protocol(
         "always (holds(c.level = 1) implies (holds(c.level = 2) since[1,3] holds(c.level = 3)))",
     );
-    for transform in ["[false,true]", "[true,true]", "[false,false]"] {
-        let text = format!(r#"[["0","1"],"distance-history",[["0",{transform}]],null]"#);
-        assert!(since.admit(state(&text).as_bytes()).is_ok(), "{text}");
-    }
-    assert_eq!(
-        since
-            .admit(state(r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#).as_bytes())
-            .map(|_| ()),
-        Err(KeyRefusal::Unresolved)
+    let triggered = protocol(
+        "always (holds(c.level = 1) implies (holds(c.level = 2) triggered[1,3] holds(c.level = 3)))",
     );
+    for operator in [&since, &triggered] {
+        for transform in ["[false,true]", "[true,true]", "[false,false]"] {
+            let text = format!(r#"[["0","1"],"distance-history",[["0",{transform}]],null]"#);
+            assert!(operator.admit(state(&text).as_bytes()).is_ok(), "{text}");
+        }
+        assert_eq!(
+            operator
+                .admit(
+                    state(r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#).as_bytes()
+                )
+                .map(|_| ()),
+            Err(KeyRefusal::Unresolved)
+        );
+    }
 
     // The flag and age forms are the subject's own on both.
     let age = protocol("always (holds(c.level = 1) implies once[0,2] holds(c.level = 2))");
@@ -2249,4 +2328,246 @@ fn a_protocol_finite_eventuality_has_an_acceptance_set() {
         on(SubjectKind::Ordinary).key(&waiting(vec![dual])),
         Err(KeyRefusal::Unresolved)
     );
+}
+
+/// #1516 R-2: an ordinary `F`/`U[a,open]` is a member of its Büchi acceptance
+/// set exactly when it is neither carried as a current obligation nor pending
+/// as a `shift` window; the shift completes into the unbounded obligation.
+#[trace("TC-525")]
+#[test]
+fn an_open_upper_eventuality_is_accepted_once_its_shift_completes() {
+    // The negated closure is `always eventually[2,*] not p`: the open-upper
+    // least fixed point is the signed occurrence `[["0"],"negative"]`.
+    let negated = "eventually always[2,*] holds(c.level = 1)";
+    let dual = at(&[0], Polarity::Negative);
+    let carry =
+        |obligations: Vec<Obligation>, windows: Vec<Window>, acceptance: Vec<Occurrence>| {
+            BuchiState::Elementary(Configuration {
+                obligations,
+                windows,
+                acceptance,
+                ..Configuration::default()
+            })
+        };
+    let root_carry = Obligation::Current(at(&[], Polarity::Negative));
+    let unbounded = Obligation::Current(dual.clone());
+    let shift = Window::Shift(dual.clone(), 2);
+    for subject in [SubjectKind::Ordinary, SubjectKind::Protocol] {
+        let fixture = fixture(INFINITE, "c: Counter", "on origin", negated);
+        let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+        let states = BuchiStates::clause(&fixture.clause, &context, subject).expect("translates");
+        // Pending: carried as the shift, so not a member.
+        assert!(states
+            .key(&carry(
+                vec![root_carry.clone()],
+                vec![shift.clone()],
+                Vec::new()
+            ))
+            .is_ok());
+        // Completed and carried as the unbounded obligation: not a member.
+        assert!(states
+            .key(&carry(
+                vec![root_carry.clone(), unbounded.clone()],
+                Vec::new(),
+                Vec::new()
+            ))
+            .is_ok());
+        // Completed and discharged: a member.
+        let member = states.key(&carry(
+            vec![root_carry.clone()],
+            Vec::new(),
+            vec![dual.clone()],
+        ));
+        assert!(member.is_ok());
+        // Wrongly carried: a member while pending, a member while carried,
+        // and neither carried nor a member.
+        assert_eq!(
+            states.key(&carry(
+                vec![root_carry.clone()],
+                vec![shift.clone()],
+                vec![dual.clone()]
+            )),
+            Err(KeyRefusal::NonNormal)
+        );
+        assert_eq!(
+            states.key(&carry(
+                vec![root_carry.clone(), unbounded.clone()],
+                Vec::new(),
+                vec![dual.clone()]
+            )),
+            Err(KeyRefusal::NonNormal)
+        );
+        assert_eq!(
+            states.key(&carry(vec![root_carry.clone()], Vec::new(), Vec::new())),
+            Err(KeyRefusal::NonNormal)
+        );
+        // One debt stored as both the shift and the unbounded obligation.
+        assert_eq!(
+            states.key(&carry(
+                vec![root_carry.clone(), unbounded.clone()],
+                vec![shift.clone()],
+                Vec::new()
+            )),
+            Err(KeyRefusal::Members)
+        );
+    }
+}
+
+/// FR-338's `each-buchi` vectors and its admission negatives
+/// (FR-338-AC-5): an unguarded `on each` TP-4 clause is keyed under
+/// activation `"each"` as `["each-buchi", phase, branch]`, and a waiting
+/// state carrying the well-formed shift window of its `eventually[1,*]` root,
+/// a `buchi` state under that context, an `each-buchi` state under an origin
+/// or `each-when` context, and a TP-4 key under a timed profile are refused,
+/// as is a same-shaped state under a foreign profile or activation.
+#[trace("TC-525", "FR-338-AC-5")]
+#[test]
+fn an_unguarded_on_each_tp4_clause_is_keyed_each_buchi() {
+    let each = |body: &str| buchi(body, "on each (q: Counter)");
+    let states = each(LIVE);
+    let branch = r#"[[[[],"negative"]],[],[],[]]"#;
+    let key = |tag: &str, body: &str| buchi_key("each", &format!(r#"["{tag}",{body}]"#));
+    // The two vectors.
+    assert_eq!(
+        text_of(
+            &states
+                .key(&BuchiState::Each(
+                    BuchiPhase::Waiting,
+                    Configuration::default()
+                ))
+                .expect("encodes")
+        ),
+        buchi_key("each", r#"["each-buchi","waiting",[[],[],[],[]]]"#)
+    );
+    let carry = Configuration {
+        obligations: vec![Obligation::Current(at(&[], Polarity::Negative))],
+        ..Configuration::default()
+    };
+    let active = text_of(
+        &states
+            .key(&BuchiState::Each(BuchiPhase::Active, carry.clone()))
+            .expect("encodes"),
+    );
+    assert_eq!(
+        active,
+        buchi_key("each", &format!(r#"["each-buchi","active",{branch}]"#))
+    );
+    // It differs from the phase-less origin `buchi` key (under its own
+    // context), and is admitted back as the state it was written from.
+    let origin_key = text_of(
+        &buchi(LIVE, "on origin")
+            .key(&BuchiState::Elementary(carry.clone()))
+            .expect("encodes"),
+    );
+    assert_ne!(active, origin_key);
+    assert_eq!(
+        states.admit(active.as_bytes()).map(|(_, state)| state),
+        Ok(BuchiState::Each(BuchiPhase::Active, carry))
+    );
+
+    // The derived `["activation"]` set is never a supplied member.
+    assert_eq!(
+        states
+            .admit(
+                key(
+                    "each-buchi",
+                    r#""active",[[[[],"negative"]],[],[],[["activation"]]]"#
+                )
+                .as_bytes()
+            )
+            .map(|_| ()),
+        Err(KeyRefusal::Members)
+    );
+
+    // The waiting state carries no window, though the shift window of the
+    // `eventually[1,*]` root is well formed in the active phase.
+    let shifting = each("eventually[1,*] holds(c.level = 1)");
+    let window = r#"[[],[],[[[],"negative","shift","1"]],[]]"#;
+    assert!(shifting
+        .admit(key("each-buchi", &format!(r#""active",{window}"#)).as_bytes())
+        .is_ok());
+    assert_eq!(
+        shifting
+            .admit(key("each-buchi", &format!(r#""waiting",{window}"#)).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::Members)
+    );
+    let obligation = r#"[[[[],"negative"]],[],[],[]]"#;
+    for (octets, refusal) in [
+        // a `buchi` or `guarded-buchi` state under the unguarded context
+        (
+            key("buchi", obligation),
+            KeyRefusal::WrongForm("buchi".into()),
+        ),
+        (
+            key("guarded-buchi", &format!(r#""active",{obligation}"#)),
+            KeyRefusal::WrongForm("guarded-buchi".into()),
+        ),
+        // a waiting branch with an obligation; an unknown phase
+        (
+            key("each-buchi", &format!(r#""waiting",{obligation}"#)),
+            KeyRefusal::Members,
+        ),
+        (
+            key("each-buchi", &format!(r#""selected",{obligation}"#)),
+            KeyRefusal::Members,
+        ),
+        // the phase-less shape
+        (key("each-buchi", obligation), KeyRefusal::Members),
+    ] {
+        assert_eq!(
+            states.admit(octets.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{octets}"
+        );
+    }
+
+    // An `each-buchi` state under the origin or the `each-when` context is
+    // not that context's form, and a same-shaped state under a foreign
+    // activation or profile is not this context's.
+    let waiting = r#"["each-buchi","waiting",[[],[],[],[]]]"#;
+    let origin = buchi(LIVE, "on origin");
+    let guarded = buchi(LIVE, GUARD);
+    assert_eq!(
+        origin
+            .admit(buchi_key("infinite", waiting).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::WrongForm("each-buchi".into()))
+    );
+    assert_eq!(
+        guarded
+            .admit(buchi_key("each-when", waiting).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::WrongForm("each-buchi".into()))
+    );
+    let written = buchi_key("each", waiting);
+    assert!(states.admit(written.as_bytes()).is_ok());
+    for foreign in [
+        written.replace(r#""each""#, r#""origin""#),
+        written.replace(r#""each""#, r#""each-when""#),
+        written.replace(r#""each""#, r#""infinite""#),
+        written.replace(
+            "quire.temporal.infinite-trace/v1",
+            "quire.temporal.timed/v1",
+        ),
+    ] {
+        assert_eq!(
+            states.admit(foreign.as_bytes()).map(|_| ()),
+            Err(KeyRefusal::ForeignContext),
+            "{foreign}"
+        );
+    }
+    // A timed-profile TP-4 clause has no key at all, and no "each" context.
+    let timed_each =
+        crate::timed_trace::timed_on("on each (q: M::Counter)", "eventually holds(c.level = 1)");
+    assert_eq!(
+        StateContext::clause(&timed_each.clause, occurrence(0), Vec::new()).activation,
+        ContextActivation::Infinite
+    );
+    let timed = crate::timed_trace::timed("eventually holds(c.level = 1)");
+    let context = StateContext::clause(&timed.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        BuchiStates::clause(&timed.clause, &context, SubjectKind::Ordinary),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
 }
