@@ -98,3 +98,15 @@ The litmus helpers were read to confirm what each case builds: `sb_run`,
 Rust lane: the PR adds no `unwrap` in production code. The `expect`s in the
 tests carry messages. There is no `#[allow]`, no `unsafe` and no integer
 conversion. The tests use `trace` attributes, not `/// Trace:` lines.
+
+## Dispositions
+
+Disposition pass 1 covers head `220c3a0cd`. It was re-run on a private copy:
+the 38 `weak_memory` tests pass, `fmt --check` is clean, and clippy
+`-p qsl-analyze --all-targets -D warnings` is clean.
+
+| FND | outcome | reason |
+|-----|---------|--------|
+| FND-001 | fixed | The multi-location test now asserts exactly two entries in order: `Both/left/L/Bx` multi-location, then `Both/right/R/Lx` load/release mismatch. A reviewer re-run kills M1 and M3 (weak_memory.rs:1013), and M2 is still killed |
+| FND-002 | fixed | The sc admission check and the acq_rel RMW check under tso and ra now assert `ModelCheckOutcome::Holds { .. }`. M6 is still killed (weak_memory.rs:973) |
+| FND-003 | fixed | The `one_branch` comment now says a relaxed read makes `x` shared when `first` writes it, and the unordered read keeps the local case's mismatch its own |

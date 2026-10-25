@@ -77,3 +77,11 @@ Out of scope, noted for context only: `from_failures` orders entries without a
 transition (node readers) after every attempt entry. FR-220's Reporting rule
 orders a node reader by its event transition identity. That is FR-220-AC-15
 territory and was not judged here.
+
+## Dispositions
+
+Disposition pass 1 covers head `220c3a0cd`.
+
+| FND | outcome | reason |
+|-----|---------|--------|
+| FND-001 | fixed | The new test `ordering_mismatches_are_collected_in_canonical_order` pins SB (stores acquire, loads release) to `[Sx, Sy, Lx, Ly]`, which differs from declaration order, under tso and ra. It also asserts strictly ascending transition bytes. A reviewer re-run kills M10 (weak_memory.rs:1039 and :1014) |
