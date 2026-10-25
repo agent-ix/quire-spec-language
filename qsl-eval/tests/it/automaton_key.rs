@@ -11,9 +11,10 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    Configuration, ContextActivation, HistoryOperand, KeyRefusal, Obligation, Occurrence,
-    PastMemory, PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    SubjectKind, TranslationRefusal, Window,
+    BoundedTranslation, BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
+    HistoryOperand, KeyRefusal, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
+    SafetyState, SafetyStates, SafetyTranslation, StateContext, SubjectKind, TranslationRefusal,
+    Window,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -1242,5 +1243,448 @@ fn subsumption_ignores_the_order_the_facts_arrive_in() {
         both.admit(key.as_bytes()).map(|_| ()),
         Err(KeyRefusal::NonNormal),
         "the reader refuses the pair"
+    );
+}
+
+const LIVE: &str = "eventually holds(c.level = 1)";
+const RESPONSE: &str = "always (holds(c.level = 1) implies eventually holds(c.level = 2))";
+const GUARD: &str = "on each (q: Counter) when (c.level = 1)";
+
+/// The TP-4 clause `body` over `c: Counter` under infinite-trace, its Büchi
+/// states under `occurrence(0)`, guarded when `activation` has a `when`.
+fn buchi(body: &str, activation: &str) -> BuchiStates {
+    let fixture = fixture(INFINITE, "c: Counter", activation, body);
+    let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+    BuchiStates::clause(&fixture.clause, &context, SubjectKind::Ordinary)
+        .unwrap_or_else(|why| panic!("{body}: {why}"))
+}
+
+/// `K_C(body)` under the context of `buchi(_, activation)`.
+fn buchi_key(activation: &str, body: &str) -> String {
+    states_key(body).replace(r#""infinite",[]]"#, &format!(r#""{activation}",[]]"#))
+}
+
+fn text_of(key: &qsl_eval::automaton::AutomatonStateKey) -> String {
+    String::from_utf8(key.as_bytes().to_vec()).expect("a key is UTF-8")
+}
+
+/// FR-338's TP-4 vector: for `eventually holds(p)` the elementary
+/// configuration that carries the negated `G not p` is
+/// `["buchi",[[[[],"negative"]],[],[],[]]]`, with no acceptance set for the
+/// dual `G`. A carried least-fixed-point occurrence has no acceptance
+/// membership, and one not carried has it. The key is admitted back as the
+/// state it was written from.
+#[trace("TC-525")]
+#[test]
+fn a_tp4_key_is_one_configuration_of_the_negated_formula() {
+    let live = buchi(LIVE, "on origin");
+    let carry = Configuration {
+        obligations: vec![Obligation::Current(at(&[], Polarity::Negative))],
+        ..Configuration::default()
+    };
+    let state = BuchiState::Elementary(carry);
+    let key = live.key(&state).expect("encodes");
+    assert_eq!(
+        text_of(&key),
+        states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    );
+    assert_eq!(live.admit(key.as_bytes()), Ok((key, state)));
+
+    // `always (p implies eventually q)` negates to `eventually (p and G not
+    // q)`: its root is a least-fixed-point occurrence at negative polarity.
+    let response = buchi(RESPONSE, "on origin");
+    let root = at(&[], Polarity::Negative);
+    let carried = BuchiState::Elementary(Configuration {
+        obligations: vec![Obligation::Current(root.clone())],
+        ..Configuration::default()
+    });
+    let discharged = BuchiState::Elementary(Configuration {
+        acceptance: vec![root.clone()],
+        ..Configuration::default()
+    });
+    assert_eq!(
+        text_of(&response.key(&carried).expect("encodes")),
+        states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    );
+    assert_eq!(
+        text_of(&response.key(&discharged).expect("encodes")),
+        states_key(r#"["buchi",[[],[],[],[[[],"negative"]]]]"#)
+    );
+    let both = BuchiState::Elementary(Configuration {
+        obligations: vec![Obligation::Current(root.clone())],
+        acceptance: vec![root],
+        ..Configuration::default()
+    });
+    assert_eq!(response.key(&both), Err(KeyRefusal::NonNormal));
+    assert_eq!(
+        response.key(&BuchiState::Elementary(Configuration::default())),
+        Err(KeyRefusal::NonNormal)
+    );
+}
+
+/// FR-338's guarded TP-4 vectors: before any activation the state is
+/// `["guarded-buchi","waiting",[[],[],[],[]]]` (the negated `G not p` has no
+/// least-fixed-point set, so the derived acceptance is empty), and after an
+/// activation is selected where p is false,
+/// `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`.
+#[trace("TC-525")]
+#[test]
+fn a_guarded_tp4_key_carries_its_phase() {
+    let guarded = buchi(LIVE, GUARD);
+    let waiting = BuchiState::Guarded(BuchiPhase::Waiting, Configuration::default());
+    let active = BuchiState::Guarded(
+        BuchiPhase::Active,
+        Configuration {
+            obligations: vec![Obligation::Current(at(&[], Polarity::Negative))],
+            ..Configuration::default()
+        },
+    );
+    for (state, body) in [
+        (&waiting, r#"["guarded-buchi","waiting",[[],[],[],[]]]"#),
+        (
+            &active,
+            r#"["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]"#,
+        ),
+    ] {
+        let key = guarded.key(state).expect("encodes");
+        assert_eq!(text_of(&key), buchi_key("each-when", body));
+        assert_eq!(guarded.admit(key.as_bytes()), Ok((key, state.clone())));
+    }
+    assert_ne!(
+        guarded.key(&waiting).expect("encodes"),
+        guarded.key(&active).expect("encodes"),
+        "the waiting key stays reachable beside the active one"
+    );
+    // A waiting branch derives its membership: the dual `G` has none, but
+    // `always (p implies eventually q)` negates to a least-fixed point root.
+    let response = buchi(RESPONSE, GUARD);
+    let member = Configuration {
+        acceptance: vec![at(&[], Polarity::Negative)],
+        ..Configuration::default()
+    };
+    assert!(response
+        .key(&BuchiState::Guarded(BuchiPhase::Waiting, member))
+        .is_ok());
+    assert_eq!(
+        response.key(&BuchiState::Guarded(
+            BuchiPhase::Waiting,
+            Configuration::default()
+        )),
+        Err(KeyRefusal::NonNormal)
+    );
+}
+
+/// FR-338's Büchi admission negatives: a `guarded-buchi` state under a
+/// context that is not `"each-when"`, a `buchi` state under an `"each-when"`
+/// context, a phase other than `waiting` or `active`, a waiting branch with
+/// an obligation or a window entry, extra and missing members, and a
+/// clause that is not TP-4.
+#[trace("TC-525", "FR-338-AC-5")]
+#[test]
+fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
+    let plain = buchi(LIVE, "on origin");
+    let guarded = buchi(LIVE, GUARD);
+    let branch = r#"[[[[],"negative"]],[],[],[]]"#;
+    let empty = "[[],[],[],[]]";
+    let in_context = |activation: &str, body: String| buchi_key(activation, &body);
+    let cases = [
+        (
+            &plain,
+            in_context(
+                "infinite",
+                format!(r#"["guarded-buchi","active",{branch}]"#),
+            ),
+            KeyRefusal::WrongForm("guarded-buchi".into()),
+        ),
+        (
+            &guarded,
+            in_context("each-when", format!(r#"["buchi",{branch}]"#)),
+            KeyRefusal::WrongForm("buchi".into()),
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                format!(r#"["guarded-buchi","selected",{branch}]"#),
+            ),
+            KeyRefusal::Members,
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                format!(r#"["guarded-buchi","waiting",{branch}]"#),
+            ),
+            KeyRefusal::Members,
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                r#"["guarded-buchi","waiting",[[],[],[[[],"positive","deadline","1"]],[]]]"#
+                    .to_owned(),
+            ),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &guarded,
+            in_context("each-when", format!(r#"["guarded-buchi",{empty}]"#)),
+            KeyRefusal::Members,
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                format!(r#"["guarded-buchi","active",{empty},{empty}]"#),
+            ),
+            KeyRefusal::Members,
+        ),
+        (
+            &plain,
+            in_context("infinite", format!(r#"["buchi",{branch},{branch}]"#)),
+            KeyRefusal::Members,
+        ),
+        (
+            &plain,
+            in_context("infinite", r#"["buchi"]"#.to_owned()),
+            KeyRefusal::Members,
+        ),
+        (
+            &plain,
+            in_context("infinite", format!(r#"["safety",[{branch}]]"#)),
+            KeyRefusal::WrongForm("safety".into()),
+        ),
+        (
+            &plain,
+            in_context("infinite", format!(r#"["tableau",{branch}]"#)),
+            KeyRefusal::UnknownTag("tableau".into()),
+        ),
+        (
+            &plain,
+            buchi_key("each-when", &format!(r#"["buchi",{branch}]"#)),
+            KeyRefusal::ForeignContext,
+        ),
+    ];
+    for (states, octets, refusal) in cases {
+        assert_eq!(
+            states.admit(octets.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{octets}"
+        );
+    }
+    let safety = fixture(
+        INFINITE,
+        "c: Counter",
+        "on origin",
+        "always holds(c.level = 1)",
+    );
+    let context = StateContext::clause(&safety.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        BuchiStates::clause(&safety.clause, &context, SubjectKind::Ordinary),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+    // A closed interval under an unbounded `always` is TP-3, not TP-4.
+    let bounded = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
+    let context = StateContext::clause(&bounded.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        BuchiStates::clause(&bounded.clause, &context, SubjectKind::Ordinary),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+    // A guarded clause has the `each-when` context, which the two-state
+    // reachable-invariant translation does not read.
+    let guarded_invariant = fixture(INFINITE, "c: Counter", GUARD, "always holds(c.level = 1)");
+    let context = StateContext::clause(&guarded_invariant.clause, occurrence(0), Vec::new());
+    assert_eq!(context.activation, ContextActivation::EachWhen);
+    assert!(matches!(
+        SafetyTranslation::reachable_invariant(&guarded_invariant.clause, &context),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+    let live = fixture(INFINITE, "c: Counter", "on origin", LIVE);
+    let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        BuchiStates::clause(&live.clause, &context, SubjectKind::Protocol),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+    assert_eq!(
+        plain.key(&BuchiState::Guarded(
+            BuchiPhase::Active,
+            Configuration::default()
+        )),
+        Err(KeyRefusal::WrongForm("guarded-buchi".into()))
+    );
+}
+
+/// FR-338-AC-4: every canonical octet vector of the "Canonical octet
+/// vectors" table is asserted as exact ASCII, with the full `K_C` where the
+/// table gives one: the TP-1 bad prefix and carried root, the bounded
+/// `eventually[0,1]` row with its `accept` and `reject` successors, the
+/// deadlines 1 and 3 that retain deadline 1, two distinct interval
+/// occurrences, the general offset set and its reversal, the TP-4 `buchi`
+/// carry, both `guarded-buchi` rows and the deadlock item's complete key
+/// with its refused profile and activation replacements. Reversing the
+/// insertion order of subsets and windows leaves the bytes equal, distinct
+/// occurrence paths and differing live facts leave them unequal, and no
+/// enumeration index is a member: an independently built translation of
+/// the same facts writes the same octets.
+#[trace("TC-525", "FR-338-AC-4")]
+#[test]
+fn every_canonical_octet_vector_is_the_authored_octets() {
+    // TP-1, deadlock: the complete key, and the refused replacements.
+    let deadlock = deadlock();
+    assert_eq!(text(&deadlock, SafetyState::Carried), DEADLOCK_CARRIED);
+    for foreign in [
+        DEADLOCK_CARRIED.replace(
+            "quire.temporal.infinite-trace/v1",
+            "quire.temporal.event-position.false-extension/v1",
+        ),
+        DEADLOCK_CARRIED.replace("\"infinite\"", "\"origin\""),
+    ] {
+        assert_eq!(
+            deadlock.admit(foreign.as_bytes()).map(|_| ()),
+            Err(KeyRefusal::ForeignContext)
+        );
+    }
+    let bad = clause("always holds(false)", 0);
+    assert!(text(&bad, bad.read(None, false)).ends_with(r#",["safety",[]]]"#));
+    let carried = clause("always holds(true)", u64::MAX);
+    assert!(
+        text(&carried, carried.read(Some(carried.read(None, true)), true))
+            .ends_with(r#"["safety",[[[[[],"positive"]],[],[],[]]]]]"#)
+    );
+
+    // Bounded `eventually[0,1] holds(p)` on origin.
+    let fixture = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,1] holds(true)",
+    );
+    let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+    let bounded = BoundedTranslation::clause(&fixture.clause, &context).expect("translates");
+    let bounded_text = |state| {
+        String::from_utf8(bounded.key(state).expect("encodes").as_bytes().to_vec()).expect("UTF-8")
+    };
+    let origin = bounded.start(false);
+    let event_context = |activation: &str| {
+        states_context()
+            .replace("infinite-trace", "event-position.false-extension")
+            .replace("\"infinite\"", &format!("\"{activation}\""))
+    };
+    let bounded_key = |body: &str| {
+        format!(
+            r#"["quire.automaton-state-key/v1",{},{body}]"#,
+            event_context("origin")
+        )
+    };
+    assert_eq!(
+        bounded_text(origin),
+        bounded_key(r#"["bounded",["origin","1"],[[[],[],[[[],"positive","deadline","1"]],[]]]]"#)
+    );
+    assert_eq!(
+        bounded_text(bounded.step(origin, true, true)),
+        bounded_key(r#"["accept"]"#)
+    );
+    let last = bounded.step(origin, true, false);
+    assert_eq!(
+        bounded_text(bounded.step(last, true, true)),
+        bounded_key(r#"["reject"]"#)
+    );
+
+    // Deadlines 1 and 3 retain deadline 1 in either insertion order; an
+    // extent would change the future and is refused.
+    let pending = states("eventually[0,3] holds(c.level = 1)");
+    let deadline = |remaining| Window::Deadline(at(&[], Polarity::Positive), remaining);
+    let debts = |windows: Vec<Window>| Configuration {
+        windows,
+        ..Configuration::default()
+    };
+    let retained = states_key(r#"["safety",[[[],[],[[[],"positive","deadline","1"]],[]]]]"#);
+    for order in [
+        vec![deadline(1), deadline(3)],
+        vec![deadline(3), deadline(1)],
+    ] {
+        assert_eq!(octets(&pending, &[debts(order)]), retained);
+    }
+    assert_eq!(
+        pending.key(&[debts(vec![Window::Extent(at(&[], Polarity::Positive), 3)])]),
+        Err(KeyRefusal::Unresolved)
+    );
+
+    // Two distinct interval occurrences with equal counters keep both
+    // windows; changing either counter changes the bytes.
+    let two = states(TWO_FUTURES);
+    let at =
+        |path: &[u64], remaining| Window::Deadline(self::at(path, Polarity::Positive), remaining);
+    let equal = octets(&two, &[debts(vec![at(&[0], 1), at(&[1], 1)])]);
+    assert_eq!(
+        equal,
+        states_key(
+            r#"["safety",[[[],[],[[["0"],"positive","deadline","1"],[["1"],"positive","deadline","1"]],[]]]]"#
+        )
+    );
+    assert_eq!(
+        equal,
+        octets(&two, &[debts(vec![at(&[1], 1), at(&[0], 1)])]),
+        "window insertion order"
+    );
+    for changed in [(at(&[0], 2), at(&[1], 1)), (at(&[0], 1), at(&[1], 2))] {
+        assert_ne!(equal, octets(&two, &[debts(vec![changed.0, changed.1])]));
+    }
+    assert_ne!(
+        octets(&two, &[debts(vec![at(&[0], 1)])]),
+        octets(&two, &[debts(vec![at(&[1], 1)])]),
+        "distinct occurrence paths"
+    );
+
+    // The general offset set `{[0,2],[1,3]}` and its reversal.
+    let shifted = states(SHIFTED);
+    let offsets = Window::Offsets(self::at(&[0, 1], Polarity::Positive), vec![(1, 3), (0, 2)]);
+    let general = octets(&shifted, &[debts(vec![offsets])]);
+    assert!(general.contains(r#"[["0","2"],["1","3"]]"#));
+    let reversed = general.replace(r#"[["0","2"],["1","3"]]"#, r#"[["1","3"],["0","2"]]"#);
+    assert_eq!(
+        shifted.admit(reversed.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::Order)
+    );
+
+    // TP-4 and guarded TP-4.
+    let live = buchi(LIVE, "on origin");
+    let carry = Configuration {
+        obligations: vec![Obligation::Current(self::at(&[], Polarity::Negative))],
+        ..Configuration::default()
+    };
+    assert_eq!(
+        text_of(
+            &live
+                .key(&BuchiState::Elementary(carry.clone()))
+                .expect("encodes")
+        ),
+        states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    );
+    let guarded = buchi(LIVE, GUARD);
+    for (state, body) in [
+        (
+            BuchiState::Guarded(BuchiPhase::Waiting, Configuration::default()),
+            r#"["guarded-buchi","waiting",[[],[],[],[]]]"#,
+        ),
+        (
+            BuchiState::Guarded(BuchiPhase::Active, carry),
+            r#"["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]"#,
+        ),
+    ] {
+        assert_eq!(
+            text_of(&guarded.key(&state).expect("encodes")),
+            buchi_key("each-when", body)
+        );
+    }
+
+    // No enumeration index: independent translations of the same facts
+    // write the same octets.
+    assert_eq!(
+        octets(
+            &states(TWO_FUTURES),
+            &[debts(vec![at(&[0], 1), at(&[1], 1)])]
+        ),
+        equal
     );
 }
