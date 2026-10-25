@@ -16,7 +16,7 @@ use quire_contract_model::source_obligation::{
 use quire_semantic_value::checking::CheckingLimits;
 use quire_spec_language::checking::composed::{self, TypeLimits};
 use quire_spec_language::checking::source_inventory::{
-    qsl_inventory, CheckedUnit, UnitLabel, UnitLabelMismatch,
+    qsl_inventory, CheckedUnit, UnitSourceMismatch,
 };
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self};
@@ -36,7 +36,11 @@ fn matching_graph() -> CheckedGraph {
 }
 
 fn graph(identity: SourceIdentity) -> CheckedGraph {
-    let text = format!("{HEADER}{GUARDED}\n");
+    graph_clause(identity, GUARDED)
+}
+
+fn graph_clause(identity: SourceIdentity, clause: &str) -> CheckedGraph {
+    let text = format!("{HEADER}{clause}\n");
     let parsed = qsl_cst::parse(
         identity,
         "unit.native",
@@ -265,35 +269,34 @@ fn an_unfinished_declaration_is_distinct_from_exhaustion() {
     );
 }
 
-fn label(authority: &str, identity: &str) -> UnitLabel {
-    UnitLabel {
-        authority: authority.into(),
-        identity: identity.into(),
-    }
-}
-
 #[test]
-fn a_graph_of_another_source_is_refused_with_both_labels() {
-    let graph = graph(SourceIdentity::new("a", "u", "git", "1"));
+fn a_graph_with_the_same_labels_but_different_bytes_is_refused() {
+    let graph = graph_clause(
+        SourceIdentity::new("test", "unit:main", "test", "authored"),
+        "function g using v(): Boolean pure { true }",
+    );
     typed(
         CALLS,
         BindingLimits::default(),
         TypeLimits::default(),
         |_, formal, types| {
             let refused = CheckedUnit::new(formal, &graph, types).expect_err("another source");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::Graph {
-                    selected: label("test", "unit:main"),
-                    graph: label("a", "u"),
-                }
-            );
+            let UnitSourceMismatch::Graph {
+                selected,
+                graph: actual,
+            } = refused
+            else {
+                panic!("expected graph source mismatch");
+            };
+            assert_eq!(&selected, formal.source().reference());
+            assert_eq!(&actual, graph.source());
+            assert_ne!(selected.digest(), actual.digest());
         },
     );
 }
 
 #[test]
-fn a_type_report_of_another_source_is_refused_with_both_labels() {
+fn a_graph_of_another_source_identity_is_refused_with_full_references() {
     let graph = matching_graph();
     typed_named(
         "other",
@@ -302,13 +305,15 @@ fn a_type_report_of_another_source_is_refused_with_both_labels() {
         TypeLimits::default(),
         |_, formal, types| {
             let refused = CheckedUnit::new(formal, &graph, types).expect_err("another source");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::Graph {
-                    selected: label("test", "unit:other"),
-                    graph: label("test", "unit:main"),
-                }
-            );
+            let UnitSourceMismatch::Graph {
+                selected,
+                graph: actual,
+            } = refused
+            else {
+                panic!("expected graph source mismatch");
+            };
+            assert_eq!(&selected, formal.source().reference());
+            assert_eq!(&actual, graph.source());
         },
     );
 }
@@ -324,13 +329,11 @@ fn a_formal_source_that_is_not_the_reports_unit_is_refused() {
         TypeLimits::default(),
         |_, _, types| {
             let refused = CheckedUnit::new(&foreign[0], &graph, types).expect_err("foreign");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::TypeReport {
-                    selected: label("test", "unit:foreign"),
-                    unit: label("test", "unit:main"),
-                }
-            );
+            let UnitSourceMismatch::TypeReport { selected, unit } = refused else {
+                panic!("expected type report source mismatch");
+            };
+            assert_eq!(&selected, foreign[0].source().reference());
+            assert_ne!(selected, unit);
         },
     );
 }
@@ -351,6 +354,6 @@ fn a_report_over_two_units_is_not_one_checked_unit() {
     setup::with_binding(&sources, &[&model], BindingLimits::default(), |binding| {
         let types = composed::admit_types(binding, &formal, TypeLimits::default());
         let refused = CheckedUnit::new(&formal[0], &graph, &types).expect_err("two units");
-        assert_eq!(refused, UnitLabelMismatch::NotOneUnit { count: 2 });
+        assert_eq!(refused, UnitSourceMismatch::NotOneUnit { count: 2 });
     });
 }
