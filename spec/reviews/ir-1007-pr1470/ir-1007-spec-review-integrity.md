@@ -3,7 +3,7 @@ id: SR-17023
 title: "IR-1007 PR #1470 integrity review"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-485-acquire-and-apply-a-checked-closure-through-the-replay-facade.md, spec/test-cases/TC-1263-checked-closure-acquisition-and-application-through-replay.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md, spec/functional/FR-485-acquire-and-apply-a-checked-closure-through-the-replay-facade.md, spec/test-cases/TC-1263-checked-closure-acquisition-and-application-through-replay.md"
 review_set: subset
 ---
 # IR-1007 PR #1470 integrity review
@@ -68,3 +68,17 @@ Ticket IR-1007; quire-spec-language PR #1470 frozen at 20fd130e5b66c37745bbc16a2
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-004 | fixed | Behavior 5 now returns ApplicationBeginRefusal::Call(CallFailure::Input(...)), matching Outputs, Behavior 6 and 8, AC-7 and TC-1263. |
+
+## Incremental review: root-site amendment at 586ac2ec849d6c6f20a5ef455af5c0ae7883b17a
+
+The frozen amendment changed FR-262, FR-485 and TC-1263 after the original review and three dispositions. This same reviewer examined FR-262-AC-13, FR-485 Behavior 3/4/6 and AC-6, and TC-1263 steps/expected results 5 against QSL `PackageClosure`, `CheckedGraph`, `Location`, and quire-eval `Registry`/`Session`. The earlier FND outcomes remain fixed. Quire validation of the three changed spec files passed. No acceptance criterion was narrowed; the root-site failure is typed and leaves Begin open; pre-Begin cancellation remains distinct from post-Begin denial; the leaf change precedes the facade; one evaluator path and T12-A remain specified.
+
+- FR-262-AC-13: Begin of an own callable and of an imported dependency callable obtains each callable's checked body root `Location` from its declaring checked graph. After successful Begin, cancelling the meter's installed handle before the first `function.call` charge returns a terminal incomplete evaluation whose `location` is exactly that graph's checked body root location, with no admitted charge and no body invocation; a work-limit denial at that charge has the same location. An admitted callable whose closure cannot return that location makes Begin return `CallFailure::Fault` with stage `quire-eval`, invariant `root-call-site-absent`, no session or charge, and an open registry. Begin has no caller-supplied location parameter; nested child requests continue to use their own `site`.
+- FR-485-AC-6: An arity or type refusal at Begin returns `ApplicationBeginRefusal::Call` carrying the leaf refusal, with no charge or body invocation. Cancellation of the meter's installed handle with `Requested` before Begin returns `ApplicationBeginRefusal::Call(CallFailure::Cancelled(Requested))` with no session or charge. After a successful Begin of an own callable and, separately, an imported callable, cancellation with `Requested` before the session's first `function.call` charge returns the leaf's incomplete evaluation at that charge with `location` exactly equal to the declaring checked graph's function-body root `Location`, no admitted charge and `tripped() = Requested`; neither result has `location: None` or the other package's body location. A `work_units` denial at root `function.call` has the same location. With `work_units` one below the measured successful spend, application returns the leaf's located incomplete outcome at the denied charge, records only preceding charges, and completes when the limit is raised. Dropping a runnable session invokes no later body.
+- TC-1263 step 5: 5. Apply `f(3)` without and with a generated body; have the generated body request another admitted callable. Compare the interpreted run with QSL's current result, location, loss and spend. Repeat at `work_units` one below and exactly equal to measured spend, and with wrong arity and wrong type. Cancel the meter's installed handle with `Requested` before `begin_call` in one run. In two other runs, begin successfully with an uncancelled handle, once for the unit's `f` and once for an imported dependency callable; cancel the handle before each session's first `function.call` charge, then step. Repeat the root charge denial with a `work_units` limit of zero. Compare each terminal `Evaluation.location` with the actual `function_by_identity(callable).body.location()` in the callable's declaring checked graph, using a QSL-internal oracle; also compare the own and imported locations to ensure the selected unit's location was not substituted for the imported one. In a leaf contract test, admit a callable whose checked closure returns no root location, then call Begin.
+
+No new finding in this analysis lens at the frozen amendment head.
+
+## Disposition round 5
+
+The two-file fix at 8ae396b430e0fb4617fc74fe354509e4229eb7ca introduces no new finding in this analysis lens.
