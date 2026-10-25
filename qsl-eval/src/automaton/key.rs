@@ -43,7 +43,7 @@ use qsl_semantics::check::{
 use quire_canonical::{Limits, Node, NodeRef};
 use quire_exact::Value;
 
-use super::key_state::{safety_enc, Configuration, FormulaShape, Reader};
+use super::key_state::{safety_enc, Configuration, FormulaShape, Polarity, Reader};
 use crate::simulation::model::encode::{hex, value_enc, Enc};
 
 /// The discriminator of a key's octet encoding (not a digest domain).
@@ -97,7 +97,8 @@ pub enum ContextRoot {
 }
 
 /// A context's activation: `"origin"` or `"each"` for a bounded monitor,
-/// `"infinite"` otherwise.
+/// `"each-when"` for an `on each` activation with a `when` condition under
+/// any profile, `"infinite"` otherwise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContextActivation {
     /// A bounded monitor activated at the origin.
@@ -106,6 +107,9 @@ pub enum ContextActivation {
     Each,
     /// An infinite-trace automaton.
     Infinite,
+    /// An `on each` activation with a `when` condition (FR-338 "Guarded `on
+    /// each` activation"), under any profile.
+    EachWhen,
 }
 
 impl ContextActivation {
@@ -115,6 +119,7 @@ impl ContextActivation {
             Self::Origin => "origin",
             Self::Each => "each",
             Self::Infinite => "infinite",
+            Self::EachWhen => "each-when",
         }
     }
 }
@@ -166,6 +171,7 @@ impl StateContext {
     ) -> Self {
         let profile = clause.profile();
         let activation = match (profile.is_bounded(), clause.activation()) {
+            (_, Activation::Each { guarded: true }) => ContextActivation::EachWhen,
             (false, _) => ContextActivation::Infinite,
             (true, Activation::Origin) => ContextActivation::Origin,
             (true, Activation::Each { .. }) => ContextActivation::Each,
@@ -362,7 +368,9 @@ impl SafetyTranslation {
     ) -> Result<Self, TranslationRefusal> {
         let atom =
             invariant_atom(clause).ok_or(TranslationRefusal::NotTranslated(NotTranslated))?;
-        if clause.profile() != TemporalProfile::InfiniteTrace || context.profile != clause.profile()
+        if clause.profile() != TemporalProfile::InfiniteTrace
+            || context.profile != clause.profile()
+            || context.activation != ContextActivation::Infinite
         {
             return Err(TranslationRefusal::NotTranslated(NotTranslated));
         }
@@ -549,7 +557,7 @@ impl SafetyTranslation {
 
 /// Admit `octets` as one key under the context whose canonical octets are
 /// `context_octets`: every envelope refusal, then `read` of the state body.
-fn admit_envelope<T>(
+pub(super) fn admit_envelope<T>(
     context_octets: &[u8],
     max_bytes: u64,
     octets: &[u8],
@@ -623,7 +631,8 @@ impl SafetyStates {
         {
             return Err(not_translated());
         }
-        let shape = FormulaShape::of(clause.formula()).ok_or_else(not_translated)?;
+        let shape =
+            FormulaShape::of(clause.formula(), Polarity::Positive).ok_or_else(not_translated)?;
         let max_bytes = IdentityLimits::default().input_bytes;
         let (context, context_octets) = context
             .encoded(max_bytes)
