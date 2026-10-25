@@ -1158,7 +1158,9 @@ impl TerminalRecord {
                     ));
                 }
             },
-            ReplayResult::Input(_) => return Err(TerminalRecordRefusal::ReplayLacksWitness),
+            ReplayResult::Input(_) | ReplayResult::ObservedTemporal(_) => {
+                return Err(TerminalRecordRefusal::ReplayLacksWitness)
+            }
         }
         Ok(Self {
             request_index,

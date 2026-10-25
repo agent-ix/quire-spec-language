@@ -1143,6 +1143,9 @@ impl OutcomeDocument {
             Ok(ReplayResult::Input(arm)) => {
                 Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
             }
+            Ok(ReplayResult::ObservedTemporal(arm)) => {
+                Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
+            }
             Err(refusal) => Self::new(
                 Operation::Replay,
                 replay_stage(refusal),
@@ -1287,7 +1290,9 @@ impl OutcomeDocument {
 fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
-        ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
+        ReplayRefusal::Fault(_)
+        | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
+        | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
         | ReplayRefusal::LimitAboveReader(_)
         | ReplayRefusal::NotASource(_)
@@ -1300,6 +1305,8 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
         | ReplayRefusal::WrongReplayTarget { .. }
+        | ReplayRefusal::WrongObservedTemporalTarget { .. }
+        | ReplayRefusal::WrongObservedTemporalSource
         | ReplayRefusal::TargetMismatch { .. }
         | ReplayRefusal::MalformedOperationTarget { .. }
         | ReplayRefusal::AmbiguousOperation { .. }
@@ -1327,6 +1334,10 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::NativePayload { .. }
         | ReplayRefusal::ModelTrace(_)
         | ReplayRefusal::UnfairLasso { .. }
+        | ReplayRefusal::MissingFairnessPremise { .. }
+        | ReplayRefusal::ObservedTemporalMismatch { .. }
+        | ReplayRefusal::ObservedTemporalInput { .. }
+        | ReplayRefusal::ObservedTemporalRefusal(_)
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }

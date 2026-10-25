@@ -627,11 +627,17 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::ParityBound(_)
             | ReplayRefusal::UnknownOperation { .. }
             | ReplayRefusal::WrongReplayTarget { .. }
+            | ReplayRefusal::WrongObservedTemporalTarget { .. }
+            | ReplayRefusal::WrongObservedTemporalSource
             | ReplayRefusal::TargetMismatch { .. }
             | ReplayRefusal::MalformedOperationTarget { .. }
             | ReplayRefusal::AmbiguousOperation { .. }
             | ReplayRefusal::FrameIdentity(_)
             | ReplayRefusal::UnknownClause { .. }
+            | ReplayRefusal::MissingFairnessPremise { .. }
+            | ReplayRefusal::ObservedTemporalMismatch { .. }
+            | ReplayRefusal::ObservedTemporalInput { .. }
+            | ReplayRefusal::ObservedTemporalRefusal(_)
             | ReplayRefusal::ClauseIdentity(_)
             | ReplayRefusal::WrongObservation { .. }
             | ReplayRefusal::Admission(_)

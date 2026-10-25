@@ -152,7 +152,8 @@ pub use identity::{
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
-    MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    MappingSite, ModelStep, ObservedTemporalCounterexample, ObservedTemporalKind,
+    ObservedTemporalStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
     UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
@@ -309,7 +310,8 @@ pub use request::{
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
-    InputArmResult, InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason,
+    InputArmResult, InputSettlement, ObservedTemporalParity, ObservedTemporalResult,
+    ObservedTemporalSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason,
     SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
@@ -331,10 +333,10 @@ pub use scalar::{
     ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueClaim, ValueIdentity,
 };
 pub use witness::{
-    CanonicalAssignment, ClaimedChange, DecodeRefusal, EntryFault, FamilyPayload,
-    FrameCounterexample, FrameOperation, MalformedTranscript, NoPayload, QuantityMagnitude,
-    ReplaySource, ValueTextError, Witness, WitnessBinding, WitnessEnvelope, WitnessField,
-    WitnessPacket, WitnessRefusal, WitnessSlot, WitnessValue, WitnessValueType,
+    CanonicalAssignment, ClaimedChange, DecodeRefusal, EntryFault, EnvelopeSource, FamilyPayload,
+    FrameCounterexample, FrameOperation, MalformedTranscript, NoPayload, ObservedTemporalEnvelope,
+    QuantityMagnitude, ReplaySource, ValueTextError, Witness, WitnessBinding, WitnessEnvelope,
+    WitnessField, WitnessPacket, WitnessRefusal, WitnessSlot, WitnessValue, WitnessValueType,
 };
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
