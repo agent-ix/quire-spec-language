@@ -127,10 +127,9 @@ impl ProtocolTarget {
                     ("branch", Enc::text(branch.clone())),
                 ],
             ),
-            Self::Visibility { model } => Enc::tagged(
-                "visibility",
-                vec![("model", Enc::text(model.label()))],
-            ),
+            Self::Visibility { model } => {
+                Enc::tagged("visibility", vec![("model", Enc::text(model.label()))])
+            }
         }
     }
 }
@@ -596,6 +595,26 @@ mod tests {
         assert_eq!(
             bytes(&ProtocolFairness::scheduler(ProtocolTarget::Root)),
             r#"{"granularity":"whole","kind":"weak","origin":"scheduler","target":{"branch":null,"node":null,"type":"thread-target"}}"#
+        );
+    }
+
+    /// FR-228-AC-1: the RA member has one exact canonical target shape and
+    /// is strong, each and memory-derived.
+    #[trace("TC-673")]
+    #[test]
+    fn ra_visibility_member_has_the_specified_wire_form() {
+        let member = ProtocolFairness::visibility(MemoryModelName::Ra);
+        assert_eq!(
+            bytes(&member),
+            r#"{"granularity":"each","kind":"strong","origin":"memory","target":{"model":"ra","type":"visibility"}}"#
+        );
+        assert_eq!(
+            (member.kind(), member.granularity(), member.origin()),
+            (
+                FairnessKind::Strong,
+                FairnessGranularity::Each,
+                FairnessOrigin::Memory
+            )
         );
     }
 

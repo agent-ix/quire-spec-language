@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-228 and FR-227 (TC-673, TC-672): flush fairness under `tso`, its
-//! effect on a liveness clause over a weak `parallel`, and the replay of a
-//! lasso that keeps a store buffer non-empty.
+//! FR-228 and FR-227 (TC-673, TC-672): memory fairness under `tso` and `ra`,
+//! its effect on infinite traces, and replay of unfair lassos.
 //!
 //! `Spin` is the store-and-poll program of QSL-994 over the `litmus` fixture, named `SB`
 //! because the shared case helpers name that protocol: branch `w` has one
@@ -131,6 +130,10 @@ impl Unit {
 
     fn tso(&self) -> Vec<MemorySelection> {
         vec![select("SB::Both", MemoryModelName::Tso)]
+    }
+
+    fn ra(&self) -> Vec<MemorySelection> {
+        vec![select("SB::Both", MemoryModelName::Ra)]
     }
 
     fn check(
@@ -288,6 +291,103 @@ fn reached(system: &ProtocolSystem<'_, Tso>) -> Vec<Reach> {
         at += 1;
     }
     states
+}
+
+/// A reachable RA state and its outgoing transitions.
+type RaReach = (ProtocolState<Ra>, Vec<(ProtocolTransition, usize)>);
+
+/// The reachable states of an RA protocol system, breadth-first.
+fn reached_ra(system: &ProtocolSystem<'_, Ra>) -> Vec<RaReach> {
+    let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
+    let mut states: Vec<RaReach> = Vec::new();
+    for state in system.initial() {
+        let key = system.state_key(&state).expect("a key").0;
+        known.insert(key, states.len());
+        states.push((state, Vec::new()));
+    }
+    let mut at = 0;
+    while at < states.len() {
+        let successors = system
+            .successors(&states[at].0)
+            .expect("expands")
+            .successors;
+        for (transition, next) in successors {
+            let key = system.state_key(&next).expect("a key").0;
+            let index = *known.entry(key).or_insert_with(|| {
+                states.push((next, Vec::new()));
+                states.len() - 1
+            });
+            states[at].1.push((transition, index));
+        }
+        at += 1;
+    }
+    states
+}
+
+/// The path to an RA state with a stale load self-loop, plus that loop's
+/// destination index. Its fresh load is enabled at the same state.
+fn stale_load_lasso(
+    system: &ProtocolSystem<'_, Ra>,
+) -> (
+    Vec<(ProtocolTransition, usize)>,
+    usize,
+    Vec<ProtocolTransition>,
+) {
+    let states = reached_ra(system);
+    let (looped, load) = states
+        .iter()
+        .enumerate()
+        .find_map(|(at, (_, steps))| {
+            steps
+                .iter()
+                .find(|(transition, next)| {
+                    *next == at
+                        && transition.node().is_some_and(|node| node.ends_with("Lx"))
+                        && transition
+                            .memory_choice()
+                            .and_then(|choice| choice.read_depth)
+                            .is_some_and(|depth| depth > 0)
+                })
+                .map(|(transition, _)| (at, transition.clone()))
+        })
+        .expect("a stale load self-loop");
+    let read_depth = |transition: &ProtocolTransition| {
+        transition
+            .memory_choice()
+            .and_then(|choice| choice.read_depth)
+    };
+    assert!(
+        states[looped].1.iter().any(|(transition, _)| {
+            transition.node() == load.node() && read_depth(transition) == Some(0)
+        }),
+        "the mo-last load is also enabled at the loop state"
+    );
+
+    let mut parent: BTreeMap<usize, (usize, ProtocolTransition)> = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::from([0usize]);
+    while let Some(at) = queue.pop_front() {
+        for (transition, next) in &states[at].1 {
+            if *next != 0 && !parent.contains_key(next) {
+                parent.insert(*next, (at, transition.clone()));
+                queue.push_back(*next);
+            }
+        }
+    }
+    let mut stem = Vec::new();
+    let mut at = looped;
+    while at != 0 {
+        let (before, transition) = parent[&at].clone();
+        stem.push((transition, at));
+        at = before;
+    }
+    stem.reverse();
+    stem.push((load, looped));
+    let enabled = states[looped]
+        .1
+        .iter()
+        .map(|(transition, _)| transition.clone())
+        .collect();
+    (stem, looped, enabled)
 }
 
 /// The unflushed lasso over `Spin`: its stem and the index of the state
@@ -510,6 +610,76 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
         panic!("{refusal:?}");
     };
     assert_eq!(**constraint, flush("w"));
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::InvalidRuntimeInput, "invalid-value")
+    );
+}
+
+/// FR-228-AC-1 and FR-227-AC-4 (TC-673, TC-672): an RA clause carries one
+/// strong visibility member. Its stale-load self-loop is refused on replay
+/// because the same thread can load the mo-last message at that state.
+#[trace("TC-673")]
+#[trace("TC-672")]
+#[test]
+fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
+    let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
+    let ra = unit.ra();
+    let system = system!(unit, &ra, Ra::new(4));
+    let (stem, looped, enabled) = stale_load_lasso(&system);
+    let (taken, _) = stem.last().expect("a loop step").clone();
+
+    let full = system
+        .fairness_set(unit.clause().fairness())
+        .expect("the set builds");
+    let visibility: Vec<&ProtocolFairness> = full
+        .iter()
+        .filter(|member| member.origin() == FairnessOrigin::Memory)
+        .collect();
+    assert_eq!(
+        visibility,
+        [&ProtocolFairness::visibility(MemoryModelName::Ra)]
+    );
+    assert_eq!(
+        unfair_member(&full, &enabled, &taken),
+        visibility.first().copied(),
+        "the repeated stale read violates its visibility pair"
+    );
+
+    let states = reached_ra(&system);
+    let prefix: Vec<ModelStep<ProtocolTransition>> = stem
+        .iter()
+        .map(|(transition, at)| ModelStep {
+            reported: system
+                .reported(transition.clone(), &states[*at].0)
+                .expect("the step reports"),
+            post_state: system.state_key(&states[*at].0).expect("a key").1,
+        })
+        .collect();
+    assert_eq!(stem.last().map(|(_, at)| *at), Some(looped));
+    let payload = TemporalCounterexample {
+        initial_state: 0,
+        lasso: Some(Lasso {
+            entry: prefix.len() - 1,
+            terminal_stutter: false,
+        }),
+        prefix,
+        over_binding: Some(core()),
+        fairness: full,
+        kind: CounterexampleKind::Formula,
+        blocked: Vec::new(),
+        refinement: None,
+    };
+    let Err(ReplayRefusal::ModelTrace(refusal)) = unit.replay(&ra, payload) else {
+        panic!("an unfair RA lasso refuses");
+    };
+    let ModelTraceRefusal::UnfairProtocolLasso { constraint } = refusal.as_ref() else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(
+        **constraint,
+        ProtocolFairness::visibility(MemoryModelName::Ra)
+    );
     assert_eq!(
         (refusal.code(), refusal.cause()),
         (Code::InvalidRuntimeInput, "invalid-value")
