@@ -272,8 +272,10 @@ fn minimum_non_resource_budget(text: &str) -> u64 {
 fn choice_partition_charges_once_per_valuation() {
     let three_atoms = choice_with_guards("a and b and c", "not (a and b and c)");
     let one_atom = choice_with_guards("a and a and a", "not (a and a and a)");
-    let three_atom_budget = minimum_non_resource_budget(&three_atoms);
-    let one_atom_budget = minimum_non_resource_budget(&one_atom);
+    check(&three_atoms).expect("the three-atom guards partition");
+    check(&one_atom).expect("the one-atom guards partition");
+    let three_atom_budget = minimum_work_budget(&three_atoms);
+    let one_atom_budget = minimum_work_budget(&one_atom);
     assert_eq!(three_atom_budget - one_atom_budget, 6);
 }
 
