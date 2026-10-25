@@ -44,6 +44,7 @@
 #![forbid(unsafe_code)]
 
 mod admitted;
+mod application;
 mod bounds;
 mod call_replay_context;
 mod call_requirements;
@@ -82,6 +83,11 @@ pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
     AdmittedContext, AdmittedDimension, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal,
     AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
+};
+pub use application::{
+    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
+    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
+    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
@@ -170,6 +176,9 @@ pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCa
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
     settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+};
+pub use model_check::hyper_smt_query::{
+    encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};

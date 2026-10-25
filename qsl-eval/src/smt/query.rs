@@ -97,11 +97,11 @@ impl Atoms<'_, '_> {
     }
 }
 
-fn fault(invariant: &'static str) -> SmtEncodingRefusal {
+pub(super) fn fault(invariant: &'static str) -> SmtEncodingRefusal {
     SmtEncodingRefusal::fault(invariant)
 }
 
-fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
+pub(super) fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
     Refusal::TooLarge {
         measure,
         value,
@@ -111,11 +111,11 @@ fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
     .into()
 }
 
-fn script_bytes(value: u64, limit: u64) -> SmtEncodingRefusal {
+pub(super) fn script_bytes(value: u64, limit: u64) -> SmtEncodingRefusal {
     too_large(Measure::ScriptBytes, value, limit)
 }
 
-fn monitor_constant(position: u64) -> Term {
+pub(super) fn monitor_constant(position: u64) -> Term {
     Term::constant(format!("m{position}"))
 }
 
@@ -125,7 +125,7 @@ fn ended_constant(position: u64) -> Term {
 
 /// The literals of `letter` over `terms`: each atom's term when its bit is
 /// set, its negation otherwise.
-fn letter_term(letter: u64, terms: &[Term]) -> Term {
+pub(super) fn letter_term(letter: u64, terms: &[Term]) -> Term {
     Term::all(terms.iter().enumerate().map(|(index, term)| {
         if letter >> index & 1 == 1 {
             term.clone()
@@ -137,7 +137,7 @@ fn letter_term(letter: u64, terms: &[Term]) -> Term {
 
 /// The printed disjunctions and conjunctions of FR-315 "Canonical printing":
 /// one operand prints as itself and none as the constant.
-fn joined(head: &str, parts: &[String], empty: &str) -> String {
+pub(super) fn joined(head: &str, parts: &[String], empty: &str) -> String {
     match parts {
         [] => empty.to_owned(),
         [only] => only.clone(),
@@ -147,15 +147,15 @@ fn joined(head: &str, parts: &[String], empty: &str) -> String {
 
 /// The printed disjuncts of one disjunction, each equal to an earlier one
 /// printed once, stopping at the first byte past the script limit.
-struct Disjuncts {
-    parts: Vec<String>,
+pub(super) struct Disjuncts {
+    pub(super) parts: Vec<String>,
     seen: HashSet<String>,
     bytes: usize,
     max_bytes: u64,
 }
 
 impl Disjuncts {
-    fn new(max_bytes: u64) -> Self {
+    pub(super) fn new(max_bytes: u64) -> Self {
         Self {
             parts: Vec::new(),
             seen: HashSet::new(),
@@ -164,7 +164,7 @@ impl Disjuncts {
         }
     }
 
-    fn push(&mut self, term: &Term) -> Result<(), SmtEncodingRefusal> {
+    pub(super) fn push(&mut self, term: &Term) -> Result<(), SmtEncodingRefusal> {
         // A construct that cannot fail contributes no term.
         if term.is_truth(false) {
             return Ok(());

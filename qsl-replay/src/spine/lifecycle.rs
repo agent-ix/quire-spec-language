@@ -409,6 +409,10 @@ pub struct CheckedUnit {
 }
 
 impl CheckedUnit {
+    /// Move the checked package into a retained in-process closure.
+    pub(crate) fn into_package(self) -> pkg::CheckedPackage {
+        self.package
+    }
     /// The S4 in-process package.
     pub fn package(&self) -> &pkg::CheckedPackage {
         &self.package
