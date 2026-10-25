@@ -22,16 +22,21 @@ relationships:
 
 QSL SHALL implement a typed replay request, defined in the layer-6 `replay`
 module and part of its public API (ADR-011 §2.1 E9, §6.1; ADR-013 O-26),
-that is exactly the ADR-013 O-25 counterexample packet plus the FR-070
+that is the ADR-013 O-25 counterexample packet plus the FR-070
 envelope's members — the state environment, the `quire.value.accounting/v1`
 limits, the S1-to-S4 stage limits copied from the proving run, and the
-optional object environment below — and nothing else. The type SHALL make it structurally impossible to obtain a
+optional object environment below — and nothing else. For observed temporal
+replay, the request SHALL additionally carry the typed common
+`WitnessEnvelope` and the observed-arm `TemporalCounterexample` payload
+defined by QSpec FR-364. This is a typed request arm, not an untyped
+extension map. The type SHALL make it structurally impossible to obtain a
 recompilation input other than by digest: it SHALL carry a digest-addressed
 byte provision (QSpec FR-323 `byte_provision`, ADR-013 QC-1) and SHALL have
 no field, accessor or constructor argument typed as a filesystem path,
 environment variable name, or search location.
 
-The request selects the item to replay by its replay target: exactly one
+For a function, frame or state-clause replay, the request selects the item by
+exactly one
 QSpec FR-323 replay target member, typed as FR-323 types that member (a
 function's `QualifiedName`, ADR-013 O-11 and the OQ-5 ruling; a frame's
 `{object, operation}`, a `QualifiedName` and an `Identifier`; a state
@@ -52,6 +57,11 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - The digest-addressed byte provision (QSpec FR-323 `byte_provision`): every
   source, definition and domain-package input the replay would recompile,
   each keyed by its declared digest domain and digest.
+- For observed temporal replay, the common `WitnessEnvelope` and QSpec
+  FR-364 `TemporalCounterexample` observed arm, including its `{document}`
+  trace steps, fairness, interval and `trace_position`; its `ReplaySource`
+  SHALL be `Witness`, and every observed document is in the digest-addressed
+  byte provision.
 
 ## Outputs
 
@@ -94,7 +104,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   (authority and identity) and its digest (QSpec STD-150), so the executor
   (FR-098) recompiles a source under exactly the labels the proving run
   used (ADR-013 §7 S-4b).
-- A byte-provision entry SHALL be verified under its declared domain: a
+- The request decoder SHALL verify each byte-provision entry under its declared domain: a
   raw-byte-addressed domain (source and definition documents) against the
   SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
   against the SHA-256 of the document's RFC 8785 bytes, the digest I1 keys
@@ -159,6 +169,38 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - The reader SHALL refuse a request whose encoded size exceeds the
   configured reader bound, and SHALL NOT return a truncated or
   partially-populated request in that case.
+- The observed temporal request arm SHALL carry the common `WitnessEnvelope`
+  whose family payload is the shared typed `TemporalCounterexample` sum
+  (FR-331, FR-128). The sum SHALL contain `Model` and `Observed` variants.
+- The `Model` variant SHALL retain FR-128's existing model payload and typed
+  fields.
+- The `Observed` variant SHALL carry QSpec FR-364's typed observed-arm
+  payload with `trace: "observed"`, `initial_state: null`,
+  `over_binding: null` and document-only steps.
+- The common envelope's trace position SHALL equal the observed payload's
+  `trace_position`; a mismatch SHALL refuse
+  `invalid_runtime_input`/`invalid-value` at
+  `/replay/observed_counterexample/trace_position` before document admission.
+- An observed temporal arm SHALL refuse `ReplaySource::Input` because it
+  carries a typed counterexample envelope, not canonical input assignments,
+  with `invalid_runtime_input`/`invalid-value` at `/replay/source` before
+  document admission.
+- The request decoder SHALL refuse a model payload in the observed arm with
+  `invalid_runtime_input`/`invalid-value` at
+  `/replay/observed_counterexample/trace`, and SHALL refuse the observed arm
+  on a function or frame target with `invalid_runtime_input`/`unknown-member`
+  at `/replay/observed_counterexample`.
+- A missing observed-document digest in the byte provision SHALL refuse at
+  construction with `missing_import`/`missing-selection`, naming the digest
+  record and its `observed_counterexample` member.
+- The request decoder SHALL preserve the observed envelope and payload on a
+  construct → encode → decode round trip.
+- The request decoder SHALL refuse a model variant in an observed request
+  arm.
+- The request decoder SHALL require each observed document digest to name a
+  `sha256-jcs` byte-provision entry.
+- The request decoder SHALL refuse an observed-counterexample arm on a
+  function or frame target.
 - The replay target SHALL hold typed names only (`QualifiedName`,
   `Identifier`); the request's public constructors and decoders SHALL NOT
   accept a bare `&str` or `String` in any replay target position.
@@ -183,12 +225,13 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-071-AC-1 | The request carries exactly the O-26 members, invents none, and a construct → serialize → read round trip preserves the package reference, replay members, byte provision and limits exactly. | Test (TC-185) |
+| FR-071-AC-1 | A function, frame or state-clause request carries exactly its O-26 members; an observed temporal request additionally carries its typed counterexample arm. Construct → encode → decode preserves the applicable package reference, replay members, byte provision and limits. | Test (TC-185) |
 | FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry whose digest domain is outside the closed FR-201 set refuses at decode. | Test (TC-186) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
 | FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction with `missing_import`/`missing-selection`, naming the requested digest record (domain and digest) and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch` carrying the declared digest and the raw bytes' own digest (an entry under a raw-byte domain) or `stale_dependency`/`content-mismatch` (a `sha256-jcs` entry, by its recomputed digest); this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
+| FR-071-AC-8 | An observed temporal request round trip preserves the shared `WitnessEnvelope<TemporalCounterexample>` and its observed payload, including `ReplaySource::Witness`, clause identity, document digests, fairness, interval and trace position; a missing document digest refuses `missing_import`/`missing-selection` naming its digest record, a mismatched clause identity refuses `stale_dependency`/`content-mismatch`, a trace-position mismatch refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace_position`, `ReplaySource::Input` refuses `invalid_runtime_input`/`invalid-value` at `/replay/source`, a model variant refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace`, and a non-state-clause target refuses `invalid_runtime_input`/`unknown-member` at `/replay/observed_counterexample`; each refusal occurs before document admission and returns no partial request. | Test (TC-847) |
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
 | FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |

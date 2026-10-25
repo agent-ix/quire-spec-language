@@ -36,7 +36,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::identity::{ProtocolTransition, ThreadPath};
 use super::memory::MemoryBranch;
-use crate::fairness::{Constraint, Identity, Strength};
+use crate::fairness::{visibility_constraints, Constraint, Identity, Strength, VisibilityPair};
 use crate::simulation::model::encode::Enc;
 
 /// What a protocol fairness constraint names (ADR-027 PA-1).
@@ -81,6 +81,11 @@ pub enum ProtocolTarget {
         /// The branch label.
         branch: String,
     },
+    /// The visibility load class of the release-acquire model.
+    Visibility {
+        /// The memory model whose loaded locations are paired.
+        model: MemoryModelName,
+    },
 }
 
 impl ProtocolTarget {
@@ -122,6 +127,9 @@ impl ProtocolTarget {
                     ("branch", Enc::text(branch.clone())),
                 ],
             ),
+            Self::Visibility { model } => {
+                Enc::tagged("visibility", vec![("model", Enc::text(model.label()))])
+            }
         }
     }
 }
@@ -215,6 +223,16 @@ impl ProtocolFairness {
         )
     }
 
+    /// The strong each-class visibility member for `model` (ADR-025 MF-2).
+    pub fn visibility(model: MemoryModelName) -> Self {
+        Self::new(
+            FairnessKind::Strong,
+            ProtocolTarget::Visibility { model },
+            FairnessGranularity::Each,
+            FairnessOrigin::Memory,
+        )
+    }
+
     /// The member's strength.
     pub const fn kind(&self) -> FairnessKind {
         self.kind
@@ -271,6 +289,7 @@ impl ProtocolFairness {
                     }
                 })
             }
+            ProtocolTarget::Visibility { .. } => None,
             ProtocolTarget::Root | ProtocolTarget::Branch { .. } => {
                 let thread = transition.thread()?;
                 let holds = match (&self.target, thread.steps.last()) {
@@ -454,6 +473,32 @@ pub fn protocol_constraints<E>(
 ) -> Result<Vec<(usize, Constraint)>, E> {
     let mut constraints = Vec::new();
     for (index, member) in fairness.iter().enumerate() {
+        if matches!(
+            member.target(),
+            ProtocolTarget::Visibility {
+                model: MemoryModelName::Ra
+            }
+        ) {
+            let mut pairs = Vec::new();
+            for transition in transitions {
+                let Some(read) = transition.visibility_read() else {
+                    continue;
+                };
+                let identity = identity(transition)?;
+                pairs.push(VisibilityPair {
+                    thread: read.thread.clone(),
+                    location: read.location.clone(),
+                    loads: [identity].into_iter().collect(),
+                    fresh: read.fresh.then_some(identity).into_iter().collect(),
+                });
+            }
+            constraints.extend(
+                visibility_constraints(pairs)
+                    .into_iter()
+                    .map(|constraint| (index, constraint)),
+            );
+            continue;
+        }
         let strength = Strength::from(member.kind());
         let mut classes: BTreeMap<ProtocolClass, Vec<Identity>> = BTreeMap::new();
         if member.granularity() == FairnessGranularity::Whole {
@@ -555,6 +600,27 @@ mod tests {
         assert_eq!(
             bytes(&ProtocolFairness::scheduler(ProtocolTarget::Root)),
             r#"{"granularity":"whole","kind":"weak","origin":"scheduler","target":{"branch":null,"node":null,"type":"thread-target"}}"#
+        );
+    }
+
+    /// FR-228-AC-1: the RA member has one exact canonical target shape and
+    /// is strong, each and memory-derived.
+    #[trace("TC-673")]
+    #[trace("FR-228-AC-1")]
+    #[test]
+    fn ra_visibility_member_has_the_specified_wire_form() {
+        let member = ProtocolFairness::visibility(MemoryModelName::Ra);
+        assert_eq!(
+            bytes(&member),
+            r#"{"granularity":"each","kind":"strong","origin":"memory","target":{"model":"ra","type":"visibility"}}"#
+        );
+        assert_eq!(
+            (member.kind(), member.granularity(), member.origin()),
+            (
+                FairnessKind::Strong,
+                FairnessGranularity::Each,
+                FairnessOrigin::Memory
+            )
         );
     }
 

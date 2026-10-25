@@ -265,7 +265,7 @@ impl Builder<'_> {
 pub(super) fn compile(
     protocol: &ProtocolDeclarationForm,
     resolved: &[ProtocolNodeId],
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Result<Compiled, Vec<(Span, CheckRefusal)>> {
     let mut roots = protocol
         .declarations
@@ -346,8 +346,7 @@ pub(super) fn compile(
     }
 
     let tree = CheckedControlTree { controls };
-    let mut refusals = cycles(protocol, &tree, &builder.edges);
-    refusals.extend(progress(protocol, &tree, profile));
+    let refusals = cycles(protocol, &tree, &builder.edges);
     if refusals.is_empty() {
         Ok(Compiled {
             tree,
@@ -512,10 +511,11 @@ fn cycles(
 
 /// One `declaration-form` refusal per `repeat` whose body does not
 /// necessarily step (QSpec FR-464 "Progress").
-fn progress(
+pub(super) fn progress(
     protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
     profile: Option<&str>,
+    nested_false_feasible: &BTreeMap<ProtocolNodeId, bool>,
 ) -> Vec<(Span, CheckRefusal)> {
     // Children follow their parent in tree order, so a reverse walk sees
     // every child before its parent.
@@ -533,7 +533,17 @@ fn progress(
         let necessarily = match control.kind {
             K::Send | K::Receive | K::Attempt | K::Effect | K::Event | K::Commit | K::Fence => true,
             K::Await | K::Parallel => true,
-            K::Check | K::Repeat | K::Finish | K::CompensateTemplate => false,
+            K::Check | K::Finish | K::CompensateTemplate => false,
+            K::Repeat => {
+                !nested_false_feasible
+                    .get(&control.node)
+                    .copied()
+                    .unwrap_or(false)
+                    && control
+                        .children
+                        .iter()
+                        .any(|child| steps.get(child).copied().unwrap_or(false))
+            }
             K::Branch | K::Case => child(0),
             K::Sequence => control
                 .children

@@ -142,7 +142,8 @@ pub struct GraphUndefined {
     pub cause: UndefinedCause,
 }
 
-/// FR-168's decision for one state-graph item instance.
+/// FR-168's decision for one state-graph item instance, or its item-level
+/// `NoInstance` marker when FR-125 derives no instances.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StateGraphOutcome {
     /// A witness for every initial state, in initial-state order, on a run
@@ -203,9 +204,13 @@ pub enum StateGraphOutcome {
     },
     /// The subject has no initial state.
     NoInitialState,
+    /// FR-125 produced no instances for the item. This is an item-level
+    /// settlement marker, not a decision for a state-graph instance.
+    NoInstance,
 }
 
-/// The decision for one instance of a state-graph item.
+/// The result for one state-graph item instance, or the item-level
+/// `NoInstance` marker when the item has no instances.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateGraphInstanceOutcome {
     /// The object the instance binds the claim's `over` parameter to; `None`

@@ -12,8 +12,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ClauseKind, StateClauseKind, TemporalNodeForm};
+use qsl_forms::{ActivationForm, ClauseKind, StateClauseKind, TemporalNodeForm};
 use quire_exact::ValueType;
+use quire_semantic_value::location::Location;
 
 use super::CheckedTemporalClause;
 use crate::check::check::{bind_parameters, Scope, StateContext, Typer};
@@ -43,6 +44,29 @@ pub(crate) struct TypedCondition {
     pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
+/// The typed Boolean conditions of one clause: its `holds` atoms' and, for an
+/// `on each ... when (g)` activation, the guard.
+#[derive(Debug, Default)]
+pub(crate) struct TypedConditions {
+    /// Each `holds` atom's condition, by its formula node's index.
+    pub(crate) holds: BTreeMap<usize, TypedCondition>,
+    /// The `when` guard, typed over the `over` parameter at slot 0 and the
+    /// trigger binder at slot 1.
+    pub(crate) guard: Option<TypedCondition>,
+}
+
+impl TypedConditions {
+    /// Every condition, the guard first.
+    pub(crate) fn all(&self) -> impl Iterator<Item = &TypedCondition> {
+        self.guard.iter().chain(self.holds.values())
+    }
+
+    /// Every condition, mutably.
+    pub(crate) fn all_mut(&mut self) -> impl Iterator<Item = &mut TypedCondition> {
+        self.guard.iter_mut().chain(self.holds.values_mut())
+    }
+}
+
 /// The typed condition of every `holds` atom of the clause at `clause`
 /// (its index among the unit's temporal clauses), by its formula node's
 /// index, typed over the clause's `over` parameter. `input.nodes_used` is
@@ -54,28 +78,70 @@ pub(crate) fn check_conditions(
     checked: &CheckedTemporalClause,
     input: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, Scope>,
-) -> Result<(BTreeMap<usize, TypedCondition>, u64), CheckRefusal> {
+) -> Result<(TypedConditions, u64), CheckRefusal> {
     let mut nodes = input.nodes_used;
     let bound = [checked.over().clone()];
-    let mut conditions = BTreeMap::new();
+    let mut conditions = TypedConditions::default();
     let named = crate::check::check::NamedScope::of(input.models, input.scope);
+    // FR-337: the activation precedes the body, so its guard is typed first
+    // and a defect in both refuses at the guard. The guard reads the `over`
+    // parameter at slot 0 and the trigger binder at slot 1.
+    let guard = match (&form.activation, checked.trigger()) {
+        (
+            ActivationForm::Each {
+                when: Some(when), ..
+            },
+            Some((name, value_type)),
+        ) => {
+            let bound = [
+                checked.over().clone(),
+                (name.to_owned(), value_type.clone()),
+            ];
+            Some((when, bound, temporal_location(clause, TemporalSite::Guard)))
+        }
+        _ => None,
+    };
+    if let Some((when, bound, location)) = guard {
+        conditions.guard = Some(type_condition(
+            when, &bound, &location, input, &named, &mut nodes, cx,
+        )?);
+    }
     for (id, node) in form.formula.iter() {
         let TemporalNodeForm::Holds { condition, .. } = node else {
             continue;
         };
         let location = temporal_location(clause, TemporalSite::Condition(id.index()));
+        let typed = type_condition(condition, &bound, &location, input, &named, &mut nodes, cx)?;
+        conditions.holds.insert(id.index(), typed);
+    }
+    Ok((conditions, nodes))
+}
+
+/// Type `condition` as a Boolean over `bound`, bound from slot 0, at
+/// `location`, and check its definedness over the current-state observation.
+fn type_condition(
+    condition: &qsl_forms::ExpressionForm,
+    bound: &[(String, ValueType)],
+    location: &Location,
+    input: &ClauseDeclarations<'_>,
+    named: &crate::check::check::NamedScope,
+    nodes: &mut u64,
+    cx: &mut CheckContext<'_, Scope>,
+) -> Result<TypedCondition, CheckRefusal> {
+    let location = location.clone();
+    {
         let mut typer = Typer::new(
             input.scope,
             input.signatures,
             input.checking_limits,
-            &mut nodes,
+            nodes,
             ClauseKind::Invariant,
         )
         .with_cancel(input.cancel)
         .with_context(cx.reborrow(input.scope))
-        // FR-391: a `holds` atom is a population position.
+        // FR-391: a `holds` atom and a guard are population positions.
         .with_named_populations(named.clone());
-        bind_parameters(&mut typer, &bound, &location)?;
+        bind_parameters(&mut typer, bound, &location)?;
         typer.enter_state_clause(StateContext {
             parent_projections: BTreeMap::new(),
             kind: StateClauseKind::Invariant,
@@ -101,15 +167,11 @@ pub(crate) fn check_conditions(
         )
         .with_observations(&observations)
         .check(body.root())?;
-        conditions.insert(
-            id.index(),
-            TypedCondition {
-                body,
-                slots,
-                slot_names,
-                formed_units,
-            },
-        );
+        Ok(TypedCondition {
+            body,
+            slots,
+            slot_names,
+            formed_units,
+        })
     }
-    Ok((conditions, nodes))
 }

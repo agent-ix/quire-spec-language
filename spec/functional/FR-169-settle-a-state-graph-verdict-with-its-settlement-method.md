@@ -47,7 +47,14 @@ verdicts and settlement (ADR-029 CB-2).
 An item whose instancing produces no instances (FR-125) SHALL still produce
 one terminal record for the item, settled as `NoInstance` by FR-127's V-6
 row. It produces no per-instance state-graph outcome, explores no state,
-and is never `proved`.
+and is never `proved`. EN-1 SHALL represent this item-level result with the
+`StateGraphOutcome::NoInstance` marker in that item's run result; the marker
+is not a per-instance decision and carries no evidence. The FR-169
+settlement map SHALL map the marker directly to that one item terminal
+record without checking a certificate or invoking replay. When a request
+contains other items that do have instances (or requests deadlock freedom),
+their shared exploration proceeds independently; the no-instance item
+itself contributes no predicate labels or state exploration.
 
 ## Use case
 
@@ -131,10 +138,11 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
 its QSpec FR-243 basis, its O-16 category and its settlement method.
 
 `qsl-replay` SHALL hold two settlement entries over the one map below,
-beside `check_state_graph`: `settle_state_graph`, which settles one instance
-of a state-graph item, and `settle_existential`, which settles one instance
-of an HP-5 item from FR-181's outcome. Each entry takes the instance's
-outcome, the run's method, seed and limits (FR-166), the replay request,
+beside `check_state_graph`: `settle_state_graph`, which settles one state-
+graph item result (an instance outcome or its item-level `NoInstance`
+marker), and `settle_existential`, which settles one instance of an HP-5
+item from FR-181's outcome. Each entry takes the item's outcome, the run's
+method, seed and limits (FR-166), the replay request,
 FR-276's `Cancel` handle and FR-170's replay of the instance's evidence, and
 returns the instance's terminal record. `settle_state_graph` checks a
 certificate with `check_state_graph`; `settle_existential` checks the
@@ -296,7 +304,7 @@ item.
 | FR-169-AC-13 | HP-5 settlement through `settle_existential`. FR-181-AC-1's `Witnessed` outcome with `witness_samples` 0, whose lassos replay and whose FR-163-AC-1 HP-5 certificate `check_product_closure` accepts, settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Explored, Explored]}, certification: Certified}`, success, one `Explored` for each of the vault's two initial snapshots `(h, l) = (0, 0)` and `(1, 0)`. The same outcome settles `inconclusive`, `CertificateRejected{SuccessorMissing, at}` with one member of that certificate removed, `at` the member whose successor is missing; `inconclusive`, `StaleDependency{requested, recompiled}` with its `package_id` replaced by another package's, `requested` the certificate's; and `incomplete`, `LimitReached`, naming `max_states` and its value, when checked with `max_states` 1. None of these settles `proved`. With the last step of one witness's loop removed, its replay refuses as FR-128 refuses a loop that does not close and the item settles `inconclusive`, `ReplayRefused`. FR-181-AC-2's `Trapped` outcome settles `refuted`, `closed-scope`, after its product trap replays. | Test (TC-1198) |
 | FR-169-AC-14 | Malformed certificates, each rejected `Malformed` before any successor is recomputed and settling `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`: AC-9's `ReachesTwo` certificate with its first two closure entries swapped (at the `ModelState` of the entry that is not greater than the one before it); with one closure entry duplicated (at the duplicate); with one closure entry's domain replaced by `package-fingerprint` (at that `ModelState`, in the `package-fingerprint` domain); with a rank entry whose index is the closure's length (at `Entry { index }`, that length); with two rank entries in descending index order (at the `ModelState` of the second entry's closure state); and the sequenced `InOneWay` certificate with one count set to 3 (at the `ModelState` of that entry's closure state). Each rejection's `at` is written in QSpec FR-331's State or State-graph entry form, the entry index as a `U64String`. | Test (TC-1197) |
 | FR-169-AC-15 | A certificate holding the other form's list is rejected `Malformed` before any successor is recomputed and settles `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`: AC-9's `ReachesTwo` certificate with the `counts` entry `(0, 1, 0)` added, at the `ModelState` of closure state 0; the sequenced `InOneWay` certificate of AC-9 with the `ranks` entry `(0, 0)` added, at the `ModelState` of closure state 0; `ReachesTwo`'s certificate with the `counts` entry `(9, 1, 0)` added, its index naming no state of the 9-state closure, at `Entry { index: 9 }`. AC-9's `ReachesTwo` and sequenced `InOneWay` certificates as the engine returns them, with an empty list of the other form, are accepted. | Test (TC-644) |
-| FR-169-AC-16 | A state-graph claim with no instances under FR-125 reports `NoInstance` before exploring any state and settles `inconclusive`, `Inconclusive(NoInstance)`, never `proved`; a claim with one or more instances proceeds through the state-graph outcome map. | Test (TC-594) |
+| FR-169-AC-16 | A state-graph claim with no instances under FR-125 produces one item-level `NoInstance` marker (not a per-instance outcome), contributes no predicate labels, and settles directly as one terminal record `inconclusive`, `Inconclusive(NoInstance)`, never `proved`, without certificate checking or replay; when it is the only requested work, no state is explored. A claim with one or more instances proceeds through the state-graph outcome map. | Test (TC-594) |
 
 ## Dependencies
 

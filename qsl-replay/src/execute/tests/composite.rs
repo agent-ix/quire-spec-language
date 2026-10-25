@@ -196,6 +196,7 @@ fn assert_reproduced(result: Result<ReplayResult, ReplayRefusal>) -> ReplayResul
         ReplayResult::Input(arm) => {
             assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
         }
+        ReplayResult::ObservedTemporal(_) => panic!("composite replay returned a temporal arm"),
     }
     assert_eq!(result.category(), Category::Violation);
     result

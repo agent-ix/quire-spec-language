@@ -22,19 +22,17 @@
 //! parameter's name, each formula node's span, each fairness constraint's
 //! span, and each `holds` condition's own expression tree.
 
-use std::collections::BTreeMap;
-
 use quire_exact::{Identifier, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LawRole, MemberTerm, NodeTag, Operation,
+    Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm, NodeTag, Operation,
     OperationLaw, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
-use crate::check::temporal_clause::condition::TypedCondition;
+use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
     BinaryTemporal, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
     UnaryTemporal,
@@ -51,6 +49,10 @@ pub(crate) enum TemporalSite {
     Claim,
     /// The `over` parameter's name.
     Over,
+    /// The `on each` trigger binder's name.
+    Trigger,
+    /// The `on each` activation's `when` guard: its expression tree.
+    Guard,
     /// The formula node at this arena index: its span.
     Node(usize),
     /// The condition of the `holds` atom at this formula arena index: its
@@ -67,6 +69,8 @@ pub(crate) fn temporal_site(clause: usize, site: TemporalSite) -> String {
     match site {
         TemporalSite::Claim => format!("temporal {clause}"),
         TemporalSite::Over => format!("temporal {clause} over"),
+        TemporalSite::Trigger => format!("temporal {clause} trigger"),
+        TemporalSite::Guard => format!("temporal {clause} guard"),
         TemporalSite::Node(node) => format!("temporal {clause} node {node}"),
         TemporalSite::Condition(node) => format!("temporal {clause} holds {node}"),
         TemporalSite::Fairness(index) => format!("temporal {clause} fair {index}"),
@@ -86,8 +90,9 @@ pub(crate) struct TemporalClauseInput<'a> {
     pub(crate) index: usize,
     /// The checked clause.
     pub(crate) clause: &'a CheckedTemporalClause,
-    /// Each `holds` atom's typed condition, by its formula node's index.
-    pub(crate) conditions: &'a BTreeMap<usize, TypedCondition>,
+    /// Each `holds` atom's typed condition, by its formula node's index, and
+    /// the activation's typed guard.
+    pub(crate) conditions: &'a TypedConditions,
 }
 
 /// A lowered temporal clause's keys.
@@ -166,7 +171,41 @@ impl Lowering<'_> {
             role: LawRole::TemporalProfile,
             definition: clause.profile().definition(),
         };
-        let kind = self.text_literal("origin", &claim)?;
+        let mut activation = Vec::new();
+        match clause.trigger() {
+            None => {
+                let kind = self.text_literal("origin", &claim)?;
+                activation.push(GroupMember::Binding(Binding::new("kind", kind)));
+            }
+            Some((trigger_name, _)) => {
+                // FR-337 "`on each` activation at S4": the trigger is the
+                // binder's own level-1 parameter node, typed as `over` is.
+                let kind = self.text_literal("each", &claim)?;
+                activation.push(GroupMember::Binding(Binding::new("kind", kind)));
+                let trigger_at = at(TemporalSite::Trigger);
+                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
+                self.record(over_type, OccurrenceRole::Type, trigger_at);
+                activation.push(GroupMember::Binding(Binding::new(
+                    "trigger",
+                    LeafTerm::reference(trigger),
+                )));
+                if let Some(guard) = &input.conditions.guard {
+                    let mut binders = Binders::new(
+                        &guard.slot_names,
+                        &[
+                            scope[0],
+                            Binder {
+                                slot: 1,
+                                parameter: trigger,
+                                semantic_type: over_type,
+                            },
+                        ],
+                    );
+                    let term = self.expression(guard.body.root(), &mut binders)?;
+                    activation.push(GroupMember::Binding(Binding::new("guard", term)));
+                }
+            }
+        }
         let clock = self.text_literal(clause.clock(), &claim)?;
         // QSpec FR-370: over, clock, activation, captures, fairness and
         // formula, in that order. An `on origin` activation binds `kind`
@@ -187,9 +226,7 @@ impl Lowering<'_> {
                 vec![
                     MemberTerm::reference(over),
                     MemberTerm::Leaf(clock),
-                    MemberTerm::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
-                        "kind", kind,
-                    ))])),
+                    MemberTerm::Group(GroupTerm::new(activation)),
                     MemberTerm::Group(GroupTerm::new(Vec::new())),
                     MemberTerm::Group(GroupTerm::references(fairness)),
                     MemberTerm::reference(formula),
@@ -226,6 +263,7 @@ impl Lowering<'_> {
                 FormulaNode::Holds { .. } => {
                     let condition = input
                         .conditions
+                        .holds
                         .get(&index)
                         .ok_or_else(|| stage_fault(&location, "holds-condition-typed"))?;
                     let mut binders = Binders::new(&condition.slot_names, scope);
