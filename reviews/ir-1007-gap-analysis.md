@@ -36,3 +36,14 @@ Plan completion: not assessed. Checked the FR-485 acceptance criteria against th
 ## Coverage
 
 All eight FR-485 ACs were compared to production code and tagged tests. AC-6 remains insufficiently evidenced. No plan selected. Plan completion: not assessed. The full-root quoin matrix did not complete and was stopped after roughly two minutes of no output; static tags were inspected directly.
+
+## Dispositions
+
+Round 1 rechecked PR #1483 at `6e2219d54ce3987138a8f81559f5d87262d8acfd` against merge base `66212ce5e378dcd34f2ae61996ba2cb8723a5496`. The rebased PR diff contains the same facade scope plus these test fixes; unrelated main-branch changes are not counted as this PR. The reported focused application suite passed 10/10; this disposition independently inspected the exact test code but did not rerun a build while leaf PR #6 remains unmerged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The test derives `own_location` and `imported_location` from their declaring checked graphs, asserts they differ, and compares each cancellation and root work-denial result to the corresponding exact location with zero admitted charges. |
+| FND-002 | fixed | The yielding generated body counts Start and Again separately; the test drops a Runnable after Start, asserts Again remains zero, then runs a fresh session to prove Again is observable. |
+
+Current disposition verdict: **PASS** for the two original gap findings. No new defect was found in the affected test diff.
