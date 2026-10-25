@@ -547,14 +547,8 @@ fn lockstep(
         executed,
     };
     let mut meter = Meter::new(replay.meter).with_cancel(replay.cancel.clone());
-    let outcome = evaluate_tuple(
-        replay.clause,
-        &components,
-        &mut letters,
-        &mut meter,
-        Some(replay.cancel),
-    )
-    .map_err(|_| fault("the-evaluator-reads-the-lasso"))?;
+    let outcome = evaluate_tuple(replay.clause, &components, &mut letters, &mut meter)
+        .map_err(|_| fault("the-evaluator-reads-the-lasso"))?;
     Ok(match outcome {
         TemporalOutcome::Violated { at } => ModelTraceSettlement::Reproduced {
             value: ModelTraceValue::Truth(false),
