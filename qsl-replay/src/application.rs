@@ -902,17 +902,14 @@ mod tests {
             .body
             .location()
             .clone();
-        let imported_package = handle
+        let (imported_id, imported_package) = handle
             .package
             .dependencies()
-            .values()
+            .iter()
             .next()
             .expect("retained checked dependency");
         let imported = handle
-            .lookup_callable(
-                imported_package.package_id().record(),
-                wire(imported_package, "imported"),
-            )
+            .lookup_callable(imported_id.record(), wire(imported_package, "imported"))
             .expect("imported function");
         let imported_location = imported_package
             .graph()
