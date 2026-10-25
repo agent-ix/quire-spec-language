@@ -1316,17 +1316,14 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
-        let complete_identity = crate::value::definition::DefinitionLock::pinned()
-            .entry(crate::value::definition::CatalogRole::Root)
-            .identity;
         let complete_value = self
             .function_selections
             .values()
-            .any(|selection| selection.identity == complete_identity)
+            .any(state_clause::is_complete_value)
             || self
                 .state_clauses
                 .iter()
-                .any(|clause| clause.selection.identity == complete_identity);
+                .any(|clause| state_clause::is_complete_value(&clause.selection));
         // Model intake currently admits only `quire.model.complete/v1`.
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
@@ -1349,12 +1346,27 @@ impl PackageDeclarations {
         .with_known_populations(refinement::population_names(&self.models))
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
+        .with_model_selections(
+            self.models
+                .iter()
+                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
+                .collect(),
+        )
         .with_declared_units(&self.units)
         .with_protocols(
             self.protocols
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
+        let model_selected = crate::value::definition::DefinitionLock::pinned()
+            .closure(&self.header_layers)
+            .contains(&crate::value::layer::HeaderLayer::ModelComplete);
+        let model_function_bodies: Vec<bool> = self
+            .functions
+            .iter()
+            .map(|function| model_selected && layer::body_needs_model_family(&function.body))
+            .collect();
+        let model_scope = check::NamedScope::of(&self.models, &scope);
         let symmetric_objects = self
             .models
             .iter()
@@ -1737,7 +1749,12 @@ impl PackageDeclarations {
                 complete_value: self
                     .function_selections
                     .get(&index)
-                    .is_some_and(|selection| selection.identity == complete_identity),
+                    .is_some_and(state_clause::is_complete_value),
+                model_scope: model_function_bodies
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false)
+                    .then(|| model_scope.clone()),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -2460,8 +2477,12 @@ impl PackageDeclarations {
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_controls::check(protocol, &control_declarations, &mut control_cx)
-                    {
+                    match protocol_controls::check(
+                        protocol,
+                        &self.alias_names,
+                        &control_declarations,
+                        &mut control_cx,
+                    ) {
                         Ok((channels, used)) => {
                             checked.channels = channels;
                             checked.owners = protocol_clause::owners(protocol, &checked);
