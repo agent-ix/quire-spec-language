@@ -765,8 +765,9 @@ fn a_non_model_receiver_keeps_its_field_read_refusal() {
     }
 }
 
-/// A bare `r.f` over a `Reference` in a function body is not a field read of
-/// the object, and keeps its `Value`-family refusal at the form.
+/// An uncalled function's bare `r.f` over a `Reference` is not a
+/// model-context helper, and keeps its `Value`-family refusal at the form.
+#[trace("TC-1031", "FR-125-AC-17")]
 #[test]
 fn a_bare_field_read_in_a_function_body_keeps_its_refusal() {
     assert_old_field_refusal(

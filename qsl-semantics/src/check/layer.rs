@@ -192,6 +192,23 @@ pub(crate) fn body_needs_model_family(body: &Expression) -> bool {
     false
 }
 
+/// The unqualified function names called by a value expression. Model-family
+/// derivation uses these edges from model-context roots to distinguish their
+/// helpers from unrelated top-level functions.
+pub(crate) fn called_functions(body: &Expression) -> Vec<String> {
+    let mut calls = Vec::new();
+    let mut pending = vec![body.root()];
+    while let Some(node) = pending.pop() {
+        if let ExprNode::Call { name, .. } = node.node() {
+            if name.segments.len() == 1 {
+                calls.push(name.name.clone());
+            }
+        }
+        pending.extend(node.children());
+    }
+    calls
+}
+
 /// Visit the nodes of `body` in source order with the span each is written
 /// at, `whole` for a node with none, until `visit` returns `Some`.
 pub(super) fn visit_located(
