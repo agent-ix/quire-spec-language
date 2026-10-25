@@ -15,9 +15,9 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::simulation::protocol::{
     binder_root, explore_protocol, Access, BlockedThread, Chosen, Disposition, FootprintStep,
-    GatedStep, MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem,
-    ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc, ScComponent, SendOutcome, SharedCell,
-    StepKind, ThreadPath, WaitCause, Written,
+    GatedStep, MemoryBranch, MemoryModel, MemoryStep, ProtocolFairness, ProtocolRefusal,
+    ProtocolState, ProtocolSystem, ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc,
+    ScComponent, SendOutcome, SharedCell, StepKind, ThreadPath, WaitCause, Written,
 };
 use qsl_eval::simulation::{
     Footprint, Limits, Location, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
@@ -37,7 +37,6 @@ use qsl_route::deadlock::{protocol_deadlock_freedom_items, ProtocolTemporalItem}
 use qsl_semantics::model::observation::DocumentRef;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::Cancel;
-use quire_semantic_value::fairness::FairnessConstraint;
 use serde_json::{json, Value as Json};
 
 use crate::counter::Letters;
@@ -1405,7 +1404,7 @@ impl MemoryModel for Interleaving {
         Cow::Owned(model.clone())
     }
 
-    fn fairness(&self) -> Vec<FairnessConstraint> {
+    fn fairness(&self, _branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
         Vec::new()
     }
 

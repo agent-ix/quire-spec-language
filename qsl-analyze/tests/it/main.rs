@@ -71,6 +71,7 @@ mod statistical_model;
 mod statistical_witness_replay;
 mod strong_fairness;
 mod strong_hint;
+mod tso_fairness;
 mod units;
 mod universe_obligation;
 mod weak_memory;

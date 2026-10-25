@@ -1137,7 +1137,7 @@ fn a_budget_or_a_cancellation_stops_the_build() {
             ..defaults
         }),
         ProductStop::Limit {
-            limit: ModelCheckLimit::MaxStates,
+            limit: ModelCheckLimit::ExactProbMaxStates,
             value: 5
         }
     );
@@ -1150,7 +1150,7 @@ fn a_budget_or_a_cancellation_stops_the_build() {
             ..defaults
         }),
         ProductStop::Limit {
-            limit: ModelCheckLimit::MaxTransitions,
+            limit: ModelCheckLimit::ExactProbMaxTransitions,
             value: 3
         }
     );
@@ -1160,9 +1160,40 @@ fn a_budget_or_a_cancellation_stops_the_build() {
             ..defaults
         }),
         ProductStop::Limit {
-            limit: ModelCheckLimit::MaxAutomatonStates,
+            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
             value: 2
         }
+    );
+    let setting_of = |limits: ModelCheckLimits| match stopped(limits) {
+        ProductStop::Limit { limit, value } => (limit.setting(), value),
+        other => panic!("expected a limit stop: {other:?}"),
+    };
+    assert_eq!(
+        setting_of(ModelCheckLimits {
+            limits: Limits {
+                max_states: 5,
+                ..defaults.limits
+            },
+            ..defaults
+        }),
+        ("exact_prob.max_states", 5)
+    );
+    assert_eq!(
+        setting_of(ModelCheckLimits {
+            limits: Limits {
+                max_transitions: 3,
+                ..defaults.limits
+            },
+            ..defaults
+        }),
+        ("exact_prob.max_transitions", 3)
+    );
+    assert_eq!(
+        setting_of(ModelCheckLimits {
+            max_automaton_states: 2,
+            ..defaults
+        }),
+        ("exact_prob.max_automaton_states", 2)
     );
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
@@ -1484,14 +1515,14 @@ fn a_budget_equal_to_the_product_size_completes() {
     assert!(matches!(
         ran(with(states - 1, edges)),
         Err(ProductRefusal::Stopped(ProductStop::Limit {
-            limit: ModelCheckLimit::MaxStates,
+            limit: ModelCheckLimit::ExactProbMaxStates,
             ..
         }))
     ));
     assert!(matches!(
         ran(with(states, edges - 1)),
         Err(ProductRefusal::Stopped(ProductStop::Limit {
-            limit: ModelCheckLimit::MaxTransitions,
+            limit: ModelCheckLimit::ExactProbMaxTransitions,
             ..
         }))
     ));

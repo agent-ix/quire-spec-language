@@ -36,7 +36,7 @@ use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
-    FieldInitializer, PopulationForm,
+    FieldInitializer, NameForm, PopulationForm,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
@@ -114,6 +114,18 @@ fn int_type(low: Integer, high: Integer, location: &Location) -> Result<ValueTyp
 /// "Resolution"): ambiguous, naming the alias, which the model selection and
 /// the enum both declare. Neither declaration is a position of the checked
 /// tree, so the one locus is the name.
+
+fn qualified_name_refusal(refusal: CheckRefusal, name: &NameForm) -> CheckRefusal {
+    if name.is_qualified() && matches!(refusal.cause, CheckCause::MissingName(_)) {
+        CheckRefusal {
+            location: refusal.location,
+            cause: CheckCause::MissingQualifiedName(name.clone()),
+        }
+    } else {
+        refusal
+    }
+}
+
 fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
     let alias = name.split("::").next().unwrap_or(name);
     refuse(
@@ -948,7 +960,11 @@ impl<'a> Typer<'a> {
                 let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {
                     return Err(CheckRefusal {
                         location,
-                        cause: CheckCause::MissingName(quantity.unit.name.clone()),
+                        cause: if quantity.unit.is_qualified() {
+                            CheckCause::MissingQualifiedName(quantity.unit.clone())
+                        } else {
+                            CheckCause::MissingName(quantity.unit.name.clone())
+                        },
                     });
                 };
                 node(
@@ -963,9 +979,9 @@ impl<'a> Typer<'a> {
                 if self
                     .named
                     .as_ref()
-                    .is_some_and(|named| named.is_ambiguous(name)) =>
+                    .is_some_and(|named| named.is_ambiguous(&name.name)) =>
             {
-                return Err(ambiguous_alias(name, &location));
+                return Err(ambiguous_alias(&name.name, &location));
             }
             // FR-391: in a population position a population is no value;
             // anywhere else outside a refinement `M::P` names nothing.
@@ -975,23 +991,25 @@ impl<'a> Typer<'a> {
                         .scope
                         .known_populations
                         .iter()
-                        .any(|known| known == name) =>
+                        .any(|known| known == &name.name) =>
             {
                 return Err(if self.named.is_some() {
                     CheckRefusal::ill_typed(&location, IllTypedCause::OperatorIneligible)
                 } else {
-                    missing_segment(name, &location)
+                    missing_segment(&name.name, &location)
                 });
             }
-            ExprNode::Name(name) if self.population_named(name).is_some() => {
-                self.population_objects(name, &location)?
+            ExprNode::Name(name) if self.population_named(&name.name).is_some() => {
+                self.population_objects(&name.name, &location)?
             }
             ExprNode::Name(name) => {
-                let resolved = match resolve_target(self, name, &location, || Ok(())) {
+                let resolved = match resolve_target(self, &name.name, &location, || Ok(())) {
                     Ok(ResolvedTarget::UnionMember(member)) => member
                         .admit_shape(None, &location)
                         .map(|()| member.finish(Vec::new(), &location)),
-                    Ok(ResolvedTarget::Value(())) => self.name(name, hint.as_deref(), &location),
+                    Ok(ResolvedTarget::Value(())) => {
+                        self.name(&name.name, hint.as_deref(), &location)
+                    }
                     Err(refusal) => Err(refusal),
                 };
                 // FR-391 "Resolution": in a population position an `M::X`
@@ -1000,14 +1018,15 @@ impl<'a> Typer<'a> {
                 let under_alias = self
                     .named
                     .as_ref()
-                    .is_some_and(|named| named.is_under_alias(name));
+                    .is_some_and(|named| named.is_under_alias(&name.name));
                 match resolved {
                     Err(refusal)
                         if under_alias && matches!(refusal.cause, CheckCause::MissingName(_)) =>
                     {
-                        return Err(missing_segment(name, &location));
+                        return Err(missing_segment(&name.name, &location));
                     }
-                    resolved => resolved?,
+                    Err(refusal) => return Err(qualified_name_refusal(refusal, name)),
+                    Ok(node) => node,
                 }
             }
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
@@ -1195,13 +1214,15 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
-                if let Some(constructor) = NativeConstructor::named(name) {
-                    self.native_literal(constructor, name, expression, arguments, &location)?
+                if let Some(constructor) = NativeConstructor::named(&name.name) {
+                    self.native_literal(constructor, &name.name, expression, arguments, &location)?
                 } else {
                     let arity = arguments.len();
-                    let application = match resolve_target(self, name, &location, || {
-                        Application::resolve(self, name, arity, &location)
-                    })? {
+                    let application = match resolve_target(self, &name.name, &location, || {
+                        Application::resolve(self, &name.name, arity, &location)
+                    })
+                    .map_err(|refusal| qualified_name_refusal(refusal, name))?
+                    {
                         ResolvedTarget::UnionMember(member) => {
                             member.admit_shape(Some(arity), &location)?;
                             Callee::Union(member)
@@ -1220,7 +1241,9 @@ impl<'a> Typer<'a> {
                 }
             }
             ExprNode::Record { name, fields } => {
-                let (key, declared) = self.record_declaration(name, &location)?;
+                let (key, declared) = self
+                    .record_declaration(&name.name, &location)
+                    .map_err(|refusal| qualified_name_refusal(refusal, name))?;
                 return Self::record_step(
                     Box::new(RecordFrame {
                         record: expression,
@@ -2731,12 +2754,12 @@ impl<'a> Typer<'a> {
         let (Some(named), ExprNode::Name(name)) = (&self.named, expression.node()) else {
             return Ok(None);
         };
-        if named.is_ambiguous(name) {
-            return Err(ambiguous_alias(name, location));
+        if named.is_ambiguous(&name.name) {
+            return Err(ambiguous_alias(&name.name, location));
         }
-        match named.named(name) {
+        match named.named(&name.name) {
             Some(population) => Ok(Some(population.clone())),
-            None if named.is_under_alias(name) => Err(missing_segment(name, location)),
+            None if named.is_under_alias(&name.name) => Err(missing_segment(&name.name, location)),
             None => Ok(None),
         }
     }

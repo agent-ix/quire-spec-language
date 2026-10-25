@@ -795,7 +795,9 @@ impl ProtocolReferenceCause {
 pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
     use super::type_form::TypeFormFault as F;
     match fault {
-        F::MissingName(_) => (Code::MissingDeclaration, "missing-name"),
+        F::MissingName(_) | F::MissingQualifiedName(_) => {
+            (Code::MissingDeclaration, "missing-name")
+        }
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
         F::Malformed
         | F::EmptyInterval
@@ -1076,6 +1078,13 @@ pub enum TemporalCause {
         /// The alias name's span.
         span: Span,
     },
+    /// FR-230: a `time` declaration names more than one semantic model node.
+    AmbiguousTimedModel {
+        /// The alias as written.
+        name: String,
+        /// The alias name's span.
+        span: Span,
+    },
     /// FR-230: `urgent when` has no timed model to bind its predicate.
     UrgencyWithoutTimeSource {
         /// The urgency declaration's span.
@@ -1302,6 +1311,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
+            | Self::AmbiguousTimedModel { span, .. }
             | Self::UrgencyWithoutTimeSource { span }
             | Self::InvalidTickPeriod { span }
             | Self::MalformedTimeUnit { span, .. }
@@ -1335,6 +1345,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
+            Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
             Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
@@ -1377,6 +1388,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
+            Self::AmbiguousTimedModel { .. } => "ambiguous-name",
             Self::UrgencyWithoutTimeSource { .. } => "missing-name",
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 "malformed-declaration"
@@ -1809,8 +1821,10 @@ pub enum CheckCause {
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
     /// written outside its admitted clause, or over an ineligible operand.
     WrongSnapshot(WrongSnapshotCause),
-    /// `missing_declaration` / `missing-name`.
+    /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// `missing_declaration` / `missing-name` for a qualified source name.
+    MissingQualifiedName(qsl_forms::NameForm),
     /// `missing_declaration` / `missing-name` for the population segment of
     /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
     /// segment: it starts `offset` bytes into the written name.
@@ -2332,9 +2346,10 @@ impl CheckCause {
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
-            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
-                Code::MissingDeclaration
-            }
+            Self::MissingName(_)
+            | Self::MissingQualifiedName(_)
+            | Self::MissingSegment { .. }
+            | Self::MissingSelf => Code::MissingDeclaration,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2404,9 +2419,10 @@ impl CheckCause {
                 Some("type-mismatch")
             }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
-            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
-                Some("missing-name")
-            }
+            Self::MissingName(_)
+            | Self::MissingQualifiedName(_)
+            | Self::MissingSegment { .. }
+            | Self::MissingSelf => Some("missing-name"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }

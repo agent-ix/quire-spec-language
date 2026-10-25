@@ -221,14 +221,15 @@ pub use outcome::{
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
     read_plugin_basis, read_plugin_cause_kind, read_plugin_certification,
-    read_plugin_inconclusive_cause, read_plugin_inconclusive_cause_over, AppliedReduction,
-    BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet, IncompleteCause,
-    InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, PluginReplayContext,
-    PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause, ProofResultEnvelope,
-    ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind, ReportedInconclusiveCause,
-    SettlementBasis, StatedInstanceBound, StatedMemoryBound, StatisticalRequestRefusal,
-    SymmetryBrokenCause, SymmetryRefusal, TerminalRecord, TerminalRecordRefusal, TerminalValue,
-    UnavailabilityCause, ValueFault,
+    read_plugin_hybrid_counterexample, read_plugin_inconclusive_cause,
+    read_plugin_inconclusive_cause_over, AppliedReduction, BackendProviderSource, Certification,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
+    MemoryBoundMember, PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis,
+    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
+    ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
+    WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -304,9 +305,9 @@ pub use request::{
     ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
-    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
-    InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
-    Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
+    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
+    InputArmResult, InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason,
+    SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.

@@ -172,7 +172,7 @@ pub(super) fn lower_at(
                         values.push(leaf(meter, HybridTerm::Constant(constant), Kind::Real)?);
                     }
                     ExprNode::Name(name) => {
-                        values.push(resolve(name, span, env, (outer, &bound), meter)?);
+                        values.push(resolve(&name.name, span, env, (outer, &bound), meter)?);
                     }
                     ExprNode::Pre(_) => {
                         values.push(pre(form, id, span, env, (outer, &bound), meter)?);
@@ -327,12 +327,12 @@ fn field_read(
             span,
         })
     };
-    let at_activation = if parameter == claim.over {
+    let at_activation = if parameter.name == claim.over {
         false
-    } else if claim.trigger == Some(parameter.as_str()) {
+    } else if claim.trigger == Some(parameter.name.as_str()) {
         true
     } else {
-        return Err(missing(parameter));
+        return Err(missing(&parameter.name));
     };
     let index = *env.variables.get(field).ok_or_else(|| missing(field))?;
     let term = if at_activation {
@@ -363,20 +363,16 @@ fn pre(
     let ExprNode::Name(name) = form.expression.at(*operand).node() else {
         return Err(malformed.into());
     };
-    let shadowed = bound.iter().chain(outer).any(|(binder, _)| binder == name);
-    match env.variables.get(name) {
+    let shadowed = bound
+        .iter()
+        .chain(outer)
+        .any(|(binder, _)| binder == &name.name);
+    match env.variables.get(&name.name) {
         Some(index) if env.reset && !shadowed => {
             leaf(meter, HybridTerm::Variable(*index), Kind::Real)
         }
         _ => Err(malformed.into()),
     }
-}
-
-/// Whether `name` is a qualified name with a `::` segment. `#[string_edge]`:
-/// the qualified spelling is the one source-text distinction S2 leaves to S3.
-#[ix_trace_rs::string_edge]
-pub(super) fn is_qualified(name: &str) -> bool {
-    name.contains("::")
 }
 
 fn take(values: &mut Vec<Lowered>, span: Span) -> Result<Lowered, Stop> {
@@ -419,7 +415,7 @@ fn finish(
                 applied.push(take(values, span)?);
             }
             applied.reverse();
-            let (function, kind) = env.callees.resolve(name, &applied, span)?;
+            let (function, kind) = env.callees.resolve(&name.name, &applied, span)?;
             let size = applied
                 .iter()
                 .fold(0_u64, |total, argument| total.saturating_add(argument.size));

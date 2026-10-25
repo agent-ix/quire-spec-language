@@ -13,7 +13,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::callee::Callees;
 use super::cause::MalformedReason;
-use super::term::{is_qualified, lower, lower_at, Binder, Env, Kind, Lowered, Meter, Stop};
+use super::term::{lower, lower_at, Binder, Env, Kind, Lowered, Meter, Stop};
 use super::{
     CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable, HybridCause,
     HybridModelIndex, HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass,
@@ -195,7 +195,7 @@ fn check_one(
     for mode in &form.modes {
         for equation in &mode.equations {
             let written = equation.variable.name.as_str();
-            if is_qualified(written) {
+            if equation.variable.is_qualified() {
                 stops.push(Stop::Cause(HybridCause::Malformed {
                     reason: MalformedReason::QualifiedEquationName,
                     span: equation.variable.span,
@@ -469,8 +469,13 @@ fn reset(
                     }
                 };
                 let variable = match form.expression.at(*left).node() {
-                    ExprNode::Name(name) if !bound.iter().any(|(binder, _)| binder == name) => {
-                        variables.get(name).copied().map(|index| (name, index))
+                    ExprNode::Name(name)
+                        if !bound.iter().any(|(binder, _)| binder == &name.name) =>
+                    {
+                        variables
+                            .get(&name.name)
+                            .copied()
+                            .map(|index| (name.name.as_str(), index))
                     }
                     _ => None,
                 };
@@ -519,7 +524,7 @@ fn reset(
                 };
                 if let Some(first) = conflict {
                     stops.push(Stop::Cause(HybridCause::DuplicateReset {
-                        variable: name.clone(),
+                        variable: name.to_owned(),
                         first,
                         span,
                     }));

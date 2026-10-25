@@ -111,7 +111,7 @@ fn plan_refusal(fault_: PlanFault) -> ProductRefusal {
 fn automaton_refusal(error: AutomatonError) -> ProductRefusal {
     match error {
         AutomatonError::StateLimit { limit } => ProductRefusal::Stopped(ProductStop::Limit {
-            limit: ModelCheckLimit::MaxAutomatonStates,
+            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
             value: limit,
         }),
         other => ProductRefusal::Translation(other),
@@ -362,7 +362,10 @@ impl Builder<'_, '_> {
             return Ok(*known);
         }
         if self.nodes.len() >= self.max_states {
-            return Err(Self::stopped(ModelCheckLimit::MaxStates, self.max_states));
+            return Err(Self::stopped(
+                ModelCheckLimit::ExactProbMaxStates,
+                self.max_states,
+            ));
         }
         let id = self.nodes.len();
         let decided = target.key.monitor.is_some_and(MonitorState::is_decided);
@@ -488,7 +491,7 @@ impl Builder<'_, '_> {
         for edge in planned {
             if self.edges.len() >= self.max_transitions {
                 return Err(Self::stopped(
-                    ModelCheckLimit::MaxTransitions,
+                    ModelCheckLimit::ExactProbMaxTransitions,
                     self.max_transitions,
                 ));
             }

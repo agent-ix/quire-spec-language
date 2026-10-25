@@ -680,13 +680,16 @@ mod tests {
                 panic!("{path:?} reaches a name");
             };
             let region = declarations.region(&body(path)).unwrap();
-            assert_eq!(text(&region), spelling, "{path:?}");
+            assert_eq!(text(&region), spelling.name, "{path:?}");
         }
         let Some(ExprNode::Name(measured)) = function.measure.as_ref().map(Expression::root_node)
         else {
             panic!("the measure is a name");
         };
-        assert_eq!(text(&declarations.region(&measure(&[])).unwrap()), measured);
+        assert_eq!(
+            text(&declarations.region(&measure(&[])).unwrap()),
+            measured.name
+        );
 
         let declaration = declarations.declaration_region(0).unwrap();
         assert!(text(&declaration).starts_with("function f using v("));

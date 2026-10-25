@@ -87,7 +87,7 @@ use qsl_semantics::check::{
 use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
-use super::access::InstanceAccess;
+use super::access::{InstanceAccess, ThreadAttempt};
 use super::identity::{PositionAnchor, ProtocolTransition, RegistrationKey, StepKind, ThreadPath};
 use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
@@ -95,7 +95,9 @@ use super::{
     Disposition, Instance, ProtocolRefusal, ProtocolState, ProtocolSystem, Status, Thread,
 };
 use crate::model_subject::ModelInstance;
+use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::{Footprint, Location};
+use crate::simulation::model::Budget;
 use crate::simulation::model::FootprintError;
 
 /// One parallel instance (ADR-027 PS-4): the thread that forked it, its
@@ -266,6 +268,9 @@ pub enum ProtocolFootprintError {
     /// The attempt's application has no model footprint.
     #[error(transparent)]
     Model(#[from] FootprintError),
+    /// The state's enabled weak-access classification could not be derived.
+    #[error("cannot derive the state's enabled access footprints: {0:?}")]
+    Expansion(ExpansionStop),
     /// An invariant of the checked protocol broke.
     #[error(transparent)]
     Refused(#[from] ProtocolRefusal),
@@ -448,6 +453,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         state: &ProtocolState<M>,
         step: &ProtocolTransition,
     ) -> Result<Footprint, ProtocolFootprintError> {
+        let mut budget: Budget = self.model.budget();
+        let accesses = self
+            .state_accesses(state, &mut budget)
+            .map_err(ProtocolFootprintError::Expansion)?;
         let unknown = || ProtocolFootprintError::UnknownStep;
         let mut built = Builder::default();
         if let Some((channel, instance)) = step.channel_queue() {
@@ -463,13 +472,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(identity) = step.memory_step() {
             let memory = FootprintStep::Memory {
                 identity,
-                stored: self.weak.shared(),
+                stored: accesses.shared(),
             };
             if !self.memory.footprint(
                 &state.memory,
                 &identity.thread,
                 memory,
-                self.weak.shared(),
+                accesses.shared(),
                 &mut built.footprint,
             ) {
                 return Err(unknown());
@@ -485,7 +494,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let instance = state.instances.get(&path.instance).ok_or_else(unknown)?;
         let thread = instance.threads.get(path).ok_or_else(unknown)?;
         if matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd) {
-            return self.compensation_footprint(state, instance, path, thread, step);
+            return self.compensation_footprint(state, instance, path, thread, step, &accesses);
         }
         let (node, after) = self.stepped(thread, step)?;
         let own = control(path);
@@ -507,9 +516,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 built.footprint.reads.extend(model.reads);
                 built.footprint.writes.extend(model.writes);
                 built.footprint.enabling.extend(model.enabling);
-                let access = match self
-                    .weak
-                    .of(node)
+                let key = ThreadAttempt {
+                    instance: path.instance,
+                    path: path.clone(),
+                    node,
+                };
+                let access = match accesses
+                    .attempt(&key)
                     .map(|weak| (weak, weak.instance(application)))
                 {
                     None => FootprintStep::Attempt {
@@ -535,7 +548,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     access,
-                    self.weak.shared(),
+                    accesses.shared(),
                     &mut built.footprint,
                 );
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
@@ -599,7 +612,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         &state.memory,
                         path,
                         FootprintStep::Gated(gated),
-                        self.weak.shared(),
+                        accesses.shared(),
                         &mut built.footprint,
                     );
                 }
@@ -624,7 +637,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fork),
-                    self.weak.shared(),
+                    accesses.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -663,7 +676,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Join),
-                    self.weak.shared(),
+                    accesses.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -701,7 +714,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fence(ordering)),
-                    self.weak.shared(),
+                    accesses.shared(),
                     &mut built.footprint,
                 );
             }
@@ -841,6 +854,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         path: &ThreadPath,
         thread: &Thread,
         step: &ProtocolTransition,
+        accesses: &super::access::StateWeakAccesses,
     ) -> Result<Footprint, ProtocolFootprintError> {
         let unknown = || ProtocolFootprintError::UnknownStep;
         let (index, retry) = match thread.rest {
@@ -883,7 +897,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         ordering: None,
                         shared: None,
                     },
-                    self.weak.shared(),
+                    accesses.shared(),
                     &mut built.footprint,
                 );
                 built.enabling(protocol(ProtocolLocation::Registrations {

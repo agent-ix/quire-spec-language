@@ -36,6 +36,7 @@ use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
     TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    WeakAccessFailure as OutcomeWeakAccessFailure,
 };
 use qsl_eval::simulation::protocol::{
     activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
@@ -289,19 +290,26 @@ pub fn settle_protocol_check(
 /// canonical text.
 fn weak_access_shape(shape: &WeakAccessShape) -> Option<UnavailabilityCause> {
     let limits = quire_canonical::Limits::new(u64::MAX);
-    let transition = match &shape.transition {
-        Some(transition) => Some(
-            quire_canonical::to_vec(transition, limits)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())?,
-        ),
-        None => None,
-    };
-    Some(UnavailabilityCause::WeakAccessShape {
-        site: shape.site.clone(),
-        transition,
-        shape: shape.shape_text().ok()?,
-    })
+    let failures = shape
+        .failures
+        .iter()
+        .map(|failure| {
+            let transition = match &failure.transition {
+                Some(transition) => Some(
+                    quire_canonical::to_vec(transition, limits)
+                        .ok()
+                        .and_then(|bytes| String::from_utf8(bytes).ok())?,
+                ),
+                None => None,
+            };
+            Some(OutcomeWeakAccessFailure {
+                site: failure.site.clone(),
+                transition,
+                shape: failure.shape_text().ok()?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(UnavailabilityCause::WeakAccessShape { failures })
 }
 
 fn settle<T: SubjectTransition>(
