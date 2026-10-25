@@ -469,7 +469,7 @@ impl TupleLetters for Reexecuted<'_> {
         }
         self.letters
             .atom(atom, self.instance, &states, meter)
-            .map_err(LetterStop::Incomplete)
+            .map_err(LetterStop::from)
     }
 }
 
@@ -836,7 +836,7 @@ fn undefined(
                         joint: u64::try_from(joint).unwrap_or(u64::MAX),
                     }))
                 }
-                Some(MatchReading::Refused) | None => return Ok(no_value()),
+                Some(MatchReading::Refused { .. }) | None => return Ok(no_value()),
             }
             match matched_existentially(replay, counterexample, joint) {
                 Some(MatchReading::Holds) => {}
@@ -857,7 +857,7 @@ fn undefined(
                         Category::Success,
                     )))
                 }
-                Some(MatchReading::Refused) | None => return Ok(no_value()),
+                Some(MatchReading::Refused { .. }) | None => return Ok(no_value()),
             }
         }
         let at = states(executed, joint)?;
@@ -1120,6 +1120,6 @@ impl TupleLetters for ProjectedLetters<'_> {
         }
         self.letters
             .atom(atom, self.instance, &states, meter)
-            .map_err(LetterStop::Incomplete)
+            .map_err(LetterStop::from)
     }
 }

@@ -103,7 +103,7 @@ impl TupleLetters for Letters<'_> {
         self.world
             .seams()
             .atom(atom, &instance(), &[state], meter)
-            .map_err(LetterStop::Incomplete)
+            .map_err(LetterStop::from)
     }
 }
 
@@ -458,7 +458,7 @@ fn the_seed_names_the_walks_and_the_run_is_reproducible() {
     );
 }
 
-/// The claim `exists trace b of V { eventually holds(v.l @ b = 2) }`, which
+/// The claim `exists trace b of V { eventually holds(v.l @ b != v.l @ b) }`, which
 /// the output's type never allows, is `Trapped` at initial state 0 with an
 /// empty stem: each initial state's part of the product is closed and holds no
 /// fair accepting cycle, and the first in subject order is named.
@@ -471,7 +471,7 @@ fn an_unreachable_output_traps_the_first_initial_state() {
         Vault::Secure,
         false,
         &STARTS,
-        &clause("", "eventually holds(v.l @ b = 2)"),
+        &clause("", "eventually holds(v.l @ b != v.l @ b)"),
     );
     for limits in [unsampled(), ModelCheckLimits::default()] {
         let result = single(&world, limits);
@@ -624,8 +624,8 @@ fn witnessed_or_unchecked(outcome: &ExistentialOutcome) -> &[LassoWitness] {
     }
 }
 
-/// Over the secure vault, `eventually always holds(1 / (1 - v.l @
-/// b) = 1 and v.l @ b = 0)`, whose division has no value at `l = 1`, is
+/// Over the secure vault, `eventually always holds(1 mod (1 - v.l @
+/// b) = 0 and v.l @ b = 0)`, whose division has no value at `l = 1`, is
 /// `Undefined` at the first product state with `l = 1`, in both runs: the
 /// path is the one step `step(1)` from initial state 0, `where` names position
 /// 1, the atom and the division's cause. With sampling on, phase 0 found a
@@ -636,7 +636,7 @@ fn witnessed_or_unchecked(outcome: &ExistentialOutcome) -> &[LassoWitness] {
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
-    let body = "eventually always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0)";
+    let body = "eventually always holds(1 mod (1 - v.l @ b) = 0 and v.l @ b = 0)";
     let world = World::new(Vault::Secure, false, &STARTS, &clause("", body));
     for limits in [unsampled(), ModelCheckLimits::default()] {
         let result = single(&world, limits);
@@ -654,7 +654,7 @@ fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
         };
         assert_eq!(
             world.atom_text(atom),
-            "holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0)"
+            "holds(1 mod (1 - v.l @ b) = 0 and v.l @ b = 0)"
         );
         assert_eq!(
             undefined.cause,
@@ -683,7 +683,7 @@ fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
-    let body = "always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0)";
+    let body = "always holds(1 mod (1 - v.l @ b) = 0 and v.l @ b = 0)";
     let world = World::new(Vault::Secure, false, &[(0, 0), (0, 1)], &clause("", body));
     let result = single(&world, unsampled());
     let ExistentialOutcome::Undefined { stem, undefined } = &result.outcome else {
@@ -702,7 +702,7 @@ fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn a_trap_comes_before_a_later_undefined_letter() {
-    let body = "holds(v.l @ b = 1) and always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0)";
+    let body = "holds(v.l @ b = 1) and always holds(1 mod (1 - v.l @ b) = 0 and v.l @ b = 0)";
     let world = World::new(Vault::Secure, false, &STARTS, &clause("", body));
     let result = single(&world, unsampled());
     assert_eq!(
@@ -797,7 +797,7 @@ fn an_unfinished_part_is_not_a_trap() {
         Vault::Secure,
         false,
         &STARTS,
-        &clause("", "eventually holds(v.l @ b = 2)"),
+        &clause("", "eventually holds(v.l @ b != v.l @ b)"),
     );
     for (states, transitions) in [(2, usize::MAX), (usize::MAX, 1), (1, usize::MAX)] {
         let mut limits = unsampled();

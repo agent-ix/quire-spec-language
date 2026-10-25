@@ -4,10 +4,9 @@
 //! tuple of projected prefixes.
 //!
 //! Each clause is real complete-V1 source taken through S1, S2, the assembler
-//! and the hyper check (FR-172). The `holds` conditions are not checked at
-//! S3, so the letter reads each atom from its source text over the
-//! components' observations, the seam the one clause evaluator (FR-107)
-//! fills.
+//! and the hyper check (FR-172). The `holds` conditions are checked nodes
+//! (FR-487); these tests' letter still reads each atom from its source text
+//! over the components' observations, as it did before the lowering.
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
@@ -22,6 +21,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::key::hex;
+use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{Cancel, CancelCause, LimitKind, Meter, ScalarLimits, Undefined};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -52,6 +52,7 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"{INFINITE}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         function Noop using v(): Boolean pure {{ true }}\n\
          hyper H using inf over behaviours (c: M::Counter) \
          forall trace a of M forall trace b of M {alignment} {{ {body} }}\n",
         hex(&digest)
@@ -71,13 +72,24 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
         ModelNormalizationLimits::default(),
     )
     .expect("the model selection admits");
-    let package = PackageDeclarations::assemble(
+    let mut package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         built,
         models,
         Vec::new(),
     )
     .expect("the unit assembles");
+    // `mod` reads truncating integer division.
+    let lock = DefinitionLock::pinned();
+    package.integer_division = Some(
+        lock.admit_integer_division(
+            &[lock
+                .entry(CatalogRole::IntegerDivisionTruncating)
+                .reference()],
+            None,
+        )
+        .expect("the division profile admits"),
+    );
     let mut checked = check_hyper_clauses(&package);
     let clause = match checked.pop() {
         Some(Ok(CheckedHyper::Behaviours(clause))) if checked.is_empty() => *clause,
@@ -151,14 +163,14 @@ impl TupleLetters for Letters<'_> {
         };
         let holds = match words.as_slice() {
             ["c.value", "@", x, "=", "c.value", "@", y] => read(x) == read(y),
-            ["1", "/", "c.value", "@", x, "=", k] => {
+            ["1", "mod", "c.value", "@", x, "=", k] => {
                 let divisor = read(x);
                 if divisor == 0 {
                     return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
                         Undefined::DivisionByZero,
                     )));
                 }
-                1 / divisor == k.parse::<i64>().expect("an integer")
+                1 % divisor == k.parse::<i64>().expect("an integer")
             }
             ["c.value", "@", x, "=", k] => read(x) == k.parse::<i64>().expect("an integer"),
             other => panic!("unmodelled atom {other:?}"),
@@ -442,9 +454,9 @@ fn a_violation_at_the_last_unrolled_position_is_located_through_the_future_reach
 #[trace("TC-600")]
 #[test]
 fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_position() {
-    let fixture = fixture("always holds(1 / c.value @ a = 1)");
+    let fixture = fixture("always holds(1 mod c.value @ a = 0)");
     let shape = [lasso(0, 2), lasso(0, 3)];
-    // `a`'s second loop position reads 0, so `1 / value` has no value there:
+    // `a`'s second loop position reads 0, so `1 mod value` has no value there:
     // joint position 1.
     let mut letters = Letters::new(&fixture, vec![vec![1, 0], vec![0, 0, 0]]);
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -654,7 +666,7 @@ fn every_component_reads_the_same_projected_position_without_stuttering() {
 #[trace("TC-603")]
 #[test]
 fn an_atom_with_no_value_in_a_prefix_is_undefined_at_its_projected_position() {
-    let fixture = projected("always holds(1 / c.value @ a = 1)");
+    let fixture = projected("always holds(1 mod c.value @ a = 0)");
     let (outcome, _) = prefix(&fixture, 3, vec![vec![1, 0, 1], vec![0, 0, 0]]);
     let TemporalOutcome::Undefined(undefined) = outcome else {
         panic!("{outcome:?}");

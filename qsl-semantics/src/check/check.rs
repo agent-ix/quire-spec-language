@@ -1703,6 +1703,19 @@ pub(crate) struct Typer<'a> {
     /// The history fields a refinement row reads (FR-138); empty outside a
     /// refinement declaration, where the name of one is a missing field.
     history: Vec<ScopedHistory>,
+    /// What a `hyper` clause's condition reads beyond a state clause's
+    /// (FR-487); `None` everywhere else.
+    hyper: Option<HyperTyping>,
+}
+
+/// What the typer reads of a `hyper` clause's atom or `match` conjunct
+/// (FR-487): an indexed read `e @ t` types as `e` and a step label as the
+/// slot [`hyper_lowering::step_slot_name`] names, bound beforehand.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct HyperTyping {
+    /// The text of each operation a label constant may name, by the
+    /// qualified name the constant is written as.
+    pub(crate) labels: BTreeMap<String, String>,
 }
 
 /// One history field a refinement row's expression may read (FR-138).
@@ -2084,6 +2097,7 @@ impl<'a> Typer<'a> {
             populations: None,
             named: None,
             history: Vec::new(),
+            hyper: None,
         }
     }
 
@@ -2109,6 +2123,14 @@ impl<'a> Typer<'a> {
     #[must_use]
     pub(crate) fn with_named_populations(mut self, named: NamedScope) -> Self {
         self.named = Some(named);
+        self
+    }
+
+    /// This pass typing the atom or `match` conjunct of a `hyper` clause
+    /// (FR-487).
+    #[must_use]
+    pub(crate) fn with_hyper(mut self, hyper: HyperTyping) -> Self {
+        self.hyper = Some(hyper);
         self
     }
 

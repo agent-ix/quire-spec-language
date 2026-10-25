@@ -6,12 +6,11 @@
 //! secure `step` contract, the two initial snapshots `(h, l) = (0, 0)` and
 //! `(1, 0)`, and the seams a hyper run reads its letters and `match` through.
 //!
-//! A hyper clause's `holds` atoms and `match` conjuncts are typed at S3 but
-//! not lowered to checked nodes the clause evaluator can run, so the seams
-//! read each from its source text over the components' states, as
-//! `qsl-eval`'s tuple tests read the body: the vault's atoms are
-//! `holds(v.l @ x = v.l @ y)` and `holds(v.l @ x = k)`, its conjuncts the
-//! forms `HyperLetters` and `StepMatch` below name.
+//! A hyper clause's `holds` atoms and `match` conjuncts are checked nodes at
+//! S3 (FR-487), so the seams evaluate them through the one clause evaluator
+//! over the world's package: `CheckedHyperLetters` for the atoms
+//! (`holds(v.l @ x = v.l @ y)`, `holds(v.l @ x = k)`) and `CheckedStepMatch`
+//! for the conjuncts.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,15 +20,16 @@ use qsl_analyze::model_check::{
 };
 use qsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use qsl_eval::hyper::{
-    BodySense, HyperFinding, HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition,
-    MatchReading, ParameterBinding, Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
+    BodySense, CheckedHyperLetters, CheckedStepMatch, HyperFinding, HyperInputs, HyperLetters,
+    HyperProduct, HyperState, HyperTransition, MatchIncomplete, MatchReading, ParameterBinding,
+    Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::Limits;
-use qsl_eval::temporal::{AtomReading, UndefinedCause};
+use qsl_eval::temporal::AtomReading;
 use qsl_foundation::IdentityLimits;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -47,7 +47,8 @@ use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Incomplete, Meter, Undefined, Value};
+use quire_exact::{Cancel, Meter, Value};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -683,7 +684,11 @@ impl World {
 
     /// The letters and the `match` of this world's clause.
     pub(crate) fn seams(&self) -> Seams<'_> {
-        Seams { world: self }
+        Seams {
+            world: self,
+            system: ModelSystem::new(self.subject().simulation)
+                .expect("the world's subject admits"),
+        }
     }
 
     /// The run of the clause under `limits`.
@@ -773,33 +778,14 @@ impl World {
         };
         &self.text[span.start..span.end]
     }
-
-    /// The source text of the universal `match` conjunct `index`.
-    fn conjunct_text(&self, index: usize) -> &str {
-        let span = self.clause.mu_universal()[index].span();
-        &self.text[span.start..span.end]
-    }
-
-    /// The source text of the existential `match` conjunct `index`.
-    fn existential_text(&self, index: usize) -> &str {
-        let span = self.clause.mu_existential()[index].span();
-        &self.text[span.start..span.end]
-    }
-
-    /// The position of trace variable `variable` among the clause's
-    /// quantifiers: its component in a joint position.
-    fn component(&self, variable: &str) -> usize {
-        self.clause
-            .quantifiers()
-            .iter()
-            .position(|quantifier| quantifier.variable == variable)
-            .unwrap_or_else(|| panic!("unmodelled trace variable {variable}"))
-    }
 }
 
-/// The seams to the vault world's atoms and `match` conjuncts.
+/// The seams to the vault world's atoms and `match` conjuncts: the clause's
+/// checked nodes, evaluated through the one clause evaluator over the
+/// world's package (FR-487).
 pub(crate) struct Seams<'w> {
     world: &'w World,
+    system: ModelSystem<'w>,
 }
 
 impl HyperLetters for Seams<'_> {
@@ -808,52 +794,12 @@ impl HyperLetters for Seams<'_> {
         atom: FormulaNodeId,
         instance: &[ParameterBinding],
         states: &[&ModelSimState],
-        _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
-        let vault = instance[0].instance.key.as_str();
-        let text = self.world.atom_text(atom);
-        let inner = text
-            .strip_prefix("holds(")
-            .and_then(|rest| rest.strip_suffix(')'))
-            .unwrap_or_else(|| panic!("{text} is not a holds atom"));
-        let words: Vec<&str> = inner.split_whitespace().collect();
-        let read = |name: &str| low_of(states[self.world.component(name)], vault);
-        let secret = |name: &str| field_of(states[self.world.component(name)], vault, "h");
-        let holds = match words.as_slice() {
-            ["v.l", "@", x, "=", "v.l", "@", y] => read(x) == read(y),
-            ["v.l", "@", x, "=", constant] => {
-                read(x) == constant.parse::<i64>().expect("an integer")
-            }
-            ["v.h", "@", x, "!=", "v.h", "@", y] => secret(x) != secret(y),
-            // `1 / (1 - v.l @ x) = 1 and v.l @ x = k`: the division is
-            // evaluated first and has no value where `l = 1`.
-            ["1", "/", "(1", "-", "v.l", "@", paren, "=", "1", "and", "v.l", "@", y, "=", constant]
-                if paren.strip_suffix(')') == Some(*y) =>
-            {
-                let l = read(y);
-                if l == 1 {
-                    return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
-                        Undefined::DivisionByZero,
-                    )));
-                }
-                l == constant.parse::<i64>().expect("an integer")
-            }
-            other => panic!("unmodelled atom {other:?}"),
-        };
-        Ok(if holds {
-            AtomReading::True
-        } else {
-            AtomReading::False
-        })
-    }
-}
-
-/// The operation a step label names: its operation text, `None` for the
-/// stutter step.
-fn operation_of<'a>(label: &StepLabel<'a>) -> Option<&'a str> {
-    match label {
-        StepLabel::Operation(transition) => Some(transition.operation()),
-        StepLabel::Stutter => None,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, AtomStop> {
+        let systems = vec![&self.system; self.world.clause.quantifiers().len()];
+        CheckedHyperLetters::new(&self.world.package, &self.world.clause, systems)
+            .map_err(|_| AtomStop::Fault(InternalFault::new("hyper-world", "letters-admit")))?
+            .atom(atom, instance, states, meter)
     }
 }
 
@@ -882,145 +828,25 @@ pub(crate) fn input_of(label: &StepLabel<'_>) -> Option<i64> {
     }
 }
 
-impl Seams<'_> {
-    /// The reading of the `match` conjuncts `texts` over `steps`, in order:
-    /// the first that fails or has no value decides it.
-    fn read(&self, texts: &[&str], steps: &[StepLabel<'_>]) -> MatchReading {
-        for (index, text) in texts.iter().enumerate() {
-            let words: Vec<&str> = text.split_whitespace().collect();
-            let label = |name: &str| {
-                &steps[self
-                    .world
-                    .component(name.split('.').next().expect("a variable"))]
-            };
-            let holds = match words.as_slice() {
-                [x, "=", y] if x.ends_with(".step.op") && y.ends_with(".step.op") => {
-                    operation_of(label(x)) == operation_of(label(y))
-                }
-                [x, "=", y]
-                    if x.ends_with(".step.Vault::step.i") && y.ends_with(".step.Vault::step.i") =>
-                {
-                    input_of(label(x)) == input_of(label(y))
-                }
-                [x, "!=", y]
-                    if x.ends_with(".step.Vault::step.i") && y.ends_with(".step.Vault::step.i") =>
-                {
-                    input_of(label(x)) != input_of(label(y))
-                }
-                [x, "=", "V::Vault::step"] if x.ends_with(".step.op") => {
-                    operation_of(label(x)).is_some_and(is_step)
-                }
-                ["false"] => false,
-                [x, "=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_none(),
-                [x, "!=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_some(),
-                // The inputs agree where both steps are `step`s (the conjunct is the
-                // parenthesised conditional, which the span reads without them).
-                ["if", present_x, "and", present_y, "then", value_x, "=", value_y, "else", "true"]
-                    if present_x.starts_with("present(")
-                        && present_y.starts_with("present(")
-                        && value_x.starts_with("value(")
-                        && value_y.starts_with("value(") =>
-                {
-                    let variable = |present: &str| {
-                        present
-                            .trim_start_matches("present(")
-                            .split('.')
-                            .next()
-                            .expect("a variable")
-                            .to_owned()
-                    };
-                    match (
-                        input_of(label(&variable(present_x))),
-                        input_of(label(&variable(present_y))),
-                    ) {
-                        (Some(left), Some(right)) => left == right,
-                        _ => true,
-                    }
-                }
-                // The input is 0 where there is one.
-                ["(if", present, "then", value, "else", "0)", "=", "0"]
-                    if present.starts_with("present(") && value.starts_with("value(") =>
-                {
-                    let variable = present
-                        .trim_start_matches("present(")
-                        .split('.')
-                        .next()
-                        .expect("a variable");
-                    input_of(label(variable)).is_none_or(|input| input == 0)
-                }
-                ["(if", present, "then", "1", "/", value, "else", "1)", "=", "1"]
-                    if present.starts_with("present(") && value.starts_with("value(") =>
-                {
-                    let variable = present
-                        .trim_start_matches("present(")
-                        .split('.')
-                        .next()
-                        .expect("a variable");
-                    match input_of(label(variable)) {
-                        Some(0) => {
-                            return MatchReading::Undefined {
-                                conjunct: index,
-                                cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
-                            }
-                        }
-                        Some(input) => 1 / input == 1,
-                        None => true,
-                    }
-                }
-                ["(if", present, "then", "1", "mod", value, "else", "0)", "=", "0"]
-                    if present.starts_with("present(") && value.starts_with("value(") =>
-                {
-                    let variable = present
-                        .trim_start_matches("present(")
-                        .split('.')
-                        .next()
-                        .expect("a variable");
-                    match input_of(label(variable)) {
-                        Some(input) => match 1i64.checked_rem(input) {
-                            Some(remainder) => remainder == 0,
-                            None => {
-                                return MatchReading::Undefined {
-                                    conjunct: index,
-                                    cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
-                                }
-                            }
-                        },
-                        None => true,
-                    }
-                }
-                other => panic!("unmodelled match conjunct {other:?}"),
-            };
-            if !holds {
-                return MatchReading::Fails;
-            }
-        }
-        MatchReading::Holds
-    }
-}
-
 impl StepMatch for Seams<'_> {
     fn universal(
         &self,
-        _instance: &[ParameterBinding],
+        instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
-        _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        let texts: Vec<&str> = (0..self.world.clause.mu_universal().len())
-            .map(|index| self.world.conjunct_text(index))
-            .collect();
-        Ok(self.read(&texts, steps))
+        meter: &mut Meter,
+    ) -> Result<MatchReading, MatchIncomplete> {
+        CheckedStepMatch::new(&self.world.package, &self.world.clause)
+            .universal(instance, steps, meter)
     }
 
     fn existential(
         &self,
-        _instance: &[ParameterBinding],
+        instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],
-        _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        let texts: Vec<&str> = (0..self.world.clause.mu_existential().len())
-            .map(|index| self.world.existential_text(index))
-            .collect();
-        Ok(self.read(&texts, steps))
+        meter: &mut Meter,
+    ) -> Result<MatchReading, MatchIncomplete> {
+        CheckedStepMatch::new(&self.world.package, &self.world.clause)
+            .existential(instance, steps, meter)
     }
 }
 

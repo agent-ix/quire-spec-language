@@ -714,6 +714,23 @@ impl<'a> Typer<'a> {
         Ok(std::mem::take(&mut self.body).finish(root))
     }
 
+    /// Type the subexpression of `expression` rooted at `root`, located at
+    /// `location`: a `match` conjunct is one subtree of its block.
+    pub(crate) fn infer_subtree(
+        &mut self,
+        expression: &Expression,
+        root: qsl_forms::ExprId,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let root = self.run(Goal::Infer(
+            expression.at(root),
+            hint.map(Cow::Borrowed),
+            location.clone(),
+        ))?;
+        Ok(std::mem::take(&mut self.body).finish(root))
+    }
+
     /// The loop: descend into the next goal, or hand the node just typed to
     /// the frame below; the node no frame waits on is the root's.
     fn run<'e, 'r>(&mut self, goal: Goal<'e, 'r>) -> Result<Node, CheckRefusal>
@@ -974,6 +991,46 @@ impl<'a> Typer<'a> {
                     &location,
                 )
             }
+            // FR-487: inside a `hyper` clause a label constant is the text of
+            // the operation it names, and `e @ t` types as `e`: the trace
+            // variable chose the object parameter's slot before typing.
+            ExprNode::Name(name)
+                if self
+                    .hyper
+                    .as_ref()
+                    .is_some_and(|hyper| hyper.labels.contains_key(&name.name)) =>
+            {
+                let text = self
+                    .hyper
+                    .as_ref()
+                    .and_then(|hyper| hyper.labels.get(&name.name))
+                    .cloned()
+                    .unwrap_or_default();
+                node(
+                    NodeKind::Literal(CheckedLiteral(Value::String(text))),
+                    ValueType::String,
+                    &location,
+                )
+            }
+            ExprNode::Indexed { read, .. } if self.hyper.is_some() => {
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*read),
+                    hint,
+                    location.child(0),
+                )));
+            }
+            ExprNode::StepLabel { trace, label } if self.hyper.is_some() => self.name(
+                &crate::check::hyper_clause::lowering::step_slot_name(trace, label),
+                hint.as_deref(),
+                &location,
+            )?,
+            ExprNode::Stutter if self.hyper.is_some() => node(
+                NodeKind::Literal(CheckedLiteral(Value::String(
+                    crate::check::hyper_clause::lowering::STUTTER_TEXT.to_owned(),
+                ))),
+                ValueType::String,
+                &location,
+            ),
             ExprNode::Name(name)
                 if self
                     .named

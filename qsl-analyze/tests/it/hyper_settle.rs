@@ -214,8 +214,8 @@ fn a_refutation_that_does_not_replay_settles_with_no_counterexample() {
 #[trace("TC-607", "FR-182-AC-8")]
 #[test]
 fn an_undefined_tuple_refutes_and_an_undetermined_match_is_inconclusive() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let record = settle(&world, &run(&world, ModelCheckLimits::default()));
     assert_eq!(record.value, TerminalValue::Refuted);
