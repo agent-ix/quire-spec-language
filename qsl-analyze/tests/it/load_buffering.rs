@@ -6,7 +6,10 @@
 use ix_trace_rs::trace;
 use qsl_eval::simulation::protocol::MemorySelection;
 use qsl_foundation::MemoryModelName::{self, Ra, Sc, Tso};
-use qsl_replay::{ModelCheckRecord, RecordWarning, ResultLabel, SettlementBasis, TerminalValue};
+use qsl_replay::{
+    Execution, InconclusiveCause, MemoryCause, ModelCheckItem, ModelCheckOutcome, ModelCheckRecord,
+    RecordWarning, ResultLabel, SettlementBasis, TerminalValue, Truth,
+};
 
 use crate::litmus::{attempt, contracts, protocol, NO_BOTH_ZERO};
 use crate::weak_memory::{select, Case};
@@ -234,4 +237,51 @@ fn the_shapes_follow_every_path_through_a_branch() {
     for (name, body, expected) in cases {
         assert_eq!(warnings(&body, Ra).len(), expected, "{name}");
     }
+}
+
+/// A pre-check that cannot classify a subject the run explored is an
+/// internal fault: the item settles `failed`, with no value of the run
+/// kept, instead of settling without the warnings it owes.
+#[trace("TC-671")]
+#[test]
+fn a_pre_check_that_cannot_classify_the_subject_fails_the_item() {
+    let shape = format!("{} {}", load("Lx", "X", "relaxed"), store("Sy", "Y"));
+    let case = Case::with_three_cells(&unit(&shape));
+    let tso = selection(Tso);
+    let outcome = case.check(&tso, ModelCheckItem::DeadlockFreedom, Some(1));
+    assert!(
+        matches!(
+            outcome,
+            ModelCheckOutcome::Memory {
+                cause: MemoryCause::BoundReached { .. },
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    let settled = case.settle(&tso, &outcome, true, Some(1));
+    assert!(matches!(
+        settled.value,
+        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
+    ));
+    let failed = case.settle_naming(&tso, &outcome, Some(1), "NoSuchProtocol");
+    assert_eq!(failed.value, TerminalValue::Failed);
+    assert_eq!(failed.label, ResultLabel::Failed);
+    assert_eq!(failed.execution, Execution::Failed);
+    assert_eq!(failed.truth, Truth::Unavailable);
+}
+
+/// A `repeat` body runs at most `max` times: with `max 1` the load of the
+/// only iteration cannot meet the store of another.
+#[trace("TC-671")]
+#[test]
+fn a_repeat_body_runs_at_most_its_maximum() {
+    let body = format!("{} {}", store("Sy", "Y"), load("Lx", "X", "relaxed"));
+    let repeated = |max: u32| {
+        format!(
+            "repeat L by w visible () max {max} while {{ true }} sequence B {{ {body} }} exhausted sequence O {{ }}"
+        )
+    };
+    assert!(warnings(&repeated(1), Ra).is_empty());
+    assert_eq!(warnings(&repeated(2), Ra).len(), 1);
 }
