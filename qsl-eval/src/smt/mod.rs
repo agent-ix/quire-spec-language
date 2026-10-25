@@ -27,5 +27,6 @@ pub mod script;
 
 pub use kind::SmtQueryKind;
 pub use limits::SmtEncodingLimits;
+pub use monitor::{MonitorTable, Move};
 pub use query::{encode_smt_query, SmtItem};
 pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, Refusal, SmtEncodingRefusal};
