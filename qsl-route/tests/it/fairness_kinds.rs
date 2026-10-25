@@ -8,8 +8,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
-    FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestDigest, Mode, ProviderOrigin,
-    RegistrationCause, Registry,
+    FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestDigest, ManifestMembers, Mode,
+    ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::catalog::CatalogCode;
@@ -162,9 +162,12 @@ fn admit(
         ProviderOrigin::Process,
         ManifestDigest::from_digest([9; 32]),
         pairs.iter().map(|&(kind, mode)| (Some(kind), Some(mode))),
-        domains,
-        member,
-        None,
+        ManifestMembers {
+            domains,
+            fairness_kinds: member,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
 }
 
@@ -181,9 +184,12 @@ fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescript
         ProviderOrigin::Process,
         ManifestDigest::from_digest([seed; 32]),
         [(Some("temporal-satisfaction"), Some("unbounded"))],
-        None,
-        Some(FairnessKindsMember::List(labels)),
-        None,
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: Some(FairnessKindsMember::List(labels)),
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
     .expect("a valid manifest")
 }

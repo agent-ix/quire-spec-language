@@ -130,6 +130,24 @@ impl Case {
         classify_accesses(&model, protocol, &subject.memory, &subject.over).expect("classifies")
     }
 
+    /// The obligation identity of the deadlock-freedom item over `SB`
+    /// under `selection`, written from the subject and the clause alone.
+    pub(crate) fn obligation(
+        &self,
+        selection: &[MemorySelection],
+    ) -> impl std::fmt::Debug + PartialEq {
+        let [clause] = self.checked.graph().temporal_clauses() else {
+            panic!("one declared clause");
+        };
+        let subject = self.subject(selection);
+        let context = SubjectContext::new(&subject.model).expect("the package emits");
+        let mut written = ModelRequest::new();
+        let index = context
+            .author_clause(&mut written, clause)
+            .expect("the clause has a record");
+        written.obligation(index).cloned().expect("an obligation")
+    }
+
     /// The protocol system of `SB` under `memory`.
     pub(crate) fn system<M: MemoryModel>(
         &self,

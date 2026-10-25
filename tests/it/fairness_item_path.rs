@@ -9,7 +9,7 @@ use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_route::request::items_from_requirements;
 use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, FairnessKindsMember, FairnessLabel,
-    ManifestDigest, ProviderOrigin, Registry,
+    ManifestDigest, ManifestMembers, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -69,9 +69,12 @@ fn registry() -> Registry {
             ProviderOrigin::Process,
             ManifestDigest::from_digest(ByteDigest::of(&[index as u8]).as_bytes()),
             [(Some("temporal-satisfaction"), Some("unbounded"))],
-            None,
-            Some(FairnessKindsMember::List(labels)),
-            None,
+            ManifestMembers {
+                domains: None,
+                fairness_kinds: Some(FairnessKindsMember::List(labels)),
+                evidence_kinds: None,
+                memory_models: None,
+            },
         )
         .expect("a valid temporal manifest");
         registry.register(descriptor).expect("admitted");

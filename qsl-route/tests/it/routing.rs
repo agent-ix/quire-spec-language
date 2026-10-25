@@ -15,7 +15,7 @@ use qsl_foundation::BackendId;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, DomainsDefect,
-    ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
+    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -34,9 +34,12 @@ fn admit(
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
-        Some(&["collection", "integer"]),
-        None,
-        None,
+        ManifestMembers {
+            domains: Some(&["collection", "integer"]),
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
 }
 
@@ -62,9 +65,12 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
         ProviderOrigin::Linked,
         digest,
         advertised,
-        None,
-        None,
-        None,
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
     .expect("the manifest labels are valid");
     let process = descriptor_from_manifest(
@@ -72,9 +78,12 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
         ProviderOrigin::Process,
         digest,
         advertised,
-        None,
-        None,
-        None,
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
     .expect("the same manifest is valid for a process provider");
 
@@ -176,9 +185,12 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
-        Some(&["collection"]),
-        None,
-        None,
+        ManifestMembers {
+            domains: Some(&["collection"]),
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
     .expect_err("an absent mode is never defaulted");
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
@@ -342,9 +354,12 @@ fn admit_domains(
         ProviderOrigin::Process,
         ManifestDigest::from_digest([4; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
-        domains,
-        None,
-        None,
+        ManifestMembers {
+            domains,
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
 }
 

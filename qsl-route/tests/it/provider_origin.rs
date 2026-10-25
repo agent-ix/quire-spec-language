@@ -9,8 +9,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    ProviderOrigin, RegistrationCause, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest,
+    ManifestMembers, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 
@@ -47,9 +47,12 @@ fn descriptor_holds_the_origin_it_was_built_with() {
         ProviderOrigin::Process,
         manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
-        Some(&["collection"]),
-        None,
-        None,
+        ManifestMembers {
+            domains: Some(&["collection"]),
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: None,
+        },
     )
     .expect("a well-formed manifest is admitted");
     assert_eq!(admitted.origin(), ProviderOrigin::Process);

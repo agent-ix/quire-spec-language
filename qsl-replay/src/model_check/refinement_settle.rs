@@ -184,6 +184,7 @@ fn record_of(
         limit_reached: row.limit_reached,
         counterexample,
         hints: Vec::new(),
+        warnings: Vec::new(),
         memory_bound: None,
         instance_bound: None,
     }

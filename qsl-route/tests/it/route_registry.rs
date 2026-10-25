@@ -21,8 +21,8 @@ use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate,
     CandidateOutcome, DynamicsDefect, DynamicsKind, DynamicsMember, EvidenceKind,
-    FairnessKindsMember, FairnessLabel, ItemEvidence, ManifestDigest, Mode, ProviderOrigin,
-    RegistrationCause, RegistrationRefusal, Registry, SolverBounds,
+    FairnessKindsMember, FairnessLabel, ItemEvidence, ManifestDigest, ManifestMembers, Mode,
+    ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry, SolverBounds,
 };
 use qsl_semantics::check::Capability;
 
@@ -121,9 +121,12 @@ fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
             ProviderOrigin::Linked,
             digest(b"hybrid-manifest"),
             [(Some("temporal-satisfaction"), Some("bounded"))],
-            Some(&["collection"]),
-            fairness,
-            None,
+            ManifestMembers {
+                domains: Some(&["collection"]),
+                fairness_kinds: fairness,
+                evidence_kinds: None,
+                memory_models: None,
+            },
             dynamics,
             bounds,
         )
@@ -1057,9 +1060,12 @@ mod tc_282_duplicate_backend_identity {
                     ProviderOrigin::Linked,
                     d2,
                     [(Some("value-validity"), Some("finite"))],
-                    Some(&["collection"]),
-                    None,
-                    None,
+                    ManifestMembers {
+                        domains: Some(&["collection"]),
+                        fairness_kinds: None,
+                        evidence_kinds: None,
+                        memory_models: None,
+                    },
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };
@@ -1433,9 +1439,12 @@ mod permutation_equality {
                         "unbounded"
                     }),
                 )],
-                Some(&["collection"]),
-                None,
-                None,
+                ManifestMembers {
+                    domains: Some(&["collection"]),
+                    fairness_kinds: None,
+                    evidence_kinds: None,
+                    memory_models: None,
+                },
             )
             .expect("generated item manifest is valid");
             let irrelevant = descriptor_from_manifest(
@@ -1443,9 +1452,12 @@ mod permutation_equality {
                 ProviderOrigin::Process,
                 digest(format!("irrelevant-manifest-{seed}").as_bytes()),
                 [(Some(other_label), Some("bounded"))],
-                Some(&["collection"]),
-                None,
-                None,
+                ManifestMembers {
+                    domains: Some(&["collection"]),
+                    fairness_kinds: None,
+                    evidence_kinds: None,
+                    memory_models: None,
+                },
             )
             .expect("generated irrelevant manifest is valid");
             let relevant = descriptor_from_manifest(
@@ -1453,9 +1465,12 @@ mod permutation_equality {
                 ProviderOrigin::Linked,
                 digest(format!("relevant-manifest-{seed}").as_bytes()),
                 [(Some(item_label), Some("unbounded"))],
-                Some(&["collection"]),
-                None,
-                None,
+                ManifestMembers {
+                    domains: Some(&["collection"]),
+                    fairness_kinds: None,
+                    evidence_kinds: None,
+                    memory_models: None,
+                },
             )
             .expect("generated relevant manifest is valid");
 
