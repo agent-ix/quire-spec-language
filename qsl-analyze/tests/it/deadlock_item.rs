@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_route::deadlock::{
-    deadlock_freedom_items, ItemObligation, ModelTemporalItem, ObligationKind,
+    deadlock_freedom_items, ItemObligation, ModelStateGraphItem, ModelTemporalItem, ObligationKind,
 };
 use qsl_route::request::ExtentClassification;
 use qsl_semantics::check::Capability;
@@ -57,7 +57,7 @@ fn derived(terminal: &str) -> (Vec<ItemObligation<Subject>>, Vec<ItemObligation<
         },
     ];
     let authored = items.iter().map(ModelTemporalItem::obligation).collect();
-    let derived = deadlock_freedom_items(&items);
+    let derived = deadlock_freedom_items(&items, &[]);
     for item in &derived {
         assert_eq!(item.subject(), &subject);
         assert_eq!(item.property_form(), PropertyForm::ReachableInvariant);
@@ -96,4 +96,63 @@ fn one_deadlock_freedom_item_per_subject_unless_any_terminal_is_intended() {
     let (authored, derived) = derived("terminal Halt using v on M any;\n");
     assert_eq!(authored.len(), 2);
     assert!(derived.is_empty(), "{derived:?}");
+}
+
+/// FR-165-AC-3: a state-graph item contributes its model subject to the same
+/// derived deadlock-freedom set as temporal items; a shared subject is
+/// deduplicated, and `terminal any` still opts the subject out.
+#[test]
+#[trace("TC-590", "FR-165-AC-3")]
+fn state_graph_items_share_the_subject_deadlock_item() {
+    let document = document(false);
+    let checked = package(&document, CONTRACT);
+    let mut documents = Documents::new(document);
+    let subject = Subject {
+        universe: vec!["c"],
+        initial: documents.start("c0", &[("c", 0)]),
+    };
+    let occurrence = occurrence(3);
+    let temporal = [ModelTemporalItem {
+        occurrence: &occurrence,
+        subject: &subject,
+        package: checked.graph(),
+    }];
+    let state_graph = [ModelStateGraphItem {
+        subject: &subject,
+        package: checked.graph(),
+    }];
+
+    let derived = deadlock_freedom_items(&temporal, &state_graph);
+    assert_eq!(derived.len(), 1, "equal subjects share one derived item");
+    assert_eq!(derived[0].subject(), &subject);
+    assert_eq!(
+        derived[0].obligation().kind,
+        ObligationKind::DeadlockFreedom
+    );
+
+    let graph_only_subject = Subject {
+        universe: vec!["other"],
+        initial: documents.start("c1", &[("other", 0)]),
+    };
+    let graph_only = [ModelStateGraphItem {
+        subject: &graph_only_subject,
+        package: checked.graph(),
+    }];
+    let graph_only_derived = deadlock_freedom_items(&[], &graph_only);
+    assert_eq!(
+        graph_only_derived.len(),
+        1,
+        "graph-only subjects contribute"
+    );
+    assert_eq!(graph_only_derived[0].subject(), &graph_only_subject);
+
+    let opted_out = package(
+        &documents.document,
+        &format!("{CONTRACT}terminal Halt using v on M any;\n"),
+    );
+    let graph_only = [ModelStateGraphItem {
+        subject: &subject,
+        package: opted_out.graph(),
+    }];
+    assert!(deadlock_freedom_items(&[], &graph_only).is_empty());
 }
