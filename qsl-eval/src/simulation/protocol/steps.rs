@@ -25,7 +25,9 @@ use quire_exact::Value;
 use super::access::{
     EnabledApplication, EnabledReader, InstanceAccess, StateWeakAccesses, ThreadAttempt,
 };
-use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
+use super::identity::{
+    BlockedThread, ProtocolTransition, StepKind, ThreadPath, VisibilityRead, WaitCause,
+};
 use super::memory::{Access, GatedStep, MemoryModel, Read, ReadChoice, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
 use super::settle::Settled;
@@ -1250,7 +1252,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 applied.state.clone(),
             );
             for chosen in written {
-                let identity = ProtocolTransition::attempt(
+                let mut identity = ProtocolTransition::attempt(
                     path.clone(),
                     text.clone(),
                     applied.transition.clone(),
@@ -1258,6 +1260,26 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     applied.arguments.iter().map(value_enc).collect(),
                 )
                 .choosing(chosen.choice);
+                if matches!(access.class, AccessClass::Load | AccessClass::Rmw) {
+                    if let (Some(shared), Some(read_depth)) = (
+                        access.shared,
+                        chosen.choice.as_ref().and_then(|choice| choice.read_depth),
+                    ) {
+                        let limits = quire_canonical::Limits::new(u64::MAX);
+                        let thread = quire_canonical::to_vec(path, limits)
+                            .map_err(|_| ProtocolRefusal::fault("a-visibility-thread-encodes"))?;
+                        let location = quire_canonical::to_vec(
+                            &super::access::location_enc(shared.location, Some(shared.cell)),
+                            limits,
+                        )
+                        .map_err(|_| ProtocolRefusal::fault("a-visibility-location-encodes"))?;
+                        identity = identity.observing_visibility(VisibilityRead {
+                            thread,
+                            location,
+                            fresh: read_depth == 0,
+                        });
+                    }
+                }
                 let (model, memory) = match chosen.written {
                     Written::Applied(model, memory) => (model, memory),
                     Written::Disabled => continue,

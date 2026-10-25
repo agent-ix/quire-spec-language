@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-228 and FR-227 (TC-673, TC-672): flush fairness under `tso`, its
-//! effect on a liveness clause over a weak `parallel`, and the replay of a
-//! lasso that keeps a store buffer non-empty.
+//! FR-228 and FR-227 (TC-673, TC-672): memory fairness under `tso` and `ra`,
+//! its effect on infinite traces, and replay of unfair lassos.
 //!
 //! `Spin` is the store-and-poll program of QSL-994 over the `litmus` fixture, named `SB`
 //! because the shared case helpers name that protocol: branch `w` has one
@@ -20,8 +19,8 @@ use qsl_eval::fairness::{check_loop, EdgeLabel, Identity, LassoFairness, LoopSte
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    protocol_constraints, FairnessOrigin, MemorySelection, ProtocolFairness, ProtocolState,
-    ProtocolSystem, ProtocolTarget, ProtocolTransition, Sc, StepKind, Tso,
+    protocol_constraints, FairnessOrigin, MemoryModel, MemorySelection, ProtocolFairness,
+    ProtocolState, ProtocolSystem, ProtocolTarget, ProtocolTransition, Ra, Sc, StepKind, Tso,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
@@ -133,6 +132,10 @@ impl Unit {
         vec![select("SB::Both", MemoryModelName::Tso)]
     }
 
+    fn ra(&self) -> Vec<MemorySelection> {
+        vec![select("SB::Both", MemoryModelName::Ra)]
+    }
+
     fn check(
         &self,
         selection: &[MemorySelection],
@@ -214,8 +217,9 @@ macro_rules! system {
 /// `SB` resolved to `tso` carries `fair weak each flush(left)` and
 /// `fair weak each flush(right)` with origin `memory` beside the three
 /// scheduler constraints; resolved to `sc` it carries no `memory` member.
-/// Not covered: the `ra` visibility member, which waits on QSL-933.
+/// The separate RA test below checks the visibility member.
 #[trace("TC-673")]
+#[trace("FR-228-AC-1")]
 #[test]
 fn a_tso_clause_carries_flush_fairness_beside_the_scheduler_constraints() {
     let unit = Unit::new(&sb_run("", "", ""), AT_MOST_ONE, &AT_MOST);
@@ -260,12 +264,12 @@ fn a_tso_clause_carries_flush_fairness_beside_the_scheduler_constraints() {
 }
 
 /// A reachable state and its steps, each with the index of its post-state.
-type Reach = (ProtocolState<Tso>, Vec<(ProtocolTransition, usize)>);
+type Reach<M> = (ProtocolState<M>, Vec<(ProtocolTransition, usize)>);
 
 /// The reachable states of `system` with each state's steps, breadth-first.
-fn reached(system: &ProtocolSystem<'_, Tso>) -> Vec<Reach> {
+fn reached<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reach<M>> {
     let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    let mut states: Vec<Reach> = Vec::new();
+    let mut states: Vec<Reach<M>> = Vec::new();
     for state in system.initial() {
         let key = system.state_key(&state).expect("a key").0;
         known.insert(key, states.len());
@@ -288,6 +292,72 @@ fn reached(system: &ProtocolSystem<'_, Tso>) -> Vec<Reach> {
         at += 1;
     }
     states
+}
+
+/// The path to an RA state with a stale load self-loop, plus that loop's
+/// destination index. Its fresh load is enabled at the same state.
+fn stale_load_lasso(
+    system: &ProtocolSystem<'_, Ra>,
+) -> (
+    Vec<(ProtocolTransition, usize)>,
+    usize,
+    Vec<ProtocolTransition>,
+) {
+    let states = reached(system);
+    let (looped, load) = states
+        .iter()
+        .enumerate()
+        .find_map(|(at, (_, steps))| {
+            steps
+                .iter()
+                .find(|(transition, next)| {
+                    *next == at
+                        && transition.node().is_some_and(|node| node.ends_with("Lx"))
+                        && transition
+                            .memory_choice()
+                            .and_then(|choice| choice.read_depth)
+                            .is_some_and(|depth| depth > 0)
+                })
+                .map(|(transition, _)| (at, transition.clone()))
+        })
+        .expect("a stale load self-loop");
+    let read_depth = |transition: &ProtocolTransition| {
+        transition
+            .memory_choice()
+            .and_then(|choice| choice.read_depth)
+    };
+    assert!(
+        states[looped].1.iter().any(|(transition, _)| {
+            transition.node() == load.node() && read_depth(transition) == Some(0)
+        }),
+        "the mo-last load is also enabled at the loop state"
+    );
+
+    let mut parent: BTreeMap<usize, (usize, ProtocolTransition)> = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::from([0usize]);
+    while let Some(at) = queue.pop_front() {
+        for (transition, next) in &states[at].1 {
+            if *next != 0 && !parent.contains_key(next) {
+                parent.insert(*next, (at, transition.clone()));
+                queue.push_back(*next);
+            }
+        }
+    }
+    let mut stem = Vec::new();
+    let mut at = looped;
+    while at != 0 {
+        let (before, transition) = parent[&at].clone();
+        stem.push((transition, at));
+        at = before;
+    }
+    stem.reverse();
+    stem.push((load, looped));
+    let enabled = states[looped]
+        .1
+        .iter()
+        .map(|(transition, _)| transition.clone())
+        .collect();
+    (stem, looped, enabled)
 }
 
 /// The unflushed lasso over `Spin`: its stem and the index of the state
@@ -469,7 +539,7 @@ fn a_false_liveness_claim_over_tso_is_refuted_with_the_memory_constraints() {
 /// ADR-025 MK-2 (TC-672): the unflushed lasso over `Spin`, in which `w`'s buffer
 /// stays `[x := 1]` through `r`'s repeated load of `x`, refuses
 /// `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s
-/// constraint. Not covered: FR-227-AC-4's `ra` clause, which waits on QSL-933.
+/// constraint. The RA replay case is covered separately below.
 #[trace("TC-672")]
 #[test]
 fn replay_refuses_the_lasso_that_never_flushes_w() {
@@ -510,6 +580,77 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
         panic!("{refusal:?}");
     };
     assert_eq!(**constraint, flush("w"));
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::InvalidRuntimeInput, "invalid-value")
+    );
+}
+
+/// FR-228-AC-1 and FR-227-AC-4 (TC-673, TC-672): an RA clause carries one
+/// strong visibility member. Its stale-load self-loop is refused on replay
+/// because the same thread can load the mo-last message at that state.
+#[trace("TC-673")]
+#[trace("TC-672")]
+#[trace("FR-228-AC-1", "FR-227-AC-4")]
+#[test]
+fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
+    let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
+    let ra = unit.ra();
+    let system = system!(unit, &ra, Ra::new(4));
+    let (stem, looped, enabled) = stale_load_lasso(&system);
+    let (taken, _) = stem.last().expect("a loop step").clone();
+
+    let full = system
+        .fairness_set(unit.clause().fairness())
+        .expect("the set builds");
+    let visibility: Vec<&ProtocolFairness> = full
+        .iter()
+        .filter(|member| member.origin() == FairnessOrigin::Memory)
+        .collect();
+    assert_eq!(
+        visibility,
+        [&ProtocolFairness::visibility(MemoryModelName::Ra)]
+    );
+    assert_eq!(
+        unfair_member(&full, &enabled, &taken),
+        visibility.first().copied(),
+        "the repeated stale read violates its visibility pair"
+    );
+
+    let states = reached(&system);
+    let prefix: Vec<ModelStep<ProtocolTransition>> = stem
+        .iter()
+        .map(|(transition, at)| ModelStep {
+            transition: system
+                .reported(transition.clone(), &states[*at].0)
+                .expect("the step reports"),
+            post_state: system.state_key(&states[*at].0).expect("a key").1,
+        })
+        .collect();
+    assert_eq!(stem.last().map(|(_, at)| *at), Some(looped));
+    let payload = TemporalCounterexample {
+        initial_state: 0,
+        lasso: Some(Lasso {
+            entry: prefix.len() - 1,
+            terminal_stutter: false,
+        }),
+        prefix,
+        over_binding: Some(core()),
+        fairness: full,
+        kind: CounterexampleKind::Formula,
+        blocked: Vec::new(),
+        refinement: None,
+    };
+    let Err(ReplayRefusal::ModelTrace(refusal)) = unit.replay(&ra, payload) else {
+        panic!("an unfair RA lasso refuses");
+    };
+    let ModelTraceRefusal::UnfairProtocolLasso { constraint } = refusal.as_ref() else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(
+        **constraint,
+        ProtocolFairness::visibility(MemoryModelName::Ra)
+    );
     assert_eq!(
         (refusal.code(), refusal.cause()),
         (Code::InvalidRuntimeInput, "invalid-value")
