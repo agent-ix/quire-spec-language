@@ -1,12 +1,12 @@
 ---
-id: TC-1264
+id: TC-1265
 title: "An on each clause emits its trigger and guard, and S3 checks the guard"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-337
     type: verifies
 ---
-# TC-1264: An on each clause emits its trigger and guard, and S3 checks the guard
+# TC-1265: An on each clause emits its trigger and guard, and S3 checks the guard
 
 ## Description
 
@@ -37,7 +37,7 @@ infinite-trace and the formula `always holds(c.value <= 1)`.
 4. Compile an `on each (q: M::Counter)` clause whose body begins
    `capture n: Int[0, 3] = c.value;`.
 
-Tag the tests `#[trace("TC-1264", "FR-337-AC-n")]`.
+Tag the tests `#[trace("TC-1265", "FR-337-AC-n")]`.
 
 ## Expected Results
 
