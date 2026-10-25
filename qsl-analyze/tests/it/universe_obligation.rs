@@ -246,12 +246,13 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
     };
 
     let first = fixture.initial[0].clone();
+    let bounds: Vec<ProofBound> = (1..=8).map(|node| bound(node, u64::from(node))).collect();
     let mut forward = over(&fixture, &["a", "b", "c"]);
     forward.simulation.initial = vec![first.clone(), second.clone()];
-    forward.proof_bounds = vec![bound(9, 3), bound(8, 4)];
+    forward.proof_bounds = bounds.clone();
     let mut reverse = over(&fixture, &["c", "b", "a"]);
     reverse.simulation.initial = vec![second, first];
-    reverse.proof_bounds = vec![bound(8, 4), bound(9, 3)];
+    reverse.proof_bounds = bounds.iter().rev().cloned().collect();
 
     // The item the request path writes holds the facade's identity.
     let identity = SubjectIdentity::of(&forward).expect("the package emits");
@@ -262,13 +263,23 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
         .expect("the item is in the request");
     assert_eq!(item.subject, identity);
 
-    let reversed = SubjectIdentity::of(&reverse).expect("the package emits");
-    assert_eq!(reversed, identity);
-    assert_eq!(hash_of(&reversed), hash_of(&identity));
+    // Every rebuild of the reversed subject, and of each rotation of the
+    // bounds, is equal with an equal hash: no listing order or per-set hash
+    // seed shows through.
+    for rotation in 0..bounds.len() {
+        let mut rotated = bounds.clone();
+        rotated.rotate_left(rotation);
+        for list in [rotated.clone(), rotated.into_iter().rev().collect()] {
+            reverse.proof_bounds = list;
+            let rebuilt = SubjectIdentity::of(&reverse).expect("the package emits");
+            assert_eq!(rebuilt, identity);
+            assert_eq!(hash_of(&rebuilt), hash_of(&identity));
+        }
+    }
 
     // The order-independence is not an identity that ignores its members.
     let mut other = over(&fixture, &["a", "b", "c"]);
-    other.proof_bounds = vec![bound(9, 3), bound(8, 5)];
+    other.proof_bounds = bounds.iter().skip(1).cloned().collect();
     assert_ne!(SubjectIdentity::of(&other).expect("emits"), identity);
 }
 
