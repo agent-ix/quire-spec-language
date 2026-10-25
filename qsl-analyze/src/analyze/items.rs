@@ -147,14 +147,23 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         ModelCheckRefusal::Symmetry(_) => symmetry(),
         ModelCheckRefusal::UnknownConstraint { .. } => Refusal::Failed(INVALID_VALUE),
         ModelCheckRefusal::Fault(fault) => Refusal::Failed(fault.catalog_code()),
-        // A refused `holds` evaluation carries its own code where its
-        // family names one (QSL-1039); the rest name none.
+        // A refused `holds` evaluation settles as FR-203 and FR-192 settle
+        // the same outcome: `failed` with the refusal's own code and cause,
+        // and a broken invariant for a refusal that names none or an outcome
+        // that is no refusal (QSL-1039).
+        ModelCheckRefusal::AtomRefused(ClauseOutcome::KernelRefused(refusal)) => {
+            match (refusal.code(), refusal.cause()) {
+                (Some(code), Some(cause)) => Refusal::Failed(CatalogCode::new(code, cause)),
+                _ => Refusal::Failed(BROKEN),
+            }
+        }
         ModelCheckRefusal::AtomRefused(ClauseOutcome::FamilyRefused(code)) => {
             Refusal::Failed(*code)
         }
-        ModelCheckRefusal::AtomRefused(_) | ModelCheckRefusal::StateUnobservable(_) => {
-            Refusal::Failed(BROKEN)
-        }
+        ModelCheckRefusal::AtomRefused(_) => Refusal::Failed(BROKEN),
+        // An unobservable state settles by the stop's own cause, which is
+        // the broken invariant for an internal failure.
+        ModelCheckRefusal::StateUnobservable(stop) => Refusal::Failed(stop.cause),
         // The forms and subjects EN-1 does not decide yet.
         ModelCheckRefusal::ProtocolRefinement
         | ModelCheckRefusal::FormNotDecided { .. }
@@ -284,6 +293,63 @@ mod tests {
         assert_eq!(cause, ProofRefusalCause::InvalidInput);
         assert_eq!(decline, DeclineCode::Qsl(Code::InvalidRuntimeInput));
         assert_eq!(diagnostic, INVALID_VALUE);
+    }
+
+    /// QSL-1039: a refused `holds` atom settles `failed` with the refusal's
+    /// own code and cause as FR-203 and FR-192 settle the same outcome, a
+    /// refusal naming none and a non-refusal settle the broken invariant,
+    /// and an unobservable state settles by its stop's own cause.
+    #[trace("TC-763")]
+    #[test]
+    fn a_refused_holds_atom_and_an_unobservable_state_settle_failed_with_their_own_code() {
+        use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Refusal as Kernel};
+
+        let failed = |refusal: ModelCheckRefusal| match model_refusal(&refusal) {
+            Refusal::Failed(code) => code,
+            _ => panic!("expected failed"),
+        };
+        let above = Kernel::CardinalityOutOfBound {
+            violation: BoundViolation::AboveMaximum,
+            kind: CollectionKind::Set,
+            bound: CardinalityBound::new(0, 1).expect("a bound"),
+            count: 2,
+        };
+        assert_eq!(
+            failed(ModelCheckRefusal::AtomRefused(
+                ClauseOutcome::KernelRefused(above)
+            )),
+            CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+        );
+        let family = CatalogCode::new("integer_out_of_domain", "outside-domain");
+        assert_eq!(
+            failed(ModelCheckRefusal::AtomRefused(
+                ClauseOutcome::FamilyRefused(family)
+            )),
+            family
+        );
+        assert_eq!(
+            failed(ModelCheckRefusal::AtomRefused(ClauseOutcome::NotBoolean)),
+            BROKEN
+        );
+        let exhausted = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+        assert_eq!(
+            failed(ModelCheckRefusal::StateUnobservable(
+                qsl_eval::simulation::ExpansionStop {
+                    cause: exhausted,
+                    limit: None
+                }
+            )),
+            exhausted
+        );
+        assert_eq!(
+            failed(ModelCheckRefusal::StateUnobservable(
+                qsl_eval::simulation::ExpansionStop {
+                    cause: BROKEN,
+                    limit: None
+                }
+            )),
+            BROKEN
+        );
     }
 
     /// FR-281's table: only a refusal whose own code is `unsupported_*` is

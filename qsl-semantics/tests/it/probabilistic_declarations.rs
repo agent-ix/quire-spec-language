@@ -152,10 +152,24 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
 /// [`service_document_with`], with `extra` operations on `Server` after
 /// `reset`.
 fn service_document_full(requires: &[&str], extra: Vec<Value>) -> Vec<u8> {
+    service_document_with_parameter_type(requires, extra, &id("Millis"))
+}
+
+/// [`service_document_full`] with `attempt(d)` using a quantity unit type.
+fn service_document_with_quantity_duration() -> Vec<u8> {
+    service_document_with_parameter_type(&[], Vec::new(), "ix://quire/unit/ms")
+}
+
+/// [`service_document_full`] with an explicit type reference for `attempt(d)`.
+fn service_document_with_parameter_type(
+    requires: &[&str],
+    extra: Vec<Value>,
+    duration_type: &str,
+) -> Vec<u8> {
     let mut attempt = operation(
         "attempt",
         vec![
-            parameter("attempt", "d", &id("Millis")),
+            parameter("attempt", "d", duration_type),
             parameter("attempt", "outcome", &id("Outcome")),
         ],
         &["phase", "attempts"],
@@ -941,6 +955,81 @@ fn a_quantity_reward_checks_and_reward_names_are_per_operation() {
         panic!("a quantity: {:?}", latency.value_type());
     };
     assert_eq!(rewards[3].value_type(), &ValueType::Quantity(*unit));
+}
+
+/// FR-185-AC-8 (TC-620): a `Quantity<ms>` random parameter admits same-unit
+/// supports in declaration order and refuses another unit, a Boolean support,
+/// and a precondition read at S3.
+#[trace("TC-620", "FR-185-AC-8")]
+#[test]
+fn a_quantity_random_parameter_checks_its_unit_and_precondition() {
+    let document = service_document_with_quantity_duration();
+    let random = "random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };";
+    let body = service(Some((D, random)), "");
+    let graph = assemble_over(&document, &body)
+        .check(CheckingLimits::default())
+        .expect("same-unit quantities are a valid support");
+    let model = graph.probabilistic_model();
+    let [duration, outcome] = model.random_parameters() else {
+        panic!("two random parameters: {:?}", model.random_parameters());
+    };
+    assert_eq!(
+        (duration.operation().name(), duration.parameter()),
+        ("attempt", "d")
+    );
+    let magnitudes: Vec<Rational> = duration
+        .support()
+        .iter()
+        .map(|support| match &support.value.0 {
+            quire_exact::Value::Quantity(quantity) => quantity.magnitude().clone(),
+            other => panic!("quantity support: {other:?}"),
+        })
+        .collect();
+    assert_eq!(magnitudes, [ratio(1, 1), ratio(3, 1), ratio(12, 1)]);
+    assert_eq!(
+        duration
+            .support()
+            .iter()
+            .map(|support| support.probability.clone())
+            .collect::<Vec<_>>(),
+        [ratio(9, 10), ratio(7, 100), ratio(3, 100)]
+    );
+    assert_eq!(outcome.parameter(), "outcome");
+    let [reward] = model.rewards() else {
+        panic!("one reward: {:?}", model.rewards());
+    };
+    assert!(matches!(reward.value_type(), ValueType::Quantity(_)));
+
+    for value in ["1 s", "true"] {
+        let invalid = format!("random Server::attempt(d) ~ {{ {value}: 1 }};");
+        let body = service(Some((D, &invalid)), "");
+        let refusals = assemble_over(&document, &body)
+            .check(CheckingLimits::default())
+            .expect_err("wrong-unit and wrong-type supports are refused");
+        assert_eq!(refusals.len(), 1, "one refusal for {value}: {refusals:?}");
+        let refusal = &refusals[0];
+        assert_eq!(refusal.cause.cause(), Some("value-outside-type"));
+        let CheckCause::Probabilistic(cause) = &refusal.cause else {
+            panic!("a probabilistic refusal: {refusal:?}");
+        };
+        assert!(names_parameter(cause, "d"), "{cause:?}");
+    }
+
+    let pre = "pre Busy using v on Service::Server::attempt \
+               { self.phase = Service::Phase::Busy and d < 5 ms }";
+    let body = service(Some((D, random)), pre);
+    let refusals = assemble_over(&document, &body)
+        .check(CheckingLimits::default())
+        .expect_err("a precondition cannot read a random parameter");
+    assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(refusal.cause.cause(), Some("random-read-in-precondition"));
+    let CheckCause::Probabilistic(cause) = &refusal.cause else {
+        panic!("a probabilistic refusal: {refusal:?}");
+    };
+    assert!(names_parameter(cause, "d"), "{cause:?}");
 }
 
 /// FR-185: a quantity literal types against the unit it names and refuses an

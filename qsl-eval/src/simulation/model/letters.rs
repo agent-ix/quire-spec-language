@@ -25,9 +25,7 @@ use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
 use qsl_semantics::model::observation::Observation;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{
-    Charge, ChargePoint, EffectiveId, Incomplete, Meter, ObjectReference, ValueType,
-};
+use quire_exact::{EffectiveId, Incomplete, Meter, ObjectReference, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::contracts::{verdict, Verdict};
@@ -60,9 +58,8 @@ pub enum LettersRefusal {
 ///
 /// The letters observe a state once, however many atoms and instances read
 /// it: the state's digest keys the last observation, which is kept for the
-/// reads that follow. Every read charges the engine's meter one
-/// `collection-visit` per object of the observation, cached or not, so that a
-/// read's charge does not depend on what was read before it.
+/// reads that follow. The observation is not charged to the engine's meter,
+/// as `state_predicates` does not charge it; charging it needs a ruling.
 pub struct ClauseLetters<'s, 'a> {
     system: &'s ModelSystem<'a>,
     node: &'s TemporalClauseNode,
@@ -179,8 +176,8 @@ impl ClauseLetters<'_, '_> {
         self.observations.get()
     }
 
-    /// `state`, observed once and charged to `meter` on every read.
-    fn observe(&self, state: &ModelSimState, meter: &mut Meter) -> Result<Rc<Observed>, AtomStop> {
+    /// `state`, observed once however many reads follow.
+    fn observe(&self, state: &ModelSimState) -> Result<Rc<Observed>, AtomStop> {
         let (_, digest) = self
             .system
             .state_key(state)
@@ -191,8 +188,8 @@ impl ClauseLetters<'_, '_> {
             .as_ref()
             .filter(|(known, _)| *known == digest)
             .map(|(_, observed)| Rc::clone(observed));
-        let observed = match known {
-            Some(observed) => observed,
+        match known {
+            Some(observed) => Ok(observed),
             None => {
                 let observation = self
                     .system
@@ -204,13 +201,9 @@ impl ClauseLetters<'_, '_> {
                 self.observations
                     .set(self.observations.get().saturating_add(1));
                 *self.observed.borrow_mut() = Some((digest, Rc::clone(&observed)));
-                observed
+                Ok(observed)
             }
-        };
-        for _ in &observed.rows {
-            meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
         }
-        Ok(observed)
     }
 }
 
@@ -222,8 +215,7 @@ fn fault(invariant: &'static str) -> AtomStop {
 impl ModelLetters for ClauseLetters<'_, '_> {
     /// # Errors
     ///
-    /// [`AtomStop::Incomplete`] when the meter runs out, in the state's
-    /// observation or in the evaluation; [`AtomStop::Refused`] when the
+    /// [`AtomStop::Incomplete`] when the meter runs out in the evaluation; [`AtomStop::Refused`] when the
     /// evaluation is refused or completes no Boolean;
     /// [`AtomStop::Unobservable`] when `state` is no state of the system; and
     /// [`AtomStop::Fault`] when `atom` is no `holds` atom of the clause,
@@ -239,7 +231,7 @@ impl ModelLetters for ClauseLetters<'_, '_> {
             .node
             .condition(atom)
             .ok_or_else(|| fault("engine-reads-only-holds-atoms"))?;
-        let observed = self.observe(state, meter)?;
+        let observed = self.observe(state)?;
         let condition = Condition { body, slots };
         let evaluation = match self.bound(&observed.rows, instance) {
             Some(bound) => evaluate_state_predicate(

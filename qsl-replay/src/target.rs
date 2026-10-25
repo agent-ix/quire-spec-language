@@ -335,6 +335,19 @@ pub struct RequestTargetWire {
     pub arguments: bool,
     /// The request's `occurrence_key` member, if it carries one.
     pub occurrence_key: Option<OccurrenceKey>,
+    /// The object selected for the `over` parameter of an observed temporal
+    /// clause replay (`FR-331`).
+    pub over: Option<ReplayOverBinding>,
+}
+
+/// The population and key supplied to replay a temporal clause over an
+/// observed trace.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayOverBinding {
+    /// The population declaration identity.
+    pub population: String,
+    /// The object key in that population.
+    pub key: String,
 }
 
 impl RequestTargetWire {
@@ -355,6 +368,14 @@ impl RequestTargetWire {
     pub fn state_clause(name: QualifiedName) -> Self {
         ReplayTargetMembers::state_clause(name).into()
     }
+
+    /// A temporal state-clause request with its observed `over` object.
+    pub fn state_clause_over(name: QualifiedName, over: ReplayOverBinding) -> Self {
+        Self {
+            over: Some(over),
+            ..ReplayTargetMembers::state_clause(name).into()
+        }
+    }
 }
 
 impl From<ReplayTargetMembers> for RequestTargetWire {
@@ -363,6 +384,7 @@ impl From<ReplayTargetMembers> for RequestTargetWire {
             members,
             arguments: false,
             occurrence_key: None,
+            over: None,
         }
     }
 }
@@ -371,6 +393,7 @@ impl From<ReplayTarget> for RequestTargetWire {
     fn from(target: ReplayTarget) -> Self {
         Self {
             occurrence_key: target.occurrence_key().cloned(),
+            over: None,
             ..ReplayTargetMembers::from(target).into()
         }
     }

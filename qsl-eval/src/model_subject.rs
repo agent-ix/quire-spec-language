@@ -102,6 +102,19 @@ impl From<Incomplete> for AtomStop {
     }
 }
 
+/// The invariant a refused `holds` atom breaks where the atom may not be
+/// refused, named by the kind of outcome so that the diagnostic keeps it.
+pub fn refused_invariant(outcome: &ClauseOutcome) -> &'static str {
+    match outcome {
+        ClauseOutcome::KernelRefused(_) => "a-holds-atom-is-not-kernel-refused",
+        ClauseOutcome::FamilyRefused(_) => "a-holds-atom-is-not-family-refused",
+        ClauseOutcome::NotBoolean => "a-holds-atom-completes-a-boolean",
+        ClauseOutcome::KernelUndefined(_)
+        | ClauseOutcome::FamilyUndefined(_)
+        | ClauseOutcome::Incomplete(_) => "a-holds-atom-refusal-is-a-refusal",
+    }
+}
+
 impl From<AtomStop> for LetterStop {
     /// A trace letter has no refusal, so a refused or unobservable atom is a
     /// fault of the letter.
@@ -109,13 +122,18 @@ impl From<AtomStop> for LetterStop {
         match stop {
             AtomStop::Incomplete(incomplete) => Self::Incomplete(incomplete),
             AtomStop::Fault(fault) => Self::Fault(fault),
-            AtomStop::Refused(_) => Self::Fault(InternalFault::new(
+            AtomStop::Refused(outcome) => Self::Fault(InternalFault::new(
                 "model-letters",
-                "a-holds-atom-is-not-refused",
+                refused_invariant(&outcome),
             )),
-            AtomStop::Unobservable(_) => {
-                Self::Fault(InternalFault::new("model-letters", "a-state-is-observable"))
-            }
+            AtomStop::Unobservable(stop) => Self::Fault(InternalFault::new(
+                "model-letters",
+                if stop.is_internal_failure() {
+                    "a-state-is-observable"
+                } else {
+                    "a-state-observation-completes"
+                },
+            )),
         }
     }
 }

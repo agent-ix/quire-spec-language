@@ -11,14 +11,16 @@ use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use qsl_foundation::Span;
 
 use crate::check::{
     observation, step_row_refs, step_simulation_records, AbstractSide, CheckCause, CheckRefusal,
     CheckedGraph, CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations,
-    ProtocolStepKind, RefinementCause, RefinementRefusal, RowClass, RowObservation, StepClass,
-    StepLabel, StepRowRefusal, UnsupportedFeature,
+    ProtocolStepKind, RefinementCause, RefinementFairnessOrigin, RefinementRefusal,
+    RefinementThreadTarget, RowClass, RowObservation, StepClass, StepLabel, StepRowRefusal,
+    UnsupportedFeature,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -308,6 +310,107 @@ fn unit(protocol: &str, rows: &str) -> String {
     header(true) + protocol + &refinement(rows)
 }
 
+/// FR-137-AC-3 (TC-542): a concrete protocol contributes a scheduler member
+/// for the root and each parallel branch; authored constraints join them, and
+/// `scheduling adversarial` removes only the scheduler-origin members.
+#[trace("TC-542", "FR-137-AC-3")]
+#[test]
+fn protocol_refinement_fairness_includes_default_scheduler_members() {
+    let check_scheduler_set = |refinement: &CheckedRefinement| {
+        let fairness = refinement.concrete_fairness();
+        let scheduler: Vec<_> = fairness
+            .iter()
+            .filter(|member| member.origin() == RefinementFairnessOrigin::Scheduler)
+            .collect();
+        assert_eq!(scheduler.len(), 3);
+        assert!(scheduler.iter().all(|member| {
+            member.kind() == FairnessKind::Weak
+                && member.granularity() == FairnessGranularity::Whole
+                && member.operation_constraint().is_none()
+        }));
+        let targets: Vec<_> = scheduler
+            .iter()
+            .map(|member| member.thread_target().expect("scheduler target"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            targets,
+            [
+                RefinementThreadTarget::Root,
+                RefinementThreadTarget::Branch {
+                    parallel: "Main/Both".to_owned(),
+                    branch: "left".to_owned(),
+                },
+                RefinementThreadTarget::Branch {
+                    parallel: "Main/Both".to_owned(),
+                    branch: "right".to_owned(),
+                },
+            ]
+        );
+    };
+
+    let graph = checks(&unit(&fill(""), ROWS));
+    let refinement = only_refinement(&graph);
+    check_scheduler_set(refinement);
+    assert_eq!(refinement.concrete_fairness().len(), 3);
+
+    let authored = "assume fair weak each M::Node::step;";
+    let graph = checks(&unit(&fill(""), &format!("{ROWS}\n{authored}")));
+    let refinement = only_refinement(&graph);
+    check_scheduler_set(refinement);
+    let authored_members: Vec<_> = refinement
+        .concrete_fairness()
+        .iter()
+        .filter(|member| member.origin() == RefinementFairnessOrigin::Authored)
+        .collect();
+    assert_eq!(authored_members.len(), 1);
+    assert_eq!(refinement.concrete_fairness().len(), 4);
+    assert_eq!(
+        authored_members[0]
+            .operation_constraint()
+            .expect("authored operation constraint")
+            .operation()
+            .name(),
+        "step"
+    );
+
+    let adversarial = fill("").replace(
+        "role w on M::Node;",
+        "role w on M::Node;\nscheduling adversarial;",
+    );
+    let graph = checks(&unit(&adversarial, &format!("{ROWS}\n{authored}")));
+    let fairness = only_refinement(&graph).concrete_fairness();
+    assert_eq!(fairness.len(), 1);
+    assert_eq!(fairness[0].origin(), RefinementFairnessOrigin::Authored);
+
+    let graph = checks(&unit(REFUNDS, REFUND_ROWS));
+    let scheduler: Vec<_> = only_refinement(&graph)
+        .concrete_fairness()
+        .iter()
+        .filter(|member| member.origin() == RefinementFairnessOrigin::Scheduler)
+        .collect();
+    assert_eq!(
+        scheduler
+            .iter()
+            .map(|member| member.thread_target().expect("scheduler target"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        [
+            RefinementThreadTarget::Root,
+            RefinementThreadTarget::CompensationTemplate {
+                name: "Refund".to_owned(),
+            },
+        ]
+    );
+
+    let adversarial = REFUNDS.replace(
+        "run sequence Main {",
+        "scheduling adversarial;\nrun sequence Main {",
+    );
+    let graph = checks(&unit(&adversarial, REFUND_ROWS));
+    assert!(only_refinement(&graph).concrete_fairness().is_empty());
+}
+
 fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
     let [refinement] = graph.refinements() else {
         panic!("one refinement: {:?}", graph.refinements());
@@ -375,7 +478,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
                 kind: ProtocolStepKind::Finish,
                 node: node("Done"),
             },
-        ]
+        ],
     );
     // The attempts are visible with `add`'s label, the control steps internal.
     let observed: Vec<RowObservation> = refinement.steps().iter().map(observation).collect();
@@ -1310,6 +1413,92 @@ fn an_await_needs_a_timeout_row_and_its_matched_event_a_row() {
             "{node}"
         );
     }
+}
+
+/// FR-136-AC-11 (TC-541): an earlier invariant refusal, a deferred abstract
+/// protocol refinement refusal and a second concrete protocol selection are
+/// all reported in order without leaking protocol coverage refusals. Once the
+/// invariant and second selection are removed, the first refinement's refusal
+/// does not prevent the later protocol coverage check.
+#[trace("TC-541", "FR-136-AC-11")]
+#[test]
+fn refinements_keep_ordered_s3_refusals_before_protocol_coverage() {
+    let abstract_protocol = "protocol Twice using v over (c: A::Acc) on origin {\n\
+        role w on A::Acc;\n\
+        run sequence Main { }\n\
+        finish Done as (d: Boolean) { true };\n\
+        }\n";
+    let abstract_refinement = "refinement CasTwice using t abstract A::Twice concrete M {\n\
+        population A::accs from M::nodes;\n\
+        population A::accs from M::nodes;\n\
+        object A::Acc from M::Node { total = self.total; }\n\
+        step M::Node::step -> A::Acc::add(self);\n\
+        step M::Node::undo -> A::Acc::add(self);\n\
+        }\n";
+    let rows = "step M::Node::step -> stutter;\n\
+                step M::Node::undo -> stutter;\n\
+                step M::Fill::A -> any;\n\
+                step M::Other::Done -> stutter;";
+    let protocol_refinement = refinement(rows).replace("FillRefinesAcc", "OverRun");
+    let other = fill("").replace("protocol Fill", "protocol Other");
+    let protocols = format!("{abstract_protocol}{}{other}", fill(""));
+    let source = header(true)
+        + "invariant Invalid using v on M::Node at current { self.total }\n"
+        + &protocols
+        + abstract_refinement
+        + &protocol_refinement;
+    let refusals = refused(&source);
+    assert_eq!(
+        refusals.iter().map(Refused::pair).collect::<Vec<_>>(),
+        [
+            (Code::IllTyped, Some("non-boolean-root")),
+            (Code::InvalidModelBinding, Some("conflicting-binding")),
+            (Code::InvalidModelBinding, Some("conflicting-binding")),
+        ],
+        "{refusals:?}"
+    );
+    assert!(
+        matches!(
+            refusals[1].refinement(),
+            RefinementCause::Conflicting { name, .. } if name == "A::accs"
+        ),
+        "{refusals:?}"
+    );
+    assert!(matches!(
+        refusals[2].refinement(),
+        RefinementCause::Conflicting { name, .. } if name == "Other"
+    ));
+    assert_eq!(refusals[2].at, "step M::Other::Done -> stutter;");
+    assert!(refusals
+        .iter()
+        .skip(1)
+        .all(|refusal| { !matches!(refusal.refinement(), RefinementCause::MissingRow { .. }) }));
+
+    let no_invariant = source.replace(
+        "invariant Invalid using v on M::Node at current { self.total }\n",
+        "",
+    );
+    let no_second_protocol = no_invariant.replace(
+        "step M::Other::Done -> stutter;",
+        "step join M::Fill::Both -> stutter;\n\
+         step M::Fill::Done -> stutter;",
+    );
+    let refusals = refused(&no_second_protocol);
+    assert_eq!(
+        refusals.iter().map(Refused::pair).collect::<Vec<_>>(),
+        [
+            (Code::InvalidModelBinding, Some("conflicting-binding")),
+            (Code::MissingDeclaration, Some("missing-name")),
+        ]
+    );
+    assert!(matches!(
+        refusals[0].refinement(),
+        RefinementCause::Conflicting { name, .. } if name == "A::accs"
+    ));
+    assert_eq!(
+        refusals[1].refinement(),
+        &missing(RowClass::Node, "fork M::Fill::Both")
+    );
 }
 
 /// Two refinements of one unit, over two protocols, record the two clauses'
