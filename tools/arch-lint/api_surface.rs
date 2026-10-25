@@ -1571,21 +1571,32 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
         aliases
     }
 
+    fn collect_spine_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+        let mut entries = fs::read_dir(directory)
+            .map_err(|error| Error::io(directory, error))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|error| Error::io(directory, error))?;
+        entries.sort_by_key(std::fs::DirEntry::path);
+        for entry in entries {
+            let path = entry.path();
+            let file_type = entry.file_type().map_err(|error| Error::io(&path, error))?;
+            if file_type.is_dir() {
+                collect_spine_files(&path, files)?;
+            } else if file_type.is_file()
+                && path.extension().is_some_and(|extension| extension == "rs")
+            {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+
     let mut files = vec![qsl_replay_src.join("spine.rs")];
     let spine_dir = qsl_replay_src.join("spine");
     if spine_dir.is_dir() {
-        let entries = fs::read_dir(&spine_dir).map_err(|error| Error::io(&spine_dir, error))?;
-        for entry in entries {
-            let entry = entry.map_err(|error| Error::io(&spine_dir, error))?;
-            if entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "rs")
-            {
-                files.push(entry.path());
-            }
-        }
+        collect_spine_files(&spine_dir, &mut files)?;
     }
+    files.sort();
     // FND-020: every scanned file's syntax tree, read and parsed once, so
     // the alias set below can be resolved across all of them together --
     // `pub(crate) type Ev = qsl_eval::...;` declared in `spine.rs` and used
@@ -1599,10 +1610,45 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
             Ok((file, parsed))
         })
         .collect::<Result<Vec<_>>>()?;
-    let mut aliases = std::collections::HashSet::new();
-    for (_, parsed) in &parsed_files {
-        aliases.extend(use_aliases(parsed));
+    // External test modules are files below the same source tree, but their
+    // public helpers are compiled only under `cfg(test)` and are not part of
+    // the shipped facade. Mirror the inline `mod tests` exclusion below for
+    // these file-backed modules before collecting aliases or public items.
+    fn is_cfg_test_module(module: &syn::ItemMod) -> bool {
+        module.attrs.iter().any(|attribute| {
+            attribute.path().is_ident("cfg")
+                && matches!(&attribute.meta, syn::Meta::List(list) if list.tokens.to_string() == "test")
+        })
     }
+    fn module_directory(file: &Path) -> PathBuf {
+        let parent = file.parent().unwrap_or_else(|| Path::new("."));
+        if file.file_stem().is_some_and(|stem| stem == "mod") {
+            parent.to_path_buf()
+        } else {
+            parent.join(file.file_stem().unwrap_or_default())
+        }
+    }
+    let mut test_module_roots = Vec::new();
+    for (file, parsed) in &parsed_files {
+        for item in &parsed.items {
+            if let syn::Item::Mod(module) = item {
+                if module.content.is_none() && is_cfg_test_module(module) {
+                    let module_path = module_directory(file).join(module.ident.to_string());
+                    test_module_roots.push(module_path.with_extension("rs"));
+                    test_module_roots.push(module_path);
+                }
+            }
+        }
+    }
+    let parsed_files: Vec<_> = parsed_files
+        .into_iter()
+        .filter(|(file, _)| {
+            !test_module_roots
+                .iter()
+                .any(|root| *file == root || file.starts_with(root))
+        })
+        .collect();
+    let mut type_aliases = std::collections::HashSet::new();
     // FND-015/FND-020: a `type` alias (private or public), in any scanned
     // file, whose own definition names `qsl_eval` -- directly, or through
     // another such alias declared in the same or a different file -- is
@@ -1611,18 +1657,22 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     // Option<Q>`, however far apart the two are) still names `qsl_eval`
     // through it. Fixed point over every scanned file's own `type` items
     // together, since one alias may be defined in terms of another
-    // declared in a different file.
+    // declared in a different file. `use` names remain local to the file
+    // that imports them; pooling those across recursively scanned modules
+    // would mistake unrelated identifiers for `qsl_eval` aliases.
     loop {
         let mut changed = false;
         for (_, parsed) in &parsed_files {
+            let mut aliases = type_aliases.clone();
+            aliases.extend(use_aliases(parsed));
             for item in &parsed.items {
                 if let syn::Item::Type(type_item) = item {
                     let name = type_item.ident.to_string();
-                    if aliases.contains(&name) {
+                    if type_aliases.contains(&name) {
                         continue;
                     }
                     if names_qsl_eval(&aliases, |finder| finder.visit_type(&type_item.ty)) {
-                        aliases.insert(name);
+                        type_aliases.insert(name);
                         changed = true;
                     }
                 }
@@ -1634,6 +1684,8 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     }
     let mut findings = Vec::new();
     for (file, parsed) in &parsed_files {
+        let mut aliases = type_aliases.clone();
+        aliases.extend(use_aliases(parsed));
         for item in &parsed.items {
             // `mod tests { ... }` is test-only code, not part of the shipped
             // public surface, even where a stray `pub` appears inside it.
@@ -1691,7 +1743,7 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     let text = fs::read_to_string(&lib).map_err(|error| Error::io(&lib, error))?;
     let parsed = syn::parse_file(&text)
         .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", lib.display())))?;
-    let mut lib_aliases = aliases;
+    let mut lib_aliases = type_aliases;
     lib_aliases.extend(use_aliases(&parsed));
     for item in &parsed.items {
         if let syn::Item::Use(use_item) = item {
@@ -3173,6 +3225,27 @@ mod tests {
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].contains("fn run"));
+    }
+
+    /// FR-100-AC-8 (TC-452 step 3): nested spine modules are part of the
+    /// facade surface scan, not only files directly under `spine/`.
+    #[trace("TC-452", "FR-100-AC-8")]
+    #[test]
+    fn tc_452_spine_surface_check_rejects_qsl_eval_in_a_nested_module() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "spine.rs", "pub mod clause;\n");
+        write(dir.path(), "spine/clause.rs", "pub mod nested;\n");
+        write(
+            dir.path(),
+            "spine/clause/nested.rs",
+            "pub fn expose() -> qsl_eval::value::QualifiedName { todo!() }\n",
+        );
+        write(dir.path(), "lib.rs", "pub mod spine;\n");
+
+        let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("nested.rs"), "{findings:?}");
+        assert!(findings[0].contains("fn expose"), "{findings:?}");
     }
 
     /// FND-001: a `pub` field typed through a `use qsl_eval::... as X`
