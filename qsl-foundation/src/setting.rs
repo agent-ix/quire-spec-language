@@ -107,6 +107,17 @@ settings! {
     I2WorkUnits => "i2.work_units", "I2 v2 reader", WorkBudget;
     ExploreStates => "explore.states", "exploration", NodeCount;
     ExploreTransitions => "explore.transitions", "exploration", EdgeCount;
+    ModelCheckMaxStates => "model_check.max_states", "EN-1 model checker", NodeCount;
+    ModelCheckMaxTransitions => "model_check.max_transitions", "EN-1 model checker", EdgeCount;
+    ModelCheckMaxAutomatonStates => "model_check.max_automaton_states", "EN-1 model checker", NodeCount;
+    ModelCheckWitnessSamples => "model_check.witness_samples", "EN-1 phase 0", NodeCount;
+    ModelCheckMaxWalkSteps => "model_check.max_walk_steps", "EN-1 phase 0", EdgeCount;
+    ModelCheckMaxWitnessSet => "model_check.max_witness_set", "EN-1 hyper runs", NodeCount;
+    ModelCheckMaxRelationTuples => "model_check.max_relation_tuples", "EN-1 hyper runs", NodeCount;
+    ModelCheckMaxLiveInstances => "model_check.max_live_instances", "EN-1 protocol subjects", NodeCount;
+    ModelCheckMaxStoreBuffer => "model_check.max_store_buffer", "EN-1 weak memory", NodeCount;
+    ModelCheckMaxMessages => "model_check.max_messages", "EN-1 weak memory", NodeCount;
+    ExpansionMaxCandidates => "expansion.max_candidates", "model-subject expansion", NodeCount;
 }
 
 impl Setting {

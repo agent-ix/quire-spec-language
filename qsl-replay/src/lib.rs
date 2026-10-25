@@ -147,7 +147,7 @@ pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
-pub use limits::{AccountingLimits, CallerLimits, PrepareLimits, RenderLimits};
+pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
     MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,

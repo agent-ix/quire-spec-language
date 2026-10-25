@@ -558,7 +558,7 @@ fn an_undefined_model_side_expression_refutes_the_deadlock_item() {
 /// `max_transitions` 1 stop the run naming the limit and its value; an
 /// already-cancelled handle stops it with no limit; a zero evaluation meter
 /// stops it at `inc`'s precondition naming the meter, 0.
-#[trace("TC-521", "FR-126-AC-19")]
+#[trace("TC-521", "FR-126-AC-8", "FR-126-AC-19", "FR-255-AC-13")]
 #[test]
 fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -595,6 +595,21 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             Some(ReachedLimit {
                 limit: ModelCheckLimit::MaxStates,
                 value: 2
+            })
+        )
+    );
+    let raised_states = CallerLimits::from_operands(["model_check.max_states=3"])
+        .expect("the settings operation accepts the model-check limit")
+        .engines
+        .model_check;
+    assert_eq!(raised_states.limits.max_states, 3);
+    assert_eq!(
+        stopped(with(None, raised_states, UNLIMITED)),
+        (
+            IncompleteCause::ResourceExhausted,
+            Some(ReachedLimit {
+                limit: ModelCheckLimit::MaxStates,
+                value: 3
             })
         )
     );
@@ -752,8 +767,15 @@ fn raising_the_reached_bound_lets_the_run_continue() {
         limit.expect("the candidate bound").limit.setting(),
         "expansion.max_candidates"
     );
+    let raised_candidates = CallerLimits::from_operands(["expansion.max_candidates=1000000"])
+        .expect("the settings operation accepts the expansion limit")
+        .engines
+        .expansion
+        .expect("the caller supplied an expansion limit")
+        .max_candidates;
+    assert_eq!(raised_candidates, 1_000_000);
     assert_eq!(
-        violated(&candidates(1_000_000)).kind,
+        violated(&candidates(raised_candidates)).kind,
         CounterexampleKind::Deadlock
     );
 }
