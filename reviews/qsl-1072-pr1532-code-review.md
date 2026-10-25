@@ -65,3 +65,37 @@ merged tree builds and passes.
 | FND-011 | medium | The FR-487-AC-4 test does not detect a missing short-circuit: the no-short-circuit mutant passes it, and only the AC-5 test catches it. Its only charge assertion is `first_conjunct < both_conjuncts`, so the AC's "conjunct 0's charges only" claim for `(step(0), stutter)` is not checked. | qsl-analyze/tests/it/hyper_lowering.rs:171-214 |
 | FND-012 | medium | The evaluated value of a label constant is untested. Lowering `V::Vault::step` to an arbitrary non-operation text survives every test. The AC-2 and FR-172-AC-5 tests check slots and refusals only. The FR-176-AC-2 fixture `a.step.op = V::Vault::step and b.step.op = stutter` gives `VacuousMatch` whether or not the constant ever equals a step. AC-2's "compares its one slot with the literal operation text of `step`" and FR-172-AC-5's "holds at exactly the joint steps at which …" are not asserted, and neither are AC-2's `Option<Int[0, 1]>` and `Option<Reference<Vault>>` slot types. | qsl-semantics/tests/it/hyper_clauses.rs:1362-1430, qsl-semantics/tests/it/hyper_clauses.rs:1462-1505, qsl-analyze/tests/it/hyper.rs:216 |
 | FND-013 | medium | The FR-172-AC-8 test omits the criterion's `deref(value(v.next @ a)).l = 1` refusal (`ill_typed` at `.l`) and does not read `component_reads()`. Its `let` fixture compares `value(r) = value(r)` and not `deref(value(r)).l = 1`, so the new `Deref` branches of `check_atom` and the recording of a `deref` read's component run in no test. | qsl-semantics/tests/it/hyper_clauses.rs:1536-1553, qsl-semantics/src/check/hyper_clause.rs:1651-1657 |
+
+## New findings (disposition pass 1)
+
+Found in the fix PR, quire-spec-language#1539 at 278643086.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | high | `conjunct_spans` is a second implementation of `check_match`'s conjunct split: the same `and` walk, the same left-first order, and the same universal/existential rule. Its spans must line up index for index with `mu_universal()`/`mu_existential()`. A change to either split moves every conjunct refusal to another conjunct's span. It was also inserted between `check_match`'s doc comment and `fn check_match`, so the "FR-172 Match" doc now describes `conjunct_spans`, and `check_match` has none. The split should be computed once, for example by `check_match` returning or recording the spans it already reads. | qsl-semantics/src/check/hyper_clause.rs:1749-1800, qsl-semantics/src/check/hyper_clause.rs:1803-1830, qsl-semantics/src/check/assemble.rs:3620-3626 |
+| FND-015 | high | `decodable_argument` (qsl-semantics) restates the list of types that `step_value::decode` (qsl-eval) decodes: Boolean, Integer/Int, String, Reference and Option of them. These are two statements of one rule in two crates. If a type is added to `decode` without `decodable_argument`, S3 keeps refusing it. If one is added to `decodable_argument` without `decode`, FND-002 returns. The unit test checks `decodable_argument` alone, so nothing ties the two lists together. | qsl-semantics/src/check/hyper_clause.rs:2105-2119, qsl-eval/src/hyper/step_value.rs:67-100 |
+
+## Dispositions
+
+Disposition pass 1, over quire-spec-language#1539 at 278643086. #1532 was merged before
+these fixes. Mutants re-run against the fix PR's tests: definedness ignoring components
+is killed (`a_proof_about_a_read_in_one_component_does_not_cover_it_in_another`); the
+slot-length check removed is killed (the AC-3 test); the no-short-circuit mutant is
+killed (the AC-4 and AC-5 tests); the label constant lowered to the wrong text is killed
+(three tests). Baseline: semantics hyper tests 32/32, analyze hyper tests 181/181.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `operation_text` builds a `DeclarationKey` and calls the new `model::key::declaration_identity_text`, which encodes the existing `DeclarationKeyWire` preimage. A test equates it with `ModelSystem::operation_text_of` and a real transition's text. |
+| FND-002 | fixed | `step_read` refuses `unsupported_construct`/`expression-form` for an argument type that `decode` cannot read, so no checked conjunct faults at a step. The two type lists are now a new finding, FND-015. |
+| FND-003 | fixed | Conjunct sites are registered as declared type spans, and `lower_conjunct` relocates a refusal to the site root. `a_refused_conjunct_has_a_source_region` asserts the region equals the conjunct's span. |
+| FND-004 | fixed | `halted` reads `Halt::Atom(AtomStop::Fault(_))` as a replay fault, beside `Halt::Fault`. |
+| FND-005 | fixed | `CheckedStepMatch` returns the new `MatchReading::Fault`. `Joint::read` records it as `Halt::Fault`, and each replay reading of `μ` refuses it as a fault. |
+| FND-006 | fixed | Atoms are typed at their own `Site::Atom`, where `type_condition` no longer refuses calls, `size`, `case`, quantity products and the other forms the value typer types. `an_atom_may_call_a_declared_function` covers this. Relation bodies keep the old pass, and FR-487 "Out of scope" excludes the `relation` body, so FR-487 "Dependencies" is met for atoms. |
+| FND-007 | fixed | `nodes_used = hyper_declarations.nodes_used.get()` after the hyper loop. |
+| FND-008 | fixed | The new AC-10 test reads `deref(value(v.parent @ a)).parent` in `a` and then in `b`. The `Step::Component` mutant is killed. |
+| FND-009 | fixed | The AC-1 test asserts the `Equality` root, that the two operands have the same kind (no index node), that the left read is component 0 and the right read component 1, and that the bodies and component maps are equal on a re-check. |
+| FND-010 | fixed | The wrong-length case passes two environments and asserts the `hyper-atom-binds-one-value-per-slot` fault. The zero-budget case asserts `Incomplete` with limit 0 and nothing consumed. The slot-length mutant is killed. |
+| FND-011 | fixed | The AC-4 test asserts that the work over `(step(0), stutter)` equals the work of the first conjunct alone. The no-short-circuit mutant is now killed by this test. |
+| FND-012 | fixed | `a_label_constant_equals_the_operation_text_of_its_steps` evaluates `=`, `!=` and the mirrored `!=` over `step`, `reset` and the stutter. A satisfiable companion of the FR-176-AC-2 vacuous fixture is added. `a_conjunct_s_slots_have_the_types_of_their_labels` checks the slot reads. The wrong-text mutant is killed. |
+| FND-013 | fixed | `an_indexed_let_and_deref_read_one_component` reads `component_reads()` for the `let`/`deref` atom under `@ a` and `@ b`, and asserts the unindexed `.versionNumber` refusal. |

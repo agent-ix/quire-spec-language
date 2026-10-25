@@ -1379,7 +1379,7 @@ fn an_atom_lowers_to_a_condition_over_per_trace_parameter_slots() {
     assert_eq!(reads.get(right.location()), Some(&1));
 }
 
-/// FR-487-AC-2: a conjunct's slots are its step reads, and a label misused
+/// FR-487 "Lowering a match conjunct": a conjunct's slots are its step reads, and a label misused
 /// by the form around it refuses `ill_typed`/`type-mismatch`.
 #[trace("TC-1264")]
 #[test]
@@ -1527,7 +1527,7 @@ fn a_label_constant_checks_beside_its_trace_s_operation_and_refuses_elsewhere() 
     );
 }
 
-/// FR-172-AC-7: a call in a conjunct takes step labels as its arguments, and
+/// FR-172 "Match" calls: a call in a conjunct takes step labels as its arguments, and
 /// an argument that reads state refuses.
 #[trace("TC-1264")]
 #[test]
@@ -1576,7 +1576,7 @@ fn an_at_scopes_over_a_compound_operand() {
     );
 }
 
-/// FR-487-AC-2: the slots of a conjunct carry the types the labels have: an
+/// FR-487 "Lowering a match conjunct": the slots of a conjunct carry the types the labels have: an
 /// operation is a `String`, an argument an option of its parameter's type.
 #[trace("TC-1264")]
 #[test]
@@ -1641,7 +1641,8 @@ fn a_refused_conjunct_has_a_source_region() {
     );
 }
 
-/// FR-487-AC-9 (checking half) and FR-172-AC-8: `@ a` scopes over the `let`
+/// The checking half of FR-487-AC-9 (its evaluation half is QSL-1085) and
+/// FR-172-AC-8: `@ a` scopes over the `let`
 /// and the `deref`, so every model read of the atom reads component `a`, and
 /// an `@ b` moves them all to `b`; a read no `@` encloses refuses.
 #[trace("TC-1264", "FR-487-AC-9")]
@@ -1719,7 +1720,7 @@ fn a_proof_about_a_read_in_one_component_does_not_cover_it_in_another() {
 
 /// FR-487 "Dependencies": the value typer decides the forms of an atom, so a
 /// call of a declared function checks in an atom.
-#[trace("TC-1264", "FR-487-AC-1")]
+#[trace("TC-1264")]
 #[test]
 fn an_atom_may_call_a_declared_function() {
     let declaration = format!(

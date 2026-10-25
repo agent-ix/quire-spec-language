@@ -4,7 +4,7 @@
 
 use std::str::FromStr;
 
-use qsl_semantics::check::{operation_text, StepRead, STUTTER_TEXT};
+use qsl_semantics::check::{decodable_argument, operation_text, StepRead, STUTTER_TEXT};
 use quire_exact::{Integer, OptionValue, Value, ValueType};
 
 use crate::hyper::StepLabel;
@@ -59,12 +59,14 @@ pub(crate) fn slot_value(read: &StepRead, label: &StepLabel<'_>) -> Result<Value
 }
 
 /// The value of declared type `value_type` that `text` writes in FR-181's
-/// typed canonical form, for the types a step argument is written in here:
-/// Boolean, integers, strings, references and options of them. Any other type
-/// has no decoding, and `None` stands for it as for a malformed text.
+/// typed canonical form, for the types [`decodable_argument`] admits. Any
+/// other type has no decoding, and `None` stands for it as for a malformed text.
 /// `#[string_edge]`: reads the canonical text the model's own encoder wrote.
 #[ix_trace_rs::string_edge]
 pub(crate) fn decode(text: &str, value_type: &ValueType) -> Option<Value> {
+    if !decodable_argument(value_type) {
+        return None;
+    }
     let value = match value_type {
         ValueType::Boolean => match text {
             r#"{"type":"boolean","value":true}"# => Value::Boolean(true),
