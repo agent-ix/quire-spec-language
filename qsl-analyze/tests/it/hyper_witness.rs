@@ -509,6 +509,8 @@ fn an_undefined_universal_match_with_no_witness_is_refused_not_guessed() {
 struct LateUndefined<'w> {
     seams: crate::hyper_world::Seams<'w>,
     calls: std::cell::Cell<usize>,
+    /// How many `Undefined` readings the seam has returned.
+    undefined: std::cell::Cell<usize>,
 }
 
 impl StepMatch for LateUndefined<'_> {
@@ -523,6 +525,7 @@ impl StepMatch for LateUndefined<'_> {
         let one = matches!(steps[0], StepLabel::Operation(step)
             if step.arguments().first().is_some_and(|argument| argument.contains("\"value\":\"1\"")));
         if calls >= 5 && one {
+            self.undefined.set(self.undefined.get() + 1);
             return Ok(MatchReading::Undefined {
                 conjunct: 0,
                 cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
@@ -557,6 +560,7 @@ fn a_later_undefined_evaluation_does_not_replace_an_earlier_empty_witness_set() 
     let matcher = LateUndefined {
         seams: world.seams(),
         calls: std::cell::Cell::new(0),
+        undefined: std::cell::Cell::new(0),
     };
     let outcome = world
         .run_through(
@@ -1430,6 +1434,7 @@ fn a_late_undefined_universal_match_and_a_refused_existential_one_rank_against_t
     let late = LateUndefined {
         seams: world.seams(),
         calls: std::cell::Cell::new(0),
+        undefined: std::cell::Cell::new(0),
     };
     let counterexample = refuted(
         world
@@ -1442,8 +1447,8 @@ fn a_late_undefined_universal_match_and_a_refused_existential_one_rank_against_t
             .expect("the run is not refused"),
     );
     assert!(
-        late.calls.get() >= 5,
-        "the undefined step was evaluated, so it is the position that decides"
+        late.undefined.get() >= 1,
+        "the seam returned Undefined, so the empty X won on rank and position"
     );
     assert_eq!(
         counterexample.kind,
@@ -1535,6 +1540,10 @@ fn the_lasso_rotates_to_entry_zero_and_goes_on_by_a_connecting_step_when_the_loo
 /// member's path, from the initial state `(1, 0)` with no step, one step short
 /// of `a`'s; `variables` and `state_keys` hold two entries. With a second
 /// universal variable `c` before `b` they hold three, in the order `a`, `c`, `b`.
+///
+/// No production `StepMatch` exists, so the division-by-zero cause comes from
+/// this test's hand-modelled match reader (`hyper_world`); the test checks the
+/// engine's handling of that reading.
 #[trace("TC-602", "FR-177-AC-10")]
 #[test]
 fn an_undefined_universal_match_ends_one_step_short_for_the_partner() {
@@ -1607,6 +1616,10 @@ fn an_undefined_universal_match_ends_one_step_short_for_the_partner() {
 /// `Stopped`. If instance `w` has an atom with no value at position 0, the run
 /// returns `w`'s `Undefined` counterexample at position 0, which ranks before
 /// `v`'s empty `X` at the same position.
+///
+/// No production `StepMatch` exists, so the division-by-zero cause comes from
+/// this test's hand-modelled match reader (`hyper_world`); the test checks the
+/// engine's handling and ranking of that reading.
 #[trace("TC-602", "FR-177-AC-11")]
 #[test]
 fn instances_rank_by_strictly_earlier_findings_and_a_position_zero_finding_bounds_the_rest() {
@@ -1702,6 +1715,19 @@ fn an_undefined_universal_match_over_an_empty_set_is_refused_and_ranks_first() {
     );
 
     let world = two_instances(Vault::Leaky, &[(0, 0), (1, 0)], " and a.step.op != stutter");
+    // Instance `w`'s empty `X` is at joint position 1, the position at which
+    // `v`'s `μ_U` refusal is made (the step out of the initial states enters
+    // position 1), so rank and not position decides.
+    let plain = refuted(run(&world, ModelCheckLimits::default()));
+    assert!(
+        matches!(
+            plain.kind,
+            HyperCounterexampleKind::WitnessExhausted { position: 1, .. }
+        ),
+        "{:?}",
+        plain.kind
+    );
+    assert_eq!(plain.trace_position, 1);
     let both = PerInstance {
         seams: world.seams(),
         undefined_at_w: false,

@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
@@ -23,7 +23,7 @@ use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
+use quire_exact::{Meter, ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -469,7 +469,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(match (self.atom)(value(state, &instance.key)) {
             Some(true) => AtomReading::True,
             Some(false) => AtomReading::False,

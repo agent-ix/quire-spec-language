@@ -46,6 +46,7 @@ mod error;
 mod formula;
 mod gba;
 mod key;
+mod key_state;
 mod letter;
 mod monitor;
 mod numbering;
@@ -62,8 +63,12 @@ pub use error::AutomatonError;
 pub use gba::{Gba, GbaBuilder, Transition};
 pub use key::{
     invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextRoot, KeyRefusal,
-    NotTranslated, SafetyItem, SafetyState, SafetyTranslation, StateContext, TranslationRefusal,
-    AUTOMATON_STATE_KEY_V1,
+    NotTranslated, SafetyItem, SafetyState, SafetyStates, SafetyTranslation, StateContext,
+    TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+};
+pub use key_state::{
+    Configuration, HistoryOperand, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
+    Window,
 };
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};

@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest, SubjectContext};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
     classify_accesses, visible, AccessShape, CarriedComponent, ClaimReads, InstanceAccess,
@@ -37,7 +37,7 @@ use qsl_replay::{
 };
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
-use quire_exact::{Cancel, Incomplete, Meter};
+use quire_exact::{Cancel, Meter};
 use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Reached};
@@ -310,7 +310,7 @@ impl ModelLetters for NoBothZero {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let both = field(state, "cores", &instance.key, "r1") == 0
             && field(state, "cores", &instance.key, "r2") == 0;
         Ok(if both {
@@ -1809,7 +1809,7 @@ impl ModelLetters for NeverOne {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if field(state, "cells", &instance.key, "v") == 1 {
             AtomReading::False
         } else {
@@ -1838,7 +1838,7 @@ impl ModelLetters for R1NeverZero {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if field(state, "cores", &instance.key, "r1") == 0 {
             AtomReading::False
         } else {
@@ -2300,7 +2300,7 @@ impl ModelLetters for Forbid {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if (self.0)(state, &instance.key) {
             AtomReading::False
         } else {

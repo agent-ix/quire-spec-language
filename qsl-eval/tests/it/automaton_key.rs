@@ -4,13 +4,16 @@
 //! and the admission of imported keys against an item's context.
 //!
 //! The expected octets are written out here as ASCII text, independent of
-//! the encoder under test. Not covered: the bounded, interval, past and
-//! Büchi alternatives of FR-338's algebra, whose clauses no EN-1 phase
-//! decides yet, so their vectors and admission negatives are not checked.
+//! the encoder under test. The interval, past and acceptance members of the
+//! `["safety", branches]` algebra are checked against clause formulas below.
+//! Not covered here: the bounded alternative (`automaton_key_bounded.rs`) and
+//! the Büchi alternatives (Remaining work: QSL-982 PR 2).
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    ContextActivation, KeyRefusal, SafetyState, SafetyTranslation, StateContext, TranslationRefusal,
+    Configuration, ContextActivation, HistoryOperand, KeyRefusal, Obligation, Occurrence,
+    PastMemory, PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
+    TranslationRefusal, Window,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -303,4 +306,568 @@ fn malformed_safety_keys_refuse_before_membership() {
             "{octets}"
         );
     }
+}
+
+/// The unbounded-profile clause `body` over `c: Counter`, its safety
+/// states under `occurrence(0)`.
+fn states(body: &str) -> SafetyStates {
+    let fixture = fixture(INFINITE, "c: Counter", "on origin", body);
+    let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+    SafetyStates::clause(&fixture.clause, &context).unwrap_or_else(|why| panic!("{body}: {why}"))
+}
+
+/// The context of `states(_)` as FR-338 spells it.
+fn states_context() -> String {
+    let node = format!(
+        r#"{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}}"#,
+        "ab".repeat(32)
+    );
+    format!(r#"[[{node},"temporal","0"],"quire.temporal.infinite-trace/v1","infinite",[]]"#)
+}
+
+/// The full key `K_C(body)` of `states(_)`, as the oracle spells it.
+fn states_key(body: &str) -> String {
+    format!(
+        r#"["quire.automaton-state-key/v1",{},{body}]"#,
+        states_context()
+    )
+}
+
+fn octets(states: &SafetyStates, branches: &[Configuration]) -> String {
+    let key = states.key(branches).expect("the key encodes");
+    String::from_utf8(key.as_bytes().to_vec()).expect("a key is UTF-8")
+}
+
+fn at(path: &[u64], polarity: Polarity) -> Occurrence {
+    Occurrence::new(path.to_vec(), polarity)
+}
+
+/// The carried root `G`: `[[],"positive"]` as a current obligation.
+fn root() -> Obligation {
+    Obligation::Current(at(&[], Polarity::Positive))
+}
+
+const FUTURE: &str = "always (holds(c.level = 1) implies eventually[0,3] holds(c.level = 2))";
+const TWO_FUTURES: &str =
+    "eventually[0,3] holds(c.level = 1) and eventually[0,3] holds(c.level = 2)";
+const SHIFTED: &str = "always (holds(c.level = 1) implies eventually[1,3] holds(c.level = 2))";
+
+/// FR-338-AC-4 over the `["safety", branches]` algebra: the state bodies
+/// and full keys are the authored octets; reversing the insertion order of
+/// obligations, windows, offsets, acceptance and branches leaves the bytes
+/// equal; distinct occurrence paths and differing live facts leave them
+/// unequal; and the bytes are a function of those facts alone, equal across
+/// independently built translations, with no enumeration index in them.
+#[trace("TC-525", "FR-338-AC-4")]
+#[test]
+fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
+    let future = states(FUTURE);
+    let deadline = |remaining: u64| Configuration {
+        obligations: vec![root()],
+        windows: vec![Window::Deadline(at(&[0, 1], Polarity::Positive), remaining)],
+        ..Configuration::default()
+    };
+    assert_eq!(
+        octets(&future, &[deadline(1)]),
+        states_key(
+            r#"["safety",[[[[[],"positive"]],[],[[["0","1"],"positive","deadline","1"]],[]]]]"#
+        )
+    );
+    assert_eq!(
+        octets(&future, &[]),
+        states_key(r#"["safety",[]]"#),
+        "the rejecting state"
+    );
+
+    // Offsets: `{[0,2],[1,3]}` encodes `[["0","2"],["1","3"]]` however the
+    // set was materialized.
+    let shifted = states(SHIFTED);
+    let offsets = |pairs: Vec<(u64, u64)>| Configuration {
+        windows: vec![Window::Offsets(at(&[0, 1], Polarity::Positive), pairs)],
+        ..Configuration::default()
+    };
+    let forward = octets(&shifted, &[offsets(vec![(0, 2), (1, 3)])]);
+    assert_eq!(
+        forward,
+        states_key(
+            r#"["safety",[[[],[],[[["0","1"],"positive","offsets",[["0","2"],["1","3"]]]],[]]]]"#
+        )
+    );
+    assert_eq!(forward, octets(&shifted, &[offsets(vec![(1, 3), (0, 2)])]));
+    let reversed = forward.replace(r#"[["0","2"],["1","3"]]"#, r#"[["1","3"],["0","2"]]"#);
+    assert_eq!(
+        shifted.admit(reversed.as_bytes()),
+        Err(KeyRefusal::Order),
+        "the reversed array supplied as canonical input refuses"
+    );
+
+    // Insertion order of every set and of the branches.
+    let both = states(TWO_FUTURES);
+    let windows = vec![
+        Window::Deadline(at(&[0], Polarity::Positive), 1),
+        Window::Deadline(at(&[1], Polarity::Positive), 1),
+    ];
+    let one = Configuration {
+        obligations: vec![
+            Obligation::Current(at(&[], Polarity::Positive)),
+            Obligation::Current(at(&[], Polarity::Negative)),
+        ],
+        windows: windows.clone(),
+        ..Configuration::default()
+    };
+    let flipped = Configuration {
+        obligations: one.obligations.iter().rev().cloned().collect(),
+        windows: windows.iter().rev().cloned().collect(),
+        ..Configuration::default()
+    };
+    let other = Configuration {
+        windows: windows[..1].to_vec(),
+        ..Configuration::default()
+    };
+    assert_eq!(
+        octets(&both, &[one.clone(), other.clone()]),
+        octets(&both, &[other.clone(), flipped.clone(), one.clone()]),
+        "branch, obligation and window order, and a duplicate branch"
+    );
+    let accepting = states("always (holds(c.level = 1) implies eventually holds(c.level = 2))");
+    let accept = |entries: Vec<Occurrence>| Configuration {
+        acceptance: entries,
+        ..Configuration::default()
+    };
+    let members = vec![at(&[0, 1], Polarity::Positive), at(&[], Polarity::Negative)];
+    assert_eq!(
+        octets(&accepting, &[accept(members.clone())]),
+        octets(
+            &accepting,
+            &[accept(members.iter().rev().cloned().collect())]
+        )
+    );
+
+    // Distinct occurrence paths with equal counters, and differing live
+    // facts, give unequal bytes.
+    let at_zero = Configuration {
+        windows: vec![Window::Deadline(at(&[0], Polarity::Positive), 1)],
+        ..Configuration::default()
+    };
+    let at_one = Configuration {
+        windows: vec![Window::Deadline(at(&[1], Polarity::Positive), 1)],
+        ..Configuration::default()
+    };
+    let keys = [
+        octets(&both, std::slice::from_ref(&at_zero)),
+        octets(&both, &[at_one]),
+        octets(
+            &both,
+            &[Configuration {
+                windows: vec![Window::Deadline(at(&[0], Polarity::Positive), 2)],
+                ..Configuration::default()
+            }],
+        ),
+        octets(
+            &both,
+            &[Configuration {
+                windows: vec![Window::Extent(at(&[0], Polarity::Negative), 1)],
+                ..Configuration::default()
+            }],
+        ),
+        octets(&both, &[Configuration::default()]),
+        octets(&both, &[]),
+    ];
+    for (index, key) in keys.iter().enumerate() {
+        for other in &keys[index + 1..] {
+            assert_ne!(key, other);
+        }
+    }
+
+    // The bytes are a function of the facts: an independently built
+    // translation of the same clause writes them again, and they hold no
+    // graph index.
+    assert_eq!(
+        octets(&states(TWO_FUTURES), &[at_zero]),
+        keys[0],
+        "independent translations"
+    );
+    assert!(!keys[0].contains("index"));
+}
+
+/// Each member kind a key can carry is admitted back as the facts that
+/// were written, sorted, whatever order they were written in.
+#[trace("TC-525")]
+#[test]
+fn safety_keys_admit_back_as_the_facts_they_were_written_from() {
+    let future = states(FUTURE);
+    let shifted = states(SHIFTED);
+    let open = states("always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))");
+    let interval = Configuration {
+        obligations: vec![Obligation::Interval {
+            occurrence: at(&[0, 1], Polarity::Positive),
+            lower: 0,
+            upper: Some(2),
+        }],
+        ..Configuration::default()
+    };
+    let up = |states: &SafetyStates, configuration: Configuration| {
+        let key = states
+            .key(std::slice::from_ref(&configuration))
+            .expect("encodes");
+        let (admitted, back) = states.admit(key.as_bytes()).expect("admitted");
+        assert_eq!(admitted, key);
+        back
+    };
+    assert_eq!(up(&future, interval.clone()), vec![interval]);
+    let windows = Configuration {
+        windows: vec![Window::Deadline(at(&[0, 1], Polarity::Positive), 3)],
+        ..Configuration::default()
+    };
+    assert_eq!(up(&future, windows.clone()), vec![windows]);
+    let extent = Configuration {
+        windows: vec![Window::Extent(at(&[0, 1], Polarity::Negative), 2)],
+        ..Configuration::default()
+    };
+    assert_eq!(up(&future, extent.clone()), vec![extent]);
+    let offsets = Configuration {
+        windows: vec![Window::Offsets(
+            at(&[0, 1], Polarity::Positive),
+            vec![(0, 2), (1, 3)],
+        )],
+        ..Configuration::default()
+    };
+    assert_eq!(up(&shifted, offsets.clone()), vec![offsets]);
+    let shift = Configuration {
+        obligations: vec![root()],
+        windows: vec![Window::Shift(at(&[0, 1], Polarity::Positive), 2)],
+        ..Configuration::default()
+    };
+    assert_eq!(up(&open, shift.clone()), vec![shift]);
+}
+
+/// Past memory is complete and typed by the occurrence's interval: an
+/// unbounded flag, a saturated age counter (`b+1` included), a `history`
+/// vector and a `shift-history` vector with its tail; a branch that omits a
+/// past occurrence's memory, or gives it the form of another interval
+/// class, is refused.
+#[trace("TC-525")]
+#[test]
+fn past_memory_is_typed_by_the_occurrence_interval_and_complete() {
+    let path = vec![0, 1];
+    let memory = |states: &SafetyStates, entry: PastMemory, text: &str| {
+        let configuration = Configuration {
+            past: vec![entry],
+            ..Configuration::default()
+        };
+        let key = octets(states, std::slice::from_ref(&configuration));
+        assert_eq!(
+            key,
+            states_key(&format!(r#"["safety",[[[],[{text}],[],[]]]]"#)),
+            "{text}"
+        );
+        assert_eq!(
+            states.admit(key.as_bytes()).map(|(_, branches)| branches),
+            Ok(vec![configuration]),
+            "{text}"
+        );
+    };
+    let unbounded = states("always (holds(c.level = 1) implies once holds(c.level = 2))");
+    memory(
+        &unbounded,
+        PastMemory::Flag {
+            path: path.clone(),
+            operator: PastOperator::Once,
+            value: true,
+        },
+        r#"[["0","1"],"once",true]"#,
+    );
+    let age = states("always (holds(c.level = 1) implies once[0,2] holds(c.level = 2))");
+    memory(
+        &age,
+        PastMemory::Age {
+            path: path.clone(),
+            operator: PastOperator::Once,
+            age: 3,
+        },
+        r#"[["0","1"],"last-true","3"]"#,
+    );
+    let history = states("always (holds(c.level = 1) implies once[1,2] holds(c.level = 2))");
+    memory(
+        &history,
+        PastMemory::History {
+            path: path.clone(),
+            operands: vec![HistoryOperand {
+                path: vec![0, 1, 0],
+                offsets: vec![1, 2],
+            }],
+        },
+        r#"[["0","1"],"history",[[["0","1","0"],["1","2"]]]]"#,
+    );
+    let reversed = Configuration {
+        past: vec![PastMemory::History {
+            path: path.clone(),
+            operands: vec![HistoryOperand {
+                path: vec![0, 1, 0],
+                offsets: vec![2, 1],
+            }],
+        }],
+        ..Configuration::default()
+    };
+    assert_eq!(
+        octets(&history, &[reversed]),
+        states_key(
+            r#"["safety",[[[],[[["0","1"],"history",[[["0","1","0"],["1","2"]]]]],[],[]]]]"#
+        ),
+        "offsets are a set"
+    );
+    let shifted = states("always (holds(c.level = 1) implies once[2,*] holds(c.level = 2))");
+    memory(
+        &shifted,
+        PastMemory::ShiftHistory {
+            path: path.clone(),
+            operands: vec![HistoryOperand {
+                path: vec![0, 1, 0],
+                offsets: vec![1],
+            }],
+            tail: false,
+        },
+        r#"[["0","1"],"shift-history",[[["0","1","0"],["1"]]],false]"#,
+    );
+
+    let flag = |tag: &str, value: &str| {
+        states_key(&format!(
+            r#"["safety",[[[],[[["0","1"],"{tag}",{value}]],[],[]]]]"#
+        ))
+    };
+    let refused = [
+        (
+            &unbounded,
+            states_key(r#"["safety",[[[],[],[],[]]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &unbounded,
+            flag("historically", "true"),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &unbounded,
+            flag("last-true", r#""0""#),
+            KeyRefusal::Unresolved,
+        ),
+        (&unbounded, flag("once", "1"), KeyRefusal::Members),
+        (&age, flag("last-true", r#""4""#), KeyRefusal::Unresolved),
+        (&age, flag("last-true", "true"), KeyRefusal::Members),
+        (&age, flag("once", "true"), KeyRefusal::Unresolved),
+        (
+            &age,
+            flag("last-true", r#""03""#),
+            KeyRefusal::Decimal("03".into()),
+        ),
+        (
+            &history,
+            flag("history", r#"[[["0","1","0"],["3"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &history,
+            flag("history", r#"[[["0","1","1"],["1"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &history,
+            flag("history", r#"[[["0","1","0"],["2","1"]]]"#),
+            KeyRefusal::Order,
+        ),
+        (
+            &history,
+            flag("history", r#"[[["0","1","0"],["0"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (&history, flag("history", "[]"), KeyRefusal::Members),
+    ];
+    for (states, key, refusal) in refused {
+        assert_eq!(
+            states.admit(key.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{key}"
+        );
+    }
+    // The saturation value of a `u64::MAX` bound is `2^64`, no more.
+    let widest = states(
+        "always (holds(c.level = 1) implies once[0,18446744073709551615] holds(c.level = 2))",
+    );
+    for (age, admitted) in [
+        ("18446744073709551616", true),
+        ("18446744073709551617", false),
+    ] {
+        let key = flag("last-true", &format!(r#""{age}""#));
+        assert_eq!(widest.admit(key.as_bytes()).is_ok(), admitted, "{age}");
+    }
+}
+
+/// Window and acceptance members resolve in the formula with the matching
+/// operator, polarity and bounds: a counter strategy other than the one the
+/// interval shape selects, a debt past the checked upper bound, a path
+/// that is no occurrence, an interval debt stored in both obligations and
+/// windows, and acceptance for a greatest-fixed-point or bounded
+/// occurrence are refused.
+#[trace("TC-525")]
+#[test]
+fn window_and_acceptance_members_must_resolve_in_the_formula() {
+    let future = states(FUTURE);
+    let shifted = states(SHIFTED);
+    let open = states("always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))");
+    let accepting = states("always (holds(c.level = 1) implies eventually holds(c.level = 2))");
+    let window = |entry: &str| states_key(&format!(r#"["safety",[[[],[],[{entry}],[]]]]"#));
+    let accept = |entry: &str| states_key(&format!(r#"["safety",[[[],[],[],[{entry}]]]]"#));
+    let refused = [
+        (
+            &future,
+            window(r#"[["0","1"],"positive","deadline","4"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","1"],"positive","extent","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","1"],"negative","deadline","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","1"],"positive","offsets",[["0","1"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","0"],"positive","deadline","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","9"],"positive","deadline","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","1"],"positive","bucket","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            window(r#"[["0","1"],"positive","deadline"]"#),
+            KeyRefusal::Members,
+        ),
+        (
+            &shifted,
+            window(r#"[["0","1"],"positive","deadline","1"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            window(r#"[["0","1"],"positive","offsets",[["2","1"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            window(r#"[["0","1"],"positive","offsets",[["2","3"]]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            window(r#"[["0","1"],"positive","offsets",[]]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            window(r#"[["0","1"],"positive","offsets",[["1","3"],["0","2"]]]"#),
+            KeyRefusal::Order,
+        ),
+        (
+            &open,
+            window(r#"[["0","1"],"positive","shift","0"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &open,
+            window(r#"[["0","1"],"positive","shift","3"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &accepting,
+            accept(r#"[["0","1"],"negative"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &accepting,
+            accept(r#"[["0"],"positive"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            accept(r#"[["0","1"],"positive"]"#),
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &accepting,
+            accept(r#"[["0","1"],"positive","x"]"#),
+            KeyRefusal::Members,
+        ),
+    ];
+    for (states, key, refusal) in refused {
+        assert_eq!(
+            states.admit(key.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{key}"
+        );
+    }
+    // The same debt cannot sit in both the obligations and the windows, and
+    // one signed occurrence has one window.
+    let both = states_key(
+        r#"["safety",[[[[["0","1"],"positive","0","2"]],[],[[["0","1"],"positive","deadline","2"]],[]]]]"#,
+    );
+    let twice = states_key(
+        r#"["safety",[[[],[],[[["0","1"],"positive","deadline","1"],[["0","1"],"positive","deadline","2"]],[]]]]"#,
+    );
+    for key in [both, twice] {
+        assert_eq!(
+            future.admit(key.as_bytes()).map(|_| ()),
+            Err(KeyRefusal::Members),
+            "{key}"
+        );
+    }
+}
+
+/// A key of the safety algebra under another clause's context, or one of
+/// another form, is refused before its members are read.
+#[trace("TC-525")]
+#[test]
+fn safety_states_refuse_foreign_contexts_and_other_forms() {
+    let future = states(FUTURE);
+    let key = octets(&future, &[Configuration::default()]);
+    let foreign = key.replace(r#""0"],"quire.temporal"#, r#""1"],"quire.temporal"#);
+    assert_ne!(foreign, key);
+    assert_eq!(
+        future.admit(foreign.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::ForeignContext)
+    );
+    for tag in ["bounded", "accept", "reject", "buchi"] {
+        let other = states_key(&format!(r#"["{tag}"]"#));
+        assert_eq!(
+            future.admit(other.as_bytes()).map(|_| ()),
+            Err(KeyRefusal::WrongForm(tag.to_owned())),
+            "{tag}"
+        );
+    }
+    let bounded = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,1] holds(true)",
+    );
+    let context = StateContext::clause(&bounded.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        SafetyStates::clause(&bounded.clause, &context),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
 }

@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest, Reductions};
 use qsl_eval::automaton::translate;
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
@@ -44,7 +44,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Incomplete, Meter, Value};
+use quire_exact::{Cancel, Meter, Value};
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
@@ -522,7 +522,7 @@ impl ModelLetters for AllTrue {
         _instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         assert_eq!(atom, self.atom, "the clause's own atom");
         let goal = self.subject.goal();
         Ok(

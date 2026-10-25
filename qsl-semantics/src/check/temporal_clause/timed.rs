@@ -98,6 +98,15 @@ pub struct TimeNominalNode {
     pub dependencies: Vec<quire_exact::NodeKey>,
 }
 
+impl TimeNominalNode {
+    /// Decode the canonical identity preimage tree for the S4 wire adapter.
+    /// The package layer deserializes this value into its contract-model type
+    /// without taking a direct dependency on the JSON implementation.
+    pub fn preimage_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::from_slice(&self.preimage)
+    }
+}
+
 /// A clause's `model-time` binding (FR-233's `ModelClockBinding::ModelTime`):
 /// the model, its time source kind and its unit.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

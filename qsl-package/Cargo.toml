@@ -54,7 +54,7 @@ quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
-serde_json = "1.0.151"
+serde = "1.0.228"
 thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -76,6 +76,7 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The tests build v2 wires and golden preimages as JSON.
 # The tests derive `Deserialize` for QSpec fixture envelopes.
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.151"
 sha2 = "0.10.9"
 # The X18 test validates QSpec's published definitions file against its schema.
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }

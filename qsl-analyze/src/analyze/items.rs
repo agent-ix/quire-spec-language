@@ -4,6 +4,7 @@
 //! engine's layer-6 settlement map, or classifies its refusal by FR-281's
 //! "Engine refusals" table.
 
+use qsl_eval::simulation::model::ClauseOutcome;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
@@ -146,6 +147,14 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         ModelCheckRefusal::Symmetry(_) => symmetry(),
         ModelCheckRefusal::UnknownConstraint { .. } => Refusal::Failed(INVALID_VALUE),
         ModelCheckRefusal::Fault(fault) => Refusal::Failed(fault.catalog_code()),
+        // A refused `holds` evaluation carries its own code where its
+        // family names one (QSL-1039); the rest name none.
+        ModelCheckRefusal::AtomRefused(ClauseOutcome::FamilyRefused(code)) => {
+            Refusal::Failed(*code)
+        }
+        ModelCheckRefusal::AtomRefused(_) | ModelCheckRefusal::StateUnobservable(_) => {
+            Refusal::Failed(BROKEN)
+        }
         // The forms and subjects EN-1 does not decide yet.
         ModelCheckRefusal::ProtocolRefinement
         | ModelCheckRefusal::FormNotDecided { .. }
@@ -206,7 +215,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_eval::simulation::model::ClauseOutcome;
     use qsl_foundation::Code;
     use qsl_replay::statistical::StatisticalRefusal;
     use qsl_replay::{IncompleteCause, TerminalValue};
