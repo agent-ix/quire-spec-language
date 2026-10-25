@@ -190,8 +190,7 @@ impl PackageDeclarations {
     }
 
     /// The declared name span of protocol `protocol`'s attempt `attempt`:
-    /// the position `Origin::ProtocolAttempt` names, since an
-    /// `operation_anchor`/`frame` node carries no position of its own.
+    /// the position the attempt's root origin names.
     fn attempt_span(&self, protocol: usize, attempt: usize) -> Option<Span> {
         let declaration = self
             .protocol_attempts
