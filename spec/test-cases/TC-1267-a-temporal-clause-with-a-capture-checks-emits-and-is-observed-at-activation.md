@@ -1,12 +1,12 @@
 ---
-id: TC-1266
+id: TC-1267
 title: "A temporal clause with a capture checks, emits and is observed at activation"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-337
     type: verifies
 ---
-# TC-1266: A temporal clause with a capture checks, emits and is observed at activation
+# TC-1267: A temporal clause with a capture checks, emits and is observed at activation
 
 ## Description
 
@@ -59,7 +59,7 @@ infinite-trace unless a step names another profile.
    clauses, and read the footprint of AC-14's clause with and without the
    capture.
 
-Tag the tests `#[trace("TC-1266", "FR-337-AC-n")]`.
+Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
 
 ## Expected Results
 
