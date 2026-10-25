@@ -1798,6 +1798,7 @@ fn check_match(
         let mut variable_names: Vec<String> = Vec::new();
         let mut labels: BTreeMap<String, String> = BTreeMap::new();
         let mut subtree = vec![(conjunct, located)];
+        let found_before = found.len();
         while let Some((node, located)) = subtree.pop() {
             let at = located.and_then(|id| block.spans.span(id)).unwrap_or(span);
             match node.node() {
@@ -1877,6 +1878,20 @@ fn check_match(
             for (index, child) in node.children().into_iter().enumerate().rev() {
                 subtree.push((child, located.and_then(|id| block.spans.child(id, index))));
             }
+        }
+        // A label misused by the form around it is `ill_typed`; the state
+        // reads of that same form are not reported beside it.
+        if found[found_before..]
+            .iter()
+            .any(|f| matches!(f, Found::Hyper(HyperCause::BodyIllTyped { .. })))
+        {
+            let mut index = 0;
+            found.retain(|f| {
+                let keep = index < found_before
+                    || !matches!(f, Found::Hyper(HyperCause::MatchReadsState { .. }));
+                index += 1;
+                keep
+            });
         }
         let existential_conjunct = variable_names
             .iter()
