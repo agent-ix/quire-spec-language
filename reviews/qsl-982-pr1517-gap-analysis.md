@@ -52,3 +52,12 @@ reverse gap.
 | --- | --- | --- | --- |
 | FND-001 | low | The protocol-subject admission negatives in `a_protocol_past_window_is_distance_history` carry only `#[trace("TC-525")]`, so the matrix binds them to no criterion. Those negatives are: `history`/`shift-history` refused on a protocol subject, `distance-history` refused on an ordinary one, a distance beyond `b`/`a`, a non-null finite tail, a null shift tail, two buckets at one distance, unsorted buckets, a short or non-Boolean transform, and `"01"`. Every earlier admission-negative test in this file is tagged FR-338-AC-5. Split the negatives into their own test tagged `FR-338-AC-5`, or tag this one. | qsl-eval/tests/it/automaton_key.rs:1903-1905; qsl-eval/tests/it/automaton_key.rs:1997-2062 |
 | FND-002 | low | Since #1516, FR-338-AC-5 names these negatives: a waiting `each-buchi` state carrying its root's shift window, `buchi` under an unguarded `on each` context, `each-buchi` under an origin or `each-when` context, and a TP-4 key under a timed profile. `quoin matrix` reports AC-5 `tagged`, but the `each-buchi` form, and the `"each"` context for unguarded TP-4, exist nowhere in the code: `StateContext::clause` still gives that clause `"infinite"`, and `BuchiStates` refuses it. The tag overstates coverage until the ruled forms land. Not introduced by #1517; defer to the QSL-982 remaining-work PR. | qsl-eval/src/automaton/key.rs:173-178; qsl-eval/src/automaton/key_buchi.rs:87-96; spec/functional/FR-338-check-an-en-1-closure-certificate.md:974 |
+
+## Dispositions
+
+Round 1, verified at PR #1517 head `2e9dbb28`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | rejected | As amended by #1516, FR-338-AC-5 enumerates its negatives (waiting `each-buchi` with a shift window, `buchi` under unguarded `on each`, `each-buchi` under origin or `each-when`, a TP-4 key under a timed profile). The protocol `distance-history` negatives are not among them, so binding them would claim AC-5 evidence it does not name. The coder's TC-525-only tag is defensible. |
+| FND-002 | deferred | This existed before #1517 (introduced by #1516's AC-5 amendment). The `each-buchi` form, the `"each"` context for unguarded TP-4, and the AC-5 negatives belong to the QSL-982 follow-up that implements #1516. Until then the matrix overstates AC-5. |
