@@ -1158,4 +1158,58 @@ mod tests {
             CandidateOutcome::UnknownBackend(missing)
         );
     }
+
+    /// FR-396-AC-2, FR-399: the shared HP-4 classification is carried by the
+    /// request item and removes every candidate, even when EN-1 advertises
+    /// temporal satisfaction.
+    #[trace("QSpec-TC-342", "QSpec-FR-396-AC-2")]
+    #[test]
+    fn an_hp4_hyper_form_is_unsupported_and_has_no_route_candidate() {
+        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use qsl_semantics::check::{HyperForm, HyperUnsupported};
+
+        let mut registry = Registry::new();
+        registry
+            .register(
+                BackendDescriptor::new(
+                    Candidate::new(BackendId::new("en1")),
+                    ProviderOrigin::Linked,
+                    ManifestDigest::from_digest([4; 32]),
+                    [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                    None,
+                    None,
+                )
+                .expect("a well-formed descriptor"),
+            )
+            .expect("admitted");
+        let reason = HyperUnsupported::ExistentialBeforeUniversal;
+        let requirements =
+            Requirements::hyper_form(ClaimExtent::Bounded, &HyperForm::Other { reason });
+        let mut writer = RequestWriter::new();
+        writer.item(occurrence(), &requirements);
+        let [item] = writer.items() else {
+            panic!("one requested hyper item");
+        };
+        assert_eq!(
+            item.unsupported(),
+            Some(&UnsupportedItem::HyperForm { reason })
+        );
+        let CandidateOutcome::Candidates(candidates) =
+            candidates_of(&requirements, None, &registry, None)
+        else {
+            panic!("an ordinary candidate set");
+        };
+        assert!(candidates.candidates().is_empty());
+
+        let admitted = Requirements::hyper_form(ClaimExtent::Bounded, &HyperForm::Universal);
+        let CandidateOutcome::Candidates(candidates) =
+            candidates_of(&admitted, None, &registry, None)
+        else {
+            panic!("an ordinary candidate set");
+        };
+        assert_eq!(
+            candidates.candidates(),
+            [Candidate::new(BackendId::new("en1"))]
+        );
+    }
 }

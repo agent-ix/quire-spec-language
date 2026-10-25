@@ -308,6 +308,21 @@ pub enum HyperForm {
     ProjectionAligned,
 }
 
+impl HyperForm {
+    /// The HP-4 classification reason, if this form is unsupported by every
+    /// negotiation arm (FR-396, FR-399).
+    pub const fn unsupported_reason(&self) -> Option<HyperUnsupported> {
+        match self {
+            Self::Other { reason } => Some(*reason),
+            Self::StepRelation
+            | Self::Universal
+            | Self::ForallExistsSafety
+            | Self::SingleExistential
+            | Self::ProjectionAligned => None,
+        }
+    }
+}
+
 /// Which rule of ADR-023 section 3 places a clause in HP-4.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum HyperUnsupported {
