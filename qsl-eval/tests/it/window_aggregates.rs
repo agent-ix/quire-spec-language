@@ -670,11 +670,10 @@ fn the_temporal_layer_reads_the_aggregate_as_a_boolean_signal() {
     );
 }
 
-/// FR-194-AC-3: an atom undefined for too few values makes the clause
-/// undefined at that position, with the insufficient-data cause.
+/// FR-194-AC-3: too few values settle as a distinct insufficient-data result.
 #[trace("TC-629", "FR-194-AC-3")]
 #[test]
-fn an_atom_with_too_few_values_makes_the_clause_undefined() {
+fn an_atom_with_too_few_values_returns_insufficient_data() {
     let needs_five = AggregateAtom::new(
         term(
             AggregateKind::Count,
@@ -685,16 +684,21 @@ fn an_atom_with_too_few_values_makes_the_clause_undefined() {
         whole(1),
     );
     let (outcome, _) = settle(&needs_five, vec![true; 4]);
-    match outcome {
-        TemporalOutcome::Undefined(ref undefined) => assert_eq!(
-            undefined.cause,
-            UndefinedCause::InsufficientData(InsufficientData {
-                count: 1,
-                min_count: 5
-            })
-        ),
-        other => panic!("an undefined clause, not {other:?}"),
-    }
+    let TemporalOutcome::InsufficientData(insufficient) = &outcome else {
+        panic!("insufficient data, not {outcome:?}");
+    };
+    assert_eq!(insufficient.at, TemporalPosition::new(0));
+    assert_eq!(
+        insufficient.data,
+        InsufficientData {
+            count: 1,
+            min_count: 5
+        }
+    );
+    assert_eq!(
+        insufficient.atom,
+        clause().formula().node_id(1).expect("atom id")
+    );
     // A window short of data is O-16 undefined, not a violation (FR-327).
     assert_eq!(outcome.category(), Category::Undefined);
 }
@@ -1063,15 +1067,16 @@ fn an_undefined_value_filter_or_predicate_stops_the_window_at_its_first_position
     .expect("the trace is readable");
     // The guarded sum holds one value at position 0, the first position the
     // clause reads, against a `min_count` of 5.
+    let TemporalOutcome::InsufficientData(insufficient) = &outcome else {
+        panic!("insufficient data, not {outcome:?}");
+    };
+    assert_eq!(insufficient.at, TemporalPosition::new(0));
     assert_eq!(
-        outcome,
-        TemporalOutcome::Undefined(UndefinedEvaluation {
-            at: TemporalPosition::new(0),
-            cause: UndefinedCause::InsufficientData(InsufficientData {
-                count: 1,
-                min_count: 5
-            }),
-        })
+        insufficient.data,
+        InsufficientData {
+            count: 1,
+            min_count: 5
+        }
     );
     assert_eq!(outcome.category(), Category::Undefined);
 
