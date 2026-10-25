@@ -261,10 +261,15 @@ that object that the guard may read, as a hybrid claim's guard reads its
   176 and 283). FR-126 decides such a clause over FR-338's guarded automaton
   and FR-126-AC-16's TP-4 halves require it, so the coding change removes
   that refusal.
-- `ModelLetters::activation` (`qsl-eval/src/model_subject.rs`, lines
-  178-183) returns `Result<AtomReading, Incomplete>`. FR-125 requires a
+- The trait method `ModelLetters::activation` (`pub trait ModelLetters`,
+  `qsl-eval/src/model_subject.rs`, lines 178-183) returns
+  `Result<AtomReading, Incomplete>`, and so does its production
+  implementation `ClauseLetters::activation` (`impl ModelLetters for
+  ClauseLetters`, `qsl-eval/src/simulation/model/letters.rs`, lines
+  271-278), which today returns `True` unconditionally. FR-125 requires a
   guard evaluation that gives no reading to stop the check as a `holds`
-  atom's does, so its error type widens to `AtomStop`.
+  atom's does, so the trait method's error type widens to `AtomStop` and
+  the implementation evaluates the guard.
 - `qsl-semantics/src/check/temporal_clause/tests.rs`'s
   `the_package_check_refuses_a_clause_no_emission_writes` expects
   `NotEmitted` for `on each (d: Counter) when (d.level = 1)`; that clause
