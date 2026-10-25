@@ -729,7 +729,7 @@ impl ModelLetters for ByKey {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut quire_exact::Meter,
-    ) -> Result<qsl_eval::temporal::AtomReading, quire_exact::Incomplete> {
+    ) -> Result<qsl_eval::temporal::AtomReading, qsl_eval::model_subject::AtomStop> {
         Ok(if (self.0)(&instance.key, value(state, &instance.key)) {
             qsl_eval::temporal::AtomReading::True
         } else {

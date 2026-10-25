@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::automaton::translate;
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
@@ -473,7 +473,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         let index = self
             .holds
             .iter()

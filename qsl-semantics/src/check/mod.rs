@@ -3078,6 +3078,17 @@ impl PackageDeclarations {
                     .collect()
             })
             .collect();
+        let attempt_reference_locations: Vec<Vec<Location>> = protocol_bindings
+            .iter()
+            .enumerate()
+            .map(|(protocol_index, bindings)| {
+                (0..bindings.len())
+                    .map(|attempt_index| {
+                        lowering::protocol_attempt_operation_location(protocol_index, attempt_index)
+                    })
+                    .collect()
+            })
+            .collect();
         // FR-381: each `compensate` template's own location, under which its
         // operation is lowered to the same shared anchor and frame nodes an
         // attempt naming the operation is (index-aligned with each checked
@@ -3097,30 +3108,56 @@ impl PackageDeclarations {
                     .collect()
             })
             .collect();
-        let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
+        // FR-105-AC-11: a frame occurrence uses the first operation-naming
+        // clause or protocol attempt in source order. The declaration span
+        // start orders candidates; the reference location itself resolves to
+        // the qualified operation name in that declaration.
+        let mut source_ordered_anchors: Vec<(usize, lowering::AnchorInput<'_>)> =
+            state_clause_forms
+                .iter()
+                .zip(clause_locations.iter().zip(&reference_locations))
+                .filter_map(|(form, (location, reference))| {
+                    form.operation.as_ref().map(|operation| {
+                        (
+                            form.spans.declaration.start,
+                            lowering::AnchorInput {
+                                declaring: operation.declaring,
+                                operation: &operation.declaration,
+                                location,
+                                reference,
+                            },
+                        )
+                    })
+                })
+                .collect();
+        for (protocol_index, ((bindings, locations), references)) in protocol_bindings
             .iter()
-            .zip(clause_locations.iter().zip(&reference_locations))
-            .filter_map(|(form, (location, reference))| {
-                form.operation
-                    .as_ref()
-                    .map(|operation| lowering::AnchorInput {
-                        declaring: operation.declaring,
-                        operation: &operation.declaration,
+            .zip(&attempt_locations)
+            .zip(&attempt_reference_locations)
+            .enumerate()
+        {
+            for ((bound, location), reference) in bindings.iter().zip(locations).zip(references) {
+                let source_order = self
+                    .protocols
+                    .get(protocol_index)
+                    .and_then(|protocol| protocol.declarations.get(bound.declaration))
+                    .map_or(usize::MAX, |declaration| declaration.name.span.start);
+                source_ordered_anchors.push((
+                    source_order,
+                    lowering::AnchorInput {
+                        declaring: bound.operation.declaring,
+                        operation: &bound.operation.declaration,
                         location,
                         reference,
-                    })
-            })
-            .collect();
-        for (bindings, locations) in protocol_bindings.iter().zip(&attempt_locations) {
-            for (bound, location) in bindings.iter().zip(locations) {
-                anchors.push(lowering::AnchorInput {
-                    declaring: bound.operation.declaring,
-                    operation: &bound.operation.declaration,
-                    location,
-                    reference: location,
-                });
+                    },
+                ));
             }
         }
+        source_ordered_anchors.sort_by_key(|(source_order, _)| *source_order);
+        let mut anchors: Vec<lowering::AnchorInput<'_>> = source_ordered_anchors
+            .into_iter()
+            .map(|(_, anchor)| anchor)
+            .collect();
         for (checked, locations) in checked_protocols.iter().zip(&template_locations) {
             for (template, location) in checked.obligations.compensations.iter().zip(locations) {
                 anchors.push(lowering::AnchorInput {

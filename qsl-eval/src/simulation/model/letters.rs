@@ -16,17 +16,24 @@
 //! where `p` holds no conforming object under the key (FR-125 Instancing). An
 //! atom that does not read the parameter is evaluated normally.
 
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
+use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
+use qsl_semantics::model::observation::Observation;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, Incomplete, Meter, ObjectReference, ValueType};
+use quire_exact::{
+    Charge, ChargePoint, EffectiveId, Incomplete, Meter, ObjectReference, ValueType,
+};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::contracts::{verdict, Verdict};
-use super::walk::{walk_of, Walk};
-use super::{ClauseOutcome, ModelSimState, ModelSystem};
-use crate::model_subject::{ModelInstance, ModelLetters};
+use super::walk::{rows_of, stop, Row};
+use super::{state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN};
+use crate::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use crate::temporal::AtomReading;
 use crate::value::{evaluate_state_predicate, evaluate_state_predicate_at_absent_key};
 
@@ -46,15 +53,16 @@ pub enum LettersRefusal {
 /// The `holds` atoms of one checked temporal clause, read at the states of a
 /// [`ModelSystem`].
 ///
-/// This seam must not get a production caller of `check_model` before QSL-1039
-/// lands: [`ModelLetters::atom`] has no channel for a refused or faulted
-/// `holds` evaluation (for example an authored population bound exceeded,
-/// FR-380, or a population a snapshot does not list complete), which
-/// [`ClauseLetters`] can only turn into a panic. Every atom read also
-/// observes its state afresh (the state's digest and observation are
-/// recomputed per call) and charges the engine's meter only for the
-/// evaluation itself, not the observation; QSL-1039 owns both.
+/// A refused or faulted `holds` evaluation (for example an authored
+/// population bound exceeded, FR-380, or a population a snapshot does not
+/// list complete), a state that cannot be observed and a broken invariant are
+/// each an [`AtomStop`] of [`ModelLetters::atom`], never a panic (QSL-1039).
 ///
+/// The letters observe a state once, however many atoms and instances read
+/// it: the state's digest keys the last observation, which is kept for the
+/// reads that follow. Every read charges the engine's meter one
+/// `collection-visit` per object of the observation, cached or not, so that a
+/// read's charge does not depend on what was read before it.
 pub struct ClauseLetters<'s, 'a> {
     system: &'s ModelSystem<'a>,
     node: &'s TemporalClauseNode,
@@ -62,13 +70,21 @@ pub struct ClauseLetters<'s, 'a> {
     /// The declaration key of the parameter's object type.
     type_key: DeclarationKey,
     overlapping: BTreeSet<DeclarationKey>,
+    /// The last state observed, by its digest.
+    observed: RefCell<Option<(DigestRecord, Rc<Observed>)>>,
+    /// How many states have been observed (not read from `observed`).
+    observations: Cell<u64>,
+}
+
+/// One state as the letters read it: its synthesized observation and its
+/// objects.
+struct Observed {
+    observation: Observation,
+    rows: Vec<Row>,
 }
 
 impl<'a> ModelSystem<'a> {
     /// The [`ModelLetters`] of `node` over this system.
-    ///
-    /// The seam must not get a production caller of `check_model` before
-    /// QSL-1039 lands; see [`ClauseLetters`].
     ///
     /// # Errors
     ///
@@ -101,6 +117,8 @@ impl<'a> ModelSystem<'a> {
                 .filter(|population| self.overlaps(population, parameter))
                 .map(|population| population.key.clone())
                 .collect(),
+            observed: RefCell::new(None),
+            observations: Cell::new(0),
         })
     }
 }
@@ -123,11 +141,10 @@ impl StatePredicate for Condition<'_> {
 
 impl ClauseLetters<'_, '_> {
     /// The reference the `over` parameter reads as under `instance`'s key in
-    /// `walk`'s state: the first object of an overlapping population held
+    /// the observed state: the first object of an overlapping population held
     /// under the key whose most-specific type conforms to the parameter's.
-    fn bound(&self, walk: &Walk<'_, '_>, instance: &ModelInstance) -> Option<ObjectReference> {
-        walk.rows
-            .iter()
+    fn bound(&self, rows: &[Row], instance: &ModelInstance) -> Option<ObjectReference> {
+        rows.iter()
             .find(|row| {
                 row.key == instance.key
                     && self.overlapping.contains(&row.population)
@@ -144,59 +161,104 @@ impl ClauseLetters<'_, '_> {
     /// The reference of the parameter's type under `instance`'s key, which no
     /// object of the state need hold.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When the model refuses a reference under the key (an empty key), which
-    /// the subject's admission refuses before it forms an instance.
-    fn key_reference(&self, instance: &ModelInstance) -> ObjectReference {
+    /// A fault when the model refuses a reference under the key (an empty
+    /// key), which the subject's admission refuses before it forms an
+    /// instance.
+    fn key_reference(&self, instance: &ModelInstance) -> Result<ObjectReference, AtomStop> {
         self.system
             .model
             .object_reference(&self.type_key, &instance.key)
-            .unwrap_or_else(|refusal| {
-                panic!("QSL-1039: an instance's key names a reference: {refusal:?}")
-            })
+            .map_err(|_| fault("instance-key-names-a-reference"))
+    }
+
+    /// How many states these letters have observed: a state read again, by
+    /// another atom or instance, is not observed again.
+    pub fn observations(&self) -> u64 {
+        self.observations.get()
+    }
+
+    /// `state`, observed once and charged to `meter` on every read.
+    fn observe(&self, state: &ModelSimState, meter: &mut Meter) -> Result<Rc<Observed>, AtomStop> {
+        let (_, digest) = self
+            .system
+            .state_key(state)
+            .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
+        let known = self
+            .observed
+            .borrow()
+            .as_ref()
+            .filter(|(known, _)| *known == digest)
+            .map(|(_, observed)| Rc::clone(observed));
+        let observed = match known {
+            Some(observed) => observed,
+            None => {
+                let observation = self
+                    .system
+                    .model
+                    .observation(&state.state, state_document(&digest))
+                    .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
+                let rows = rows_of(self.system, &state.state).map_err(AtomStop::Unobservable)?;
+                let observed = Rc::new(Observed { observation, rows });
+                self.observations
+                    .set(self.observations.get().saturating_add(1));
+                *self.observed.borrow_mut() = Some((digest, Rc::clone(&observed)));
+                observed
+            }
+        };
+        for _ in &observed.rows {
+            meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
+        }
+        Ok(observed)
     }
 }
 
+/// A broken invariant of the letters.
+fn fault(invariant: &'static str) -> AtomStop {
+    AtomStop::Fault(InternalFault::new("model-letters", invariant))
+}
+
 impl ModelLetters for ClauseLetters<'_, '_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// When `atom` is no `holds` atom of the clause, when `state` is no
-    /// state of the system, when `instance` is no instance of the system
-    /// (its key names no reference), or when the evaluation faults, is refused or
-    /// completes no Boolean: the seam has no channel for them (QSL-1039),
-    /// and none is a reading.
+    /// [`AtomStop::Incomplete`] when the meter runs out, in the state's
+    /// observation or in the evaluation; [`AtomStop::Refused`] when the
+    /// evaluation is refused or completes no Boolean;
+    /// [`AtomStop::Unobservable`] when `state` is no state of the system; and
+    /// [`AtomStop::Fault`] when `atom` is no `holds` atom of the clause,
+    /// `instance`'s key names no reference, or the evaluator faults.
     fn atom(
         &self,
         atom: FormulaNodeId,
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
-        let (body, slots) = self.node.condition(atom).unwrap_or_else(|| {
-            panic!("QSL-1039: the engine reads only the clause's `holds` atoms")
-        });
-        let walk = walk_of(self.system, state, None)
-            .unwrap_or_else(|stop| panic!("QSL-1039: the state is observable: {stop:?}"));
+    ) -> Result<AtomReading, AtomStop> {
+        let (body, slots) = self
+            .node
+            .condition(atom)
+            .ok_or_else(|| fault("engine-reads-only-holds-atoms"))?;
+        let observed = self.observe(state, meter)?;
         let condition = Condition { body, slots };
-        let evaluation = match self.bound(&walk, instance) {
+        let evaluation = match self.bound(&observed.rows, instance) {
             Some(bound) => evaluate_state_predicate(
                 self.system.package,
                 &condition,
-                &walk.observation.environment,
+                &observed.observation.environment,
                 Some(bound),
                 meter,
             ),
             None => evaluate_state_predicate_at_absent_key(
                 self.system.package,
                 &condition,
-                &walk.observation.environment,
-                self.key_reference(instance),
+                &observed.observation.environment,
+                self.key_reference(instance)?,
                 instance.population.node.clone(),
                 meter,
             ),
         }
-        .unwrap_or_else(|fault| panic!("QSL-1039: the evaluator does not fault: {fault:?}"));
+        .map_err(AtomStop::Fault)?;
         match verdict(&evaluation.outcome) {
             Verdict::True => Ok(AtomReading::True),
             Verdict::False => Ok(AtomReading::False),
@@ -204,11 +266,9 @@ impl ModelLetters for ClauseLetters<'_, '_> {
                 if let Some(cause) = outcome.undefined_cause() {
                     Ok(AtomReading::Undefined(cause))
                 } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
-                    Err(incomplete)
+                    Err(AtomStop::Incomplete(incomplete))
                 } else {
-                    panic!(
-                        "QSL-1039: the `holds` condition was refused or completed no Boolean: {outcome:?}"
-                    )
+                    Err(AtomStop::Refused(outcome))
                 }
             }
         }

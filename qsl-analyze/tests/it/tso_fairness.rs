@@ -17,7 +17,7 @@ use qsl_analyze::model_check::{
     check_protocol, LivenessRefusal, ModelCheckRefusal, ProtocolCheckRequest,
 };
 use qsl_eval::fairness::{check_loop, EdgeLabel, Identity, LassoFairness, LoopStep};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
     protocol_constraints, FairnessOrigin, MemorySelection, ProtocolFairness, ProtocolState,
@@ -36,7 +36,7 @@ use qsl_replay::{
     ReplayLimits, ReplayRefusal, TemporalCounterexample,
 };
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Cancel, Incomplete, Meter};
+use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::litmus::{
@@ -69,7 +69,7 @@ impl ModelLetters for R1 {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if (self.0)(field(state, "cores", &instance.key, "r1")) {
             AtomReading::True
         } else {
