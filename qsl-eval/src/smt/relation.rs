@@ -28,11 +28,6 @@ use crate::smt::layout::{value_term, FieldSort, FieldTerms, StateCopy, StateLayo
 use crate::smt::script::Term;
 use crate::smt::{Measure, Refusal, SmtEncodingRefusal};
 
-/// The most applications of one step (FR-315 "Size limits").
-pub const MAX_APPLICATIONS: u64 = 1 << 16;
-/// The most candidates of one application that a query expands.
-pub const MAX_CANDIDATES: u64 = 1 << 16;
-
 /// One application: a receiver, an operation of it and an argument vector.
 pub struct Application<'s, 'a> {
     receiver: usize,
@@ -105,13 +100,14 @@ pub fn count_applications(subject: &SymbolicSubject<'_>) -> u64 {
 /// built.
 pub fn applications<'s, 'a>(
     subject: &'s SymbolicSubject<'a>,
+    max_applications: u64,
 ) -> Result<Vec<Application<'s, 'a>>, SmtEncodingRefusal> {
     let total = count_applications(subject);
-    if total > MAX_APPLICATIONS {
+    if total > max_applications {
         return Err(Refusal::TooLarge {
             measure: Measure::Applications,
             value: total,
-            limit: MAX_APPLICATIONS,
+            limit: max_applications,
         }
         .into());
     }
@@ -265,9 +261,18 @@ impl CopyFacts {
         applications: &[Application<'_, '_>],
         copy: &StateCopy,
         terminal: bool,
+        max_candidates: u64,
     ) -> Result<Self, SmtEncodingRefusal> {
         let mut best = None;
-        let facts = Self::read_each(subject, layout, applications, copy, terminal, &mut best);
+        let facts = Self::read_each(
+            subject,
+            layout,
+            applications,
+            copy,
+            terminal,
+            max_candidates,
+            &mut best,
+        );
         match best {
             Some(refusal) => Err(refusal),
             None => Ok(facts),
@@ -280,6 +285,7 @@ impl CopyFacts {
         applications: &[Application<'_, '_>],
         copy: &StateCopy,
         terminal: bool,
+        max_candidates: u64,
         best: &mut Option<SmtEncodingRefusal>,
     ) -> Self {
         let before = Views::of(StateRef::Copy(copy.clone()));
@@ -287,7 +293,15 @@ impl CopyFacts {
         let mut postcondition_failures = Vec::new();
         let mut enabled = Vec::new();
         for application in applications {
-            match Self::read_application(subject, layout, application, copy, &before, terminal) {
+            match Self::read_application(
+                subject,
+                layout,
+                application,
+                copy,
+                &before,
+                terminal,
+                max_candidates,
+            ) {
                 Ok((pre, post, enable)) => {
                     precondition_failures.push(pre);
                     postcondition_failures.push(post);
@@ -313,6 +327,7 @@ impl CopyFacts {
         copy: &StateCopy,
         before: &Views,
         terminal: bool,
+        max_candidates: u64,
     ) -> Result<(Term, Term, Option<Term>), SmtEncodingRefusal> {
         let mut earlier: Vec<Term> = Vec::new();
         let mut failures = Vec::new();
@@ -347,7 +362,7 @@ impl CopyFacts {
         }
         let mut ready = Vec::new();
         let mut broken = Vec::new();
-        for candidate in application.candidates(subject, layout, copy)? {
+        for candidate in application.candidates(subject, layout, copy, max_candidates)? {
             let views = Views {
                 pre: StateRef::Copy(copy.clone()),
                 post: candidate.clone(),
@@ -501,6 +516,7 @@ impl<'a> Application<'_, 'a> {
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         base: &StateCopy,
+        max_candidates: u64,
     ) -> Result<Vec<StateRef>, SmtEncodingRefusal> {
         for (index, object) in subject.objects.iter().enumerate() {
             for (field, symbolic) in object.fields.iter().enumerate() {
@@ -529,11 +545,11 @@ impl<'a> Application<'_, 'a> {
                     .unwrap_or(0)
                     .saturating_add(u128::from(symbolic.optional));
                 count = count.saturating_mul(u64::try_from(radix).unwrap_or(u64::MAX));
-                if count > MAX_CANDIDATES {
+                if count > max_candidates {
                     return Err(Refusal::TooLarge {
                         measure: Measure::Candidates,
                         value: count,
-                        limit: MAX_CANDIDATES,
+                        limit: max_candidates,
                     }
                     .into());
                 }

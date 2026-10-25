@@ -9,7 +9,8 @@ use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_eval::smt::{
-    encode_smt_query, Measure, Refusal, SmtEncodingRefusal, SmtItem, SmtQueryKind,
+    encode_smt_query, Measure, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtItem,
+    SmtQueryKind,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -320,8 +321,23 @@ impl World {
     }
 
     fn query(&self, clause: usize, kind: SmtQueryKind) -> Result<String, SmtEncodingRefusal> {
+        self.query_with_limits(clause, kind, &SmtEncodingLimits::default())
+    }
+
+    fn query_with_limits(
+        &self,
+        clause: usize,
+        kind: SmtQueryKind,
+        limits: &SmtEncodingLimits,
+    ) -> Result<String, SmtEncodingRefusal> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        self.query_with(&keys, clause, kind)
+        encode_smt_query(
+            &self.subject(&keys),
+            SmtItem::Clause(&self.clauses[clause]),
+            kind,
+            limits,
+        )
+        .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
 
     fn without_initial_state(&self, keys: &[&str]) -> ModelSubject<'_> {
@@ -332,8 +348,13 @@ impl World {
 
     fn deadlock(&self, kind: SmtQueryKind) -> Result<String, SmtEncodingRefusal> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        encode_smt_query(&self.subject(&keys), SmtItem::DeadlockFreedom, kind)
-            .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
+        encode_smt_query(
+            &self.subject(&keys),
+            SmtItem::DeadlockFreedom,
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
 
     fn query_with(
@@ -346,9 +367,66 @@ impl World {
             &self.subject(keys),
             SmtItem::Clause(&self.clauses[clause]),
             kind,
+            &SmtEncodingLimits::default(),
         )
         .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
+}
+
+/// FR-315-AC-44: temporal query encoding reads caller-supplied limits,
+/// including zero, exact and one-short boundaries.
+#[trace("TC-1250", "FR-315-AC-44")]
+#[test]
+fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
+    let world = counter(BOUNDED, &["always[0,3] holds(c.value <= 3)"]);
+    let kind = SmtQueryKind::Unrolling { depth: 3 };
+    let default = world.query(0, kind).expect("default limits encode");
+    let mut limits = SmtEncodingLimits::default();
+    limits.max_constants = 8;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+
+    for max_constants in [7, 0] {
+        limits.max_constants = max_constants;
+        assert!(matches!(
+            world.query_with_limits(0, kind, &limits),
+            Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+                measure: Measure::Constants,
+                value: 8,
+                limit,
+            })) if limit == max_constants
+        ));
+    }
+
+    let script_bytes = u64::try_from(default.len()).expect("script length fits u64");
+    limits = SmtEncodingLimits {
+        max_script_bytes: 0,
+        ..SmtEncodingLimits::default()
+    };
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::ScriptBytes,
+            value: 1,
+            limit: 0,
+        }))
+    ));
+    limits.max_script_bytes = script_bytes;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_script_bytes -= 1;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::ScriptBytes,
+            limit,
+            ..
+        })) if limit == script_bytes - 1
+    ));
 }
 
 /// `Counter`: `value: Int[0, 3]`, operation `inc` modifying it, guarded by
@@ -1517,8 +1595,13 @@ fn each_refusal_has_its_code() {
     assert_eq!(code(nested.query(0, kind)), "item-form");
     let subject = counter_world.without_initial_state(&["c"]);
     assert_eq!(
-        encode_smt_query(&subject, SmtItem::Clause(&counter_world.clauses[2]), kind)
-            .map_err(|refusal| refusal.code()),
+        encode_smt_query(
+            &subject,
+            SmtItem::Clause(&counter_world.clauses[2]),
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map_err(|refusal| refusal.code()),
         Err(Some("no-initial-state"))
     );
     let none = world(
@@ -1702,8 +1785,13 @@ fn an_item_other_than_tp2_under_false_extension_is_a_fault() {
         let altered = clause
             .clone()
             .with_profile_after_s3(TemporalProfile::EventPositionFalseExtension);
-        let result = encode_smt_query(&world.subject(&["c"]), SmtItem::Clause(&altered), kind)
-            .map(|script| String::from_utf8(script).expect("UTF-8"));
+        let result = encode_smt_query(
+            &world.subject(&["c"]),
+            SmtItem::Clause(&altered),
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map(|script| String::from_utf8(script).expect("UTF-8"));
         assert_eq!(
             invariant_of(result),
             "a TP-1 or TP-3 item binds infinite-trace"
@@ -1727,6 +1815,7 @@ fn a_tp1_item_without_its_atom_is_a_fault_not_item_form() {
         &world.subject(&["c"]),
         SmtItem::Clause(&altered),
         SmtQueryKind::Unrolling { depth: 1 },
+        &SmtEncodingLimits::default(),
     )
     .map(|script| String::from_utf8(script).expect("UTF-8"));
     assert_eq!(invariant_of(result), "a TP-1 item holds its one atom");

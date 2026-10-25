@@ -13,11 +13,6 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use crate::automaton::{translate, AutomatonError, Letter, Monitor, StateId};
 use crate::smt::{Measure, Refusal, SmtEncodingRefusal};
 
-/// The most `holds` atoms of a letter the encoding tabulates.
-pub const MAX_ATOMS: usize = 8;
-/// The most monitor states the encoding tabulates.
-pub const MAX_STATES: usize = 64;
-
 /// One monitor transition: from a state over a letter to a state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Move {
@@ -60,20 +55,23 @@ impl MonitorTable {
     /// [`Refusal::ItemTranslation`] when the translation does not
     /// build and [`Refusal::TooLarge`] when the monitor has more
     /// atoms or states than the encoding tabulates.
-    pub fn of(clause: &CheckedTemporalClause) -> Result<Self, SmtEncodingRefusal> {
-        let automaton = translate(clause, MAX_STATES as u64).map_err(Self::translation)?;
+    pub fn of(
+        clause: &CheckedTemporalClause,
+        max_atoms: u64,
+        max_states: u64,
+    ) -> Result<Self, SmtEncodingRefusal> {
+        let automaton = translate(clause, max_states).map_err(Self::translation)?;
         let atoms = automaton.atoms().to_vec();
-        if atoms.len() > MAX_ATOMS {
+        if u64::try_from(atoms.len()).unwrap_or(u64::MAX) > max_atoms {
             return Err(Refusal::TooLarge {
                 measure: Measure::MonitorAtoms,
                 value: atoms.len() as u64,
-                limit: MAX_ATOMS as u64,
+                limit: max_atoms,
             }
             .into());
         }
         let bits = atoms.len();
-        let mut monitor =
-            Monitor::bad_prefix(automaton, MAX_STATES as u64).map_err(Self::translation)?;
+        let mut monitor = Monitor::bad_prefix(automaton, max_states).map_err(Self::translation)?;
         let initial = monitor.initial().map_err(Self::translation)?;
         let mut reached: Vec<StateId> = vec![initial];
         let mut moves = Vec::new();
