@@ -105,7 +105,7 @@ pub enum SolverStop {
     /// The wall-clock budget ran out: settles `incomplete`, `timed-out`.
     Time,
     /// The step budget ran out after this many steps: settles `incomplete`,
-    /// `limit-reached` naming `solver-steps`.
+    /// `limit-reached` naming `max_solver_steps`.
     Steps(u64),
 }
 
@@ -1035,7 +1035,7 @@ mod tests {
 
     /// A solver stopped by its time budget settles `incomplete`,
     /// `timed-out`, carrying no seconds; one stopped by its step budget
-    /// settles `incomplete`, `limit-reached` naming `solver-steps`.
+    /// settles `incomplete`, `limit-reached` naming `max_solver_steps`.
     #[trace("TC-705", "FR-250-AC-2", "FR-250-AC-3")]
     #[test]
     fn a_stopped_solver_settles_incomplete_by_the_budget_that_stopped_it() {
@@ -1077,7 +1077,7 @@ mod tests {
                 "result": "incomplete",
                 "cause": {
                     "kind": "limit-reached",
-                    "limit": "solver-steps",
+                    "limit": "max_solver_steps",
                     "value": 1000,
                     "setting": "hybrid.max_solver_steps",
                 },
