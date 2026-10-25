@@ -35,6 +35,13 @@ fn with_channel(carries: &str, ordering: &str) -> String {
 }
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    check_with_limits(text, CheckingLimits::default())
+}
+
+fn check_with_limits(
+    text: &str,
+    limits: CheckingLimits,
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -51,7 +58,31 @@ fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(limits)
+}
+
+fn minimum_work_budget(text: &str) -> u64 {
+    let mut lower = 0;
+    let mut upper = 1_000_000;
+    assert!(check_with_limits(
+        text,
+        CheckingLimits::default().with_work_budget(upper)
+    )
+    .is_ok());
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if check_with_limits(
+            text,
+            CheckingLimits::default().with_work_budget(middle),
+        )
+        .is_ok()
+        {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    lower
 }
 
 /// The one channel's checked ordering.
@@ -179,6 +210,109 @@ fn attempted(binder_type: &str, visible: &str, yes: &str, no: &str) -> String {
          case yes when {{ {yes} }} sequence Yes {{ }} \
          case no when {{ {no} }} sequence No {{ }} }} }}"
     )
+}
+
+fn choice_with_guards(yes: &str, no: &str) -> String {
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             event A by Service as (a: Boolean) {{ true }}; \
+             event B by Service as (b: Boolean) {{ true }}; \
+             event C by Service as (c: Boolean) {{ true }}; \
+             choice Pick by Service visible (a, b, c) {{ \
+             case yes when {{ {yes} }} sequence Yes {{ }} \
+             case no when {{ {no} }} sequence No {{ }} }} }}"
+        ),
+    )
+}
+
+fn nested_repeat_with_guard(guard: &str) -> String {
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             event A by Service as (a: Boolean) {{ true }}; \
+             event B by Service as (b: Boolean) {{ true }}; \
+             repeat Outer by Service visible () while {{ true }} \
+             sequence OuterBody {{ \
+             repeat Inner by Service visible (a, b) max 1 while {{ {guard} }} \
+             event Progress by Service as (progress: Boolean) {{ true }}; \
+             }} }}"
+        ),
+    )
+}
+
+fn minimum_non_resource_budget(text: &str) -> u64 {
+    let has_non_resource_outcome = |budget| match check_with_limits(
+        text,
+        CheckingLimits::default().with_work_budget(budget),
+    ) {
+        Ok(_) => true,
+        Err(refusals) => refusals
+            .iter()
+            .all(|refusal| !matches!(refusal.cause, CheckCause::ResourceExhausted(_))),
+    };
+    let mut lower = 0;
+    let mut upper = 1_000_000;
+    assert!(has_non_resource_outcome(upper));
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if has_non_resource_outcome(middle) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    lower
+}
+
+#[trace("TC-1172", "FR-218-AC-30")]
+#[test]
+fn choice_partition_charges_once_per_valuation() {
+    let three_atoms = choice_with_guards("a and b and c", "not (a and b and c)");
+    let one_atom = choice_with_guards("a and a and a", "not (a and a and a)");
+    let three_atom_budget = minimum_non_resource_budget(&three_atoms);
+    let one_atom_budget = minimum_non_resource_budget(&one_atom);
+    assert_eq!(three_atom_budget - one_atom_budget, 6);
+}
+
+#[trace("TC-1172", "FR-218-AC-32")]
+#[test]
+fn nested_repeat_feasibility_is_independent_and_budgeted() {
+    let feasible_exit = nested_repeat_with_guard("a");
+    let refusals = check(&feasible_exit).expect_err("the inner repeat may skip its body");
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer")
+    )));
+
+    let guard_false_at_first_valuation =
+        nested_repeat_with_guard("a and not a or b and not b");
+    let guard_false_infeasible = nested_repeat_with_guard("a or not a or b or not b");
+    check(&guard_false_infeasible).expect("the nested repeat always enters its body");
+
+    let first_outcome_budget = minimum_non_resource_budget(&guard_false_at_first_valuation);
+    let all_outcomes_budget = minimum_non_resource_budget(&guard_false_infeasible);
+    assert_eq!(all_outcomes_budget - first_outcome_budget, 3);
+
+    let one_short = check_with_limits(
+        &guard_false_infeasible,
+        CheckingLimits::default().with_work_budget(all_outcomes_budget - 1),
+    )
+    .expect_err("the fourth independent valuation exceeds the one-short limit");
+    let [refusal] = one_short.as_slice() else {
+        panic!("one resource refusal, got {one_short:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a work-budget refusal, got {refusal:?}");
+    };
+    assert_eq!(limit.actual, u128::from(limit.limit) + 1);
+    let region = limit.region.as_ref().expect("the nested repeat's region");
+    let start = usize::try_from(region.start()).expect("region start fits usize");
+    let end = usize::try_from(region.end()).expect("region end fits usize");
+    assert_eq!(&guard_false_infeasible[start..end], "Inner");
 }
 
 /// FR-218-AC-2: a `choice` guard that reads the `over` input's field `k.v`
