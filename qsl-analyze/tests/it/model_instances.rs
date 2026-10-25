@@ -45,7 +45,9 @@ use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{declarations_in, document_digest, UNLIMITED};
+use crate::counter::{
+    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED,
+};
 
 const PACKAGE: &str = "test/things";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -952,6 +954,84 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
             .expect("checked"),
         ModelCheckOutcome::Violated { .. }
     ));
+}
+
+/// FR-125-AC-17: an absent `x` remains a guard when forwarded through a let
+/// alias and unchanged helper returns, while a helper that reads its argument
+/// as a field still produces `absent-key`.
+#[trace("TC-520", "FR-125-AC-17", "FR-361-AC-16")]
+#[test]
+fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
+    let world = world(
+        &[("animals", &["Animal"]), ("dogs", &["Dog"])],
+        &[
+            ("animals", &[("k", "Dog"), ("t", "Cat")]),
+            ("dogs", &[("d", "Dog")]),
+        ],
+    );
+    let bounded = universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
+    let helpers = "\
+        function same using v(r: Reference<M::Dog>): Reference<M::Dog> pure { r }\n\
+        function isDog using v(r: Reference<M::Dog>): Boolean pure {\n\
+            present(lookup<M::Dog>(M::animals, same(r)) absent empty) or\n\
+            present(lookup<M::Dog>(M::dogs, same(r)) absent empty)\n\
+        }\n\
+        function ageOK using v(r: Reference<M::Dog>): Boolean pure { r.age >= 0 }\n";
+    let package_for = |formula: &str| {
+        let body = format!(
+            "{helpers}temporal C using t0 over (x: M::Dog) clock \"model-steps\" on origin {{ {formula} }}\n"
+        );
+        CheckedPackage::link(
+            declarations_with_model_profile(PACKAGE, &world.document, &body)
+                .with_unwritten_terminals()
+                .check(CheckingLimits::default())
+                .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
+        )
+    };
+    let check = |formula: &str| {
+        let package = package_for(formula);
+        let subject = world.subject(&package, bounded.clone());
+        let system = ModelSystem::new(subject.simulation.clone()).expect("the subject admits");
+        let node = &package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("an unguarded clause");
+        check_model(
+            ModelCheckRequest {
+                subject,
+                item: ModelCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("the model check runs")
+    };
+
+    assert!(matches!(
+        check("always holds(let y = x in (isDog(y) implies ageOK(y)))"),
+        ModelCheckOutcome::Holds { .. }
+    ));
+    let unguarded = check("always holds(let y = x in ageOK(y))");
+    let ModelCheckOutcome::Violated { counterexample, .. } = unguarded else {
+        panic!("expected Violated, got {unguarded:?}");
+    };
+    assert_eq!(counterexample.over_binding, Some(instance("animals", "t")));
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = counterexample.kind else {
+        panic!(
+            "expected undefined-evaluation, got {:?}",
+            counterexample.kind
+        );
+    };
+    assert_eq!(
+        AtomReading::Undefined(evaluation.cause),
+        AtomReading::Undefined(UndefinedCause::Family(UndefinedRecord {
+            reason: UndefinedReason::AbsentKey,
+            fields: BTreeMap::new(),
+        }))
+    );
 }
 
 /// `ModelSystem::clause_letters` refuses a clause whose `over` parameter is

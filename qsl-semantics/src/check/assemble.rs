@@ -2846,10 +2846,23 @@ impl PackageDeclarations {
                         function_selections.insert(index, profile.clone());
                         // FR-110 "Layer selection".
                         if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
-                            errors.extend(
-                                LayerAdmission::new(&lock, layer, &predicates, selects_model)
-                                    .function(function),
-                            );
+                            let selected_admission =
+                                LayerAdmission::new(&lock, layer, &predicates, selects_model);
+                            if selects_model && selected_admission.body_needs_model_family(function)
+                            {
+                                let model_admission = LayerAdmission::new(
+                                    &lock,
+                                    HeaderLayer::ModelComplete,
+                                    &predicates,
+                                    selects_model,
+                                );
+                                errors.extend(
+                                    selected_admission
+                                        .function_with_body_admission(function, &model_admission),
+                                );
+                            } else {
+                                errors.extend(selected_admission.function(function));
+                            }
                         }
                     }
                     None => errors.push(AssemblyError {

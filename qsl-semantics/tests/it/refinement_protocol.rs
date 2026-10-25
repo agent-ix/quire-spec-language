@@ -25,7 +25,7 @@ use super::refinement_declarations::{assemble, counters, mutated, CAS, SPEC};
 /// `a1` and `a2` of `inc`, a `parallel` `par` of two empty branches, a
 /// channel `ch` whose delivery is `unknown` (so `duplicate` and `lose` are
 /// both classes), a static role `w` and `finish`.
-fn twice(alias: &str) -> String {
+pub(crate) fn twice(alias: &str) -> String {
     format!(
         "protocol Twice using v over (c: {alias}::Counter) on origin {{\n\
          role w on {alias}::Counter;\n\
@@ -190,6 +190,54 @@ fn the_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
         panic!("one refinement: {:?}", graph.refinements());
     };
     refinement
+}
+
+/// FR-218-AC-24 (TC-1065): `role ... on <model alias>` checks as a static
+/// whole-model role and retains the selected model identity.
+#[trace("TC-1065", "FR-218-AC-24")]
+#[test]
+fn a_static_role_can_bind_to_a_whole_model_alias() {
+    let body = "protocol Whole using v over (x: Spec::Counter) on origin {\n\
+         role w on Spec;\n\
+         role u on Impl;\n\
+         run sequence Main { }\n\
+         finish Done as (d: Boolean) { true };\n\
+         }";
+    let graph = check_over("Spec", body, None, RefinementSupport::BUILD).unwrap_or_else(|found| {
+        panic!(
+            "{body}: {:?}",
+            found.iter().map(|item| &item.refusal).collect::<Vec<_>>()
+        )
+    });
+    let roles = &graph.protocol("Whole").expect("checked protocol").roles;
+    let [w, u] = roles.as_slice() else {
+        panic!("the protocol has two roles: {roles:?}");
+    };
+    assert_eq!(w.name, "w");
+    assert_eq!(w.context, None);
+    assert_eq!(u.name, "u");
+    assert_eq!(u.context, None);
+    assert_eq!(w.model_selection.as_deref(), Some(SPEC));
+    assert_eq!(u.model_selection.as_deref(), Some(CAS));
+}
+
+/// A replicated role cannot bind to the whole-model alias, and its
+/// population name is not diagnosed as a second, cascading refusal.
+#[trace("TC-1065", "FR-218-AC-24")]
+#[test]
+fn a_replicated_role_on_a_model_alias_refuses_at_the_alias_only() {
+    let body = "protocol Whole using v over (x: Boolean) on origin {\n\
+         role w each Spec from counters max 2 lifetime until (true);\n\
+         run sequence Main { }\n\
+         finish Done as (d: Boolean) { true };\n\
+         }";
+    let found = check_over("Spec", body, None, RefinementSupport::BUILD).unwrap_err();
+    let refusal = only(&found);
+    assert_eq!(
+        refusal.code_and_cause(),
+        (Code::InvalidModelBinding, Some("malformed-declaration"))
+    );
+    assert_eq!(refusal.at.as_deref(), Some("Spec"));
 }
 
 fn spellings(refinement: &CheckedRefinement) -> Vec<&str> {

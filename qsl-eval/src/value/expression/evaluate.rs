@@ -599,7 +599,12 @@ pub(crate) struct Machine<'a, 'm> {
     meter: &'m mut Meter,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
+    /// FR-125: whether each stack value is still the absent-key parameter
+    /// being forwarded as a reference, rather than read by an operation.
+    value_guard_provenance: Vec<bool>,
     frames: Vec<Vec<Option<Value>>>,
+    /// Per-slot provenance parallel to `frames`.
+    frame_guard_provenance: Vec<Vec<bool>>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -635,10 +640,6 @@ pub(crate) struct Machine<'a, 'm> {
     /// read through it is `absent-key` undefined, except the reference
     /// operand of a `lookup` (the guard).
     absent_parameter: Option<AbsentParameter>,
-    /// The claim body's `lookup` reference operands that read the absent
-    /// parameter as the guard, by node id. A guard reached through a `let`
-    /// alias or a helper is not recognised (QSL-1054 asks the spec whether it should be).
-    guard_operands: std::collections::BTreeSet<NodeId>,
 }
 
 /// The `over` parameter of a claim at a key with no conforming object.
@@ -729,7 +730,9 @@ impl<'a, 'm> Machine<'a, 'm> {
             meter,
             dispatch_tables,
             values: Vec::new(),
+            value_guard_provenance: Vec::new(),
             frames: Vec::new(),
+            frame_guard_provenance: Vec::new(),
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
@@ -740,13 +743,11 @@ impl<'a, 'm> Machine<'a, 'm> {
             iterations: 0,
             witnessed_reads: std::collections::BTreeSet::new(),
             absent_parameter: None,
-            guard_operands: std::collections::BTreeSet::new(),
         }
     }
 
-    /// FR-125 Instancing: read the parameter in `slot` as `absent-key`
-    /// undefined in every read except a `lookup`'s reference operand, `binding`
-    /// naming the population of the instance.
+    /// FR-125 Instancing: `slot` carries absent-key guard provenance when the
+    /// instance has no conforming object; `binding` names its population.
     pub(crate) fn with_absent_parameter(mut self, slot: Slot, binding: String) -> Self {
         self.absent_parameter = Some(AbsentParameter { slot, binding });
         self
@@ -823,7 +824,8 @@ impl<'a, 'm> Machine<'a, 'm> {
         root: CheckedNode<'a>,
         frame: Vec<Option<Value>>,
     ) -> Result<Evaluation, InternalFault> {
-        self.frames.push(frame);
+        let provenance = vec![false; frame.len()];
+        self.push_frame(frame, provenance);
         self.drive(root)
     }
 
@@ -849,7 +851,20 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn enter_frame(&mut self, slots: usize, arguments: Vec<Value>) {
         let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
         frame.resize(slots.max(frame.len()), None);
+        let mut provenance = vec![false; frame.len()];
+        if let Some(absent) = &self.absent_parameter {
+            if let Some(slot) = provenance.get_mut(absent.slot) {
+                *slot = true;
+            }
+        }
         self.frames.push(frame);
+        self.frame_guard_provenance.push(provenance);
+    }
+
+    fn push_frame(&mut self, frame: Vec<Option<Value>>, mut provenance: Vec<bool>) {
+        provenance.resize(frame.len(), false);
+        self.frames.push(frame);
+        self.frame_guard_provenance.push(provenance);
     }
 
     /// Evaluate `root` on the current frame to its outcome: the task loop
@@ -899,14 +914,29 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
             }
         }
-        match (self.values.pop(), self.values.is_empty()) {
-            (Some(value), true) => Ok(Evaluation {
-                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value)),
-                location: None,
-                losses: std::mem::take(&mut self.losses),
-            }),
-            _ => Err(InternalFault::new("S6a", "evaluation-result-stack-invalid")),
+        let value = match self.pop() {
+            Ok(value) => value,
+            Err(Halt::Fault(fault)) => return Err(fault),
+            Err(Halt::Family(result)) => {
+                return Ok(Evaluation {
+                    outcome: FamilyOutcome::FamilyEvaluated(result),
+                    location: Some(root.location().clone()),
+                    losses: Vec::new(),
+                });
+            }
+            Err(Halt::Stop(stop)) => return Self::stopped(stop, Some(root.location())),
+            Err(Halt::Located(at)) => {
+                return Self::stopped(at.stop, Some(&at.location));
+            }
+        };
+        if !self.values.is_empty() || !self.value_guard_provenance.is_empty() {
+            return Err(InternalFault::new("S6a", "evaluation-result-stack-invalid"));
         }
+        Ok(Evaluation {
+            outcome: FamilyOutcome::Evaluated(Outcome::Completed(value)),
+            location: None,
+            losses: std::mem::take(&mut self.losses),
+        })
     }
 
     /// FR-268 (ADR-031 SW-13): the separation check's steps 2 to 4 over
@@ -1023,9 +1053,54 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {
-        self.values
+        let value = self
+            .values
             .pop()
-            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
+        let provenance = self
+            .value_guard_provenance
+            .pop()
+            .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        if provenance {
+            return Err(self.absent_key_halt(&value)?);
+        }
+        Ok(value)
+    }
+
+    /// Pop a value while preserving whether it forwards the absent-key
+    /// parameter through a let binding, lookup reference, or helper argument.
+    fn pop_forwarded(&mut self) -> Result<(Value, bool), Halt> {
+        let value = self
+            .values
+            .pop()
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
+        let provenance = self
+            .value_guard_provenance
+            .pop()
+            .ok_or_else(|| invariant("evaluation-provenance-stack-underflow"))?;
+        Ok((value, provenance))
+    }
+
+    fn absent_key_halt(&self, value: &Value) -> Result<Halt, Halt> {
+        let absent = self
+            .absent_parameter
+            .as_ref()
+            .ok_or_else(|| invariant("guard-provenance-without-absent-parameter"))?;
+        let Value::Reference(reference) = value else {
+            return Err(invariant("absent-parameter-reference-expected"));
+        };
+        let key = render_identity(reference.object().as_str().as_bytes());
+        Ok(Halt::Family(FamilyResult::Undefined(Box::new(
+            StateModelUndefined::AbsentKey {
+                binding: absent.binding.clone(),
+                key,
+            },
+        ))))
+    }
+
+    fn push_value(&mut self, value: Value, provenance: bool) {
+        self.values.push(value);
+        self.value_guard_provenance.push(provenance);
     }
 
     fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
@@ -1034,7 +1109,27 @@ impl<'a, 'm> Machine<'a, 'm> {
             .len()
             .checked_sub(count)
             .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
-        Ok(self.values.split_off(start))
+        let values = self.values.split_off(start);
+        let provenance = self.value_guard_provenance.split_off(start);
+        if let Some(index) = provenance.iter().position(|provenance| *provenance) {
+            let reference = values
+                .get(index)
+                .ok_or_else(|| invariant("forwarded-value-missing"))?;
+            return Err(self.absent_key_halt(reference)?);
+        }
+        Ok(values)
+    }
+
+    fn pop_many_forwarded(&mut self, count: usize) -> Result<(Vec<Value>, Vec<bool>), Halt> {
+        let start = self
+            .values
+            .len()
+            .checked_sub(count)
+            .ok_or_else(|| invariant("evaluation-value-stack-underflow"))?;
+        Ok((
+            self.values.split_off(start),
+            self.value_guard_provenance.split_off(start),
+        ))
     }
 
     fn pop_integer(&mut self) -> Result<Integer, Halt> {
@@ -1095,11 +1190,36 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Bind `value` to `slot` in the current frame.
     fn bind(&mut self, slot: Slot, value: Value) -> Result<(), Halt> {
+        self.bind_with_provenance(slot, value, false)
+    }
+
+    fn bind_with_provenance(
+        &mut self,
+        slot: Slot,
+        value: Value,
+        provenance: bool,
+    ) -> Result<(), Halt> {
         if let Some(trail) = self.trail.as_mut() {
             trail.element_paths.remove(&slot);
         }
         *self.slot(slot)? = Some(value);
+        *self.frame_provenance_slot(slot)? = provenance;
         Ok(())
+    }
+
+    fn slot_has_guard_provenance(&self, slot: Slot) -> Result<bool, Halt> {
+        self.frame_guard_provenance
+            .last()
+            .and_then(|frame| frame.get(slot))
+            .copied()
+            .ok_or_else(|| invariant("evaluation-local-provenance-unbound"))
+    }
+
+    fn frame_provenance_slot(&mut self, slot: Slot) -> Result<&mut bool, Halt> {
+        self.frame_guard_provenance
+            .last_mut()
+            .and_then(|frame| frame.get_mut(slot))
+            .ok_or_else(|| invariant("evaluation-local-provenance-unbound"))
     }
 
     /// FR-322: select the one arm of the `case` at `node` whose member is the
@@ -1260,7 +1380,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 match skipped {
                     Some(result) => {
                         let result = retain_boolean(result, self.meter)?;
-                        self.values.push(Value::Boolean(result));
+                        self.push_value(Value::Boolean(result), false);
                     }
                     None => {
                         self.tasks.push(Task::Retain(node));
@@ -1271,12 +1391,12 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             Task::Retain(_) => {
                 let result = retain_boolean(self.pop_boolean()?, self.meter)?;
-                self.values.push(Value::Boolean(result));
+                self.push_value(Value::Boolean(result), false);
                 Ok(())
             }
             Task::Bind(slot) => {
-                let value = self.pop()?;
-                self.bind(slot, value)
+                let (value, provenance) = self.pop_forwarded()?;
+                self.bind_with_provenance(slot, value, provenance)
             }
             Task::Select(node) => self.select_arm(node),
             Task::ChargeElement(_) => charge_element(self.meter).map_err(Into::into),
@@ -1284,6 +1404,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.frames
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
+                self.frame_guard_provenance
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
                 Ok(())
             }
             Task::DispatchGuard(guard) => {
@@ -1297,6 +1420,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.frames
                     .pop()
                     .ok_or_else(|| invariant("evaluation-return-frame-missing"))?;
+                self.frame_guard_provenance
+                    .pop()
+                    .ok_or_else(|| invariant("evaluation-return-provenance-frame-missing"))?;
                 if !holds {
                     // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
                     // undefined result.
@@ -1311,7 +1437,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
-                self.frames.push(frame);
+                let provenance = vec![false; frame.len()];
+                self.push_frame(frame, provenance);
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
                 Ok(())
@@ -1331,45 +1458,18 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
-        if let (NodeKind::Lookup { reference, .. }, 1, true) =
-            (node.kind(), self.frames.len(), self.imported.is_empty())
-        {
-            let operand = node.at(*reference);
-            if matches!(operand.kind(), NodeKind::Local(_)) {
-                self.guard_operands.insert(operand.id());
-            }
-        }
         match node.kind() {
             NodeKind::Literal(CheckedLiteral(value)) => {
-                self.values.push(value.clone());
+                self.push_value(value.clone(), false);
                 return Ok(());
             }
             NodeKind::Local(slot) => {
-                if let Some((absent_slot, binding)) = self
-                    .absent_parameter
-                    .as_ref()
-                    .map(|absent| (absent.slot, absent.binding.clone()))
-                {
-                    if absent_slot == *slot
-                        && self.frames.len() == 1
-                        && !self.guard_operands.contains(&node.id())
-                    {
-                        let key = match self.slot(*slot)?.as_ref() {
-                            Some(Value::Reference(reference)) => {
-                                render_identity(reference.object().as_str().as_bytes())
-                            }
-                            _ => return Err(invariant("absent-parameter-reference-expected")),
-                        };
-                        return Err(Halt::Family(FamilyResult::Undefined(Box::new(
-                            StateModelUndefined::AbsentKey { binding, key },
-                        ))));
-                    }
-                }
                 let value = self
                     .slot(*slot)?
                     .clone()
                     .ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
-                self.values.push(value);
+                let provenance = self.slot_has_guard_provenance(*slot)?;
+                self.push_value(value, provenance);
                 return Ok(());
             }
             NodeKind::Let { slot, value, body } => {
@@ -1929,11 +2029,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .graph
                     .function_state(*function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
-                let arguments = self.pop_many(arguments.len())?;
+                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
-                self.frames.push(frame);
+                let mut frame_provenance = provenance;
+                frame_provenance.resize(frame.len(), false);
+                self.push_frame(frame, frame_provenance);
                 // shared-grammar.md: "self, result and pre(...) are ...
                 // unavailable ... inside a reusable predicate" -- a callee's
                 // own body is never anchored by its caller's `pre(..)`, so
@@ -1963,11 +2065,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let callable = library
                     .function_state(*function)
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
-                let arguments = self.pop_many(arguments.len())?;
+                let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
-                self.frames.push(frame);
+                let mut frame_provenance = provenance;
+                frame_provenance.resize(frame.len(), false);
+                self.push_frame(frame, frame_provenance);
                 let previous = self.enter(PackageContext {
                     scope: library.scope(),
                     graph: library,
@@ -2165,7 +2269,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 members,
             } = node.at(*population).kind() =>
             {
-                let reference = self.pop()?;
+                let (reference, _) = self.pop_forwarded()?;
                 self.named_lookup(node, population, members, *absence, reference)?
             }
             NodeKind::AllInstances { population } => {
@@ -2198,7 +2302,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ProtocolClauseUnsupported::Lookup,
                     ))));
                 }
-                let reference_value = self.pop()?;
+                let (reference_value, _) = self.pop_forwarded()?;
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant("query-population-value-expected"));
                 };
@@ -2289,7 +2393,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         let mut frame: Vec<Option<Value>> =
                             full_arguments.clone().into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
-                        self.frames.push(frame);
+                        let provenance = vec![false; frame.len()];
+                        self.push_frame(frame, provenance);
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
@@ -2312,7 +2417,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         let mut frame: Vec<Option<Value>> =
                             full_arguments.into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
-                        self.frames.push(frame);
+                        let provenance = vec![false; frame.len()];
+                        self.push_frame(frame, provenance);
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -2320,7 +2426,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             }
         };
-        self.values.push(value);
+        self.push_value(value, false);
         Ok(())
     }
 
@@ -2643,7 +2749,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Err(invariant("seq-collection-result-expected"));
             };
             let value = outcome_into_stop(form(result_type, iteration.results, self.meter))?;
-            self.values.push(value);
+            self.push_value(value, false);
             return Ok(());
         }
         charge_visit(self.meter)?;
@@ -3199,7 +3305,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                 );
                 let value = retain_scalar(Value::Boolean(found), self.meter)?;
-                self.values.push(value);
+                self.push_value(value, false);
                 return Ok(());
             }
         }
@@ -3737,7 +3843,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             _ => return Err(invariant("iteration-node-invalid")),
         };
-        self.values.push(value);
+        self.push_value(value, false);
         Ok(())
     }
 }
