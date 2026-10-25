@@ -12,7 +12,7 @@
 //! element.
 //!
 //! The rows are read in an order that does not depend on how they were
-//! written: populations by abstract declaration, objects by ascending key, and
+//! written: populations by abstract population node-key digest, objects by ascending key, and
 //! per object its object row, then its field rows by ascending field name as
 //! UTF-8 bytes. Every row is read, because an internal fault in any of them
 //! outranks every row outcome; of the row outcomes the first undefined one
@@ -221,8 +221,7 @@ pub fn map_state(
     history: &HistoryValues,
 ) -> Result<MappedState, MappingFailure> {
     check_systems(refinement, concrete_system, abstract_system)?;
-    let mut populations: Vec<&PopulationRow> = refinement.populations().iter().collect();
-    populations.sort_by(|left, right| left.abstract_population.cmp(&right.abstract_population));
+    let populations = ordered_populations(refinement.populations().iter().collect());
     let mut visible = ModelState {
         populations: BTreeMap::new(),
         extents: Vec::new(),
@@ -293,6 +292,12 @@ pub fn map_state(
     }
     hidden.sort();
     Ok(MappedState { visible, hidden })
+}
+
+/// The model-node digest order FR-140 uses for the population rows it reads.
+fn ordered_populations(mut populations: Vec<&PopulationRow>) -> Vec<&PopulationRow> {
+    populations.sort_by_key(|row| row.order_key);
+    populations
 }
 
 /// The identities of the two domain packages `refinement` maps between,
@@ -699,5 +704,38 @@ mod tests {
                 node: "first-undetermined".to_owned()
             })
         );
+    }
+
+    /// FR-140-AC-15 (TC-545): population row precedence follows the named
+    /// abstract population's node-key digest, even when declaration order is
+    /// the reverse.
+    #[trace("TC-545", "FR-140-AC-15")]
+    #[test]
+    fn population_rows_sort_by_abstract_node_key_digest() {
+        let later_digest = PopulationRow {
+            abstract_population: DeclarationKey {
+                package: "p".to_owned(),
+                node: "a".to_owned(),
+            },
+            order_key: quire_exact::NodeKey::from_digest([0xff; 32]),
+            concrete_population: DeclarationKey {
+                package: "c".to_owned(),
+                node: "first".to_owned(),
+            },
+        };
+        let earlier_digest = PopulationRow {
+            abstract_population: DeclarationKey {
+                package: "p".to_owned(),
+                node: "z".to_owned(),
+            },
+            order_key: quire_exact::NodeKey::from_digest([0x01; 32]),
+            concrete_population: DeclarationKey {
+                package: "c".to_owned(),
+                node: "second".to_owned(),
+            },
+        };
+        let ordered = ordered_populations(vec![&later_digest, &earlier_digest]);
+        assert_eq!(ordered[0].abstract_population.node, "z");
+        assert_eq!(ordered[1].abstract_population.node, "a");
     }
 }

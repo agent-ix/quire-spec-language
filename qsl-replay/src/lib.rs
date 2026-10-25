@@ -133,9 +133,10 @@ pub use execute::{
 };
 pub use hybrid::{
     settle_hybrid_candidates, AdmittedHybridProcessItem, AdmittedHybridProcessRequest,
-    BoundDimension, BudgetRefusal, ClaimHorizon, HybridProcessItem, HybridProcessRequest,
-    HybridProcessRequestRefusal, HybridSettlement, NegativeHorizon, SolverBudget, SolverCoverage,
-    SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+    BoundDimension, BudgetRefusal, ClaimHorizon, HybridProcessDependencyPackage, HybridProcessItem,
+    HybridProcessPackageContext, HybridProcessRequest, HybridProcessRequestRefusal,
+    HybridSettlement, NegativeHorizon, SolverBudget, SolverCoverage, SolverHorizon, SolverMethod,
+    SolverOutcome, SolverResult, SolverStop,
 };
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
@@ -200,6 +201,7 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
     STEP_INDUCTION_DEPTH,
 };
+pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
