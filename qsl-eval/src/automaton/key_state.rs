@@ -338,7 +338,7 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    fn enc(&self, max_bytes: u64) -> Result<Enc, KeyRefusal> {
+    pub(super) fn enc(&self, max_bytes: u64) -> Result<Enc, KeyRefusal> {
         let obligations = self.obligations.iter().map(Obligation::enc).collect();
         let past = self
             .past
@@ -450,7 +450,7 @@ enum PastClass {
 impl FormulaShape {
     /// The shape of `formula`, or `None` when it holds a timed interval or
     /// more occurrences than the path bound.
-    pub(super) fn of(formula: &CheckedFormula) -> Option<Self> {
+    pub(super) fn of(formula: &CheckedFormula, root: Polarity) -> Option<Self> {
         struct Entry {
             path: Vec<u64>,
             node: usize,
@@ -462,7 +462,7 @@ impl FormulaShape {
             path: Vec::new(),
             node: formula.root().index(),
             parent: None,
-            signs: (true, false),
+            signs: (root == Polarity::Positive, root == Polarity::Negative),
         }];
         let mut next = 0_usize;
         while next < entries.len() {
@@ -515,6 +515,35 @@ impl FormulaShape {
                 .map(|entry| entry.path)
                 .zip(shaped)
                 .collect(),
+        })
+    }
+
+    /// Whether the formula (read at a positive root) has an unbounded
+    /// `eventually` or `until` after dualization: ADR-018 IV-4's outside of
+    /// the safety fragment, so a TP-4 form. `[a,open]` counts.
+    pub(super) fn is_liveness(&self) -> bool {
+        self.nodes.values().any(|node| {
+            [Polarity::Positive, Polarity::Negative]
+                .into_iter()
+                .any(|polarity| {
+                    node.reached(polarity)
+                        && node.least_fixed_point(polarity) == Some(true)
+                        && node.interval.is_none_or(|bounds| bounds.upper.is_none())
+                })
+        })
+    }
+
+    /// Whether some occurrence is an open-upper least-fixed-point operator
+    /// (`F`/`U[a,open]`, or a dual) at a polarity it is read at: it has a
+    /// Büchi acceptance set this algebra does not derive (spec ruling R-2).
+    pub(super) fn has_open_upper_eventuality(&self) -> bool {
+        self.nodes.values().any(|node| {
+            node.interval.is_some_and(|bounds| bounds.upper.is_none())
+                && [Polarity::Positive, Polarity::Negative]
+                    .into_iter()
+                    .any(|polarity| {
+                        node.reached(polarity) && node.least_fixed_point(polarity) == Some(true)
+                    })
         })
     }
 
@@ -700,7 +729,10 @@ fn same_facts(
 /// occurrence merged to the one retained counter (the earliest deadline, the
 /// furthest extent, the union of offsets), and every branch an obligation-free
 /// branch subsumes removed.
-fn normal(branches: &[Configuration], max_bytes: u64) -> Result<Vec<Configuration>, KeyRefusal> {
+pub(super) fn normal(
+    branches: &[Configuration],
+    max_bytes: u64,
+) -> Result<Vec<Configuration>, KeyRefusal> {
     let merged: Vec<Configuration> = branches
         .iter()
         .map(|branch| {
@@ -777,7 +809,7 @@ impl Reader<'_> {
         Ok((Occurrence { path, polarity }, node))
     }
 
-    fn configuration(&self, branch: NodeRef<'_>) -> Result<Configuration, KeyRefusal> {
+    pub(super) fn configuration(&self, branch: NodeRef<'_>) -> Result<Configuration, KeyRefusal> {
         let [obligations, past, windows, acceptance] =
             exactly(members(branch)?.into_iter()).ok_or(KeyRefusal::Members)?;
         let configuration = Configuration {
