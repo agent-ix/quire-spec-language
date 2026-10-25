@@ -1011,6 +1011,7 @@ fn settle(world: &World, outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckR
         &CertificateRequest {
             subject: world.subject(),
             item: ModelCheckItem::DeadlockFreedom,
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |_| panic!("a reduced outcome settles without a replay"),

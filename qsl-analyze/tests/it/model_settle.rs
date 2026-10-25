@@ -98,6 +98,7 @@ impl Case {
                 UNLIMITED,
             ),
             item: ModelCheckItem::DeadlockFreedom,
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         }
     }
 }

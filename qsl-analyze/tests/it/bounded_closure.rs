@@ -62,6 +62,7 @@ impl Bounded {
                 UNLIMITED,
             ),
             item: self.item(),
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         }
     }
 
