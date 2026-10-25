@@ -721,6 +721,45 @@ fn the_counter_refinement_checks_to_one_population_and_one_object_row() {
     );
 }
 
+/// FR-136 and QSpec FR-375-AC-22: source provenance covers every authored
+/// step row, including `any`, before any proof eligibility filtering.
+#[trace("FR-136-AC-5", "FR-375-AC-22")]
+#[test]
+fn checked_step_sources_keep_source_order_and_exact_rows_including_any() {
+    let base = cas_refines_counter();
+    let body = mutated(
+        &base,
+        "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
+        "step Impl::Counter::commitB -> any;",
+    );
+    let (spec, cas) = counters();
+    let (text, declarations) = assemble("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body);
+    let declarations = declarations.expect("the unit assembles");
+    let graph = check_declarations(&text, declarations).unwrap_or_else(|refusals| {
+        panic!(
+            "{body}: {:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    });
+    let refinement = only_refinement(&graph);
+    assert_eq!(refinement.steps().len(), 7);
+    assert_eq!(refinement.step_sources().len(), 7);
+    assert!(matches!(&refinement.steps()[1].target, StepTarget::Any));
+    for (ordinal, source_row) in refinement.step_sources().iter().enumerate() {
+        assert_eq!(source_row.ordinal(), ordinal);
+        let span = source_row.span();
+        assert_eq!(
+            &text[span.start..span.end],
+            body.lines()
+                .map(str::trim)
+                .filter(|line| line.starts_with("step "))
+                .nth(ordinal)
+                .expect("the source row exists")
+        );
+    }
+    assert!(body.contains("step Impl::Counter::commitB -> any;"));
+}
+
 /// FR-135-AC-2 (TC-540 step 2): each malformed row refuses at its span, with
 /// no `CheckedRefinement`.
 #[trace("TC-540", "FR-135-AC-2")]

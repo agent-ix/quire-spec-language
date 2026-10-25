@@ -710,6 +710,28 @@ pub struct StepRow {
     pub target: StepTarget,
 }
 
+/// The original source region of one checked, authored step row (FR-136,
+/// QSpec FR-375-AC-22). The containing [`CheckedRefinement`] is its owner;
+/// `ordinal` is its position among that refinement's authored step rows,
+/// before S4 reorders the semantic `steps` array.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefinementStepSource {
+    ordinal: usize,
+    span: Span,
+}
+
+impl RefinementStepSource {
+    /// The source-order ordinal among authored `step` rows.
+    pub const fn ordinal(&self) -> usize {
+        self.ordinal
+    }
+
+    /// The original checked source span of the entire row.
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+}
+
 /// The origin of a checked refinement fairness member (FR-137).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RefinementFairnessOrigin {
@@ -807,6 +829,10 @@ pub struct CheckedRefinement {
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
+    /// Every authored step row's source provenance, including rows whose
+    /// mapping makes this refinement ineligible for a proof. This remains
+    /// attached to the checked owner independently of any S5 proof records.
+    pub(crate) step_sources: Vec<RefinementStepSource>,
     pub(crate) history: Vec<HistoryRow>,
     pub(crate) concrete_fairness: Vec<RefinementFairness>,
     pub(crate) abstract_fairness: Vec<RefinementFairness>,
@@ -864,6 +890,11 @@ impl CheckedRefinement {
     /// The step rows, in source order.
     pub fn steps(&self) -> &[StepRow] {
         &self.steps
+    }
+
+    /// Every authored step row's source region in source-row order.
+    pub fn step_sources(&self) -> &[RefinementStepSource] {
+        &self.step_sources
     }
 
     /// The protocol clause the step rows select (FR-136 "Selecting the
@@ -1393,6 +1424,19 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         populations,
         objects,
         steps: Vec::new(),
+        step_sources: form
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                RefinementRowForm::Step(row) => Some(row.span),
+                RefinementRowForm::Population(_)
+                | RefinementRowForm::Object(_)
+                | RefinementRowForm::History(_)
+                | RefinementRowForm::Fairness(_) => None,
+            })
+            .enumerate()
+            .map(|(ordinal, span)| RefinementStepSource { ordinal, span })
+            .collect(),
         history,
         concrete_fairness,
         abstract_fairness,
