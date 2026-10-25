@@ -24,7 +24,8 @@ use quire_exact::EffectiveId;
 
 use super::{
     CheckedRefinement, Checker, Findings, NameSegments, ObjectType, RefinementCause,
-    RefinementRefusal, RowClass, Side, StepClass, StepRow, StepTarget, UnsupportedFeature,
+    RefinementFairness, RefinementRefusal, RefinementThreadTarget, RowClass, Side, StepClass,
+    StepRow, StepTarget, UnsupportedFeature,
 };
 use crate::check::check::ScopedHistory;
 use crate::check::lowering::AdmittedModel;
@@ -702,11 +703,56 @@ impl ProtocolRefinement<'_> {
         );
         let refusals = checker.findings.refusals;
         let result = match outcome {
-            Some(selected) if refusals.is_empty() => Ok((checked, selected)),
+            Some(selected) if refusals.is_empty() => {
+                checked
+                    .concrete_fairness
+                    .extend(scheduler_fairness(clause.checked));
+                Ok((checked, selected))
+            }
             _ => Err(refusals),
         };
         (result, nodes)
     }
+}
+
+/// The default scheduler members of a concrete protocol subject (FR-137).
+fn scheduler_fairness(protocol: &CheckedProtocol) -> Vec<RefinementFairness> {
+    use crate::check::CheckedScheduling;
+    use qsl_forms::ProtocolNodeKind;
+
+    if protocol.slots.scheduling == CheckedScheduling::Adversarial {
+        return Vec::new();
+    }
+    let tree = &protocol.controls;
+    let mut members = vec![RefinementFairness::Scheduler(RefinementThreadTarget::Root)];
+    for control in &tree.controls {
+        if control.kind != ProtocolNodeKind::Parallel {
+            continue;
+        }
+        let parallel = control.path.join("/");
+        for child in control
+            .children
+            .iter()
+            .filter_map(|node| tree.control(*node))
+        {
+            if child.kind == ProtocolNodeKind::Branch {
+                members.push(RefinementFairness::Scheduler(
+                    RefinementThreadTarget::Branch {
+                        parallel: parallel.clone(),
+                        branch: child.name.clone(),
+                    },
+                ));
+            }
+        }
+    }
+    for compensation in &protocol.obligations.compensations {
+        members.push(RefinementFairness::Scheduler(
+            RefinementThreadTarget::CompensationTemplate {
+                name: compensation.name.clone(),
+            },
+        ));
+    }
+    members
 }
 
 /// The model the unit gives `alias`, with that alias.
