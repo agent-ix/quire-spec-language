@@ -1503,6 +1503,8 @@ fn pair_of_references(peer: &str) -> Value {
     mutate_k2(|document| {
         let mut parent = field("Order", "parent", &id("Order"));
         parent["presence"] = json!("optional");
+        let mut buddy = field("Pair", "buddy", &id("Order"));
+        buddy["presence"] = json!("optional");
         let chain = json!({
             "identity": id("relationship/Order-chain"),
             "sourceEnd": {"type": id("Order"), "role": "prior",
@@ -1520,32 +1522,98 @@ fn pair_of_references(peer: &str) -> Value {
         document["types"].as_array_mut().unwrap().push(declaration(
             "Pair",
             "money",
-            json!({"fields": [field("Pair", "a", &id("Order")), field("Pair", "b", &id("Order"))]}),
+            json!({"fields": [
+                field("Pair", "a", &id("Order")),
+                field("Pair", "b", &id("Order")),
+                buddy,
+            ]}),
         ));
         set_clauses(document, "Pair", vec![clause("Pair", "Peer", peer)]);
     })
 }
 
-/// FR-366: a relationship read (`reaches` over an edge field or over a
-/// relationship end) and a call that hands a reference to a function are no
-/// reads a record value can make, since it is evaluated with no object
-/// universe.
-#[trace("TC-1050", "FR-366-AC-3")]
+/// FR-366-AC-10: object reads in a helper's reachable call graph make a
+/// record invariant read an object, while merely receiving and passing a
+/// reference does not.
+#[trace("TC-1050", "FR-366-AC-10")]
 #[test]
-fn a_record_invariant_that_reaches_or_calls_with_a_reference_is_refused() {
-    let body = "function ok using v(o: M::Order): Boolean pure { true }";
+fn a_record_invariant_follows_only_object_reading_helpers() {
+    let functions = concat!(
+        "function total_of using v(b: Reference<M::Order>): Integer pure { b.total.amount_minor }\n",
+        "function checked using v(b: Reference<M::Order>): Boolean pure { total_of(b) >= 0 }\n",
+        "function linked using v(b: Option<Reference<M::Order>>): Boolean pure { present(b) }\n",
+        "function same using v(a: Reference<M::Order>, b: Reference<M::Order>): Boolean pure { a = b }\n",
+        "function wrap using v(b: Option<Reference<M::Order>>): Boolean pure { linked(b) }\n",
+    );
+
+    for (peer, reads_object) in [
+        (
+            "present(self.buddy) implies total_of(value(self.buddy)) >= 0",
+            true,
+        ),
+        (
+            "present(self.buddy) implies checked(value(self.buddy))",
+            true,
+        ),
+        ("linked(self.buddy) or not linked(self.buddy)", false),
+        (
+            "present(self.buddy) implies same(value(self.buddy), value(self.buddy))",
+            false,
+        ),
+        ("wrap(self.buddy) or not wrap(self.buddy)", false),
+    ] {
+        let unit = format!("{functions}\n");
+        let (compiled, _) = compile_unit(&pair_of_references(peer), &unit);
+        if reads_object {
+            let refusal = sole_refusal(compiled);
+            assert_eq!(
+                refusal.type_invariant_clause(),
+                Some(&key("Pair/Peer")),
+                "{peer}: {refusal:?}"
+            );
+            assert!(
+                matches!(
+                    refusal.type_invariant_cause(),
+                    Some(CheckCause::ObjectReadInValueInvariant)
+                ),
+                "{peer}: {refusal:?}"
+            );
+        } else {
+            match compiled {
+                Compiled::Checked(_) => {}
+                Compiled::Refused(refusals) => panic!("{peer}: {refusals:?}"),
+                Compiled::Unparsed(clause, member) => {
+                    panic!("{peer}: {clause:?} {member:?}")
+                }
+            }
+        }
+    }
+
+    let named_predicate = format!(
+        "{functions}predicate positive using v(b: Reference<M::Order>): Boolean {{ b.total.amount_minor >= 0 }}\n"
+    );
+    let peer = "present(self.buddy) implies positive(value(self.buddy))";
+    let (compiled, _) = compile_unit(&pair_of_references(peer), &named_predicate);
+    let refusal = sole_refusal(compiled);
+    assert_eq!(
+        refusal.type_invariant_clause(),
+        Some(&key("Pair/Peer")),
+        "{peer}: {refusal:?}"
+    );
+    assert!(
+        matches!(
+            refusal.type_invariant_cause(),
+            Some(CheckCause::ObjectReadInValueInvariant)
+        ),
+        "{peer}: {refusal:?}"
+    );
+
     for (peer, unit) in [
         ("reaches(self.a, self.b, parent)", UNIT_BODY),
         ("reaches(self.a, self.b, prior)", UNIT_BODY),
-        ("ok(self.a)", body),
     ] {
         let (compiled, _) = compile_unit(&pair_of_references(peer), unit);
         let refusal = sole_refusal(compiled);
-        assert_eq!(
-            refusal.type_invariant_clause(),
-            Some(&key("Pair/Peer")),
-            "{peer}"
-        );
         assert!(
             matches!(
                 refusal.type_invariant_cause(),

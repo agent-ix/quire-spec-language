@@ -307,6 +307,17 @@ pub fn check(
     ))
 }
 
+/// FR-218: validate repeat-body progress after the slot checker has proved
+/// nested repeat exit feasibility under the shared S3 work meter.
+pub(crate) fn progress(
+    protocol: &ProtocolDeclarationForm,
+    checked: &CheckedProtocol,
+    profile: Option<&str>,
+    nested_false_feasible: &BTreeMap<ProtocolNodeId, bool>,
+) -> Vec<(Span, CheckRefusal)> {
+    graph::progress(protocol, &checked.controls, profile, nested_false_feasible)
+}
+
 /// FR-218: resolve and type-check every predicate join's named function.
 fn check_predicate_joins(
     protocol: &ProtocolDeclarationForm,
