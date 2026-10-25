@@ -113,6 +113,78 @@ fn lt13() -> Vec<Vec<Op>> {
     ]
 }
 
+/// LT-14 and LT-18 exercise both PSC-3 edge directions involving a fence:
+/// a release-message view carries a fence to an SC access, and an SC access
+/// happens before a fence through an acquire read.
+#[trace("TC-668", "FR-223-AC-6")]
+#[test]
+fn sc_fence_edges_match_rc11_for_lt14_and_lt18() {
+    let lt14 = vec![
+        vec![
+            Op::store(X, 1, Order::SeqCst),
+            Op::fence(Order::SeqCst),
+            Op::store(Y, 1, Order::Relaxed),
+        ],
+        vec![
+            Op::load(Y, 1, Order::Acquire),
+            Op::store(Z, 1, Order::SeqCst),
+        ],
+        vec![
+            Op::load(Z, 2, Order::SeqCst),
+            Op::store(Z, 2, Order::SeqCst),
+            Op::load(X, 3, Order::SeqCst),
+            Op::load(Z, 4, Order::SeqCst),
+        ],
+    ];
+    let rc11 = compare("LT-14", &lt14, &[]);
+    assert!(!rc11.contains(&vec![1, 1, 0, 2]));
+
+    let lt18 = vec![
+        vec![
+            Op::store(X, 1, Order::SeqCst),
+            Op::store(Y, 1, Order::Release),
+        ],
+        vec![
+            Op::load(Y, 1, Order::Acquire),
+            Op::fence(Order::SeqCst),
+            Op::load(Z, 2, Order::SeqCst),
+        ],
+        vec![
+            Op::store(Z, 1, Order::SeqCst),
+            Op::load(X, 3, Order::SeqCst),
+        ],
+    ];
+    let rc11 = compare("LT-18", &lt18, &[]);
+    assert!(!rc11.contains(&vec![1, 0, 0, 3]));
+}
+
+/// LT-16 carries a predecessor of a collected SC event through an acquire
+/// fence and an SC load, so the forbidden register outcome stays absent.
+#[trace("TC-668", "FR-223-AC-8")]
+#[test]
+fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
+    let lt16 = vec![
+        vec![
+            Op::store(X, 1, Order::SeqCst),
+            Op::store(Y, 1, Order::SeqCst),
+            Op::load(Y, 1, Order::Relaxed),
+            Op::load(Y, 2, Order::Relaxed),
+        ],
+        vec![
+            Op::store(Y, 1, Order::SeqCst),
+            Op::store(Y, 2, Order::Relaxed),
+        ],
+        vec![Op::store(Y, 3, Order::Relaxed)],
+        vec![
+            Op::load(Y, 3, Order::Relaxed),
+            Op::fence(Order::Acquire),
+            Op::load(Y, 4, Order::SeqCst),
+        ],
+    ];
+    let ra = under(&case_of(&lt16), MemoryModelName::Ra, Ra::default(), true);
+    assert!(!ra.contains(&vec![1, 2, 2, 3]));
+}
+
 /// LT-12: a release flag between an SC write and an SC read through a third
 /// thread. The weak outcome is the one execution of PSC-7 (a) that `ra`
 /// admits beyond RC11; the other seven outcomes are RC11's.
