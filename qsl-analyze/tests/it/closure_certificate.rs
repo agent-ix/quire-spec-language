@@ -11,7 +11,10 @@
 //!
 //! Not covered: ADR-018 §6's `ConfigVersion` subject, which has no
 //! model-check fixture; the Counter subject stands in for it, so the
-//! FR-338-AC-1 and AC-2 vectors are not verified as written.
+//! FR-338-AC-1 vectors, and the AC-2 vector over `ConfigVersion`, are not
+//! verified as written. The deadlock test below tags AC-2 for its deadlock
+//! vector alone; the missing-state rejections are checked over the Counter
+//! and carry no AC-2 tag.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
@@ -422,7 +425,7 @@ fn a_certificate_missing_a_reached_state_is_rejected_at_it() {
 /// value 3, the deadlock, under the rejecting state; the same states under
 /// `always holds(c.value <= 3)`'s carried root are accepted, since the
 /// deadlock changes no authored claim (ADR-018 DL-6).
-#[trace("TC-525")]
+#[trace("TC-525", "FR-338-AC-2")]
 #[test]
 fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     let world = world(CONTRACT, &[("c", 0)]);

@@ -46,6 +46,7 @@ mod error;
 mod formula;
 mod gba;
 mod key;
+mod key_buchi;
 mod key_state;
 mod letter;
 mod monitor;
@@ -66,6 +67,7 @@ pub use key::{
     NotTranslated, SafetyItem, SafetyState, SafetyStates, SafetyTranslation, StateContext,
     SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
 };
+pub use key_buchi::{BuchiPhase, BuchiState, BuchiStates};
 pub use key_state::{
     Configuration, HistoryOperand, Obligation, Occurrence, PastMemory, PastOperator, Polarity,
     Window,

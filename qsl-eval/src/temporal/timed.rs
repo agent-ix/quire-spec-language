@@ -40,8 +40,10 @@ use qsl_semantics::check::{
 };
 use quire_exact::{Charge, ChargePoint, Incomplete, Integer, Meter, NonZeroInteger, Rational};
 
-use super::letters::{AtomReading, LetterStop, TemporalLetters};
-use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
+use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+use super::outcome::{
+    InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
+};
 use super::plan::fault;
 use super::position::{PositionRefusal, TemporalPosition};
 
@@ -465,7 +467,13 @@ fn read_atoms<L: TemporalLetters>(
     letters: &mut L,
     represented: usize,
     loop_start: usize,
-) -> Result<Option<UndefinedEvaluation>, Stop> {
+) -> Result<
+    (
+        Option<UndefinedEvaluation>,
+        Option<InsufficientDataEvaluation>,
+    ),
+    Stop,
+> {
     let atoms: Vec<usize> = formula
         .nodes()
         .iter()
@@ -473,6 +481,7 @@ fn read_atoms<L: TemporalLetters>(
         .filter(|(_, node)| matches!(node, FormulaNode::Holds { .. }))
         .map(|(index, _)| index)
         .collect();
+    let mut insufficient = None;
     for position in 0..represented {
         let at =
             TemporalPosition::new(u64::try_from(position).map_err(|_| broken("position-in-u64"))?);
@@ -484,6 +493,12 @@ fn read_atoms<L: TemporalLetters>(
             let value = match letters.atom(id, at, &mut *evaluator.meter)? {
                 AtomReading::True => Tri::True,
                 AtomReading::False => Tri::False,
+                AtomReading::Undefined(UndefinedCause::InsufficientData(data)) => {
+                    if insufficient.is_none() {
+                        insufficient = Some(InsufficientDataEvaluation { at, atom: id, data });
+                    }
+                    Tri::Unknown
+                }
                 AtomReading::Undefined(cause) => {
                     for &atom in &atoms {
                         if let Some(values) = evaluator.values.get_mut(atom) {
@@ -491,7 +506,7 @@ fn read_atoms<L: TemporalLetters>(
                             values.resize(evaluator.stamps.len(), Tri::Unknown);
                         }
                     }
-                    return Ok(Some(UndefinedEvaluation { at, cause }));
+                    return Ok((Some(UndefinedEvaluation { at, cause }), insufficient));
                 }
             };
             let slot = evaluator
@@ -513,7 +528,7 @@ fn read_atoms<L: TemporalLetters>(
             }
         }
     }
-    Ok(None)
+    Ok((None, insufficient))
 }
 
 /// Evaluate `clause`'s formula at `position` of the timed `trace`, ignoring
@@ -583,11 +598,12 @@ pub fn evaluate_timed_at<L: TemporalLetters>(
         represented,
         loop_start,
     ) {
-        Ok((value, undefined)) => Ok(match (value, undefined) {
-            (Tri::False, _) => TemporalOutcome::Violated { at: position },
-            (_, Some(undefined)) => TemporalOutcome::Undefined(undefined),
-            (Tri::True, None) => TemporalOutcome::Holds,
-            (Tri::Unknown, None) => TemporalOutcome::Pending,
+        Ok((value, undefined, insufficient)) => Ok(match (value, undefined, insufficient) {
+            (_, Some(undefined), _) => TemporalOutcome::Undefined(undefined),
+            (Tri::False, None, None) => TemporalOutcome::Violated { at: position },
+            (_, None, Some(insufficient)) => TemporalOutcome::InsufficientData(insufficient),
+            (Tri::True, None, None) => TemporalOutcome::Holds,
+            (Tri::Unknown, None, None) => TemporalOutcome::Pending,
         }),
         Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
         Err(Stop::Refused(refusal)) => Err(refusal),
@@ -604,8 +620,16 @@ fn evaluate<L: TemporalLetters>(
     at: usize,
     represented: usize,
     loop_start: usize,
-) -> Result<(Tri, Option<UndefinedEvaluation>), Stop> {
-    let undefined = read_atoms(formula, evaluator, letters, represented, loop_start)?;
+) -> Result<
+    (
+        Tri,
+        Option<UndefinedEvaluation>,
+        Option<InsufficientDataEvaluation>,
+    ),
+    Stop,
+> {
+    let (undefined, insufficient) =
+        read_atoms(formula, evaluator, letters, represented, loop_start)?;
     for (index, node) in formula.nodes().iter().enumerate().rev() {
         if matches!(node, FormulaNode::Holds { .. }) {
             continue;
@@ -620,7 +644,11 @@ fn evaluate<L: TemporalLetters>(
             *slot = value;
         }
     }
-    Ok((evaluator.value(formula.root().index(), at)?, undefined))
+    Ok((
+        evaluator.value(formula.root().index(), at)?,
+        undefined,
+        insufficient,
+    ))
 }
 
 /// The stamps of `trace`'s lasso with its loop repeated until every node's

@@ -77,7 +77,7 @@ pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -
 /// A unit over the `test/counters` model `M` with one infinite-trace `temporal`
 /// clause `C` over `c: M::Counter`, `on origin`, so a fairness constraint can
 /// name the model operation `M::Counter::increment`.
-fn modelled(body: &str) -> Fixture {
+pub(crate) fn modelled(body: &str) -> Fixture {
     modelled_with(vec![increment()], body)
 }
 
