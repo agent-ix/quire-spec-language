@@ -381,7 +381,7 @@ fn a_subject_that_alone_exceeds_max_states_stops_before_the_product_is_built() {
 fn an_undefined_match_ends_the_item_at_the_first_such_joint_step() {
     let divided = "match { a.step.op = b.step.op and \
          a.step.Vault::step.i = b.step.Vault::step.i and \
-         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+         (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 }";
     let world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
     let counterexample = refuted(run(&world));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -1291,7 +1291,7 @@ fn a_horizon_cuts_the_lockstep_search_before_its_lasso() {
 fn a_first_phase_finding_is_returned_only_inside_the_horizon() {
     let divided = "match { a.step.op = b.step.op and \
          a.step.Vault::step.i = b.step.Vault::step.i and \
-         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+         (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 }";
     let mut world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
     world.max_depth = Some(0);
     assert!(matches!(

@@ -44,7 +44,7 @@ const AGREE: &str = "(if present(a.step.Vault::step.i) and present(b.step.Vault:
 /// The conjunct of FR-178-AC-5, which has no value where `a`'s step is
 /// `step(0)`.
 const INVERSE: &str = "(if present(a.step.Vault::step.i) \
-     then 1 / value(a.step.Vault::step.i) else 1) = 1";
+     then 1 mod value(a.step.Vault::step.i) else 0) = 0";
 
 /// The vault's two idle initial states `(h, l, busy)`.
 pub(crate) const IDLE: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 0)];

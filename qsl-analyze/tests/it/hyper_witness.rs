@@ -300,8 +300,8 @@ fn a_witness_set_over_its_budget_stops_the_run() {
 }
 
 /// FR-177-AC-5: `Opaque` over the secure vault with the added `match`
-/// conjunct `(if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i)
-/// else 1) = 1` on the existential variable `b`, which has no value on a joint
+/// conjunct `(if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i)
+/// else 0) = 0` on the existential variable `b`, which has no value on a joint
 /// step whose `b` step is `step(0)`: the item returns `Violated` with an
 /// `Undefined` counterexample whose traces hold a path for `a` and for `b`,
 /// ending at the first such joint step in canonical order, with cause
@@ -311,8 +311,8 @@ fn a_witness_set_over_its_budget_stops_the_run() {
 #[trace("TC-602", "FR-177-AC-5")]
 #[test]
 fn an_undefined_existential_match_ends_the_item_with_a_path_for_b() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -419,8 +419,8 @@ fn an_incomplete_existential_match_leaves_the_item_undecided() {
 #[trace("TC-602")]
 #[test]
 fn an_undefined_universal_match_with_a_witness_ends_the_item_with_the_partners_path() {
-    let divided = " and (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
@@ -963,8 +963,8 @@ fn two_instances(vault: Vault, limits: &[(i64, i64)], conjuncts: &str) -> World 
 #[trace("TC-602")]
 #[test]
 fn a_later_instance_wins_only_with_a_strictly_earlier_finding() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = two_instances(Vault::Secure, &[(0, 0), (1, 0)], divided);
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     assert!(matches!(
@@ -1205,7 +1205,7 @@ fn an_undefined_contract_at_position_one_comes_before_a_refused_match_at_positio
 fn an_undefined_universal_match_names_every_variable_with_two_universals() {
     let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
          forall trace a of V forall trace c of V exists trace b of V \
-         match { (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 \
+         match { (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 \
          and a.step.Vault::step.i = b.step.Vault::step.i } \
          { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
     let world = World::new(Vault::Secure, false, &STARTS, clause);
@@ -1349,8 +1349,8 @@ fn refusal(result: Result<ModelTraceSettlement, ReplayRefusal>) -> ModelTraceRef
 #[trace("TC-602", "FR-183-AC-6")]
 #[test]
 fn an_undefined_existential_match_counterexample_replays_and_needs_its_existential_path() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
     let counterexample = refuted(run(&world, ModelCheckLimits::default()));
     let HyperCounterexampleKind::Undefined(claimed) = counterexample.kind.clone() else {

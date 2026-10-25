@@ -214,7 +214,7 @@ fn a_lockstep_counterexample_on_which_the_body_holds_is_inconclusive() {
 fn an_undefined_match_counterexample_replays_to_its_value() {
     let divided = "match { a.step.op = b.step.op and \
          a.step.Vault::step.i = b.step.Vault::step.i and \
-         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+         (if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0 }";
     let world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
     let counterexample = refuted(&world);
     let HyperCounterexampleKind::Undefined(claimed) = counterexample.kind.clone() else {
@@ -546,8 +546,8 @@ fn a_witness_set_emptied_by_a_refused_match_reproduces_nothing() {
 #[trace("TC-608")]
 #[test]
 fn a_witness_set_emptied_by_an_undefined_match_reproduces_nothing() {
-    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
-                   else 1) = 1";
+    let divided = " and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) \
+                   else 0) = 0";
     let world = World::new(Vault::Leaky, false, &STARTS, &opaque(divided));
     no_value_settlement(world.replay(&exhausted()));
 }
@@ -605,7 +605,7 @@ impl qsl_eval::hyper::StepMatch for UniversalOnly<'_> {
 /// `step(0)`, and an existential one that divides by `b`'s input.
 fn divided_over_a_universal_match() -> World {
     let divided = " and (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
-                   and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) else 1) = 1";
+                   and (if present(b.step.Vault::step.i) then 1 mod value(b.step.Vault::step.i) else 0) = 0";
     World::new(Vault::Secure, false, &STARTS, &opaque(divided))
 }
 
