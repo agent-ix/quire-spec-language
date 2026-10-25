@@ -30,6 +30,7 @@ use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::location::{Location, Origin};
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
 /// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
@@ -320,7 +321,7 @@ fn call_charges_the_top_level_function_call_to_the_callers_meter() {
 /// The top-level charge carries over between calls on one meter.
 /// With one work unit, the first call of `one(5)` spends it and completes;
 /// the second call's own `function.call` is denied before any node runs, so
-/// its `Incomplete` names `FunctionCall` and carries no location.
+/// its `Incomplete` names `FunctionCall` at the function's root call site.
 #[trace("QSpec-TC-191", "QSpec-FR-146-AC-5")]
 #[test]
 fn a_second_call_on_a_spent_meter_is_denied_at_its_function_call() {
@@ -354,7 +355,13 @@ fn a_second_call_on_a_spent_meter_is_denied_at_its_function_call() {
         )
     );
     let second = call();
-    assert_eq!(second.location, None, "no node ran, so nothing is located");
+    assert_eq!(
+        second.location,
+        Some(Location::root(Origin::Body {
+            function: "one".to_owned(),
+            index: 0,
+        }))
+    );
     match evaluated(second) {
         Outcome::Incomplete(record) => {
             assert_eq!(record.charge_point, quire_exact::ChargePoint::FunctionCall);
