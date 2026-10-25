@@ -36,6 +36,8 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
 use super::check::Signatures;
+use super::ir::CheckedNode;
+use super::temporal_clause::FormulaNodeId;
 use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
@@ -50,6 +52,10 @@ use super::{AdmittedModel, Capability};
 use crate::family::requirements::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
+
+pub(crate) mod lowering;
+
+pub use lowering::{operation_text, AtomSlot};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.hyper";
@@ -84,6 +90,18 @@ pub struct HyperDeclarations<'a> {
     pub(crate) models: &'a [AdmittedModel],
     /// The unit's declared functions, which a body's calls resolve against.
     pub(crate) signatures: &'a Signatures,
+    /// The unit's dispatch tables, which a condition's definedness reads.
+    pub(crate) dispatch_tables: &'a [super::DispatchTable],
+    /// The unit's checking limits, which a condition is typed under.
+    pub(crate) checking_limits: quire_semantic_value::checking::CheckingLimits,
+    /// The caller's cancellation handle, polled at every node charge.
+    pub(crate) cancel: Option<&'a quire_exact::Cancel>,
+    /// The package's running expression-node total: the total before the
+    /// clause checked next, and the total after the clause checked last.
+    pub(crate) nodes_used: std::cell::Cell<u64>,
+    /// How many `behaviours` clauses have been checked: the index of the one
+    /// checked next among the unit's hyper clauses over `behaviours`.
+    pub(crate) behaviours_checked: std::cell::Cell<usize>,
 }
 
 /// The `TemporalTrace` family's `hyper` and `relation` productions (ADR-023
@@ -141,6 +159,9 @@ pub enum StepRead {
     Receiver {
         /// The trace variable.
         trace: String,
+        /// The one object type `T` that declares every operation of the
+        /// trace's model that has a receiver: the key is `Reference<T>`.
+        object: EffectiveId,
     },
     /// `t.step.O.p`: the argument `p` of operation `O`, of type `Option<T>`
     /// for `p: T`.
@@ -156,10 +177,46 @@ pub struct ArgumentRead {
     pub trace: String,
     /// The operation `O`.
     pub operation: OperationKey,
+    /// The operation as the label writes it.
+    pub written: String,
     /// The parameter `p`.
     pub parameter: String,
     /// The parameter's type `T`.
     pub parameter_type: ValueType,
+}
+
+impl StepRead {
+    /// The name the read's slot is bound under in a conjunct's condition;
+    /// `None` for `stutter`, which is a literal.
+    pub(crate) fn slot_name(&self) -> Option<String> {
+        let (trace, label) = match self {
+            Self::Operation { trace } => (trace, StepLabelForm::Operation),
+            Self::Receiver { trace, .. } => (trace, StepLabelForm::Receiver),
+            Self::Argument(argument) => (
+                &argument.trace,
+                StepLabelForm::Argument {
+                    operation: argument.written.clone(),
+                    parameter: argument.parameter.clone(),
+                },
+            ),
+            Self::Stutter => return None,
+        };
+        Some(lowering::step_slot_name(trace, &label))
+    }
+
+    /// The type of the read's slot: a `String` for an operation, the
+    /// receiver key or the argument `Option<T>` otherwise (FR-487 "Lowered
+    /// form").
+    pub(crate) fn slot_type(&self) -> Option<ValueType> {
+        match self {
+            Self::Operation { .. } => Some(ValueType::String),
+            Self::Receiver { object, .. } => Some(ValueType::Option(std::sync::Arc::new(
+                ValueType::Reference(*object),
+            ))),
+            Self::Argument(argument) => Some(argument.read_type()),
+            Self::Stutter => None,
+        }
+    }
 }
 
 impl ArgumentRead {
@@ -171,12 +228,14 @@ impl ArgumentRead {
 }
 
 /// One top-level conjunct of a `match` block (ADR-023 HM-3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedStepPredicate {
     root: ExprId,
     span: Span,
     variables: Vec<String>,
     reads: Vec<StepRead>,
+    slots: Vec<StepRead>,
+    condition: lowering::ConjunctCondition,
 }
 
 impl CheckedStepPredicate {
@@ -198,6 +257,18 @@ impl CheckedStepPredicate {
     /// The typed step-label reads of the conjunct, in source order.
     pub fn reads(&self) -> &[StepRead] {
         &self.reads
+    }
+
+    /// The conjunct's distinct step-label reads, in order of first read;
+    /// slot `k` of its condition is entry `k` (FR-487). `stutter` is not a
+    /// read.
+    pub fn slots(&self) -> &[StepRead] {
+        &self.slots
+    }
+
+    /// The conjunct's checked condition and its slot count.
+    pub fn condition(&self) -> (CheckedNode<'_>, usize) {
+        (self.condition.body.root(), self.condition.slots)
     }
 }
 
@@ -293,6 +364,8 @@ pub struct CheckedHyperClause {
     copy_group: CopyGroup,
     claim: TemporalClaim,
     identity: HyperIdentity,
+    atom_slots: Vec<AtomSlot>,
+    atoms: BTreeMap<usize, lowering::AtomCondition>,
 }
 
 impl CheckedHyperClause {
@@ -384,6 +457,25 @@ impl CheckedHyperClause {
     /// The clause's identity members (ADR-023 HV-7).
     pub fn identity(&self) -> &HyperIdentity {
         &self.identity
+    }
+
+    /// One entry per atom slot, in slot order (FR-487 "Atom slots"): every
+    /// atom of the clause has the same slot list.
+    pub fn atom_slots(&self) -> &[AtomSlot] {
+        &self.atom_slots
+    }
+
+    /// The checked condition of the `holds` atom `atom` and its slot count;
+    /// `None` for a node that is not a `holds` atom of the body.
+    pub fn condition(&self, atom: FormulaNodeId) -> Option<(CheckedNode<'_>, usize)> {
+        let condition = self.atoms.get(&atom.index())?;
+        Some((condition.root(), condition.slots))
+    }
+
+    /// The component (trace variable index, quantifier order) that each model
+    /// read of the atom `atom` reads, keyed by the read's location.
+    pub fn component_reads(&self, atom: FormulaNodeId) -> Option<&BTreeMap<Location, usize>> {
+        self.atoms.get(&atom.index()).map(|atom| &atom.components)
     }
 }
 
@@ -514,7 +606,7 @@ impl FamilyContract for HyperTraceFamily {
         form: &HyperDeclaration,
         cx: &mut CheckContext<'a, HyperDeclarations<'a>>,
     ) -> CheckOutcome<CheckedHyper, CheckRefusal> {
-        check_declaration(form, cx.declarations()).map(Staged::new)
+        check_declaration(form, cx).map(Staged::new)
     }
 
     fn requirements(checked: &CheckedHyper) -> Vec<TemporalClaim> {
@@ -814,6 +906,9 @@ impl HyperCause {
 enum Found {
     Hyper(HyperCause),
     Temporal(TemporalCause),
+    /// A refusal of the value typer or the definedness check of a lowered
+    /// condition, at the span of the expression it refuses.
+    Typed(lowering::Refused),
 }
 
 impl Found {
@@ -821,6 +916,7 @@ impl Found {
         match self {
             Self::Hyper(cause) => cause.span().map_or(0, |span| span.start),
             Self::Temporal(cause) => cause.span().start,
+            Self::Typed(refused) => refused.span.start,
         }
     }
 
@@ -828,6 +924,7 @@ impl Found {
         let cause = match self {
             Self::Hyper(cause) => CheckCause::Hyper(Box::new(cause)),
             Self::Temporal(cause) => CheckCause::Temporal(Box::new(cause)),
+            Self::Typed(refused) => return StageFailure::Refused(refused.refusal),
         };
         StageFailure::Refused(CheckRefusal {
             // A clause has no expression tree for a `Location` path to walk;
@@ -851,12 +948,13 @@ fn earliest(found: Vec<Found>) -> Result<(), StageFailure<CheckRefusal>> {
     }
 }
 
-fn check_declaration(
+fn check_declaration<'a>(
     declaration: &HyperDeclaration,
-    declarations: &HyperDeclarations<'_>,
+    cx: &mut CheckContext<'a, HyperDeclarations<'a>>,
 ) -> Result<CheckedHyper, StageFailure<CheckRefusal>> {
+    let declarations = cx.declarations();
     match declaration {
-        HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations)
+        HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations, cx)
             .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
         HyperDeclaration::Relation(form) => check_relation(form, declarations)
@@ -898,12 +996,15 @@ impl Variables<'_> {
     }
 }
 
-fn check_behaviours(
+fn check_behaviours<'a>(
     form: &HyperBehavioursForm,
-    declarations: &HyperDeclarations<'_>,
+    declarations: &HyperDeclarations<'a>,
+    cx: &mut CheckContext<'a, HyperDeclarations<'a>>,
 ) -> Result<CheckedHyperClause, StageFailure<CheckRefusal>> {
     let temporal = &declarations.temporal;
     let scope = temporal.scope;
+    let clause_index = declarations.behaviours_checked.get();
+    declarations.behaviours_checked.set(clause_index + 1);
     let profile = match temporal.selections {
         [only] => only.profile,
         found => return Err(profile_selection(found, form.span)),
@@ -937,9 +1038,52 @@ fn check_behaviours(
             .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(*object)))
             .collect()
     };
+    // A condition is lowered only when the clause's quantifiers and object
+    // parameters resolved, and it checked clean before.
+    let resolved = found.is_empty();
+    let typing = lowering::Typing {
+        scope,
+        signatures: declarations.signatures,
+        dispatch_tables: declarations.dispatch_tables,
+        models: declarations.models,
+        limits: declarations.checking_limits,
+        cancel: declarations.cancel,
+    };
+    let trace_names: Vec<&str> = quantifiers
+        .iter()
+        .map(|quantifier| quantifier.variable.as_str())
+        .collect();
+    let parameter_names: Vec<&str> = parameters
+        .iter()
+        .map(|(parameter, _)| parameter.name.as_str())
+        .collect();
+    let slots = lowering::AtomSlots::of(
+        &quantifiers
+            .iter()
+            .map(|quantifier| (quantifier.variable.as_str(), quantifier.alias.as_str()))
+            .collect::<Vec<_>>(),
+        &parameters
+            .iter()
+            .map(|(parameter, object)| {
+                (parameter.name.as_str(), parameter.alias.as_str(), *object)
+            })
+            .collect::<Vec<_>>(),
+    );
+    let first_trace = |parameter: &str| {
+        let alias = parameters
+            .iter()
+            .find(|(candidate, _)| candidate.name == parameter)
+            .map(|(candidate, _)| &candidate.alias)?;
+        quantifiers
+            .iter()
+            .position(|quantifier| &quantifier.alias == alias)
+    };
+    let mut nodes = declarations.nodes_used.get();
+    let mut atoms: BTreeMap<usize, lowering::AtomCondition> = BTreeMap::new();
     let no_label = |_: &str, _: &StepLabelForm| None;
-    for (_, node) in form.body.iter() {
+    for (id, node) in form.body.iter() {
         if let TemporalNodeForm::Holds { condition, .. } = node {
+            let mark = found.len();
             check_atom(
                 &condition.expression,
                 &condition.spans,
@@ -959,10 +1103,30 @@ fn check_behaviours(
                     .into_iter()
                     .map(body_fault),
             );
+            if resolved && found.len() == mark {
+                let location = lowering::hyper_location(clause_index, lowering::Site::Atom(id.index()));
+                let locate = |at: &Location| lowering::span_at(&condition.spans, at);
+                match lowering::lower_atom(
+                    &typing,
+                    &mut cx.reborrow(scope),
+                    &mut nodes,
+                    &location,
+                    &slots,
+                    (&parameter_names, &trace_names),
+                    &first_trace,
+                    (&condition.expression, &locate),
+                ) {
+                    Ok(lowered) => {
+                        atoms.insert(id.index(), lowered);
+                    }
+                    Err(refused) => found.push(Found::Typed(refused)),
+                }
+            }
         }
     }
 
-    let (match_expression, mu_universal, mu_existential) = match &form.match_block {
+    let match_mark = found.len();
+    let (match_expression, drafts) = match &form.match_block {
         Some(block) => {
             let split = check_match(block, &variables, declarations, &mut found)?;
             let label = |trace: &str, label: &StepLabelForm| match step_read(
@@ -989,13 +1153,69 @@ fn check_behaviours(
                     .into_iter()
                     .map(body_fault),
             );
-            (Some(block.expression.clone()), split.0, split.1)
+            (Some(block.expression.clone()), split)
         }
-        None => (None, Vec::new(), Vec::new()),
+        None => (None, (Vec::new(), Vec::new())),
     };
+    let (universal_drafts, existential_drafts) = drafts;
+    let mut lowered_universal = Vec::new();
+    let mut lowered_existential = Vec::new();
+    if let (true, true, Some(block)) = (resolved, found.len() == match_mark, &form.match_block) {
+        for (existential, drafts, lowered) in [
+            (false, &universal_drafts, &mut lowered_universal),
+            (true, &existential_drafts, &mut lowered_existential),
+        ] {
+            for (index, draft) in drafts.iter().enumerate() {
+                let site = if existential {
+                    lowering::Site::Existential(index)
+                } else {
+                    lowering::Site::Universal(index)
+                };
+                let location = lowering::hyper_location(clause_index, site);
+                // A conjunct refuses at its own span, the span the first
+                // typing pass names.
+                let locate = |_: &Location| draft.span;
+                match lowering::lower_conjunct(
+                    &typing,
+                    &mut cx.reborrow(scope),
+                    &mut nodes,
+                    &location,
+                    draft.root,
+                    &draft.slots,
+                    draft.labels.clone(),
+                    (&block.expression, &locate),
+                ) {
+                    Ok(condition) => lowered.push(condition),
+                    Err(refused) => found.push(Found::Typed(refused)),
+                }
+            }
+        }
+    }
+    declarations.nodes_used.set(nodes);
 
     let align_skip = checked_align_skip(form, &quantifiers, &aliases, declarations, &mut found);
     earliest(std::mem::take(&mut found))?;
+    let predicates = |drafts: Vec<ConjunctDraft>,
+                      lowered: Vec<lowering::ConjunctCondition>|
+     -> Result<Vec<CheckedStepPredicate>, StageFailure<CheckRefusal>> {
+        if drafts.len() != lowered.len() {
+            return Err(fault("conjuncts-lowered"));
+        }
+        Ok(drafts
+            .into_iter()
+            .zip(lowered)
+            .map(|(draft, condition)| CheckedStepPredicate {
+                root: draft.root,
+                span: draft.span,
+                variables: draft.variables,
+                reads: draft.reads,
+                slots: draft.slots,
+                condition,
+            })
+            .collect())
+    };
+    let mu_universal = predicates(universal_drafts, lowered_universal)?;
+    let mu_existential = predicates(existential_drafts, lowered_existential)?;
 
     let intervals: BTreeMap<_, _> = operators
         .iter()
@@ -1073,6 +1293,8 @@ fn check_behaviours(
             true,
         ),
         identity,
+        atom_slots: slots.slots().to_vec(),
+        atoms,
     })
 }
 
@@ -1366,9 +1588,12 @@ fn read_root<'e>(mut node: ExprRef<'e>) -> Option<&'e str> {
     }
 }
 
-/// FR-172 "Indexed atoms and step labels": every read of an object
-/// parameter's member in a body atom carries exactly one trace variable, bound
-/// to the model that declares the parameter.
+/// FR-172 "Indexed atoms and step labels": every model member read in a body
+/// atom is enclosed by exactly one trace variable, `e @ t`, and `@ t` scopes
+/// over every read of `e` that no inner `@` encloses. A member read is the
+/// field selection of a chain whose root is an object parameter, and a field
+/// selection on a `deref`, whatever its root. The trace variable is bound to
+/// the model that declares the parameter the read is rooted at.
 fn check_atom(
     expression: &Expression,
     spans: &ExpressionSpans,
@@ -1382,40 +1607,136 @@ fn check_atom(
             .map(|(parameter, _)| parameter)
             .find(|parameter| parameter.name == name)
     };
+    let enclosing = lowering::enclosing_reads(expression);
+    let mut located: Vec<Option<Span>> = vec![None; expression.len()];
+    walk(expression, spans, |visit| {
+        if let Some(slot) = located.get_mut(visit.node.id().index()) {
+            *slot = visit.span;
+        }
+    });
+    let mut indexed: Vec<ExprId> = Vec::new();
+    let mut touched: Vec<ExprId> = Vec::new();
     walk(expression, spans, |visit| {
         let Some(span) = visit.span else {
             return;
         };
+        let id = visit.node.id();
+        let around = enclosing.get(id.index()).copied().flatten();
         match visit.node.node() {
             ExprNode::StepLabel { .. } | ExprNode::Stutter => {
                 found.push(Found::Hyper(HyperCause::StepLabelInBody { span }));
             }
-            ExprNode::Indexed { read, trace } => {
-                let Some(alias) = variables.alias_of(trace) else {
+            ExprNode::Indexed { trace, .. } => {
+                if variables.alias_of(trace).is_none() {
                     found.push(Found::Hyper(HyperCause::UnknownTrace {
                         name: trace.clone(),
                         span,
                     }));
                     return;
-                };
-                let owner = read_root(visit.node.at(*read)).and_then(parameter);
-                if owner.is_none_or(|owner| &owner.alias != alias) {
-                    found.push(Found::Hyper(HyperCause::MismatchedTrace { span }));
                 }
+                indexed.push(id);
+            }
+            ExprNode::Name(name) if parameter(&name.name).is_some() => {
+                touched.extend(around);
             }
             other => {
-                let is_read = chain_operand(other).is_some()
-                    && read_root(visit.node).and_then(parameter).is_some();
+                let root_parameter = read_root(visit.node).and_then(parameter);
+                let reads_member = match other {
+                    ExprNode::Field { operand, .. } => {
+                        root_parameter.is_some()
+                            || matches!(visit.node.at(*operand).node(), ExprNode::Deref(_))
+                    }
+                    ExprNode::Deref(_) => true,
+                    _ => false,
+                };
                 let continues = visit.parent.is_some_and(|parent| {
-                    chain_operand(parent.node()) == Some(visit.node.id())
-                        || matches!(parent.node(), ExprNode::Indexed { read, .. } if *read == visit.node.id())
+                    chain_operand(parent.node()) == Some(id)
+                        || matches!(parent.node(), ExprNode::Indexed { read, .. } if *read == id)
                 });
-                if is_read && !continues {
-                    found.push(Found::Hyper(HyperCause::UnindexedRead { span }));
+                if !reads_member {
+                    return;
+                }
+                match around {
+                    None if !continues => {
+                        found.push(Found::Hyper(HyperCause::UnindexedRead { span }));
+                    }
+                    None => {}
+                    Some(read) => {
+                        touched.push(read);
+                        let trace_alias = match expression.at(read).node() {
+                            ExprNode::Indexed { trace, .. } => variables.alias_of(trace),
+                            _ => None,
+                        };
+                        if let (Some(owner), Some(alias)) = (root_parameter, trace_alias) {
+                            if &owner.alias != alias {
+                                let at = located.get(read.index()).copied().flatten();
+                                found.push(Found::Hyper(HyperCause::MismatchedTrace {
+                                    span: at.unwrap_or(span),
+                                }));
+                            }
+                        }
+                    }
                 }
             }
         }
     });
+    for read in indexed {
+        if !touched.contains(&read) {
+            if let Some(span) = located.get(read.index()).copied().flatten() {
+                found.push(Found::Hyper(HyperCause::MismatchedTrace { span }));
+            }
+        }
+    }
+}
+
+/// One top-level conjunct of a `match` block, checked for its reads and not
+/// yet lowered.
+struct ConjunctDraft {
+    root: ExprId,
+    span: Span,
+    variables: Vec<String>,
+    reads: Vec<StepRead>,
+    slots: Vec<StepRead>,
+    /// The operation text of each label constant the conjunct writes.
+    labels: BTreeMap<String, String>,
+}
+
+/// What a qualified name in a `match` conjunct resolves to.
+enum Qualified {
+    /// An operation of the model of the alias written in the name.
+    Operation(String, OperationKey),
+    /// A member of an object type of a model: a state read.
+    Member,
+    /// A name of a bound model that names neither.
+    Nothing,
+    /// Not a name of that form.
+    Other,
+}
+
+/// What `name` (`Alias::Type::member`) resolves to (FR-172 "Match").
+fn qualify(declarations: &HyperDeclarations<'_>, name: &NameForm) -> Qualified {
+    let scope = declarations.temporal.scope;
+    let segments: Vec<&str> = name.name.split("::").collect();
+    let [alias, object, member] = segments[..] else {
+        return Qualified::Other;
+    };
+    if model_of(declarations.models, alias).is_none() {
+        return Qualified::Other;
+    }
+    if let Ok((operation, _)) = resolve_operation(declarations, alias, name) {
+        return match operation_key(declarations.models, alias, &operation) {
+            Some(key) => Qualified::Operation(alias.to_owned(), key),
+            None => Qualified::Nothing,
+        };
+    }
+    let is_member = scope
+        .object_type_named(&format!("{alias}::{object}"))
+        .is_some_and(|object| scope.types().attribute(object, member).is_some());
+    if is_member {
+        Qualified::Member
+    } else {
+        Qualified::Nothing
+    }
 }
 
 /// FR-172 "Match": `mu` reads step labels only, and splits into its top-level
@@ -1427,7 +1748,7 @@ fn check_match(
     variables: &Variables<'_>,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Result<(Vec<CheckedStepPredicate>, Vec<CheckedStepPredicate>), StageFailure<CheckRefusal>> {
+) -> Result<(Vec<ConjunctDraft>, Vec<ConjunctDraft>), StageFailure<CheckRefusal>> {
     let expression = &block.expression;
     let mut conjuncts: Vec<(ExprRef<'_>, Option<SpanId>)> = Vec::new();
     let mut pending = vec![(expression.root(), Some(block.spans.root()))];
@@ -1450,6 +1771,14 @@ fn check_match(
             _ => conjuncts.push((node, located)),
         }
     }
+    let mut parents: Vec<Option<ExprId>> = vec![None; expression.len()];
+    for node in expression.iter() {
+        for child in node.node().children() {
+            if let Some(slot) = parents.get_mut(child.index()) {
+                *slot = Some(node.id());
+            }
+        }
+    }
     let mut universal = Vec::new();
     let mut existential = Vec::new();
     for (conjunct, located) in conjuncts {
@@ -1458,6 +1787,7 @@ fn check_match(
             .ok_or_else(|| fault("conjunct-has-span"))?;
         let mut reads = Vec::new();
         let mut variable_names: Vec<String> = Vec::new();
+        let mut labels: BTreeMap<String, String> = BTreeMap::new();
         let mut subtree = vec![(conjunct, located)];
         while let Some((node, located)) = subtree.pop() {
             let at = located.and_then(|id| block.spans.span(id)).unwrap_or(span);
@@ -1468,8 +1798,31 @@ fn check_match(
                         Ok(read) => reads.push(read),
                         Err(cause) => found.push(Found::Hyper(cause)),
                     }
+                    if matches!(label, StepLabelForm::Operation)
+                        && !label_compared(node, trace, &parents, variables, declarations)
+                    {
+                        // The operation is misused by the comparison it
+                        // sits in, so the conjunct is the refused span.
+                        found.push(Found::Hyper(HyperCause::BodyIllTyped { span }));
+                    }
                 }
                 ExprNode::Stutter => reads.push(StepRead::Stutter),
+                ExprNode::Name(name) => match qualify(declarations, name) {
+                    Qualified::Operation(alias, key) => {
+                        if label_constant_of(node, &alias, &parents, variables) {
+                            labels.insert(name.name.clone(), operation_text(&key));
+                        } else {
+                            found.push(Found::Hyper(HyperCause::BodyIllTyped { span: at }));
+                        }
+                    }
+                    Qualified::Nothing => found.push(Found::Hyper(HyperCause::BodyMissing {
+                        name: name.name.clone(),
+                        span: at,
+                    })),
+                    Qualified::Member | Qualified::Other => {
+                        found.push(Found::Hyper(HyperCause::MatchReadsState { span: at }));
+                    }
+                },
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
@@ -1480,13 +1833,12 @@ fn check_match(
                 | ExprNode::Negate(_)
                 | ExprNode::If { .. }
                 | ExprNode::Present(_)
-                | ExprNode::Value(_) => {}
+                | ExprNode::Value(_)
+                | ExprNode::Call { .. } => {}
                 ExprNode::Case(_)
-                | ExprNode::Name(_)
                 | ExprNode::Let { .. }
                 | ExprNode::Field { .. }
                 | ExprNode::Deref(_)
-                | ExprNode::Call { .. }
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Convert { .. }
@@ -1520,19 +1872,94 @@ fn check_match(
         let existential_conjunct = variable_names
             .iter()
             .any(|name| variables.kind_of(name) == Some(QuantifierKind::Exists));
-        let predicate = CheckedStepPredicate {
+        let mut slots: Vec<StepRead> = Vec::new();
+        for read in &reads {
+            if !matches!(read, StepRead::Stutter) && !slots.contains(read) {
+                slots.push(read.clone());
+            }
+        }
+        let draft = ConjunctDraft {
             root: conjunct.id(),
             span,
             variables: variable_names,
             reads,
+            slots,
+            labels,
         };
         if existential_conjunct {
-            existential.push(predicate);
+            existential.push(draft);
         } else {
-            universal.push(predicate);
+            universal.push(draft);
         }
     }
     Ok((universal, existential))
+}
+
+/// Whether the operation label `node` of `trace` is compared as FR-172
+/// "Match" admits: by `=` or `!=` with the label of a trace variable over the
+/// same model, `stutter`, or a label constant of that model.
+fn label_compared(
+    node: ExprRef<'_>,
+    trace: &str,
+    parents: &[Option<ExprId>],
+    variables: &Variables<'_>,
+    declarations: &HyperDeclarations<'_>,
+) -> bool {
+    let Some(alias) = variables.alias_of(trace) else {
+        return true;
+    };
+    let Some(parent) = parents.get(node.id().index()).copied().flatten() else {
+        return false;
+    };
+    let ExprNode::Binary {
+        operator: BinaryOperator::Equal | BinaryOperator::NotEqual,
+        left,
+        right,
+    } = node.tree().at(parent).node()
+    else {
+        return false;
+    };
+    let other = if *left == node.id() { *right } else { *left };
+    match node.tree().at(other).node() {
+        ExprNode::Stutter => true,
+        ExprNode::StepLabel {
+            trace: other,
+            label: StepLabelForm::Operation,
+        } => variables.alias_of(other) == Some(alias),
+        ExprNode::Name(name) => matches!(
+            qualify(declarations, name),
+            Qualified::Operation(written, _) if written == alias.as_str()
+        ),
+        _ => false,
+    }
+}
+
+/// Whether the label constant `node` of the model `alias` is written as
+/// FR-172 "Match" admits: an operand of `=` or `!=` whose other operand is
+/// the operation label of a trace variable bound to that alias.
+fn label_constant_of(
+    node: ExprRef<'_>,
+    alias: &str,
+    parents: &[Option<ExprId>],
+    variables: &Variables<'_>,
+) -> bool {
+    let Some(parent) = parents.get(node.id().index()).copied().flatten() else {
+        return false;
+    };
+    let ExprNode::Binary {
+        operator: BinaryOperator::Equal | BinaryOperator::NotEqual,
+        left,
+        right,
+    } = node.tree().at(parent).node()
+    else {
+        return false;
+    };
+    let other = if *left == node.id() { *right } else { *left };
+    matches!(
+        node.tree().at(other).node(),
+        ExprNode::StepLabel { trace, label: StepLabelForm::Operation }
+            if variables.alias_of(trace).is_some_and(|bound| bound.as_str() == alias)
+    )
 }
 
 fn note_variable(names: &mut Vec<String>, name: &str) {
@@ -1561,6 +1988,8 @@ fn step_read(
         }),
         StepLabelForm::Receiver => Ok(StepRead::Receiver {
             trace: trace.to_owned(),
+            object: receiver_object(declarations, alias.as_str())
+                .ok_or(HyperCause::MatchReadsState { span })?,
         }),
         StepLabelForm::Argument {
             operation,
@@ -1586,10 +2015,34 @@ fn step_read(
                 trace: trace.to_owned(),
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
                     .ok_or_else(unresolved)?,
+                written: operation.clone(),
                 parameter: parameter.clone(),
                 parameter_type: value_type.clone(),
             })))
         }
+    }
+}
+
+/// The one object type that declares every operation of the model of `alias`
+/// that has a receiver (QSpec FR-395 "Step labels"); `None` when those
+/// operations are declared by more than one type, or by none.
+fn receiver_object(declarations: &HyperDeclarations<'_>, alias: &str) -> Option<EffectiveId> {
+    let model = model_of(declarations.models, alias)?;
+    let objects: Vec<&quire_checked::key::DeclarationKey> =
+        model.object_types().map(|(key, _)| key).collect();
+    let mut declaring: Vec<EffectiveId> = Vec::new();
+    for operation in model.model_index().operations() {
+        if !objects.contains(&&operation.owner) {
+            continue;
+        }
+        let owner = model.effective_id(&operation.owner)?;
+        if !declaring.contains(&owner) {
+            declaring.push(owner);
+        }
+    }
+    match declaring[..] {
+        [only] => Some(only),
+        _ => None,
     }
 }
 
@@ -2397,15 +2850,55 @@ impl CheckedHyper {
 pub fn check_hyper_clauses(
     package: &crate::check::PackageDeclarations,
 ) -> Vec<Result<CheckedHyper, StageFailure<CheckRefusal>>> {
-    let scope = Scope::new(
+    let complete_value = package
+        .function_selections
+        .values()
+        .any(super::state_clause::is_complete_value)
+        || package
+            .state_clauses
+            .iter()
+            .any(|clause| super::state_clause::is_complete_value(&clause.selection));
+    let mut scope = Scope::new(
         package.types.clone(),
         package.operations.clone(),
         package.enums.clone(),
         package.aliases.clone(),
-        Vec::new(),
-        None,
-        Vec::new(),
+        package.model_operations.clone(),
+        package.ieee_profile.clone(),
+        package.dispatch_operations.clone(),
+    )
+    .with_integer_division(package.integer_division.clone())
+    .with_complete_value(complete_value)
+    .with_known_populations(super::refinement::population_names(&package.models))
+    .with_complete_model(!package.models.is_empty())
+    .with_model_selections(
+        package
+            .models
+            .iter()
+            .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
+            .collect(),
+    )
+    .with_declared_units(&package.units);
+    // The declared functions' signatures, which a body's calls resolve
+    // against; a function that does not resolve is left out.
+    let signatures = Signatures::new(
+        package
+            .functions
+            .iter()
+            .filter_map(|function| {
+                let location = super::root_location();
+                let (parameters, result) =
+                    super::resolve_signature(&scope, function, &location).ok()?;
+                Some(super::check::Signature {
+                    name: function.name.clone(),
+                    parameters,
+                    result,
+                    callable_by_name: function.callable_by_name(),
+                })
+            })
+            .collect(),
     );
+    scope.select_declared_ieee_profile(signatures.as_slice()).ok();
     let declarations = HyperDeclarations {
         temporal: TemporalDeclarations {
             scope: &scope,
@@ -2423,8 +2916,12 @@ pub fn check_hyper_clauses(
             },
         },
         models: &package.models,
-        // The helper checks clauses over no declared function.
-        signatures: &Signatures::default(),
+        signatures: &signatures,
+        dispatch_tables: &package.dispatch_tables,
+        checking_limits: quire_semantic_value::checking::CheckingLimits::default(),
+        cancel: None,
+        nodes_used: std::cell::Cell::new(0),
+        behaviours_checked: std::cell::Cell::new(0),
     };
     package
         .hyper_clauses

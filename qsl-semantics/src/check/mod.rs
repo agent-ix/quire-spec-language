@@ -2877,6 +2877,11 @@ impl PackageDeclarations {
             },
             models: &models,
             signatures: &signatures,
+            dispatch_tables: &dispatch_tables,
+            checking_limits: limits,
+            cancel: Some(cancel),
+            nodes_used: std::cell::Cell::new(nodes_used),
+            behaviours_checked: std::cell::Cell::new(0),
         };
         for clause in &self.hyper_clauses {
             let mut contract_cx = crate::family::CheckContext::new(

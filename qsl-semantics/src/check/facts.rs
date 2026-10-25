@@ -46,6 +46,10 @@ pub(crate) enum Step {
     /// observation it reads at: a fact about one observation of a path
     /// never discharges an obligation at another.
     Attribute(FieldRef, Observation),
+    /// A model attribute read in the component `n` of a `hyper` clause's
+    /// atom (FR-487): a fact about one component never discharges an
+    /// obligation at another.
+    Component(FieldRef, usize),
 }
 
 /// A parameter, `let` or binder root followed by field projections and
@@ -403,6 +407,9 @@ pub(crate) struct Definedness<'a> {
     /// paths through model attribute reads and `pre(e)`, each attribute
     /// step keyed by its observation.
     observations: Option<&'a Observations>,
+    /// The component each model read of a `hyper` atom reads (FR-487), by the
+    /// read's location; a read in it takes its component as its observation.
+    components: Option<&'a BTreeMap<Location, usize>>,
     /// The stable path each `let` slot aliases, resolved when the `let` was
     /// walked. A slot is bound by exactly one `let` and read only inside its
     /// body, so one table serves every path of the walk and no `let` copies
@@ -422,8 +429,16 @@ impl<'a> Definedness<'a> {
             dispatch_tables,
             dispatch_operations,
             observations: None,
+            components: None,
             aliases: BTreeMap::new(),
         }
+    }
+
+    /// Treat each model read of a `hyper` atom as its own observation, the
+    /// component `components` records for it (FR-487).
+    pub(crate) fn with_components(mut self, components: &'a BTreeMap<Location, usize>) -> Self {
+        self.components = Some(components);
+        self
     }
 
     /// Check a state clause body whose model reads observe `observations`
@@ -476,10 +491,14 @@ impl<'a> Definedness<'a> {
                     reference, field, ..
                 } => {
                     let observation = self.observations?.of_read(current.location())?;
-                    steps.push(PathStep::Attribute(Step::Attribute(
-                        field.clone(),
-                        observation,
-                    )));
+                    let step = match self
+                        .components
+                        .and_then(|components| components.get(current.location()))
+                    {
+                        Some(component) => Step::Component(field.clone(), *component),
+                        None => Step::Attribute(field.clone(), observation),
+                    };
+                    steps.push(PathStep::Attribute(step));
                     current = current.at(*reference);
                 }
                 NodeKind::Pre(operand) if self.observations.is_some() => {
