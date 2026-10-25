@@ -741,18 +741,10 @@ fn value_of(values: &[(qsl_forms::ExprId, bool)], id: qsl_forms::ExprId) -> Opti
         .map(|(_, value)| *value)
 }
 
+#[derive(Default)]
 struct EvaluationScratch<'a> {
     values: Vec<(qsl_forms::ExprId, bool)>,
     stack: Vec<EvaluationFrame<'a>>,
-}
-
-impl<'a> Default for EvaluationScratch<'a> {
-    fn default() -> Self {
-        Self {
-            values: Vec::new(),
-            stack: Vec::new(),
-        }
-    }
 }
 
 struct Atoms<'a> {
