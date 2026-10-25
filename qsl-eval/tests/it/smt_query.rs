@@ -429,6 +429,7 @@ fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
                 measure: Measure::Constants,
                 value: 8,
                 limit,
+                setting: "smt_encoding.max_constants",
             })) if limit == max_constants
         ));
     }
@@ -444,6 +445,7 @@ fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
             measure: Measure::ScriptBytes,
             value: 1,
             limit: 0,
+            setting: "smt_encoding.max_script_bytes",
         }))
     ));
     limits.max_script_bytes = script_bytes;
@@ -1668,9 +1670,15 @@ fn each_refusal_has_its_code() {
             measure,
             value,
             limit,
+            setting,
         })) => assert_eq!(
-            (measure, value, limit),
-            (Measure::Constants, 1_048_577, 1_048_576)
+            (measure, value, limit, setting),
+            (
+                Measure::Constants,
+                1_048_577,
+                1_048_576,
+                "smt_encoding.max_constants"
+            )
         ),
         other => panic!("expected too-large, got {other:?}"),
     }
