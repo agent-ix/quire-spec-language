@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(completed(&result), Some(3));
         assert!(meter.consumed(LimitKind::WorkUnits) > 0);
         use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-        let mut reference_meter = meter(1000);
+        let mut reference_meter = self::meter(1000);
         let reference = handle
             .package
             .call(
