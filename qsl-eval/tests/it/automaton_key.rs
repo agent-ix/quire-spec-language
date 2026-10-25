@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-338's canonical translation state for the safety items EN-1 decides:
-//! the exact key octets of the deadlock-freedom item and of TP-1 clauses,
-//! and the admission of imported keys against an item's context.
+//! the exact key octets of the deadlock-freedom item, of TP-1 clauses and of
+//! the TP-4 Büchi and guarded-Büchi states, and the admission of imported
+//! keys against an item's context.
 //!
 //! The expected octets are written out here as ASCII text, independent of
-//! the encoder under test. The interval, past and acceptance members of the
-//! `["safety", branches]` algebra are checked against clause formulas below.
-//! Not covered here: the bounded alternative (`automaton_key_bounded.rs`) and
-//! the Büchi alternatives (Remaining work: QSL-982 PR 2).
+//! the encoder under test. The interval and past members of the
+//! `["safety", branches]` algebra and the acceptance members of the Büchi
+//! alternatives are checked against clause formulas below.
+//! Not covered here: the bounded alternative (`automaton_key_bounded.rs`,
+//! except its vector rows in the FR-338-AC-4 aggregate), the protocol
+//! subject's `distance-history` past form and finite F/U acceptance (QSL-982
+//! PR 2b), and the unguarded `on each` and open-upper TP-4 forms, which are
+//! refused until the spec rulings R-5 and R-2.
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
@@ -355,10 +360,9 @@ const TWO_FUTURES: &str =
 const SHIFTED: &str = "always (holds(c.level = 1) implies eventually[1,3] holds(c.level = 2))";
 
 /// The `["safety", branches]` algebra's share of FR-338-AC-4's vectors (the
-/// criterion stays untagged until the bounded and Büchi rows are asserted
-/// together, Remaining work: QSL-982 PR 2): the state bodies
-/// and full keys are the authored octets; reversing the insertion order of
-/// obligations, windows, offsets, acceptance and branches leaves the bytes
+/// whole table is asserted by `every_canonical_octet_vector_is_the_authored_octets`):
+/// the state bodies and full keys are the authored octets; reversing the insertion order of
+/// obligations, windows, offsets and branches leaves the bytes
 /// equal; distinct occurrence paths and differing live facts leave them
 /// unequal; and the bytes are a function of those facts alone, equal across
 /// independently built translations, with no enumeration index in them.
@@ -411,7 +415,7 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
         Window::Deadline(at(&[0], Polarity::Positive), 1),
         Window::Deadline(at(&[1], Polarity::Positive), 1),
     ];
-    let mixed = states("always holds(c.level = 1) and eventually holds(c.level = 2)");
+    let mixed = states("always holds(c.level = 1) and always holds(c.level = 2)");
     let one = Configuration {
         obligations: vec![
             Obligation::Current(at(&[0], Polarity::Positive)),
@@ -425,7 +429,6 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
     };
     let other = Configuration {
         obligations: vec![Obligation::Current(at(&[0], Polarity::Positive))],
-        acceptance: vec![at(&[1], Polarity::Positive)],
         ..Configuration::default()
     };
     assert_eq!(
@@ -446,19 +449,22 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
         octets(&both, &[reversed_windows]),
         "window order"
     );
-    let two_acceptances = states("eventually holds(c.level = 1) and eventually holds(c.level = 2)");
-    let accept = |entries: Vec<Occurrence>| Configuration {
-        acceptance: entries,
-        ..Configuration::default()
+    let two_acceptances = buchi(TWO_SETS, "on origin");
+    let members = vec![
+        at(&[1, 0], Polarity::Negative),
+        at(&[1, 1], Polarity::Negative),
+    ];
+    let accept = |entries: Vec<Occurrence>| {
+        BuchiState::Elementary(Configuration {
+            acceptance: entries,
+            ..Configuration::default()
+        })
     };
-    let members = vec![at(&[0], Polarity::Positive), at(&[1], Polarity::Positive)];
     assert_eq!(
-        octets(&two_acceptances, &[accept(members.clone())]),
-        octets(
-            &two_acceptances,
-            &[accept(members.iter().rev().cloned().collect())]
-        )
+        two_acceptances.key(&accept(members.clone())),
+        two_acceptances.key(&accept(members.iter().rev().cloned().collect()))
     );
+    assert!(two_acceptances.key(&accept(members.clone())).is_ok());
 
     // Distinct occurrence paths with equal counters, and differing live
     // facts, give unequal bytes.
@@ -518,7 +524,7 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
 fn safety_keys_admit_back_as_the_facts_they_were_written_from() {
     let future = states(FUTURE);
     let shifted = states(SHIFTED);
-    let open = states("always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))");
+    let open = states("always (holds(c.level = 1) implies always[2,*] holds(c.level = 2))");
     let interval = Configuration {
         obligations: vec![Obligation::Interval {
             occurrence: at(&[0, 1], Polarity::Positive),
@@ -734,8 +740,7 @@ fn past_memory_is_typed_by_the_occurrence_interval_and_complete() {
 fn window_and_acceptance_members_must_resolve_in_the_formula() {
     let future = states(FUTURE);
     let shifted = states(SHIFTED);
-    let open = states("always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))");
-    let accepting = states("always (holds(c.level = 1) implies eventually holds(c.level = 2))");
+    let open = states("always (holds(c.level = 1) implies always[2,*] holds(c.level = 2))");
     let window = |entry: &str| states_key(&format!(r#"["safety",[[[],[],[{entry}],[]]]]"#));
     let accept = |entry: &str| states_key(&format!(r#"["safety",[[[],[],[],[{entry}]]]]"#));
     let refused = [
@@ -815,24 +820,9 @@ fn window_and_acceptance_members_must_resolve_in_the_formula() {
             KeyRefusal::Unresolved,
         ),
         (
-            &accepting,
-            accept(r#"[["0","1"],"negative"]"#),
-            KeyRefusal::Unresolved,
-        ),
-        (
-            &accepting,
-            accept(r#"[["0"],"positive"]"#),
-            KeyRefusal::Unresolved,
-        ),
-        (
             &future,
             accept(r#"[["0","1"],"positive"]"#),
             KeyRefusal::Unresolved,
-        ),
-        (
-            &accepting,
-            accept(r#"[["0","1"],"positive","x"]"#),
-            KeyRefusal::Members,
         ),
     ];
     for (states, key, refusal) in refused {
@@ -893,8 +883,9 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
     ));
 }
 
-const OPEN: &str = "always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))";
-const ACCEPTING: &str = "always (holds(c.level = 1) implies eventually holds(c.level = 2))";
+const OPEN: &str = "always (holds(c.level = 1) implies always[2,*] holds(c.level = 2))";
+const TWO_SETS: &str =
+    "eventually holds(c.level = 1) and (always holds(c.level = 2) and always holds(c.level = 3))";
 
 /// An `[a,open]` occurrence's shift entry ends at zero, and its unbounded
 /// obligation `[o,s]` takes its place: that state is admitted and written,
@@ -1029,19 +1020,13 @@ fn interval_obligations_outside_the_checked_interval_are_refused() {
 #[trace("TC-525", "FR-338-AC-5")]
 #[test]
 fn non_normal_branches_and_acceptance_are_refused() {
-    let mixed = states("always holds(c.level = 1) and eventually holds(c.level = 2)");
+    let mixed = states("always holds(c.level = 1) and always holds(c.level = 2)");
     let carried = Configuration {
         obligations: vec![Obligation::Current(at(&[0], Polarity::Positive))],
-        acceptance: vec![at(&[1], Polarity::Positive)],
         ..Configuration::default()
     };
-    let free = Configuration {
-        acceptance: vec![at(&[1], Polarity::Positive)],
-        ..Configuration::default()
-    };
-    let subsumed = states_key(
-        r#"["safety",[[[[["0"],"positive"]],[],[],[[["1"],"positive"]]],[[],[],[],[[["1"],"positive"]]]]]"#,
-    );
+    let free = Configuration::default();
+    let subsumed = states_key(r#"["safety",[[[[["0"],"positive"]],[],[],[]],[[],[],[],[]]]]"#);
     assert_eq!(
         mixed.admit(subsumed.as_bytes()).map(|_| ()),
         Err(KeyRefusal::NonNormal)
@@ -1052,71 +1037,75 @@ fn non_normal_branches_and_acceptance_are_refused() {
         "the writer drops the subsumed branch"
     );
 
-    let accepting = states(ACCEPTING);
-    let eventually = at(&[0, 1], Polarity::Positive);
-    let key = |obligations: &str, acceptance: &str| {
-        states_key(&format!(
-            r#"["safety",[[[{obligations}],[],[],[{acceptance}]]]]"#
-        ))
+    // Acceptance membership is a Büchi fact: a branch belongs to a
+    // least-fixed-point occurrence's set exactly when it is not carried.
+    let response = buchi(RESPONSE, "on origin");
+    let root = at(&[], Polarity::Negative);
+    let elementary = |obligations: Vec<Obligation>, acceptance: Vec<Occurrence>| {
+        BuchiState::Elementary(Configuration {
+            obligations,
+            acceptance,
+            ..Configuration::default()
+        })
     };
-    let refused = [
-        // not carried, yet not a member
-        (key("", ""), KeyRefusal::NonNormal),
-        // carried, yet a member
-        (
-            key(r#"[["0","1"],"positive"]"#, r#"[["0","1"],"positive"]"#),
-            KeyRefusal::NonNormal,
-        ),
-        // never a least-fixed point at that polarity
-        (key("", r#"[[],"negative"]"#), KeyRefusal::Unresolved),
-        (key("", r#"[["0","1"],"negative"]"#), KeyRefusal::Unresolved),
-    ];
-    for (octets, refusal) in refused {
+    let carried_root = vec![Obligation::Current(root.clone())];
+    assert!(response
+        .key(&elementary(Vec::new(), vec![root.clone()]))
+        .is_ok());
+    assert_eq!(
+        response.key(&elementary(Vec::new(), Vec::new())),
+        Err(KeyRefusal::NonNormal),
+        "not carried, yet not a member"
+    );
+    assert_eq!(
+        response.key(&elementary(carried_root, vec![root])),
+        Err(KeyRefusal::NonNormal),
+        "carried, yet a member"
+    );
+    let entry = |entry: &str| buchi_key("infinite", &format!(r#"["buchi",[[],[],[],[{entry}]]]"#));
+    for (octets, refusal) in [
+        // never a least-fixed point at that polarity, or never read there
+        (entry(r#"[["0","1"],"negative"]"#), KeyRefusal::Unresolved),
+        (entry(r#"[["0","1"],"positive"]"#), KeyRefusal::Unresolved),
+        (entry(r#"[["0"],"positive"]"#), KeyRefusal::Unresolved),
+        (entry(r#"[[],"negative","x"]"#), KeyRefusal::Members),
+    ] {
         assert_eq!(
-            accepting.admit(octets.as_bytes()).map(|_| ()),
+            response.admit(octets.as_bytes()).map(|_| ()),
             Err(refusal),
             "{octets}"
         );
     }
-    // An antecedent is read at the dual polarity: `always a` there is a
-    // least-fixed-point `eventually not a`.
-    let dual = states("always ((always holds(c.level = 1)) implies holds(c.level = 2))");
-    let antecedent = Configuration {
-        acceptance: vec![at(&[0, 0], Polarity::Negative)],
-        ..Configuration::default()
-    };
-    assert!(dual.key(std::slice::from_ref(&antecedent)).is_ok());
-    assert_eq!(
-        dual.key(&[Configuration::default()]),
-        Err(KeyRefusal::NonNormal)
-    );
-    let negated = states("always (not (always holds(c.level = 1)))");
-    assert_eq!(
-        negated.key(&[Configuration::default()]),
-        Err(KeyRefusal::NonNormal),
-        "`not` dualizes its operand"
-    );
-    let wrong_sign = Configuration {
-        acceptance: vec![at(&[0, 0], Polarity::Positive)],
-        ..Configuration::default()
-    };
-    assert_eq!(dual.key(&[wrong_sign]), Err(KeyRefusal::Unresolved));
-    let member = Configuration {
-        acceptance: vec![eventually.clone()],
-        ..Configuration::default()
-    };
-    assert!(accepting.key(&[member]).is_ok());
-    assert_eq!(
-        accepting.key(&[Configuration::default()]),
-        Err(KeyRefusal::NonNormal),
-        "the writer refuses what the reader refuses"
-    );
-    let both = Configuration {
-        obligations: vec![Obligation::Current(eventually.clone())],
-        acceptance: vec![eventually],
-        ..Configuration::default()
-    };
-    assert_eq!(accepting.key(&[both]), Err(KeyRefusal::NonNormal));
+    // An antecedent is read at the dual polarity (and a `not` dualizes its
+    // operand): under the negated root, `eventually a` there is a
+    // least-fixed-point set.
+    for (formula, path) in [
+        (
+            "eventually ((eventually holds(c.level = 1)) implies holds(c.level = 2))",
+            vec![0, 0],
+        ),
+        (
+            "eventually (not (eventually holds(c.level = 1)))",
+            vec![0, 0],
+        ),
+    ] {
+        let dual = buchi(formula, "on origin");
+        assert_eq!(
+            dual.key(&elementary(Vec::new(), Vec::new())),
+            Err(KeyRefusal::NonNormal),
+            "{formula}"
+        );
+        assert!(
+            dual.key(&elementary(Vec::new(), vec![at(&path, Polarity::Positive)]))
+                .is_ok(),
+            "{formula}"
+        );
+        assert_eq!(
+            dual.key(&elementary(Vec::new(), vec![at(&path, Polarity::Negative)])),
+            Err(KeyRefusal::Unresolved),
+            "{formula}"
+        );
+    }
 }
 
 /// The writer retains one counter per occurrence however the debts were
@@ -1525,7 +1514,12 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
 /// insertion order of subsets and windows leaves the bytes equal, distinct
 /// occurrence paths and differing live facts leave them unequal, and no
 /// enumeration index is a member: an independently built translation of
-/// the same facts writes the same octets.
+/// the same facts writes the same octets. The rest of the table is here too:
+/// a false fork before the counted step leaves deadline 1, subset branches
+/// reversed as insertion order write the same bytes and as canonical input
+/// refuse, the clause-root ordinals "0" and u64::MAX are decimal strings in
+/// the full `K_C` while a JSON-number ordinal and "18446744073709551616" are
+/// refused, and the TP-4 `buchi` carry is not the positive F `safety` carry.
 #[trace("TC-525", "FR-338-AC-4")]
 #[test]
 fn every_canonical_octet_vector_is_the_authored_octets() {
@@ -1647,6 +1641,65 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
         Err(KeyRefusal::Order)
     );
 
+    // A false fork before the counted step leaves the deadline at 1: the
+    // state is the origin's again, and does not reject.
+    let forked = bounded.step(origin, false, false);
+    assert_eq!(bounded_text(forked), bounded_text(origin));
+
+    // Subset branches: insertion order does not change the bytes, and the
+    // reversed array supplied as canonical input refuses.
+    let one_each = |path: &[u64]| debts(vec![at(path, 1)]);
+    let branches = octets(&two, &[one_each(&[0]), one_each(&[1])]);
+    assert_eq!(branches, octets(&two, &[one_each(&[1]), one_each(&[0])]));
+    let first = r#"[[],[],[[["0"],"positive","deadline","1"]],[]]"#;
+    let second = r#"[[],[],[[["1"],"positive","deadline","1"]],[]]"#;
+    assert_eq!(
+        branches,
+        states_key(&format!(r#"["safety",[{first},{second}]]"#))
+    );
+    assert_eq!(
+        two.admit(states_key(&format!(r#"["safety",[{second},{first}]]"#)).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::Order)
+    );
+
+    // The clause-root lexical vector: ordinals are decimal strings. A
+    // JSON-number ordinal and 2^64 are never the context of the clause at
+    // ordinal 0 or u64::MAX.
+    let node = format!(
+        r#"{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}}"#,
+        "ab".repeat(32)
+    );
+    let rooted = |ordinal: &str| {
+        format!(
+            r#"["quire.automaton-state-key/v1",[[{node},"temporal",{ordinal}],"quire.temporal.infinite-trace/v1","infinite",[]],["safety",[[[[[],"positive"]],[],[],[]]]]]"#
+        )
+    };
+    for (ordinal, zero) in [("0", true), ("18446744073709551615", false)] {
+        let truth = clause("always holds(true)", if zero { 0 } else { u64::MAX });
+        let written = text(&truth, truth.read(Some(truth.read(None, true)), true));
+        assert_eq!(written, rooted(&format!(r#""{ordinal}""#)), "{ordinal}");
+        assert!(truth.admit(written.as_bytes()).is_ok());
+        // A bare number is the same value as no string: JCS spells the
+        // largest ones in exponent form, which is not canonical input.
+        let number = if zero {
+            ("0", KeyRefusal::ForeignContext)
+        } else {
+            (ordinal, KeyRefusal::NotCanonical)
+        };
+        for (wrong, refusal) in [
+            number,
+            (r#""18446744073709551616""#, KeyRefusal::ForeignContext),
+            ("18446744073709551616", KeyRefusal::NotCanonical),
+        ] {
+            assert_eq!(
+                truth.admit(rooted(wrong).as_bytes()).map(|_| ()),
+                Err(refusal),
+                "{wrong}"
+            );
+        }
+    }
+
     // TP-4 and guarded TP-4.
     let live = buchi(LIVE, "on origin");
     let carry = Configuration {
@@ -1660,6 +1713,16 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
                 .expect("encodes")
         ),
         states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    );
+    // The positive F carry is a different state: it is not a `buchi` body.
+    let positive_carry = states_key(r#"["safety",[[[[[],"positive"]],[],[],[]]]]"#);
+    assert_ne!(
+        positive_carry,
+        states_key(r#"["buchi",[[[[],"negative"]],[],[],[]]]"#)
+    );
+    assert_eq!(
+        live.admit(positive_carry.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::WrongForm("safety".into()))
     );
     let guarded = buchi(LIVE, GUARD);
     for (state, body) in [
@@ -1686,5 +1749,136 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
             &[debts(vec![at(&[0], 1), at(&[1], 1)])]
         ),
         equal
+    );
+}
+
+/// A TP-4 clause is not translated when its key form is not derived: an
+/// unguarded `on each` (ruling R-5 pending), an open-upper least fixed point
+/// in the negated closure (R-2 pending), a clause checked under another
+/// profile, and any clause the safety key cannot carry.
+#[trace("TC-525")]
+#[test]
+fn tp4_clauses_without_a_derived_key_form_are_not_translated() {
+    let refused = |profile: &str, activation: &str, body: &str| {
+        let fixture = fixture(profile, "c: Counter", activation, body);
+        let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+        BuchiStates::clause(&fixture.clause, &context, SubjectKind::Ordinary).map(|_| ())
+    };
+    for (activation, body) in [
+        ("on each (q: Counter)", "eventually[2,*] holds(c.level = 1)"),
+        ("on origin", "eventually always[2,*] holds(c.level = 1)"),
+        // not unbounded, so a safety clause
+        ("on origin", "eventually[0,3] holds(c.level = 1)"),
+    ] {
+        assert!(
+            matches!(
+                refused(INFINITE, activation, body),
+                Err(TranslationRefusal::NotTranslated(_))
+            ),
+            "{activation}: {body}"
+        );
+    }
+    // The same shapes with a closed upper bound are keyed.
+    for body in [
+        "eventually always[0,3] holds(c.level = 1)",
+        "eventually always holds(c.level = 1)",
+        // an open-lower, open-upper eventuality is liveness
+        "eventually[2,*] holds(c.level = 1)",
+    ] {
+        assert!(refused(INFINITE, "on origin", body).is_ok(), "{body}");
+    }
+    // Another profile is not the context's.
+    let live = fixture(INFINITE, "c: Counter", "on origin", LIVE);
+    let other = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,3] holds(c.level = 1)",
+    );
+    let context = StateContext::clause(&other.clause, occurrence(0), Vec::new());
+    assert!(BuchiStates::clause(&live.clause, &context, SubjectKind::Ordinary).is_err());
+
+    // A context of another profile is refused, though its activation fits.
+    let timed = crate::timed_trace::timed("always holds(c.level = 1)");
+    let timed_context = StateContext::clause(&timed.clause, occurrence(0), Vec::new());
+    assert_eq!(timed_context.activation, ContextActivation::Infinite);
+    assert!(BuchiStates::clause(&live.clause, &timed_context, SubjectKind::Ordinary).is_err());
+    let safe = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
+    assert!(SafetyStates::clause(&safe.clause, &timed_context, SubjectKind::Ordinary).is_err());
+
+    // A TP-4 clause has no safety key, and a safety clause no Büchi key.
+    let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
+    assert!(SafetyStates::clause(&live.clause, &context, SubjectKind::Ordinary).is_err());
+    let safe = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
+    let context = StateContext::clause(&safe.clause, occurrence(0), Vec::new());
+    assert!(BuchiStates::clause(&safe.clause, &context, SubjectKind::Ordinary).is_err());
+}
+
+/// A guarded TP-4 key in the waiting phase carries no window: the waiting
+/// rule is reached with a formula that has an interval, not one that cannot
+/// resolve the window at all.
+#[trace("TC-525")]
+#[test]
+fn a_waiting_branch_cannot_carry_a_window() {
+    let guarded = buchi("eventually always[0,3] holds(c.level = 1)", GUARD);
+    let window = r#"[[],[],[[["0"],"negative","deadline","1"]],[]]"#;
+    let waiting = |branch: &str| {
+        buchi_key(
+            "each-when",
+            &format!(r#"["guarded-buchi","waiting",{branch}]"#),
+        )
+    };
+    assert_eq!(
+        guarded.admit(waiting(window).as_bytes()).map(|_| ()),
+        Err(KeyRefusal::Members)
+    );
+    assert!(guarded.admit(waiting("[[],[],[],[]]").as_bytes()).is_ok());
+}
+
+/// A timed-profile clause is neither a safety nor a Büchi state: its
+/// intervals measure time, not steps, and the key algebra is over steps.
+#[trace("TC-525")]
+#[test]
+fn a_timed_clause_is_not_keyed() {
+    for body in ["always holds(c.level = 1)", "eventually holds(c.level = 1)"] {
+        let timed = crate::timed_trace::timed(body);
+        let context = StateContext::clause(&timed.clause, occurrence(0), Vec::new());
+        assert_eq!(context.activation, ContextActivation::Infinite);
+        assert!(
+            matches!(
+                SafetyStates::clause(&timed.clause, &context, SubjectKind::Ordinary),
+                Err(TranslationRefusal::NotTranslated(_))
+            ),
+            "{body}"
+        );
+        assert!(
+            matches!(
+                BuchiStates::clause(&timed.clause, &context, SubjectKind::Ordinary),
+                Err(TranslationRefusal::NotTranslated(_))
+            ),
+            "{body}"
+        );
+    }
+}
+
+/// Over a model subject the checked property form decides: liveness is a
+/// Büchi key and not a safety key, a safety clause the reverse.
+#[trace("TC-525")]
+#[test]
+fn a_model_subject_is_keyed_by_its_checked_property_form() {
+    let keyed = |body: &str| {
+        let model = crate::temporal_trace::modelled(body);
+        assert!(model.clause.property_form().is_some(), "{body}");
+        let context = StateContext::clause(&model.clause, occurrence(0), Vec::new());
+        (
+            SafetyStates::clause(&model.clause, &context, SubjectKind::Ordinary).is_ok(),
+            BuchiStates::clause(&model.clause, &context, SubjectKind::Ordinary).is_ok(),
+        )
+    };
+    assert_eq!(keyed("eventually holds(c.level = 1)"), (false, true));
+    assert_eq!(keyed("always holds(c.level = 1)"), (true, false));
+    assert_eq!(
+        keyed("always (holds(c.level = 1) implies eventually[0,3] holds(c.level = 2))"),
+        (true, false)
     );
 }

@@ -30,14 +30,14 @@ use crate::model_simulation::{counters_document, increment, PACKAGE};
 const VALUE: &str = "quire.value.complete/v1";
 const TIMED: &str = "quire.temporal.timed/v1";
 
-struct Fixture {
+pub(crate) struct Fixture {
     text: String,
-    clause: CheckedTemporalClause,
+    pub(crate) clause: CheckedTemporalClause,
 }
 
 /// The clause `C` under the timed profile over `c: M::Counter`, `M` timed in
 /// `ms`, whose formula is `body`.
-fn timed(body: &str) -> Fixture {
+pub(crate) fn timed(body: &str) -> Fixture {
     let document = counters_document(vec![increment()], false);
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");

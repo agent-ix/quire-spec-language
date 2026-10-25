@@ -10,8 +10,9 @@
 //! member of a key.
 
 use qsl_foundation::IdentityLimits;
-use qsl_semantics::check::CheckedTemporalClause;
+use qsl_semantics::check::{Activation, CheckedTemporalClause, TemporalProfile};
 use quire_canonical::{Limits, Node, NodeRef};
+use quire_semantic_value::fairness::PropertyForm;
 
 use super::key::{
     admit_envelope, exactly, AutomatonStateKey, ContextActivation, KeyRefusal, NotTranslated,
@@ -84,9 +85,16 @@ impl BuchiStates {
             ContextActivation::Infinite => false,
             ContextActivation::Origin | ContextActivation::Each => return Err(not_translated()),
         };
+        // Spec ruling R-5 pending: an unguarded `on each` TP-4 clause is the
+        // selection of one violating activation, a form FR-338 does not key.
+        let form_agrees = clause
+            .property_form()
+            .is_none_or(|form| form == PropertyForm::Liveness);
         if subject == SubjectKind::Protocol
-            || clause.profile().is_bounded()
+            || clause.profile() != TemporalProfile::InfiniteTrace
             || context.profile != clause.profile()
+            || matches!(clause.activation(), Activation::Each { guarded: false })
+            || !form_agrees
         {
             return Err(not_translated());
         }
@@ -98,6 +106,9 @@ impl BuchiStates {
             return Err(not_translated());
         }
         let shape = FormulaShape::of(formula, Polarity::Negative).ok_or_else(not_translated)?;
+        if shape.has_open_upper_eventuality() {
+            return Err(not_translated());
+        }
         let max_bytes = IdentityLimits::default().input_bytes;
         let (context, context_octets) = context
             .encoded(max_bytes)

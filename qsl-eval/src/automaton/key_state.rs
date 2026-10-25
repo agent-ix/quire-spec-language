@@ -533,6 +533,20 @@ impl FormulaShape {
         })
     }
 
+    /// Whether some occurrence is an open-upper least-fixed-point operator
+    /// (`F`/`U[a,open]`, or a dual) at a polarity it is read at: it has a
+    /// Büchi acceptance set this algebra does not derive (spec ruling R-2).
+    pub(super) fn has_open_upper_eventuality(&self) -> bool {
+        self.nodes.values().any(|node| {
+            node.interval.is_some_and(|bounds| bounds.upper.is_none())
+                && [Polarity::Positive, Polarity::Negative]
+                    .into_iter()
+                    .any(|polarity| {
+                        node.reached(polarity) && node.least_fixed_point(polarity) == Some(true)
+                    })
+        })
+    }
+
     fn get(&self, path: &[u64]) -> Option<&Shaped> {
         self.nodes.get(path)
     }

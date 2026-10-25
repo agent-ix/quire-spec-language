@@ -42,6 +42,7 @@ use qsl_semantics::check::{
 };
 use quire_canonical::{Limits, Node, NodeRef};
 use quire_exact::Value;
+use quire_semantic_value::fairness::PropertyForm;
 
 use super::key_state::{safety_enc, Configuration, FormulaShape, Polarity, Reader};
 use crate::simulation::model::encode::{hex, value_enc, Enc};
@@ -626,13 +627,21 @@ impl SafetyStates {
     ) -> Result<Self, TranslationRefusal> {
         let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
         if subject == SubjectKind::Protocol
-            || clause.profile().is_bounded()
+            || clause.profile() != TemporalProfile::InfiniteTrace
             || context.profile != clause.profile()
         {
             return Err(not_translated());
         }
         let shape =
             FormulaShape::of(clause.formula(), Polarity::Positive).ok_or_else(not_translated)?;
+        // A TP-4 clause is keyed by `BuchiStates`, not as a safety state.
+        let liveness = clause.property_form().map_or_else(
+            || shape.is_liveness(),
+            |form| form == PropertyForm::Liveness,
+        );
+        if liveness {
+            return Err(not_translated());
+        }
         let max_bytes = IdentityLimits::default().input_bytes;
         let (context, context_octets) = context
             .encoded(max_bytes)
