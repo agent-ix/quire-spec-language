@@ -963,7 +963,7 @@ fn refused_on(activation: &str, body: &str) -> (Code, Option<&'static str>, u64,
 
 /// FR-337-AC-7 (TC-1265 steps 3 and 4): S3 checks the guard as a `holds`
 /// condition, reads of `q` resolve in the guard alone, the binder is typed as
-/// `over` is and named otherwise, and a capture stays `NotEmitted`.
+/// `over` is and named otherwise.
 #[trace("TC-1265", "FR-337-AC-7")]
 #[test]
 fn s3_checks_the_on_each_guard_and_binder() {
@@ -1063,20 +1063,6 @@ fn s3_checks_the_on_each_guard_and_binder() {
         start,
         u64::try_from(text.find("c.versionNumber)").unwrap()).unwrap()
     );
-
-    // A capture stays `NotEmitted` at the clause.
-    let (code, tag, start, text) = refused_on(
-        &each("q", ""),
-        "capture n: Int[0, 3] = c.versionNumber; always holds(c.versionNumber <= 1)",
-    );
-    assert_eq!(
-        (code, tag),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
-    assert_eq!(
-        start,
-        u64::try_from(text.find("temporal Each").unwrap()).unwrap()
-    );
 }
 
 /// The one refusal of `activation` and `body` and the unit text it refuses.
@@ -1170,5 +1156,398 @@ fn the_activation_is_checked_before_the_captures_and_the_body() {
         let nth = usize::from(at == "c:");
         let (offset, _) = text.match_indices(at).nth(nth).expect("the refused text");
         assert_eq!(start, u64::try_from(offset).unwrap(), "{activation} {body}");
+    }
+}
+
+/// The captures of AC-8, as a clause body written with `holds` conditions
+/// that read them.
+const CAPTURES: &str = "capture n: Int[0, 1000] = c.versionNumber; \
+    capture m: Int[0, 1000] = q.versionNumber; \
+    always (holds(c.versionNumber >= n) and holds(m = n))";
+
+/// The `Int[0, 1000]` captures `n` and `m` under `activation`, written
+/// before `rest`.
+fn captured(rest: &str) -> String {
+    format!(
+        "capture n: Int[0, 1000] = c.versionNumber; \
+         capture m: Int[0, 1000] = q.versionNumber; {rest}"
+    )
+}
+
+/// FR-337-AC-8 (TC-1267 steps 1 and 2): S3 types each capture like a `holds`
+/// condition, keeps `n` then `m` with their slot counts, and a `holds`
+/// condition counts the captures after `c` and `q`.
+#[trace("TC-1267", "FR-337-AC-8")]
+#[test]
+fn s3_checks_and_keeps_each_capture() {
+    for (activation, slots, holds) in [
+        (each("q", " when (c.versionNumber >= 1)"), [2, 3], 4),
+        (each("q", ""), [2, 3], 4),
+        ("on origin".to_owned(), [1, 2], 3),
+    ] {
+        let text = unit(
+            INFINITE,
+            &declared_on(
+                "Each",
+                &activation,
+                &captured("always (holds(c.versionNumber >= n) and holds(m = n))").replace(
+                    "q.versionNumber",
+                    if activation == "on origin" {
+                        "c.versionNumber"
+                    } else {
+                        "q.versionNumber"
+                    },
+                ),
+            ),
+        );
+        let compiled = compile(&text);
+        let [node] = compiled.clauses.as_slice() else {
+            panic!("one clause");
+        };
+        let names: Vec<_> = node.clause().captures().map(|(name, _)| name).collect();
+        assert_eq!(names, ["n", "m"], "{activation}");
+        for (index, expected) in slots.into_iter().enumerate() {
+            let (_, found) = node.capture(index).expect("a typed initializer");
+            assert_eq!(found, expected, "{activation} capture {index}");
+        }
+        assert!(node.capture(2).is_none());
+        let counts: Vec<usize> = (0..node.clause().formula().nodes().len())
+            .filter_map(|index| node.clause().formula().node_id(index))
+            .filter_map(|atom| node.condition(atom))
+            .map(|(_, count)| count)
+            .collect();
+        assert_eq!(counts, [holds, holds], "{activation}");
+    }
+}
+
+/// FR-337-AC-8 (TC-1267 step 2): each defect refuses with its existing code
+/// and tag at the stated text, and the first in the order activation,
+/// captures, `holds` conditions is the one refusal.
+#[trace("TC-1267", "FR-337-AC-8")]
+#[test]
+fn s3_refuses_each_capture_defect_at_its_locus() {
+    let tail = "always holds(c.versionNumber <= 1)";
+    let guard = " when (c.versionNumber)";
+    // The activation, the body, code and tag, the text the refusal is
+    // located at and the index of that text's occurrence.
+    let cases: [(String, String, Code, &str, &str, usize); 11] = [
+        (
+            each("q", ""),
+            format!("capture b: Boolean = c.versionNumber; {tail}"),
+            Code::IllTyped,
+            "type-mismatch",
+            "c.versionNumber;",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture x: Config::Absent = c.versionNumber; {tail}"),
+            Code::MissingDeclaration,
+            "missing-name",
+            "Config::Absent",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture n: Int[0, 1000] = c.versionNumber + 1; {tail}"),
+            Code::UndefinedExpression,
+            "unproved-range",
+            "c.versionNumber + 1",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!(
+                "capture a: Int[0, 1000] = b; capture b: Int[0, 1000] = c.versionNumber; {tail}"
+            ),
+            Code::MissingDeclaration,
+            "missing-name",
+            "b;",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture a: Int[0, 1000] = a; {tail}"),
+            Code::MissingDeclaration,
+            "missing-name",
+            "a;",
+            0,
+        ),
+        (
+            each("q", " when (n = 1)"),
+            format!("capture n: Int[0, 1000] = c.versionNumber; {tail}"),
+            Code::MissingDeclaration,
+            "missing-name",
+            "n = 1",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture c: Int[0, 1000] = 1; {tail}"),
+            Code::ConflictingDeclaration,
+            "duplicate-declaration",
+            "c: Int",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture q: Int[0, 1000] = 1; {tail}"),
+            Code::ConflictingDeclaration,
+            "duplicate-declaration",
+            "q: Int",
+            0,
+        ),
+        (
+            each("q", ""),
+            format!("capture n: Int[0, 1000] = 1; capture n: Int[0, 1000] = 2; {tail}"),
+            Code::ConflictingDeclaration,
+            "duplicate-declaration",
+            "n: Int",
+            1,
+        ),
+        (
+            each("q", guard),
+            format!("capture b: Boolean = c.versionNumber; {tail}"),
+            Code::IllTyped,
+            "non-boolean-root",
+            "c.versionNumber)",
+            0,
+        ),
+        (
+            each("q", ""),
+            "capture b: Boolean = c.versionNumber; always holds(c.versionNumber)".to_owned(),
+            Code::IllTyped,
+            "type-mismatch",
+            "c.versionNumber;",
+            0,
+        ),
+    ];
+    for (activation, body, code, tag, at, nth) in cases {
+        let (found, found_tag, start, text) = refused_on(&activation, &body);
+        assert_eq!((found, found_tag), (code, Some(tag)), "{activation} {body}");
+        let (offset, _) = text.match_indices(at).nth(nth).expect("the refused text");
+        assert_eq!(start, u64::try_from(offset).unwrap(), "{activation} {body}");
+    }
+}
+
+/// FR-337-AC-8: a capture that repeats an earlier declaration names both.
+#[trace("TC-1267", "FR-337-AC-8")]
+#[test]
+fn a_repeated_capture_name_refuses_naming_both_declarations() {
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+
+    let (refusal, text) = refusal_of(
+        &each("q", ""),
+        "capture n: Int[0, 1000] = 1; capture n: Int[0, 1000] = 2; always holds(true)",
+    );
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a temporal refusal: {refusal:?}");
+    };
+    let TemporalCause::DuplicateCapture { name, first, span } = cause.as_ref() else {
+        panic!("a duplicate capture: {cause:?}");
+    };
+    assert_eq!(name, "n");
+    let mut names = text.match_indices("n: Int").map(|(at, _)| at);
+    let (one, two) = (names.next().unwrap(), names.next().unwrap());
+    assert_eq!((first.start, span.start), (one, two));
+}
+
+/// The node of `wire` that is a `value`/`parameter` named `name`.
+fn parameter_named<'w>(wire: &'w Value, name: &str) -> &'w Value {
+    nodes(wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "value"
+                && node["semantic_form"] == "parameter"
+                && node["body"]["members"][0]["value"]["value"] == name
+        })
+        .unwrap_or_else(|| panic!("a parameter named {name}"))
+}
+
+/// The captures aggregate of the clause node of `wire`.
+fn captures_of(wire: &Value) -> &Value {
+    &clause_node(wire)["body"]["arguments"][3]
+}
+
+/// The clause key and package id of `activation` over `body`.
+fn captured_key(activation: &str, body: &str) -> (String, qsl_semantics::library::PackageId) {
+    let (compiled, key) = key_of(activation, body);
+    (key, package_id(&compiled))
+}
+
+/// FR-337-AC-9 (TC-1267 step 3): the captures aggregate binds each capture to
+/// its initializer's term, each capture has its own parameter node at level
+/// `1 + e + j` typed by its declared type, a `holds` read references the
+/// node, the nodes are located at the capture names, and the I2 reader
+/// returns the clause's `over` node.
+#[trace("TC-1267", "FR-337-AC-9")]
+#[test]
+fn the_captures_aggregate_and_nodes_are_emitted() {
+    let activation = each("q", " when (c.versionNumber >= 1)");
+    let (compiled, _) = key_of(&activation, CAPTURES);
+    let wire = &compiled.wire;
+    let aggregate = captures_of(wire);
+    let members = aggregate["members"].as_array().expect("an aggregate");
+    let names: Vec<_> = members
+        .iter()
+        .map(|member| member["name"].clone())
+        .collect();
+    assert_eq!(names, ["n", "m"]);
+    let over = parameter_named(wire, "c");
+    let trigger = parameter_named(wire, "q");
+    let n = parameter_named(wire, "n");
+    let m = parameter_named(wire, "m");
+    assert_eq!(n["body"]["members"][1]["value"]["value"], "2");
+    assert_eq!(m["body"]["members"][1]["value"]["value"], "3");
+    assert_eq!(n["semantic_type"], m["semantic_type"]);
+    assert_ne!(n["semantic_type"], over["semantic_type"]);
+    let digest = |node: &Value| node["node_id"]["digest"].as_str().unwrap().to_owned();
+    assert!(reaches(wire, &members[0]["value"], &digest(over)));
+    assert!(!reaches(wire, &members[0]["value"], &digest(trigger)));
+    assert!(reaches(wire, &members[1]["value"], &digest(trigger)));
+    let formula = formula_root(wire, clause_node(wire));
+    assert!(
+        reaches(wire, &formula["body"], &digest(n)),
+        "a holds reads n"
+    );
+    assert!(reaches(wire, &formula["body"], &digest(m)));
+
+    // The capture node and its type node are located at the capture's name.
+    let text = unit(INFINITE, &declared_on("Each", &activation, CAPTURES));
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
+    let regions = declarations.regions();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let located = |digest: &str, role: &str| -> Vec<u64> {
+        graph
+            .occurrences()
+            .filter(|(key, origin, _)| {
+                key.to_string() == digest && origin.role().to_string() == role
+            })
+            .map(|(_, _, location)| regions.region(location).expect("a region").start())
+            .collect()
+    };
+    let start = |needle: &str| u64::try_from(text.find(needle).unwrap()).unwrap();
+    assert!(located(&digest(n), "expression").contains(&start("n: Int")));
+    assert!(located(&digest(m), "expression").contains(&start("m: Int")));
+    let type_digest = n["semantic_type"]["digest"].as_str().unwrap();
+    let at_types = located(type_digest, "type");
+    assert!(at_types.contains(&start("n: Int")) && at_types.contains(&start("m: Int")));
+
+    // Under `on origin` the nodes are at levels 1 and 2, and a clause with no
+    // capture binds the empty aggregate.
+    let origin_body = CAPTURES.replace("q.versionNumber", "c.versionNumber");
+    let (origin, _) = key_of("on origin", &origin_body);
+    assert_eq!(
+        parameter_named(&origin.wire, "n")["body"]["members"][1]["value"]["value"],
+        "1"
+    );
+    assert_eq!(
+        parameter_named(&origin.wire, "m")["body"]["members"][1]["value"]["value"],
+        "2"
+    );
+    let (none, _) = key_of(&activation, BODY);
+    assert_eq!(
+        captures_of(&none.wire)["members"].as_array().map(Vec::len),
+        Some(0)
+    );
+
+    // The I2 reader admits each package and returns the clause's triple and
+    // `over` node, never a capture node.
+    for compiled in [&compiled, &origin, &none] {
+        let [checked] = compiled.clauses.as_slice() else {
+            panic!("one emitted clause");
+        };
+        let admitted = admit(compiled);
+        let [root] = clause_roots(&admitted)
+            .expect("the roots read")
+            .try_into()
+            .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
+        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
+        assert_eq!(root.over(), Some(wire_id(checked.over())));
+    }
+}
+
+/// FR-337-AC-10 (TC-1267 step 4): every change of the captures changes the
+/// clause key and the package id; reformatting changes neither.
+#[trace("TC-1267", "FR-337-AC-10")]
+#[test]
+fn a_capture_changes_the_clause_key() {
+    let activation = each("q", " when (c.versionNumber >= 1)");
+    let base = captured_key(&activation, CAPTURES);
+    let variants = [
+        CAPTURES
+            .replace("capture n:", "capture p:")
+            .replace("<= n", "<= p")
+            .replace(">= n", ">= p")
+            .replace("= n)", "= p)"),
+        CAPTURES.replace(
+            "n: Int[0, 1000] = c.versionNumber",
+            "n: Int[0, 1000] = q.versionNumber",
+        ),
+        CAPTURES
+            .replace("n: Int[0, 1000]", "n: Int[0, 2000]")
+            .replace("holds(m = n)", "holds(n <= 2000)"),
+        "capture m: Int[0, 1000] = q.versionNumber; capture n: Int[0, 1000] = c.versionNumber; \
+         always (holds(c.versionNumber >= n) and holds(m = n))"
+            .to_owned(),
+        CAPTURES.replace("always", "capture k: Int[0, 1000] = 3; always"),
+        BODY.to_owned(),
+    ];
+    let mut seen = vec![base.clone()];
+    for body in &variants {
+        let found = captured_key(&activation, body);
+        assert!(!seen.contains(&found), "{body}: a new key");
+        assert!(
+            seen.iter()
+                .all(|other| other.0 != found.0 && other.1 != found.1),
+            "{body}"
+        );
+        seen.push(found);
+    }
+    let reformatted = CAPTURES.replace("; ", ";\n    ").replace("= c.", "=   c.");
+    assert_eq!(captured_key(&activation, &reformatted), base);
+}
+
+/// FR-337-AC-10 (TC-1267 step 4): the node a clause's `temporal-satisfaction`
+/// record (the requirements set `requires temporal Due;` reads) holds is the
+/// emitted clause node: its key is the clause key, it is the same each time
+/// the clause is emitted, and it differs with and without the captures.
+#[trace("TC-1267", "FR-337-AC-10")]
+#[test]
+fn the_requirement_node_is_the_clause_node_and_changes_with_the_captures() {
+    use qsl_foundation::bound::DomainKind;
+    use qsl_semantics::family::ClaimExtent;
+
+    let activation = each("q", " when (c.versionNumber >= 1)");
+    let requirement = |activation: &str, body: &str| {
+        let text = unit(INFINITE, &declared_on("Each", activation, body));
+        let (graph, clause, requirements) = record_of(&text);
+        let ClaimExtent::Unbounded(domains) = requirements.extent() else {
+            panic!("infinite-trace: {:?}", requirements.extent());
+        };
+        assert_eq!(domains.kind(&clause), Some(DomainKind::InfiniteTrace));
+        // The record is keyed by the emitted clause's identity.
+        let (compiled, digest) = key_of(activation, body);
+        let [checked] = graph.temporal_clauses() else {
+            panic!("one emitted clause");
+        };
+        assert_eq!(checked.identity(), compiled.clauses[0].identity());
+        assert!(format!("{:?}", wire_id(checked.identity())).contains(&digest[digest.len() - 8..]));
+        clause
+    };
+    let captured = requirement(&activation, CAPTURES);
+    assert_eq!(captured, requirement(&activation, CAPTURES));
+    assert_ne!(captured, requirement(&activation, BODY));
+    for body in [CAPTURES, BODY] {
+        assert_ne!(
+            requirement(&activation, body),
+            requirement(
+                "on origin",
+                &body.replace("q.versionNumber", "c.versionNumber")
+            )
+        );
     }
 }

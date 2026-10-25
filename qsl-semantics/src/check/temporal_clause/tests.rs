@@ -407,42 +407,32 @@ fn package_refusal(text: &str) -> TemporalCause {
     (**cause).clone()
 }
 
-/// FR-326, FR-337: a clause that activates `on origin` or `on each` and
-/// declares no capture checks and compiles into the package; one that
-/// declares a capture checks but no S4 emission writes it, so `check`
-/// refuses it as `unsupported_construct`/`not-yet-implemented` at the
-/// clause; a clause that does not check reports its own refusal.
+/// FR-326, FR-337: a clause that activates `on origin` or `on each`, with or
+/// without a capture, checks and compiles into the package, keeping its
+/// captures; a clause that does not check reports its own refusal.
 #[trace("FR-326", "FR-337-AC-7")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes() {
     let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
     let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
-    for text in [&origin, &each] {
-        let graph = assemble(text)
+    let captured = origin.replace(
+        "{ eventually",
+        "{ capture before: Int[0, 9] = c.level; eventually",
+    );
+    for (text, captures) in [
+        (origin.clone(), 0),
+        (each, 0),
+        (captured.clone(), 1),
+        (captured.replace("on origin", "on each (d: Counter)"), 1),
+    ] {
+        let graph = assemble(&text)
             .check(CheckingLimits::default())
             .expect("an emitted clause compiles");
         let [clause] = graph.temporal_clauses() else {
             panic!("one emitted clause");
         };
         assert_eq!(clause.clause().name(), "C");
-    }
-
-    let captured = origin.replace(
-        "{ eventually",
-        "{ capture before: Int[0, 9] = c.level; eventually",
-    );
-    for text in [
-        captured.clone(),
-        captured.replace("on origin", "on each (d: Counter)"),
-    ] {
-        let cause = package_refusal(&text);
-        assert!(
-            matches!(cause, TemporalCause::NotEmitted { .. }),
-            "{cause:?}"
-        );
-        assert_eq!(cause.code(), Code::UnsupportedConstruct);
-        assert_eq!(cause.tag(), "not-yet-implemented");
-        assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+        assert_eq!(clause.clause().captures().len(), captures);
     }
 
     let bounded = source(&[EVENT], "Counter", "eventually holds(c.level = 3)");

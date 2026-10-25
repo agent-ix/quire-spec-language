@@ -141,6 +141,23 @@ impl ExpressionSpans {
         Ok(id)
     }
 
+    /// The tree rooted at `node`: the spans of its descendants, numbered as
+    /// they are here, so a path from `node` locates the same span as it does
+    /// in this tree. `None` when `node` is no node of this tree.
+    pub fn subtree(&self, node: SpanId) -> Option<Self> {
+        let root = self.nodes.get(node.0)?;
+        let mut tree = Self::new(root.span).ok()?;
+        let mut pending = vec![(node, tree.root())];
+        while let Some((source, target)) = pending.pop() {
+            for &child in &self.nodes.get(source.0)?.children {
+                let span = self.span(child)?;
+                let added = tree.push_child(target, span).ok()?;
+                pending.push((child, added));
+            }
+        }
+        Some(tree)
+    }
+
     /// The span of `node`, when it is a node of this tree.
     pub fn span(&self, node: SpanId) -> Option<Span> {
         self.nodes.get(node.0).map(|node| node.span)

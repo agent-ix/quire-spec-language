@@ -2,13 +2,17 @@
 //! FR-337: the Boolean condition of each `holds` atom of a checked temporal
 //! clause, typed so S4 can lower it as FR-093 lowers a Boolean expression.
 //!
-//! A condition reads the clause's `over` parameter and nothing else of the
-//! clause: it is typed as a state clause types its body (FR-104), with the
-//! `over` parameter bound at slot 0 and no `self`, so a field read through
-//! the `over` object is a model read of the current state. Each condition
-//! is located at its own declaration site (`lowering::temporal_site`), so
-//! a refusal inside it, and every occurrence its lowered nodes record,
-//! resolves to the condition's own source.
+//! A condition reads the clause's `over` parameter and its captures: it is
+//! typed as a state clause types its body (FR-104), with the `over`
+//! parameter bound at slot 0, the trigger binder's slot (when the activation
+//! is `on each`) bound under a name no source can write, the captures at the
+//! following slots and no `self`, so a field read through the `over` object
+//! is a model read of the current state. A capture's initializer is typed
+//! the same way, with the trigger binder named, the earlier captures bound
+//! and the declared type as its goal. Each condition is located at its own
+//! declaration site (`lowering::temporal_site`), so a refusal inside it, and
+//! every occurrence its lowered nodes record, resolves to the condition's
+//! own source.
 
 use std::collections::BTreeMap;
 
@@ -44,8 +48,13 @@ pub(crate) struct TypedCondition {
     pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
-/// The typed Boolean conditions of one clause: its `holds` atoms' and, for an
-/// `on each ... when (g)` activation, the guard.
+/// The slot name of the trigger binder in a `holds` condition: the binder is
+/// not in scope there (FR-337-AC-7), but its slot is counted (FR-337
+/// "Captures at S3").
+const HIDDEN_TRIGGER: &str = " trigger";
+
+/// The typed conditions of one clause: its `holds` atoms', its captures'
+/// initializers and, for an `on each ... when (g)` activation, the guard.
 #[derive(Debug, Default)]
 pub(crate) struct TypedConditions {
     /// Each `holds` atom's condition, by its formula node's index.
@@ -53,17 +62,27 @@ pub(crate) struct TypedConditions {
     /// The `when` guard, typed over the `over` parameter at slot 0 and the
     /// trigger binder at slot 1.
     pub(crate) guard: Option<TypedCondition>,
+    /// Each capture's initializer in source order, typed against the
+    /// capture's declared type over the `over` parameter, the trigger binder
+    /// and the earlier captures.
+    pub(crate) captures: Vec<TypedCondition>,
 }
 
 impl TypedConditions {
-    /// Every condition, the guard first.
+    /// Every condition, the guard first, then the captures.
     pub(crate) fn all(&self) -> impl Iterator<Item = &TypedCondition> {
-        self.guard.iter().chain(self.holds.values())
+        self.guard
+            .iter()
+            .chain(&self.captures)
+            .chain(self.holds.values())
     }
 
     /// Every condition, mutably.
     pub(crate) fn all_mut(&mut self) -> impl Iterator<Item = &mut TypedCondition> {
-        self.guard.iter_mut().chain(self.holds.values_mut())
+        self.guard
+            .iter_mut()
+            .chain(&mut self.captures)
+            .chain(self.holds.values_mut())
     }
 }
 
@@ -80,38 +99,78 @@ pub(crate) fn check_conditions(
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<(TypedConditions, u64), CheckRefusal> {
     let mut nodes = input.nodes_used;
-    let bound = [checked.over().clone()];
     let mut conditions = TypedConditions::default();
     let named = crate::check::check::NamedScope::of(input.models, input.scope);
     // FR-337: the activation precedes the body, so its guard is typed first
     // and a defect in both refuses at the guard. The guard reads the `over`
     // parameter at slot 0 and the trigger binder at slot 1.
-    let guard = match (&form.activation, checked.trigger()) {
+    let trigger = checked
+        .trigger()
+        .map(|(name, value_type)| (name.to_owned(), value_type.clone()));
+    let guard = match (&form.activation, &trigger) {
         (
             ActivationForm::Each {
                 when: Some(when), ..
             },
-            Some((name, value_type)),
+            Some(trigger),
         ) => {
-            let bound = [
-                checked.over().clone(),
-                (name.to_owned(), value_type.clone()),
-            ];
+            let bound = [checked.over().clone(), trigger.clone()];
             Some((when, bound, temporal_location(clause, TemporalSite::Guard)))
         }
         _ => None,
     };
     if let Some((when, bound, location)) = guard {
         conditions.guard = Some(type_condition(
-            when, &bound, &location, input, &named, &mut nodes, cx,
+            Goal::Boolean,
+            when,
+            &bound,
+            &location,
+            input,
+            &named,
+            &mut nodes,
+            cx,
         )?);
     }
+    // Then the captures in source order, each over the binders before it.
+    let mut visible = vec![checked.over().clone()];
+    visible.extend(trigger.clone());
+    for (index, ((name, declared), written)) in checked.captures().zip(&form.captures).enumerate() {
+        let location = temporal_location(clause, TemporalSite::CaptureValue(index));
+        let typed = type_condition(
+            Goal::Declared(declared),
+            &written.value,
+            &visible,
+            &location,
+            input,
+            &named,
+            &mut nodes,
+            cx,
+        )?;
+        conditions.captures.push(typed);
+        visible.push((name.to_owned(), declared.clone()));
+    }
+    // A `holds` condition reads `over` and the captures: the trigger binder
+    // keeps its slot under a name no source writes.
+    let mut bound = vec![checked.over().clone()];
+    if let Some((_, value_type)) = &trigger {
+        bound.push((HIDDEN_TRIGGER.to_owned(), value_type.clone()));
+    }
+    bound.extend(visible.into_iter().skip(1 + usize::from(trigger.is_some())));
     for (id, node) in form.formula.iter() {
         let TemporalNodeForm::Holds { condition, .. } = node else {
             continue;
         };
         let location = temporal_location(clause, TemporalSite::Condition(id.index()));
-        let typed = type_condition(condition, &bound, &location, input, &named, &mut nodes, cx)?;
+        let typed = type_condition(
+            Goal::Boolean,
+            condition,
+            &bound,
+            &location,
+            input,
+            &named,
+            &mut nodes,
+            cx,
+        )?;
         conditions.holds.insert(id.index(), typed);
     }
     Ok((conditions, nodes))
@@ -152,12 +211,33 @@ pub(crate) fn guard_refusal(
     let named = crate::check::check::NamedScope::of(input.models, input.scope);
     let mut nodes = input.nodes_used;
     let location = temporal_location(clause, TemporalSite::Guard);
-    type_condition(when, &bound, &location, input, &named, &mut nodes, cx).err()
+    type_condition(
+        Goal::Boolean,
+        when,
+        &bound,
+        &location,
+        input,
+        &named,
+        &mut nodes,
+        cx,
+    )
+    .err()
 }
 
-/// Type `condition` as a Boolean over `bound`, bound from slot 0, at
+/// What a condition is typed against.
+#[derive(Clone, Copy)]
+enum Goal<'t> {
+    /// A Boolean: a `holds` condition or the guard.
+    Boolean,
+    /// A capture's declared type.
+    Declared(&'t ValueType),
+}
+
+/// Type `condition` against `goal` over `bound`, bound from slot 0, at
 /// `location`, and check its definedness over the current-state observation.
+#[allow(clippy::too_many_arguments)]
 fn type_condition(
+    goal: Goal<'_>,
     condition: &qsl_forms::ExpressionForm,
     bound: &[(String, ValueType)],
     location: &Location,
@@ -187,13 +267,22 @@ fn type_condition(
             self_slot: NO_SLOT,
             result_slot: None,
         });
-        let body = typer.infer(&condition.expression, Some(&ValueType::Boolean), &location)?;
-        if body.root().value_type() != &ValueType::Boolean {
-            return Err(CheckRefusal {
-                location,
-                cause: CheckCause::NonBooleanRoot,
-            });
-        }
+        let body = match goal {
+            Goal::Boolean => {
+                let body =
+                    typer.infer(&condition.expression, Some(&ValueType::Boolean), &location)?;
+                if body.root().value_type() != &ValueType::Boolean {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::NonBooleanRoot,
+                    });
+                }
+                body
+            }
+            Goal::Declared(declared) => {
+                typer.check_as(&condition.expression, declared, &location)?
+            }
+        };
         let slots = typer.slots();
         let slot_names = typer.slot_names().to_vec();
         let formed_units = typer.into_formed_units();

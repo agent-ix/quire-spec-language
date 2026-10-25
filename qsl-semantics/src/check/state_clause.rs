@@ -625,18 +625,20 @@ pub(crate) fn population_of(
     }
 }
 
-/// Every population that covers `object`, by conformance, in ascending
-/// `DeclarationKey` order: what a clause `over (x: object)` of a model subject
-/// ranges over (FR-125 Instancing admits several, whose universes the subject
-/// lists together).
-pub(crate) fn populations_covering(
+/// Every population whose member type overlaps `object` by subtyping, in
+/// ascending declaration-key order. Temporal requirement records use this
+/// relation (FR-336); other population lookups retain their own coverage
+/// rules.
+pub(crate) fn populations_overlapping(
     models: &[AdmittedModel],
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Vec<PopulationDomain> {
     let mut found: Vec<(&DeclarationKey, PopulationDomain)> = models
         .iter()
-        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .flat_map(|model| {
+            model.populations_overlapping(object, |sub, sup| types.conforms(sub, sup))
+        })
         .map(|(ordinal, key, member, bound)| {
             (
                 key,
@@ -648,7 +650,7 @@ pub(crate) fn populations_covering(
             )
         })
         .collect();
-    found.sort_by_key(|(left, _)| *left);
+    found.sort_by_key(|(key, _)| *key);
     found.into_iter().map(|(_, domain)| domain).collect()
 }
 

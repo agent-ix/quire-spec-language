@@ -49,7 +49,7 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
-pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{

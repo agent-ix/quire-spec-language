@@ -1179,6 +1179,18 @@ pub enum TemporalCause {
         /// The `on each` binder name's span.
         span: Span,
     },
+    /// FR-337 "Captures at S3": a capture is named as the `over` parameter,
+    /// the trigger binder or an earlier capture is.
+    /// `conflicting_declaration`/`duplicate-declaration`, located at the
+    /// capture's name.
+    DuplicateCapture {
+        /// The repeated name.
+        name: String,
+        /// The first declaration's name span.
+        first: Span,
+        /// The capture name's span.
+        span: Span,
+    },
     /// FR-123 "Fairness constraints": a fairness constraint names no
     /// operation of an admitted model. Located at the operation's name.
     UnresolvedFairnessOperation {
@@ -1344,6 +1356,7 @@ impl TemporalCause {
             | Self::ParameterType { span, .. }
             | Self::TriggerType { span, .. }
             | Self::DuplicateTrigger { span, .. }
+            | Self::DuplicateCapture { span, .. }
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
@@ -1400,7 +1413,9 @@ impl TemporalCause {
             },
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
-            Self::DuplicateTrigger { .. } => Code::ConflictingDeclaration,
+            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
+                Code::ConflictingDeclaration
+            }
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
     }
@@ -1425,7 +1440,9 @@ impl TemporalCause {
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
-            Self::DuplicateTrigger { .. } => "duplicate-declaration",
+            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
+                "duplicate-declaration"
+            }
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }

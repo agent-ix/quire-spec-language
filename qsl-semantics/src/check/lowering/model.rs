@@ -171,6 +171,20 @@ impl AdmittedModel {
         self.types.get(&identity)
     }
 
+    /// Whether the object type `identity` is a systems interface, whose
+    /// model node is a `model`/`systems_interface` node (FR-094).
+    pub(crate) fn is_systems_interface(&self, identity: EffectiveId) -> bool {
+        self.types
+            .get(&identity)
+            .and_then(|key| self.records.get(key))
+            .is_some_and(|record| {
+                matches!(
+                    record_form(record),
+                    Some((NodeTag::Model, "systems_interface"))
+                )
+            })
+    }
+
     pub(crate) fn field_reference(
         &self,
         key: &DeclarationKey,
@@ -744,6 +758,34 @@ impl AdmittedModel {
         };
         self.population_domains()
             .filter(|(_, population, _)| population.member_types.iter().any(covers))
+            .map(|(ordinal, population, canonical)| {
+                (
+                    ordinal,
+                    &population.key,
+                    canonical,
+                    self.population_bounds.get(&population.key),
+                )
+            })
+            .collect()
+    }
+
+    /// FR-336: every population whose member type overlaps `target` by
+    /// subtyping, for temporal requirement records. A population can overlap
+    /// from either direction; this is broader than `populations_of`, whose
+    /// coverage direction is used by state-clause resolution.
+    pub(crate) fn populations_overlapping(
+        &self,
+        target: EffectiveId,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> {
+        let overlaps = |member: &DeclarationKey| {
+            self.types.iter().any(|(id, declared)| {
+                declared == member
+                    && (*id == target || conforms(target, *id) || conforms(*id, target))
+            })
+        };
+        self.population_domains()
+            .filter(|(_, population, _)| population.member_types.iter().any(overlaps))
             .map(|(ordinal, population, canonical)| {
                 (
                     ordinal,

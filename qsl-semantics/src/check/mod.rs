@@ -332,7 +332,8 @@ pub use hyper_clause::{
     decodable_argument, operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause,
     CheckedModelRelation, CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup,
     HyperCause, HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
-    HyperUnsupported, ModelAlias, ObjectParameter, OperationContractClaim, StepRead, STUTTER_TEXT,
+    HyperUnsupported, MatchPart, ModelAlias, ObjectParameter, OperationContractClaim, StepRead,
+    STUTTER_TEXT,
 };
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CompositeForm,
@@ -386,7 +387,7 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedOperator,
+    Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
     TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
@@ -575,6 +576,9 @@ pub struct CheckedGraph {
     protocols: Vec<CheckedProtocol>,
     /// FR-337: every emitted temporal clause, in declaration order.
     temporal_clauses: Vec<TemporalClauseNode>,
+    /// FR-488: every emitted hyper clause over `behaviours`, in declaration
+    /// order, each carrying its `claim` occurrence.
+    hyper_nodes: Vec<hyper_clause::CheckedHyperClause>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-447: every checked hybrid model, in declaration order.
@@ -649,6 +653,9 @@ pub struct TemporalClauseNode {
     /// An `on each ... when (g)` activation's checked guard and its slot
     /// count.
     guard: Option<(CheckedBody, usize)>,
+    /// Each capture's checked initializer and its slot count, in source
+    /// order.
+    captures: Vec<(CheckedBody, usize)>,
 }
 
 impl TemporalClauseNode {
@@ -693,8 +700,37 @@ impl TemporalClauseNode {
             .map(|(body, slots)| (body.root(), *slots))
     }
 
+    /// The checked initializer of the clause's `index`th capture and its
+    /// evaluation slot count (FR-337 "Captures at S3"): the number of
+    /// binders in scope for it, `over`, the trigger binder of an `on each`
+    /// activation and the earlier captures. `None` past the last capture.
+    pub fn capture(&self, index: usize) -> Option<(CheckedNode<'_>, usize)> {
+        self.captures
+            .get(index)
+            .map(|(body, slots)| (body.root(), *slots))
+    }
+
+    /// The first capture, in source order, that a `holds` condition of the
+    /// clause reads (FR-337 "Capture observation"): its index among the
+    /// captures. A condition binds the `over` parameter, the trigger binder
+    /// of an `on each` activation and then the captures, so a read of the
+    /// local at slot `first + j` is a read of capture `j`; the locals a
+    /// condition binds itself follow them.
+    pub fn captured_read(&self) -> Option<usize> {
+        let first = 1 + usize::from(self.clause.trigger().is_some());
+        let count = self.clause.captures().len();
+        self.conditions
+            .values()
+            .flat_map(|(body, _)| body.root().descendants())
+            .filter_map(|node| match node.kind() {
+                NodeKind::Local(slot) => slot.checked_sub(first).filter(|capture| *capture < count),
+                _ => None,
+            })
+            .min()
+    }
+
     /// The declaration identities of the populations the clause's `holds`
-    /// atoms and guard name (FR-391), ascending and each once: each is required
+    /// atoms, guard and captures name (FR-391), ascending and each once: each is required
     /// (FR-106 check 7) in every snapshot of the trace the clause is read
     /// over.
     pub fn named_populations(&self) -> Vec<String> {
@@ -702,6 +738,7 @@ impl TemporalClauseNode {
             .conditions
             .values()
             .chain(self.guard.as_ref())
+            .chain(&self.captures)
             .flat_map(|(body, _)| body.root().descendants())
             .filter_map(|node| match node.kind() {
                 NodeKind::NamedPopulation { population, .. } => Some(population.node.clone()),
@@ -2797,9 +2834,9 @@ impl PackageDeclarations {
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
         // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a capture) is refused rather
-        // than compiled and silently missing from the package
-        // (`temporal_clause::not_emitted`).
+        // clause S4 does not emit (a protocol fairness target, the timed
+        // profile) is refused rather than compiled and silently missing from
+        // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
             self.nominal_spans.keys().copied(),
@@ -2833,7 +2870,7 @@ impl PackageDeclarations {
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
-                Ok(staged) => !temporal_clause::is_emitted(&clause.form, staged.value()),
+                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
@@ -2873,7 +2910,7 @@ impl PackageDeclarations {
                 }
             }
             match outcome {
-                Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
+                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }
                 Ok(staged) => {
@@ -3087,6 +3124,7 @@ impl PackageDeclarations {
             nodes_used: std::cell::Cell::new(nodes_used),
             behaviours_checked: std::cell::Cell::new(0),
         };
+        let mut checked_hyper: Vec<hyper_clause::CheckedHyperClause> = Vec::new();
         for clause in &self.hyper_clauses {
             let mut contract_cx = crate::family::CheckContext::new(
                 &hyper_declarations,
@@ -3096,10 +3134,20 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) => {
-                    let (name, span) = staged.into_value().name_and_span();
-                    refusals.push(hyper_clause::not_emitted(name, span));
-                }
+                Ok(staged) => match staged.into_value() {
+                    // FR-488: a clause over `behaviours` is emitted unless
+                    // it is one of the constructs S4 refuses.
+                    hyper_clause::CheckedHyper::Behaviours(checked) => {
+                        match hyper_clause::emission::unemitted(&checked, &models) {
+                            Some(refusal) => refusals.push(refusal),
+                            None => checked_hyper.push(*checked),
+                        }
+                    }
+                    relation => {
+                        let (name, span) = relation.name_and_span();
+                        refusals.push(hyper_clause::not_emitted(name, span));
+                    }
+                },
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -3181,6 +3229,11 @@ impl PackageDeclarations {
         for (_, _, conditions) in &mut checked_temporal {
             for condition in conditions.all_mut() {
                 units.append(std::mem::take(&mut condition.formed_units));
+            }
+        }
+        for clause in &mut checked_hyper {
+            for table in clause.take_formed_units() {
+                units.append(table);
             }
         }
         let mut lowering = lowering::Lowering::new(
@@ -3324,6 +3377,47 @@ impl PackageDeclarations {
         // clause or protocol attempt in source order. The declaration span
         // start orders candidates; the reference location itself resolves to
         // the qualified operation name in that declaration.
+        // FR-488: each `align skip` operation of a hyper clause, resolved to
+        // its declaring type and operation, anchored like a clause's.
+        let hyper_skipped: Vec<(
+            usize,
+            usize,
+            quire_exact::EffectiveId,
+            crate::model::operation::OperationDeclaration,
+            Location,
+        )> = checked_hyper
+            .iter()
+            .enumerate()
+            .flat_map(|(clause_index, clause)| {
+                clause
+                    .align_skip()
+                    .iter()
+                    .enumerate()
+                    .filter_map({
+                        let models = &models;
+                        let scope = &scope;
+                        move |(skip_index, key)| {
+                            let declaring = models
+                                .iter()
+                                .find_map(|model| model.effective_id(&key.declaring))?;
+                            let operation = scope
+                                .operation_declaration(declaring, key.operation.as_str())?
+                                .clone();
+                            Some((
+                                clause_index,
+                                clause.span().start,
+                                declaring,
+                                operation,
+                                hyper_clause::lowering::hyper_location(
+                                    clause_index,
+                                    hyper_clause::lowering::Site::AlignSkip(skip_index),
+                                ),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let mut source_ordered_anchors: Vec<(usize, lowering::AnchorInput<'_>)> =
             state_clause_forms
                 .iter()
@@ -3364,6 +3458,17 @@ impl PackageDeclarations {
                     },
                 ));
             }
+        }
+        for (_, source_order, declaring, operation, location) in &hyper_skipped {
+            source_ordered_anchors.push((
+                *source_order,
+                lowering::AnchorInput {
+                    declaring: *declaring,
+                    operation,
+                    location,
+                    reference: location,
+                },
+            ));
         }
         source_ordered_anchors.sort_by_key(|(source_order, _)| *source_order);
         let mut anchors: Vec<lowering::AnchorInput<'_>> = source_ordered_anchors
@@ -3438,6 +3543,35 @@ impl PackageDeclarations {
             match lowering.time_source_anchor(&anchor) {
                 Ok(key) => self.time_sources[*index].tick_operation_anchor = Some(key),
                 Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-488: the `operation_anchor` of each `align skip` operation.
+        let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
+        for (clause_index, _, declaring, operation, location) in &hyper_skipped {
+            let anchor = lowering::AnchorInput {
+                declaring: *declaring,
+                operation,
+                location,
+                reference: location,
+            };
+            match lowering.align_skip_anchor(&anchor) {
+                Ok(key) => hyper_align[*clause_index].push(key),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // S3 resolves every listed operation, so a clause whose anchors fall
+        // short of its list is a broken invariant, never a silent drop.
+        for (clause, align) in checked_hyper.iter().zip(&hyper_align) {
+            if align.len() != clause.align_skip().len() && refusals.is_empty() {
+                refusals.push(CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                        quire_semantic_value::catalog::InternalFault::new(
+                            "S3",
+                            "align-skip-operation-resolves",
+                        ),
+                    ))),
+                });
             }
         }
         // FR-104: each state clause after every function it may call,
@@ -3614,6 +3748,23 @@ impl PackageDeclarations {
                 conditions,
             }) {
                 Ok(lowered) => lowered_temporal.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-488: each emitted hyper clause over `behaviours`, after every
+        // function its conditions may call.
+        let mut lowered_hyper = Vec::with_capacity(checked_hyper.len());
+        for (index, clause) in checked_hyper.iter().enumerate() {
+            let align = hyper_align.get(index).map_or(&[][..], Vec::as_slice);
+            if align.len() != clause.align_skip().len() {
+                continue;
+            }
+            match lowering.hyper_clause(&lowering::HyperClauseInput {
+                index,
+                clause,
+                align_skip: align,
+            }) {
+                Ok(lowered) => lowered_hyper.push(lowered),
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -3907,6 +4058,60 @@ impl PackageDeclarations {
         if lowered_temporal.len() != checked_temporal.len() {
             return Err(unlowered());
         }
+        if lowered_hyper.len() != checked_hyper.len() {
+            return Err(unlowered());
+        }
+        // FR-488 "Outputs": each hyper clause carries its `claim`
+        // occurrence, the `clause` of FR-315's `HyperProductIdentity`.
+        // The sites no declared form spans (slots, conjunct slots, skipped
+        // operations) are located at their conjunct or clause.
+        for (index, clause) in checked_hyper.iter().enumerate() {
+            use hyper_clause::lowering::{hyper_site, Site};
+            for slot in 0..clause.atom_slots().len() {
+                type_spans.insert(hyper_site(index, Site::Slot(slot)), clause.span());
+            }
+            for skipped in 0..clause.align_skip().len() {
+                type_spans.insert(hyper_site(index, Site::AlignSkip(skipped)), clause.span());
+            }
+            for (part, at) in clause.conjuncts() {
+                let (conjunct, make): (_, fn(usize, usize) -> Site) = match part {
+                    hyper_clause::MatchPart::Universal => {
+                        (clause.mu_universal().get(at), Site::UniversalSlot)
+                    }
+                    hyper_clause::MatchPart::Existential => {
+                        (clause.mu_existential().get(at), Site::ExistentialSlot)
+                    }
+                };
+                let Some(conjunct) = conjunct else { continue };
+                for slot in 0..conjunct.slots().len() {
+                    type_spans.insert(hyper_site(index, make(at, slot)), conjunct.span());
+                }
+            }
+        }
+        let hyper_nodes = checked_hyper
+            .into_iter()
+            .zip(&lowered_hyper)
+            .enumerate()
+            .map(|(index, (checked, lowered))| {
+                let location = hyper_clause::lowering::hyper_location(
+                    index,
+                    hyper_clause::lowering::Site::Claim,
+                );
+                let claim = occurrences
+                    .iter_role(family::OccurrenceRole::Claim)
+                    .find(|(node, _, at)| *node == lowered.key && **at == location)
+                    .map(|(_, origin, _)| origin)
+                    .ok_or_else(|| {
+                        vec![CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(
+                                KeyFault::UnkeyableRequirements,
+                            )),
+                        }]
+                    })?;
+                Ok(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)))
+            })
+            .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
         let named_scope = NamedScope::of(&models, &scope);
         let temporal_clauses = checked_temporal
             .into_iter()
@@ -3954,7 +4159,12 @@ impl PackageDeclarations {
                         .and_then(|populations| {
                             claimed.requirements(
                                 claims::wire(lowered.key),
-                                &[claims::wire(lowered.over)],
+                                &lowered
+                                    .parameters
+                                    .iter()
+                                    .copied()
+                                    .map(claims::wire)
+                                    .collect::<Vec<_>>(),
                                 &populations,
                                 named_keys.as_ref().map_err(Clone::clone)?,
                             )
@@ -3990,6 +4200,11 @@ impl PackageDeclarations {
                     guard: conditions
                         .guard
                         .map(|condition| (condition.body, condition.slots)),
+                    captures: conditions
+                        .captures
+                        .into_iter()
+                        .map(|condition| (condition.body, condition.slots))
+                        .collect(),
                     conditions: conditions
                         .holds
                         .into_iter()
@@ -4255,6 +4470,7 @@ impl PackageDeclarations {
             model_names,
             protocols: checked_protocols,
             temporal_clauses,
+            hyper_nodes,
             state_graph_claims: checked_state_graph_claims,
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
@@ -4834,6 +5050,12 @@ impl CheckedGraph {
     /// FR-113: every checked protocol declaration, in declaration order.
     pub fn protocols(&self) -> &[CheckedProtocol] {
         &self.protocols
+    }
+
+    /// FR-488: every emitted hyper clause over `behaviours`, in declaration
+    /// order, each with its `claim` occurrence.
+    pub fn hyper_clauses(&self) -> &[hyper_clause::CheckedHyperClause] {
+        &self.hyper_nodes
     }
 
     /// FR-337: every emitted temporal clause, in declaration order.

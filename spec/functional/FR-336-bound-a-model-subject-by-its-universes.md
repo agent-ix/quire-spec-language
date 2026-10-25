@@ -75,7 +75,11 @@ pub enum SubjectIdentityRefusal {
 
 - The requirement record of a temporal clause over a population with no
   declared maximum SHALL be `Unbounded` with that population's domain
-  (FR-097), independent of the universes any request supplies.
+  (FR-097), independent of the universes any request supplies. A population
+  contributes when its member type is equal to, a subtype of, or a supertype
+  of the clause's `over` type; a population whose member type is unrelated by
+  subtyping contributes no domain. Each contributing population appears once
+  in ascending declaration-key order.
 - When a run starts, EN-1 SHALL classify every root of the subject (FR-120
   `domains()` under the subject's universes) before any expansion: a
   population root with a universe is finite with the universe's length, one
@@ -136,6 +140,7 @@ pub enum SubjectIdentityRefusal {
 | FR-336-AC-4 | `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a, b, c}` gives two obligation identities that differ only in the subject's universe, and each `proved` result joins only its own request index. | Test (TC-846) |
 | FR-336-AC-5 | A subject that differs from another only in a proof bound, only in an initial state, or only in its checked package (a changed `post` contract, with the same clause, domain package and initial document), has a different identity, and the two get two request indices; a provision carrying a package the model does not select leaves the identity unchanged; a clause the subject's package has no requirement record for is refused and no item is written. | Test (TC-846) |
 | FR-336-AC-6 | `qsl_replay::SubjectIdentity::of` over FR-336-AC-4's subject gives the identity `qsl-analyze`'s request path writes into the item, and the same subject with its initial states, its universe's keys and its proof bounds each listed in reverse order gives an equal identity with an equal hash. A subject whose checked package has no emission is refused `SubjectIdentityRefusal::Package`. | Test (TC-1190) |
+| FR-336-AC-7 | For a temporal clause over `ConfigVersion`, an unbounded `config_history` whose member type is `ConfigVersion` and an unbounded `recent_history` whose member type is a proper subtype of `ConfigVersion` each appear exactly once in the record's `Unbounded` population domains, in declaration-key order, regardless of the subject universes; an unbounded population whose member type is unrelated by subtyping appears nowhere in that record. | Test (TC-846) |
 
 ## Dependencies
 

@@ -43,12 +43,10 @@
 //! `model-time`, its timed intervals are checked in exact rational time,
 //! and it is classified into one `TimedPropertyForm`.
 //!
-//! A `holds` condition is typed by [`condition::check_conditions`] once the
+//! The activation's `when` guard, each capture's initializer and each
+//! `holds` condition are typed by [`condition::check_conditions`] once the
 //! package's signatures are known, and the clause is emitted as FR-337's
-//! v2 temporal clause node. The activation's `when` and a capture's value
-//! are not checked: [`not_emitted`] refuses a clause that activates `on
-//! each` or declares a capture, so it is never compiled into a package
-//! that silently lacks them.
+//! v2 temporal clause node.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -77,7 +75,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
-use super::state_clause::{populations_covering, PopulationDomain};
+use super::state_clause::{populations_overlapping, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
@@ -289,6 +287,17 @@ impl CheckedFormula {
     }
 }
 
+/// Where a clause fixes its captures (FR-337 "Capture observation").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureSite {
+    /// The clause declares no capture.
+    Never,
+    /// An `on origin` clause: at position 0.
+    Origin,
+    /// An `on each` clause: at each position its guard admits.
+    Activations,
+}
+
 /// How a clause activates (FR-325 "Outputs").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Activation {
@@ -444,6 +453,9 @@ pub struct CheckedTemporalClause {
     /// An `on each` activation's trigger binder: its name and resolved type,
     /// which is the `over` parameter's type (FR-337).
     trigger: Option<(String, ValueType)>,
+    /// The clause's captures in source order: each name and resolved
+    /// declared type (FR-337 "Captures at S3").
+    captures: Vec<(String, ValueType)>,
     fairness: Vec<FairnessConstraint>,
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
@@ -557,6 +569,31 @@ impl CheckedTemporalClause {
         self.trigger
             .as_ref()
             .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// The clause's captures in source order, each by name and declared type
+    /// (FR-337 "Captures at S3").
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (&str, &ValueType)> {
+        self.captures
+            .iter()
+            .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// Where the clause fixes its captures (FR-337 "Capture observation").
+    pub fn capture_site(&self) -> CaptureSite {
+        if self.captures.is_empty() {
+            CaptureSite::Never
+        } else if matches!(self.activation, Activation::Origin) {
+            CaptureSite::Origin
+        } else {
+            CaptureSite::Activations
+        }
+    }
+
+    /// Whether the activation reads the state beyond the trigger: it has a
+    /// `when` guard or the clause declares a capture (FR-337).
+    pub fn reads_at_activation(&self) -> bool {
+        matches!(self.activation, Activation::Each { guarded: true }) || !self.captures.is_empty()
     }
 
     /// The clause's fairness set, each constraint once, in source order of
@@ -875,6 +912,15 @@ fn check_clause(
 
     let mut types: Vec<ValueType> = Vec::new();
     let mut trigger = None;
+    let mut captures = Vec::with_capacity(form.captures.len());
+    // The parameters before the first capture: `over`, and the trigger
+    // binder of an `on each` activation.
+    let binders = 1 + usize::from(matches!(form.activation, ActivationForm::Each { .. }));
+    // Every parameter's type is resolved in this pass, before any initializer
+    // is typed, because `types` is the extent every later stage binds. A
+    // capture whose declared type does not resolve is therefore reported
+    // before an earlier capture's ill-typed initializer; both are single
+    // refusals with their own code, and AC-8's vectors hold.
     for (position, parameter) in parameters(form).into_iter().enumerate() {
         let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
             .map_err(|error| {
@@ -904,6 +950,21 @@ fn check_clause(
                 }));
             }
             trigger = Some((parameter.name.name.clone(), resolved.clone()));
+        } else if position >= binders {
+            // FR-337 "Captures at S3": a capture's name is new among the
+            // `over` parameter, the trigger binder and the earlier captures.
+            let first = parameters(form)
+                .into_iter()
+                .take(position)
+                .find(|earlier| earlier.name.name == parameter.name.name);
+            if let Some(first) = first {
+                return Err(refuse(TemporalCause::DuplicateCapture {
+                    name: parameter.name.name.clone(),
+                    first: first.name.span,
+                    span: parameter.name.span,
+                }));
+            }
+            captures.push((parameter.name.name.clone(), resolved.clone()));
         }
         types.push(resolved);
     }
@@ -969,7 +1030,7 @@ fn check_clause(
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
     let populations: Vec<PopulationDomain> = match types.first() {
         Some(ValueType::Reference(object)) => {
-            populations_covering(declarations.models, *object, declarations.scope.types())
+            populations_overlapping(declarations.models, *object, declarations.scope.types())
                 .into_iter()
                 .filter(|domain| domain.maximum.is_none())
                 .collect()
@@ -1016,6 +1077,7 @@ fn check_clause(
         formula,
         activation,
         trigger,
+        captures,
         fairness,
         fairness_sources,
         protocol_fairness,
@@ -1544,15 +1606,12 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
-/// that declares no capture, names no protocol target and is not under the
-/// timed profile. S4 writes no capture, no emitted member names a protocol
-/// target, and S4 writes no timed interval (QSpec FR-370's timed form), so a
-/// clause with any of them is [`not_emitted`].
-pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
-    form.captures.is_empty()
-        && checked.protocol_fairness.is_empty()
-        && checked.time_binding.is_none()
+/// Whether S4 emits `checked` (FR-337, FR-212): one that names no protocol
+/// target and is not under the timed profile. No emitted member names a
+/// protocol target, and S4 writes no timed interval (QSpec FR-370's timed
+/// form), so a clause with either is [`not_emitted`].
+pub(crate) fn is_emitted(checked: &CheckedTemporalClause) -> bool {
+    checked.protocol_fairness.is_empty() && checked.time_binding.is_none()
 }
 
 /// Whether `refusal` of the clause `form` is located after its `on each`
