@@ -524,14 +524,8 @@ impl<'a> Run<'_, 'a> {
             prefix: widen(entry),
             loop_len: widen(length - entry),
         };
-        let outcome = evaluate_tuple(
-            self.request.clause,
-            &[component],
-            &mut letters,
-            &mut meter,
-            Some(self.cancel),
-        )
-        .map_err(|_| fault("the-evaluator-reads-the-candidate"))?;
+        let outcome = evaluate_tuple(self.request.clause, &[component], &mut letters, &mut meter)
+            .map_err(|_| fault("the-evaluator-reads-the-candidate"))?;
         match outcome {
             TemporalOutcome::Holds => {}
             TemporalOutcome::Violated { .. } | TemporalOutcome::Undefined(_) => {
