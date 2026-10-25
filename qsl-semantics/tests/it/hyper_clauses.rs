@@ -830,7 +830,8 @@ fn a_bound_step_relation_has_a_code_claim_beside_its_model_claim() {
 
 /// FR-361-AC-4: a `hyper` clause and a `relation` are gated by neither layer.
 /// Under the value profile and under the model profile alike, the unit
-/// assembles and its check refuses only that the clause is not emitted, with
+/// assembles; a hyper clause is emitted and a relation is refused only as not
+/// emitted, with
 /// no layer refusal and no model-construct family.
 #[trace("TC-1015", "FR-361-AC-4")]
 #[test]
@@ -838,9 +839,13 @@ fn hyper_clauses_are_ungated_by_the_model_profile() {
     for layer in ["quire.value.complete/v1", "quire.model.complete/v1"] {
         for declaration in [non_interference(), DET.to_owned()] {
             let (_, package) = assemble_under(layer, &["V"], INFINITE, &declaration);
-            let refusals = package
-                .check(CheckingLimits::default())
-                .expect_err("a checked clause is refused as not emitted");
+            let checked = package.check(CheckingLimits::default());
+            if declaration == non_interference() {
+                // A hyper clause over `behaviours` is emitted (FR-488).
+                checked.unwrap_or_else(|refusals| panic!("{layer}: {refusals:?}"));
+                continue;
+            }
+            let refusals = checked.expect_err("a relation is refused as not emitted");
             let [CheckRefusal {
                 cause: CheckCause::Temporal(cause),
                 ..
@@ -1065,13 +1070,16 @@ fn a_name_used_twice_refuses_at_the_second() {
 }
 
 /// What the unit's check says of the clauses of `declarations` over the
-/// vault: `Ok` when each is refused only as not emitted (every body typed),
+/// vault: `Ok` when each is emitted or refused only as not emitted (every body
+/// typed),
 /// otherwise the hyper causes found.
 fn body_outcome(declarations: &str) -> Result<(), Vec<HyperCause>> {
     let (_, package) = assemble(&["V"], INFINITE, declarations);
-    let refusals = package
-        .check(CheckingLimits::default())
-        .expect_err("a checked clause is refused as not emitted");
+    // A checked hyper clause is emitted (FR-488); a relation is refused as
+    // not emitted.
+    let Err(refusals) = package.check(CheckingLimits::default()) else {
+        return Ok(());
+    };
     let mut faults = Vec::new();
     for refusal in refusals {
         match refusal.cause {

@@ -114,13 +114,7 @@ pub enum HyperSlot {
 }
 
 /// Which part of a `match` block a conjunct belongs to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MatchPart {
-    /// `mu_U`: the conjuncts that read universal variables only.
-    Universal,
-    /// `mu_E`: the conjuncts that read an existential variable.
-    Existential,
-}
+pub use qsl_semantics::check::MatchPart;
 
 /// Reads a hyper clause's `match` block over a joint step: its universal part
 /// `μ_U` (ADR-023 HC-1) and, for an HP-3 clause, its existential part `μ_E`

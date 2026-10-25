@@ -171,6 +171,20 @@ impl AdmittedModel {
         self.types.get(&identity)
     }
 
+    /// Whether the object type `identity` is a systems interface, whose
+    /// model node is a `model`/`systems_interface` node (FR-094).
+    pub(crate) fn is_systems_interface(&self, identity: EffectiveId) -> bool {
+        self.types
+            .get(&identity)
+            .and_then(|key| self.records.get(key))
+            .is_some_and(|record| {
+                matches!(
+                    record_form(record),
+                    Some((NodeTag::Model, "systems_interface"))
+                )
+            })
+    }
+
     pub(crate) fn field_reference(
         &self,
         key: &DeclarationKey,
