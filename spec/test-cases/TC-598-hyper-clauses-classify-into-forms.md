@@ -10,9 +10,9 @@ relationships:
 
 ## Description
 
-Verify form classification, the requirement records, V-8 for HP-4 and non-infinite-trace profiles, the HP-5 `match` refusal, and the request writer's subjects and deadlock-freedom items.
+Verify form classification, the requirement records, V-8 for HP-4 and non-infinite-trace profiles, the HP-5 `match` refusal, the HP-4 negotiation and route disposition, and the request writer's subjects and deadlock-freedom items.
 
-Scope: FR-173-AC-1 to FR-173-AC-4.
+Scope: FR-173-AC-1 to FR-173-AC-5.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Fixtures: the clauses FR-173-AC-1 to AC-4 name.
 2. Classify and negotiate each FR-173-AC-2 clause.
 3. Check the single-`exists` clause with a `match` block; negotiate `NonInterference` under the event-position profile.
 4. Write requests for `SavesPower`, and for `NonInterference` with `Opaque`.
+5. Negotiate one HP-4 `Other` item beside one supported `Universal` item, then route both dispositions.
 
 Tag the tests `#[trace("TC-598", "FR-173-AC-n")]`.
 
@@ -31,3 +32,6 @@ Tag the tests `#[trace("TC-598", "FR-173-AC-n")]`.
 - Step 2: `Other` naming its rule; V-8 `unsupported-requested-capability` with no engine run.
 - Step 3: refusal at the block; no form and V-8.
 - Step 4: two subjects and two deadlock-freedom items; one deadlock-freedom item.
+- Step 5: the HP-4 item settles V-8 `unsupported` before engine execution and
+  has no route target; the `Universal` sibling remains supported and routes
+  to its selected candidate at its own request index.
