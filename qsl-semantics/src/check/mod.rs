@@ -719,9 +719,7 @@ impl TemporalClauseNode {
             .values()
             .flat_map(|(body, _)| body.root().descendants())
             .filter_map(|node| match node.kind() {
-                NodeKind::Local(slot) => slot
-                    .checked_sub(first)
-                    .filter(|capture| *capture < count),
+                NodeKind::Local(slot) => slot.checked_sub(first).filter(|capture| *capture < count),
                 _ => None,
             })
             .min()

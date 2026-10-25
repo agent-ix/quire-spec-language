@@ -1187,9 +1187,18 @@ fn s3_checks_and_keeps_each_capture() {
     ] {
         let text = unit(
             INFINITE,
-            &declared_on("Each", &activation, &captured(
-                "always (holds(c.versionNumber >= n) and holds(m = n))",
-            ).replace("q.versionNumber", if activation == "on origin" { "c.versionNumber" } else { "q.versionNumber" })),
+            &declared_on(
+                "Each",
+                &activation,
+                &captured("always (holds(c.versionNumber >= n) and holds(m = n))").replace(
+                    "q.versionNumber",
+                    if activation == "on origin" {
+                        "c.versionNumber"
+                    } else {
+                        "q.versionNumber"
+                    },
+                ),
+            ),
         );
         let compiled = compile(&text);
         let [node] = compiled.clauses.as_slice() else {
@@ -1379,7 +1388,10 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
     let wire = &compiled.wire;
     let aggregate = captures_of(wire);
     let members = aggregate["members"].as_array().expect("an aggregate");
-    let names: Vec<_> = members.iter().map(|member| member["name"].clone()).collect();
+    let names: Vec<_> = members
+        .iter()
+        .map(|member| member["name"].clone())
+        .collect();
     assert_eq!(names, ["n", "m"]);
     let over = parameter_named(wire, "c");
     let trigger = parameter_named(wire, "q");
@@ -1394,7 +1406,10 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
     assert!(!reaches(wire, &members[0]["value"], &digest(trigger)));
     assert!(reaches(wire, &members[1]["value"], &digest(trigger)));
     let formula = formula_root(wire, clause_node(wire));
-    assert!(reaches(wire, &formula["body"], &digest(n)), "a holds reads n");
+    assert!(
+        reaches(wire, &formula["body"], &digest(n)),
+        "a holds reads n"
+    );
     assert!(reaches(wire, &formula["body"], &digest(m)));
 
     // The capture node and its type node are located at the capture's name.
@@ -1434,7 +1449,10 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
         "2"
     );
     let (none, _) = key_of(&activation, BODY);
-    assert_eq!(captures_of(&none.wire)["members"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        captures_of(&none.wire)["members"].as_array().map(Vec::len),
+        Some(0)
+    );
 
     // The I2 reader admits each package and returns the clause's triple and
     // `over` node, never a capture node.
@@ -1460,8 +1478,15 @@ fn a_capture_changes_the_clause_key() {
     let activation = each("q", " when (c.versionNumber >= 1)");
     let base = captured_key(&activation, CAPTURES);
     let variants = [
-        CAPTURES.replace("capture n:", "capture p:").replace("<= n", "<= p").replace(">= n", ">= p").replace("= n)", "= p)"),
-        CAPTURES.replace("n: Int[0, 1000] = c.versionNumber", "n: Int[0, 1000] = q.versionNumber"),
+        CAPTURES
+            .replace("capture n:", "capture p:")
+            .replace("<= n", "<= p")
+            .replace(">= n", ">= p")
+            .replace("= n)", "= p)"),
+        CAPTURES.replace(
+            "n: Int[0, 1000] = c.versionNumber",
+            "n: Int[0, 1000] = q.versionNumber",
+        ),
         CAPTURES
             .replace("n: Int[0, 1000]", "n: Int[0, 2000]")
             .replace("holds(m = n)", "holds(n <= 2000)"),
@@ -1476,7 +1501,8 @@ fn a_capture_changes_the_clause_key() {
         let found = captured_key(&activation, body);
         assert!(!seen.contains(&found), "{body}: a new key");
         assert!(
-            seen.iter().all(|other| other.0 != found.0 && other.1 != found.1),
+            seen.iter()
+                .all(|other| other.0 != found.0 && other.1 != found.1),
             "{body}"
         );
         seen.push(found);

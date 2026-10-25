@@ -1415,7 +1415,7 @@ impl TemporalCause {
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
             Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
                 Code::ConflictingDeclaration
-            },
+            }
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
     }
@@ -1440,7 +1440,9 @@ impl TemporalCause {
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
-            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => "duplicate-declaration",
+            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
+                "duplicate-declaration"
+            }
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }

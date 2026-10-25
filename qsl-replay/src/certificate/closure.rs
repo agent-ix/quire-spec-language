@@ -75,7 +75,7 @@ use qsl_eval::simulation::{
     Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
     ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
-use qsl_eval::temporal::AtomReading;
+use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
@@ -881,6 +881,19 @@ impl<S: SubjectSystem> Check<'_, S> {
         // A position past the horizon is never read (ADR-018 UE-1), and a
         // step that counts out of the window closes it before its letter.
         let holds = if distance <= horizon {
+            if !self.captured(
+                run.letters,
+                run.binding,
+                &self.system.atom_state(&state),
+                before.is_none(),
+            )? {
+                let key = run
+                    .translation
+                    .key(BoundedState::Reject)
+                    .map_err(|_| ClosureRefusal::Encoding)?;
+                let at = self.product_of(digest, key)?;
+                return Err(Self::reject(CertificateRule::BadState, at));
+            }
             let reading = match run.readings.get(&digest) {
                 Some(reading) => *reading,
                 None => {
@@ -998,6 +1011,15 @@ impl<S: SubjectSystem> Check<'_, S> {
                     .binding
                     .as_ref()
                     .ok_or_else(|| fault("clause-instance-binding"))?;
+                if !self.captured(
+                    *letters,
+                    bound,
+                    &self.system.atom_state(&state),
+                    before.is_none(),
+                )? {
+                    let at = self.product(translation, digest, SafetyState::Rejected)?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                }
                 match self.atom(*letters, atom, bound, &self.system.atom_state(&state))? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
@@ -1138,6 +1160,44 @@ impl<S: SubjectSystem> Check<'_, S> {
             Ok(AtomReading::True) => Ok(Some(true)),
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),
+            Err(AtomStop::Incomplete(incomplete)) => Err(stopped(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
+                crate::meter_bound(&self.meter, incomplete.limit_kind),
+            )),
+            Err(AtomStop::Fault(internal)) => Err(ClosureRefusal::Fault(internal).into()),
+            Err(AtomStop::Refused(outcome)) => Err(fault(refused_invariant(&outcome)).into()),
+            Err(AtomStop::Unobservable(stop)) => Err(self.expansion_stop(stop)),
+        }
+    }
+
+    /// FR-337 "Capture observation": whether the clause's captures have a
+    /// value at `state`, where the clause fixes them: position 0 of an `on
+    /// origin` clause (`initial`), each position of an `on each` clause. A
+    /// capture with no value is a bad state, as an undefined atom is.
+    fn captured(
+        &self,
+        letters: &dyn ModelLetters,
+        instance: &qsl_eval::model_subject::ModelInstance,
+        state: &ModelSimState,
+        initial: bool,
+    ) -> Step<bool> {
+        let ModelCheckItem::Clause { clause, .. } = self.item else {
+            return Ok(true);
+        };
+        let fixes = match clause.activation() {
+            qsl_semantics::check::Activation::Origin => initial,
+            qsl_semantics::check::Activation::Each { .. } => true,
+        };
+        if !fixes || clause.captures().len() == 0 {
+            return Ok(true);
+        }
+        self.poll()?;
+        let mut meter = Meter::new(self.meter);
+        match letters.captures(instance, state, &mut meter) {
+            Ok(CaptureReading::Fixed) => Ok(true),
+            Ok(CaptureReading::Undefined { .. }) => Ok(false),
             Err(AtomStop::Incomplete(incomplete)) => Err(stopped(
                 ModelCheckLimit::EvaluationMeter {
                     counter: incomplete.limit_kind,

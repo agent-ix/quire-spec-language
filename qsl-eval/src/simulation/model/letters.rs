@@ -384,7 +384,9 @@ impl ModelLetters for ClauseLetters<'_, '_> {
                         Err(AtomStop::Refused(outcome))
                     }
                 }
-                Verdict::True | Verdict::False => Err(fault("a-capture-completes-no-boolean-verdict")),
+                Verdict::True | Verdict::False => {
+                    Err(fault("a-capture-completes-no-boolean-verdict"))
+                }
             };
         }
         Ok(CaptureReading::Fixed)

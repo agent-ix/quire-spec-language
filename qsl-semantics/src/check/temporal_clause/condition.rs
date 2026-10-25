@@ -134,9 +134,7 @@ pub(crate) fn check_conditions(
     // Then the captures in source order, each over the binders before it.
     let mut visible = vec![checked.over().clone()];
     visible.extend(trigger.clone());
-    for (index, ((name, declared), written)) in
-        checked.captures().zip(&form.captures).enumerate()
-    {
+    for (index, ((name, declared), written)) in checked.captures().zip(&form.captures).enumerate() {
         let location = temporal_location(clause, TemporalSite::CaptureValue(index));
         let typed = type_condition(
             Goal::Declared(declared),

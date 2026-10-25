@@ -19,8 +19,8 @@ use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
-    TemporalTrace, UndefinedCause,
+    AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    TemporalRefusal, TemporalTrace, UndefinedCause,
 };
 use crate::value::{evaluate_capture, CheckedPackageEvaluation};
 use quire_eval::{CallFailure, Evaluation};

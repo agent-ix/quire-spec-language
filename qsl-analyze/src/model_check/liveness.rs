@@ -117,9 +117,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::check::{
-    CapturedAt,
-    atom_refusal, not_simulated, precheck, refuse_capture_read, Admitted, ModelCheckRefusal, ModelCheckRequest,
-    BOUND_POSITIONS,
+    atom_refusal, not_simulated, precheck, refuse_capture_read, Admitted, CapturedAt,
+    ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop, PermuterOf};
 use super::fair_walk::{fairness_constraints, tree_path, FairModel};

@@ -221,10 +221,9 @@ fn a_requirement_binds_a_clause_with_an_activation_and_a_capture() {
         .err()
         .unwrap_or_default();
     assert!(
-        refusals.iter().all(|refusal| !matches!(
-            refusal.cause,
-            CheckCause::Temporal(_)
-        )),
+        refusals
+            .iter()
+            .all(|refusal| !matches!(refusal.cause, CheckCause::Temporal(_))),
         "{refusals:?}"
     );
 }
