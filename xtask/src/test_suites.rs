@@ -3293,19 +3293,22 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// Rewrite a fixture file. Cargo rebuilds only when a source's mtime is
         /// strictly newer than the last build's, and a coarse filesystem clock
         /// can stamp a quick edit with the same tick as that build. An existing
-        /// file therefore gets an mtime a full second past its previous one, so
-        /// the edit is always seen.
+        /// file therefore gets an mtime past both its previous mtime and the
+        /// current clock. The baseline build may have finished long after the
+        /// previous write, so bumping only the previous mtime is insufficient.
         fn write(root: &Path, path: &str, text: &str) {
             let path = root.join(path);
             fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
             let previous = fs::metadata(&path).and_then(|meta| meta.modified()).ok();
             fs::write(&path, text).expect("write");
             if let Some(previous) = previous {
+                let modified = std::cmp::max(previous, std::time::SystemTime::now())
+                    + std::time::Duration::from_secs(2);
                 fs::File::options()
                     .write(true)
                     .open(&path)
                     .expect("reopen")
-                    .set_modified(previous + std::time::Duration::from_secs(1))
+                    .set_modified(modified)
                     .expect("bump mtime");
             }
         }
