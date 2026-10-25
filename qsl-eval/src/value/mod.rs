@@ -16,13 +16,13 @@ mod expression;
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::{
-    admit_arguments, evaluate_closed, evaluate_history_update, evaluate_protocol_slot,
-    evaluate_refinement_row, evaluate_reward, evaluate_state_predicate,
-    evaluate_state_predicate_at_absent_key, evaluate_terminal_predicate, input_refusal_code,
-    refusal_record, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
-    ClauseEvaluation, ClauseRead, ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome,
-    FrameEvaluation, InvalidQualifiedName, InvocationBinding, ObservationIdentity, PackageClosure,
-    PackageTask, QualifiedName, RuntimeValuePath, Separation, SeparationStep, StopReport,
-    ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult, ValuePathStep,
-    ValuePathSubject, WitnessClaim,
+    admit_arguments, evaluate_activation_guard, evaluate_activation_guard_at_absent_key,
+    evaluate_closed, evaluate_history_update, evaluate_protocol_slot, evaluate_refinement_row,
+    evaluate_reward, evaluate_state_predicate, evaluate_state_predicate_at_absent_key,
+    evaluate_terminal_predicate, input_refusal_code, refusal_record, supplied_stop_cause,
+    supplied_stop_code, CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry,
+    ClauseSetEvaluation, ClauseSetOutcome, FrameEvaluation, InvalidQualifiedName,
+    InvocationBinding, ObservationIdentity, PackageClosure, PackageTask, QualifiedName,
+    RuntimeValuePath, Separation, SeparationStep, StopReport, ValueInvariantEvaluation,
+    ValueInvariantOutcome, ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
 };

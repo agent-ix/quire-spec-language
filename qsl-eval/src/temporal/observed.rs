@@ -6,8 +6,10 @@
 //! Each position of the trace is the object environment its snapshot
 //! admitted. A `holds` atom reads its condition through
 //! [`CheckedPackageEvaluation::evaluate_holds`] with the clause's `over`
-//! object bound; a lasso position past the represented ones reads the
-//! environment its wrapped index names.
+//! object bound, and an `on each` guard through
+//! [`CheckedPackageEvaluation::evaluate_guard`] with both binders bound to
+//! it; a lasso position past the represented ones reads the environment its
+//! wrapped index names.
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
@@ -128,6 +130,21 @@ fn evaluate_observed_goal(
     }
 }
 
+/// The fault codes of a `holds` condition: a failed call, a refusal and a
+/// non-Boolean completion.
+const HOLDS_CODES: [&str; 3] = [
+    "holds-condition-call-failed",
+    "holds-condition-refused",
+    "holds-condition-boolean",
+];
+
+/// The fault codes of an `on each` guard, as [`HOLDS_CODES`].
+const ACTIVATION_CODES: [&str; 3] = [
+    "activation-condition-call-failed",
+    "activation-condition-refused",
+    "activation-condition-boolean",
+];
+
 struct ObservedLetters<'a> {
     package: &'a CheckedPackage,
     clause: &'a TemporalClauseNode,
@@ -166,6 +183,57 @@ impl ObservedLetters<'_> {
                 ))
             })
     }
+
+    /// The reading of a condition's S6a `evaluation`; the fault codes name
+    /// the condition (`HOLDS_CODES`, `ACTIVATION_CODES`). A refusal or a
+    /// failed call is kept whole in `stopped` and ends the run.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    fn reading(
+        &mut self,
+        evaluation: Result<Evaluation, CallFailure>,
+        [failed, refused_code, boolean]: [&'static str; 3],
+    ) -> Result<AtomReading, LetterStop> {
+        let stop =
+            |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
+        let evaluation = match evaluation {
+            Ok(evaluation) => evaluation,
+            Err(failure) => {
+                self.stopped = Some(HoldsStop::Failed(failure));
+                return Err(stop(failed));
+            }
+        };
+        let refused = matches!(
+            evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+                | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+        );
+        if refused {
+            self.stopped = Some(HoldsStop::Refused(evaluation));
+            return Err(stop(refused_code));
+        }
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))) => {
+                Ok(AtomReading::True)
+            }
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false))) => {
+                Ok(AtomReading::False)
+            }
+            FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(stop(boolean)),
+            FamilyOutcome::Evaluated(Outcome::Undefined(undefined)) => {
+                Ok(AtomReading::Undefined(UndefinedCause::Kernel(undefined)))
+            }
+            FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+                Err(LetterStop::Incomplete(incomplete))
+            }
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => Err(stop(refused_code)),
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
+                AtomReading::Undefined(UndefinedCause::Family(cause.undefined_record())),
+            ),
+            #[cfg(seam_probe_eval_downstream)]
+            FamilyOutcome::__SeamProbe => unreachable!("never constructed outside the probe build"),
+        }
+    }
 }
 
 impl TemporalLetters for ObservedLetters<'_> {
@@ -177,77 +245,34 @@ impl TemporalLetters for ObservedLetters<'_> {
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         let objects = self.environment(position)?;
-        let stop =
-            |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
-        let evaluation = match self.package.evaluate_holds(
+        let evaluation = self.package.evaluate_holds(
             self.clause,
             atom,
             Value::Reference(self.over.clone()),
             objects,
             meter,
-        ) {
-            Ok(evaluation) => evaluation,
-            Err(failure) => {
-                self.stopped = Some(HoldsStop::Failed(failure));
-                return Err(stop("holds-condition-call-failed"));
-            }
-        };
-        let fault = stop;
-        let refused = matches!(
-            evaluation.outcome,
-            FamilyOutcome::Evaluated(Outcome::Refused(_))
-                | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
         );
-        if refused {
-            self.stopped = Some(HoldsStop::Refused(evaluation));
-            return Err(fault("holds-condition-refused"));
+        let reading = self.reading(evaluation, HOLDS_CODES)?;
+        if let AtomReading::Undefined(cause) = &reading {
+            if self.undefined.is_none() {
+                self.undefined = Some((atom, position, cause.clone()));
+            }
         }
-        match evaluation.outcome {
-            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))) => {
-                Ok(AtomReading::True)
-            }
-            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false))) => {
-                Ok(AtomReading::False)
-            }
-            FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
-                Err(fault("holds-condition-boolean"))
-            }
-            FamilyOutcome::Evaluated(Outcome::Undefined(undefined)) => {
-                let cause = UndefinedCause::Kernel(undefined);
-                if self.undefined.is_none() {
-                    self.undefined = Some((atom, position, cause.clone()));
-                }
-                Ok(AtomReading::Undefined(cause))
-            }
-            FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
-                Err(LetterStop::Incomplete(incomplete))
-            }
-            FamilyOutcome::Evaluated(Outcome::Refused(_))
-            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => {
-                Err(fault("holds-condition-refused"))
-            }
-            FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
-                let cause = UndefinedCause::Family(cause.undefined_record());
-                if self.undefined.is_none() {
-                    self.undefined = Some((atom, position, cause.clone()));
-                }
-                Ok(AtomReading::Undefined(cause))
-            }
-            #[cfg(seam_probe_eval_downstream)]
-            FamilyOutcome::__SeamProbe => unreachable!("never constructed outside the probe build"),
-        }
+        Ok(reading)
     }
 
     fn activation(
         &mut self,
-        _position: TemporalPosition,
-        _meter: &mut Meter,
+        position: TemporalPosition,
+        meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        // An emitted clause activates `on origin` (FR-337), so it has no
-        // `when` condition to read.
-        Err(LetterStop::Fault(InternalFault::new(
-            "temporal.observed",
-            "emitted-clause-has-no-activation-condition",
-        )))
+        let objects = self.environment(position)?;
+        let evaluation = self.package.evaluate_guard(
+            self.clause,
+            Value::Reference(self.over.clone()),
+            objects,
+            meter,
+        );
+        self.reading(evaluation, ACTIVATION_CODES)
     }
 }

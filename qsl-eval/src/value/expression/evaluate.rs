@@ -774,6 +774,15 @@ impl<'a, 'm> Machine<'a, 'm> {
         self
     }
 
+    /// [`Self::with_absent_parameter`] for several slots that alias the one
+    /// absent object (an `on each` guard's `over` and trigger binders).
+    pub(crate) fn with_absent_parameters(mut self, slots: Vec<Slot>, binding: String) -> Self {
+        for slot in slots {
+            self = self.with_absent_parameter(slot, binding.clone());
+        }
+        self
+    }
+
     /// FR-487: `slot` holds `key`, which names no object of `binding`'s
     /// population in its component; any number of slots may be absent.
     pub(crate) fn with_absent_key(

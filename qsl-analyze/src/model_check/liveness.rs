@@ -108,7 +108,7 @@ use qsl_replay::{
     ModelCheckOutcome, ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats,
     TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -172,9 +172,6 @@ pub(super) fn check(
         return Err(fault("a-liveness-item-is-a-clause"));
     };
     let symmetric = !request.reductions.symmetry.is_empty();
-    if matches!(clause.activation(), Activation::Each { guarded: true }) {
-        return Err(ModelCheckRefusal::GuardedActivation);
-    }
     // The clause's identity is resolved from the package, as the safety path
     // does (FR-337-AC-5): a package that gives it no root refuses.
     let root_cancelled = match ClauseIdentity::resolve(
@@ -279,9 +276,6 @@ pub(super) fn check_protocol<M: MemoryModel>(
     let ModelCheckItem::Clause { clause, letters } = item else {
         return Err(fault("a-liveness-item-is-a-clause"));
     };
-    if matches!(clause.activation(), Activation::Each { guarded: true }) {
-        return Err(ModelCheckRefusal::GuardedActivation);
-    }
     let model = system.model();
     let simulation = &subject.model.simulation;
     let root_cancelled =
@@ -498,8 +492,7 @@ impl<'a> LiveSubject for ModelSystem<'a> {
         let atoms = Atoms {
             letters: run.letters,
             nodes: &product.atoms,
-            // A guarded activation is refused before the run starts.
-            guarded: false,
+            guarded: product.automaton.borrow().when().is_some(),
         };
         let por = Por::new(
             run.system,
@@ -668,13 +661,13 @@ struct RunRequest {
     max_candidates: u64,
 }
 
-/// One position's letter for one binding, or the first atom that is undefined
-/// there.
+/// One position's letter for one binding, or the first condition (a guarded
+/// activation's `when`, then an atom) that is undefined there.
 #[derive(Clone, Debug)]
 enum Reading {
     Defined(Letter),
     Undefined {
-        atom: FormulaNodeId,
+        locus: UndefinedLocus,
         cause: UndefinedCause,
     },
 }
@@ -687,7 +680,7 @@ enum Property {
     After(StateId),
     /// The letter at this position is undefined.
     Undefined {
-        atom: FormulaNodeId,
+        locus: UndefinedLocus,
         cause: UndefinedCause,
     },
 }
@@ -865,7 +858,33 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
         let state = state.as_ref();
         let mut letter = Letter::default();
         let mut reading = None;
+        // UE-1: a guarded activation's condition is read before the atoms.
+        let when = self.automaton.borrow().when();
+        if let Some(when) = when {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            let value = self
+                .letters
+                .activation(self.binding, state, &mut meter)
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => self.record(Halt::Refusal(refusal)),
+                    Err(incomplete) => self.record(Halt::Meter(incomplete.limit_kind)),
+                })?;
+            match value {
+                AtomReading::True => letter = letter.with(when),
+                AtomReading::False => {}
+                AtomReading::Undefined(cause) => {
+                    reading = Some(Reading::Undefined {
+                        locus: UndefinedLocus::Activation,
+                        cause,
+                    });
+                }
+            }
+        }
         for (index, atom) in self.atoms.iter().enumerate() {
+            if reading.is_some() {
+                break;
+            }
             self.poll()?;
             let mut meter = Meter::new(self.meter);
             let value = self
@@ -883,7 +902,10 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
                 }
                 AtomReading::False => {}
                 AtomReading::Undefined(cause) => {
-                    reading = Some(Reading::Undefined { atom: *atom, cause });
+                    reading = Some(Reading::Undefined {
+                        locus: UndefinedLocus::Atom(*atom),
+                        cause,
+                    });
                     break;
                 }
             }
@@ -897,9 +919,9 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
     /// the automaton has no move on the letter.
     fn step(&self, before: Before, reading: &Reading) -> Result<Vec<Property>, ExpansionStop> {
         let letter = match reading {
-            Reading::Undefined { atom, cause } => {
+            Reading::Undefined { locus, cause } => {
                 return Ok(vec![Property::Undefined {
-                    atom: *atom,
+                    locus: locus.clone(),
                     cause: cause.clone(),
                 }])
             }
@@ -1702,8 +1724,8 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 let built = self.prefix_counterexample(run, id, kind)?;
                 Ok(Some((state.state.depth, FirstHit::from(built))))
             };
-            if let Property::Undefined { atom, cause } = &state.state.property {
-                let site = self.site(&state.state, UndefinedLocus::Atom(*atom), None)?;
+            if let Property::Undefined { locus, cause } = &state.state.property {
+                let site = self.site(&state.state, locus.clone(), None)?;
                 return violated(CounterexampleKind::UndefinedEvaluation(
                     UndefinedEvaluation {
                         site,
@@ -1874,8 +1896,8 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             if cut.memory {
                 self.dead_limited.borrow_mut().insert(self.digest(&model)?);
             }
-            let kind = if let Reading::Undefined { atom, cause } = reading {
-                Some((UndefinedLocus::Atom(atom), None, cause))
+            let kind = if let Reading::Undefined { locus, cause } = reading {
+                Some((locus, None, cause))
             } else {
                 undefined_finding(&expansion.findings)
             };

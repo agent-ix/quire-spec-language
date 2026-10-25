@@ -876,6 +876,36 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     assert!(member(&none_activation, "trigger").is_some());
     assert!(member(&none_activation, "guard").is_none());
     assert!(member(&truth_activation, "guard").is_some());
+    // `when (true)` lowers to the Boolean literal `true`, located at `true`.
+    let truth_wire = &truth.wire;
+    let truth_guard = node_with(
+        truth_wire,
+        target(&member(&truth_activation, "guard").unwrap()["value"]),
+    );
+    assert_eq!(truth_guard["body"]["term"], "literal");
+    assert_eq!(truth_guard["body"]["value_kind"], "boolean");
+    assert_eq!(truth_guard["body"]["value"], true);
+    let truth_text = unit(
+        INFINITE,
+        &declared_on("Each", &each("q", " when (true)"), BODY),
+    );
+    let truth_packages = qsl_semantics::model::intake::package_input([document()]);
+    let truth_declarations =
+        assemble_with_models(truth_text.as_bytes(), &truth_packages).expect("assembles");
+    let truth_regions = truth_declarations.regions();
+    let truth_graph = truth_declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let guard_digest = truth_guard["node_id"]["digest"].as_str().unwrap();
+    let guard_at: Vec<_> = truth_graph
+        .occurrences()
+        .filter(|(key, origin, _)| {
+            key.to_string() == guard_digest && origin.role().to_string() == "expression"
+        })
+        .map(|(_, _, location)| truth_regions.region(location).expect("a region").start())
+        .collect();
+    let literal_at = truth_text.find("when (true)").unwrap() + "when (".len();
+    assert_eq!(guard_at, [u64::try_from(literal_at).unwrap()]);
     assert_eq!(
         origin_activation["members"].as_array().map(Vec::len),
         Some(1)
@@ -1047,4 +1077,98 @@ fn s3_checks_the_on_each_guard_and_binder() {
         start,
         u64::try_from(text.find("temporal Each").unwrap()).unwrap()
     );
+}
+
+/// The one refusal of `activation` and `body` and the unit text it refuses.
+fn refusal_of(activation: &str, body: &str) -> (qsl_semantics::check::CheckRefusal, String) {
+    let text = unit(INFINITE, &declared_on("Each", activation, body));
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let refusals = assemble_with_models(text.as_bytes(), &packages)
+        .expect("assembles")
+        .check(CheckingLimits::default())
+        .expect_err("the clause is refused");
+    let [refusal] = <[_; 1]>::try_from(refusals).unwrap_or_else(|refusals| {
+        panic!("one refusal: {refusals:?}");
+    });
+    (refusal, text)
+}
+
+/// FR-337-AC-7: a binder that repeats the `over` parameter's name refuses
+/// `duplicate-declaration` at the binder, and the cause's `first` is the
+/// `over` parameter's name, so that both declarations are named.
+#[trace("TC-1265", "FR-337-AC-7")]
+#[test]
+fn a_repeated_binder_name_refuses_naming_both_declarations() {
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+
+    let (refusal, text) = refusal_of(&each("c", ""), BODY);
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a temporal refusal: {refusal:?}");
+    };
+    let TemporalCause::DuplicateTrigger { name, first, span } = cause.as_ref() else {
+        panic!("a duplicate trigger: {cause:?}");
+    };
+    assert_eq!(name, "c");
+    let over = text.find("(c:").unwrap() + 1;
+    let binder = text.match_indices("c:").nth(1).unwrap().0;
+    assert_eq!((first.start, first.end), (over, over + 1));
+    assert_eq!((span.start, span.end), (binder, binder + 1));
+}
+
+/// FR-337-AC-7 "checked in source order": the activation binder is checked
+/// before the captures, and the guard before the interval and the fairness
+/// constraints, so the first defect in source order is the one refusal.
+#[trace("TC-1265", "FR-337-AC-7")]
+#[test]
+fn the_activation_is_checked_before_the_captures_and_the_body() {
+    let guard = " when (c.versionNumber)";
+    let cases: [(String, &str, Code, &str, &str); 5] = [
+        // The binder's type before an ill-typed capture.
+        (
+            "on each (q: Integer)".to_owned(),
+            "capture n: Config::Absent = c.versionNumber; always holds(c.versionNumber <= 1)",
+            Code::IllTyped,
+            "type-mismatch",
+            "Integer",
+        ),
+        // The binder's name before an ill-typed capture.
+        (
+            each("c", ""),
+            "capture n: Config::Absent = c.versionNumber; always holds(c.versionNumber <= 1)",
+            Code::ConflictingDeclaration,
+            "duplicate-declaration",
+            "c:",
+        ),
+        // The guard before an unresolved fairness operation.
+        (
+            each("q", guard),
+            "fair weak each Config::ConfigVersion::nothing; always holds(c.versionNumber <= 1)",
+            Code::IllTyped,
+            "non-boolean-root",
+            "c.versionNumber)",
+        ),
+        // The guard before an inverted interval.
+        (
+            each("q", guard),
+            "always[3, 1] holds(c.versionNumber <= 1)",
+            Code::IllTyped,
+            "non-boolean-root",
+            "c.versionNumber)",
+        ),
+        // The guard before an ill-typed `holds` condition.
+        (
+            each("q", guard),
+            "always holds(c.versionNumber)",
+            Code::IllTyped,
+            "non-boolean-root",
+            "c.versionNumber)",
+        ),
+    ];
+    for (activation, body, code, tag, at) in cases {
+        let (found, found_tag, start, text) = refused_on(&activation, body);
+        assert_eq!((found, found_tag), (code, Some(tag)), "{activation} {body}");
+        let nth = usize::from(at == "c:");
+        let (offset, _) = text.match_indices(at).nth(nth).expect("the refused text");
+        assert_eq!(start, u64::try_from(offset).unwrap(), "{activation} {body}");
+    }
 }
