@@ -1044,7 +1044,8 @@ impl HyperProductIdentity {
 - **Members.** The identity SHALL hold exactly three members:
   - `clause`: the `claim` occurrence key (ADR-013 O-07) of the clause's
     `hyperproperty` node in the checked-package v2 emission of the
-    subjects' checked package. Its node id binds every clause-level member
+    subjects' checked package (FR-488 emits the node and exposes the
+    occurrence as `CheckedHyperClause::occurrence()`). Its node id binds every clause-level member
     that FR-172 "Identity" and ADR-023 HV-7 name: the aliases in order, the
     quantifier prefix with each variable's kind, alias and fairness set,
     `μ`, the `align skip` list and the body.
