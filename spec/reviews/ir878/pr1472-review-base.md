@@ -42,3 +42,5 @@ Request changes. quire validate and make check-spec-validation pass, the hash/di
 | FND-001 | fixed | Companion drafts quire-semantic-value#66 and quire-exact#83 retarget all four upstream sites (plus QSV TC-908) to FR-486. Both are open drafts and must merge together with #1472. |
 | FND-002 | fixed | Verified in dbb95abc5 against origin/main. |
 | FND-003 | fixed | Verified in dbb95abc5 against origin/main. |
+| FND-004 | fixed | Round 2: verified in 4bbc6e37a. |
+| FND-005 | fixed | Round 2: verified in 4bbc6e37a. |
