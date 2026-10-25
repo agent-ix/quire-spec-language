@@ -14,7 +14,7 @@ Verify that universes, not proof bounds, make a model subject's roots
 finite, that the requirement record ignores universes, and that the
 universe enters the obligation identity.
 
-Scope: FR-336-AC-1 to FR-336-AC-5.
+Scope: FR-336-AC-1 to FR-336-AC-7.
 
 ## Test Procedure
 
@@ -32,6 +32,11 @@ with no maximum.
 5. Change only a proof bound, then only an initial state, then only the
    checked package's `post` contract, of a subject and compare identities;
    add an unselected package to the provision; request a clause of another package.
+6. Add a proper subtype `RecentConfigVersion` of `ConfigVersion`, an
+   unbounded `recent_history` population whose member type is
+   `RecentConfigVersion`, and an unbounded population whose member type is
+   unrelated to `ConfigVersion`; read the requirement record of `ReachesTwo`
+   over `ConfigVersion` with and without universes.
 
 Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
 
@@ -48,3 +53,6 @@ Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
 - Step 5: each change gives a different identity (the package change gives
   two request indices); the unselected package changes nothing; the foreign clause is
   refused and no item is written.
+- Step 6: both `config_history` and `recent_history` occur once in the
+  `Unbounded` record's population domains in declaration-key order, independent
+  of universes; the unrelated population is absent.
