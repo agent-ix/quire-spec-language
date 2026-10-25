@@ -43,6 +43,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-250
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-297
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-254
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-315
@@ -76,11 +78,12 @@ requirements named below. Each row's default is the published default a
 caller gets when it does not configure the limit (ADR-014 §2, "inherited").
 Every limit has no ceiling: a caller raises or lowers it, and the value is
 used as given. The requirement that owns each limit defines its counter:
-NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-298 (`render.*`),
+NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
 NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
-FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). The analysis engines' limits
-have their own table (Engine limit setting names).
+FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). Analysis
+engine limits and the typed inspection operation's limit have their own table
+(Engine limit setting names).
 
 | Setting | Stage | Limit kind | Library field | Default |
 | --- | --- | --- | --- | --- |
@@ -143,7 +146,7 @@ integer.
 
 ## Engine limit setting names
 
-Every limit member of an analysis engine's limits type is a limit (QSpec
+Every limit member of an analysis engine's or separately typed operation's limits type is a limit (QSpec
 FR-461 Behavior 5); a method setting such as FR-254's `q` is not a limit
 member. Its limit name is the member name, which matches the
 backend-provider `LimitName` pattern `^[a-z][a-z0-9_]*$`; its setting name
@@ -177,7 +180,7 @@ query, so reaching it settles `LimitReached` naming it, never `TimedOut`
 rows bound FR-315's encoding of each query, and a `too-large` refusal names
 its row (FR-315 "Size limits").
 
-| Setting | Limit | Engine | Library field | Default | Owner |
+| Setting | Limit | Engine or typed operation | Library field | Default | Owner |
 | --- | --- | --- | --- | --- | --- |
 | `model_check.max_states` | `max_states` | EN-1 model checker | `ModelCheckLimits.limits` max_states | 10000000 states | FR-126 |
 | `model_check.max_transitions` | `max_transitions` | EN-1 model checker | `ModelCheckLimits.limits` max_transitions | 100000000 transitions | FR-126 |
@@ -211,6 +214,7 @@ its row (FR-315 "Size limits").
 | `certificate_check.max_certificate_bytes` | `max_certificate_bytes` | certificate checkers | `CertificateCheckLimits` max_certificate_bytes | 1073741824 bytes | FR-245 |
 | `schedule.max_demand_points` | `max_demand_points` | schedulability analysis | `ScheduleLimits` max_demand_points | 1048576 points | FR-247 |
 | `monitor.max_window_values` | `max_window_values` | window aggregates | the monitor run's max_window_values | 1048576 values | FR-194 |
+| `inspect.max_view_entries` | `max_view_entries` | typed view construction | `qsl_inspect::InspectLimits` max_view_entries | 10000000 entries | FR-297 |
 | `hybrid.max_solver_steps` | `max_solver_steps` | hybrid provider | `hybrid.limits` max_solver_steps | 1000000 steps | FR-250 |
 | `hybrid.max_solver_time` | `max_solver_time` | hybrid provider | `hybrid.limits` max_solver_time | 60 seconds | FR-250 |
 | `smt_encoding.max_constants` | `max_constants` | SMT proof-query encoding | `SmtEncodingLimits` max_constants | 1048576 constants | FR-315 |
@@ -291,7 +295,7 @@ these names through the same operand grammar as the stage settings
    | --- | --- | --- |
    | `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` (caller budgets) | `resource_exhausted`/`insufficient-next-charge` for a denied charge, a walk ceiling (`model.ancestor_steps`, `model.family_steps`, `admission.ancestor_steps`) being a denied one-edge charge (FR-082-AC-3, FR-083, QSpec FR-150-AC-11), wherever the ceiling is read, observation admission's re-run walks included | `model.*`, `admission.*` |
    | the format, intake and library resolution budgets | `resource_exhausted`/`input-bytes-exceeded`, `resource_exhausted`/`intake-limit-exceeded`, `resource_exhausted`/`insufficient-next-charge` | `format.output_bytes`, `intake.input_bytes`, `library.*` |
-   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `render.output_bytes` |
+   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `inspect.max_view_entries`, `render.output_bytes` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
    | an engine's limits type | no catalog code: the engine stops and the item settles `incomplete`, `LimitReached{limit, value, setting}` (FR-127 V-7, QSpec FR-461 Behavior 5) | the engine table's names |
@@ -343,8 +347,8 @@ these names through the same operand grammar as the stage settings
    `ExpansionLimits`, `ExactProbLimits`, `StatisticalLimits`,
    `TimedSampling`, `ZoneCheckLimits`, `CertificateCheckLimits`,
    `ScheduleLimits`, the monitor run's window limit, `hybrid.limits`,
-   `SmtEncodingLimits` or `SmtRunLimits`) with
-   that member at `<value>` and every other member at its default. When
+   `InspectLimits`, `SmtEncodingLimits` or `SmtRunLimits`), with that member
+   at `<value>` and every other member at its default. When
    `<name>` is in none of the three tables, `<value>` is
    not a non-negative decimal integer, `<value>` is 0 for an engine row
    whose value is a positive count, or one name is given twice, it SHALL
@@ -402,7 +406,7 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-9 | The settings operation given `depth=1`, the bare counter `work_units=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `accounting.work_units=ten`, `accounting.work_units=-1` and `accounting.work_units=18446744073709551616` each returns cause not an integer; given `accounting.work_units=5` and `accounting.work_units=6` together returns cause repeated naming `accounting.work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
 | FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `accounting.work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `accounting.work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-921) |
 | FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `accounting.work_units` and `accounting.value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-921) |
-| FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`, every setting name of the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, and the setting names of the three tables are pairwise distinct. For each engine limits type, its mapping from each limit member to (limit name, setting name) equals its engine-table rows (`ExactProbLimits.model`'s members to the `exact_prob.*` product rows, `TimedSampling`'s `q` to none); the union of those names is exactly the engine table's, which AC-3's union does not include. Every `LimitReached` an engine makes at a member of its limits types names that member's pair; a method-bound stop (`max_live_instances`, `max_store_buffer`, `max_messages`) is checked against its owner's member naming (the member and its value), not against the setting pair, and its row's setting raises it through the settings operation. A stop at a limit outside those types (an evaluation meter, `MaxCandidates` of an engine that does not own `ExpansionLimits`, `Time`, `ClauseMeter`, cancellation) is not covered here. The settings operation given `model_check.max_states=0` returns a usage refusal naming the operand, and given `model_check.witness_samples=0` returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
+| FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`; every setting name in the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`; and setting names are distinct across the setting, engine and accounting tables. Each engine limits type and the typed inspection operation maps each limit member to the table's (limit name, setting name) pair (`ExactProbLimits.model`'s members map to the `exact_prob.*` product rows; `InspectLimits.max_view_entries` maps to `max_view_entries`/`inspect.max_view_entries`; `TimedSampling.q` maps to none). Each engine's `LimitReached` names its member's pair. The inspection operation's `StageFailure::Limit` identifies `max_view_entries`, its configured bound and attempted count, and `inspect.max_view_entries` (FR-277, FR-297). Method-bound stops (`max_live_instances`, `max_store_buffer`, `max_messages`) retain their owner's member and value naming; their row's setting raises them through the settings operation. A stop outside the listed limits (evaluation meter, `MaxCandidates` of an engine without `ExpansionLimits`, `Time`, `ClauseMeter` or cancellation) is not covered here. Given `model_check.max_states=0`, the settings operation returns a usage refusal naming the operand; given `model_check.witness_samples=0`, it returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
 | FR-255-AC-13 | FR-126-AC-8's run stopped by `max_states` 2 settles `incomplete`, `LimitReached{limit: max_states, value: 2, setting: model_check.max_states}`, and the settings operation given `model_check.max_states=3` raises it; FR-101-AC-15's exploration with `max_states` 2 returns `Outcome::Bounded` at `Limit::States` with value 2 under setting `explore.states`, and `explore.states=3` leaves a model check's `max_states` at its default. FR-126-AC-6's `max_automaton_states` 50 stop names `max_automaton_states` and `model_check.max_automaton_states`; FR-254-AC-3's `max_sample_steps` 1 stop names `statistical.max_sample_steps`. | Test (TC-1161) |
 | FR-255-AC-14 | The settings operation given `smt_encoding.max_constants=8` returns `SmtEncodingLimits` with `max_constants` 8 and its other five members at their defaults, and given `smt.max_solver_steps=1000` and `smt.max_solver_time=5` returns `SmtRunLimits` with those values; given no operand it returns both at the engine table's defaults; given `smt.max_solver_time=0` or `smt_encoding.max_monitor_states=0` it returns a usage refusal naming the operand. A replay request's `stage_limits` entry `smt_encoding.max_constants` at 8 runs the item's encoding under 8. FR-315-AC-40's `max_constants` 7 refusal names the row's limit name and setting, and FR-182-AC-14's solver stops name `max_solver_steps` with `smt.max_solver_steps` and `max_solver_time` with `smt.max_solver_time`. | Test (TC-1250) |
 
@@ -411,6 +415,9 @@ these names through the same operand grammar as the stage settings
 The setting table, the one-mapping-per-limits-type rule, the builders, the
 settings operation, a request's `stage_limits` and the defaults are
 implemented (TC-720, TC-721). Backing of the criteria:
+
+The `inspect.max_view_entries` row and its typed-view behavior are specified
+here for QSL-600; their implementation is not yet complete.
 
 - FR-255-AC-1 is stage-driven for the step ceilings and the byte limits: the step
   ceilings (`model.ancestor_steps`, `admission.ancestor_steps`,
@@ -430,7 +437,7 @@ implemented (TC-720, TC-721). Backing of the criteria:
 
 - The owners of the engine table's members: FR-120, FR-126, FR-166, FR-184,
   FR-191, FR-194, FR-203, FR-209, FR-225, FR-239, FR-245, FR-247, FR-250,
-  FR-254 and FR-315.
+  FR-254, FR-297 and FR-315.
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-3 decides the setting names, the three entry points and the rendering.
 - ADR-029 CB-1: the user CLI is the driver's (`quire`), and it exposes the
