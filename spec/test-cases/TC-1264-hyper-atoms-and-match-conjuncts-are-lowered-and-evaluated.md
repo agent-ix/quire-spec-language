@@ -25,7 +25,7 @@ as FR-172 now states. Then verify the evaluation and encoding:
 - `encode_hyper_query` reads the conditions with no caller seam: an `always`
   body by its atom, and any other safety body by its tabulated monitor.
 
-Scope: FR-487-AC-1 to FR-487-AC-12, FR-315-AC-43 and FR-172-AC-7. The test
+Scope: FR-487-AC-1 to FR-487-AC-12, FR-315-AC-43, FR-172-AC-7 and FR-172-AC-8. The test
 for FR-172-AC-5's label constants, which QSL-1072 delivers, stays in TC-597.
 
 The model `G` and the clause `Linked` are those defined in FR-487's
@@ -100,10 +100,14 @@ Acceptance Criteria.
     and run EN-1 over the secure vault with that body. Call it for
     `NonInterference`'s atom with a component state that its system cannot
     observe.
+14. Check `Linked` with `B` = `deref(value(v.next @ a)).l = 1`; with
+    `B` = `(let r = v.next in present(r) and deref(value(r)).l = 1) @ a`;
+    and with `B` = `present(v.next @ a) and present(v.next)`.
 
 Tag the tests `#[trace("TC-1264", "FR-487-AC-n")]`. Tag step 9's test
 `#[trace("TC-1264", "FR-315-AC-43")]` and step 12's checking tests
-`#[trace("TC-1264", "FR-172-AC-7")]`.
+`#[trace("TC-1264", "FR-172-AC-7")]`. Tag step 14's tests
+`#[trace("TC-1264", "FR-172-AC-8")]`.
 
 ## Expected Results
 
@@ -169,3 +173,6 @@ Tag the tests `#[trace("TC-1264", "FR-487-AC-n")]`. Tag step 9's test
 - **Step 13:** `Err(AtomStop::Refused(outcome))` with the `ieee_not_exact`
   outcome, and EN-1 returns `ModelCheckRefusal::AtomRefused` with it. The
   unobservable state gives `Err(AtomStop::Unobservable(..))`.
+- **Step 14:** the first is refused `ill_typed` at the `.l` read. The second
+  checks, and `component_reads()` records component 0 for both reads. The
+  third is refused `ill_typed` at the bare `v.next`.
