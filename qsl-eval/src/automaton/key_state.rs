@@ -592,21 +592,6 @@ impl FormulaShape {
         })
     }
 
-    /// Whether some occurrence is an open-upper least-fixed-point operator
-    /// (`F`/`U[a,open]`, or a dual) at a polarity it is read at: it has a
-    /// Büchi acceptance set this algebra does not derive yet: #1516 settled
-    /// it, and the refusal is a stand-in until the follow-up implements it.
-    pub(super) fn has_open_upper_eventuality(&self) -> bool {
-        self.nodes.values().any(|node| {
-            node.interval.is_some_and(|bounds| bounds.upper.is_none())
-                && [Polarity::Positive, Polarity::Negative]
-                    .into_iter()
-                    .any(|polarity| {
-                        node.reached(polarity) && node.least_fixed_point(polarity) == Some(true)
-                    })
-        })
-    }
-
     fn get(&self, path: &[u64]) -> Option<&Shaped> {
         self.nodes.get(path)
     }
@@ -935,13 +920,13 @@ impl Reader<'_> {
     }
 
     /// Whether the occurrence has a least-fixed-point acceptance set on this
-    /// subject: an unbounded `F`/`U`, or on a protocol subject a finite one
-    /// too. An open-upper `F`/`U[a,open]` has none here: #1516 gives
-    /// it one after its shift completes, which the follow-up implements.
+    /// subject: an unbounded `F`/`U`, an open-upper `F`/`U[a,open]` (member
+    /// only once its shift completes: while a `shift` window is pending it is
+    /// carried), or on a protocol subject a finite one too.
     fn has_acceptance(&self, node: &Shaped) -> bool {
         match node.interval {
             None => true,
-            Some(bounds) => self.subject == SubjectKind::Protocol && bounds.upper.is_some(),
+            Some(bounds) => bounds.upper.is_none() || self.subject == SubjectKind::Protocol,
         }
     }
 
@@ -1034,9 +1019,6 @@ impl Reader<'_> {
     fn accepted(&self, entry: NodeRef<'_>) -> Result<Occurrence, KeyRefusal> {
         let [path, polarity] = exactly(members(entry)?.into_iter()).ok_or(KeyRefusal::Members)?;
         let (occurrence, node) = self.occurrence(path, polarity)?;
-        // An `F`/`U[a,open]` occurrence has no acceptance membership yet
-        // (#1516 rules one; the follow-up implements it); only an unbounded
-        // `F`/`U` does, and a finite one on a protocol subject.
         if node.least_fixed_point(occurrence.polarity) == Some(true)
             && self.has_acceptance(node)
             && node.reached(occurrence.polarity)
