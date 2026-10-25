@@ -16,7 +16,7 @@ nodes so a clause with an `on each` activation and a capture is compiled with a
 distinct key, and that the engine fixes a capture at the activation and ends
 the run with `UndefinedEvaluation` located at a capture it cannot evaluate.
 
-Scope: FR-337-AC-8 to FR-337-AC-12, with FR-218-AC-16 (TC-1056 row 23a) over
+Scope: FR-337-AC-8 to FR-337-AC-14, with FR-218-AC-16 (TC-1056 row 23a) over
 the emitted clause.
 
 ## Test Procedure
@@ -41,17 +41,23 @@ infinite-trace unless a step names another profile.
    `n` declared `Int[0, 9]`, `n` and `m` swapped, a third capture added, no
    capture, and reformatted; compare the clause keys and `package_id`s;
    compile `requires temporal Due;` over the clause with and without the
-   captures and compare the requirement node keys.
+   captures and compare the clause keys and the nodes the `requirements` set
+   holds.
 5. Run the production letter seam over the `Counter` subject: under
    event-position false-extension the clause `eventually[0,1] holds(c.value =
    3)` `on each (q: M::Counter) when (c.value = 1)` and `when (c.value >= 2)`
    each with an unread `capture n: Int[0, 3] = c.value;`; under
    infinite-trace `always holds(true)` `on each (q: M::Counter) when (true)`
-   and `when (c.value = 7)` with `capture z: Boolean = 6 mod (2 - c.value) =
-   0;`.
-6. Run `eventually[0,1] holds(c.value = n + 1)` `on each (q: M::Counter) when
+   and `when (c.value = 7)` with `capture z: Boolean = (6 mod (2 - c.value) =
+   0);`.
+6. Run `eventually[0,1] holds(n < 3 and c.value = n + 1)` `on each (q: M::Counter) when
    (c.value = 1)` with `capture n: Int[0, 3] = c.value;` through the engine,
-   and the same clause with the `holds` condition `c.value = 3`.
+   and the same clause with the `holds` condition `c.value = 3`; the refusal
+   cases of AC-12 (infinite-trace `always`, a bounded `on origin` monitor, a
+   second capture, an unbounded root), checking that no state is charged.
+7. Run FR-128 replay and the FR-338 and FR-339 checkers over AC-13's
+   clauses, and read the footprint of AC-14's clause with and without the
+   capture.
 
 Tag the tests `#[trace("TC-1266", "FR-337-AC-n")]`.
 
@@ -75,10 +81,17 @@ Tag the tests `#[trace("TC-1266", "FR-337-AC-n")]`.
   I2 reader admits each package, returns the triple and `over` node, never a
   capture node as `over`.
 - Step 4: every variant has a different clause key and `package_id`;
-  reformatting changes neither; the requirement node key of `Due` equals with
-  and without the captures.
+  reformatting changes neither; the node the `requirements` set holds for
+  `Due` is the clause node, its key equal to the clause key and different
+  with and without the captures.
 - Step 5: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`, then
   `Holds{Exhaustive}`; `Violated` with `kind: UndefinedEvaluation` at position
   2, cause `division-by-zero`, the site naming `z`, then `Holds{Exhaustive}`.
 - Step 6: `ModelCheckRefusal::CaptureRead` naming the clause and `n`, no
-  verdict; the second clause returns step 5's first verdict.
+  verdict and no state explored, likewise for each listed case, `RequiresBound`
+  for the unbounded root; the second clause returns step 5's first verdict.
+- Step 7: replay `reproduced-with-evaluated-witness`; `Holds{Exhaustive}`
+  accepted by FR-338; the undefined `z` replays to `UndefinedEvaluation` at
+  `z` and its certificate is rejected `BadState` by FR-338 and FR-339; the
+  footprint holds `Counter::value` with the `over` receiver only with the
+  capture.
