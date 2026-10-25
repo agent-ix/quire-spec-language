@@ -232,7 +232,7 @@ fn the_match_conjuncts_are_evaluated_in_order_and_short_circuit() {
     assert!(first_conjunct < both_conjuncts);
 }
 
-/// FR-487-AC-5: a conjunct without a value, or whose meter runs out, ends the
+/// FR-487 "Evaluating a match conjunct": a conjunct without a value, or whose meter runs out, ends the
 /// reading at that conjunct; one that follows a false conjunct is not charged.
 #[trace("TC-1264")]
 #[test]
@@ -352,7 +352,7 @@ fn reset_step(world: &World) -> ModelTransition {
         .expect("reset is enabled")
 }
 
-/// FR-487-AC-2 and FR-172-AC-5: a label constant compares equal to exactly the
+/// FR-487 "Lowered form" and FR-172 "Match": a label constant compares equal to exactly the
 /// steps of its operation, and `V::Vault::step != a.step.op` holds at the
 /// joint steps at which `a.step.op != V::Vault::step` does.
 #[trace("TC-1264")]

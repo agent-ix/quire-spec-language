@@ -64,3 +64,21 @@ assessed.
 - Semantic review: not run as a separate pass. The intent-to-test checks done in the
   code review stand in for it.
 - Plan completion: not assessed
+
+## New findings (disposition pass 1)
+
+Found in the fix PR, quire-spec-language#1539 at 278643086.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | `an_atom_may_call_a_declared_function` is tagged `#[trace("TC-1264", "FR-487-AC-1")]`, but it asserts nothing FR-487-AC-1 states (slots, condition shape, component reads, re-check equality). It checks that a call in an atom checks, which is FR-487 "Dependencies" and FR-172 "Body expressions", neither of which has a criterion. The binding is wrong. | qsl-semantics/tests/it/hyper_clauses.rs:1722 |
+| FND-004 | low | FR-487-AC-9 is now `tagged` by `an_indexed_let_and_deref_read_one_component`, which covers only its checking half. The evaluation half and `HyperSlot::Absent` are deferred to QSL-1085. This is the same partial-tag inflation that FND-002 asked to remove for FR-487-AC-2, FR-487-AC-5 and FR-172-AC-7, so the fix applies the rule inconsistently. | qsl-semantics/tests/it/hyper_clauses.rs:1647 |
+
+## Dispositions
+
+Disposition pass 1, over quire-spec-language#1539 at 278643086, where `quire matrix --scope .` reads `tagged` for FR-487-AC-1 to AC-6, AC-9, AC-10, AC-11 and FR-172-AC-5, AC-7, AC-8.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `an_indexed_let_and_deref_read_one_component` reads `component_reads()` of the `(let r = v.parent in present(r) and deref(value(r)).versionNumber = 1) @ t` atom: every read is component 0 under `@ a` and component 1 under `@ b`. FR-487-AC-9 now reads `tagged`. |
+| FND-002 | still-open | The `#[trace]` attributes were reduced to `#[trace("TC-1264")]`, but the doc lines `/// FR-487-AC-2: …` (hyper_clauses.rs:1382 and 1579), `/// FR-487-AC-5: …` (hyper_lowering.rs:235) and `/// FR-172-AC-7: …` (hyper_clauses.rs:1530) still bind. `quire matrix` at 278643086 still reads FR-487-AC-2, FR-487-AC-5 and FR-172-AC-7 as `tagged`, with those tests as binders, while their deferred halves (QSL-1084, QSL-1085) are open. Confirmed by experiment: rewording the FR-172-AC-7 doc line alone turns that row `untagged`. Either reword the doc lines so that they do not lead with the criterion id, or keep the tags and record the deferral. |
