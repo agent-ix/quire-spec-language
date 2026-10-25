@@ -295,6 +295,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::ListEntryConflict { .. }
             | RefinementCause::Malformed { .. }
             | RefinementCause::Unsupported { .. }
+            | RefinementCause::UnsupportedRowForm { .. }
             | RefinementCause::PopulationBound { .. }
             | RefinementCause::NodeArgumentCount { .. }
             | RefinementCause::NodeArgumentType { .. } => None,
@@ -316,6 +317,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::IdentityObservingForm(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
+        | CheckCause::MissingQualifiedName(_)
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
         | CheckCause::AmbiguousName { .. }

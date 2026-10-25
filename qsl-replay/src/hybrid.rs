@@ -26,6 +26,12 @@ use crate::result::{DisagreementCause, HybridTraceDisagreement};
 use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim, HybridClock, HybridHorizon};
 use quire_exact::LimitKind;
 
+mod process_request;
+pub use process_request::{
+    AdmittedHybridProcessItem, AdmittedHybridProcessRequest, HybridProcessItem,
+    HybridProcessRequest, HybridProcessRequestRefusal,
+};
+
 /// The kind of method a provider ran. QSL decides soundness from the kind
 /// (QSpec FR-193), never from a provider's say-so.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -680,8 +686,10 @@ mod tests {
     use crate::outcome::OutcomeItem;
     use crate::proof_result::TerminalRecord;
     use ix_trace_rs::trace;
-    use qsl_foundation::RequestIndex;
-    use quire_exact::Integer;
+    use qsl_foundation::{RequestIndex, SourceIdentity};
+    use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim, PackageDeclarations};
+    use quire_exact::{CancelCause, Integer};
+    use quire_semantic_value::checking::CheckingLimits;
     use serde_json::json;
 
     fn horizon(seconds: u64) -> SolverHorizon {
@@ -857,6 +865,85 @@ mod tests {
         serde_json::to_value(OutcomeItem::from_terminal(&record)).expect("serializes")
     }
 
+    /// FR-447's `Braking` and `SlowEnough`, with the declared initial set
+    /// empty because the `Moving` condition is outside its invariant.
+    fn no_initial_state_fixture() -> (CheckedGraph, CheckedHybridClaim) {
+        const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+             profile p = \"quire.temporal.infinite-trace/v1\";\n\
+             dimension Time;\n\
+             unit s : Time = rational(1, 1);\n\
+             hybrid Braking using p {\n\
+               initial { mode Moving when { v = 30 }; }\n\
+               mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }\n\
+                 flow { v' = -a; a' = 0; t' = 1; }\n\
+                 transition to Stopped when { v = 0 } reset { v = 0 };\n\
+               mode Stopped invariant { v = 0 }\n\
+                 flow { v' = 0; a' = 0; t' = 1; }\n\
+             }\n\
+             temporal SlowEnough using p over (h: Braking) clock \"model-time\"\
+               on origin { always [0, 10] holds(h.v < 30) }\n";
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("agent-ix", "qsl-1035", "fixture", "fixture:1"),
+            "program.native",
+            SOURCE.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+        let graph = PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            unit,
+            qsl_semantics::model::intake::SelectedModels::default(),
+            Vec::new(),
+        )
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+        let claim = match graph.hybrid_claims() {
+            [claim] => claim.clone(),
+            _ => panic!("one checked hybrid claim"),
+        };
+        (graph, claim)
+    }
+
+    fn process_item(package: &[u8], budget: SolverBudget) -> HybridProcessItem {
+        let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
+        let nodes = wire["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("semantic graph nodes");
+        let claim = nodes
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "temporal_clause"
+                    && node["occurrences"].as_array().is_some_and(|occurrences| {
+                        occurrences
+                            .iter()
+                            .any(|occurrence| occurrence["role"] == "claim")
+                    })
+            })
+            .expect("emitted hybrid claim");
+        let occurrence = claim["occurrences"]
+            .as_array()
+            .expect("claim occurrences")
+            .iter()
+            .find(|occurrence| occurrence["role"] == "claim")
+            .expect("claim occurrence");
+        HybridProcessItem::new(
+            RequestIndex::new(0),
+            json!({"node": claim["node_id"], "occurrence": occurrence}),
+            json!({"classification": "bounded", "bounds": []}),
+            json!({"type": "set", "backends": ["hybrid-fixture"]}),
+            budget,
+        )
+    }
+
+    fn process_package_evidence() -> quire_contract_model::CheckedPackageEvidence {
+        let mut evidence = quire_contract_model::CheckedPackageEvidence::default();
+        evidence.support_feature("quire.value.complete/v1");
+        evidence
+    }
+
     /// QSpec FR-193's verdict map, FR-250's table: a sound `Unsat` settles
     /// `proved`, `uncertified`, with its horizon and jump bound.
     #[trace("TC-705", "FR-250-AC-2")]
@@ -948,7 +1035,7 @@ mod tests {
     /// A solver stopped by its time budget settles `incomplete`,
     /// `timed-out`, carrying no seconds; one stopped by its step budget
     /// settles `incomplete`, `limit-reached` naming `solver-steps`.
-    #[trace("TC-705", "FR-250-AC-2")]
+    #[trace("TC-705", "FR-250-AC-2", "FR-250-AC-3")]
     #[test]
     fn a_stopped_solver_settles_incomplete_by_the_budget_that_stopped_it() {
         let timed = result(
@@ -965,6 +1052,18 @@ mod tests {
                 "category": "incomplete",
             })
         );
+        let frontend_deadline = TerminalRecord::from_value(
+            RequestIndex::new(0),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Deadline,
+            }),
+        );
+        let frontend_deadline =
+            serde_json::to_value(OutcomeItem::from_terminal(&frontend_deadline))
+                .expect("the frontend deadline record serializes");
+        assert_eq!(frontend_deadline["cause"]["kind"], "cancelled");
+        assert_eq!(frontend_deadline["cause"]["source"], "deadline");
+        assert_ne!(item(&timed)["cause"], frontend_deadline["cause"]);
         let stepped = result(
             SolverMethod::DeltaComplete,
             SolverOutcome::Stopped(SolverStop::Steps(1000)),
@@ -1104,7 +1203,7 @@ mod tests {
         Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("non-zero")
     }
 
-    #[trace("TC-705")]
+    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn max_solver_time_rounds_up_to_whole_seconds_and_unset_members_take_the_supplied_bounds() {
         let seconds = |time: Rational| {
@@ -1117,12 +1216,12 @@ mod tests {
         assert_eq!(seconds(ratio(1, 5)), Some(1));
 
         let unset = SolverBudget::from_request(None, None).expect("admitted");
-        assert_eq!(unset.resolved(7, 9), (7, 9));
+        assert_eq!(unset.resolved(60, 1_000_000), (60, 1_000_000));
         let set = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000)).expect("admitted");
         assert_eq!(set.resolved(7, 9), (2, 1000));
     }
 
-    #[trace("TC-705")]
+    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn the_request_writer_writes_whole_seconds_and_omits_unset_members() {
         let rounded = SolverBudget::from_request(Some(&ratio(3, 2)), None).expect("admitted");
@@ -1135,6 +1234,11 @@ mod tests {
             both.hybrid_member(),
             Some(json!({"limits": {"max_solver_time": 1, "max_solver_steps": 1000}}))
         );
+        assert_eq!(
+            serde_json::to_vec(&both.hybrid_member().expect("the process request member"))
+                .expect("serializes the process request member"),
+            br#"{"limits":{"max_solver_steps":1000,"max_solver_time":1}}"#
+        );
         let unset = SolverBudget::from_request(None, None).expect("admitted");
         assert_eq!(unset.hybrid_member(), None);
         assert_eq!(
@@ -1143,7 +1247,61 @@ mod tests {
         );
     }
 
-    #[trace("TC-705")]
+    /// The process request carries the same budget member and the exact
+    /// emitted v2 package bytes; reading it admits the package and binds the
+    /// item to the checked hybrid claim.
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn process_request_composes_and_reads_v2_package_bytes_with_hybrid_limits() {
+        let (graph, _) = no_initial_state_fixture();
+        let package = qsl_package::CheckedPackage::link(graph);
+        let emission = qsl_package::emit_checked(&package).expect("the package emits");
+        let package_bytes = emission.package().bytes();
+        let budget = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000))
+            .expect("the budget is admitted");
+        let item = process_item(package_bytes, budget);
+        let evidence = process_package_evidence();
+        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
+        let request =
+            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
+                .expect("the process request composes");
+        let wire: serde_json::Value =
+            serde_json::from_slice(request.bytes()).expect("the request is JSON");
+        use base64::Engine as _;
+        let carried_package = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(wire["package"].as_str().expect("package base64url"))
+            .expect("the package decodes");
+        assert_eq!(carried_package, package_bytes);
+        assert_eq!(
+            wire["items"][0]["hybrid"]["limits"],
+            json!({"max_solver_time": 2, "max_solver_steps": 1000})
+        );
+        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
+            .expect("the process request reads against its package");
+        assert_eq!(admitted.hybrids().claims.len(), 1);
+        assert_eq!(admitted.items()[0].budget(), budget);
+
+        let mut wrong_occurrence = wire.clone();
+        wrong_occurrence["items"][0]["claim"]["occurrence"]["role"] = json!("trigger");
+        let wrong_occurrence =
+            serde_json::to_vec(&wrong_occurrence).expect("wrong occurrence serializes");
+        assert!(matches!(
+            HybridProcessRequest::read(&wrong_occurrence, &evidence, limits),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
+        ));
+
+        let mut malformed = wire.clone();
+        malformed["items"][0]["hybrid"]["limits"]["max_solver_time"] = json!(1.5);
+        let malformed = serde_json::to_vec(&malformed).expect("malformed request serializes");
+        assert!(matches!(
+            HybridProcessRequest::read(&malformed, &evidence, limits),
+            Err(HybridProcessRequestRefusal::Budget(
+                BudgetRefusal::NotAWholeNumber("max_solver_time")
+            ))
+        ));
+    }
+
+    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn a_malformed_budget_is_refused_before_any_solver_consumes_it() {
         let refused = |hybrid: serde_json::Value| SolverBudget::read_hybrid(&hybrid);
@@ -1182,7 +1340,7 @@ mod tests {
         );
     }
 
-    #[trace("TC-705")]
+    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn requests_differing_only_in_max_solver_time_have_equal_key_bytes() {
         let key = |time: i64, steps: Option<u64>| {
@@ -1196,6 +1354,90 @@ mod tests {
         assert!(!String::from_utf8(key(30, Some(1000)))
             .expect("utf-8")
             .contains("max_solver_time"));
+
+        let timed = result(
+            SolverMethod::DeltaComplete,
+            SolverOutcome::Stopped(SolverStop::Time),
+        );
+        let record =
+            TerminalRecord::from_value(RequestIndex::new(0), timed.terminal_value(&claim()));
+        let wire = serde_json::to_value(OutcomeItem::from_terminal(&record))
+            .expect("the timed-out record serializes");
+        assert_eq!(wire["cause"]["kind"], "timed-out");
+        assert!(!wire.to_string().contains("max_solver_time"));
+    }
+
+    /// A provider's empty-initial result is inconclusive through both the
+    /// in-process result path and the process provider's plugin-result reader.
+    #[trace("TC-705", "FR-250-AC-5")]
+    #[test]
+    fn no_initial_state_is_inconclusive_for_in_process_and_plugin_results() {
+        let (graph, claim) = no_initial_state_fixture();
+        let fixture = SolverResult {
+            method: SolverMethod::DeltaComplete,
+            outcome: SolverOutcome::NoInitialState,
+            coverage: SolverCoverage::Inductive,
+        };
+        let expected = TerminalValue::Inconclusive(InconclusiveCause::NoInitialState);
+        let settlement = fixture
+            .settle(&graph, &claim, &mut HybridReplayMeter::new(u64::MAX))
+            .expect("the no-initial-state result requires no replay");
+        assert_eq!(settlement.value, expected);
+        assert!(settlement.counterexample.is_none());
+        let in_process = serde_json::to_value(OutcomeItem::from_terminal(
+            &TerminalRecord::from_value(RequestIndex::new(0), settlement.value.clone()),
+        ))
+        .expect("the in-process result serializes");
+        assert_eq!(in_process["result"], "inconclusive");
+        assert_eq!(in_process["cause"]["kind"], "no-initial-state");
+        assert!(in_process.get("counterexamples").is_none());
+
+        let package = qsl_package::CheckedPackage::link(graph);
+        let emission = qsl_package::emit_checked(&package).expect("the v2 provider package emits");
+        let package_bytes = emission.package().bytes();
+        let unset = SolverBudget::from_request(None, None).expect("unset budget is valid");
+        let item = process_item(package_bytes, unset);
+        let evidence = process_package_evidence();
+        let limits = quire_contract_model::CheckedPackageReadLimits::bounded();
+        let request =
+            HybridProcessRequest::compose(package_bytes, &evidence, limits, 20_000, &[item])
+                .expect("the process request composes");
+        let admitted = HybridProcessRequest::read(request.bytes(), &evidence, limits)
+            .expect("the process request admits its v2 package");
+        let request_wire: serde_json::Value =
+            serde_json::from_slice(request.bytes()).expect("the process request is JSON");
+        assert!(request_wire["items"][0].get("hybrid").is_none());
+        assert_eq!(
+            admitted.items()[0].budget().resolved(60, 1_000_000),
+            (60, 1_000_000)
+        );
+        let process = admitted
+            .read_no_initial_state_result(&json!({
+                "request_index": 0,
+                "backend": "hybrid-fixture",
+                "kind": "temporal-satisfaction",
+                "result": "inconclusive",
+                "cause": {"type": "no-initial-state"},
+            }))
+            .expect("the process result reads against the admitted hybrid claim");
+        assert_eq!(
+            admitted.read_no_initial_state_result(&json!({
+                "request_index": 1,
+                "backend": "hybrid-fixture",
+                "kind": "temporal-satisfaction",
+                "result": "inconclusive",
+                "cause": {"type": "no-initial-state"},
+            })),
+            Err(HybridProcessRequestRefusal::ResultMismatch)
+        );
+        let process = serde_json::to_value(OutcomeItem::from_terminal(&process))
+            .expect("the process result serializes");
+        assert_eq!(process["result"], "inconclusive");
+        assert_eq!(process["cause"]["kind"], "no-initial-state");
+        assert!(process.get("counterexamples").is_none());
+
+        assert_eq!(admitted.hybrids().models.len(), 1);
+        assert_eq!(admitted.hybrids().claims.len(), 1);
     }
 
     #[trace("TC-705")]

@@ -218,6 +218,9 @@ pub fn check(
         .map(|role| CheckedRole {
             name: role.name.name.clone(),
             context: scope.object_type_named(&role.context.name),
+            model_selection: scope
+                .model_selection(&role.context.name)
+                .map(|selection| selection.identity.clone()),
             replicated: role.replicated.is_some(),
         })
         .collect();

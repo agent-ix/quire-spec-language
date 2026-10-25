@@ -819,6 +819,9 @@ pub struct Scope {
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
+    /// The selected package behind each source model alias, used by static
+    /// protocol roles that act on a whole model.
+    model_selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// FR-150: each object type a `symmetric` population covers, with that
     /// population's declaration key.
@@ -1024,6 +1027,7 @@ impl Scope {
             known_populations: Vec::new(),
             history_names: Vec::new(),
             complete_model: false,
+            model_selections: BTreeMap::new(),
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
             index,
@@ -1154,6 +1158,23 @@ impl Scope {
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
         self.complete_model = complete_model;
         self
+    }
+
+    /// The selected domain package for each model alias in this unit.
+    pub(crate) fn with_model_selections(
+        mut self,
+        selections: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
+    ) -> Self {
+        self.model_selections = selections;
+        self
+    }
+
+    /// The selected package of a source model alias.
+    pub(crate) fn model_selection(
+        &self,
+        alias: &str,
+    ) -> Option<&crate::model::domain_package::DomainPackageRef> {
+        self.model_selections.get(alias)
     }
 
     /// This scope with the unit's admitted dimension and unit declarations
@@ -1637,6 +1658,8 @@ struct Local {
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
     complete_value: bool,
+    /// The derived StateModel family of a helper function body.
+    model_family: bool,
     signatures: &'a Signatures,
     context: Option<crate::family::CheckContext<'a, Scope>>,
     limits: CheckingLimits,
@@ -1935,7 +1958,7 @@ fn reference_root(expression: ExprRef<'_>) -> Option<&str> {
     let mut expression = expression;
     loop {
         match expression.node() {
-            ExprNode::Name(name) => return Some(name),
+            ExprNode::Name(name) => return Some(name.name.as_str()),
             ExprNode::Deref(operand)
             | ExprNode::Value(operand)
             | ExprNode::Field { operand, .. } => {
@@ -2044,6 +2067,7 @@ impl<'a> Typer<'a> {
         Self {
             scope,
             complete_value: scope.complete_value,
+            model_family: false,
             signatures,
             context: None,
             limits,
@@ -2107,6 +2131,13 @@ impl<'a> Typer<'a> {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    /// Type this body as a derived StateModel helper family.
+    #[must_use]
+    pub(crate) fn with_model_family(mut self, derived: bool) -> Self {
+        self.model_family = derived;
         self
     }
 
@@ -2385,14 +2416,15 @@ impl<'a> Typer<'a> {
                         let mut at = scope;
                         let mut alias = None;
                         while let Some(binding) = at.and_then(|index| bindings.get(index)) {
-                            if binding.name == name {
+                            if binding.name == name.name {
                                 alias = Some(binding.alias);
                                 break;
                             }
                             at = binding.outer;
                         }
-                        resolved
-                            .push(alias.unwrap_or_else(|| self.captured_before(name, boundary)));
+                        resolved.push(
+                            alias.unwrap_or_else(|| self.captured_before(&name.name, boundary)),
+                        );
                     }
                     ExprNode::Let { name, value, body } => {
                         pending.push(AliasStep::Bind(name, operand.at(*body), scope));
@@ -2964,6 +2996,7 @@ impl<'a> Typer<'a> {
         match value_type {
             ValueType::Reference(object) => {
                 self.in_state_clause()
+                    || self.model_family
                     || self
                         .scope
                         .relationships()
@@ -3043,7 +3076,7 @@ impl<'a> Typer<'a> {
                 ));
             }
         }
-        let field_reads = derefed || self.in_state_clause();
+        let field_reads = derefed || self.in_state_clause() || self.model_family;
         let value_type = reference.value_type.clone();
         let on_self = self.state.as_ref().is_some_and(
             |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),

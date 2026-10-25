@@ -34,7 +34,9 @@ use super::ir::CheckedBody;
 use super::protocol_obligation::{
     model_state_reads, span_of, type_body, wraps, CheckedBinder, Goal,
 };
-use super::refusal::{ChannelEnd, CheckCause, CheckRefusal, JoinFault, ProtocolAnchorCause};
+use super::refusal::{
+    AliasKind, ChannelEnd, CheckCause, CheckRefusal, JoinFault, ProtocolAnchorCause,
+};
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
 use super::Scope;
@@ -104,6 +106,7 @@ struct Keys<'k, 'a, 'c> {
 /// source order.
 pub(super) fn check(
     protocol: &ProtocolDeclarationForm,
+    alias_names: &BTreeMap<String, AliasKind>,
     declarations: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
 ) -> Result<(Vec<CheckedChannel>, u64), Vec<CheckRefusal>> {
@@ -123,6 +126,19 @@ pub(super) fn check(
 
     for role in &protocol.roles {
         let name = role.context.name.as_str();
+        if alias_names.get(name) == Some(&AliasKind::Model) {
+            if role.replicated.is_some() {
+                refusals.push((
+                    role.context.span,
+                    refusal(ProtocolAnchorCause::RoleModel {
+                        role: role.name.name.clone(),
+                        context: role.context.name.clone(),
+                        span: role.context.span,
+                    }),
+                ));
+            }
+            continue;
+        }
         // A name that is no type at all is the missing-type refusal of
         // `protocol_clause::content`.
         if scope.object_type_named(name).is_none() && !scope.named_types(name).is_empty() {
@@ -189,7 +205,7 @@ fn check_channel(
     let carries = match resolve_form(scope, &channel.carries) {
         Ok(ValueType::Reference(_) | ValueType::Population(_)) => {
             let name = match &channel.carries.head {
-                TypeFormHead::Name(name) => name.clone(),
+                TypeFormHead::Name(name) => name.name.clone(),
                 TypeFormHead::Builtin(_)
                 | TypeFormHead::Collection(_)
                 | TypeFormHead::Population => String::new(),
@@ -776,7 +792,7 @@ mod tests {
         assert_eq!(channel, "Pay");
         assert_eq!(
             *fault,
-            super::super::type_form::TypeFormFault::MissingName("M::Absent".to_owned())
+            super::super::type_form::TypeFormFault::MissingQualifiedName("M::Absent".into())
         );
         assert_eq!(located(&text, &cause), "M::Absent");
 

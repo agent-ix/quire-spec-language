@@ -779,7 +779,7 @@ impl Renaming<'_, '_, '_> {
                     }
                     ExprNode::Name(name) => {
                         if let Some(slot) = self.names.get_mut(id.index()) {
-                            *slot = Some(self.scope.resolve(name, self.rename));
+                            *slot = Some(self.scope.resolve(&name.name, self.rename));
                         }
                     }
                     ExprNode::Let { value, body, .. } => {
@@ -883,7 +883,7 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
     expression.respell_names(|id, spellings| {
         let index = id.index();
         if let (Some(name), Some(Some(renamed))) = (spellings.reference, names.get(index)) {
-            name.clone_from(renamed);
+            name.set_spelling(renamed.clone());
         }
         let used = binders.get(index).into_iter().flatten();
         for (binder, renamed) in spellings.binders.into_iter().zip(used) {
@@ -1631,9 +1631,9 @@ mod tests {
             .stack_size(512 * 1024)
             .spawn(|| {
                 let mut builder = qsl_forms::ExpressionBuilder::new();
-                let mut clause = builder.push(ExprNode::Name("x".to_owned())).unwrap();
+                let mut clause = builder.push(ExprNode::Name("x".into())).unwrap();
                 for _ in 0..LEVELS {
-                    let left = builder.push(ExprNode::Name("x".to_owned())).unwrap();
+                    let left = builder.push(ExprNode::Name("x".into())).unwrap();
                     clause = builder
                         .push(ExprNode::Binary {
                             operator: BinaryOperator::And,
@@ -1660,7 +1660,7 @@ mod tests {
             .join()
             .expect("the rename completes on a 512 KiB stack");
         assert_eq!(names.len(), LEVELS + 1);
-        assert!(names.iter().all(|name| name == "y"));
+        assert!(names.iter().all(|name| name.name == "y"));
     }
 
     /// One expression of every form, each operand a distinct name `o0`,
@@ -1687,6 +1687,7 @@ mod tests {
                 },
                 unit: qsl_forms::NameForm {
                     name: "ms".to_owned(),
+                    segments: vec!["ms".to_owned()].into(),
                     span: qsl_foundation::Span { start: 0, end: 0 },
                 },
                 span: qsl_foundation::Span { start: 0, end: 0 },
@@ -1960,7 +1961,7 @@ mod tests {
             panic!("binary body")
         };
         assert_eq!(renamed.at(*left).node(), &ExprNode::Name("r".into()));
-        assert_eq!(renamed.at(*right).node(), &ExprNode::Name(fresh));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name(fresh.into()));
         assert_eq!(case.arms[1].binders[0].name, "k");
     }
 

@@ -795,7 +795,9 @@ impl ProtocolReferenceCause {
 pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
     use super::type_form::TypeFormFault as F;
     match fault {
-        F::MissingName(_) => (Code::MissingDeclaration, "missing-name"),
+        F::MissingName(_) | F::MissingQualifiedName(_) => {
+            (Code::MissingDeclaration, "missing-name")
+        }
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
         F::Malformed
         | F::EmptyInterval
@@ -1671,7 +1673,18 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::I2Diagnostics
             | Setting::I2WorkUnits
             | Setting::ExploreStates
-            | Setting::ExploreTransitions => Err(setting),
+            | Setting::ExploreTransitions
+            | Setting::ModelCheckMaxStates
+            | Setting::ModelCheckMaxTransitions
+            | Setting::ModelCheckMaxAutomatonStates
+            | Setting::ModelCheckWitnessSamples
+            | Setting::ModelCheckMaxWalkSteps
+            | Setting::ModelCheckMaxWitnessSet
+            | Setting::ModelCheckMaxRelationTuples
+            | Setting::ModelCheckMaxLiveInstances
+            | Setting::ModelCheckMaxStoreBuffer
+            | Setting::ModelCheckMaxMessages
+            | Setting::ExpansionMaxCandidates => Err(setting),
         }
     }
 }
@@ -1819,8 +1832,10 @@ pub enum CheckCause {
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
     /// written outside its admitted clause, or over an ineligible operand.
     WrongSnapshot(WrongSnapshotCause),
-    /// `missing_declaration` / `missing-name`.
+    /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// `missing_declaration` / `missing-name` for a qualified source name.
+    MissingQualifiedName(qsl_forms::NameForm),
     /// `missing_declaration` / `missing-name` for the population segment of
     /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
     /// segment: it starts `offset` bytes into the written name.
@@ -2342,9 +2357,10 @@ impl CheckCause {
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
-            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
-                Code::MissingDeclaration
-            }
+            Self::MissingName(_)
+            | Self::MissingQualifiedName(_)
+            | Self::MissingSegment { .. }
+            | Self::MissingSelf => Code::MissingDeclaration,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2414,9 +2430,10 @@ impl CheckCause {
                 Some("type-mismatch")
             }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
-            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
-                Some("missing-name")
-            }
+            Self::MissingName(_)
+            | Self::MissingQualifiedName(_)
+            | Self::MissingSegment { .. }
+            | Self::MissingSelf => Some("missing-name"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }

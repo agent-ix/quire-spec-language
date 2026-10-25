@@ -169,11 +169,11 @@ bullets state how QSL applies them over FR-120's subject.
   holding a `Cat` under `over (x: Dog)`) is an instance. Where no overlapping
   population holds under the key an object whose most-specific type conforms
   to `T`, including a position where no object is held, QSL SHALL return, for
-  every read through the bound parameter other than the guard below, the
-  `absent-key` undefined value QSpec FR-361 states. This applies only when
-  the expression actually reads through the bound parameter; an atom that
-  does not read `x` is evaluated normally. The claim is then
-  undefined at that position and the item settles `refuted`,
+  every evaluated read through the bound parameter other than the guard or a
+  forwarding read below, the `absent-key` undefined value QSpec FR-361
+  states. This applies only when the expression actually reads through the
+  bound parameter; an atom that does not read `x` is evaluated normally. The
+  claim is then undefined at that position and the item settles `refuted`,
   `undefined-evaluation`, naming the instance, the position and the read's
   locus (FR-127).
 - **The guard.** For a parameter `x` bound by `over`, `lookup<T>(p, x)`
@@ -183,12 +183,37 @@ bullets state how QSL applies them over FR-120's subject.
   through `x` with the disjunction over every population `p1`, `p2`, ... that
   overlaps `T`: `present(lookup<T>(M::p1, x) absent empty) or
   present(lookup<T>(M::p2, x) absent empty) or ...`. The disjunction is true
-  exactly when a read through `x` evaluates. A guard naming only some of the
-  overlapping populations is false at the keys only the others list, and
-  holds the guarded property vacuously there. QSpec FR-361 adds no type-test
-  operator and no population-free membership form, so an unguarded read at a
-  key whose object does not conform to `T` refutes the item whatever the
-  property.
+  exactly when the key holds an object of a type conforming to `T` in at
+  least one listed population. A guard naming only some of the overlapping
+  populations is false at the keys only the others list, and holds the
+  guarded property vacuously there. QSpec FR-361 adds no type-test operator
+  and no population-free membership form, so an unguarded read at a key whose
+  object does not conform to `T` refutes the item whatever the property.
+- **Guard provenance.** QSL SHALL attach `x`'s provenance to an immutable
+  `let` binding initialized with the same reference value. When a function
+  call binds a formal parameter to an actual argument carrying
+  `x`'s provenance, QSL SHALL attach that provenance to the formal parameter.
+  When a function returns the same reference value from a provenance-bearing
+  input, QSL SHALL propagate that provenance to its result. The provenance
+  denotes the binding origin of the reference, not equality with an
+  independently supplied reference. QSL SHALL treat a `lookup<T>(p, r)`
+  reference operand `r` carrying `x`'s provenance as the guard operand,
+  including when the lookup is inside a called function or `r` is returned
+  unchanged through a helper function. QSL SHALL allow a reference to be
+  forwarded through a `let` binding or function call without returning
+  `absent-key`; this exception permits only passing the reference onward. QSL
+  SHALL return `absent-key` for every evaluated field read or other operation
+  through `x` or its alias outside a `lookup` reference operand when no
+  conforming object is held. QSL SHALL NOT treat a helper result that lacks
+  `x`'s provenance as a guard operand. When the lookup reports absence, QSL
+  SHALL evaluate its `present` test as false. QSL SHALL NOT evaluate an
+  implication consequent while its guard is false.
+  Under FR-361, when the unit selects the model profile, a helper function
+  whose body performs model operations SHALL derive and carry the StateModel
+  family needed by that body, even when its `using` alias selects
+  `quire.value.complete/v1`; its declaration and `decreases` measure remain
+  under their declared selection. The helper remains subject to ordinary S3
+  resolution and assembly refusals.
 - S3 SHALL admit an `over (x: T)` clause when more than one population
   overlaps `T`. Instancing and reads use all such populations: their universes
   contribute keys in the order specified above, equal keys form one
@@ -293,6 +318,7 @@ bullets state how QSL applies them over FR-120's subject.
 | FR-125-AC-14 | Over `P1` of `Counter` with universe `[c, d, z]`, initial records under `c` and `d` only, value 0 each, `inc` disabled, and an operation `make` that creates a `Counter` with value 1 under `z`, `over (x: Counter)` has the instances `c` and `d` and the excluded keys `[z]`, and `always holds(x.value = 0)` settles `proved`, although `z`'s object has value 1 at a reachable position. | Test (TC-520) |
 | FR-125-AC-15 | A state-graph claim `over (x: Thing)` (FR-169) over AC-10's populations has the instances, order and excluded keys a temporal claim has. A hyper clause (FR-172) whose parameter `v: V::Thing` resolves to `P` of AC-9 reads `v`, at each position, as the reference with the held object's most-specific type, and a parameter typed `V::Lamp` reads `absent-key` undefined where the key holds a `Switch`. | Test (TC-520) |
 | FR-125-AC-16 | With a population `all` of member type `Entity` (a supertype of `Counter`) whose initial state holds a `Counter` under `c` (value 0, with `inc` enabled) and an `Entity` that is not a `Counter` under `e`, the unguarded claim `always holds(x.value <= 0)` over `Counter` refutes at both instances, `c` by a false evaluation after `inc` and `e` by an `absent-key` read. With `all = [c, e]` the reported instance is `c`, with no undefined cause; with `all = [e, c]` it is `e`, with cause `undefined-evaluation`. The item is `refuted` in both orders, and the two subjects give different request identities. | Test (TC-520) |
+| FR-125-AC-17 | On AC-12's `dogs` and `animals` subject, let `y` be an immutable `let` alias of `x`; let a helper `same(r)` return its reference argument unchanged, `isDog(r)` test the disjunction of `lookup<Dog>` in `animals` and `dogs` using `same(r)`, and `ageOK(r)` read `r.age >= 0`. The unit selects the model profile and each helper's `using` alias selects `quire.value.complete/v1`; S3 derives the StateModel family for `isDog` and `ageOK` bodies per FR-361. `always holds(isDog(y) implies ageOK(y))` settles `proved`: at `t`, the guard is false and `ageOK` is not called; at `k` and `d`, the guard and property are true. At `t`, the reference is forwarded through `y`, `same` and `isDog` without `absent-key`; the unguarded `always holds(ageOK(y))` still refutes with `undefined-evaluation`/`absent-key` at `t`. | Test (TC-520) |
 
 ## Dependencies
 

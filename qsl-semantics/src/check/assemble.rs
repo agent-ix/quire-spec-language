@@ -822,7 +822,7 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
-                DeclarationForm::Unit(quantity) => unit.units.push(quantity),
+                DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
@@ -2046,10 +2046,12 @@ fn check_names(
                         if !unit
                             .units
                             .iter()
-                            .any(|declared| declared.name.name == *name)
+                            .any(|declared| declared.name.name == name.name)
                         {
                             errors.push(AssemblyError {
-                                cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                                cause: AssemblyCause::UnresolvedTypeName {
+                                    name: name.name.clone(),
+                                },
                                 span: target.span,
                             });
                         }
@@ -2064,40 +2066,48 @@ fn check_names(
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => continue,
                     };
-                    if !object_types.contains_key(name) {
+                    if !object_types.contains_key(&name.name) {
                         errors.push(AssemblyError {
-                            cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                            cause: AssemblyCause::UnresolvedTypeName {
+                                name: name.name.clone(),
+                            },
                             span: target.span,
                         });
                     }
                 }
             }
-            TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
+            TypeFormHead::Name(name) => match unit.declared.get(&name.name).map(Vec::len) {
                 // FR-091: a native spelling is a candidate beside the unit's
                 // own forms, so it resolves only when the unit declares none.
-                None | Some(0) if native_scalar_named(name).is_some() => {}
+                None | Some(0) if native_scalar_named(&name.name).is_some() => {}
                 None | Some(0)
-                    if object_types.contains_key(name) || model_composites.contains(name) => {}
+                    if object_types.contains_key(&name.name)
+                        || model_composites.contains(&name.name) => {}
                 None | Some(0)
                     if name
-                        .split_once("::")
-                        .is_some_and(|(qualifier, _)| imports.contains_key(qualifier)) =>
+                        .segments
+                        .first()
+                        .is_some_and(|qualifier| imports.contains_key(qualifier)) =>
                 {
                     errors.push(AssemblyError {
-                        cause: AssemblyCause::ImportedTypeName { name: name.clone() },
+                        cause: AssemblyCause::ImportedTypeName {
+                            name: name.name.clone(),
+                        },
                         span: form.span,
                     });
                 }
                 None | Some(0) => errors.push(AssemblyError {
-                    cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                    cause: AssemblyCause::UnresolvedTypeName {
+                        name: name.name.clone(),
+                    },
                     span: form.span,
                 }),
-                Some(1) if native_scalar_named(name).is_none() => {}
+                Some(1) if native_scalar_named(&name.name).is_none() => {}
                 Some(_) => errors.push(AssemblyError {
                     cause: AssemblyCause::AmbiguousTypeName {
-                        name: name.clone(),
-                        candidates: unit.candidates(name),
-                        native: native_scalar_named(name).is_some(),
+                        name: name.name.clone(),
+                        candidates: unit.candidates(&name.name),
+                        native: native_scalar_named(&name.name).is_some(),
                     },
                     span: form.span,
                 }),
@@ -2123,7 +2133,8 @@ fn named_aliases(unit: &Unit, form: &TypeForm) -> Vec<usize> {
     let mut stack = vec![form];
     while let Some(form) = stack.pop() {
         if let TypeFormHead::Name(name) = &form.head {
-            if let Some([(Declared::Alias(index), _)]) = unit.declared.get(name).map(Vec::as_slice)
+            if let Some([(Declared::Alias(index), _)]) =
+                unit.declared.get(&name.name).map(Vec::as_slice)
             {
                 named.push(*index);
             }
@@ -2137,6 +2148,9 @@ fn named_aliases(unit: &Unit, form: &TypeForm) -> Vec<usize> {
 fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
     let cause = match error.fault {
         TypeFormFault::MissingName(name) => AssemblyCause::UnresolvedTypeName { name },
+        TypeFormFault::MissingQualifiedName(name) => {
+            AssemblyCause::UnresolvedTypeName { name: name.name }
+        }
         TypeFormFault::AmbiguousName(name) => AssemblyCause::AmbiguousTypeName {
             candidates: unit.candidates(&name),
             native: native_scalar_named(&name).is_some(),
@@ -2832,10 +2846,23 @@ impl PackageDeclarations {
                         function_selections.insert(index, profile.clone());
                         // FR-110 "Layer selection".
                         if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
-                            errors.extend(
-                                LayerAdmission::new(&lock, layer, &predicates, selects_model)
-                                    .function(function),
-                            );
+                            let selected_admission =
+                                LayerAdmission::new(&lock, layer, &predicates, selects_model);
+                            if selects_model && selected_admission.body_needs_model_family(function)
+                            {
+                                let model_admission = LayerAdmission::new(
+                                    &lock,
+                                    HeaderLayer::ModelComplete,
+                                    &predicates,
+                                    selects_model,
+                                );
+                                errors.extend(
+                                    selected_admission
+                                        .function_with_body_admission(function, &model_admission),
+                                );
+                            } else {
+                                errors.extend(selected_admission.function(function));
+                            }
                         }
                     }
                     None => errors.push(AssemblyError {
@@ -3892,7 +3919,7 @@ fn hybrid_claims(
         let over_hybrid = matches!(
             &clause.form.over.value_type.head,
             TypeFormHead::Name(name)
-                if hybrids.iter().any(|hybrid| hybrid.form.name.name == *name)
+                if hybrids.iter().any(|hybrid| hybrid.form.name.name == name.name)
         );
         if !over_hybrid {
             ordinary.push(clause);
@@ -3991,9 +4018,11 @@ fn state_graph_claims(
                     ));
                     continue;
                 };
-                let Some(context) = object_names.get(name).copied() else {
+                let Some(context) = object_names.get(&name.name).copied() else {
                     errors.push(error(
-                        AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                        AssemblyCause::UnresolvedTypeName {
+                            name: name.name.clone(),
+                        },
                         over.span,
                     ));
                     continue;
@@ -4003,7 +4032,7 @@ fn state_graph_claims(
                     Err(populations) => {
                         errors.push(error(
                             AssemblyCause::AmbiguousPopulation {
-                                context: name.clone(),
+                                context: name.name.clone(),
                                 populations,
                             },
                             over.span,

@@ -116,7 +116,7 @@ fn show(expression: ExprRef<'_>) -> String {
             )
         }
         ExprNode::String(text) => format!("string({text:?})"),
-        ExprNode::Name(spelling) => spelling.clone(),
+        ExprNode::Name(spelling) => spelling.name.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
         ExprNode::If { .. } => "If".into(),
         ExprNode::Case(_) => "Case".into(),
@@ -127,7 +127,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Present(_) => "Present".into(),
         ExprNode::Value(_) => "Value".into(),
         ExprNode::Deref(_) => "Deref".into(),
-        ExprNode::Call { name, .. } => format!("Call[{name}]"),
+        ExprNode::Call { name, .. } => format!("Call[{}]", name.name),
         ExprNode::Record { name, fields } => {
             let fields: Vec<String> = fields
                 .iter()
@@ -136,7 +136,7 @@ fn show(expression: ExprRef<'_>) -> String {
                     FieldInitializer::Null => format!("{field}=null"),
                 })
                 .collect();
-            format!("Record[{name};{}]", fields.join(","))
+            format!("Record[{};{}]", name.name, fields.join(","))
         }
         ExprNode::Collection { kind, .. } => format!("Collection[{kind:?}]"),
         ExprNode::Convert { target, .. } => format!("Convert[{:?}]", target.head),
@@ -168,7 +168,10 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Seq { binder, .. } => format!("Seq[{binder}]"),
         ExprNode::Size(_) => "Size".into(),
         ExprNode::Contains { .. } => "Contains".into(),
-        ExprNode::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
+        ExprNode::AllInstances { target, .. } => match &target.head {
+            TypeFormHead::Name(name) => format!("AllInstances[Name({:?})]", name.name),
+            head => format!("AllInstances[{head:?}]"),
+        },
         ExprNode::Lookup { .. } => "Lookup".into(),
         ExprNode::Dispatch { .. } => "Dispatch".into(),
         ExprNode::Pre(_) => "Pre".into(),
@@ -289,14 +292,14 @@ fn a_function_form_carries_its_signature_as_syntax() {
         TypeFormHead::Builtin(BuiltinType::Int)
     ));
     assert_eq!(x_type.bounds, ["0", "9"]);
-    assert!(matches!(&y_type.head, TypeFormHead::Name(name) if name == "Digit"));
+    assert!(matches!(&y_type.head, TypeFormHead::Name(name) if name.name == "Digit"));
     assert!(matches!(
         inc.result.head,
         TypeFormHead::Builtin(BuiltinType::Int)
     ));
     assert_eq!(inc.result.bounds, ["0", "10"]);
     assert!(
-        matches!(inc.measure.as_ref().map(Expression::root_node), Some(ExprNode::Name(name)) if name == "x")
+        matches!(inc.measure.as_ref().map(Expression::root_node), Some(ExprNode::Name(name)) if name.name == "x")
     );
     assert_eq!(show(inc.body.root()), "Add(x, 1)");
 }
@@ -771,7 +774,7 @@ fn record_and_tuple_forms_carry_their_names_and_members() {
     ));
     assert!(matches!(
         &record.fields[1].type_form.arguments[0].head,
-        TypeFormHead::Name(name) if name == "Point"
+        TypeFormHead::Name(name) if name.name == "Point"
     ));
     let DeclarationForm::Tuple(tuple) = unit.forms()[1].form() else {
         panic!("a tuple");
@@ -780,7 +783,7 @@ fn record_and_tuple_forms_carry_their_names_and_members() {
     assert_eq!(tuple.elements.len(), 2);
     assert!(matches!(
         &tuple.elements[1].arguments[0].head,
-        TypeFormHead::Name(name) if name == "M::T"
+        TypeFormHead::Name(name) if name.name == "M::T"
     ));
 }
 
@@ -801,7 +804,7 @@ fn a_quantity_type_form_names_its_unit() {
     let [unit_name] = form.arguments.as_slice() else {
         panic!("one argument")
     };
-    assert!(matches!(&unit_name.head, TypeFormHead::Name(name) if name == "ms"));
+    assert!(matches!(&unit_name.head, TypeFormHead::Name(name) if name.name == "ms"));
     assert_eq!(&text[unit_name.span.start..unit_name.span.end], "ms");
 }
 
@@ -1187,7 +1190,7 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
     let ExprNode::Call { name, arguments } = function.body.root_node() else {
         panic!("a call");
     };
-    assert_eq!(name, "UUID");
+    assert_eq!(name.name, "UUID");
     assert_eq!(
         function.body.at(arguments[0]).node(),
         &ExprNode::String("00112233-4455-6677-8899-aabbccddeeff".to_owned())
@@ -1196,7 +1199,7 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
     let ExprNode::Call { name, arguments } = function.body.root_node() else {
         panic!("a call");
     };
-    assert_eq!(name, "Timestamp");
+    assert_eq!(name.name, "Timestamp");
     let ExprNode::Negate(operand) = function.body.at(arguments[0]).node() else {
         panic!("a negated count");
     };

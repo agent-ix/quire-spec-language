@@ -73,7 +73,7 @@ pub enum TypeFormHead {
     Population,
     /// A qualified name that `check` resolves against a declared alias,
     /// record or tuple, enum or model object type.
-    Name(String),
+    Name(NameForm),
 }
 
 /// A declared type as spelled in source (ADR-011 §1's stage table:
@@ -329,7 +329,7 @@ impl TypeForm {
     /// A bare qualified name, e.g. a record, tuple, enum or model object
     /// type's own declared name.
     pub fn name(name: impl Into<String>, span: Span) -> Self {
-        Self::new(TypeFormHead::Name(name.into()), span)
+        Self::new(TypeFormHead::Name(NameForm::new(name, span)), span)
     }
 
     /// This type's own declared type arguments, in source order.
@@ -540,7 +540,7 @@ pub enum ExprNode {
     /// Unicode scalar sequence, kept exactly. It is always a `String`.
     String(String),
     /// A parameter, `let` or binder name, or a qualified enum member.
-    Name(String),
+    Name(NameForm),
     /// `let name = value in body`.
     Let {
         /// The bound name.
@@ -588,15 +588,15 @@ pub enum ExprNode {
     /// A call of a qualified name: a function, tuple constructor, or another
     /// declaration or undeclared name that the checker refuses.
     Call {
-        /// The qualified call target.
-        name: String,
+        /// The call target as written, with its ordered segments.
+        name: NameForm,
         /// Arguments in source order.
         arguments: Vec<ExprId>,
     },
     /// `R { f: e, ... }` in source order.
     Record {
-        /// The record declaration name.
-        name: String,
+        /// The record declaration name as written.
+        name: NameForm,
         /// Field initializers in source order.
         fields: Vec<(String, FieldInitializer)>,
     },
@@ -1307,7 +1307,7 @@ impl Expression {
 
     /// A name.
     pub fn name(name: impl Into<String>) -> Self {
-        Self::single(ExprNode::Name(name.into()))
+        Self::single(ExprNode::Name(NameForm::synthetic(name.into())))
     }
 
     /// `self`.
@@ -1424,13 +1424,16 @@ impl Expression {
             .into_iter()
             .map(|argument| append(&mut nodes, argument))
             .collect();
-        nodes.push(ExprNode::Call { name, arguments });
+        nodes.push(ExprNode::Call {
+            name: NameForm::synthetic(name),
+            arguments,
+        });
         Self { nodes }
     }
 
     /// `name { field: value, ... }`, where a `None` value is `null`.
     pub fn record(name: impl Into<String>, fields: Vec<(String, Option<Self>)>) -> Self {
-        let name = name.into();
+        let name = NameForm::synthetic(name.into());
         let mut nodes = Vec::new();
         let fields = fields
             .into_iter()
@@ -1836,7 +1839,7 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
 #[derive(Debug)]
 pub struct Spellings<'n> {
     /// The name a `Name` node reads; `None` for every other node.
-    pub reference: Option<&'n mut String>,
+    pub reference: Option<&'n mut NameForm>,
     /// The names the node binds, in [`ExprNode::binders`] order.
     pub binders: Vec<&'n mut String>,
 }
@@ -2304,13 +2307,84 @@ pub struct CaseForm {
     pub span: Span,
 }
 
-/// A qualified name as written, with `::` separators, and its span.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// A qualified name as written, with its ordered identifier segments and span.
+#[derive(Clone, Debug)]
 pub struct NameForm {
     /// The name as written.
     pub name: String,
+    /// The identifier segments, in source order.
+    pub segments: Box<[String]>,
     /// The span of the name.
     pub span: Span,
+}
+
+// Source locations are carried for diagnostics, but they do not change the
+// identity or meaning of a name. Keeping them out of equality also lets
+// callers compare a parsed name with a synthesized expected form.
+impl PartialEq for NameForm {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.segments == other.segments
+    }
+}
+
+impl Eq for NameForm {}
+
+impl std::hash::Hash for NameForm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.segments.hash(state);
+    }
+}
+
+impl NameForm {
+    /// Construct a name form from its spelling and source span.
+    pub fn new(name: impl Into<String>, span: Span) -> Self {
+        let name = name.into();
+        let segments = name
+            .split("::")
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Self {
+            name,
+            segments,
+            span,
+        }
+    }
+
+    /// Whether the source name contains a qualifier.
+    pub fn is_qualified(&self) -> bool {
+        self.segments.len() > 1
+    }
+
+    /// Replace the spelling of a synthesized expression name and refresh its
+    /// segment values. Source forms are otherwise built from the CST.
+    pub fn set_spelling(&mut self, spelling: impl Into<String>) {
+        self.name = spelling.into();
+        self.segments = self
+            .name
+            .split("::")
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+    }
+
+    /// Build a name form for a name synthesized without a source span.
+    fn synthetic(name: String) -> Self {
+        Self::new(name, Span { start: 0, end: 0 })
+    }
+}
+
+impl From<String> for NameForm {
+    fn from(name: String) -> Self {
+        Self::synthetic(name)
+    }
+}
+
+impl From<&str> for NameForm {
+    fn from(name: &str) -> Self {
+        Self::synthetic(name.to_owned())
+    }
 }
 
 /// The operator that precedes a dimension term.
@@ -3220,7 +3294,7 @@ pub struct TimedIntervalForm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TimedUpper {
     /// A quantity literal.
-    Finite(QuantityForm),
+    Finite(Box<QuantityForm>),
     /// `*`: the interval has no upper bound.
     Open,
 }
@@ -3360,8 +3434,8 @@ pub enum ActivationForm {
     Origin,
     /// `on each (p: T) [when (e)]`.
     Each {
-        /// The activation parameter.
-        parameter: ParameterForm,
+        /// The activation parameter, boxed to keep `Origin` compact.
+        parameter: Box<ParameterForm>,
         /// The `when` condition, when written.
         when: Option<ExpressionForm>,
     },
@@ -4051,8 +4125,8 @@ pub enum DeclarationForm {
     Enum(EnumForm),
     /// A `dimension` declaration.
     Dimension(DimensionForm),
-    /// A `unit` declaration.
-    Unit(UnitForm),
+    /// A `unit` declaration, boxed to keep the declaration sum compact.
+    Unit(Box<UnitForm>),
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
@@ -4200,9 +4274,9 @@ mod tests {
     fn a_deep_arena_clones_compares_formats_and_drops_on_a_small_stack() {
         on_small_stack(|| {
             let mut builder = ExpressionBuilder::new();
-            let mut inner = builder.push(ExprNode::Name("bottom".to_owned())).unwrap();
+            let mut inner = builder.push(ExprNode::Name("bottom".into())).unwrap();
             for level in 1..LEVELS {
-                let mut leaf = || builder.push(ExprNode::Name("x".to_owned())).unwrap();
+                let mut leaf = || builder.push(ExprNode::Name("x".into())).unwrap();
                 let node = match level % 5 {
                     0 => ExprNode::Not(inner),
                     1 => ExprNode::Binary {
@@ -4216,11 +4290,11 @@ mod tests {
                         body: inner,
                     },
                     3 => ExprNode::Call {
-                        name: "f".to_owned(),
+                        name: "f".into(),
                         arguments: vec![leaf(), inner],
                     },
                     _ => ExprNode::Record {
-                        name: "R".to_owned(),
+                        name: "R".into(),
                         fields: vec![
                             ("a".to_owned(), FieldInitializer::Null),
                             ("b".to_owned(), FieldInitializer::Value(inner)),
@@ -4235,7 +4309,10 @@ mod tests {
             assert_eq!(copy, tree);
             let rendered = format!("{tree:?}");
             assert!(rendered.starts_with(&format!("#{} ", tree.len() - 1)));
-            assert_eq!(rendered.matches("Name(\"bottom\")").count(), 1);
+            assert_eq!(
+                rendered.matches("Name(NameForm { name: \"bottom\"").count(),
+                1
+            );
             drop(copy);
             drop(tree);
         });
@@ -4260,12 +4337,12 @@ mod tests {
             format!("{tree:?}"),
             "#5 Binary { operator: Add, left: #2, right: #4 } \
              [#2 Binary { operator: Subtract, left: #0, right: #1 } \
-             [#0 Name(\"a\"), #1 Name(\"b\")], #4 Not(#3) [#3 Name(\"c\")]]"
+             [#0 Name(NameForm { name: \"a\", segments: [\"a\"], span: Span { start: 0, end: 0 } }), #1 Name(NameForm { name: \"b\", segments: [\"b\"], span: Span { start: 0, end: 0 } })], #4 Not(#3) [#3 Name(NameForm { name: \"c\", segments: [\"c\"], span: Span { start: 0, end: 0 } })]]"
         );
         let built = {
             let mut builder = ExpressionBuilder::new();
-            let a = builder.push(ExprNode::Name("a".to_owned())).unwrap();
-            let b = builder.push(ExprNode::Name("b".to_owned())).unwrap();
+            let a = builder.push(ExprNode::Name("a".into())).unwrap();
+            let b = builder.push(ExprNode::Name("b".into())).unwrap();
             let left = builder
                 .push(ExprNode::Binary {
                     operator: BinaryOperator::Subtract,
@@ -4307,13 +4384,13 @@ mod tests {
     #[test]
     fn a_builder_builds_only_one_tree() {
         let mut builder = ExpressionBuilder::new();
-        let x = builder.push(ExprNode::Name("x".to_owned())).unwrap();
+        let x = builder.push(ExprNode::Name("x".into())).unwrap();
         builder.push(ExprNode::Not(x)).unwrap();
         assert_eq!(
             builder.push(ExprNode::Negate(x)),
             Err(TreeRefusal::ClaimedTwice(x))
         );
-        let y = builder.push(ExprNode::Name("y".to_owned())).unwrap();
+        let y = builder.push(ExprNode::Name("y".into())).unwrap();
         assert_eq!(
             builder.push(ExprNode::Binary {
                 operator: BinaryOperator::Add,
@@ -4341,7 +4418,7 @@ mod tests {
         );
         let renamed = tree.respell_names(|_, spellings| {
             if let Some(name) = spellings.reference {
-                name.push('1');
+                name.set_spelling(format!("{}1", name.name));
             }
             for binder in spellings.binders {
                 binder.push('2');
@@ -4376,7 +4453,7 @@ mod tests {
         let renamed = tree
             .respelled(|_, node| {
                 if let ExprNode::Name(name) = node {
-                    name.push('1');
+                    name.set_spelling(format!("{}1", name.name));
                 }
             })
             .expect("a rename keeps the shape");

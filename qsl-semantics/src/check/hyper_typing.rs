@@ -234,20 +234,20 @@ pub(crate) fn type_condition(
                 let binder = lets
                     .iter()
                     .filter(|bound| {
-                        bound.name == *name && bound.body_start <= index && index <= bound.body
+                        bound.name == name.name && bound.body_start <= index && index <= bound.body
                     })
                     .max_by_key(|bound| bound.body_start);
                 if let Some(bound) = binder {
                     types.get(bound.value).cloned().unwrap_or(Ty::Unknown)
-                } else if let Some(root) = env.roots.get(name.as_str()) {
+                } else if let Some(root) = env.roots.get(name.name.as_str()) {
                     match root {
                         Root::Object(object) => Ty::Value(ValueType::Reference(*object)),
-                        Root::Execution(_) => Ty::Execution(name.clone()),
+                        Root::Execution(_) => Ty::Execution(name.name.clone()),
                     }
-                } else if let Some((binding, _)) = env.scope.enum_members_named(name).next() {
+                } else if let Some((binding, _)) = env.scope.enum_members_named(&name.name).next() {
                     Ty::Value(ValueType::Enum(binding.shape()))
                 } else {
-                    missing(&mut faults, name)
+                    missing(&mut faults, &name.name)
                 }
             }
             ExprNode::Let { name, body, .. } => {
@@ -266,22 +266,24 @@ pub(crate) fn type_condition(
                 }
                 child(*body)
             }
-            ExprNode::Call { name, arguments } if !silent => match env.signatures.callable(name) {
-                None => missing(&mut faults, name),
-                Some((_, signature)) => {
-                    let accepted = signature.parameters.len() == arguments.len()
-                        && signature.parameters.iter().zip(arguments).all(
-                            |((_, declared), argument)| {
-                                Ty::of(declared).compares_with(&child(*argument))
-                            },
-                        );
-                    if accepted {
-                        Ty::of(&signature.result)
-                    } else {
-                        ill(&mut faults)
+            ExprNode::Call { name, arguments } if !silent => {
+                match env.signatures.callable(&name.name) {
+                    None => missing(&mut faults, &name.name),
+                    Some((_, signature)) => {
+                        let accepted = signature.parameters.len() == arguments.len()
+                            && signature.parameters.iter().zip(arguments).all(
+                                |((_, declared), argument)| {
+                                    Ty::of(declared).compares_with(&child(*argument))
+                                },
+                            );
+                        if accepted {
+                            Ty::of(&signature.result)
+                        } else {
+                            ill(&mut faults)
+                        }
                     }
                 }
-            },
+            }
             ExprNode::Indexed { read, .. } | ExprNode::Pre(read) => child(*read),
             ExprNode::Field { operand, field } => match field_type(env, &child(*operand), field) {
                 Field::Found(ty) => *ty,

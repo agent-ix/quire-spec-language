@@ -126,7 +126,7 @@ fn name(expression: &ExpressionForm) -> &str {
     let ExprNode::Name(name) = expression.expression.root_node() else {
         panic!("a name: {:?}", expression.expression.root_node());
     };
-    name
+    name.name.as_str()
 }
 
 const SERVICE: &str = "\

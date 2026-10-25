@@ -77,6 +77,17 @@ impl<'a> LayerAdmission<'a> {
     /// expression form of the body or `decreases` measure, in source order,
     /// at its span.
     pub(crate) fn function(&self, function: &FunctionDeclaration) -> Option<AssemblyError> {
+        self.function_with_body_admission(function, self)
+    }
+
+    /// The function declaration and its measure use the function's selected
+    /// layer, while its body may derive a wider family from constructs it
+    /// writes (FR-361, FR-125).
+    pub(crate) fn function_with_body_admission(
+        &self,
+        function: &FunctionDeclaration,
+        body_admission: &Self,
+    ) -> Option<AssemblyError> {
         let declaration = match function.kind() {
             DeclarationKind::Function => LayerForm::FunctionDeclaration,
             DeclarationKind::Predicate => LayerForm::PredicateDeclaration,
@@ -91,12 +102,19 @@ impl<'a> LayerAdmission<'a> {
             return Some(refusal);
         }
         let spans = spans?;
-        self.expression(&function.body, &spans.body, whole)
+        body_admission
+            .expression(&function.body, &spans.body, whole)
             .or_else(|| {
                 let (measure, measure_spans) =
                     function.measure.as_ref().zip(spans.measure.as_ref())?;
                 self.expression(measure, measure_spans, whole)
             })
+    }
+
+    /// Whether a source function body needs model-family typing. Its
+    /// `decreases` measure remains in its declared family.
+    pub(crate) fn body_needs_model_family(&self, function: &FunctionDeclaration) -> bool {
+        body_needs_model_family(&function.body)
     }
 
     /// The refusal of the first form of a state clause outside the set, if
@@ -152,6 +170,28 @@ impl<'a> LayerAdmission<'a> {
     }
 }
 
+/// Whether an expression needs model-family typing. Kept independent of
+/// source spans so the family derivation also applies to declarations built
+/// directly for a checked package.
+pub(crate) fn body_needs_model_family(body: &Expression) -> bool {
+    let mut pending = vec![body.root()];
+    while let Some(node) = pending.pop() {
+        if matches!(
+            node.node(),
+            ExprNode::Field { .. }
+                | ExprNode::Deref(_)
+                | ExprNode::Reaches { .. }
+                | ExprNode::AllInstances { .. }
+                | ExprNode::Lookup { .. }
+                | ExprNode::Dispatch { .. }
+        ) {
+            return true;
+        }
+        pending.extend(node.children());
+    }
+    false
+}
+
 /// Visit the nodes of `body` in source order with the span each is written
 /// at, `whole` for a node with none, until `visit` returns `Some`.
 pub(super) fn visit_located(
@@ -181,7 +221,7 @@ pub(super) fn visit_located(
 #[ix_trace_rs::string_edge]
 pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<LayerForm> {
     match node {
-        ExprNode::Call { name, .. } => Some(if predicates.contains(name.as_str()) {
+        ExprNode::Call { name, .. } => Some(if predicates.contains(name.name.as_str()) {
             LayerForm::NamedPredicateCall
         } else {
             LayerForm::ValueConstruct

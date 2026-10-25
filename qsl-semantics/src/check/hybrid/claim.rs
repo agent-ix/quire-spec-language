@@ -163,7 +163,7 @@ fn check_claim(
     let TypeFormHead::Name(model_name) = &form.over.value_type.head else {
         return None;
     };
-    let model_index = *inputs.index.get(model_name)?;
+    let model_index = *inputs.index.get(&model_name.name)?;
     let model = inputs.models.get(model_index.get())?;
 
     let profile = match TemporalProfile::from_identity(&declaration.selection.identity) {

@@ -1258,7 +1258,11 @@ fn checked_parameters(
             }));
             continue;
         };
-        let alias = written.split("::").next().unwrap_or_default();
+        let alias = written
+            .segments
+            .first()
+            .map(String::as_str)
+            .unwrap_or_default();
         if !aliases.iter().any(|bound| bound.as_str() == alias) {
             found.push(Found::Hyper(HyperCause::UnboundParameterAlias {
                 parameter: name,
@@ -1266,7 +1270,7 @@ fn checked_parameters(
             }));
             continue;
         }
-        let Some(object) = scope.object_type_named(written) else {
+        let Some(object) = scope.object_type_named(&written.name) else {
             found.push(Found::Hyper(HyperCause::ParameterNotAnObject {
                 parameter: name,
                 span,
@@ -1356,7 +1360,7 @@ fn chain_operand(node: &ExprNode) -> Option<ExprId> {
 fn read_root<'e>(mut node: ExprRef<'e>) -> Option<&'e str> {
     loop {
         match node.node() {
-            ExprNode::Name(name) => return Some(name),
+            ExprNode::Name(name) => return Some(name.name.as_str()),
             other => node = node.at(chain_operand(other)?),
         }
     }
@@ -1568,6 +1572,7 @@ fn step_read(
             };
             let name = NameForm {
                 name: format!("{}::{operation}", alias.as_str()),
+                segments: vec![alias.as_str().to_owned(), operation.clone()].into(),
                 span,
             };
             let (resolved, declaration) =
@@ -1940,8 +1945,10 @@ fn binary_tag(operator: BinaryOperator) -> (u8, Commutes) {
 fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
     match node {
         // A claim's `over` binder is not content: it encodes as a binder.
-        ExprNode::Name(name) if swap.1 == Some(name.as_str()) => (b"binder".to_vec(), Vec::new()),
-        ExprNode::Name(name) => (b"name".to_vec(), text_segment(name)),
+        ExprNode::Name(name) if swap.1 == Some(name.name.as_str()) => {
+            (b"binder".to_vec(), Vec::new())
+        }
+        ExprNode::Name(name) => (b"name".to_vec(), text_segment(&name.name)),
         ExprNode::Boolean(value) => (b"bool".to_vec(), vec![u8::from(*value)]),
         ExprNode::Integer(value) => (b"int".to_vec(), text_segment(&value.to_string())),
         ExprNode::String(text) => (b"str".to_vec(), text_segment(text)),
@@ -1976,7 +1983,7 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::If { .. } => (b"if".to_vec(), Vec::new()),
         ExprNode::SelfRef => (b"self".to_vec(), Vec::new()),
         ExprNode::Result => (b"result".to_vec(), Vec::new()),
-        ExprNode::Call { name, .. } => (b"call".to_vec(), text_segment(name)),
+        ExprNode::Call { name, .. } => (b"call".to_vec(), text_segment(&name.name)),
         ExprNode::Rational(numerator, denominator) => (
             b"rational".to_vec(),
             text_segment(&format!("{numerator}/{denominator}")),

@@ -8,6 +8,7 @@
 //! same [`SettingLimits::set_bound`], so one name raises one limit at every
 //! entry point.
 
+use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::Limits as ExploreLimits;
 use qsl_foundation::{AccountingSetting, Setting, SettingLimits, SettingName, UsageRefusal};
 use qsl_semantics::library::bundle::PackageLimits as LibraryLimits;
@@ -16,6 +17,7 @@ use qsl_semantics::model::population::PopulationAdmissionLimits;
 use quire_exact::{LimitKind as Counter, ScalarLimits};
 
 use crate::bounds::ReplayLimits;
+use crate::model_check::limits::ModelCheckLimits;
 use crate::spine::{default_accounting, SpineLimits, DEFAULT_WORK_UNITS};
 
 /// The call's accounting limits (`quire.value.accounting/v1`): each of the
@@ -180,7 +182,98 @@ impl SettingLimits for PrepareLimits {
     }
 }
 
-/// Every limits type a caller can configure, one field per stage.
+/// The FR-255 engine-table limits accepted by the settings operation.
+/// `expansion` is absent until a caller supplies its required
+/// `expansion.max_candidates` bound; the model-check and protocol-method
+/// limits use their published defaults.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EngineLimits {
+    /// EN-1's search and product budgets.
+    pub model_check: ModelCheckLimits,
+    /// FR-120's caller-supplied candidate bound, absent by default.
+    pub expansion: Option<ExpansionLimits>,
+    /// EN-1's protocol-subject live-instance bound.
+    pub max_live_instances: u64,
+    /// EN-1's weak-memory TSO store-buffer bound.
+    pub max_store_buffer: u64,
+    /// EN-1's weak-memory RA live-message bound.
+    pub max_messages: u64,
+}
+
+impl Default for EngineLimits {
+    fn default() -> Self {
+        Self {
+            model_check: ModelCheckLimits::default(),
+            expansion: None,
+            max_live_instances: 3,
+            max_store_buffer: 4,
+            max_messages: 4,
+        }
+    }
+}
+
+impl SettingLimits for EngineLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        let model = &self.model_check;
+        let mut bounds = vec![
+            (
+                Setting::ModelCheckMaxStates,
+                u64::try_from(model.limits.max_states).unwrap_or(u64::MAX),
+            ),
+            (
+                Setting::ModelCheckMaxTransitions,
+                u64::try_from(model.limits.max_transitions).unwrap_or(u64::MAX),
+            ),
+            (
+                Setting::ModelCheckMaxAutomatonStates,
+                model.max_automaton_states,
+            ),
+            (Setting::ModelCheckWitnessSamples, model.witness_samples),
+            (Setting::ModelCheckMaxWalkSteps, model.max_walk_steps),
+            (Setting::ModelCheckMaxWitnessSet, model.max_witness_set),
+            (
+                Setting::ModelCheckMaxRelationTuples,
+                model.max_relation_tuples,
+            ),
+            (Setting::ModelCheckMaxLiveInstances, self.max_live_instances),
+            (Setting::ModelCheckMaxStoreBuffer, self.max_store_buffer),
+            (Setting::ModelCheckMaxMessages, self.max_messages),
+        ];
+        if let Some(expansion) = self.expansion {
+            bounds.push((Setting::ExpansionMaxCandidates, expansion.max_candidates));
+        }
+        bounds
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        let model = &mut self.model_check;
+        match setting {
+            Setting::ModelCheckMaxStates => {
+                model.limits.max_states = usize::try_from(bound).unwrap_or(usize::MAX);
+            }
+            Setting::ModelCheckMaxTransitions => {
+                model.limits.max_transitions = usize::try_from(bound).unwrap_or(usize::MAX);
+            }
+            Setting::ModelCheckMaxAutomatonStates => model.max_automaton_states = bound,
+            Setting::ModelCheckWitnessSamples => model.witness_samples = bound,
+            Setting::ModelCheckMaxWalkSteps => model.max_walk_steps = bound,
+            Setting::ModelCheckMaxWitnessSet => model.max_witness_set = bound,
+            Setting::ModelCheckMaxRelationTuples => model.max_relation_tuples = bound,
+            Setting::ModelCheckMaxLiveInstances => self.max_live_instances = bound,
+            Setting::ModelCheckMaxStoreBuffer => self.max_store_buffer = bound,
+            Setting::ModelCheckMaxMessages => self.max_messages = bound,
+            Setting::ExpansionMaxCandidates => {
+                self.expansion = Some(ExpansionLimits {
+                    max_candidates: bound,
+                });
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// Every limit type a caller can configure, one field per stage or engine.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CallerLimits {
     /// S1, I1, S3, type-environment admission and the I2 read.
@@ -201,6 +294,8 @@ pub struct CallerLimits {
     pub render: RenderLimits,
     /// Execution-backend prepare (FR-294).
     pub prepare: PrepareLimits,
+    /// FR-255's analysis-engine limits.
+    pub engines: EngineLimits,
     /// The call's accounting budgets (`quire.value.accounting/v1`).
     pub accounting: AccountingLimits,
 }
@@ -263,7 +358,7 @@ impl CallerLimits {
         limits
     }
 
-    fn parts(&self) -> [&dyn SettingLimits; 9] {
+    fn parts(&self) -> [&dyn SettingLimits; 10] {
         [
             &self.spine,
             &self.library,
@@ -274,6 +369,7 @@ impl CallerLimits {
             &self.format,
             &self.render,
             &self.prepare,
+            &self.engines,
         ]
     }
 }
@@ -284,7 +380,7 @@ impl SettingLimits for CallerLimits {
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        let parts: [&mut dyn SettingLimits; 9] = [
+        let parts: [&mut dyn SettingLimits; 10] = [
             &mut self.spine,
             &mut self.library,
             &mut self.admission,
@@ -294,6 +390,7 @@ impl SettingLimits for CallerLimits {
             &mut self.format,
             &mut self.render,
             &mut self.prepare,
+            &mut self.engines,
         ];
         parts.into_iter().any(|part| part.set_bound(setting, bound))
     }
@@ -413,7 +510,7 @@ mod tests {
     /// defaults however the entries were built. The stage-driven half, an input that reached
     /// a limit and passes once it is raised, is
     /// `a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request`.
-    #[trace("TC-721", "FR-255-AC-4")]
+    #[trace("TC-721", "FR-255-AC-4", "FR-255-AC-12", "FR-255-AC-13")]
     #[test]
     fn the_settings_operation_and_a_request_take_every_setting() {
         for setting in Setting::ALL {

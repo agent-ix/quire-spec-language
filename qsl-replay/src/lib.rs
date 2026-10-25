@@ -132,9 +132,10 @@ pub use execute::{
     ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
-    settle_hybrid_candidates, BoundDimension, BudgetRefusal, ClaimHorizon, HybridSettlement,
-    NegativeHorizon, SolverBudget, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome,
-    SolverResult, SolverStop,
+    settle_hybrid_candidates, AdmittedHybridProcessItem, AdmittedHybridProcessRequest,
+    BoundDimension, BudgetRefusal, ClaimHorizon, HybridProcessItem, HybridProcessRequest,
+    HybridProcessRequestRefusal, HybridSettlement, NegativeHorizon, SolverBudget, SolverCoverage,
+    SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
 };
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
@@ -147,7 +148,7 @@ pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
-pub use limits::{AccountingLimits, CallerLimits, PrepareLimits, RenderLimits};
+pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
     MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,

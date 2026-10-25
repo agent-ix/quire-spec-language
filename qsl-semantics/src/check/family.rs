@@ -437,7 +437,7 @@ fn encode_expression(
             }
             ExprNode::Name(name) => {
                 out.write_str("name");
-                out.write_str(name);
+                out.write_str(&name.name);
             }
             ExprNode::ProtocolReference { target } => {
                 out.write_str("protocol_reference");
@@ -505,13 +505,13 @@ fn encode_expression(
             }
             ExprNode::Call { name, arguments } => {
                 out.write_str("call");
-                out.write_str(name);
+                out.write_str(&name.name);
                 out.write_u64(arguments.len() as u64);
                 pending.extend(arguments.iter().map(|id| expr.at(*id)));
             }
             ExprNode::Record { name, fields } => {
                 out.write_str("record");
-                out.write_str(name);
+                out.write_str(&name.name);
                 out.write_u64(fields.len() as u64);
                 for (field_name, initializer) in fields {
                     out.write_str(field_name);
@@ -716,7 +716,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
     let mut pending = vec![root];
     while let Some(form) = pending.pop() {
         out.write_str(match &form.head {
-            TypeFormHead::Name(name) => name,
+            TypeFormHead::Name(name) => &name.name,
             TypeFormHead::Collection(kind) => collection_kind_tag(*kind),
             TypeFormHead::Population => "Population",
             TypeFormHead::Builtin(builtin) => match builtin {
@@ -964,7 +964,7 @@ impl<'a> Application<'a> {
         let declared = match typer.type_named(name, location) {
             Ok(value_type) => Some(value_type),
             Err(CheckRefusal {
-                cause: CheckCause::MissingName(_),
+                cause: CheckCause::MissingName(_) | CheckCause::MissingQualifiedName(_),
                 ..
             }) => None,
             Err(refusal) => return Err(refusal),
@@ -1231,6 +1231,11 @@ pub(crate) fn check_declaration_body(
     .with_cancel(input.cancel)
     .with_complete_value(input.complete_value)
     .with_context(cx.reborrow(input.scope));
+    if let Some(model_scope) = &input.model_scope {
+        typer = typer
+            .with_model_family(input.derived_model_family)
+            .with_named_populations(model_scope.clone());
+    }
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
@@ -1501,6 +1506,12 @@ pub struct ValueDeclarations<'a> {
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
     pub(crate) complete_value: bool,
+    /// The derived StateModel body family and its population-name scope.
+    /// `None` for a value-only function body.
+    pub(crate) model_scope: Option<super::check::NamedScope>,
+    /// Whether this body was admitted in the derived model family from a
+    /// `quire.value.complete/v1` function selection (FR-361-AC-16).
+    pub(crate) derived_model_family: bool,
     pub(crate) location: &'a CheckLocation,
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.
@@ -2132,6 +2143,8 @@ pub mod fixtures {
             dispatch_tables,
             checking_limits,
             complete_value: false,
+            model_scope: None,
+            derived_model_family: false,
             location,
             measure_location: location,
             nodes_used: 0,

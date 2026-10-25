@@ -13,7 +13,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_package::CheckedPackage;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, AdmissionFailure, AdmissionRecord, AdmittedObservations, AnchorKind,
-    ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, PostStateRange,
+    ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, PathStep, PostStateRange,
     SelectedAnchor, SelectedObject, SelfKind, SnapshotValue,
 };
 use quire_exact::{FieldValue, Value as Datum};
@@ -113,6 +113,7 @@ fn owned(owner: Json, label: Json) -> Json {
             "token": {"kind": "uuid", "text": "00112233-4455-6677-8899-aabbccddeeff"},
             "stamp": {"kind": "timestamp", "nanoseconds": "0"},
             "flags": {"record": {"type": id("Flags"), "fields": {"placed": boolean(true)}}},
+            "ids": {"set": []},
         },
     })
 }
@@ -254,6 +255,7 @@ impl Orders {
                 id("Owned/token"),
                 id("Owned/stamp"),
                 id("Owned/flags"),
+                id("Owned/ids"),
             ]);
             types.push(declaration(
                 "Owned",
@@ -268,6 +270,13 @@ impl Orders {
                         field("Owned", "token", &format!("{NATIVE}/UUID")),
                         field("Owned", "stamp", &format!("{NATIVE}/Timestamp")),
                         field("Owned", "flags", &id("Flags")),
+                        {
+                            // `ids: Set<UUID>[0, 3]`.
+                            let mut ids = field("Owned", "ids", &format!("{NATIVE}/UUID"));
+                            ids["multiplicity"] =
+                                json!({"lower": 0, "upper": 3, "ordered": false, "unique": true});
+                            ids
+                        },
                     ],
                     claim,
                 ),
@@ -1463,9 +1472,10 @@ fn a_context_reference_closes_against_the_snapshot() {
 
     // The value bound: the exact count admits, one less refuses.
     let (docs, i3) = claim(string_value("x"), populations, pump_reference("p1"));
-    // One context entry, its six fields and the one nested `Flags` member,
-    // and the one `pump_id` of the listed `p1`.
-    let exact = 9;
+    // One context entry, its seven fields (the empty set `ids` counts one)
+    // and the one nested `Flags` member, and the one `pump_id` of the listed
+    // `p1`.
+    let exact = 10;
     assert_eq!(owner(&docs, &i3).unwrap().usage.values, exact);
     let at = |bound: u64| {
         lifecycle_selection_with(
@@ -1605,4 +1615,87 @@ fn a_context_field_follows_the_value_rules_of_an_object_field() {
         "missing-member",
         &[("machine", &id("Owned")), ("field", "flags")],
     );
+}
+
+/// TC-1171 step 2 (FR-106-AC-51, the context-field clause): a context field of a `Set<UUID>[0, 3]`
+/// type follows the value rules of an object field, naming the machine and
+/// the field and nesting its path at the element: a set in either array
+/// order admits, a duplicate refuses `duplicate-member` at the later element
+/// naming the earlier one, four members refuse `cardinality_out_of_bound`
+/// before any element is read, and a form of another kind or an element of
+/// another type is `wrong-value-kind`.
+#[trace("TC-1171", "FR-106-AC-51")]
+#[test]
+fn a_context_set_field_follows_the_collection_rules_of_an_object_field() {
+    let orders = Orders::new(false);
+    let uuid = |last: u8| json!({"kind": "uuid", "text": format!("00000000-0000-0000-0000-0000000000{last:02x}")});
+    let admit = |value: Json| {
+        let mut docs = Docs::default();
+        let mut entry = owned(pump_reference("p1"), string_value("x"));
+        entry["fields"]["ids"] = value;
+        let mut pre = orders.snapshot_of("i3", "o1", "pre", vec![entry]);
+        pre["populations"] = json!([population("Q", true, vec![pump_object("p1")])]);
+        let pre = docs.snapshot(&pre);
+        let post = docs.snapshot(&orders.snapshot_of("i3", "o2", "post", vec![]));
+        let i3 = docs.invocation(&orders.invocation(
+            "i3",
+            "Owned",
+            "claim",
+            Json::Null,
+            &pre,
+            &post,
+            json!({}),
+        ));
+        orders.context(&docs, "Owner", &i3, ContextSide::Pre)
+    };
+    admit(json!({"set": [uuid(2), uuid(1)]})).expect("a set admits in either array order");
+    admit(json!({"set": [uuid(1), uuid(2)]})).expect("a set admits in either array order");
+
+    let named = [("machine", id("Owned")), ("field", "ids".to_owned())];
+    let named: Vec<(&str, &str)> = named.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let refusal = |value: Json, code: Code, cause: &str, extra: &[(&str, &str)]| {
+        let record = refused(admit(value));
+        let mut expected = named.clone();
+        expected.extend_from_slice(extra);
+        assert_refusal(&record, code, cause, &expected);
+        record
+    };
+    let record = refusal(
+        json!({"set": [uuid(7), uuid(7)]}),
+        Code::InvalidRuntimeInput,
+        "duplicate-member",
+        &[("earlier-index", "0")],
+    );
+    assert_eq!(record.path, vec![PathStep::Index(1)]);
+    // The bound comes before any element: none of the four is a UUID.
+    let record = refusal(
+        json!({"set": [{"integer": "x"}, {"integer": "x"}, {"integer": "x"}, {"integer": "x"}]}),
+        Code::CardinalityOutOfBound,
+        "above-maximum",
+        &[("minimum", "0"), ("maximum", "3"), ("count", "4")],
+    );
+    assert!(record.path.is_empty());
+    let record = refusal(
+        json!({"set": [{"integer": "1"}]}),
+        Code::InvalidRuntimeInput,
+        "wrong-value-kind",
+        &[],
+    );
+    assert_eq!(record.path, vec![PathStep::Index(0)]);
+    let record = refusal(
+        json!({"sequence": [uuid(1)]}),
+        Code::InvalidRuntimeInput,
+        "wrong-value-kind",
+        &[],
+    );
+    assert!(record.path.is_empty());
+    // An element is admitted by its own type's rules: an uppercase UUID is
+    // not the canonical text.
+    let record = refusal(
+        json!({"set": [{"kind": "uuid", "text": "00000000-0000-0000-0000-00000000000A"}]}),
+        Code::InvalidRuntimeInput,
+        "invalid-value",
+        &[],
+    );
+    assert_eq!(record.path, vec![PathStep::Index(0)]);
 }
