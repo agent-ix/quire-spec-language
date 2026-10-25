@@ -67,16 +67,17 @@ fn broken() -> String {
     broken
 }
 
-/// The unit with a checked `on each` temporal clause. S3 checks it, but S4
-/// has no emitter for that activation and refuses it as not yet implemented.
+/// The unit with a checked temporal clause that declares a capture. S3
+/// checks it, but S4 has no emitter for captures yet (QSL-1081) and refuses it
+/// as not yet implemented (FR-337-AC-7 interim).
 fn unsupported() -> String {
     unit().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.infinite-trace/v1\";\n",
     ) + "temporal Unemitted using t over (c: Config::ConfigVersion) \
-           clock \"model-steps\" on each (d: Config::ConfigVersion) \
-           when (d.versionNumber >= 0) { eventually holds(c.versionNumber <= 1000) }\n"
+           clock \"model-steps\" on origin { capture before: Int[0, 1000] = c.versionNumber; \
+           eventually holds(c.versionNumber <= 1000) }\n"
 }
 
 /// The unit with more work in `ParentOrder` and the same meaning.

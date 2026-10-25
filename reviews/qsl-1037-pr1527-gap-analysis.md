@@ -130,6 +130,24 @@ directly.
 | FND-004 | medium | FR-125-AC-18 is now claimed (three tests tagged), but most of its rows are not exercised through the production letter seam. Uncovered: the Counter event-position rows (`when (c.value = 1)` Violated with prefix 0→1→2, `when (c.value >= 2)` Holds{Exhaustive}); the infinite-trace `when (c.value >= 3)` row with its prefix and the FR-128 replay to `reproduced-with-evaluated-witness` (`ReplayedLetters::activation` is untested, as model_check_safety.rs's module doc says); the `6 mod (2 - c.value)` guard's UndefinedEvaluation at position 2 naming the activation; and the POR visibility of `inc` under the `c.value >= 3` footprint. In addition, `the_production_letters_read_the_counter_guard_and_its_footprint` asserts only `Violated` for `when (q.value >= 1)` + `always holds(c.value <= 2)`, which an activation-everywhere reading also gives | qsl-analyze/tests/it/model_check_safety.rs:464-530; qsl-analyze/tests/it/model_instances.rs:1022-1084 |
 | FND-005 | low | `the_populations_a_guard_names_join_the_clauses` is tagged `FR-125-AC-18`, but it checks FR-337 "`on each` activation at S3" (the guard is a population position, FR-391), not the letter seam that AC-18 states | qsl-analyze/tests/it/model_instances.rs:1090-1092 |
 
+## New findings (disposition pass 2)
+
+Disposition pass 2 reviews #1538 at `3637c7461`. Mutation M5 was re-run
+(guard objects dropped from the record's `ModelReferences`; `cargo test -p
+qsl-package -p qsl-semantics --lib` plus `-p qsl-analyze --test it
+model_instances`). It is now killed by
+`the_populations_a_guard_names_join_the_clauses`, which counts
+`AbstractionKey::Object` elements through the public
+`CheckedGraph::item_elements`.
+
+The FR-125-AC-18 tag now sits on
+`model_check_safety::the_production_letters_read_the_counter_guard_and_its_footprint`
+alone. The two model_instances tests are retagged `FR-337`. The rows that
+are still uncovered, including that test's non-discriminating `Violated`
+assertion, are filed as QSL-1086.
+
+No new findings.
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -137,3 +155,6 @@ directly.
 | FND-001 | fixed | `a_repeated_binder_name_refuses_naming_both_declarations` asserts `DuplicateTrigger { first }` at the `over` name. M2 is killed |
 | FND-002 | still-open | M4 and M5b are now killed by `the_populations_a_guard_names_join_the_clauses`. M5 still survives: no test shows the guard's objects joining the requirement record's references. The stated blocker (`references()` is `pub(crate)`) does not hold, because the public `CheckedGraph::item_elements` exposes them and an in-crate qsl-semantics test can read them. The fix is a small in-PR test; it could also be deferred to a ticket by the lead |
 | FND-003 | fixed | `when (true)` is asserted to lower to the Boolean literal `true` located at `true`, and the guard's emitted node occurrence is located at the guard's text |
+| FND-002 | fixed | `the_populations_a_guard_names_join_the_clauses` asserts that a guard reading `y.age` adds one `AbstractionKey::Object` through `CheckedGraph::item_elements` (none for `when (true)`). M5 is killed |
+| FND-004 | deferred | QSL-1086 (Backlog) owns the FR-125-AC-18 rows not run through the production letters and replay. The AC-18 tag is narrowed to the guard-reading/footprint test |
+| FND-005 | fixed | Both model_instances tests are now tagged `#[trace("TC-520", "FR-337")]` |
