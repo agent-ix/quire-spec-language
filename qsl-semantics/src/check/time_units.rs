@@ -124,36 +124,27 @@ impl TimeUnits {
                 .dimensions
                 .iter()
                 .find(|dimension| dimension.base && dimension.name == TIME_DIMENSION);
-            let time_key = dimension.and_then(|dimension| {
+            let time_node = dimension.and_then(|dimension| {
                 let owner = NodeOwner::Model(ModelSubject {
                     identity: package.identity.clone(),
                     node: dimension.key.node.clone(),
                 });
                 let preimage =
                     DimensionPreimage::new(owner, vec![dimension.name.clone()], vec![]).ok()?;
-                nominal_key(&preimage, identity).ok()
+                let key = nominal_key(&preimage, identity).ok()?;
+                Some((key, preimage.preimage_bytes(identity).ok()?))
             });
-            if let (Some(dimension), Some(time_key)) = (dimension, time_key) {
-                if let Ok(preimage) = serde_json::to_vec(&serde_json::json!({
-                    "version": "quire.dimension-node/v1",
-                    "owner": {
-                        "kind": "model",
-                        "identity": package.identity,
-                        "node": dimension.key.node,
+            let time_key = time_node.as_ref().map(|(key, _)| *key);
+            if let Some((time_key, preimage)) = time_node {
+                nominal_nodes.insert(
+                    time_key,
+                    TimeNominalNode {
+                        key: time_key,
+                        form: "dimension".to_owned(),
+                        preimage,
+                        dependencies: Vec::new(),
                     },
-                    "qualified_declaration": [dimension.name],
-                    "terms": [],
-                })) {
-                    nominal_nodes.insert(
-                        time_key,
-                        TimeNominalNode {
-                            key: time_key,
-                            form: "dimension".to_owned(),
-                            preimage,
-                            dependencies: Vec::new(),
-                        },
-                    );
-                }
+                );
             }
             let prefix = model.alias().unwrap_or(&package.identity);
             if let Some(time_key) = time_key {
@@ -377,32 +368,7 @@ fn package_unit_nominal_nodes(
         )
         .ok()?;
         let key = nominal_key(&preimage, identity).ok()?;
-        let preimage = serde_json::to_vec(&serde_json::json!({
-            "version": "quire.unit-node/v1",
-            "owner": {
-                "kind": "model",
-                "identity": unit.key.package,
-                "node": unit.key.node,
-            },
-            "qualified_declaration": [unit.name],
-            "dimension_node_id": {
-                "domain": quire_exact::NODE_KEY_DOMAIN,
-                "digest": dimension.to_string(),
-            },
-            "target_unit_node_id": target.map(|target| serde_json::json!({
-                "domain": quire_exact::NODE_KEY_DOMAIN,
-                "digest": target.to_string(),
-            })),
-            "scale": {
-                "numerator": scale.numerator().to_string(),
-                "denominator": scale.denominator().to_string(),
-            },
-            "offset": {
-                "numerator": offset.numerator().to_string(),
-                "denominator": offset.denominator().to_string(),
-            },
-        }))
-        .ok()?;
+        let preimage = preimage.preimage_bytes(identity).ok()?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,
