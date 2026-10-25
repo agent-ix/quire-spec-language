@@ -9,16 +9,16 @@ review_set: all
 
 ## Summary
 
-Reviewed the new QSL owner allocation and its index and test-case link changes. The three criteria distinguish QSV membership/conversion ownership, the QSL caller's omitted-bound default, and evaluator-effect ownership; no implementation evidence is claimed.
+Reviewed the new QSL owner allocation and its index and test-case link changes. The seven criteria distinguish QSV membership/conversion ownership, the QSL caller's omitted-bound default, and evaluator-effect ownership; no implementation evidence is claimed.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No base-review defects found. FR-486 is unique, all criteria have explicit Test verification, and planned coverage remains unclaimed pending code tests. | FR-486 |
+| FND-001 | low | No base-review defects found. FR-486 is unique, every criterion has an explicit verification method (Test, except FR-486-AC-2 which is Inspection), and planned coverage remains unclaimed pending code tests. | FR-486 |
 
 ## Base checks
 
-The current main branch already assigns FR-394 to the replay facade, so this change allocates FR-486 and leaves FR-394 intact. The requirement index and `spec.md` containment edge include FR-486. TC-459 and TC-460 retain their broad FR-104 verification links and drop their criterion-level FR-104-AC-9 links, as recorded in the inherited change. No hash, digest, pin, trace tag, or test evidence was added.
+The current main branch already assigns FR-394 to the replay facade, so this change allocates FR-486 and leaves FR-394 intact. The requirement index and `spec.md` containment edge include FR-486. TC-459 and TC-460 are unchanged from main: both their FR-104 and criterion-level FR-104-AC-9 verification links are retained. No hash, digest, pin, trace tag, or test evidence was added.
 
 No applicable `AssuranceProfile` artifact was found in `spec/`. The review is direct-path evidence; no enforced review workflow was run.
