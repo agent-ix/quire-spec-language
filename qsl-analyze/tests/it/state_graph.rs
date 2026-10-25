@@ -1293,8 +1293,11 @@ fn a_state_graph_claim_is_instanced_over_the_subjects_universe() {
         no_samples(),
     ));
     assert!(
-        result.items[0].is_empty(),
-        "no instance: {:?}",
+        matches!(
+            result.items[0].as_slice(),
+            [outcome] if outcome.outcome == StateGraphOutcome::NoInstance
+        ),
+        "no-instance marker: {:?}",
         result.items[0]
     );
     assert_eq!(bound(&result, 1), vec![None]);
