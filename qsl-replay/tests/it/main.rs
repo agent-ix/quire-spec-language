@@ -6,6 +6,7 @@ mod compile_ieee_profile;
 mod compile_protocol_profile;
 mod format_outcome_facade;
 mod hyper_identity;
+mod hyper_query;
 mod outcome_facade;
 mod parse_outcome_facade;
 mod quantity_namespace_source;
@@ -22,4 +23,5 @@ mod refinement_step;
 mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
+mod script_search;
 mod vault_world;

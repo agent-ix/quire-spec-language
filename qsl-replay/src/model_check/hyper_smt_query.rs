@@ -7,7 +7,10 @@ use std::collections::BTreeSet;
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::ModelSystem;
-use qsl_eval::smt::{Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind};
+use qsl_eval::smt::{
+    encode_hyper_script, HyperScriptRequest, Refusal, SmtEncodingLimits, SmtEncodingRefusal,
+    SmtQueryKind,
+};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedHyperClause, HyperForm};
 use quire_exact::{Meter, ValueType};
@@ -48,7 +51,34 @@ pub struct HyperQuery {
 ///
 /// It is made of existing canonical identities only, has no digest of its
 /// own and no wire form, and only [`HyperProductIdentity::of`] and
-/// `encode_hyper_query` make one.
+/// `encode_hyper_query` make one: a caller cannot write one as a struct
+/// literal, serialize one or deserialize one (FR-315-AC-14).
+///
+/// ```compile_fail,E0451
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn minted() -> HyperProductIdentity {
+///     HyperProductIdentity {
+///         clause: todo!(),
+///         subjects: Vec::new(),
+///         instance: Vec::new(),
+///     }
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn serializes<T: serde::Serialize>() {}
+/// serializes::<HyperProductIdentity>();
+/// ```
+///
+/// ```compile_fail,E0277
+/// use qsl_replay::HyperProductIdentity;
+///
+/// fn deserializes<T: serde::de::DeserializeOwned>() {}
+/// deserializes::<HyperProductIdentity>();
+/// ```
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct HyperProductIdentity {
     clause: OccurrenceKey,
@@ -223,4 +253,43 @@ fn check_instance(
         return Err(binding(&instance[clause.parameters().len()].0).into());
     }
     Ok(())
+}
+
+/// Encode the query `kind` of the HP-2 product and instance `request` names
+/// (FR-315 "Hyper self-composition queries").
+///
+/// The identity checks run first, in the order of
+/// [`HyperProductIdentity::of`], which this call computes before it writes
+/// any script and returns as [`HyperQuery::product`]. The encoding's own
+/// stages follow; `request.meter` is charged by `μ_U` only.
+///
+/// # Errors
+///
+/// [`SmtEncodingRefusal`], with the code of FR-315's table, naming the
+/// construct and its locus; no script is written.
+pub fn encode_hyper_query(
+    request: HyperQueryRequest<'_>,
+    kind: SmtQueryKind,
+) -> Result<HyperQuery, SmtEncodingRefusal> {
+    let product = HyperProductIdentity::of(&request)?;
+    let HyperQueryRequest {
+        clause,
+        subjects,
+        instance,
+        meter,
+        encoding,
+    } = request;
+    let script = encode_hyper_script(HyperScriptRequest {
+        clause,
+        subjects,
+        instance,
+        meter,
+        encoding,
+        kind,
+    })?;
+    Ok(HyperQuery {
+        product,
+        kind,
+        script,
+    })
 }

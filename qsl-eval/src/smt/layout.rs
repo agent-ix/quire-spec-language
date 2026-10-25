@@ -20,6 +20,12 @@ impl StateCopy {
     pub fn at(position: u64) -> Self {
         Self(format!("s{position}"))
     }
+
+    /// The copy of trace variable `variable` at joint position `position` of
+    /// a hyper query, `s<i>.<t>`.
+    pub fn hyper(position: u64, variable: &str) -> Self {
+        Self(format!("s{position}.{variable}"))
+    }
 }
 
 /// The state an expression reads: a declared copy, or a candidate post-state

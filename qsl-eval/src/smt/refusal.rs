@@ -18,11 +18,18 @@ pub struct ExpressionLocus {
     pub clause: String,
     /// The node's index in the clause's body.
     pub node: usize,
+    /// The trace variable of the component the expression reads, for an atom
+    /// of a hyper clause.
+    pub component: Option<String>,
 }
 
 impl std::fmt::Display for ExpressionLocus {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "clause `{}` node {}", self.clause, self.node)
+        write!(formatter, "clause `{}` node {}", self.clause, self.node)?;
+        match &self.component {
+            Some(component) => write!(formatter, " in component `{component}`"),
+            None => Ok(()),
+        }
     }
 }
 
