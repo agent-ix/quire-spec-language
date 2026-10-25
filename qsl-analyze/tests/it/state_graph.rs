@@ -25,7 +25,7 @@ use qsl_replay::{
     ModelCheckOutcome, ModelPath, ModelStep, OpenCause, ReachedLimit, RunEnd, StateGraphOutcome,
     WitnessSource, DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
-use qsl_semantics::check::PredicateRole;
+use qsl_semantics::check::{PredicateRole, StateGraphForm};
 use quire_exact::{Cancel, CancelCause, ObjectReference};
 
 use crate::counter::UNLIMITED;
@@ -67,6 +67,29 @@ pub(crate) fn reachable(
         seen.insert(digest, state);
     }
     (seen, edges)
+}
+
+/// FR-165-AC-1 (TC-590): the §7.2 Game and §7.3 Job domain packages reach
+/// S3 with their reference state-graph forms, covering the enum and multiple
+/// field predicates that the ConfigVersion fixture does not exercise.
+#[trace("TC-590", "FR-165-AC-1")]
+#[test]
+fn game_and_job_state_graph_claims_check_at_s3() {
+    let game = game_world(false, false, CAN_STILL_WIN);
+    assert!(matches!(
+        game.claim("CanStillWin").form(),
+        StateGraphForm::AlwaysPossible { from, target }
+            if from.is_constant_true()
+                && target.body().is_some_and(|body| body.value_type() == &quire_exact::ValueType::Boolean)
+    ));
+
+    let job = job_world(false, false);
+    assert!(matches!(
+        job.claim("InOneWay").form(),
+        StateGraphForm::UniquePath { from, to }
+            if from.body().is_some_and(|body| body.value_type() == &quire_exact::ValueType::Boolean)
+                && to.body().is_some_and(|body| body.value_type() == &quire_exact::ValueType::Boolean)
+    ));
 }
 
 /// The state at each position of `path`, re-executed from its initial
