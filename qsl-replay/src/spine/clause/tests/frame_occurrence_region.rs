@@ -87,6 +87,28 @@ fn reference_in(unit: &str, name: &str, reference: &str) -> (usize, String) {
     (start, reference.to_owned())
 }
 
+fn attempt_reference_in(unit: &str) -> (usize, String) {
+    let prefix = "on ";
+    let attempt = unit
+        .find("attempt Update by R on Config::ConfigVersion::attemptUpdate contracts []")
+        .expect("the attempt");
+    let start = unit[attempt..]
+        .find(prefix)
+        .map(|offset| attempt + offset + prefix.len())
+        .expect("the operation reference");
+    (start, REFERENCE.to_owned())
+}
+
+fn protocol_attempt() -> &'static str {
+    "protocol AttemptUpdate using v over (input: Boolean) on origin {\n\
+     role R on Config::ConfigVersion;\n\
+     run sequence Main {\n\
+     attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [] as (tried: Boolean) { true };\n\
+     }\n\
+     finish End as (outcome: Boolean) { true };\n\
+     }\n"
+}
+
 #[trace("TC-462", "FR-105-AC-9")]
 #[test]
 fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
@@ -172,5 +194,63 @@ fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
             } if *node == frame
         ),
         "{refusal:?}"
+    );
+}
+
+/// A protocol attempt names the operation at its qualified reference, and
+/// the first clause or attempt in source order determines the frame region.
+#[trace("TC-462", "FR-105-AC-11")]
+#[test]
+fn frame_occurrence_region_is_the_first_naming_clause_or_attempt_in_source_order() {
+    let (base, packages) = config_version_unit_and_packages();
+    let attempt = protocol_attempt();
+
+    let attempt_first = base.replacen(
+        "post VersionUnchanged",
+        &format!("{attempt}post VersionUnchanged"),
+        1,
+    );
+    let attempt_first_graph = compile(&attempt_first, &packages);
+    let [attempt_entry] = &generated_entries(&attempt_first_graph, Some("attemptUpdate"))[..]
+    else {
+        panic!("one generated frame occurrence for the clause and attempt");
+    };
+    assert_eq!(
+        region_text(&attempt_first, attempt_entry),
+        attempt_reference_in(&attempt_first)
+    );
+
+    let clause_first = base.replacen(
+        "function sameIdentity",
+        &format!("{attempt}function sameIdentity"),
+        1,
+    );
+    let clause_first_graph = compile(&clause_first, &packages);
+    let [clause_entry] = &generated_entries(&clause_first_graph, Some("attemptUpdate"))[..] else {
+        panic!("one generated frame occurrence for the clause and attempt");
+    };
+    assert_eq!(
+        region_text(&clause_first, clause_entry),
+        reference_in(&clause_first, "VersionUnchanged", REFERENCE)
+    );
+    for key in ["node_id", "role", "ordinal"] {
+        assert_eq!(attempt_entry[key], clause_entry[key], "{key} is stable");
+    }
+
+    let clause_start = base.find("post VersionUnchanged").expect("the clause");
+    let function_start = base.find("function sameIdentity").expect("the function");
+    let attempt_only = format!(
+        "{}{attempt}{}",
+        &base[..clause_start],
+        &base[function_start..]
+    );
+    let attempt_only_graph = compile(&attempt_only, &packages);
+    let [only_attempt_entry] = &generated_entries(&attempt_only_graph, Some("attemptUpdate"))[..]
+    else {
+        panic!("one generated frame occurrence for the attempt");
+    };
+    assert_eq!(
+        region_text(&attempt_only, only_attempt_entry),
+        attempt_reference_in(&attempt_only)
     );
 }
