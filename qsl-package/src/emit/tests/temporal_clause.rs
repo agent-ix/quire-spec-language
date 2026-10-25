@@ -1510,3 +1510,44 @@ fn a_capture_changes_the_clause_key() {
     let reformatted = CAPTURES.replace("; ", ";\n    ").replace("= c.", "=   c.");
     assert_eq!(captured_key(&activation, &reformatted), base);
 }
+
+/// FR-337-AC-10 (TC-1267 step 4): the node a clause's `temporal-satisfaction`
+/// record (the requirements set `requires temporal Due;` reads) holds is the
+/// emitted clause node: its key is the clause key, it is the same each time
+/// the clause is emitted, and it differs with and without the captures.
+#[trace("TC-1267", "FR-337-AC-10")]
+#[test]
+fn the_requirement_node_is_the_clause_node_and_changes_with_the_captures() {
+    use qsl_foundation::bound::DomainKind;
+    use qsl_semantics::family::ClaimExtent;
+
+    let activation = each("q", " when (c.versionNumber >= 1)");
+    let requirement = |activation: &str, body: &str| {
+        let text = unit(INFINITE, &declared_on("Each", activation, body));
+        let (graph, clause, requirements) = record_of(&text);
+        let ClaimExtent::Unbounded(domains) = requirements.extent() else {
+            panic!("infinite-trace: {:?}", requirements.extent());
+        };
+        assert_eq!(domains.kind(&clause), Some(DomainKind::InfiniteTrace));
+        // The record is keyed by the emitted clause's identity.
+        let (compiled, digest) = key_of(activation, body);
+        let [checked] = graph.temporal_clauses() else {
+            panic!("one emitted clause");
+        };
+        assert_eq!(checked.identity(), compiled.clauses[0].identity());
+        assert!(format!("{:?}", wire_id(checked.identity())).contains(&digest[digest.len() - 8..]));
+        clause
+    };
+    let captured = requirement(&activation, CAPTURES);
+    assert_eq!(captured, requirement(&activation, CAPTURES));
+    assert_ne!(captured, requirement(&activation, BODY));
+    for body in [CAPTURES, BODY] {
+        assert_ne!(
+            requirement(&activation, body),
+            requirement(
+                "on origin",
+                &body.replace("q.versionNumber", "c.versionNumber")
+            )
+        );
+    }
+}

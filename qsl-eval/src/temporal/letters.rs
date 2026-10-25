@@ -110,13 +110,18 @@ pub trait TemporalLetters {
     /// activates: the evaluator calls it at position 0 of an `on origin`
     /// clause and at each position an `on each` clause activates (where its
     /// guard, when it has one, is true), once per activation. A clause with
-    /// no capture answers [`CaptureReading::Fixed`].
+    /// no capture is never asked. The default fails closed: letters that do
+    /// not read captures stop with a fault rather than treat a capture as
+    /// defined.
     fn captures(
         &mut self,
         _position: TemporalPosition,
         _meter: &mut Meter,
     ) -> Result<CaptureReading, LetterStop> {
-        Ok(CaptureReading::Fixed)
+        Err(LetterStop::Fault(InternalFault::new(
+            "temporal.letters",
+            "letters-of-a-captured-clause-read-its-captures",
+        )))
     }
 
     /// Whether the step into the represented `position` counts for interval

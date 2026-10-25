@@ -108,7 +108,7 @@ use qsl_replay::{
     ModelCheckOutcome, ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats,
     TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{CaptureSite, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -117,8 +117,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::check::{
-    atom_refusal, not_simulated, precheck, refuse_capture_read, Admitted, CapturedAt,
-    ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
+    atom_refusal, not_simulated, precheck, refuse_capture_read, Admitted, ModelCheckRefusal,
+    ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop, PermuterOf};
 use super::fair_walk::{fairness_constraints, tree_path, FairModel};
@@ -495,7 +495,7 @@ impl<'a> LiveSubject for ModelSystem<'a> {
             letters: run.letters,
             nodes: &product.atoms,
             guarded: product.automaton.borrow().when().is_some()
-                || product.captured != CapturedAt::Never,
+                || product.captured != CaptureSite::Never,
         };
         let por = Por::new(
             run.system,
@@ -790,7 +790,7 @@ struct LassoSystem<'r, S: LiveSubject> {
     start: StateId,
     readings: RefCell<BTreeMap<(DigestRecord, bool), Reading>>,
     /// Where the clause fixes its captures (FR-337).
-    captured: CapturedAt,
+    captured: CaptureSite,
     initial: Vec<LState<S::State>>,
     dead: RefCell<Vec<DeadRoot<S::State, Tr<S>>>>,
     meter: ScalarLimits,
@@ -862,7 +862,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
     /// Only an `on origin` clause's captures read differently there.
     fn reading_at(&self, state: &S::State, initial: bool) -> Result<Reading, ExpansionStop> {
         let digest = self.digest_of(state)?;
-        let key = (digest, initial && self.captured == CapturedAt::Origin);
+        let key = (digest, initial && self.captured == CaptureSite::Origin);
         if let Some(known) = self.readings.borrow().get(&key) {
             return Ok(known.clone());
         }
@@ -895,9 +895,9 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
         }
         // FR-337: the captures are fixed once, at an activation.
         let capturing = match self.captured {
-            CapturedAt::Never => false,
-            CapturedAt::Origin => initial,
-            CapturedAt::Activations => when.is_none_or(|when| letter.holds(when)),
+            CaptureSite::Never => false,
+            CaptureSite::Origin => initial,
+            CaptureSite::Activations => when.is_none_or(|when| letter.holds(when)),
         };
         if capturing && reading.is_none() {
             self.poll()?;
@@ -1623,7 +1623,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             automaton: RefCell::new(automaton),
             start,
             readings: RefCell::new(BTreeMap::new()),
-            captured: CapturedAt::of(self.clause),
+            captured: self.clause.capture_site(),
             initial: Vec::new(),
             dead: RefCell::new(Vec::new()),
             meter: self.request.meter,

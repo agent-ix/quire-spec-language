@@ -200,11 +200,15 @@ fn a_holds_read_of_a_capture_is_refused_before_exploration() {
     assert!(run(&unread, ModelCheckLimits::default()).is_ok());
 }
 
-/// FR-337-AC-14: the activation's footprint holds the location a capture
-/// initializer reads, with the `over` receiver, only with the capture.
+/// FR-337-AC-14: the activation's footprint holds `Counter::value` with the
+/// `over` receiver, for a capture reading through `c` and through `q`, and
+/// holds nothing without the capture; a partial-order run joins it (the
+/// verdict is unchanged).
 #[trace("TC-1267", "FR-337-AC-14")]
 #[test]
 fn a_capture_initializer_joins_the_activation_footprint() {
+    use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
+
     let reads = |captures: &str| {
         let world = world(
             INFINITE,
@@ -220,14 +224,131 @@ fn a_capture_initializer_joins_the_activation_footprint() {
             key: "c".to_owned(),
         };
         let start = system.initial_states()[0].clone();
-        let reading = letters
-            .captures(&instance, &start, &mut Meter::new(UNLIMITED))
-            .expect("the captures read");
-        assert_eq!(reading, CaptureReading::Fixed);
-        letters.activation_reads().expect("a footprint").len()
+        if !captures.is_empty() {
+            let reading = letters
+                .captures(&instance, &start, &mut Meter::new(UNLIMITED))
+                .expect("the captures read");
+            assert_eq!(reading, CaptureReading::Fixed);
+        }
+        let reads = letters.activation_reads().expect("a footprint");
+        (reads, world.domain.key("Counter/value"))
     };
-    assert_eq!(reads(""), 0);
-    assert_eq!(reads("capture n: Int[0, 3] = q.value; "), 1);
+    let (none, _) = reads("");
+    assert!(none.is_empty());
+    for capture in [
+        "capture n: Int[0, 3] = q.value; ",
+        "capture n: Int[0, 3] = c.value; ",
+    ] {
+        let (found, value) = reads(capture);
+        assert_eq!(
+            found.into_iter().collect::<Vec<_>>(),
+            [SymbolicLocation::Field {
+                object: FootprintObject::Receiver,
+                field: value,
+            }],
+            "{capture}"
+        );
+    }
+    // A partial-order run reads the capture's footprint and settles as the
+    // unreduced run does.
+    let world = world(
+        INFINITE,
+        &each("true"),
+        "capture n: Int[0, 3] = q.value; always holds(true)",
+    );
+    let system =
+        ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("the clause has letters");
+    let outcome = check_model(
+        ModelCheckRequest {
+            subject: world.subject(&["c"], UNLIMITED),
+            item: ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: qsl_analyze::model_check::Reductions {
+                partial_order: true,
+                ..Default::default()
+            },
+        },
+        &Cancel::new(),
+    )
+    .expect("checked");
+    assert!(
+        matches!(outcome, ModelCheckOutcome::HoldsReduced { .. }),
+        "{outcome:?}"
+    );
+}
+
+/// FR-337-AC-12: an unbounded root is `RequiresBound`, not `CaptureRead`.
+#[trace("TC-1267", "FR-337-AC-12")]
+#[test]
+fn an_unbounded_root_is_refused_before_a_capture_read() {
+    let text = format!(
+        "{}always holds(c.value >= n)",
+        "capture n: Int[0, 3] = c.value; "
+    );
+    let world = World::new(
+        model_world::Domain {
+            document: crate::counter::document(true),
+            ..model_world::counter()
+        },
+        CONTRACT,
+        INFINITE,
+        &[Clause {
+            activation: &each("true"),
+            formula: &text,
+        }],
+        &[("c", json!({"value": {"integer": "0"}}))],
+    );
+    let refusal = run(&world, ModelCheckLimits::default()).expect_err("refused");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::RequiresBound(_)),
+        "{refusal:?}"
+    );
+}
+
+/// FR-337-AC-11 through the lasso reader: an infinite-trace `eventually`
+/// fixes `z` at each position its guard admits and finds it undefined at
+/// position 2; an `on origin` clause, whose capture is defined at position 0,
+/// and a guard that never holds read none there.
+#[trace("TC-1267", "FR-337-AC-11")]
+#[test]
+fn the_liveness_reader_fixes_captures_at_the_activation() {
+    use qsl_analyze::model_check::LivenessRefusal;
+
+    let formula = "capture z: Boolean = (6 mod (2 - c.value) = 0); eventually holds(c.value = 3)";
+    for guard in ["true", "c.value = 2"] {
+        let world = world(INFINITE, &each(guard), formula);
+        let outcome = run(&world, ModelCheckLimits::default()).expect("checked");
+        let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+            panic!("{guard}: expected a violation, got {outcome:?}");
+        };
+        let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+            panic!("{guard}: expected an undefined evaluation: {counterexample:?}");
+        };
+        assert_eq!(evaluation.site.position, 2, "{guard}");
+        assert_eq!(
+            evaluation.site.locus,
+            UndefinedLocus::Capture("z".to_owned())
+        );
+        assert_eq!(prefix(&world, &outcome), [0, 1, 2], "{guard}");
+    }
+    for activation in ["on origin".to_owned(), each("false")] {
+        let world = world(INFINITE, &activation, formula);
+        let refusal = run(&world, ModelCheckLimits::default())
+            .expect_err("a proof waits on FR-339's component certificate");
+        assert!(
+            matches!(
+                refusal,
+                ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
+            ),
+            "{activation}: {refusal:?}"
+        );
+    }
 }
 
 /// FR-337-AC-13: the FR-338 checker reads the captures at each state it
