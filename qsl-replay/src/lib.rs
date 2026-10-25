@@ -64,6 +64,7 @@ mod hybrid_replay;
 mod identity;
 mod limits;
 mod model_check;
+mod monitor_plan;
 mod object_environment;
 mod outcome;
 mod proof_result;
@@ -205,6 +206,11 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
+pub use monitor_plan::{
+    plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
+    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
+    TimingObligation, TimingObligationSettings,
+};
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
