@@ -4,10 +4,9 @@
 //! tuple of projected prefixes.
 //!
 //! Each clause is real complete-V1 source taken through S1, S2, the assembler
-//! and the hyper check (FR-172). The `holds` conditions are not checked at
-//! S3, so the letter reads each atom from its source text over the
-//! components' observations, the seam the one clause evaluator (FR-107)
-//! fills.
+//! and the hyper check (FR-172). The `holds` conditions are checked nodes
+//! (FR-487); these tests' letter still reads each atom from its source text
+//! over the components' observations, as it did before the lowering.
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{

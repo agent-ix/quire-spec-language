@@ -3,9 +3,9 @@
 //! clause, which evaluates each conjunct of `match` through the one clause
 //! evaluator (FR-107).
 
-use quire_exact::Meter;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedHyperClause;
+use quire_exact::Meter;
 
 use crate::hyper::{
     MatchIncomplete, MatchPart, MatchReading, ParameterBinding, StepLabel, StepMatch,
@@ -44,10 +44,13 @@ impl<'s> CheckedStepMatch<'s> {
             MatchPart::Existential => self.clause.mu_existential().len(),
         };
         for conjunct in 0..count {
-            let evaluation = match self
-                .package
-                .evaluate_step_predicate(self.clause, part, conjunct, labels, meter)
-            {
+            let evaluation = match self.package.evaluate_step_predicate(
+                self.clause,
+                part,
+                conjunct,
+                labels,
+                meter,
+            ) {
                 Ok(evaluation) => evaluation,
                 // The labels and the conjunct are the product's own, so an
                 // evaluator fault is a broken invariant; the seam has no

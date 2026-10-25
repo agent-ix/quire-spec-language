@@ -13,6 +13,7 @@ mod flag_world;
 mod graph_core;
 mod graph_world;
 mod hyper;
+mod hyper_lowering;
 mod hyper_projected;
 mod hyper_replay;
 mod hyper_settle;

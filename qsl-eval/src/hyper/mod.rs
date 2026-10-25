@@ -30,8 +30,8 @@ mod seam;
 mod step_value;
 mod witness;
 
-pub use checked::CheckedStepMatch;
 pub use crate::simulation::model::CheckedHyperLetters;
+pub use checked::CheckedStepMatch;
 pub use copy_swap::{copy_population, copy_symmetry, CopySwapInputs};
 pub use joint::cartesian;
 pub use product::{
@@ -39,9 +39,9 @@ pub use product::{
     HyperTransition, Property,
 };
 pub use projected::{ProjectedInputs, ProjectedProduct};
-pub(crate) use step_value::slot_value;
 pub use seam::{
     HyperLetters, HyperSlot, MatchIncomplete, MatchPart, MatchReading, ParameterBinding, StepLabel,
     StepMatch,
 };
+pub(crate) use step_value::slot_value;
 pub use witness::{Member, Partner, PartnerStep, WitnessInputs, WitnessProduct, WitnessSet};

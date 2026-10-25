@@ -1120,7 +1120,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 }
             }
         }
-        machine.run(condition, count, values).map_err(CallFailure::Fault)
+        machine
+            .run(condition, count, values)
+            .map_err(CallFailure::Fault)
     }
 
     fn evaluate_step_predicate(

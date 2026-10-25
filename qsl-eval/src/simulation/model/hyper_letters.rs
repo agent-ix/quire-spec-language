@@ -32,6 +32,9 @@ use crate::model_subject::{AtomStop, ModelInstance};
 use crate::temporal::AtomReading;
 use crate::value::CheckedPackageEvaluation;
 
+/// A component's observation of the state it was last read at.
+type Cached = Option<(DigestRecord, Rc<Observed>)>;
+
 /// The `holds` atoms of one checked hyper clause, read at the joint positions
 /// of the [`ModelSystem`]s of its trace variables.
 ///
@@ -50,7 +53,7 @@ pub struct CheckedHyperLetters<'s, 'a> {
     /// overlap the type of its object parameter.
     overlapping: Vec<BTreeSet<DeclarationKey>>,
     /// The last state of each component observed, by its digest.
-    observed: Vec<RefCell<Option<(DigestRecord, Rc<Observed>)>>>,
+    observed: Vec<RefCell<Cached>>,
 }
 
 impl<'s, 'a> CheckedHyperLetters<'s, 'a> {
@@ -102,11 +105,7 @@ impl<'s, 'a> CheckedHyperLetters<'s, 'a> {
 
     /// `state`, the state of component `component`, observed once however
     /// many reads follow.
-    fn observe(
-        &self,
-        component: usize,
-        state: &ModelSimState,
-    ) -> Result<Rc<Observed>, AtomStop> {
+    fn observe(&self, component: usize, state: &ModelSimState) -> Result<Rc<Observed>, AtomStop> {
         let system = self
             .systems
             .get(component)

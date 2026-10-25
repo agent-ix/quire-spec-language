@@ -1293,7 +1293,10 @@ fn the_atom(clause: &CheckedHyperClause) -> qsl_semantics::check::FormulaNodeId 
     let [(index, _)] = atoms[..] else {
         panic!("one holds atom");
     };
-    clause.body().node_id(index).expect("the atom is in the arena")
+    clause
+        .body()
+        .node_id(index)
+        .expect("the atom is in the arena")
 }
 
 fn behaviours(quantifiers: &str, conjuncts: &str, body: &str) -> String {
@@ -1450,4 +1453,101 @@ fn presence_proved_in_one_component_does_not_cover_another() {
     );
     assert_eq!(cause.code(), Code::UndefinedExpression, "{cause:?}");
     assert_eq!(cause.cause(), Some("unproved-presence"), "{cause:?}");
+}
+
+/// FR-172-AC-5: a qualified operation name beside `t.step.op` is a label
+/// constant; elsewhere or misresolved it refuses.
+#[trace("TC-597", "FR-172-AC-5")]
+#[test]
+fn a_label_constant_checks_beside_its_trace_s_operation_and_refuses_elsewhere() {
+    let conjunct = |text: &str| {
+        behaviours(
+            "forall trace a of V forall trace b of V",
+            &format!("match {{ {text} }}"),
+            "always holds(true)",
+        )
+    };
+    for accepted in [
+        "a.step.op = V::ConfigVersion::step and b.step.op = stutter",
+        "V::ConfigVersion::step != a.step.op",
+        "a.step.op != V::ConfigVersion::step",
+    ] {
+        clause(&["V", "N"], &conjunct(accepted));
+    }
+    for (text, refused) in [
+        (
+            "a.step.op = N::ConfigVersion::tick",
+            "N::ConfigVersion::tick",
+        ),
+        (
+            "a.step.receiver = V::ConfigVersion::step",
+            "V::ConfigVersion::step",
+        ),
+        ("V::ConfigVersion::step", "V::ConfigVersion::step"),
+    ] {
+        let (unit, cause) = hyper_cause(&["V", "N"], &conjunct(text));
+        assert!(
+            matches!(cause, HyperCause::BodyIllTyped { span } if span.start <= first(&unit, refused).start && first(&unit, refused).end <= span.end),
+            "{text}: {cause:?}"
+        );
+    }
+    let (_, cause) = hyper_cause(&["V", "N"], &conjunct("a.step.op = V::ConfigVersion::nope"));
+    assert!(matches!(cause, HyperCause::BodyMissing { .. }), "{cause:?}");
+    let (_, cause) = hyper_cause(
+        &["V", "N"],
+        &conjunct("a.step.op = V::ConfigVersion::versionNumber"),
+    );
+    assert!(
+        matches!(cause, HyperCause::MatchReadsState { .. }),
+        "{cause:?}"
+    );
+}
+
+/// FR-172-AC-7: a call in a conjunct takes step labels as its arguments, and
+/// an argument that reads state refuses.
+#[trace("TC-1264", "FR-172-AC-7")]
+#[test]
+fn a_conjunct_may_call_a_declared_function_of_step_labels() {
+    let function = "function f using v(x: Option<Int[0, 1000]>): Boolean pure { present(x) }\n";
+    let declaration = |argument: &str| {
+        format!(
+            "{function}{}",
+            behaviours(
+                "forall trace a of V forall trace b of V",
+                &format!("match {{ f({argument}) }}"),
+                "always holds(true)",
+            )
+        )
+    };
+    let checked = clause(&["V"], &declaration("a.step.ConfigVersion::step.i"));
+    assert_eq!(checked.mu_universal().len(), 1);
+    let declaration = declaration("v.versionNumber @ a");
+    let (unit, cause) = hyper_cause(&["V"], &declaration);
+    assert!(
+        matches!(cause, HyperCause::MatchReadsState { span } if span == first(&unit, "v.versionNumber @ a")),
+        "{cause:?}"
+    );
+}
+
+/// FR-172-AC-8: `@ a` scopes over the compound operand it follows, so the
+/// reads inside carry `a`; a read no `@` encloses refuses.
+#[trace("TC-1264", "FR-172-AC-8")]
+#[test]
+fn an_at_scopes_over_a_compound_operand() {
+    let atom = |body: &str| {
+        behaviours(
+            "forall trace a of V forall trace b of V",
+            "",
+            &format!("always holds({body})"),
+        )
+    };
+    clause(
+        &["V"],
+        &atom("(let r = v.parent in present(r) and value(r) = value(r)) @ a"),
+    );
+    let (unit, cause) = hyper_cause(&["V"], &atom("present(v.parent @ a) and present(v.parent)"));
+    assert!(
+        matches!(cause, HyperCause::UnindexedRead { span } if span == after(&unit, "present(v.parent @ a) and present(", "v.parent")),
+        "{cause:?}"
+    );
 }

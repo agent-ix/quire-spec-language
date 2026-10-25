@@ -36,12 +36,12 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
 use super::check::Signatures;
-use super::ir::CheckedNode;
-use super::temporal_clause::FormulaNodeId;
 use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
+use super::ir::CheckedNode;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{population_of, PopulationDomain};
+use super::temporal_clause::FormulaNodeId;
 use super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, in_safety_fragment, CheckedFormula,
     CheckedOperator, IntervalReading, TemporalClaim, TemporalDeclarations, TemporalSelection,
@@ -933,7 +933,7 @@ impl Found {
         let cause = match self {
             Self::Hyper(cause) => CheckCause::Hyper(Box::new(cause)),
             Self::Temporal(cause) => CheckCause::Temporal(Box::new(cause)),
-            Self::Typed(refused) => return StageFailure::Refused(refused.refusal),
+            Self::Typed(refused) => return StageFailure::Refused(*refused.refusal),
         };
         StageFailure::Refused(CheckRefusal {
             // A clause has no expression tree for a `Location` path to walk;
@@ -1073,9 +1073,7 @@ fn check_behaviours<'a>(
             .collect::<Vec<_>>(),
         &parameters
             .iter()
-            .map(|(parameter, object)| {
-                (parameter.name.as_str(), parameter.alias.as_str(), *object)
-            })
+            .map(|(parameter, object)| (parameter.name.as_str(), parameter.alias.as_str(), *object))
             .collect::<Vec<_>>(),
     );
     let first_trace = |parameter: &str| {
@@ -1113,7 +1111,8 @@ fn check_behaviours<'a>(
                     .map(body_fault),
             );
             if resolved && found.len() == mark {
-                let location = lowering::hyper_location(clause_index, lowering::Site::Atom(id.index()));
+                let location =
+                    lowering::hyper_location(clause_index, lowering::Site::Atom(id.index()));
                 let locate = |at: &Location| lowering::span_at(&condition.spans, at);
                 match lowering::lower_atom(
                     &typing,
@@ -1190,8 +1189,7 @@ fn check_behaviours<'a>(
                     &mut nodes,
                     &location,
                     draft.root,
-                    &draft.slots,
-                    draft.labels.clone(),
+                    (&draft.slots, draft.labels.clone()),
                     (&block.expression, &locate),
                 ) {
                     Ok(condition) => lowered.push(condition),
@@ -1950,10 +1948,12 @@ fn label_compared(
             trace: other,
             label: StepLabelForm::Operation,
         } => variables.alias_of(other) == Some(alias),
-        ExprNode::Name(name) => matches!(
-            qualify(declarations, name),
-            Qualified::Operation(written, _) if written == alias.as_str()
-        ),
+        // A name that is no operation is refused as the state read or the
+        // missing name it is, not as a misused label.
+        ExprNode::Name(name) => match qualify(declarations, name) {
+            Qualified::Operation(written, _) => written == alias.as_str(),
+            Qualified::Nothing | Qualified::Member | Qualified::Other => true,
+        },
         _ => false,
     }
 }
@@ -2893,7 +2893,7 @@ pub fn check_hyper_clauses(
         package.ieee_profile.clone(),
         package.dispatch_operations.clone(),
     )
-    .with_integer_division(package.integer_division.clone())
+    .with_integer_division(package.integer_division)
     .with_complete_value(complete_value)
     .with_known_populations(super::refinement::population_names(&package.models))
     .with_complete_model(!package.models.is_empty())
@@ -2924,7 +2924,9 @@ pub fn check_hyper_clauses(
             })
             .collect(),
     );
-    scope.select_declared_ieee_profile(signatures.as_slice()).ok();
+    scope
+        .select_declared_ieee_profile(signatures.as_slice())
+        .ok();
     let declarations = HyperDeclarations {
         temporal: TemporalDeclarations {
             scope: &scope,

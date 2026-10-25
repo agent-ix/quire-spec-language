@@ -119,6 +119,7 @@ pub(crate) fn positions(
 /// through the differing outputs. The clause is symmetric in `a` and `b`, so
 /// the engine stores the quotient by the swap (FR-174): the same verdict over
 /// fewer states.
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601")]
 #[test]
 fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
@@ -172,6 +173,7 @@ fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
 /// the equal `l` pairs `(0, 0)` and `(1, 1)`, all in the one automaton
 /// state), and the item holds; the engine stores the 6 states of the quotient
 /// by the swap of `a` and `b` (FR-174).
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601")]
 #[test]
 fn the_secure_vault_holds_over_eight_product_states() {
@@ -189,15 +191,11 @@ fn the_secure_vault_holds_over_eight_product_states() {
     assert_eq!(world.explore().accepting_components(), 0);
 }
 
-/// Criterion 2 of FR-176, not claimed: `NonInterference` with its `match`
-/// block removed is refuted over the secure vault, which pairs `step(0)` with `step(1)`; and a `match`
-/// that no pair of runs satisfies, `b` stuttering where the vault has no
-/// terminal state, is `Undecided(VacuousMatch)`, never `Holds`. The AC writes
-/// the first conjunct `a.step.op = V::Vault::step`, which S3 refuses as
-/// `MatchReadsState` (FR-172 has no operation-constant operand yet), so the
-/// vacuous clause uses `a.step.op != stutter`, which is equivalent over this
-/// vault; the criterion is not claimed.
-#[trace("TC-601")]
+/// Criterion 2 of FR-176: `NonInterference` with its `match` block removed is
+/// refuted over the secure vault, which pairs `step(0)` with `step(1)`; and a
+/// `match` that no pair of runs satisfies, `b` stuttering where the vault has
+/// no terminal state, is `Undecided(VacuousMatch)`, never `Holds`.
+#[trace("TC-601", "FR-176-AC-2")]
 #[test]
 fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuous() {
     let unmatched = World::new(Vault::Secure, false, &STARTS, &non_interference(""));
@@ -215,7 +213,7 @@ fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuo
         Vault::Secure,
         false,
         &STARTS,
-        &non_interference("match { a.step.op != stutter and b.step.op = stutter }"),
+        &non_interference("match { a.step.op = V::Vault::step and b.step.op = stutter }"),
     );
     let HyperOutcome::Undecided { cause, .. } = run(&vacuous) else {
         panic!("expected the vacuous match to decide nothing");
@@ -376,6 +374,7 @@ fn a_subject_that_alone_exceeds_max_states_stops_before_the_product_is_built() {
 /// step whose `a` step is `step(0)`, is refuted by an `Undefined`
 /// counterexample that ends at the first such joint step in canonical order,
 /// with a path for `a` and one for `b` and the cause `division-by-zero`.
+#[trace("TC-1264", "FR-487-AC-6")]
 #[trace("TC-601", "FR-176-AC-4")]
 #[test]
 fn an_undefined_match_ends_the_item_at_the_first_such_joint_step() {

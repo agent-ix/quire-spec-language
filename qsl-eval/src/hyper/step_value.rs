@@ -4,8 +4,8 @@
 
 use std::str::FromStr;
 
-use quire_exact::{Integer, OptionValue, Value, ValueType};
 use qsl_semantics::check::{operation_text, StepRead, STUTTER_TEXT};
+use quire_exact::{Integer, OptionValue, Value, ValueType};
 
 use crate::hyper::StepLabel;
 use crate::simulation::model::encode::parse_reference;
@@ -33,9 +33,7 @@ pub(crate) fn slot_value(read: &StepRead, label: &StepLabel<'_>) -> Result<Value
                 StepLabel::Stutter => None,
                 StepLabel::Operation(step) => match step.receiver() {
                     None => None,
-                    Some(text) => Some(Value::Reference(
-                        parse_reference(text).ok_or(Undecodable)?,
-                    )),
+                    Some(text) => Some(Value::Reference(parse_reference(text).ok_or(Undecodable)?)),
                 },
             };
             Ok(OptionValue::from_admitted(payload, present))
@@ -44,7 +42,9 @@ pub(crate) fn slot_value(read: &StepRead, label: &StepLabel<'_>) -> Result<Value
             let payload = argument.parameter_type.clone();
             let present = match label {
                 StepLabel::Stutter => None,
-                StepLabel::Operation(step) if step.operation() != operation_text(&argument.operation) => {
+                StepLabel::Operation(step)
+                    if step.operation() != operation_text(&argument.operation) =>
+                {
                     None
                 }
                 StepLabel::Operation(step) => {
@@ -129,4 +129,3 @@ fn unquote(literal: &str) -> Option<String> {
     }
     Some(text)
 }
-

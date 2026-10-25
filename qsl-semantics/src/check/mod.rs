@@ -329,10 +329,10 @@ pub use hybrid::{
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
-    operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
-    CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause, HyperDeclaration,
-    HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias,
-    ObjectParameter, OperationContractClaim, StepRead, STUTTER_TEXT,
+    operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause, CheckedModelRelation,
+    CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause,
+    HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
+    HyperUnsupported, ModelAlias, ObjectParameter, OperationContractClaim, StepRead, STUTTER_TEXT,
 };
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CompositeForm,

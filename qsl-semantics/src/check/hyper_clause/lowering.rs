@@ -24,9 +24,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::check::abstraction::OperationKey;
-use crate::check::check::{
-    bind_parameters, HyperTyping, NamedScope, Scope, StateContext, Typer,
-};
+use crate::check::check::{bind_parameters, HyperTyping, NamedScope, Scope, StateContext, Typer};
 use crate::check::facts::Definedness;
 use crate::check::ir::{CheckedBody, CheckedNode};
 use crate::check::observation::Observations;
@@ -168,7 +166,12 @@ pub(crate) fn enclosing_reads(expression: &Expression) -> Vec<Option<ExprId>> {
             ExprNode::Indexed { .. } => Some(id),
             _ => around,
         };
-        pending.extend(node.node().children().into_iter().map(|child| (child, inside)));
+        pending.extend(
+            node.node()
+                .children()
+                .into_iter()
+                .map(|child| (child, inside)),
+        );
     }
     enclosing
 }
@@ -193,10 +196,7 @@ impl AtomSlots {
     /// The slots of `trace_aliases` (each trace variable's alias, in
     /// quantifier order) and `parameters` (each object parameter's name,
     /// alias and object type, in source order).
-    pub(crate) fn of(
-        traces: &[(&str, &str)],
-        parameters: &[(&str, &str, EffectiveId)],
-    ) -> Self {
+    pub(crate) fn of(traces: &[(&str, &str)], parameters: &[(&str, &str, EffectiveId)]) -> Self {
         let mut slots = Vec::new();
         let mut names = Vec::new();
         let mut types = Vec::new();
@@ -235,7 +235,7 @@ impl AtomSlots {
 
 /// A refusal of a condition, with the span of the expression it is at.
 pub(crate) struct Refused {
-    pub(crate) refusal: CheckRefusal,
+    pub(crate) refusal: Box<CheckRefusal>,
     pub(crate) span: Span,
 }
 
@@ -300,7 +300,10 @@ pub(crate) fn lower_atom<'a>(
 ) -> Result<AtomCondition, Refused> {
     let refused = |refusal: CheckRefusal| {
         let span = locate(&refusal.location);
-        Refused { refusal, span }
+        Refused {
+            refusal: Box::new(refusal),
+            span,
+        }
     };
     let enclosing = enclosing_reads(expression);
     let respelled = expression.respell_names(|id, spellings| {
@@ -332,8 +335,8 @@ pub(crate) fn lower_atom<'a>(
         }
     });
     let bound = slots.bound();
-    let mut typer = typer(typing, cx, nodes, &bound, HyperTyping::default(), location)
-        .map_err(refused)?;
+    let mut typer =
+        typer(typing, cx, nodes, &bound, HyperTyping::default(), location).map_err(refused)?;
     let body = typer
         .infer(&respelled, Some(&ValueType::Boolean), location)
         .map_err(refused)?;
@@ -359,12 +362,12 @@ pub(crate) fn lower_atom<'a>(
             }
             None => {
                 return Err(Refused {
-                    refusal: CheckRefusal {
+                    refusal: Box::new(CheckRefusal {
                         location: read.clone(),
-                        cause: CheckCause::Hyper(Box::new(
-                            super::HyperCause::UnindexedRead { span: locate(read) },
-                        )),
-                    },
+                        cause: CheckCause::Hyper(Box::new(super::HyperCause::UnindexedRead {
+                            span: locate(read),
+                        })),
+                    }),
                     span: locate(read),
                 });
             }
@@ -396,20 +399,22 @@ pub(crate) fn lower_conjunct<'a>(
     nodes: &'a mut u64,
     location: &Location,
     root: ExprId,
-    slots: &[StepRead],
-    labels: BTreeMap<String, String>,
+    (slots, labels): (&[StepRead], BTreeMap<String, String>),
     (expression, locate): (&Expression, Locate<'_>),
 ) -> Result<ConjunctCondition, Refused> {
     let refused = |refusal: CheckRefusal| {
         let span = locate(&refusal.location);
-        Refused { refusal, span }
+        Refused {
+            refusal: Box::new(refusal),
+            span,
+        }
     };
     let bound: Vec<(String, ValueType)> = slots
         .iter()
         .filter_map(|read| Some((read.slot_name()?, read.slot_type()?)))
         .collect();
-    let mut typer = typer(typing, cx, nodes, &bound, HyperTyping { labels }, location)
-        .map_err(refused)?;
+    let mut typer =
+        typer(typing, cx, nodes, &bound, HyperTyping { labels }, location).map_err(refused)?;
     let body = typer
         .infer_subtree(expression, root, Some(&ValueType::Boolean), location)
         .map_err(refused)?;

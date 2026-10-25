@@ -6,12 +6,11 @@
 //! secure `step` contract, the two initial snapshots `(h, l) = (0, 0)` and
 //! `(1, 0)`, and the seams a hyper run reads its letters and `match` through.
 //!
-//! A hyper clause's `holds` atoms and `match` conjuncts are typed at S3 but
-//! not lowered to checked nodes the clause evaluator can run, so the seams
-//! read each from its source text over the components' states, as
-//! `qsl-eval`'s tuple tests read the body: the vault's atoms are
-//! `holds(v.l @ x = v.l @ y)` and `holds(v.l @ x = k)`, its conjuncts the
-//! forms `HyperLetters` and `StepMatch` below name.
+//! A hyper clause's `holds` atoms and `match` conjuncts are checked nodes at
+//! S3 (FR-487), so the seams evaluate them through the one clause evaluator
+//! over the world's package: `CheckedHyperLetters` for the atoms
+//! (`holds(v.l @ x = v.l @ y)`, `holds(v.l @ x = k)`) and `CheckedStepMatch`
+//! for the conjuncts.
 
 use std::collections::{BTreeMap, BTreeSet};
 
