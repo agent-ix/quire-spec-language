@@ -310,6 +310,11 @@ pub enum KeyRefusal {
     /// The state is well formed but is not a state of this translation.
     #[error("the state is not a state of this item's translation")]
     Unreachable,
+    /// The state is well formed and resolves, but is not in FR-338's normal
+    /// form: a branch an obligation-free branch subsumes, or acceptance
+    /// membership that disagrees with what is carried.
+    #[error("the state is not in FR-338's normal form")]
+    NonNormal,
     /// The key exceeds the identity byte budget or a bound value has no
     /// typed canonical form.
     #[error("the key has no canonical encoding within the identity byte budget")]
@@ -431,7 +436,7 @@ impl SafetyTranslation {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),
@@ -566,6 +571,16 @@ fn admit_envelope<T>(
     Ok((AutomatonStateKey(octets.to_vec()), state))
 }
 
+/// The kind of subject a clause ranges over: FR-338 fixes its past-window
+/// and acceptance forms by it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubjectKind {
+    /// An ordinary operation subject: every step counts.
+    Ordinary,
+    /// A protocol subject (ADR-027): steps count by kind.
+    Protocol,
+}
+
 /// The safety translation of a checked clause whose states carry the whole
 /// `["safety", branches]` algebra (FR-338): obligations, past memory, interval
 /// windows and acceptance membership, resolved in the clause's own formula.
@@ -583,20 +598,27 @@ pub struct SafetyStates {
 }
 
 impl SafetyStates {
-    /// The states of the unbounded-profile clause `clause` under `context`.
+    /// The states of the unbounded-profile clause `clause` over a `subject`
+    /// under `context`.
     ///
     /// # Errors
     ///
-    /// [`TranslationRefusal::NotTranslated`] when the clause is under a
-    /// bounded profile, holds a timed interval, has more operand paths than
-    /// the path bound, or `context` names another profile;
-    /// [`TranslationRefusal::Key`] when the context does not encode.
+    /// [`TranslationRefusal::NotTranslated`] when the subject is a protocol
+    /// (its `distance-history` past form and finite `F`/`U` acceptance are
+    /// not written or read yet), the clause is under a bounded profile,
+    /// holds a timed interval, has more operand paths than the path bound,
+    /// or `context` names another profile; [`TranslationRefusal::Key`] when
+    /// the context does not encode.
     pub fn clause(
         clause: &CheckedTemporalClause,
         context: &StateContext,
+        subject: SubjectKind,
     ) -> Result<Self, TranslationRefusal> {
         let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
-        if clause.profile().is_bounded() || context.profile != clause.profile() {
+        if subject == SubjectKind::Protocol
+            || clause.profile().is_bounded()
+            || context.profile != clause.profile()
+        {
             return Err(not_translated());
         }
         let shape = FormulaShape::of(clause.formula()).ok_or_else(not_translated)?;
@@ -619,16 +641,22 @@ impl SafetyStates {
     /// # Errors
     ///
     /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
-    /// budget; no truncated key is produced.
+    /// budget; no truncated key is produced. Any other [`KeyRefusal`] when the
+    /// facts, after the earliest-deadline, furthest-extent, offset-union and
+    /// obligation-free-subsumption normalization, are a state this context
+    /// would refuse.
     pub fn key(&self, branches: &[Configuration]) -> Result<AutomatonStateKey, KeyRefusal> {
         let key = Enc::Array(vec![
             Enc::text(AUTOMATON_STATE_KEY_V1),
             self.context.clone(),
             safety_enc(branches, self.max_bytes)?,
         ]);
-        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
+        let key = quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
             .map(AutomatonStateKey)
-            .map_err(|_| KeyRefusal::Encoding)
+            .map_err(|_| KeyRefusal::Encoding)?;
+        // A key is written only if this context would admit it back.
+        self.admit(key.as_bytes())?;
+        Ok(key)
     }
 
     /// Admit `octets` as a safety key of this clause's context, resolving
@@ -659,7 +687,7 @@ impl SafetyStates {
         };
         match tag {
             "safety" => {}
-            "bounded" | "accept" | "reject" | "buchi" => {
+            "bounded" | "accept" | "reject" | "buchi" | "guarded-buchi" => {
                 return Err(KeyRefusal::WrongForm(tag.to_owned()))
             }
             other => return Err(KeyRefusal::UnknownTag(other.to_owned())),

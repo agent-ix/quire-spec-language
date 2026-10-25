@@ -13,7 +13,7 @@ use ix_trace_rs::trace;
 use qsl_eval::automaton::{
     Configuration, ContextActivation, HistoryOperand, KeyRefusal, Obligation, Occurrence,
     PastMemory, PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    TranslationRefusal, Window,
+    SubjectKind, TranslationRefusal, Window,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -313,7 +313,8 @@ fn malformed_safety_keys_refuse_before_membership() {
 fn states(body: &str) -> SafetyStates {
     let fixture = fixture(INFINITE, "c: Counter", "on origin", body);
     let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
-    SafetyStates::clause(&fixture.clause, &context).unwrap_or_else(|why| panic!("{body}: {why}"))
+    SafetyStates::clause(&fixture.clause, &context, SubjectKind::Ordinary)
+        .unwrap_or_else(|why| panic!("{body}: {why}"))
 }
 
 /// The context of `states(_)` as FR-338 spells it.
@@ -352,13 +353,15 @@ const TWO_FUTURES: &str =
     "eventually[0,3] holds(c.level = 1) and eventually[0,3] holds(c.level = 2)";
 const SHIFTED: &str = "always (holds(c.level = 1) implies eventually[1,3] holds(c.level = 2))";
 
-/// FR-338-AC-4 over the `["safety", branches]` algebra: the state bodies
+/// The `["safety", branches]` algebra's share of FR-338-AC-4's vectors (the
+/// criterion stays untagged until the bounded and Büchi rows are asserted
+/// together, Remaining work: QSL-982 PR 2): the state bodies
 /// and full keys are the authored octets; reversing the insertion order of
 /// obligations, windows, offsets, acceptance and branches leaves the bytes
 /// equal; distinct occurrence paths and differing live facts leave them
 /// unequal; and the bytes are a function of those facts alone, equal across
 /// independently built translations, with no enumeration index in them.
-#[trace("TC-525", "FR-338-AC-4")]
+#[trace("TC-525")]
 #[test]
 fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
     let future = states(FUTURE);
@@ -407,38 +410,51 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
         Window::Deadline(at(&[0], Polarity::Positive), 1),
         Window::Deadline(at(&[1], Polarity::Positive), 1),
     ];
+    let mixed = states("always holds(c.level = 1) and eventually holds(c.level = 2)");
     let one = Configuration {
         obligations: vec![
-            Obligation::Current(at(&[], Polarity::Positive)),
-            Obligation::Current(at(&[], Polarity::Negative)),
+            Obligation::Current(at(&[0], Polarity::Positive)),
+            Obligation::Current(at(&[1], Polarity::Positive)),
         ],
-        windows: windows.clone(),
         ..Configuration::default()
     };
     let flipped = Configuration {
         obligations: one.obligations.iter().rev().cloned().collect(),
-        windows: windows.iter().rev().cloned().collect(),
         ..Configuration::default()
     };
     let other = Configuration {
-        windows: windows[..1].to_vec(),
+        obligations: vec![Obligation::Current(at(&[0], Polarity::Positive))],
+        acceptance: vec![at(&[1], Polarity::Positive)],
         ..Configuration::default()
     };
     assert_eq!(
-        octets(&both, &[one.clone(), other.clone()]),
-        octets(&both, &[other.clone(), flipped.clone(), one.clone()]),
-        "branch, obligation and window order, and a duplicate branch"
+        octets(&mixed, &[one.clone(), other.clone()]),
+        octets(&mixed, &[other.clone(), flipped.clone(), one.clone()]),
+        "branch and obligation order, and a duplicate branch"
     );
-    let accepting = states("always (holds(c.level = 1) implies eventually holds(c.level = 2))");
+    let reversed_windows = Configuration {
+        windows: windows.iter().rev().cloned().collect(),
+        ..Configuration::default()
+    };
+    let forward_windows = Configuration {
+        windows: windows.clone(),
+        ..Configuration::default()
+    };
+    assert_eq!(
+        octets(&both, &[forward_windows]),
+        octets(&both, &[reversed_windows]),
+        "window order"
+    );
+    let two_acceptances = states("eventually holds(c.level = 1) and eventually holds(c.level = 2)");
     let accept = |entries: Vec<Occurrence>| Configuration {
         acceptance: entries,
         ..Configuration::default()
     };
-    let members = vec![at(&[0, 1], Polarity::Positive), at(&[], Polarity::Negative)];
+    let members = vec![at(&[0], Polarity::Positive), at(&[1], Polarity::Positive)];
     assert_eq!(
-        octets(&accepting, &[accept(members.clone())]),
+        octets(&two_acceptances, &[accept(members.clone())]),
         octets(
-            &accepting,
+            &two_acceptances,
             &[accept(members.iter().rev().cloned().collect())]
         )
     );
@@ -487,7 +503,11 @@ fn safety_keys_are_the_authored_octets_and_a_function_of_the_facts() {
         keys[0],
         "independent translations"
     );
-    assert!(!keys[0].contains("index"));
+    assert_eq!(
+        keys[0],
+        states_key(r#"["safety",[[[],[],[[["0"],"positive","deadline","1"]],[]]]]"#),
+        "the whole key is the authored members and nothing else"
+    );
 }
 
 /// Each member kind a key can carry is admitted back as the facts that
@@ -546,7 +566,7 @@ fn safety_keys_admit_back_as_the_facts_they_were_written_from() {
 /// vector and a `shift-history` vector with its tail; a branch that omits a
 /// past occurrence's memory, or gives it the form of another interval
 /// class, is refused.
-#[trace("TC-525")]
+#[trace("TC-525", "FR-338-AC-5")]
 #[test]
 fn past_memory_is_typed_by_the_occurrence_interval_and_complete() {
     let path = vec![0, 1];
@@ -708,7 +728,7 @@ fn past_memory_is_typed_by_the_occurrence_interval_and_complete() {
 /// that is no occurrence, an interval debt stored in both obligations and
 /// windows, and acceptance for a greatest-fixed-point or bounded
 /// occurrence are refused.
-#[trace("TC-525")]
+#[trace("TC-525", "FR-338-AC-5")]
 #[test]
 fn window_and_acceptance_members_must_resolve_in_the_formula() {
     let future = states(FUTURE);
@@ -840,7 +860,7 @@ fn window_and_acceptance_members_must_resolve_in_the_formula() {
 
 /// A key of the safety algebra under another clause's context, or one of
 /// another form, is refused before its members are read.
-#[trace("TC-525")]
+#[trace("TC-525", "FR-338-AC-5")]
 #[test]
 fn safety_states_refuse_foreign_contexts_and_other_forms() {
     let future = states(FUTURE);
@@ -851,7 +871,7 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
         future.admit(foreign.as_bytes()).map(|_| ()),
         Err(KeyRefusal::ForeignContext)
     );
-    for tag in ["bounded", "accept", "reject", "buchi"] {
+    for tag in ["bounded", "accept", "reject", "buchi", "guarded-buchi"] {
         let other = states_key(&format!(r#"["{tag}"]"#));
         assert_eq!(
             future.admit(other.as_bytes()).map(|_| ()),
@@ -867,7 +887,316 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
     );
     let context = StateContext::clause(&bounded.clause, occurrence(0), Vec::new());
     assert!(matches!(
-        SafetyStates::clause(&bounded.clause, &context),
+        SafetyStates::clause(&bounded.clause, &context, SubjectKind::Ordinary),
+        Err(TranslationRefusal::NotTranslated(_))
+    ));
+}
+
+const OPEN: &str = "always (holds(c.level = 1) implies eventually[2,*] holds(c.level = 2))";
+const ACCEPTING: &str = "always (holds(c.level = 1) implies eventually holds(c.level = 2))";
+
+/// An `[a,open]` occurrence's shift entry ends at zero, and its unbounded
+/// obligation `[o,s]` takes its place: that state is admitted and written,
+/// the pending shift beside it is a different state, and the finished shift
+/// stored in both places is refused. `[o,s,"0","open"]` is not the spelling.
+#[trace("TC-525")]
+#[test]
+fn a_completed_shift_is_carried_as_the_unbounded_obligation() {
+    let open = states(OPEN);
+    let target = at(&[0, 1], Polarity::Positive);
+    let pending = Configuration {
+        obligations: vec![root()],
+        windows: vec![Window::Shift(target.clone(), 1)],
+        ..Configuration::default()
+    };
+    let done = Configuration {
+        obligations: vec![Obligation::Current(target.clone()), root()],
+        ..Configuration::default()
+    };
+    let key = open.key(std::slice::from_ref(&done)).expect("encodes");
+    assert_eq!(
+        String::from_utf8(key.as_bytes().to_vec()).expect("UTF-8"),
+        states_key(r#"["safety",[[[[["0","1"],"positive"],[[],"positive"]],[],[],[]]]]"#)
+    );
+    assert_eq!(
+        open.admit(key.as_bytes()).map(|(_, branches)| branches),
+        Ok(vec![done.clone()])
+    );
+    assert_ne!(open.key(&[pending]).expect("encodes"), key);
+    let twice = Configuration {
+        windows: vec![Window::Shift(target, 1)],
+        ..done
+    };
+    assert_eq!(open.key(&[twice]), Err(KeyRefusal::Members));
+    let spelled = states_key(r#"["safety",[[[[["0","1"],"positive","0","open"]],[],[],[]]]]"#);
+    assert_eq!(
+        open.admit(spelled.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::Unresolved)
+    );
+}
+
+/// FR-338-AC-5's interval-obligation negatives: `lower>upper`, an offset
+/// outside the checked interval on either end, a negative offset, a finite
+/// upper on an open checked interval, and a `[o,s]` obligation where the
+/// occurrence is not a future temporal carry or carries an interval.
+#[trace("TC-525", "FR-338-AC-5")]
+#[test]
+fn interval_obligations_outside_the_checked_interval_are_refused() {
+    let future = states(FUTURE);
+    let shifted = states(SHIFTED);
+    let open = states(OPEN);
+    let obligation = |entry: &str| states_key(&format!(r#"["safety",[[[{entry}],[],[],[]]]]"#));
+    let refused = [
+        (
+            &future,
+            r#"[["0","1"],"positive","2","1"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            r#"[["0","1"],"positive","0","4"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            r#"[["0","1"],"positive","1","3"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            r#"[["0","1"],"positive","0","open"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &future,
+            r#"[["0","1"],"positive","-1","2"]"#,
+            KeyRefusal::Decimal("-1".into()),
+        ),
+        (&future, r#"[["0","1"],"positive"]"#, KeyRefusal::Unresolved),
+        (&future, r#"[["0","0"],"positive"]"#, KeyRefusal::Unresolved),
+        (&future, r#"[["0"],"positive"]"#, KeyRefusal::Unresolved),
+        (
+            &future,
+            r#"[["0","0"],"positive","0","1"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            r#"[["0","1"],"positive","2","3"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &open,
+            r#"[["0","1"],"positive","1","5"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &open,
+            r#"[["0","1"],"positive","3","open"]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &open,
+            r#"[["0","1"],"positive","0","open"]"#,
+            KeyRefusal::Unresolved,
+        ),
+    ];
+    for (states, entry, refusal) in refused {
+        let key = obligation(entry);
+        assert_eq!(
+            states.admit(key.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{entry}"
+        );
+    }
+    // Inside the checked interval, the same forms are admitted.
+    for (states, entry) in [
+        (&future, r#"[["0","1"],"positive","0","3"]"#),
+        (&shifted, r#"[["0","1"],"positive","1","3"]"#),
+        (&open, r#"[["0","1"],"positive","1","open"]"#),
+    ] {
+        let key = obligation(entry);
+        assert!(states.admit(key.as_bytes()).is_ok(), "{entry}");
+    }
+}
+
+/// FR-338 refuses a non-normal form rather than repairing it: a branch an
+/// obligation-free branch subsumes, an acceptance set that disagrees with
+/// what is carried, and a set naming an occurrence that is never a
+/// least-fixed point at that polarity. The writer reaches the same
+/// refusals, or the normal form, and never writes a key `admit` refuses.
+#[trace("TC-525", "FR-338-AC-5")]
+#[test]
+fn non_normal_branches_and_acceptance_are_refused() {
+    let mixed = states("always holds(c.level = 1) and eventually holds(c.level = 2)");
+    let carried = Configuration {
+        obligations: vec![Obligation::Current(at(&[0], Polarity::Positive))],
+        acceptance: vec![at(&[1], Polarity::Positive)],
+        ..Configuration::default()
+    };
+    let free = Configuration {
+        acceptance: vec![at(&[1], Polarity::Positive)],
+        ..Configuration::default()
+    };
+    let subsumed = states_key(
+        r#"["safety",[[[[["0"],"positive"]],[],[],[[["1"],"positive"]]],[[],[],[],[[["1"],"positive"]]]]]"#,
+    );
+    assert_eq!(
+        mixed.admit(subsumed.as_bytes()).map(|_| ()),
+        Err(KeyRefusal::NonNormal)
+    );
+    assert_eq!(
+        mixed.key(&[carried.clone(), free.clone()]),
+        mixed.key(&[free]),
+        "the writer drops the subsumed branch"
+    );
+
+    let accepting = states(ACCEPTING);
+    let eventually = at(&[0, 1], Polarity::Positive);
+    let key = |obligations: &str, acceptance: &str| {
+        states_key(&format!(
+            r#"["safety",[[[{obligations}],[],[],[{acceptance}]]]]"#
+        ))
+    };
+    let refused = [
+        // not carried, yet not a member
+        (key("", ""), KeyRefusal::NonNormal),
+        // carried, yet a member
+        (
+            key(r#"[["0","1"],"positive"]"#, r#"[["0","1"],"positive"]"#),
+            KeyRefusal::NonNormal,
+        ),
+        // never a least-fixed point at that polarity
+        (key("", r#"[[],"negative"]"#), KeyRefusal::Unresolved),
+        (key("", r#"[["0","1"],"negative"]"#), KeyRefusal::Unresolved),
+    ];
+    for (octets, refusal) in refused {
+        assert_eq!(
+            accepting.admit(octets.as_bytes()).map(|_| ()),
+            Err(refusal),
+            "{octets}"
+        );
+    }
+    // An antecedent is read at the dual polarity: `always a` there is a
+    // least-fixed-point `eventually not a`.
+    let dual = states("always ((always holds(c.level = 1)) implies holds(c.level = 2))");
+    let antecedent = Configuration {
+        acceptance: vec![at(&[0, 0], Polarity::Negative)],
+        ..Configuration::default()
+    };
+    assert!(dual.key(std::slice::from_ref(&antecedent)).is_ok());
+    assert_eq!(
+        dual.key(&[Configuration::default()]),
+        Err(KeyRefusal::NonNormal)
+    );
+    let negated = states("always (not (always holds(c.level = 1)))");
+    assert_eq!(
+        negated.key(&[Configuration::default()]),
+        Err(KeyRefusal::NonNormal),
+        "`not` dualizes its operand"
+    );
+    let wrong_sign = Configuration {
+        acceptance: vec![at(&[0, 0], Polarity::Positive)],
+        ..Configuration::default()
+    };
+    assert_eq!(dual.key(&[wrong_sign]), Err(KeyRefusal::Unresolved));
+    let member = Configuration {
+        acceptance: vec![eventually.clone()],
+        ..Configuration::default()
+    };
+    assert!(accepting.key(&[member]).is_ok());
+    assert_eq!(
+        accepting.key(&[Configuration::default()]),
+        Err(KeyRefusal::NonNormal),
+        "the writer refuses what the reader refuses"
+    );
+    let both = Configuration {
+        obligations: vec![Obligation::Current(eventually.clone())],
+        acceptance: vec![eventually],
+        ..Configuration::default()
+    };
+    assert_eq!(accepting.key(&[both]), Err(KeyRefusal::NonNormal));
+}
+
+/// The writer retains one counter per occurrence however the debts were
+/// inserted (FR-338's "deadlines 1 and 3 retain deadline 1"), the furthest
+/// extent, and the union of offsets; it refuses facts the context would
+/// refuse rather than writing them.
+#[trace("TC-525")]
+#[test]
+fn the_writer_retains_one_counter_per_occurrence_and_refuses_what_admit_refuses() {
+    let future = states(FUTURE);
+    let target = at(&[0, 1], Polarity::Positive);
+    let window = |windows: Vec<Window>| Configuration {
+        windows,
+        ..Configuration::default()
+    };
+    let retained = states_key(r#"["safety",[[[],[],[[["0","1"],"positive","deadline","1"]],[]]]]"#);
+    for order in [[3, 1], [1, 3]] {
+        let debts = order
+            .iter()
+            .map(|remaining| Window::Deadline(target.clone(), *remaining))
+            .collect();
+        assert_eq!(
+            octets(&future, &[window(debts)]),
+            retained,
+            "deadlines {order:?}"
+        );
+    }
+    let dual = at(&[0, 1], Polarity::Negative);
+    assert_eq!(
+        octets(
+            &future,
+            &[window(vec![
+                Window::Extent(dual.clone(), 1),
+                Window::Extent(dual, 3)
+            ])]
+        ),
+        states_key(r#"["safety",[[[],[],[[["0","1"],"negative","extent","3"]],[]]]]"#)
+    );
+    let shifted = states(SHIFTED);
+    assert_eq!(
+        octets(
+            &shifted,
+            &[window(vec![
+                Window::Offsets(target.clone(), vec![(1, 3)]),
+                Window::Offsets(target.clone(), vec![(0, 2), (1, 3)]),
+            ])]
+        ),
+        states_key(
+            r#"["safety",[[[],[],[[["0","1"],"positive","offsets",[["0","2"],["1","3"]]]],[]]]]"#
+        )
+    );
+
+    let age = states("always (holds(c.level = 1) implies once[0,2] holds(c.level = 2))");
+    let too_old = Configuration {
+        past: vec![PastMemory::Age {
+            path: vec![0, 1],
+            operator: PastOperator::Once,
+            age: 99,
+        }],
+        ..Configuration::default()
+    };
+    assert_eq!(age.key(&[too_old]), Err(KeyRefusal::Unresolved));
+    let open = states(OPEN);
+    let shifts = window(vec![
+        Window::Shift(target.clone(), 1),
+        Window::Shift(target, 2),
+    ]);
+    assert_eq!(open.key(&[shifts]), Err(KeyRefusal::Members));
+}
+
+/// A protocol subject's past and acceptance forms differ from the ordinary
+/// ones (`distance-history`, finite `F`/`U` acceptance), and this algebra
+/// does not carry them: it refuses to translate such a subject rather than
+/// admit the ordinary forms as if they were its own.
+#[trace("TC-525")]
+#[test]
+fn a_protocol_subject_has_no_safety_states_yet() {
+    let fixture = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
+    let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+    assert!(matches!(
+        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol),
         Err(TranslationRefusal::NotTranslated(_))
     ));
 }
