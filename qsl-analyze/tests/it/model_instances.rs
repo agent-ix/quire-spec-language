@@ -40,13 +40,13 @@ use qsl_semantics::model::intake::{meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, ChargePoint, LimitKind, Meter};
+use quire_exact::{Cancel, Meter};
 use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::{
-    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED, ZERO,
+    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED,
 };
 
 const PACKAGE: &str = "test/things";
@@ -1123,7 +1123,7 @@ fn an_atom_that_is_no_holds_atom_of_the_clause_is_a_fault() {
 /// QSL-1039: a `holds` evaluation that is refused (here an authored
 /// population bound exceeded, FR-380) is `AtomStop::Refused` at the letters
 /// and the refusal `AtomRefused` of the model check, not a panic.
-#[trace("TC-520")]
+#[trace("TC-520", "FR-380-AC-7")]
 #[test]
 fn a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check() {
     const PM: Declared<'_> = ("PM", &["Lamp", "Thing"]);
@@ -1181,49 +1181,6 @@ fn a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check() {
     );
 }
 
-/// QSL-1039: the observation of a state is charged to the meter, so a meter
-/// that cannot pay for the objects the state holds stops the read as
-/// incomplete at the observation, before any evaluation; and a read charges
-/// the same whether or not the state was observed before.
-#[trace("TC-520")]
-#[test]
-fn the_state_observation_is_charged_to_the_meter_on_every_read() {
-    let world = world(&[P1], &[("P1", &[("l", "Lamp"), ("s", "Switch")])]);
-    let package = world.always_true_with("");
-    let system = ModelSystem::new(
-        world
-            .subject(&package, universes(&[("P1", &["l", "s"])]))
-            .simulation,
-    )
-    .expect("the subject admits");
-    let node = &package.graph().temporal_clauses()[0];
-    let letters = system.clause_letters(node).expect("an unguarded clause");
-    let start = system.initial_states()[0].clone();
-    let atom = holds_atom(node);
-    let instance = instance("P1", "l");
-
-    let stopped = letters.atom(atom, &instance, &start, &mut Meter::new(ZERO));
-    let Err(AtomStop::Incomplete(incomplete)) = stopped else {
-        panic!("expected the meter to stop the read, got {stopped:?}");
-    };
-    assert_eq!(incomplete.charge_point, ChargePoint::CollectionVisit);
-
-    let charged = |letters: &dyn ModelLetters| {
-        let mut meter = Meter::new(UNLIMITED);
-        letters
-            .atom(atom, &instance, &start, &mut meter)
-            .expect("the meter is not exhausted");
-        meter.consumed(LimitKind::WorkUnits)
-    };
-    let fresh = charged(&letters);
-    assert!(fresh >= 2, "one visit for each of the two objects: {fresh}");
-    assert_eq!(
-        charged(&letters),
-        fresh,
-        "the cached read charges as the first"
-    );
-}
-
 /// QSL-1039 / SR-16618 FND-005: a state is observed once however many atoms
 /// and instances read it.
 #[trace("TC-520")]
@@ -1252,4 +1209,68 @@ fn a_state_is_observed_once_for_all_the_reads_of_it() {
             .expect("the meter is not exhausted");
     }
     assert_eq!(letters.observations(), 1);
+}
+
+/// A world with two initial states, the first holding `l` and `s`, the
+/// second only `l`.
+fn two_state_world() -> World {
+    let mut first = world(&[P1], &[("P1", &[("l", "Lamp"), ("s", "Switch")])]);
+    let second = world(&[P1], &[("P1", &[("l", "Lamp")])]);
+    let (_, bytes) = second.snapshots.into_iter().next().expect("one snapshot");
+    let bytes = String::from_utf8(bytes)
+        .expect("utf8")
+        .replace("\"s0\"", "\"s1\"")
+        .into_bytes();
+    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+        .expect("canonical fixture")
+        .as_bytes();
+    first.snapshots.insert(digest, bytes);
+    let mut reference = first.initial[0].clone();
+    reference.identity = "s1".to_owned();
+    reference.digest = digest;
+    first.initial.push(reference);
+    first
+}
+
+/// QSL-1039 / SR-16618 FND-005: a state that differs from the last one
+/// observed is observed afresh, so the cache never serves one state's
+/// observation for another: read through one set of letters in the order
+/// 0, 1, 0, 1, 1, every read equals a read through fresh letters, and four
+/// observations are made.
+#[trace("TC-520")]
+#[test]
+fn a_changed_state_is_observed_afresh() {
+    let world = two_state_world();
+    let package = world.always_with("", "x = x");
+    let system = ModelSystem::new(
+        world
+            .subject(&package, universes(&[("P1", &["l", "s"])]))
+            .simulation,
+    )
+    .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    let atom = holds_atom(node);
+    let states = system.initial_states();
+    assert_eq!(states.len(), 2, "two initial states");
+    let instance = instance("P1", "s");
+    let read = |letters: &dyn ModelLetters, state: &ModelSimState| {
+        letters
+            .atom(atom, &instance, state, &mut Meter::new(UNLIMITED))
+            .expect("a reading")
+    };
+    let oracle: Vec<_> = states
+        .iter()
+        .map(|state| read(&system.clause_letters(node).expect("letters"), state))
+        .collect();
+    assert_ne!(oracle[0], oracle[1], "the two states read differently");
+    let cached = system.clause_letters(node).expect("letters");
+    for index in [0, 1, 0, 1, 1] {
+        assert_eq!(
+            read(&cached, &states[index]),
+            oracle[index],
+            "state {index}"
+        );
+    }
+    assert_eq!(cached.observations(), 4);
 }

@@ -786,31 +786,75 @@ fn a_history_field_named_like_a_subtype_field_is_refused() {
     );
 }
 
-/// FR-138 S3 (TC-543): a history type whose values FR-181 gives no key form,
-/// a decimal here, is refused `unsupported_construct`/`not-yet-implemented`
-/// at the type, not admitted to fault in a product.
-#[trace("TC-543")]
+/// FR-138-AC-9 (TC-543): a history row typed `Decimal[0, 100; 0, 2;
+/// nearest-even]` refuses `unsupported_construct`/`not-yet-implemented` at
+/// the type, once, with `feature` `history-row`, `subject` `decimal` and no
+/// other diagnostic about the row; the same row typed as an enum, and typed
+/// `Option` of that enum, refuses with `subject` `enum`. `Int[0, 1]`, a
+/// Boolean and `Option<Int[0, 1]>` rows check.
+#[trace("TC-543", "FR-138-AC-9")]
 #[test]
 fn a_history_type_with_no_key_form_is_unsupported() {
     let unit = Unit::register();
-    let bad = "history Impl::Register.d : Decimal[0, 100; 0, 2; nearest-even] = decimal(0, 0) { }";
-    let found = unit.refused(&register_history(&format!("{LAST}\n{bad}")));
-    assert_eq!(
-        codes(&found),
-        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
-    );
-    assert!(found[0].at.starts_with("Decimal"));
-    let qsl_semantics::check::CheckCause::Refinement(refusal) = &found[0].refusal.cause else {
-        panic!("a refinement refusal");
+    let refusal = |declared: &str, initial: &str| {
+        let row = format!("history Impl::Register.d : {declared} = {initial} {{ }}");
+        let found = unit.refused(&format!(
+            "enum Phase {{ OPEN, SHUT }}\n{}",
+            register_history(&format!("{LAST}\n{row}"))
+        ));
+        assert_eq!(
+            codes(&found),
+            [(Code::UnsupportedConstruct, Some("not-yet-implemented"))],
+            "{declared}"
+        );
+        assert_eq!(found[0].at, declared);
+        let qsl_semantics::check::CheckCause::Refinement(refusal) = &found[0].refusal.cause else {
+            panic!("a refinement refusal");
+        };
+        let qsl_semantics::check::RefinementCause::Unsupported {
+            feature, subject, ..
+        } = &refusal.cause
+        else {
+            panic!("an unsupported feature: {:?}", refusal.cause);
+        };
+        (feature.name(), *subject)
     };
-    assert!(matches!(
-        &refusal.cause,
-        qsl_semantics::check::RefinementCause::Unsupported {
-            feature,
-            subject: Some("decimal"),
-            ..
-        } if feature.name() == "history-row"
-    ));
+    assert_eq!(
+        refusal("Decimal[0, 100; 0, 2; nearest-even]", "decimal(0, 0)"),
+        ("history-row", Some("decimal"))
+    );
+    assert_eq!(
+        refusal("Phase", "Phase::OPEN"),
+        ("history-row", Some("enum"))
+    );
+    assert_eq!(
+        refusal("Option<Phase>", "none"),
+        ("history-row", Some("enum"))
+    );
+
+    let bit = quire_exact::ValueType::Int(
+        quire_exact::IntegerInterval::new(0_i64.into(), 1_i64.into()).expect("a range"),
+    );
+    for (declared, initial, expected) in [
+        ("Int[0, 1]", "0", bit.clone()),
+        ("Boolean", "false", quire_exact::ValueType::Boolean),
+        (
+            "Option<Int[0, 1]>",
+            "none",
+            quire_exact::ValueType::option(bit),
+        ),
+    ] {
+        let row = format!("history Impl::Register.d : {declared} = {initial} {{ }}");
+        let world = unit.world(&register_history(&format!("{LAST}\n{row}")));
+        let checked: Vec<(&str, &quire_exact::ValueType)> = world
+            .refinement()
+            .history()
+            .iter()
+            .map(|row| (row.field.as_str(), &row.declared))
+            .collect();
+        assert_eq!(checked.len(), 2, "{declared}");
+        assert_eq!(checked[1], ("d", &expected), "{declared}");
+    }
 }
 
 /// FR-138-AC-6 (TC-543): an update that reads its own field outside `pre(..)`

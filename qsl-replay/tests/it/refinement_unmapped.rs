@@ -5,13 +5,16 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::UndefinedCause;
+use qsl_replay::ObjectKey;
 use qsl_replay::{map_state, EvalFailure, HistoryValues, MappingFailure, MappingRowRef};
+use qsl_semantics::model::state::ModelState;
 use quire_exact::Value;
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::UndefinedReason;
 
 use crate::ring_world::{
-    custom_state, key, ring_is_queue, MapWorld, RingSpec, RingWorld, Variant, ITEMS, QUEUE, RING,
-    UNLIMITED,
+    custom_state, key, ring_is_queue, ring_state, MapWorld, RingSpec, RingWorld, Variant, ITEMS,
+    QUEUE, RING, UNLIMITED,
 };
 
 const ITEMS_ROW: &str = "items = seq(i in 0 .. self.size - 1: only(s in R::slots where s.ring = self and s.index + 0 = (self.head + i) mod 2: s.value));";
@@ -261,4 +264,121 @@ fn the_reported_failure_does_not_depend_on_the_source_order_of_the_rows() {
             );
         }
     }
+}
+
+/// The failure of mapping `state` in `world`.
+fn map_failure(world: &MapWorld, state: &ModelState) -> MappingFailure {
+    map_state(
+        world.refinement(),
+        &world.concrete_system(),
+        &world.abstract_system(),
+        state,
+        &HistoryValues::default(),
+    )
+    .expect_err("the state does not map")
+}
+
+/// The row and concrete object of an undefined row.
+fn undefined_at(failure: MappingFailure) -> (MappingRowRef, ObjectKey) {
+    let MappingFailure::Undefined { row, object, .. } = failure else {
+        panic!("an undefined row: {failure:?}");
+    };
+    (row, object.expect("an object"))
+}
+
+/// FR-140-AC-15 (TC-545): over the two populations `queues` and `cells`,
+/// whose first named declarations have node-key digest order opposite to
+/// their `DeclarationKey` byte order, each with a row that evaluates
+/// undefined (the `items` row where the ring holds an item, the `Cell`
+/// `value` row where its slot holds 0), `map_state` returns the undefined row
+/// and object of the population first in digest order, and a state with only
+/// the other population undefined returns that one.
+#[trace("TC-545", "FR-140-AC-15")]
+#[test]
+fn populations_are_read_in_node_key_digest_order_not_declaration_key_order() {
+    let cell_value =
+        "value = only(t in R::slots where t.index = self.index and t.value = 1: t.value);";
+    let world = MapWorld::with_cell_rows(ONLY_ROW, cell_value);
+    let [first, second] = world.refinement().populations() else {
+        panic!("two populations: {:?}", world.refinement().populations());
+    };
+    let (queues, cells) = if first.abstract_population.node.ends_with("/queues") {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert!(cells.abstract_population < queues.abstract_population);
+    assert!(queues.order_key.as_bytes() < cells.order_key.as_bytes());
+
+    let concrete = world.concrete_system();
+    let items = MappingRowRef::Field {
+        object_type: key(QUEUE, "Queue"),
+        field: key(QUEUE, "Queue/items"),
+    };
+    let ring = ObjectKey {
+        population: key(RING, "rings"),
+        key: "r".to_owned(),
+    };
+    let value = MappingRowRef::Field {
+        object_type: key(QUEUE, "Cell"),
+        field: key(QUEUE, "Cell/value"),
+    };
+    let slot = ObjectKey {
+        population: key(RING, "slots"),
+        key: "s0".to_owned(),
+    };
+
+    // Both undefined: the ring holds an item and the slots hold 0.
+    let both = ring_state(&concrete, 1, 1, [0, 0]);
+    assert_eq!(
+        undefined_at(map_failure(&world, &both)),
+        (items.clone(), ring.clone())
+    );
+    // Only `queues`: the slots hold 1.
+    let only_queues = ring_state(&concrete, 1, 1, [1, 1]);
+    assert_eq!(
+        undefined_at(map_failure(&world, &only_queues)),
+        (items, ring)
+    );
+    // Only `cells`: the ring holds no item.
+    let only_cells = ring_state(&concrete, 1, 0, [0, 0]);
+    assert_eq!(
+        undefined_at(map_failure(&world, &only_cells)),
+        (value, slot)
+    );
+}
+
+/// FR-140 "Behavior" (TC-1086): an internal fault returns
+/// `MappingFailure::Fault`, and never the row outcome the state would
+/// otherwise give: a dangling reference faults a state whose `items` row is
+/// undefined. Every evaluator fault a state can induce is raised by the one
+/// observation of the state, before the first row is read, so a fault after
+/// an undefined row is not reachable through `map_state`'s inputs.
+#[trace("TC-1086")]
+#[test]
+fn an_internal_fault_replaces_the_row_outcome_a_state_would_give() {
+    let fault = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+
+    let world = MapWorld::new(ONLY_ROW);
+    let concrete = world.concrete_system();
+    let mut state = ring_state(&concrete, 1, 1, [0, 0]);
+    let MappingFailure::Undefined { .. } = map_failure(&world, &state) else {
+        panic!("the items row is undefined");
+    };
+    let ghost = Value::Reference(
+        concrete
+            .object_reference(&key(RING, "Ring"), "ghost")
+            .expect("a reference"),
+    );
+    state
+        .populations
+        .get_mut(&key(RING, "slots"))
+        .and_then(|slots| slots.get_mut("s1"))
+        .expect("the slot s1")
+        .fields
+        .insert(key(RING, "Slot/ring"), ghost);
+    let MappingFailure::Fault(code) = map_failure(&world, &state) else {
+        panic!("a dangling reference is a fault");
+    };
+    assert_eq!(code, fault);
 }

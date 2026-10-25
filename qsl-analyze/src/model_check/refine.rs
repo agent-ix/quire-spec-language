@@ -232,7 +232,7 @@ fn check_with(
             },
         }
     };
-    let liveness = if refinement.abstract_fairness().is_empty() {
+    let liveness = if refinement.abstract_operation_fairness().next().is_none() {
         None
     } else if refinement
         .objects()
@@ -243,8 +243,7 @@ fn check_with(
             UnavailabilityCause::HiddenFieldLiveness,
         ))
     } else if refinement
-        .abstract_fairness()
-        .iter()
+        .abstract_operation_fairness()
         .any(|constraint| constraint.kind() == FairnessKind::Strong)
     {
         // A hidden field is reported first (above), so a refinement with
@@ -713,12 +712,13 @@ impl Run<'_, '_> {
                 .or_insert_with(|| transition.clone());
         }
         let identities: Vec<ModelTransition> = identities.into_values().collect();
-        let classes = (self.classes_of)(
-            self.abstract_system,
-            self.refinement.abstract_fairness(),
-            &identities,
-        )
-        .map_err(End::Fault)?;
+        let abstract_fairness: Vec<_> = self
+            .refinement
+            .abstract_operation_fairness()
+            .cloned()
+            .collect();
+        let classes = (self.classes_of)(self.abstract_system, &abstract_fairness, &identities)
+            .map_err(End::Fault)?;
         let transitions: Vec<ModelTransition> = self
             .nodes
             .iter()
@@ -738,12 +738,13 @@ impl Run<'_, '_> {
                 .copied()
                 .ok_or_else(|| fault("every-edge-transition-is-numbered"))
         };
-        let constraints = fairness_constraints(
-            self.concrete,
-            self.refinement.concrete_fairness(),
-            &transitions,
-            identity,
-        )?;
+        let concrete_fairness: Vec<_> = self
+            .refinement
+            .concrete_operation_fairness()
+            .cloned()
+            .collect();
+        let constraints =
+            fairness_constraints(self.concrete, &concrete_fairness, &transitions, identity)?;
         for class in &classes {
             let (graph, vertices) = self.fair_graph(class, &identity)?;
             let within: BTreeSet<Vertex> = vertices
@@ -888,8 +889,8 @@ impl Run<'_, '_> {
         }
         let constraint = self
             .refinement
-            .abstract_fairness()
-            .get(class.constraint())
+            .abstract_operation_fairness()
+            .nth(class.constraint())
             .ok_or_else(|| fault("a-class-names-a-constraint-of-the-set"))?
             .clone();
         let failure = if taking {
@@ -902,7 +903,11 @@ impl Run<'_, '_> {
                 initial_state,
                 prefix,
                 over_binding: None,
-                fairness: self.refinement.concrete_fairness().to_vec(),
+                fairness: self
+                    .refinement
+                    .concrete_operation_fairness()
+                    .cloned()
+                    .collect(),
                 kind: CounterexampleKind::Formula,
                 lasso: Some(Lasso {
                     entry: entry_position,
