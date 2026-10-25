@@ -176,11 +176,10 @@ impl PastOperator {
     /// constant true, historically the identity or constant false, since and
     /// triggered all three; none yields a negation.
     const fn composes(self, transform: [bool; 2]) -> bool {
-        match (self, transform) {
-            (_, [true, false]) => false,
-            (Self::Once, [false, false]) | (Self::Historically, [true, true]) => false,
-            _ => true,
-        }
+        !matches!(
+            (self, transform),
+            (_, [true, false]) | (Self::Once, [false, false]) | (Self::Historically, [true, true])
+        )
     }
 
     /// The operator's operand count.
