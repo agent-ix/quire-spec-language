@@ -27,7 +27,7 @@
 use std::collections::HashMap;
 
 use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId, HyperForm};
-use quire_exact::{Cancel, Meter, ScalarLimits};
+use quire_exact::{Meter, ScalarLimits};
 
 use super::engine::{self, bad_prefix_bound, Goal, Subject};
 use super::input::TemporalTrace;
@@ -247,7 +247,6 @@ fn false_position<L: TupleLetters>(
     represented: u64,
     lockstep: &mut Lockstep<'_, L>,
     meter: &Meter,
-    cancel: Option<&Cancel>,
 ) -> Result<Result<TemporalPosition, TemporalOutcome>, TemporalRefusal> {
     let longest = u64::try_from(bad_prefix_bound(subject(body), trace)?)
         .map_err(|_| TemporalRefusal::TraceTooLong)?;
@@ -258,7 +257,7 @@ fn false_position<L: TupleLetters>(
         work_units: u64::MAX,
         ..*meter.limits()
     });
-    if let Some(cancel) = cancel {
+    if let Some(cancel) = meter.cancel() {
         search = search.with_cancel(cancel.clone());
     }
     let mut bad = |len: u64| {
@@ -305,9 +304,8 @@ fn false_position<L: TupleLetters>(
 /// `Undefined` at the first joint position an atom is undefined, with its
 /// cause.
 ///
-/// `cancel` must be the same handle `meter` polls, if any (`Meter` exposes no
-/// accessor for it, so the caller passes it again): the position search
-/// polls it too, so a cancellation during the search is seen.
+/// The position search uses the cancellation handle installed on `meter`, if
+/// any, so it observes the same cancellation as the evaluation itself.
 ///
 /// A tuple whose count differs from the clause's variables, an empty
 /// component, or a joint period that exceeds `u64` is refused.
@@ -316,7 +314,6 @@ pub fn evaluate_tuple<L: TupleLetters>(
     components: &[ComponentTrace],
     letters: &mut L,
     meter: &mut Meter,
-    cancel: Option<&Cancel>,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
     if components.len() != body.quantifiers().len() {
         return Err(TemporalRefusal::TupleArity {
@@ -344,7 +341,7 @@ pub fn evaluate_tuple<L: TupleLetters>(
     let outcome = engine::run(subject(body), trace, Goal::Clause, &mut lockstep, meter)?;
     match outcome {
         TemporalOutcome::Violated { .. } => Ok(
-            match false_position(body, trace, represented, &mut lockstep, meter, cancel)? {
+            match false_position(body, trace, represented, &mut lockstep, meter)? {
                 Ok(at) => TemporalOutcome::Violated { at },
                 Err(stopped) => stopped,
             },
