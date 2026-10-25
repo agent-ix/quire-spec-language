@@ -189,7 +189,7 @@ fn check_channel(
     let carries = match resolve_form(scope, &channel.carries) {
         Ok(ValueType::Reference(_) | ValueType::Population(_)) => {
             let name = match &channel.carries.head {
-                TypeFormHead::Name(name) => name.clone(),
+                TypeFormHead::Name(name) => name.name.clone(),
                 TypeFormHead::Builtin(_)
                 | TypeFormHead::Collection(_)
                 | TypeFormHead::Population => String::new(),
@@ -776,7 +776,7 @@ mod tests {
         assert_eq!(channel, "Pay");
         assert_eq!(
             *fault,
-            super::super::type_form::TypeFormFault::MissingName("M::Absent".to_owned())
+            super::super::type_form::TypeFormFault::MissingQualifiedName("M::Absent".into())
         );
         assert_eq!(located(&text, &cause), "M::Absent");
 

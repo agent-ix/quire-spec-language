@@ -437,7 +437,7 @@ fn encode_expression(
             }
             ExprNode::Name(name) => {
                 out.write_str("name");
-                out.write_str(name);
+                out.write_str(&name.name);
             }
             ExprNode::ProtocolReference { target } => {
                 out.write_str("protocol_reference");
@@ -505,13 +505,13 @@ fn encode_expression(
             }
             ExprNode::Call { name, arguments } => {
                 out.write_str("call");
-                out.write_str(name);
+                out.write_str(&name.name);
                 out.write_u64(arguments.len() as u64);
                 pending.extend(arguments.iter().map(|id| expr.at(*id)));
             }
             ExprNode::Record { name, fields } => {
                 out.write_str("record");
-                out.write_str(name);
+                out.write_str(&name.name);
                 out.write_u64(fields.len() as u64);
                 for (field_name, initializer) in fields {
                     out.write_str(field_name);
@@ -716,7 +716,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
     let mut pending = vec![root];
     while let Some(form) = pending.pop() {
         out.write_str(match &form.head {
-            TypeFormHead::Name(name) => name,
+            TypeFormHead::Name(name) => &name.name,
             TypeFormHead::Collection(kind) => collection_kind_tag(*kind),
             TypeFormHead::Population => "Population",
             TypeFormHead::Builtin(builtin) => match builtin {
@@ -964,7 +964,7 @@ impl<'a> Application<'a> {
         let declared = match typer.type_named(name, location) {
             Ok(value_type) => Some(value_type),
             Err(CheckRefusal {
-                cause: CheckCause::MissingName(_),
+                cause: CheckCause::MissingName(_) | CheckCause::MissingQualifiedName(_),
                 ..
             }) => None,
             Err(refusal) => return Err(refusal),

@@ -1084,7 +1084,7 @@ impl Checker<'_, '_> {
                 self.refuse(ObligationCause::AttemptType {
                     compensation: name,
                     name: match &record.head {
-                        TypeFormHead::Name(written) => Some(written.clone()),
+                        TypeFormHead::Name(written) => Some(written.name.clone()),
                         TypeFormHead::Builtin(_)
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => None,
@@ -1177,7 +1177,7 @@ impl Checker<'_, '_> {
             }
         }
         match cause {
-            CheckCause::MissingName(name) if !is_qualified(&name) => {
+            CheckCause::MissingName(name) => {
                 let read = self.universe.classify(&name, site);
                 self.refuse(ObligationCause::StageRead {
                     name,
@@ -1211,6 +1211,7 @@ pub(super) fn wraps(cause: &CheckCause) -> bool {
             | CheckCause::NonBooleanRoot
             | CheckCause::WrongSnapshot(_)
             | CheckCause::MissingName(_)
+            | CheckCause::MissingQualifiedName(_)
             | CheckCause::AmbiguousName { .. }
             | CheckCause::Unproved(_)
             | CheckCause::UnanchoredResult { .. }
@@ -1265,15 +1266,6 @@ pub(super) fn type_body(
         }
         Goal::Infer => typer.infer(&form.expression, None, input.location),
     }
-}
-
-/// Whether the clause checker's missing name was written with a `::`
-/// qualifier. The expression tree carries a name only as its spelling
-/// (`ExprNode::Name`), so the qualifier is read from that spelling: a
-/// qualified name is a missing declaration, not a stage's unreadable name.
-#[ix_trace_rs::string_edge]
-fn is_qualified(name: &str) -> bool {
-    name.contains("::")
 }
 
 /// The span of the node `location` reaches in `form`, or the whole

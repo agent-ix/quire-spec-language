@@ -451,7 +451,10 @@ fn unresolved_name<'a>(
             else {
                 continue;
             };
-            if !matches!(inner.cause, CheckCause::MissingName(_)) {
+            if !matches!(
+                inner.cause,
+                CheckCause::MissingName(_) | CheckCause::MissingQualifiedName(_)
+            ) {
                 continue;
             }
             let span = scoped_span(operand, scope, &inner.location.path())

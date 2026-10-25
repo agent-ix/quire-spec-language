@@ -594,7 +594,7 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
     let tried = binder(form, "tried", BinderKind::RecordBinder, &["Main"]);
     assert_eq!(
         tried.value_type.head,
-        TypeFormHead::Name("Config::ConfigVersion".to_owned())
+        TypeFormHead::Name("Config::ConfigVersion".into())
     );
     let input = binder(form, "input", BinderKind::Input, &[]);
     assert_eq!(
@@ -956,7 +956,7 @@ fn show(expression: ExprRef<'_>) -> String {
     let head = match expression.node() {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
-        ExprNode::Name(spelling) => spelling.clone(),
+        ExprNode::Name(spelling) => spelling.name.clone(),
         ExprNode::Binary { operator, .. } => format!("{operator:?}"),
         ExprNode::Not(_) => "Not".into(),
         ExprNode::Field { field, .. } => format!("Field[{field}]"),
