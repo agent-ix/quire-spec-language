@@ -127,7 +127,7 @@ fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() 
 
 /// QSpec FR-331-AC-30 at the manifest conversion: a `memory_models` member
 /// that is empty or repeats a model, or that sits on a descriptor that does
-/// not advertise `temporal-satisfaction`, refuses `invalid-memory-models`.
+/// not advertise `temporal-satisfaction`, refuses under the temporal members' cause `invalid-dynamics`.
 #[trace("TC-671")]
 #[test]
 fn a_defective_memory_models_member_refuses_the_registration() {
@@ -166,7 +166,7 @@ fn a_defective_memory_models_member_refuses_the_registration() {
             &RegistrationCause::InvalidMemoryModels(defect),
             "{kind} {models:?}"
         );
-        assert_eq!(refusal.cause().as_str(), "invalid-memory-models");
+        assert_eq!(refusal.cause().as_str(), "invalid-dynamics");
     }
 }
 
@@ -191,4 +191,26 @@ fn a_provider_with_dynamics_keeps_its_memory_models() {
     )
     .expect("a well-formed manifest");
     assert_eq!(descriptor.memory_models(), &BTreeSet::from([Sc, Tso]));
+}
+
+/// `memory_models` is judged after every other member: a manifest with a
+/// defective evidence kind and a defective `memory_models` refuses the
+/// evidence kind.
+#[trace("TC-671")]
+#[test]
+fn memory_models_are_judged_after_evidence_kinds() {
+    let refusal = descriptor_from_manifest(
+        candidate("late"),
+        ProviderOrigin::Linked,
+        ManifestDigest::from_digest([5; 32]),
+        [(Some("probabilistic-satisfaction"), Some("unbounded"))],
+        ManifestMembers {
+            domains: None,
+            fairness_kinds: None,
+            evidence_kinds: None,
+            memory_models: Some(&[Sc]),
+        },
+    )
+    .expect_err("refused");
+    assert_eq!(refusal.cause().as_str(), "unknown-evidence-kind");
 }

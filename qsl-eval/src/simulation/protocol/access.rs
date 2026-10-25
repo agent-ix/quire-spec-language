@@ -1152,7 +1152,10 @@ impl Walk<'_, '_> {
                 let looped = self.program.repeat(node)?;
                 let mut exits = pending.clone();
                 let mut entry = pending;
-                for _ in 0..2 {
+                // A third pass adds no pair: the loads pending after two are
+                // those pending after any more.
+                let passes = looped.max.map_or(2, |max| max.min(2));
+                for _ in 0..passes {
                     entry = self.node(looped.body, ra, entry, found)?;
                     exits.extend(entry.iter().cloned());
                 }
