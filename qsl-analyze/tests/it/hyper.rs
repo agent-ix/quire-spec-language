@@ -219,6 +219,21 @@ fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuo
         panic!("expected the vacuous match to decide nothing");
     };
     assert_eq!(cause, UndecidedCause::VacuousMatch);
+    // The same conjunct over `step` on both sides is satisfiable, so the
+    // vacuity is the stutter's and not the label constant's.
+    let satisfiable = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(
+            "match { a.step.op = V::Vault::step and b.step.op = V::Vault::step and \
+             a.step.Vault::step.i = b.step.Vault::step.i }",
+        ),
+    );
+    assert!(matches!(
+        run(&satisfiable),
+        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
+    ));
 }
 
 /// FR-176-AC-3, first sentence: the secure vault with a `reset` operation and

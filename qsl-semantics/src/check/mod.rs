@@ -2933,6 +2933,9 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // The nodes the hyper conditions checked count against the package's
+        // ceiling beside every other declaration's.
+        nodes_used = hyper_declarations.nodes_used.get();
         if !refusals.is_empty() {
             return Err(refusals);
         }

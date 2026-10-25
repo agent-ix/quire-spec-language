@@ -10,6 +10,7 @@
 //! lowered (FR-487).
 
 use quire_exact::{Incomplete, Meter, ObjectReference};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::FormulaNodeId;
@@ -82,6 +83,9 @@ pub enum MatchReading {
         /// How the evaluation was refused.
         outcome: ClauseOutcome,
     },
+    /// The evaluator broke an invariant while reading a conjunct: the labels
+    /// or the conjunct are not the product's own. The run stops as a fault.
+    Fault(InternalFault),
 }
 
 /// A conjunct whose evaluation exhausted the meter (FR-487).

@@ -5,7 +5,9 @@
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedHyperClause;
+use quire_eval::CallFailure;
 use quire_exact::Meter;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::hyper::{
     MatchIncomplete, MatchPart, MatchReading, ParameterBinding, StepLabel, StepMatch,
@@ -52,14 +54,12 @@ impl<'s> CheckedStepMatch<'s> {
                 meter,
             ) {
                 Ok(evaluation) => evaluation,
-                // The labels and the conjunct are the product's own, so an
-                // evaluator fault is a broken invariant; the seam has no
-                // fault channel, and the product reads a refusal.
+                Err(CallFailure::Fault(fault)) => return Ok(MatchReading::Fault(fault)),
                 Err(_) => {
-                    return Ok(MatchReading::Refused {
-                        conjunct,
-                        outcome: ClauseOutcome::FamilyRefused(BROKEN),
-                    })
+                    return Ok(MatchReading::Fault(InternalFault::new(
+                        "hyper-match",
+                        "a-conjunct-evaluates",
+                    )))
                 }
             };
             match verdict(&evaluation.outcome) {
