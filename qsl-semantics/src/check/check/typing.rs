@@ -114,7 +114,6 @@ fn int_type(low: Integer, high: Integer, location: &Location) -> Result<ValueTyp
 /// "Resolution"): ambiguous, naming the alias, which the model selection and
 /// the enum both declare. Neither declaration is a position of the checked
 /// tree, so the one locus is the name.
-
 fn qualified_name_refusal(refusal: CheckRefusal, name: &NameForm) -> CheckRefusal {
     if name.is_qualified() && matches!(refusal.cause, CheckCause::MissingName(_)) {
         CheckRefusal {

@@ -97,6 +97,7 @@ use quire_contract_model::{
     ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
+use ix_trace_rs::string_edge;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
@@ -1449,6 +1450,9 @@ fn candidates_of<'g>(
 /// node would be written; every production call site is `emit_package`,
 /// which passes `|_| None`, so this behaves exactly as `emit_package`
 /// always has for every non-test caller.
+/// `#[string_edge]`: the nominal preimage's `form` wire discriminator selects
+/// the unit-node emission branch.
+#[string_edge]
 fn emit_package_inner(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,

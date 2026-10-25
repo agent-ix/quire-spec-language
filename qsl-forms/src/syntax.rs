@@ -2313,7 +2313,7 @@ pub struct NameForm {
     /// The name as written.
     pub name: String,
     /// The identifier segments, in source order.
-    pub segments: Vec<String>,
+    pub segments: Box<[String]>,
     /// The span of the name.
     pub span: Span,
 }
@@ -2340,7 +2340,11 @@ impl NameForm {
     /// Construct a name form from its spelling and source span.
     pub fn new(name: impl Into<String>, span: Span) -> Self {
         let name = name.into();
-        let segments = name.split("::").map(str::to_owned).collect();
+        let segments = name
+            .split("::")
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         Self {
             name,
             segments,
@@ -2357,7 +2361,12 @@ impl NameForm {
     /// segment values. Source forms are otherwise built from the CST.
     pub fn set_spelling(&mut self, spelling: impl Into<String>) {
         self.name = spelling.into();
-        self.segments = self.name.split("::").map(str::to_owned).collect();
+        self.segments = self
+            .name
+            .split("::")
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
     }
 
     /// Build a name form for a name synthesized without a source span.
@@ -3285,7 +3294,7 @@ pub struct TimedIntervalForm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TimedUpper {
     /// A quantity literal.
-    Finite(QuantityForm),
+    Finite(Box<QuantityForm>),
     /// `*`: the interval has no upper bound.
     Open,
 }
@@ -3425,8 +3434,8 @@ pub enum ActivationForm {
     Origin,
     /// `on each (p: T) [when (e)]`.
     Each {
-        /// The activation parameter.
-        parameter: ParameterForm,
+        /// The activation parameter, boxed to keep `Origin` compact.
+        parameter: Box<ParameterForm>,
         /// The `when` condition, when written.
         when: Option<ExpressionForm>,
     },
@@ -4116,8 +4125,8 @@ pub enum DeclarationForm {
     Enum(EnumForm),
     /// A `dimension` declaration.
     Dimension(DimensionForm),
-    /// A `unit` declaration.
-    Unit(UnitForm),
+    /// A `unit` declaration, boxed to keep the declaration sum compact.
+    Unit(Box<UnitForm>),
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
@@ -4300,7 +4309,10 @@ mod tests {
             assert_eq!(copy, tree);
             let rendered = format!("{tree:?}");
             assert!(rendered.starts_with(&format!("#{} ", tree.len() - 1)));
-            assert_eq!(rendered.matches("Name(NameForm { name: \"bottom\"").count(), 1);
+            assert_eq!(
+                rendered.matches("Name(NameForm { name: \"bottom\"").count(),
+                1
+            );
             drop(copy);
             drop(tree);
         });

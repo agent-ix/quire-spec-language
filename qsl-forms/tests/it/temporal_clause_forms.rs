@@ -429,8 +429,12 @@ fn assert_same_without_spans(left: &TemporalFormulaForm, right: &TemporalFormula
                 TemporalNodeForm::Constant { value: right, .. },
             ) => assert_eq!(left, right),
             (
-                TemporalNodeForm::Holds { condition: left, .. },
-                TemporalNodeForm::Holds { condition: right, .. },
+                TemporalNodeForm::Holds {
+                    condition: left, ..
+                },
+                TemporalNodeForm::Holds {
+                    condition: right, ..
+                },
             ) => assert!(left.expression.root().same_tree(right.expression.root())),
             (TemporalNodeForm::Operator(left), TemporalNodeForm::Operator(right)) => {
                 assert_eq!(left.operator, right.operator);

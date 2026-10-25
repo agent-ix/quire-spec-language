@@ -1085,7 +1085,7 @@ impl PackageDeclarations {
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
-                                        let operations = model.tick_operation_keys(&operation);
+                                        let operations = model.tick_operation_keys(operation);
                                         let [resolved] = operations.as_slice() else {
                                             let cause = if operations.is_empty() {
                                                 TemporalCause::MissingTickOperation {
