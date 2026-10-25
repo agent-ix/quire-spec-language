@@ -274,6 +274,11 @@ fn choice_partition_charges_once_per_valuation() {
     let one_atom = choice_with_guards("a and a and a", "not (a and a and a)");
     check(&three_atoms).expect("the three-atom guards partition");
     check(&one_atom).expect("the one-atom guards partition");
+    assert!(check_with_limits(
+        &three_atoms,
+        CheckingLimits::default().with_work_budget(0),
+    )
+    .is_err());
     let three_atom_budget = minimum_work_budget(&three_atoms);
     let one_atom_budget = minimum_work_budget(&one_atom);
     assert_eq!(three_atom_budget - one_atom_budget, 6);
