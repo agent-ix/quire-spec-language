@@ -83,7 +83,12 @@ pub fn declaration(package: &str, path: &str, kind: &str, members: Value) -> Val
 
 /// `Int[0, upper]` as a declared value type.
 pub fn bounded(package: &str, name: &str, upper: u32) -> Value {
-    let constraints: Vec<Value> = [("min", "0".to_owned()), ("max", upper.to_string())]
+    ranged(package, name, 0, upper)
+}
+
+/// `Int[lower, upper]` as a declared value type.
+pub fn ranged(package: &str, name: &str, lower: u32, upper: u32) -> Value {
+    let constraints: Vec<Value> = [("min", lower.to_string()), ("max", upper.to_string())]
         .iter()
         .map(|(keyword, value)| {
             let path = format!("{name}/constraints/{keyword}");
@@ -331,13 +336,18 @@ pub fn all_rows() -> String {
 /// state clause under the complete value profile, which is what admits `mod`
 /// in the rows (the profile is the unit's, not the row's).
 pub fn ring_is_queue(rows: &str) -> String {
+    ring_is_queue_over(rows, "value = self.value;")
+}
+
+/// [`ring_is_queue`] whose `Cell` object row holds `cell_rows`.
+pub fn ring_is_queue_over(rows: &str, cell_rows: &str) -> String {
     format!(
         "invariant Anything using v on R::Ring at current {{ true }}\n\
          refinement RingIsQueue using inf abstract Q concrete R {{\n\
          population Q::queues from R::rings;\n\
          population Q::cells from R::slots;\n\
          object Q::Queue from R::Ring {{ {rows} }}\n\
-         object Q::Cell from R::Slot {{ value = self.value; }}\n\
+         object Q::Cell from R::Slot {{ {cell_rows} }}\n\
          step R::Slot::put -> Q::Queue::enq(self.ring, x);\n\
          step R::Slot::take -> Q::Queue::deq(self.ring);\n\
          }}"
@@ -362,7 +372,12 @@ pub struct Checked {
 
 /// The unit holding `body` over both models, checked, or its refusals.
 pub fn check(body: &str) -> Result<Checked, Vec<Refused>> {
-    let (queue, ring) = (queue_spec(), ring_buffer());
+    check_over(&queue_spec(), body)
+}
+
+/// [`check`] over the abstract package `queue`.
+pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
+    let (queue, ring) = (queue.to_vec(), ring_buffer());
     let mut packages = BTreeMap::new();
     let mut selections = String::new();
     for (alias, identity, bytes) in [("Q", QUEUE, &queue), ("R", RING, &ring)] {
@@ -425,7 +440,12 @@ pub fn check(body: &str) -> Result<Checked, Vec<Refused>> {
 
 /// [`check`], which must succeed.
 pub fn checked(body: &str) -> Checked {
-    check(body).unwrap_or_else(|refusals| {
+    checked_over(&queue_spec(), body)
+}
+
+/// [`check_over`], which must succeed.
+pub fn checked_over(queue: &[u8], body: &str) -> Checked {
+    check_over(queue, body).unwrap_or_else(|refusals| {
         panic!(
             "{body}: {:?}",
             refusals
