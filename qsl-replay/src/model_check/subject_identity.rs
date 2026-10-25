@@ -2,15 +2,14 @@
 //! FR-336 Outputs (ADR-013 O-09): the identity projection of a model
 //! subject.
 
-use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::model_subject::ModelSubject;
-use qsl_foundation::bound::ProofBound;
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_package::{emit_checked, EmitRefusal};
 use qsl_semantics::library::PackageId;
 use quire_checked::key::DeclarationKey;
+use quire_exact::Integer;
 
 /// An initial state's document, as the identity reads it: the four source
 /// labels and the digest.
@@ -28,13 +27,38 @@ type InitialState = (String, String, String, String, [u8; 32]);
 /// the observation and normalization limits and the snapshot provision decide
 /// whether a run finishes or reads, not what a finished run holds, so they
 /// are no part of it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SubjectIdentity {
     package: PackageId,
     initial: BTreeSet<InitialState>,
     universes: BTreeMap<DeclarationKey, BTreeSet<String>>,
     packages: BTreeSet<[u8; 32]>,
-    proof_bounds: HashSet<ProofBound>,
+    proof_bounds: BTreeSet<BoundKey>,
+}
+
+/// A finite bound in an orderable form, so the identity's set of proof
+/// bounds is ordered and hashes without depending on listing order.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Bound {
+    Cardinality(u64),
+    IntegerRange(Integer, Integer),
+    Depth(u64),
+    Variants(Vec<String>),
+}
+
+/// One proof bound: its domain, its kind and its finite bound.
+type BoundKey = (DomainKey, Option<DomainKind>, Bound);
+
+fn bound_key(bound: &ProofBound) -> BoundKey {
+    let finite = match bound.bound() {
+        FiniteBound::Cardinality { maximum } => Bound::Cardinality(*maximum),
+        FiniteBound::IntegerRange(range) => {
+            Bound::IntegerRange(range.lower().clone(), range.upper().clone())
+        }
+        FiniteBound::Depth { maximum } => Bound::Depth(maximum.get()),
+        FiniteBound::Variants { members } => Bound::Variants(members.clone()),
+    };
+    (bound.domain().clone(), bound.kind(), finite)
 }
 
 /// Why no [`SubjectIdentity`] was made.
@@ -86,7 +110,7 @@ impl SubjectIdentity {
                 .iter()
                 .map(|selection| selection.digest)
                 .collect(),
-            proof_bounds: subject.proof_bounds.iter().cloned().collect(),
+            proof_bounds: subject.proof_bounds.iter().map(bound_key).collect(),
         })
     }
 
@@ -94,27 +118,5 @@ impl SubjectIdentity {
     /// supplies none.
     pub fn universe(&self, population: &DeclarationKey) -> Option<&BTreeSet<String>> {
         self.universes.get(population)
-    }
-}
-
-impl Hash for SubjectIdentity {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.package.hash(state);
-        self.initial.hash(state);
-        self.universes.hash(state);
-        self.packages.hash(state);
-        // A set's iteration order is unspecified, so fold the members' hashes
-        // with an operation that does not depend on the order.
-        let folded = self
-            .proof_bounds
-            .iter()
-            .map(|bound| {
-                let mut member = DefaultHasher::new();
-                bound.hash(&mut member);
-                member.finish()
-            })
-            .fold(0u64, u64::wrapping_add);
-        self.proof_bounds.len().hash(state);
-        folded.hash(state);
     }
 }
