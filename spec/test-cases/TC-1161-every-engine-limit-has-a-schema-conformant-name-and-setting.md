@@ -1,19 +1,20 @@
 ---
 id: TC-1161
-title: "Every engine limit has a schema-conformant limit name and setting name"
+title: "Every engine and typed-operation limit has a schema-conformant name and setting"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-255
     type: verifies
 ---
-# TC-1161: Every engine limit has a schema-conformant limit name and setting name
+# TC-1161: Every engine and typed-operation limit has a schema-conformant name and setting
 
 ## Description
 
-Verify FR-255's engine table: each engine limits type maps every member to
-one limit name and one dotted setting name matching the backend-provider
-`LimitName` and `SettingName` patterns, a stopped engine item names that
-pair, and `model_check.max_states` and `explore.states` raise different
+Verify FR-255's engine table and typed inspection operation: each limits
+type maps every member to one limit name and one dotted setting name matching
+the backend-provider `LimitName` and `SettingName` patterns; a stopped engine
+item names that pair; a typed-view limit is reported by the lifecycle
+operation; and `model_check.max_states` and `explore.states` raise different
 limits.
 
 Scope: FR-255-AC-12, FR-255-AC-13.
@@ -23,10 +24,14 @@ Scope: FR-255-AC-12, FR-255-AC-13.
 1. For each limits type of FR-255's engine table (`ModelCheckLimits`,
    `ModelCheckRequest`'s method bounds, `ExpansionLimits`, `ExactProbLimits`, `StatisticalLimits`,
    `TimedSampling`, `ZoneCheckLimits`, `CertificateCheckLimits`,
-   `ScheduleLimits`, the monitor run's window limit and `hybrid.limits`),
+   `ScheduleLimits`, the monitor run's window limit, `hybrid.limits` and
+   `InspectLimits`),
    read its mapping from each limit member (not `TimedSampling`'s `q`; for
    `ExactProbLimits`, only the three product-bound `model` members) to its
-   names and match each name against the two patterns; for the three
+   names and match each name against the two patterns; verify
+   `InspectLimits.max_view_entries` maps to (`max_view_entries`,
+   `inspect.max_view_entries`) and that the settings operation sets its
+   default to 10000000 and accepts a positive configured value; for the three
    method bounds, check that their V-6 stops name the member and its value
    (FR-209, FR-225) and that the settings operation raises each by its row's
    setting; collect every setting name of the setting, engine and
@@ -49,7 +54,8 @@ Tag the tests `#[trace("TC-1161", "<criterion>")]`.
 
 - Step 1: every name matches its pattern; the mapping equals the table
   rows, `ExactProbLimits.model`'s members giving the `exact_prob.*` product
-  rows; no setting name repeats across the three tables.
+  rows and `InspectLimits.max_view_entries` giving
+  `inspect.max_view_entries`; no setting name repeats across the three tables.
 - Step 2: each mapped variant's pair is its member's row; `max_states=0`
   is a usage refusal naming the operand, `witness_samples=0` returns
   `witness_samples` 0.

@@ -13,7 +13,8 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_eval::value::CheckedPackageEvaluation;
-use qsl_semantics::check::{FormulaNode, FormulaNodeId};
+use qsl_semantics::check::{operation_text, FormulaNode, FormulaNodeId, StepRead};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{LimitKind, Meter, Undefined};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -91,23 +92,27 @@ fn an_atom_is_evaluated_over_its_components_and_is_deterministic() {
     for kind in LimitKind::ALL {
         assert_eq!(first.consumed(kind), second.consumed(kind), "{kind:?}");
     }
-    // A meter with a zero budget cannot read the atom.
+    // A meter with a zero budget cannot read the atom: it is denied at the
+    // first charge, with nothing consumed.
     let mut empty = Meter::new(ZERO);
-    assert!(matches!(
-        read(&world, at, &[low_zero, low_one], &mut empty),
-        Err(AtomStop::Incomplete(_))
-    ));
-    // A slot vector of the wrong length is a fault and charges nothing.
+    let Err(AtomStop::Incomplete(incomplete)) = read(&world, at, &[low_zero, low_one], &mut empty)
+    else {
+        panic!("a zero budget is exhausted");
+    };
+    assert_eq!((incomplete.limit, incomplete.consumed), (0, 0));
+    // A slot vector of the wrong length is a fault and charges nothing, with
+    // one observed component for each trace so that only the slots are wrong.
+    let environments = [ObjectEnvironment::default(), ObjectEnvironment::default()];
     let mut untouched = Meter::new(UNLIMITED);
     let fault = world.package.evaluate_hyper_holds(
         &world.clause,
         at,
         vec![HyperSlot::Bound(quire_exact::Value::Boolean(true))],
-        &[],
+        &[&environments[0], &environments[1]],
         &mut untouched,
     );
     assert!(
-        matches!(&fault, Err(failure) if format!("{failure:?}").starts_with("Fault")),
+        matches!(&fault, Err(failure) if format!("{failure:?}").contains("hyper-atom-binds-one-value-per-slot")),
         "{fault:?}"
     );
     for kind in LimitKind::ALL {
@@ -204,17 +209,32 @@ fn the_match_conjuncts_are_evaluated_in_order_and_short_circuit() {
     assert_eq!(differing_inputs, MatchReading::Fails);
     let (differing_labels, first_conjunct) = work(StepLabel::Operation(&zero), StepLabel::Stutter);
     assert_eq!(differing_labels, MatchReading::Fails);
-    // The second conjunct is neither evaluated nor charged once the first
-    // is false.
-    assert!(
-        first_conjunct < both_conjuncts,
-        "{first_conjunct} {both_conjuncts}"
+    // Over `(step(0), stutter)` the first conjunct is false, so the second is
+    // neither evaluated nor charged: the work is that of a clause holding the
+    // first conjunct alone, and less than both conjuncts' work.
+    let alone = World::new(
+        Vault::Secure,
+        false,
+        &[(0, 0)],
+        &non_interference("match { a.step.op = b.step.op }"),
     );
+    let mut single = Meter::new(UNLIMITED);
+    assert_eq!(
+        universal(
+            &alone,
+            &[StepLabel::Operation(&zero), StepLabel::Stutter],
+            &mut single
+        )
+        .expect("complete"),
+        MatchReading::Fails
+    );
+    assert_eq!(first_conjunct, single.consumed(LimitKind::WorkUnits));
+    assert!(first_conjunct < both_conjuncts);
 }
 
 /// FR-487-AC-5: a conjunct without a value, or whose meter runs out, ends the
 /// reading at that conjunct; one that follows a false conjunct is not charged.
-#[trace("TC-1264", "FR-487-AC-5")]
+#[trace("TC-1264")]
 #[test]
 fn a_conjunct_without_a_value_or_a_budget_ends_the_reading_there() {
     let divided = "match { a.step.op = b.step.op and \
@@ -315,4 +335,87 @@ fn a_call_in_a_conjunct_receives_the_argument_as_an_option() {
         .expect("complete"),
         MatchReading::Fails
     );
+}
+
+/// The `Vault` operations out of the first initial state of a vault with
+/// `reset`: the transition of each of `step(0)` and `reset`.
+fn reset_step(world: &World) -> ModelTransition {
+    let system = system(world);
+    let state = system.initial()[0].clone();
+    system
+        .successors(&state)
+        .expect("expands")
+        .successors
+        .into_iter()
+        .map(|(transition, _)| transition)
+        .find(|transition| transition.operation().contains("/Vault/reset\""))
+        .expect("reset is enabled")
+}
+
+/// FR-487-AC-2 and FR-172-AC-5: a label constant compares equal to exactly the
+/// steps of its operation, and `V::Vault::step != a.step.op` holds at the
+/// joint steps at which `a.step.op != V::Vault::step` does.
+#[trace("TC-1264")]
+#[test]
+fn a_label_constant_equals_the_operation_text_of_its_steps() {
+    let clause = |conjunct: &str| {
+        World::new(
+            Vault::Secure,
+            true,
+            &[(0, 0)],
+            &non_interference(&format!("match {{ {conjunct} }}")),
+        )
+    };
+    let equal = clause("a.step.op = V::Vault::step and b.step.op = stutter");
+    let unequal = clause("a.step.op != V::Vault::step");
+    let mirrored = clause("V::Vault::step != a.step.op");
+    let (zero, _) = steps(&equal);
+    let reset = reset_step(&equal);
+    let reading = |world: &World, a: StepLabel<'_>, b: StepLabel<'_>| {
+        universal(world, &[a, b], &mut Meter::new(UNLIMITED)).expect("complete")
+    };
+    for (a, expected_equal) in [
+        (StepLabel::Operation(&zero), true),
+        (StepLabel::Operation(&reset), false),
+        (StepLabel::Stutter, false),
+    ] {
+        let holds = |reading: MatchReading| matches!(reading, MatchReading::Holds);
+        assert_eq!(
+            holds(reading(&equal, a, StepLabel::Stutter)),
+            expected_equal
+        );
+        let unequal_reading = holds(reading(&unequal, a, StepLabel::Stutter));
+        assert_eq!(unequal_reading, !expected_equal);
+        assert_eq!(
+            holds(reading(&mirrored, a, StepLabel::Stutter)),
+            unequal_reading
+        );
+    }
+}
+
+/// FR-487 "Lowered form": the operation text a label constant lowers to is
+/// the text the model's system gives the operation.
+#[trace("TC-1264")]
+#[test]
+fn the_lowered_operation_text_is_the_text_of_the_model_s_transitions() {
+    let world = World::new(
+        Vault::Secure,
+        true,
+        &[(0, 0)],
+        &non_interference(EQUAL_INPUTS),
+    );
+    let system = system(&world);
+    let state = system.initial()[0].clone();
+    let successors = system.successors(&state).expect("expands").successors;
+    assert!(!successors.is_empty());
+    let Some(StepRead::Argument(read)) = world.clause.mu_universal()[1].slots().first() else {
+        panic!("an argument read");
+    };
+    let text = system
+        .operation_text_of(&read.operation)
+        .expect("the model declares the operation");
+    assert_eq!(operation_text(&read.operation), text);
+    assert!(successors
+        .iter()
+        .any(|(transition, _)| transition.operation() == text));
 }

@@ -3602,7 +3602,7 @@ impl PackageDeclarations {
         }
         // FR-487: a `hyper` clause over `behaviours` locates each `holds`
         // atom at its condition's expression tree and each `match` conjunct
-        // (match conjuncts refuse at their own spans), indexed as the family checks them.
+        // (a conjunct refuses at its own span), indexed as the family checks them.
         let mut behaviours = 0;
         for declaration in &unit.hyper_clauses {
             let super::hyper_clause::HyperDeclaration::Behaviours(form) = declaration else {
@@ -3616,6 +3616,13 @@ impl PackageDeclarations {
                         condition.spans.clone(),
                     );
                 }
+            }
+            let (universal, existential) = super::hyper_clause::conjunct_spans(form);
+            for (k, span) in universal.into_iter().enumerate() {
+                declared_type_spans.insert(hyper_site(behaviours, Site::Universal(k)), span);
+            }
+            for (k, span) in existential.into_iter().enumerate() {
+                declared_type_spans.insert(hyper_site(behaviours, Site::Existential(k)), span);
             }
             behaviours += 1;
         }

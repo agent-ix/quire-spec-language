@@ -209,7 +209,7 @@ impl<'r, 's> Joint<'r, 's> {
         self.poll()?;
         let labels = self.labels(step)?;
         let mut meter = Meter::new(self.meter);
-        Ok(read(matcher.universal(self.instance, &labels, &mut meter)))
+        self.read(matcher.universal(self.instance, &labels, &mut meter))
     }
 
     /// `μ_E` over the joint step `step` of every component.
@@ -223,11 +223,24 @@ impl<'r, 's> Joint<'r, 's> {
         self.poll()?;
         let labels = self.labels(step)?;
         let mut meter = Meter::new(self.meter);
-        Ok(read(matcher.existential(
-            self.instance,
-            &labels,
-            &mut meter,
-        )))
+        self.read(matcher.existential(self.instance, &labels, &mut meter))
+    }
+
+    /// What `μ` made of a reading; a broken evaluator invariant stops the run
+    /// as a fault.
+    fn read(
+        &self,
+        reading: Result<MatchReading, MatchIncomplete>,
+    ) -> Result<Matched, ExpansionStop> {
+        Ok(match reading {
+            Ok(MatchReading::Holds) => Matched::Holds,
+            Ok(MatchReading::Fails) => Matched::Fails,
+            Ok(MatchReading::Undefined { conjunct, cause }) => {
+                Matched::Undefined { conjunct, cause }
+            }
+            Ok(MatchReading::Fault(fault)) => return Err(self.record(Halt::Fault(fault))),
+            Ok(MatchReading::Refused { .. }) | Err(_) => Matched::Refused,
+        })
     }
 
     /// The labels `μ` reads for `step`, which moves every component.
@@ -313,15 +326,6 @@ impl<'r, 's> Joint<'r, 's> {
         let identity = IdentityLimits::default();
         quire_canonical::to_vec(step, quire_canonical::Limits::new(identity.input_bytes))
             .map_err(|error| self.record(Halt::Encoding(EncodingRefusal::of(&error, identity))))
-    }
-}
-
-fn read(reading: Result<MatchReading, MatchIncomplete>) -> Matched {
-    match reading {
-        Ok(MatchReading::Holds) => Matched::Holds,
-        Ok(MatchReading::Fails) => Matched::Fails,
-        Ok(MatchReading::Undefined { conjunct, cause }) => Matched::Undefined { conjunct, cause },
-        Ok(MatchReading::Refused { .. }) | Err(_) => Matched::Refused,
     }
 }
 
