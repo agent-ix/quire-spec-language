@@ -54,3 +54,12 @@ admission-negative tests are not bound to AC-5. No reverse gap.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-338-AC-4 shows as `tagged` in `quoin matrix` only through `safety_keys_are_the_authored_octets_and_a_function_of_the_facts`. That test covers the safety rows of the vector table, but not the 2 bounded rows, the deadlines-1-and-3 row, the TP-4 `buchi` row, the 2 `guarded-buchi` rows, or the full `K_C` deadlock oracle. The tag overstates coverage until PR 2 lands the Büchi vectors and the remaining rows are tagged or added. | qsl-eval/tests/it/automaton_key.rs:355-363; spec/functional/FR-338-check-an-en-1-closure-certificate.md:744-765 |
 | FND-002 | low | The new admission-negative tests assert FR-338-AC-5's listed negatives for the safety algebra but carry only `#[trace("TC-525")]`, so the matrix binds them to no criterion: `past_memory_is_typed_by_the_occurrence_interval_and_complete`, `window_and_acceptance_members_must_resolve_in_the_formula` and `safety_states_refuse_foreign_contexts_and_other_forms`. AC-5's "lower>upper" and "offset outside the checked interval" have no test for the `[o,s,lower,upper]` obligation form. | qsl-eval/tests/it/automaton_key.rs:549-551; qsl-eval/tests/it/automaton_key.rs:711-713; qsl-eval/tests/it/automaton_key.rs:843-845 |
+
+## Dispositions
+
+Round 1, verified against PR #1506 head `af0317030` (fix commit `872bfcb8d`). The reviewer reran `quoin matrix` at the head.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-338-AC-4 is now `untagged`. The safety vector test carries only `TC-525`, with a doc note that AC-4 waits for the bounded and Büchi rows (QSL-982 PR 2). |
+| FND-002 | fixed | FR-338-AC-5 is now on 5 tests: past memory, window/acceptance, foreign context/other forms, interval obligations, and non-normal branches/acceptance. Each one asserts negatives that AC-5 lists, so none of the tags overclaims. AC-5 was already `tagged` through `automaton_key_bounded` before this PR. The Büchi/`on each` negatives remain for PR 2. The new interval-obligation test supplies the `lower>upper` and outside-interval negatives. |

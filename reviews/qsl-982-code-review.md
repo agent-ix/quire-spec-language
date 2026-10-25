@@ -148,3 +148,38 @@ and panic surface are sound.
 | FND-010 | low | `assert!(!keys[0].contains("index"))` is near-tautological: no member could ever spell `index`. The no-graph-index half of AC-4 actually rests on the closed `Configuration` type, which has no index field, and on equality across independent translations. The assertion adds nothing and reads as evidence it is not. | qsl-eval/tests/it/automaton_key.rs:490 |
 | FND-011 | low | A current obligation `[o,s]` is admitted at any resolved path, including an atom, a Boolean (`and`/`implies`) node or a past operator (probe P2). After expansion, only temporal carries are retained, so these are likely non-normal. FR-338's "unbounded/current subformula" does not settle it (spec ruling R-3). | qsl-eval/src/automaton/key_state.rs:729-735 |
 | FND-012 | low | `SafetyStates::state` refuses `guarded-buchi` as `UnknownTag`, although FR-338 lists it as one of the closed state alternatives. `bounded`/`accept`/`reject`/`buchi` get `WrongForm`. | qsl-eval/src/automaton/key.rs:660-666 |
+
+## New findings (disposition pass 1)
+
+Verified against PR #1506 head `af0317030a84e61182efbcdca73a62d8ce2c708c` (fix commit `872bfcb8d`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | The writer's subsumption step compares configurations by their unsorted input vectors. `same_facts` compares the `past`/`windows`/`acceptance` Vecs in insertion order, so `normal` does not recognise an obligation-free branch whose facts arrive in a different order. `key` then returns `NonNormal` for a valid input. Reviewer probe: `always (p implies (once q and historically r))`, an obligation-free branch with past `[once, historically]` beside a `[root]` branch with past `[historically, once]`, gives `key` → `Err(NonNormal)`. The same facts in the same order give `Ok`. This breaks FR-338 "Same facts reached in different materialization orders SHALL produce identical full octets" and `key`'s own "in any order" contract. Compare canonical (sorted, encoded) member sets instead. | qsl-eval/src/automaton/key_state.rs:679-726 |
+| FND-014 | low | The key.rs module doc still calls `SafetyStates` the algebra "of any unbounded-profile clause", but `SafetyStates::clause` now refuses every protocol subject with `NotTranslated` (the method doc says so). | qsl-eval/src/automaton/key.rs:30-33 |
+
+## Dispositions
+
+Round 1, verified against `af0317030` (fix commit `872bfcb8d`). Gates rerun by the reviewer in a private copy at the head:
+- `xtask string-edge`: only the 5 qsl-replay main-baseline hits remain, none in qsl-eval.
+- clippy `-p qsl-eval --all-targets -D warnings`: clean.
+- rustfmt: clean.
+- `automaton_key` tests: 23 passed.
+- `quoin matrix`: FR-338-AC-4 untagged, FR-338-AC-5 tagged.
+
+Reviewer mutations on the fixes, each killed by `non_normal_branches_and_acceptance_are_refused`: removing the `membership` call, disabling the reader's subsumption refusal, and dropping the `not` polarity flip.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `#[ix_trace_rs::string_edge]` added to `polarity`, `Reader::obligation`, `Reader::window` and `Reader::past`. string-edge reports nothing in qsl-eval. |
+| FND-002 | fixed | `Reader::obligation` admits `[o,s]` for a future operator whose interval is open-upper, and `coherent` refuses it beside the same occurrence's `shift` entry. Covered by `a_completed_shift_is_carried_as_the_unbounded_obligation`: the post-shift state is written and admitted, the double storage refuses `Members`, and `"0","open"` refuses. |
+| FND-003 | fixed | The `within` match now has `(Some(_), None) => false`. The interval-obligations test refuses `[["0","1"],"positive","1","5"]` for `eventually[2,*]`. |
+| FND-004 | fixed | `Reader::branches` refuses an obligation-free branch with identical facts beside an obligation branch (`NonNormal`), and the writer's `normal` drops the subsumed branch. The writer is order-dependent, a new defect recorded as FND-013. |
+| FND-005 | fixed | `Reader::membership` requires that every reached unbounded least-fixed-point signed occurrence is a member exactly when it is not carried. Polarity is propagated through `not` and implication antecedents. Tested both ways, including the dual antecedent and `not`. |
+| FND-006 | fixed | `normal` retains the earliest deadline, the furthest extent and the union of offsets, and `key` admits its own output back before returning. The deadlines-1-and-3 vector is now asserted in both insertion orders. Age 99 and two shifts are refused by `key`. |
+| FND-007 | fixed | `SafetyStates::clause` takes `SubjectKind` and refuses `Protocol` with `NotTranslated`, so ordinary forms are never admitted as a protocol subject's. Writing `distance-history` and finite F/U acceptance is left for QSL-982 PR 2. The stale module doc is FND-014. |
+| FND-008 | fixed | The FR-338-AC-4 tag is removed. The doc names the test as the safety share of AC-4, untagged until PR 2, and `quoin matrix` shows AC-4 `untagged`. |
+| FND-009 | fixed | `interval_obligations_outside_the_checked_interval_are_refused` adds lower>upper, both bounds outside the checked interval, `-1`, finite-upper-on-open and `"0","open"` negatives, with positive controls. The `lower <= checked.lower` arm is now exercised by `[["0","1"],"positive","1","3"]` on `eventually[0,3]`. |
+| FND-010 | fixed | `!contains("index")` is replaced by whole-key equality against the authored octets. |
+| FND-011 | fixed | Under conservative ruling R-3 (still pending), `[o,s]` is admitted only for a future temporal carry. Atom, Boolean and past paths refuse `Unresolved`, and the test covers them. |
+| FND-012 | fixed | `guarded-buchi` joins the `WrongForm` tags in both `SafetyTranslation` and `SafetyStates`, and is tested. |
