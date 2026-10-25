@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
+use qsl_replay::SmtEncodingLimits;
 use qsl_replay::{encode_smt_query, ModelCheckItem, SmtEncodingRefusal, SmtQueryKind};
 
 use crate::counter::{package_with_clauses, subject, Documents, Letters, CONTRACT, UNLIMITED};
@@ -34,6 +35,7 @@ fn bytes(
             letters: &letters,
         },
         kind,
+        &SmtEncodingLimits::default(),
     )
 }
 
@@ -51,7 +53,12 @@ fn the_facade_encodes_the_engine_s_item_and_refuses_the_ones_it_cannot() {
     assert!(text.starts_with("(set-logic QF_LIA)\n"), "{text}");
     assert!(text.contains("(assert (= s0.c.value 0))\n"), "{text}");
     assert_eq!(first, bytes(&subject, &clauses[0], kind).expect("encodes"));
-    let deadlock = encode_smt_query(&subject, ModelCheckItem::DeadlockFreedom, kind)
-        .expect("the deadlock-freedom item encodes");
+    let deadlock = encode_smt_query(
+        &subject,
+        ModelCheckItem::DeadlockFreedom,
+        kind,
+        &SmtEncodingLimits::default(),
+    )
+    .expect("the deadlock-freedom item encodes");
     assert!(deadlock.ends_with(b"(check-sat)\n"));
 }

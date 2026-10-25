@@ -673,6 +673,7 @@ impl World {
                     clause: &self.clauses[clause],
                     letters: &letters,
                 },
+                smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
             &Cancel::new(),
             |counterexample| {

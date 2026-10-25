@@ -7,7 +7,7 @@
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::smt::SmtItem;
-pub use qsl_eval::smt::{Refusal, SmtEncodingRefusal, SmtQueryKind};
+pub use qsl_eval::smt::{Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind};
 
 use crate::model_check::item::ModelCheckItem;
 
@@ -24,10 +24,11 @@ pub fn encode_smt_query(
     subject: &ModelSubject<'_>,
     item: ModelCheckItem<'_>,
     kind: SmtQueryKind,
+    limits: &SmtEncodingLimits,
 ) -> Result<Vec<u8>, SmtEncodingRefusal> {
     let item = match item {
         ModelCheckItem::Clause { clause, .. } => SmtItem::Clause(clause),
         ModelCheckItem::DeadlockFreedom => SmtItem::DeadlockFreedom,
     };
-    qsl_eval::smt::encode_smt_query(subject, item, kind)
+    qsl_eval::smt::encode_smt_query(subject, item, kind, limits)
 }
