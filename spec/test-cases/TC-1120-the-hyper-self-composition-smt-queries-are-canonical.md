@@ -15,7 +15,7 @@ steps the copies together on the joint steps `μ_U` matches, reads an
 undefined match as a refutation, ignores fairness, and refuses a clause,
 body, kind, subject binding or match conjunct it cannot encode.
 
-Scope: FR-315-AC-7 to FR-315-AC-11.
+Scope: FR-315-AC-7 to FR-315-AC-11, FR-315-AC-46 to FR-315-AC-48.
 
 ## Test Procedure
 
@@ -31,13 +31,29 @@ Scope: FR-315-AC-7 to FR-315-AC-11.
    clause, `Unrolling{depth: 1}`, `SavesPower` with one subject, and a
    `match` conjunct whose function exhausts the request's `meter`, the last
    twice with equal budgets.
-5. Submit step 1's base query and step 2's depth-1 step query to a `QF_LIA`
+5. Build `HyperQueryRequest` by a struct literal and read its members. Over
+   `NonInterference`, encode `InductionBase{depth: 1}` and `{depth: 3}`,
+   `InductionStep{depth: 1}`, and the base query at instance `w`, each with
+   a fresh `Meter` lent as `&mut` to the request; on one further fresh meter
+   of the same budget call `CheckedStepMatch::universal` for each of the
+   nine tuples of step 1 in sequence; read each lent meter's consumed
+   counters after its call, that reference meter's, and those of a meter
+   lent to `HyperProductIdentity::of`.
+6. Encode `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for
+   `NonInterference` with FR-487-AC-5's `ieee_not_exact` conjunct 2, and with
+   the exhausting-function conjunct, the latter twice with equal budgets;
+   call `HyperProductIdentity::of` for each.
+7. Encode `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for
+   `NonInterference` with FR-176-AC-5's body, then with FR-176-AC-5's body
+   and the exhausting-function conjunct.
+8. Submit step 1's base query, step 3's base query and the base query of
+   FR-315-AC-43's body, and step 2's depth-1 step query to a `QF_LIA`
    solver; then the base query at depth 1 over the vault whose post clause
    is `self.l = self.h`. When no solver is available, the test SHALL be
    marked skipped with the reason "no QF_LIA solver" in the test report,
    never passed.
 
-Tag the tests `#[trace("TC-1120", "FR-315-AC-n")]`.
+Tag the tests `#[trace("TC-1120", "FR-315-AC-n")]`, including AC-46 to AC-48.
 
 ## Expected Results
 
@@ -56,7 +72,16 @@ Tag the tests `#[trace("TC-1120", "FR-315-AC-n")]`.
   `query-kind`, `subject-binding` at alias `N`, and `match-conjunct` at the
   conjunct naming `(step(0), step(0))`, each with no script; equal
   refusals for equal budgets.
-- Step 5: both secure queries unsatisfiable, the `Inductive{depth: 1}`
+- Step 5: the struct literal compiles with the five members and no seam
+  member. Each lent meter's consumed counters equal the reference meter's,
+  one cumulative budget over the nine tuples, for every kind, depth and
+  instance; the meter lent to `HyperProductIdentity::of` stays at zero.
+- Step 6: `match-conjunct` naming conjunct 2, its site and the tuple
+  `(step(0), step(0))`, for both conjuncts and both kinds, with no script;
+  equal refusals for equal budgets; the identity returned, no charge.
+- Step 7: `out-of-fragment` at the atom's site for FR-176-AC-5's body, no
+  script; `match-conjunct` for the second request.
+- Step 8: both secure queries unsatisfiable, the `Inductive{depth: 1}`
   outcome FR-182-AC-7 settles; the `self.l = self.h` base satisfiable from
-  `((0, 0), (1, 0))` with `(step(0), step(0))`. A skipped step 5 is reported
+  `((0, 0), (1, 0))` with `(step(0), step(0))`. A skipped step 8 is reported
   as skipped, and FR-315-AC-11 then stands on its analysis alone.
