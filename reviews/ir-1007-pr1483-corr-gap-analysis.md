@@ -36,3 +36,15 @@ One spec-consistency gap remains (FND-001). FR-090's own statement text still de
 Bindings checked: `a_second_call_on_a_spent_meter_is_denied_at_its_function_call` -> QSpec-FR-146-AC-5 / QSpec-TC-191 (correct). `s6a_returns_kernel_outcomes_unchanged_in_evaluated` -> FR-090-AC-1 / TC-382 (correct). Neither binding changed in this commit. Focused tests were run on a detached worktree at 6ee417f64, with `RUST_TEST_THREADS=4` and `QSPEC_DIR` set to a read-only export of quire-specification origin/main 37a78bca. The run covered the 10 `qsl_replay` `application::tests` facade tests (`cargo test --locked -p qsl-replay --lib application::tests`: 10 passed, 0 failed) and the two modified qsl-eval tests (`cargo test --locked -p qsl-eval --test it -- a_second_call_on_a_spent_meter_is_denied_at_its_function_call s6a_returns_kernel_outcomes_unchanged_in_evaluated`: 2 passed, 0 failed). The aggregate gate and Kani were not run, by brief.
 
 Suggested fix for FND-001: amend FR-090's two `location` definitions so that a `function.call` charge denied or cancelled after a successful Begin carries the checked body root `Location`, citing FR-262-AC-13. Keep `None` for completed evaluations only. This is a Markdown-only edit that can land in this PR.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | Amended FR-090 drops the "stopped before any node ran" `None` case, so a refusal raised before any node runs (FR-380-AC-7 population bound, `refused_evaluation`) now carries `None` without a covering definition | spec/functional/FR-090-return-a-family-outcome-or-a-typed-family-refusal.md:137-140, :214-218; qsl-eval/src/value/expression/evaluate.rs:322-328; qsl-eval/src/value/expression/mod.rs:1336-1341 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Head f83c821ac amends both FR-090 `location` definitions to: "A root `function.call` charge denied or cancelled after successful Begin carries the checked body root location (FR-262-AC-13). A completed evaluation carries `None`." This matches FR-262-AC-13, quire-eval #6 (a464a64f), and the two qsl-eval tests (df457b9db, which range-diff shows `=` to 6ee417f64). The production Value path builds its environment only through `EvaluationEnv::charged` after Begin (closure.rs:309); the uncharged hook path that still yields `None` at call entry is reachable only from `#[cfg(test)]` code. No other FR-090 text changed, apart from dropping one article ("the loss records of operations"). |

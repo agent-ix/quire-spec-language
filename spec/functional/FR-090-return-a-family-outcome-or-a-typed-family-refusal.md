@@ -137,7 +137,9 @@ This requirement carries testable criteria for decisions already taken:
 - `e.location`, the `quire_semantic_value::location::ExpressionLocation` of the node at which an evaluation that
   did not complete stopped. A root `function.call` charge denied or cancelled
   after successful Begin carries the checked body root location
-  (FR-262-AC-13). A completed evaluation carries `None`.
+  (FR-262-AC-13). A completed evaluation carries `None`. A refusal raised
+  before any node runs without an established root call site, such as the
+  FR-380-AC-7 population-bound refusal, also carries `None`.
 - `e.losses`, the loss records of the operations a completed evaluation
   performed, in evaluation order; empty unless `e.outcome` is
   `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
@@ -214,7 +216,9 @@ origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
 not complete stopped. A root `function.call` charge denied or cancelled after
 successful Begin carries the checked body root location (FR-262-AC-13). A
-completed evaluation carries `None`; a consumer reports `None` as
+completed evaluation carries `None`. A refusal raised before any node runs
+without an established root call site, such as the FR-380-AC-7
+population-bound refusal, also carries `None`; a consumer reports `None` as
 "unavailable" (`quire.native.diagnostics/v1` common context). `losses` holds
 the loss records of operations a completed evaluation performed, in
 evaluation order, as QSpec FR-140-AC-3 requires
