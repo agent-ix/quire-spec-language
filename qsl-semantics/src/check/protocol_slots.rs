@@ -1132,11 +1132,22 @@ pub(crate) fn check(
                 .map(CheckedLifetime::Until),
             RoleLifetime::Until(_) => None,
         };
-        let population = match role_population(role, replicated, declarations) {
-            Ok(population) => Some(population),
-            Err(cause) => {
-                checker.refuse(cause);
-                None
+        let population = if declarations
+            .scope
+            .model_selection(&role.context.name)
+            .is_some()
+        {
+            // A model alias is a whole-model role context, not an object
+            // type with a population. `protocol_controls` reports the
+            // unsupported replicated form at the alias.
+            None
+        } else {
+            match role_population(role, replicated, declarations) {
+                Ok(population) => Some(population),
+                Err(cause) => {
+                    checker.refuse(cause);
+                    None
+                }
             }
         };
         if let (Some(lifetime), Some(population), true) = (lifetime, population, replicated.max > 0)
