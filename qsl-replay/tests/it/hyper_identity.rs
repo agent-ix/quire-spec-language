@@ -10,7 +10,7 @@ use qsl_replay::{
     HyperProductIdentity, HyperQueryRequest, SmtEncodingLimits, SmtEncodingRefusal, SubjectIdentity,
 };
 use qsl_semantics::check::{admitted_source, PackageDeclarations};
-use quire_exact::Meter;
+use quire_exact::{LimitKind, Meter};
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::vault_world::{
@@ -266,13 +266,16 @@ fn an_unassembled_clause_names_product_identity_and_charges_nothing() {
     identity(&world, &instance("v")).expect("the assembled clause is identified");
 }
 
-/// FR-315-AC-13: `of` charges nothing to the request's meter.
+/// FR-315-AC-13: `of` charges nothing to the request's meter, even a meter
+/// whose budget is already exhausted.
 #[trace("TC-1190", "FR-315-AC-13")]
 #[test]
 fn identifying_a_request_charges_nothing() {
     let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
     let subjects = [world.subject()];
-    let mut meter = Meter::new(UNLIMITED);
+    let mut empty = UNLIMITED;
+    empty.work_units = 0;
+    let mut meter = Meter::new(empty);
     HyperProductIdentity::of(&HyperQueryRequest {
         clause: world.clause(),
         subjects: &subjects,
@@ -282,4 +285,59 @@ fn identifying_a_request_charges_nothing() {
     })
     .expect("identified");
     assert_eq!(meter.admission_count(), 0);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+}
+
+/// FR-315-AC-12: two clauses of one checked package over the same subject
+/// differ in `clause()` alone.
+#[trace("TC-1190", "FR-315-AC-12")]
+#[test]
+fn two_clauses_of_one_package_differ_in_the_clause_member() {
+    let declarations = format!(
+        "{}\n{}",
+        non_interference(EQUAL_INPUTS, ""),
+        non_interference(EQUAL_INPUTS, "").replace("NonInterference", "Second")
+    );
+    let world = World::new(&["v"], false, &declarations);
+    let clauses = world.package().graph().hyper_clauses();
+    assert_eq!(clauses.len(), 2);
+    let of = |clause: &qsl_semantics::check::CheckedHyperClause| {
+        let subjects = [world.subject()];
+        let mut meter = Meter::new(UNLIMITED);
+        HyperProductIdentity::of(&HyperQueryRequest {
+            clause,
+            subjects: &subjects,
+            instance: &instance("v"),
+            meter: &mut meter,
+            encoding: SmtEncodingLimits::default(),
+        })
+        .expect("identified")
+    };
+    let (first, second) = (of(&clauses[0]), of(&clauses[1]));
+    assert_ne!(first.clause(), second.clause());
+    assert_eq!(first.subjects(), second.subjects());
+    assert_eq!(first.instance(), second.instance());
+}
+
+/// FR-315-AC-52: a parameter that names an alias the clause does not have
+/// breaks an invariant of the checked clause, which `of` returns as a fault
+/// and not as `instance-binding`.
+#[trace("TC-1190", "FR-315-AC-52")]
+#[test]
+fn a_parameter_with_an_unknown_alias_is_a_fault() {
+    let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    let altered = world.clause().clone().with_parameter_alias_after_s3("Z");
+    let subjects = [world.subject()];
+    let mut meter = Meter::new(UNLIMITED);
+    let result = HyperProductIdentity::of(&HyperQueryRequest {
+        clause: &altered,
+        subjects: &subjects,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    });
+    assert!(
+        matches!(result, Err(SmtEncodingRefusal::Fault(_))),
+        "{result:?}"
+    );
 }

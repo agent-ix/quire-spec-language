@@ -1079,10 +1079,14 @@ HV-3 reads.
   `component_reads` does not record SHALL return `SmtEncodingRefusal::Fault`
   naming that invariant (Internal faults), never a `Refused` code.
   `Undefined { conjunct, .. }` is not a refusal: the tuple is kept with the
-  undefined-match definedness failure above.
+  undefined-match definedness failure above. `HyperProductIdentity::of`, and
+  so `encode_hyper_query` in its first four checks, returns `Fault` for an
+  object parameter that names an alias the clause's `aliases` do not hold,
+  because the clause's aliases hold every alias its parameters name; it
+  returns that fault in place of `instance-binding`.
 - Equal requests, with meters of equal budget, and equal kinds SHALL give
   byte-equal scripts or equal refusals. The encoder owns its readers, so this
-  depends on no caller behaviour. No AC drives a Faults arm: a well-formed
+  depends on no caller behaviour. No AC drives a Faults arm of the encoding stages: a well-formed
   request cannot break those invariants, as for FR-315-AC-29's single-subject
   fault, which needs a hand-altered checked clause inside the crate that defines the call.
 
@@ -1169,10 +1173,14 @@ impl HyperProductIdentity {
      member of `clause.parameters`, in parameter order, each key in that
      parameter's universe, at the first parameter that breaks this. The
      parameter's universe is the key list of the populations of its alias's
-     subject that admit the parameter's object type (FR-125 Instancing); when
-     the subject does not admit, it is the keys of all of that subject's
-     universes, so that a subject whose checked package has no emission is
-     refused `product-identity` and not `instance-binding`;
+     subject that admit the parameter's object type (FR-125 Instancing); an admitting subject
+     whose instances cannot be listed refuses `instance-binding`; and when
+     FR-120 does not admit the subject, it is the keys of all of that
+     subject's universes, so that a subject whose checked package has no
+     emission is refused `product-identity` and not `instance-binding`.
+     `encode_hyper_query` then refuses a subject that FR-120 does not admit
+     as `subject-binding` at its alias (FR-315-AC-51), after these four
+     checks and before `hyper-body`;
   4. `product-identity`, when the subjects' checked package has no
      checked-package v2 emission, so FR-336's `SubjectIdentity::of`
      refuses, or when that emission has no `hyperproperty` node for the
@@ -1267,6 +1275,8 @@ impl HyperProductIdentity {
 | FR-315-AC-48 | `NonInterference` with FR-176-AC-5's body `always holds(1 mod (1 - v.h @ a) = 1 mod (1 - v.h @ b))`, whose divisors are not literals, is refused `SmtEncodingRefusal` `out-of-fragment` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, located at the atom's site `hyper <c> holds <n>`. The same clause with a `match` conjunct that exhausts the meter is refused `match-conjunct`, not `out-of-fragment`, the refusal order being as this requirement states. The scripts of FR-315-AC-7 and FR-315-AC-9 and the base script of FR-315-AC-43 are accepted by a `QF_LIA` solver. | Test (TC-1120) |
 | FR-315-AC-49 | `HyperProductIdentity::of` and `encode_hyper_query` over `NonInterference` as S3 checked it, before any package assembled it (`assembled_occurrence()` is `None`), each refuse `SmtEncodingRefusal` `product-identity` at the clause, with no identity and no script, charging nothing to the meter. The same request over the assembled clause returns the identity of FR-315-AC-12. | Test (TC-1190) |
 | FR-315-AC-50 | For the TP-3 item of FR-315-AC-45 and for `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, the `MonitorTable` constructor over the body's `CheckedFormula` and profile gives tables with equal state counts, initial state, rejecting state and numbered moves, and `MonitorTable::of` over the TP-3 item gives that item's table through the constructor. FR-315-AC-45's and FR-315-AC-43's scripts are byte-equal to golden bytes recorded from `main` before `MonitorTable::of` delegates to the constructor, the golden files being added in the refactor's first commit. | Test (TC-1264) |
+| FR-315-AC-51 | Over ADR-023 §8's secure vault, `encode_hyper_query` for `NonInterference` at instance `v` over a subject that FR-120 does not admit (its `snapshots` provision lacks the document an initial state names) is refused `SmtEncodingRefusal` `subject-binding` at alias `V`, with no script, after `HyperProductIdentity::of` has returned the identity for the same request. | Test (TC-1190) |
+| FR-315-AC-52 | Inside `qsl-replay`'s tests, with the request's checked clause altered after S3 so that an object parameter names an alias the clause does not hold, `HyperProductIdentity::of` returns `Fault` and not `instance-binding`, and `encode_hyper_query` returns the same `Fault`. | Test (TC-1190) |
 
 ## Dependencies
 

@@ -409,6 +409,20 @@ pub struct CheckedHyperClause {
     assembled: bool,
 }
 
+#[cfg(any(test, feature = "test-support"))]
+impl CheckedHyperClause {
+    /// The clause with every object parameter bound to the model alias
+    /// `alias` after S3 (test-support only): a clause no well-formed request
+    /// carries when `alias` is no alias of the clause.
+    #[must_use]
+    pub fn with_parameter_alias_after_s3(mut self, alias: &str) -> Self {
+        for parameter in &mut self.parameters {
+            parameter.alias = ModelAlias(alias.to_owned());
+        }
+        self
+    }
+}
+
 impl CheckedHyperClause {
     /// The declared clause name.
     pub fn name(&self) -> &str {

@@ -271,9 +271,10 @@ impl Refusal {
         }
     }
 
-    /// The row of FR-315's refusal table this refusal is on, 1 to 17, and
-    /// 18 to 23 for the hyper refusals in the order `encode_hyper_query`
-    /// applies them: the order the encoding applies the checks in.
+    /// The position of this refusal in the order the encoding applies its
+    /// checks: rows 1 to 17 of FR-315's refusal table, and 18 to 23 for the
+    /// hyper refusals in the order FR-315 "Refusals and their order" states
+    /// (the table itself lists no hyper row).
     pub const fn row(&self) -> u8 {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => 1,

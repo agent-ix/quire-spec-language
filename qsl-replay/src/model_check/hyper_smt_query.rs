@@ -167,9 +167,17 @@ fn check_subjects(
 }
 
 /// `instance-binding`: one pair per parameter, in parameter order, each key
-/// in that parameter's universe. A subject that does not admit lists no
-/// instances of its population, so its key is read against the keys of all of
-/// the subject's universes.
+/// in that parameter's universe: the keys of the populations of its alias's
+/// subject that admit the parameter's object type. A subject that FR-120 does
+/// not admit lists no populations, so its key is read against the keys of all
+/// of the subject's universes, and its admission is refused by
+/// `encode_hyper_query` after the identity checks. A subject that admits and
+/// has no listable universe for the parameter refuses `instance-binding`.
+///
+/// # Errors
+///
+/// A refusal as above; a fault when a parameter names an alias that is not
+/// an alias of the clause.
 fn check_instance(
     clause: &CheckedHyperClause,
     subjects: &[ModelSubject<'_>],
@@ -178,48 +186,41 @@ fn check_instance(
     let binding = |parameter: &str| Refusal::InstanceBinding {
         parameter: parameter.to_owned(),
     };
-    if instance.len() > clause.parameters().len() {
-        let extra = &instance[clause.parameters().len()].0;
-        return Err(binding(extra).into());
-    }
     for (index, parameter) in clause.parameters().iter().enumerate() {
+        let slot = clause
+            .aliases()
+            .iter()
+            .position(|alias| *alias == parameter.alias)
+            .ok_or_else(|| SmtEncodingRefusal::fault("a parameter names an alias of the clause"))?;
+        let Some(subject) = subjects.get(slot) else {
+            return Err(binding(&parameter.name).into());
+        };
         let Some((name, key)) = instance.get(index) else {
             return Err(binding(&parameter.name).into());
         };
         if *name != parameter.name {
             return Err(binding(&parameter.name).into());
         }
-        let slot = clause
-            .aliases()
-            .iter()
-            .position(|alias| *alias == parameter.alias);
-        let Some(subject) = slot.and_then(|slot| subjects.get(slot)) else {
-            return Err(binding(&parameter.name).into());
+        let listed = match ModelSystem::new(subject.simulation.clone()) {
+            Ok(system) => system
+                .instances(&ValueType::Reference(parameter.population.object()))
+                .map_err(|_| binding(&parameter.name))?
+                .into_iter()
+                .map(|instance| instance.key)
+                .collect::<BTreeSet<_>>(),
+            Err(_) => subject
+                .simulation
+                .universes
+                .iter()
+                .flat_map(|universe| universe.keys.iter().cloned())
+                .collect(),
         };
-        let listed = ModelSystem::new(subject.simulation.clone())
-            .ok()
-            .and_then(|system| {
-                system
-                    .instances(&ValueType::Reference(parameter.population.object()))
-                    .ok()
-            })
-            .map(|found| {
-                found
-                    .into_iter()
-                    .map(|instance| instance.key)
-                    .collect::<BTreeSet<_>>()
-            })
-            .unwrap_or_else(|| {
-                subject
-                    .simulation
-                    .universes
-                    .iter()
-                    .flat_map(|universe| universe.keys.iter().cloned())
-                    .collect()
-            });
         if !listed.contains(key) {
             return Err(binding(&parameter.name).into());
         }
+    }
+    if instance.len() > clause.parameters().len() {
+        return Err(binding(&instance[clause.parameters().len()].0).into());
     }
     Ok(())
 }

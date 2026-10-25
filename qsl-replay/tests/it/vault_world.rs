@@ -380,10 +380,12 @@ impl World {
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
-        let mut checked = check_hyper_clauses(&declarations(&documents, &text));
-        let unassembled = match checked.pop() {
-            Some(Ok(CheckedHyper::Behaviours(clause))) if checked.is_empty() => *clause,
-            other => panic!("{declaration}: one checked hyper clause, not {other:?}"),
+        let unassembled = match check_hyper_clauses(&declarations(&documents, &text))
+            .into_iter()
+            .next()
+        {
+            Some(Ok(CheckedHyper::Behaviours(clause))) => *clause,
+            other => panic!("{declaration}: a checked hyper clause, not {other:?}"),
         };
         let mut snapshots = BTreeMap::new();
         let starts = [(0, 0), (1, 0)];
