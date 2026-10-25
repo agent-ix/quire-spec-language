@@ -2,14 +2,13 @@
 //! FR-124 "The deadlock-freedom item" (ADR-018 DL-3): the request writer's
 //! derived item.
 //!
-//! For each distinct model subject among a request's temporal items the
-//! writer adds one deadlock-freedom item, unless the subject's state model
-//! declares `terminal any`. The item is `always holds(not deadlocked)`,
-//! requested as (`temporal-satisfaction`, unbounded) and routed,
-//! negotiated and settled as a [`PropertyForm::ReachableInvariant`] item.
-//! Its obligation identity is the subject and the fixed kind
-//! `deadlock-freedom`, so it is never an authored claim's identity over the
-//! same subject.
+//! For each distinct model subject among a request's temporal and state-graph
+//! items the writer adds one deadlock-freedom item, unless the subject's state
+//! model declares `terminal any`. The item is `always holds(not deadlocked)`,
+//! requested as (`temporal-satisfaction`, unbounded) and routed, negotiated
+//! and settled as a [`PropertyForm::ReachableInvariant`] item. Its obligation
+//! identity is the subject and the fixed kind `deadlock-freedom`, so it is
+//! never an authored claim's identity over the same subject.
 //!
 //! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
 //! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
@@ -30,6 +29,19 @@ use crate::request::ExtentClassification;
 pub struct ModelTemporalItem<'g, S> {
     /// The authored claim's occurrence.
     pub occurrence: &'g OccurrenceKey,
+    /// The model subject (ADR-018 SM-2).
+    pub subject: &'g S,
+    /// The subject's checked package.
+    pub package: &'g CheckedGraph,
+}
+
+/// One state-graph item over a model subject, as the writer reads it.
+///
+/// State-graph claims share the model subject's derived deadlock-freedom
+/// obligation with temporal claims (FR-165). The claim occurrence is not
+/// part of that derived obligation.
+#[derive(Clone, Copy, Debug)]
+pub struct ModelStateGraphItem<'g, S> {
     /// The model subject (ADR-018 SM-2).
     pub subject: &'g S,
     /// The subject's checked package.
@@ -113,15 +125,24 @@ fn opts_out(package: &CheckedGraph) -> bool {
         .any(|terminal| matches!(terminal.declaration(), TerminalDeclaration::Any))
 }
 
-/// FR-124: the deadlock-freedom items of a request whose temporal items over
-/// model subjects are `items`: one per distinct subject, in the order the
-/// subjects first appear, and none for a subject whose state model declares
-/// `terminal any`.
+/// FR-124 and FR-165: the deadlock-freedom items of a request's temporal and
+/// state-graph items over model subjects. There is one per distinct subject,
+/// ordered by temporal-item order then state-graph-item order, and none for a
+/// subject whose state model declares `terminal any`.
 pub fn deadlock_freedom_items<S: Clone + Eq>(
-    items: &[ModelTemporalItem<'_, S>],
+    temporal: &[ModelTemporalItem<'_, S>],
+    state_graph: &[ModelStateGraphItem<'_, S>],
 ) -> Vec<DeadlockFreedomItem<S>> {
     let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
-    for item in items {
+    for item in temporal {
+        if opts_out(item.package) || derived.iter().any(|seen| seen.subject == *item.subject) {
+            continue;
+        }
+        derived.push(DeadlockFreedomItem {
+            subject: item.subject.clone(),
+        });
+    }
+    for item in state_graph {
         if opts_out(item.package) || derived.iter().any(|seen| seen.subject == *item.subject) {
             continue;
         }

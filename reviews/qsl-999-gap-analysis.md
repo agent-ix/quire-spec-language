@@ -72,3 +72,13 @@ merged on main.
 - Semantic review: done inline (reviewer brief), not fanned out.
 - No new production code lacks an owning requirement: the genuine 22-file
   change is all owned by FR-226. The reverted files are covered under FND-001.
+
+## Dispositions
+
+Disposition pass 1, over PR #1505 (head `29b0b4d93`), which replaces #1495.
+
+| FND | outcome | reason |
+|-----|---------|--------|
+| FND-001 | fixed | #1505 is a clean rebuild on ed7abb55b; no main test or spec is removed. The FR-177, FR-485/TC-1263 and SubjectIdentity evidence stays intact |
+| FND-002 | fixed | The AC-1 test asserts the warned record settles as the engine outcome says (Proved, ClosedScope, no counterexample, no hints) and compares the obligation identity with the quiet variant |
+| FND-003 | fixed | `the_shapes_follow_every_path_through_a_branch` covers a non-atomic load (1 shape) |

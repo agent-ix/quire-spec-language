@@ -222,6 +222,32 @@ impl Case {
         self.settle_with_messages(selection, outcome, deadlock, max_store_buffer, None)
     }
 
+    /// [`Self::settle`] over a subject whose protocol name is `protocol`.
+    pub(crate) fn settle_naming(
+        &self,
+        selection: &[MemorySelection],
+        outcome: &ModelCheckOutcome<ProtocolTransition>,
+        max_store_buffer: Option<u64>,
+        protocol: &str,
+    ) -> ModelCheckRecord<ProtocolTransition> {
+        let mut subject = self.subject(selection);
+        protocol.clone_into(&mut subject.protocol);
+        settle_protocol_check(
+            outcome,
+            &ModelCheckLimits::default(),
+            &self.package_id(),
+            &ProtocolCertificateRequest {
+                subject,
+                item: ModelCheckItem::DeadlockFreedom,
+                max_store_buffer,
+                max_messages: None,
+                max_live_instances: None,
+            },
+            &Cancel::new(),
+            |payload| self.replay(selection, payload.clone()),
+        )
+    }
+
     fn settle_with_messages(
         &self,
         selection: &[MemorySelection],
