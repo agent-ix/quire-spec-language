@@ -252,6 +252,35 @@ bullets state how QSL applies them over FR-120's subject.
   without it, `invalid_syntax`/`unexpected-token` at the token that stands
   where `over` is required, and QSL produces no node.
 
+### The `on each` activation guard
+
+The `when` guard of a clause's `on each` activation (FR-337) is the
+activation guard. It is not "The guard" above, which is a `lookup`
+disjunction a clause writes inside its formula: FR-125-AC-12's `G` is such a
+formula guard and is read as an ordinary `holds` condition.
+
+- QSL's production letter seam (FR-107 `ModelLetters`, built over a checked
+  clause and FR-120's `ModelSystem`) SHALL read the activation guard of a
+  clause for an instance at a state as it reads a `holds` atom there: through
+  the clause evaluator over the state's observation, with the `over`
+  parameter bound as "Instancing" binds it, the `absent-key` rule and the
+  `lookup` guard operand included. The reading is true where the position
+  activates the clause and false where it does not; an `absent-key` or
+  kernel undefined value is the undefined reading, which FR-126 turns into
+  `kind: UndefinedEvaluation` at the activation, never a false reading.
+- A guard evaluation that gives no reading (a refused or faulted
+  evaluation, a state the system cannot observe, an exhausted meter) SHALL
+  stop the check exactly as a `holds` atom's evaluation that gives no
+  reading stops it.
+- The guard's footprint (FR-156 "Atom footprints") SHALL be the locations
+  the guard reads, with the `over` parameter as the receiver, computed as an
+  atom's footprint is; FR-126's partial-order run joins it into the atoms'.
+- The engine reads the activation guard only for a clause whose activation
+  has one. A clause with no guard has no guard reading and an empty guard
+  footprint.
+- FR-128's replay and FR-338's and FR-339's checkers read the guard through
+  the same seam from the recompiled package.
+
 ### Reading a lasso
 
 - For a lasso with a prefix of `n` positions and a loop of `L` positions,
@@ -319,6 +348,7 @@ bullets state how QSL applies them over FR-120's subject.
 | FR-125-AC-15 | A state-graph claim `over (x: Thing)` (FR-169) over AC-10's populations has the instances, order and excluded keys a temporal claim has. A hyper clause (FR-172) whose parameter `v: V::Thing` resolves to `P` of AC-9 reads `v`, at each position, as the reference with the held object's most-specific type, and a parameter typed `V::Lamp` reads `absent-key` undefined where the key holds a `Switch`. | Test (TC-520) |
 | FR-125-AC-16 | With a population `all` of member type `Entity` (a supertype of `Counter`) whose initial state holds a `Counter` under `c` (value 0, with `inc` enabled) and an `Entity` that is not a `Counter` under `e`, the unguarded claim `always holds(x.value <= 0)` over `Counter` refutes at both instances, `c` by a false evaluation after `inc` and `e` by an `absent-key` read. With `all = [c, e]` the reported instance is `c`, with no undefined cause; with `all = [e, c]` it is `e`, with cause `undefined-evaluation`. The item is `refuted` in both orders, and the two subjects give different request identities. | Test (TC-520) |
 | FR-125-AC-17 | On AC-12's `dogs` and `animals` subject, let `y` be an immutable `let` alias of `x`; let a helper `same(r)` return its reference argument unchanged, `isDog(r)` test the disjunction of `lookup<Dog>` in `animals` and `dogs` using `same(r)`, and `ageOK(r)` read `r.age >= 0`. The unit selects the model profile and each helper's `using` alias selects `quire.value.complete/v1`; S3 derives the StateModel family for `isDog` and `ageOK` bodies per FR-361. `always holds(isDog(y) implies ageOK(y))` settles `proved`: at `t`, the guard is false and `ageOK` is not called; at `k` and `d`, the guard and property are true. At `t`, the reference is forwarded through `y`, `same` and `isDog` without `absent-key`; the unguarded `always holds(ageOK(y))` still refutes with `undefined-evaluation`/`absent-key` at `t`. | Test (TC-520) |
+| FR-125-AC-18 | Compiled from source (FR-337-AC-6) and read through QSL's production letter seam, with no test letters: over the `Counter` subject under event-position false-extension, `eventually[0,1] holds(c.value = 3)` `on each (q: M::Counter) when (c.value = 1)` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2`, and `when (c.value >= 2)` returns `Holds{Exhaustive}`; under infinite-trace, `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, which FR-128 replays to `reproduced-with-evaluated-witness`, and `always holds(true)` `on each (q: M::Counter) when (6 mod (2 - c.value) = 0)` returns `Violated` with `kind: UndefinedEvaluation` at position 2, cause `division-by-zero`, its site naming the activation. On AC-12's `dogs` and `animals` subject, `always holds(true)` `on each (y: M::Dog) when (x.age >= 1)` refutes `undefined-evaluation` naming `t`, the guard's read through `x` being `absent-key` there, and with AC-12's `G` as the activation guard (`when (G)`) it reads `G` false at `t` and true at `k` and `d` and settles `proved`. The guard footprint of the `c.value >= 3` clause is the read of `Counter`'s `value` through `c`, so `inc`, which writes it, is visible to a partial-order run of that clause. | Test (TC-520) |
 
 ## Dependencies
 
