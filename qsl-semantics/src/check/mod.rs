@@ -649,6 +649,9 @@ pub struct TemporalClauseNode {
     /// An `on each ... when (g)` activation's checked guard and its slot
     /// count.
     guard: Option<(CheckedBody, usize)>,
+    /// Each capture's checked initializer and its slot count, in source
+    /// order.
+    captures: Vec<(CheckedBody, usize)>,
 }
 
 impl TemporalClauseNode {
@@ -693,8 +696,37 @@ impl TemporalClauseNode {
             .map(|(body, slots)| (body.root(), *slots))
     }
 
+    /// The checked initializer of the clause's `index`th capture and its
+    /// evaluation slot count (FR-337 "Captures at S3"): the number of
+    /// binders in scope for it, `over`, the trigger binder of an `on each`
+    /// activation and the earlier captures. `None` past the last capture.
+    pub fn capture(&self, index: usize) -> Option<(CheckedNode<'_>, usize)> {
+        self.captures
+            .get(index)
+            .map(|(body, slots)| (body.root(), *slots))
+    }
+
+    /// The first capture, in source order, that a `holds` condition of the
+    /// clause reads (FR-337 "Capture observation"): its index among the
+    /// captures. A condition binds the `over` parameter, the trigger binder
+    /// of an `on each` activation and then the captures, so a read of the
+    /// local at slot `first + j` is a read of capture `j`; the locals a
+    /// condition binds itself follow them.
+    pub fn captured_read(&self) -> Option<usize> {
+        let first = 1 + usize::from(self.clause.trigger().is_some());
+        let count = self.clause.captures().len();
+        self.conditions
+            .values()
+            .flat_map(|(body, _)| body.root().descendants())
+            .filter_map(|node| match node.kind() {
+                NodeKind::Local(slot) => slot.checked_sub(first).filter(|capture| *capture < count),
+                _ => None,
+            })
+            .min()
+    }
+
     /// The declaration identities of the populations the clause's `holds`
-    /// atoms and guard name (FR-391), ascending and each once: each is required
+    /// atoms, guard and captures name (FR-391), ascending and each once: each is required
     /// (FR-106 check 7) in every snapshot of the trace the clause is read
     /// over.
     pub fn named_populations(&self) -> Vec<String> {
@@ -702,6 +734,7 @@ impl TemporalClauseNode {
             .conditions
             .values()
             .chain(self.guard.as_ref())
+            .chain(&self.captures)
             .flat_map(|(body, _)| body.root().descendants())
             .filter_map(|node| match node.kind() {
                 NodeKind::NamedPopulation { population, .. } => Some(population.node.clone()),
@@ -2797,9 +2830,9 @@ impl PackageDeclarations {
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
         // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a capture) is refused rather
-        // than compiled and silently missing from the package
-        // (`temporal_clause::not_emitted`).
+        // clause S4 does not emit (a protocol fairness target, the timed
+        // profile) is refused rather than compiled and silently missing from
+        // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
             self.nominal_spans.keys().copied(),
@@ -2833,7 +2866,7 @@ impl PackageDeclarations {
             // FR-337: the activation precedes the body in source, so a defect
             // of an `on each` guard refuses ahead of a refusal of the body.
             let body_refused = match &outcome {
-                Ok(staged) => !temporal_clause::is_emitted(&clause.form, staged.value()),
+                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
@@ -2873,7 +2906,7 @@ impl PackageDeclarations {
                 }
             }
             match outcome {
-                Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
+                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }
                 Ok(staged) => {
@@ -3954,7 +3987,12 @@ impl PackageDeclarations {
                         .and_then(|populations| {
                             claimed.requirements(
                                 claims::wire(lowered.key),
-                                &[claims::wire(lowered.over)],
+                                &lowered
+                                    .parameters
+                                    .iter()
+                                    .copied()
+                                    .map(claims::wire)
+                                    .collect::<Vec<_>>(),
                                 &populations,
                                 named_keys.as_ref().map_err(Clone::clone)?,
                             )
@@ -3990,6 +4028,11 @@ impl PackageDeclarations {
                     guard: conditions
                         .guard
                         .map(|condition| (condition.body, condition.slots)),
+                    captures: conditions
+                        .captures
+                        .into_iter()
+                        .map(|condition| (condition.body, condition.slots))
+                        .collect(),
                     conditions: conditions
                         .holds
                         .into_iter()

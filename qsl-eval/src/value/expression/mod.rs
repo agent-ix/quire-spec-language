@@ -239,6 +239,39 @@ pub fn evaluate_activation_guard(
     )
 }
 
+/// FR-337 "Capture observation": evaluate a capture's initializer `capture`
+/// over `current`, the observation at the activation position, with the
+/// binders in scope bound to `bindings` in slot order: the `over` parameter,
+/// the trigger binder of an `on each` activation and the values of the
+/// earlier captures. `absent` names the slots bound to the `absent-key`
+/// parameter and the population it names, where the instance's key holds no
+/// object conforming to the `over` parameter's type (see
+/// [`evaluate_activation_guard_at_absent_key`]).
+pub fn evaluate_capture(
+    package: &CheckedPackage,
+    capture: &impl qsl_semantics::check::StatePredicate,
+    current: &ObjectEnvironment,
+    bindings: Vec<Value>,
+    absent: Option<(Vec<usize>, String)>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    let machine = Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    );
+    let machine = match absent {
+        Some((slots, binding)) => machine.with_absent_parameters(slots, binding),
+        None => machine,
+    };
+    machine.run(capture.body(), capture.slots(), bindings)
+}
+
 /// [`evaluate_activation_guard`] for an instance whose key holds no object
 /// conforming to the `over` parameter's type: both binders are the
 /// `absent-key` parameter, `key` the reference to read them as where one is a

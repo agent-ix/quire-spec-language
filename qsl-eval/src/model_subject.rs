@@ -26,7 +26,7 @@ use quire_semantic_value::catalog::InternalFault;
 use crate::simulation::model::{ClauseOutcome, ModelSimState, ModelSimulationRequest};
 use crate::simulation::protocol::ResolvedMemory;
 use crate::simulation::ExpansionStop;
-use crate::temporal::{AtomReading, LetterStop};
+use crate::temporal::{AtomReading, CaptureReading, LetterStop};
 
 /// FR-125's model subject.
 pub struct ModelSubject<'a> {
@@ -188,10 +188,41 @@ pub trait ModelLetters {
         meter: &mut Meter,
     ) -> Result<AtomReading, AtomStop>;
 
-    /// FR-156 "Atom footprints" for the guarded activation's condition: the
-    /// locations it reads, with the clause's `over` parameter as the
-    /// receiver. A model check under partial-order reduction reads them for
-    /// a guarded clause alone.
+    /// FR-337 "Capture observation": fix the clause's captures for `instance`
+    /// at `state`, an activation position, charging `meter`: each initializer
+    /// in source order through the clause evaluator, once, with the `over`
+    /// parameter and the trigger binder both the instance's object and each
+    /// earlier capture bound to its value. The engine calls it at position 0
+    /// of an `on origin` clause and at each position an `on each` clause
+    /// activates (its guard, when it has one, read true), and only for a
+    /// clause with a capture. A clause with none answers
+    /// [`CaptureReading::Fixed`]. The stops are those of [`Self::atom`].
+    ///
+    /// # Errors
+    ///
+    /// [`AtomStop`], as for [`Self::atom`].
+    fn captures(
+        &self,
+        _instance: &ModelInstance,
+        _state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<CaptureReading, AtomStop> {
+        Ok(CaptureReading::Fixed)
+    }
+
+    /// FR-337 "Capture observation": the first capture, by its index in source
+    /// order, that a `holds` condition of the clause reads. The engine refuses
+    /// such a clause (`ModelCheckRefusal::CaptureRead`) before it explores a
+    /// state.
+    fn captured_read(&self) -> Option<usize> {
+        None
+    }
+
+    /// FR-156 "Atom footprints" for the activation: the locations the guarded
+    /// activation's condition and the clause's capture initializers read,
+    /// with the clause's `over` parameter as the receiver. A model check
+    /// under partial-order reduction reads them for a clause whose activation
+    /// reads the state alone.
     ///
     /// # Errors
     ///

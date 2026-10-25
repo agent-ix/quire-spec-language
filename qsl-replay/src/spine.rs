@@ -1219,6 +1219,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::DuplicateTrigger { name, .. } => format!(
                     "{message}: the `on each` parameter `{name}` repeats the `over` parameter's name"
                 ),
+                TemporalCause::DuplicateCapture { name, .. } => format!(
+                    "{message}: the capture `{name}` repeats the name of the `over` parameter, \
+                     the `on each` parameter or an earlier capture"
+                ),
                 TemporalCause::UnresolvedFairnessOperation { name, .. } => {
                     format!("{message}: the fairness operation `{name}` names no model operation")
                 }

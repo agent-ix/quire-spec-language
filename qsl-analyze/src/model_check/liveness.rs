@@ -99,7 +99,7 @@ use qsl_eval::simulation::{
     Limits, OfferedReductions, Outcome, Permutation, SubjectSystem, SubjectTransition,
     SymmetryGroup, TransitionSystem,
 };
-use qsl_eval::temporal::{AtomReading, UndefinedCause};
+use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
@@ -117,8 +117,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::check::{
-    atom_refusal, not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest,
-    BOUND_POSITIONS,
+    atom_refusal, not_simulated, precheck, refuse_capture_read, Admitted, CapturedAt,
+    ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop, PermuterOf};
 use super::fair_walk::{fairness_constraints, tree_path, FairModel};
@@ -205,6 +205,7 @@ pub(super) fn check(
     // admit the clause's `over` type (FR-125 Instancing); under symmetry one
     // per orbit, run under its stabiliser (FR-151 "Instances").
     let instances = system.instances(&clause.over().1).map_err(not_simulated)?;
+    refuse_capture_read(request.item)?;
     let bindings: Vec<Binding> = if symmetric {
         reduce::instance_groups(Some(&instances), &group)
             .into_iter()
@@ -295,6 +296,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
             applied: None,
         })
         .collect();
+    refuse_capture_read(item)?;
     decide_bindings(
         system,
         Bound {
@@ -492,7 +494,8 @@ impl<'a> LiveSubject for ModelSystem<'a> {
         let atoms = Atoms {
             letters: run.letters,
             nodes: &product.atoms,
-            guarded: product.automaton.borrow().when().is_some(),
+            guarded: product.automaton.borrow().when().is_some()
+                || product.captured != CapturedAt::Never,
         };
         let por = Por::new(
             run.system,
@@ -785,7 +788,9 @@ struct LassoSystem<'r, S: LiveSubject> {
     atoms: Vec<FormulaNodeId>,
     automaton: RefCell<PropertyAutomaton>,
     start: StateId,
-    readings: RefCell<BTreeMap<DigestRecord, Reading>>,
+    readings: RefCell<BTreeMap<(DigestRecord, bool), Reading>>,
+    /// Where the clause fixes its captures (FR-337).
+    captured: CapturedAt,
     initial: Vec<LState<S::State>>,
     dead: RefCell<Vec<DeadRoot<S::State, Tr<S>>>>,
     meter: ScalarLimits,
@@ -850,8 +855,15 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
 
     /// The letter of `state` for this binding, read once per model state.
     fn reading(&self, state: &S::State) -> Result<Reading, ExpansionStop> {
+        self.reading_at(state, false)
+    }
+
+    /// The letter of `state`, `initial` when it is position 0 of the trace.
+    /// Only an `on origin` clause's captures read differently there.
+    fn reading_at(&self, state: &S::State, initial: bool) -> Result<Reading, ExpansionStop> {
         let digest = self.digest_of(state)?;
-        if let Some(known) = self.readings.borrow().get(&digest) {
+        let key = (digest, initial && self.captured == CapturedAt::Origin);
+        if let Some(known) = self.readings.borrow().get(&key) {
             return Ok(known.clone());
         }
         let state = self.system.atom_state(state);
@@ -879,6 +891,29 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
                         cause,
                     });
                 }
+            }
+        }
+        // FR-337: the captures are fixed once, at an activation.
+        let capturing = match self.captured {
+            CapturedAt::Never => false,
+            CapturedAt::Origin => initial,
+            CapturedAt::Activations => when.is_none_or(|when| letter.holds(when)),
+        };
+        if capturing && reading.is_none() {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            let value = self
+                .letters
+                .captures(self.binding, state, &mut meter)
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => self.record(Halt::Refusal(refusal)),
+                    Err(incomplete) => self.record(Halt::Meter(incomplete.limit_kind)),
+                })?;
+            if let CaptureReading::Undefined { capture, cause } = value {
+                reading = Some(Reading::Undefined {
+                    locus: UndefinedLocus::Capture(capture),
+                    cause,
+                });
             }
         }
         for (index, atom) in self.atoms.iter().enumerate() {
@@ -911,7 +946,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             }
         }
         let reading = reading.unwrap_or(Reading::Defined(letter));
-        self.readings.borrow_mut().insert(digest, reading.clone());
+        self.readings.borrow_mut().insert(key, reading.clone());
         Ok(reading)
     }
 
@@ -947,7 +982,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
     fn start_states(&mut self) -> Result<(), ExpansionStop> {
         let mut initial = Vec::new();
         for model in self.system.initial() {
-            let reading = self.reading(&model)?;
+            let reading = self.reading_at(&model, true)?;
             let properties = self.step(Before::Start, &reading)?;
             if properties.is_empty() {
                 self.dead.borrow_mut().push(DeadRoot {
@@ -1588,6 +1623,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             automaton: RefCell::new(automaton),
             start,
             readings: RefCell::new(BTreeMap::new()),
+            captured: CapturedAt::of(self.clause),
             initial: Vec::new(),
             dead: RefCell::new(Vec::new()),
             meter: self.request.meter,

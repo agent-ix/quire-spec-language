@@ -19,10 +19,10 @@ use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::{
-    AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
-    TemporalTrace, UndefinedCause,
+    AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    TemporalRefusal, TemporalTrace, UndefinedCause,
 };
-use crate::value::CheckedPackageEvaluation;
+use crate::value::{evaluate_capture, CheckedPackageEvaluation};
 use quire_eval::{CallFailure, Evaluation};
 
 /// Why a `holds` condition stopped the run without a reading, kept whole so
@@ -274,5 +274,89 @@ impl TemporalLetters for ObservedLetters<'_> {
             meter,
         );
         self.reading(evaluation, ACTIVATION_CODES)
+    }
+
+    fn captures(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        self.fix_captures(position, meter)
+    }
+}
+
+impl ObservedLetters<'_> {
+    /// FR-337 "Capture observation": the clause's captures at `position`, in
+    /// source order, each through the clause evaluator with the `over`
+    /// parameter and the trigger binder both `over` and each earlier capture
+    /// bound to its value.
+    fn fix_captures(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        let clause = self.clause.clause();
+        if clause.captures().len() == 0 {
+            return Ok(CaptureReading::Fixed);
+        }
+        let objects = self.environment(position)?;
+        let binders = 1 + usize::from(clause.trigger().is_some());
+        let mut values: Vec<Value> = Vec::new();
+        for (index, (name, _)) in clause.captures().enumerate() {
+            let (body, slots) = self.clause.capture(index).ok_or_else(|| {
+                LetterStop::Fault(InternalFault::new(
+                    "temporal.observed",
+                    "clause-has-its-typed-captures",
+                ))
+            })?;
+            let mut arguments = vec![Value::Reference(self.over.clone()); binders];
+            arguments.extend(values.iter().cloned());
+            let evaluation = evaluate_capture(
+                self.package,
+                &Capture { body, slots },
+                objects,
+                arguments,
+                None,
+                meter,
+            )
+            .map_err(LetterStop::Fault)?;
+            if let FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome {
+                values.push(value.clone());
+                continue;
+            }
+            return match self.reading(Ok(evaluation), CAPTURE_CODES)? {
+                AtomReading::Undefined(cause) => Ok(CaptureReading::Undefined {
+                    capture: name.to_owned(),
+                    cause,
+                }),
+                AtomReading::True | AtomReading::False => Err(LetterStop::Fault(
+                    InternalFault::new("temporal.observed", CAPTURE_CODES[2]),
+                )),
+            };
+        }
+        Ok(CaptureReading::Fixed)
+    }
+}
+
+/// The fault codes of a capture's initializer, as [`HOLDS_CODES`].
+const CAPTURE_CODES: [&str; 3] = [
+    "capture-initializer-call-failed",
+    "capture-initializer-refused",
+    "capture-initializer-completes-a-value",
+];
+
+/// One capture's initializer as a predicate of the clause evaluator.
+struct Capture<'n> {
+    body: qsl_semantics::check::CheckedNode<'n>,
+    slots: usize,
+}
+
+impl qsl_semantics::check::StatePredicate for Capture<'_> {
+    fn body(&self) -> qsl_semantics::check::CheckedNode<'_> {
+        self.body
+    }
+
+    fn slots(&self) -> usize {
+        self.slots
     }
 }
