@@ -31,6 +31,7 @@ pub(crate) mod support;
 
 mod abstraction_relation_inert;
 mod assessment_artifact_kinds;
+mod checked_closure_consumer;
 mod call_replay_context_items;
 mod call_requirements_items;
 mod clause_kind_canonical;

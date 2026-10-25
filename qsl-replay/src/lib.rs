@@ -44,6 +44,7 @@
 #![forbid(unsafe_code)]
 
 mod admitted;
+mod application;
 mod bounds;
 mod call_replay_context;
 mod call_requirements;
@@ -82,6 +83,11 @@ pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
     AdmittedContext, AdmittedDimension, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal,
     AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
+};
+pub use application::{
+    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
+    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
+    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};

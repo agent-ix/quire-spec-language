@@ -1393,6 +1393,8 @@ pub(crate) fn run_spine(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    #[cfg(test)]
+    SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
 
     let cancel = Cancel::new();
@@ -1432,6 +1434,16 @@ pub(crate) fn run_spine(
         packages: packages.clone(),
         model_limits: limits.model,
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    static SPINE_RUNS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn spine_run_count() -> u64 {
+    SPINE_RUNS.with(std::cell::Cell::get)
 }
 
 /// Recompile the request's one source unit from the byte provision against
