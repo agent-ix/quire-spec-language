@@ -386,7 +386,7 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedOperator,
+    Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
     TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,

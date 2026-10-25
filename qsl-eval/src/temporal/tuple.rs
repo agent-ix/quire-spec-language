@@ -224,6 +224,7 @@ fn subject(body: &CheckedHyperClause) -> Subject<'_> {
         profile: body.profile(),
         activation: Activation::Origin,
         horizon: None,
+        captures: qsl_semantics::check::CaptureSite::Never,
         fairness: &[],
     }
 }

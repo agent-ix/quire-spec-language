@@ -100,7 +100,7 @@ use qsl_replay::{
     TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
     UndefinedSite,
 };
-use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
+use qsl_semantics::check::{Activation, CaptureSite, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Incomplete, Meter};
@@ -256,7 +256,7 @@ enum Item<'a> {
         when: Option<Atom>,
         /// Where the clause fixes its captures (FR-337 "Capture
         /// observation").
-        captured: CapturedAt,
+        captured: CaptureSite,
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
@@ -277,30 +277,6 @@ enum Item<'a> {
         canonical: Vec<BoundedTranslation>,
     },
     Deadlock,
-}
-
-/// Where a clause fixes its captures (FR-337 "Capture observation").
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CapturedAt {
-    /// The clause declares no capture.
-    Never,
-    /// An `on origin` clause: at position 0.
-    Origin,
-    /// An `on each` clause: at each position its guard admits.
-    Activations,
-}
-
-impl CapturedAt {
-    /// Where `clause` fixes its captures.
-    pub(super) fn of(clause: &qsl_semantics::check::CheckedTemporalClause) -> Self {
-        if clause.captures().len() == 0 {
-            Self::Never
-        } else if matches!(clause.activation(), Activation::Origin) {
-            Self::Origin
-        } else {
-            Self::Activations
-        }
-    }
 }
 
 impl Item<'_> {
@@ -1268,7 +1244,7 @@ fn ample_of<'r, 'a>(
             Some(Atoms {
                 letters: *letters,
                 nodes: atoms,
-                guarded: when.is_some() || *captured != CapturedAt::Never,
+                guarded: when.is_some() || *captured != CaptureSite::Never,
             }),
             bindings,
             fairness,
@@ -1390,7 +1366,7 @@ fn prepare(
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
         when: automaton.when(),
-        captured: CapturedAt::of(clause),
+        captured: clause.capture_site(),
         live: automaton.live(),
         uncounted: automaton.uncounted(),
         counting,
@@ -2404,9 +2380,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         // an `on origin` clause, each position an `on each` guard admits.
         let activates = (*when).is_none_or(|when| letter.holds(when));
         let capturing = match captured {
-            CapturedAt::Never => false,
-            CapturedAt::Origin => node.depth == 0,
-            CapturedAt::Activations => activates,
+            CaptureSite::Never => false,
+            CaptureSite::Origin => node.depth == 0,
+            CaptureSite::Activations => activates,
         };
         if capturing && reads_position {
             self.poll()?;

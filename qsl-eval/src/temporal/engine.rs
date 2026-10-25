@@ -28,7 +28,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, TemporalProfile};
+use qsl_semantics::check::{
+    Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, TemporalProfile,
+};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::FairnessConstraint;
@@ -288,6 +290,7 @@ pub(super) struct Subject<'a> {
     pub(super) profile: TemporalProfile,
     pub(super) activation: Activation,
     pub(super) horizon: Option<u64>,
+    pub(super) captures: CaptureSite,
     pub(super) fairness: &'a [FairnessConstraint],
 }
 
@@ -299,6 +302,7 @@ impl<'a> Subject<'a> {
             profile: clause.profile(),
             activation: clause.activation(),
             horizon: clause.horizon(),
+            captures: clause.capture_site(),
             fairness: clause.fairness(),
         }
     }
@@ -332,17 +336,6 @@ pub(super) fn bad_prefix_bound(
         .map_err(TemporalRefusal::Fault)?
         .saturating_sub(1);
     Ok(unrolled.positions.saturating_add(future))
-}
-
-/// Where the run fixes the clause's captures (FR-337 "Capture observation").
-#[derive(Clone, Copy, Debug)]
-enum CapturedAt {
-    /// The goal reads no activation: a single position's formula.
-    Never,
-    /// An `on origin` clause: at position 0.
-    Origin,
-    /// An `on each` clause: at each position its guard admits.
-    Activations,
 }
 
 /// What a run settles: the whole clause on its activations, or the root
@@ -585,7 +578,7 @@ impl<'a> Evaluator<'a> {
         source: &mut L,
         read: u64,
         guarded: bool,
-        captured: CapturedAt,
+        captured: CaptureSite,
         whens: &mut HashMap<u64, bool>,
     ) -> Result<
         (
@@ -616,9 +609,9 @@ impl<'a> Evaluator<'a> {
             // an activation: position 0 of an `on origin` clause, each
             // position an `on each` clause's guard admits.
             let activation_position = match captured {
-                CapturedAt::Never => false,
-                CapturedAt::Origin => position == 0,
-                CapturedAt::Activations => true,
+                CaptureSite::Never => false,
+                CaptureSite::Origin => position == 0,
+                CaptureSite::Activations => true,
             };
             if activates && activation_position {
                 if let CaptureReading::Undefined { cause, .. } =
@@ -679,10 +672,10 @@ impl<'a> Evaluator<'a> {
         };
         let guarded = clause_goal && matches!(activation, Activation::Each { guarded: true });
         let mut whens = HashMap::new();
-        let captured = match (clause_goal, activation) {
-            (true, Activation::Origin) => CapturedAt::Origin,
-            (true, Activation::Each { .. }) => CapturedAt::Activations,
-            (false, _) => CapturedAt::Never,
+        let captured = if clause_goal {
+            clause.captures
+        } else {
+            CaptureSite::Never
         };
         let (undefined, insufficient) =
             self.read_letters(source, read, guarded, captured, &mut whens)?;
