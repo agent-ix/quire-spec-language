@@ -167,8 +167,9 @@ fn evaluate_step_predicate(
 - **Components of reads.** The S3 hyper check SHALL record, for each model
   read of the condition (each field selection and each `deref`), the
   component it reads: the trace variable of the innermost indexed read that
-  encloses it. FR-172 gives every member read in an atom a trace variable,
-  so every model read lies inside some `@ t`. The record is static, made
+  encloses it. FR-172 admits `(e) @ t` with `@ t` scoping over `e` and
+  refuses `ill_typed` a member read that no `@` encloses (FR-172-AC-8), so
+  every model read of a checked condition lies inside some `@ t`. The record is static, made
   at S3, and keyed by the read's location, as FR-104 records the observation
   of each read. A reference stored in a `let` or chosen by an `if` inside
   `@ t` is therefore read in component `t` wherever it is used.
@@ -450,10 +451,13 @@ holds(B) }`, its body atom `B` varying by criterion, read at the instance `n1`.
   lowering replaces the S3 hyper typing roots: main's `hyper_typing`
   `type_condition` pass, and the QSL-867 `type_body` route if that route
   lands again. #1521 merged that route and #1525 reverted it.
-  - Those roots are one root per object parameter, `Boolean` placeholders
-    with `HyperType` markers for step labels, default checking limits, a
-    private node counter, and a typed node that is discarded.
-  - The lowering replaces them with per-(trace, parameter) slots, real label
+  - On main, `hyper_typing::type_condition` is a separate forward `Ty` pass
+    with real label types. It has no `HyperType` markers and builds no
+    checked node, so no typed node is kept.
+  - The reverted QSL-867 route had one root per object parameter, `Boolean`
+    placeholders with `HyperType` markers for step labels, default checking
+    limits, a private node counter, and a typed node that is discarded.
+  - The lowering replaces either with per-(trace, parameter) slots, real label
     types, kept conditions, the package's node ceiling, and definedness by
     component. It keeps the value-typer refusals of FR-172-AC-6.
   - Sequencing: QSL-1072 is coded on main, or on QSL-867 if QSL-867 lands

@@ -27,3 +27,20 @@ Examined units: FR-487 "Evaluating an atom", "Evaluating a match conjunct" and "
 ## Verdict
 
 Changes requested: the atom seam's error path, the absent-key binding and the component-tracking mechanism are all unspecified at the interface. The conjunct side is complete: faults charge nothing, an out-of-range `conjunct` faults, decode failures fault, and short-circuit charging is pinned by AC-4.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The new static rule gives each model read "the trace variable of the innermost indexed read that encloses it", and claims every model read lies inside some `@ t` because FR-172 gives every member read a trace variable. Main's FR-172 check (`check_atom`) does not guarantee this. It flags only a chain read whose root is an object parameter, so `deref(value(v.next @ a)).l` checks while its `.l` read is enclosed by no `@` and gets no component. Conversely, FR-487-AC-9's `(let r = v.next in ...) @ a` is refused by `check_atom` today: `read_root` of the `let` is none, giving `MismatchedTrace` at the `@`, and `v.next`, whose parent is the `let`, gives `UnindexedRead`. FR-172 states no rule that `@ t` scopes over a compound operand. Amend FR-172 to admit `(e) @ t` with enclosing scope and to refuse, or give the reference's component to, a member read outside every `@`. Add an AC for `deref(value(v.next @ a)).l`. | FR-487:167-174, FR-487-AC-9, qsl-semantics/src/check/hyper_clause.rs check_atom |
+
+## Dispositions
+
+Round 1, head bd9361749 (fix commit be4e0bad6).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `HyperLetters::atom` now returns `Result<AtomReading, AtomStop>`. The mapping follows `ClauseLetters`, products record non-Incomplete stops in `Halt`, and qsl-analyze maps them to `ModelCheckRefusal::{AtomRefused, StateUnobservable, Fault}` (all present in qsl-analyze/src/model_check/check.rs). Covered by FR-487-AC-12. |
+| FND-002 | fixed | `HyperSlot::{Bound, Absent { key, population }}` in the signature. Absent slots follow `evaluate_state_predicate_at_absent_key` / `Machine::with_absent_parameter`, with any number allowed. Covered by FR-487-AC-9. |
+| FND-003 | fixed | Static choice stated: `component_reads(atom)` is recorded at S3 by read location, definedness is per component, and the evaluator and SMT reader read through the record. Covered by FR-487-AC-1, AC-9 and AC-10. The enclosure rule has a residual gap, FND-004. |
+| FND-004 | fixed | Round 2, head b23f84fdd: FR-172 "Indexed atoms and step labels" now admits a compound operand of `e @ t`, with `@ t` scoping over every member read not enclosed by an inner `@`, chain reads rooted at an object parameter and field selections on a `deref` included. It refuses `ill_typed` a member read that no `@` encloses (the `.l` of `deref(value(v.next @ a)).l`) and gives such a read no component. FR-487 "Components of reads" cites the rule, and FR-172-AC-8 (TC-1264 step 14) covers the accepted `let` form and both refusals. |

@@ -25,3 +25,11 @@ Examined units: FR-487 relationships and Dependencies, and FR-315 relationships 
 ## Verdict
 
 Sound ordering and no cycles. One low finding on missing edges.
+
+## Dispositions
+
+Round 1, head bd9361749 (fix commit be4e0bad6).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-487 relationships now include depends_on FR-120 and FR-128, references FR-093, and traces_to FR-177, FR-178 and FR-183. FR-172 cites FR-487 in prose only, with no relationships edge, so no depends_on cycle forms. |
