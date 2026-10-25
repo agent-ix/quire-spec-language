@@ -524,6 +524,13 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             .unwrap()
             .obligation_identity
             .as_bytes();
+        let envelope_source = match wire.source.clone() {
+            crate::ReplaySource::Witness(witness) => crate::EnvelopeSource::Witness(witness),
+            crate::ReplaySource::Input(assignments) => crate::EnvelopeSource::Input(assignments),
+            crate::ReplaySource::ObservedTemporal(_) => {
+                panic!("value-parity packets cannot carry observed temporal sources")
+            }
+        };
         let packet = WitnessPacket {
             obligation_identity: Some(identity),
             occurrence_key: Some(located.site.declaration.clone()),
@@ -539,7 +546,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             declared_domains: Some(Vec::new()),
             backend: Some("generator-under-test".to_owned()),
             trace_position: Some(None::<TracePosition>),
-            source: Some(wire.source.clone()),
+            source: Some(envelope_source),
             family_payload: Some(NoPayload),
         };
         let sent = packet.clone();
@@ -580,7 +587,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         built.profile_selections = envelope.profile_selections().to_vec();
         built.accounting_limits = envelope.run_limits();
         built.backend = envelope.backend().as_str().to_owned();
-        built.source = envelope.source().clone();
+        built.source = envelope.source().clone().into();
         built.replay_target = crate::RequestTargetWire::from(envelope.replay_target().clone());
         built.replay_target.occurrence_key = Some(envelope.occurrence_key().clone());
         let report = replay_generated(built, integer(generated), ReplayLimits::default());

@@ -116,6 +116,7 @@ fn settled(result: Result<ReplayResult, ReplayRefusal>) -> Settled {
                 other => panic!("unexpected settlement {other:?}"),
             }
         }
+        ReplayResult::ObservedTemporal(_) => panic!("function replay returned a temporal arm"),
     }
 }
 

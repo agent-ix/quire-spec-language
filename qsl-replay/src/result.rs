@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use qsl_eval::temporal::{TemporalOutcome, TemporalPosition};
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
@@ -22,6 +23,7 @@ use quire_semantic_value::supplied_stop::SuppliedStop;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::hybrid_replay::HybridCounterexample;
+use crate::model_check::counterexample::ObservedTemporalKind;
 
 mod wire;
 use crate::identity::TracePosition;
@@ -785,6 +787,175 @@ impl InputArmResult {
     }
 }
 
+/// The settlement of an observed temporal counterexample replay (FR-331).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObservedTemporalSettlement {
+    /// The typed evaluation reproduced the packet's value at its position.
+    ReproducedWithEvaluatedWitness,
+    /// The evaluation differs from the packet; its complete typed value is
+    /// retained for a replay-parity report.
+    Inconclusive,
+}
+
+/// Why an observed temporal value did not reproduce its packet. Both the
+/// expected payload and actual evaluator outcome remain typed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedTemporalParity {
+    expected: ObservedTemporalKind,
+    expected_position: TemporalPosition,
+    actual_locus: Option<qsl_semantics::check::FormulaNodeId>,
+}
+
+impl ObservedTemporalParity {
+    /// The packet's claimed value.
+    pub fn expected(&self) -> &ObservedTemporalKind {
+        &self.expected
+    }
+
+    /// The packet's claimed position.
+    pub fn expected_position(&self) -> TemporalPosition {
+        self.expected_position
+    }
+
+    /// The first atom actually observed as undefined, if any.
+    pub fn actual_locus(&self) -> Option<qsl_semantics::check::FormulaNodeId> {
+        self.actual_locus
+    }
+}
+
+/// FR-072's observed temporal replay result. It keeps the packet position,
+/// evaluator value (including insufficient-data and incomplete details),
+/// undefined locus, and replay-parity cause as typed members.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedTemporalResult {
+    settlement: ObservedTemporalSettlement,
+    position: TemporalPosition,
+    outcome: TemporalOutcome,
+    undefined_locus: Option<qsl_semantics::check::FormulaNodeId>,
+    parity: Option<ObservedTemporalParity>,
+    charges: ScalarLimits,
+    limit: Option<Incomplete>,
+}
+
+impl ObservedTemporalResult {
+    /// Settle against the payload's expected value and position.
+    pub fn settle(
+        expected: ObservedTemporalKind,
+        expected_position: TemporalPosition,
+        outcome: TemporalOutcome,
+        actual_locus: Option<qsl_semantics::check::FormulaNodeId>,
+        charges: ScalarLimits,
+    ) -> Self {
+        let reproduced = match (&expected, &outcome, actual_locus) {
+            (ObservedTemporalKind::Formula, TemporalOutcome::Violated { at }, _) => {
+                *at == expected_position
+            }
+            (
+                ObservedTemporalKind::UndefinedEvaluation { locus, cause },
+                TemporalOutcome::Undefined(actual),
+                Some(actual_locus),
+            ) => actual.at == expected_position && actual_locus == *locus && actual.cause == *cause,
+            _ => false,
+        };
+        let limit = match &outcome {
+            TemporalOutcome::Incomplete(incomplete) => Some(incomplete.clone()),
+            _ => None,
+        };
+        Self {
+            settlement: if reproduced {
+                ObservedTemporalSettlement::ReproducedWithEvaluatedWitness
+            } else {
+                ObservedTemporalSettlement::Inconclusive
+            },
+            position: expected_position,
+            outcome,
+            undefined_locus: actual_locus,
+            parity: (!reproduced).then_some(ObservedTemporalParity {
+                expected,
+                expected_position,
+                actual_locus,
+            }),
+            charges,
+            limit,
+        }
+    }
+
+    /// The packet position used by the evaluator.
+    pub fn position(&self) -> TemporalPosition {
+        self.position
+    }
+
+    /// The complete typed temporal evaluation.
+    pub fn outcome(&self) -> &TemporalOutcome {
+        &self.outcome
+    }
+
+    /// The first atom actually observed as undefined, if any.
+    pub fn undefined_locus(&self) -> Option<qsl_semantics::check::FormulaNodeId> {
+        self.undefined_locus
+    }
+
+    /// The typed replay-parity cause when settlement is inconclusive.
+    pub fn parity(&self) -> Option<&ObservedTemporalParity> {
+        self.parity.as_ref()
+    }
+
+    /// Whether the packet's temporal value was reproduced.
+    pub fn settlement(&self) -> ObservedTemporalSettlement {
+        self.settlement
+    }
+
+    /// The replay's O-16 category.
+    pub fn category(&self) -> Category {
+        self.outcome.category()
+    }
+
+    /// The accounting charges incurred.
+    pub fn charges(&self) -> ScalarLimits {
+        self.charges
+    }
+
+    /// The accounting limit that stopped the temporal replay, when one did.
+    pub fn limit(&self) -> Option<&Incomplete> {
+        self.limit.as_ref()
+    }
+
+    /// This result carrying the accounting limit that stopped the replay.
+    #[must_use]
+    pub fn with_limit(mut self, limit: Incomplete) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    fn measured_bytes(&self) -> usize {
+        let outcome_bytes = match &self.outcome {
+            TemporalOutcome::Undefined(undefined) => format!("{:?}", undefined.cause).len(),
+            TemporalOutcome::Incomplete(incomplete) => incomplete.next_charge.to_string().len(),
+            TemporalOutcome::MissingFairnessPremise { constraint } => {
+                constraint.operation().name().len()
+            }
+            TemporalOutcome::Holds
+            | TemporalOutcome::Violated { .. }
+            | TemporalOutcome::InsufficientData(_)
+            | TemporalOutcome::Pending
+            | TemporalOutcome::WindowLimitReached(_) => 0,
+        };
+        let parity_bytes = self.parity.as_ref().map_or(0, |parity| {
+            std::mem::size_of_val(parity)
+                + match &parity.expected {
+                    ObservedTemporalKind::Formula => 0,
+                    ObservedTemporalKind::UndefinedEvaluation { cause, .. } => {
+                        format!("{cause:?}").len()
+                    }
+                }
+        });
+        std::mem::size_of_val(self)
+            .saturating_add(std::mem::size_of_val(&self.outcome))
+            .saturating_add(outcome_bytes)
+            .saturating_add(parity_bytes)
+    }
+}
+
 /// FR-072/ADR-013 O-27: one per-item replay result, a sum of the
 /// `Witness`-arm and `Input`-arm result types. No shared, arm-agnostic
 /// Boolean or flag represents agreement across both arms; a caller must
@@ -795,6 +966,8 @@ pub enum ReplayResult {
     Witness(WitnessArmResult),
     /// The `Input`-arm result.
     Input(InputArmResult),
+    /// An observed temporal counterexample result (FR-331).
+    ObservedTemporal(ObservedTemporalResult),
 }
 
 impl ReplayResult {
@@ -803,6 +976,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.limit(),
             Self::Input(result) => result.limit(),
+            Self::ObservedTemporal(result) => result.limit(),
         }
     }
 
@@ -813,6 +987,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => Self::Witness(result.with_limit(limit)),
             Self::Input(result) => Self::Input(result.with_limit(limit)),
+            Self::ObservedTemporal(result) => Self::ObservedTemporal(result.with_limit(limit)),
         }
     }
 
@@ -822,6 +997,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.pre_call_limit(),
             Self::Input(result) => result.pre_call_limit(),
+            Self::ObservedTemporal(_) => None,
         }
     }
 
@@ -832,6 +1008,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => Self::Witness(result.with_pre_call(stop)),
             Self::Input(result) => Self::Input(result.with_pre_call(stop)),
+            Self::ObservedTemporal(result) => Self::ObservedTemporal(result),
         }
     }
 
@@ -840,6 +1017,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.category(),
             Self::Input(result) => result.category(),
+            Self::ObservedTemporal(result) => result.category(),
         }
     }
 
@@ -849,6 +1027,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.disagreement(),
             Self::Input(result) => result.disagreement(),
+            Self::ObservedTemporal(_) => None,
         }
     }
 
@@ -857,6 +1036,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.charges(),
             Self::Input(result) => result.charges(),
+            Self::ObservedTemporal(result) => result.charges(),
         }
     }
 }
@@ -896,6 +1076,7 @@ pub(crate) fn measured_encoded_bytes(result: &ReplayResult) -> usize {
                     .disagreement()
                     .map_or(0, DisagreementCause::measured_bytes)
         }
+        ReplayResult::ObservedTemporal(arm) => arm.measured_bytes(),
     };
     arm_bytes
         + result
@@ -1380,9 +1561,7 @@ mod tests {
         use crate::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };
-        use crate::witness::{
-            origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
-        };
+        use crate::witness::{origin, NoPayload, Witness, WitnessEnvelope, WitnessPacket};
         use qsl_foundation::digest::WireNodeId;
         use qsl_foundation::source::provenance::OccurrenceKey;
         use quire_exact::Identifier;
@@ -1438,7 +1617,7 @@ mod tests {
                     declared_domains: Some(vec![]),
                     backend: Some("kani-backend-1".to_owned()),
                     trace_position: Some(None),
-                    source: Some(ReplaySource::Witness(witness)),
+                    source: Some(crate::EnvelopeSource::Witness(witness)),
                     family_payload: Some(NoPayload),
                 };
                 WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap()
