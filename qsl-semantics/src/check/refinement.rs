@@ -237,6 +237,16 @@ pub enum RefinementCause {
         /// The identity of the layer that admits the expression form.
         layer: &'static str,
     },
+    /// The abstract model declares relationships, which a refinement cannot
+    /// map into its abstract state (FR-135-AC-7).
+    AbstractRelationships {
+        /// The unsupported declaration form.
+        form: &'static str,
+        /// The refinement whose abstract side declares it.
+        refinement: String,
+        /// The selected profile identity.
+        profile: String,
+    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -316,9 +326,9 @@ impl RefinementCause {
                     Code::InvalidModelBinding
                 }
             },
-            Self::Unsupported { .. } | Self::UnsupportedRowForm { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unsupported { .. }
+            | Self::UnsupportedRowForm { .. }
+            | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -343,6 +353,7 @@ impl RefinementCause {
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
             Self::UnsupportedRowForm { .. } => Some("expression-form"),
+            Self::AbstractRelationships { .. } => Some("declaration-form"),
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -579,6 +590,9 @@ impl CheckedRefinement {
 pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
+    /// The population declaration's canonical model-node key. FR-140 reads
+    /// population rows in this digest order, independently of source names.
+    pub order_key: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
 }
@@ -1054,6 +1068,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     env: &RefinementEnv<'_>,
+    identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
@@ -1109,6 +1124,23 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         }
         return (RefinementCheck::Refused(findings.refusals), nodes);
     };
+    if matches!(form.abstract_side, AbstractSideForm::Model(_))
+        && abstract_side
+            .model
+            .relationship_declarations()
+            .next()
+            .is_some()
+    {
+        findings.refuse(
+            abstract_alias.span,
+            RefinementCause::AbstractRelationships {
+                form: "relationship",
+                refinement: form.name.name.clone(),
+                profile: declaration.selection.identity.clone(),
+            },
+        );
+        return (RefinementCheck::Refused(findings.refusals), nodes);
+    }
     let subject = match &form.abstract_side {
         AbstractSideForm::Model(_) => ListSubject::Model,
         AbstractSideForm::Protocol { clause, .. } => resolve_protocol(
@@ -1132,6 +1164,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         protocols,
         abstract_side,
         concrete_side,
+        identity,
         findings,
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
@@ -1209,6 +1242,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         // not wait on them (FR-136 "Order of the checks").
         Some((selection, rows)) => RefinementCheck::Protocol(Box::new(ProtocolRefinement {
             checked,
+            identity,
             operations,
             written,
             selection,
@@ -1407,6 +1441,7 @@ struct Checker<'c, 'a> {
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
     concrete_side: Side<'c>,
+    identity: qsl_foundation::IdentityLimits,
     findings: Findings,
     nodes: &'c mut u64,
     /// Each abstract object type an object row maps, with the concrete type
@@ -1600,8 +1635,18 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
             if let Some(source) = source {
+                let Some(order_key) =
+                    super::lowering::population_node(&target.record.key, self.identity)
+                        .ok()
+                        .flatten()
+                        .map(|node| node.key())
+                else {
+                    self.fault("admitted-abstract-population-has-a-population-node-key");
+                    continue;
+                };
                 rows.push(PopulationRow {
                     abstract_population: target.record.key.clone(),
+                    order_key,
                     concrete_population: source.record.key.clone(),
                 });
             }

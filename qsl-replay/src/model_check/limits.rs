@@ -130,15 +130,16 @@ pub enum ModelCheckLimit {
 }
 
 impl ModelCheckLimit {
-    /// The limit's name: the FR-331 spelling for an EN-1 member, FR-255's
-    /// snake_case engine-table limit name for an EN-5 product bound.
+    /// The limit's name, snake_case per FR-255-AC-12
+    /// (`^[a-z][a-z0-9_]*$`): the FR-331 member name for an EN-1 member,
+    /// FR-255's engine-table limit name for an EN-5 product bound.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::MaxStates => "max-states",
+            Self::MaxStates => "max_states",
             Self::ExactProbMaxStates => "max_states",
-            Self::MaxTransitions => "max-transitions",
+            Self::MaxTransitions => "max_transitions",
             Self::ExactProbMaxTransitions => "max_transitions",
-            Self::MaxAutomatonStates => "max-automaton-states",
+            Self::MaxAutomatonStates => "max_automaton_states",
             Self::ExactProbMaxAutomatonStates => "max_automaton_states",
             Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
@@ -153,11 +154,11 @@ impl ModelCheckLimit {
                 LimitKind::ResultUnits => "result_units",
             },
             Self::MaxCandidates => "max_candidates",
-            Self::SolverSteps => "solver-steps",
-            Self::WitnessSamples => "witness-samples",
-            Self::MaxWalkSteps => "max-walk-steps",
-            Self::MaxWitnessSet => "max-witness-set",
-            Self::MaxRelationTuples => "max-relation-tuples",
+            Self::SolverSteps => "max_solver_steps",
+            Self::WitnessSamples => "witness_samples",
+            Self::MaxWalkSteps => "max_walk_steps",
+            Self::MaxWitnessSet => "max_witness_set",
+            Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.as_str(),
         }
     }
@@ -217,7 +218,9 @@ pub struct ReachedLimit {
 #[cfg(test)]
 mod tests {
     use super::ModelCheckLimit;
+    use crate::statistical::StatisticalLimit;
     use ix_trace_rs::trace;
+    use quire_exact::LimitKind;
 
     #[test]
     fn exact_prob_product_bounds_pair_a_snake_case_limit_with_an_exact_prob_setting() {
@@ -268,5 +271,111 @@ mod tests {
             ModelCheckLimit::MaxCandidates.setting(),
             "expansion.max_candidates"
         );
+    }
+
+    /// The literal FR-255 (limit name, setting name) row of a limit. The
+    /// match is exhaustive with no wildcard arm, so a new variant, meter or
+    /// statistical budget fails to compile until it has a row here.
+    fn row(limit: ModelCheckLimit) -> (&'static str, &'static str) {
+        match limit {
+            ModelCheckLimit::MaxStates => ("max_states", "model_check.max_states"),
+            ModelCheckLimit::MaxTransitions => ("max_transitions", "model_check.max_transitions"),
+            ModelCheckLimit::MaxAutomatonStates => {
+                ("max_automaton_states", "model_check.max_automaton_states")
+            }
+            ModelCheckLimit::ExactProbMaxStates => ("max_states", "exact_prob.max_states"),
+            ModelCheckLimit::ExactProbMaxTransitions => {
+                ("max_transitions", "exact_prob.max_transitions")
+            }
+            ModelCheckLimit::ExactProbMaxAutomatonStates => {
+                ("max_automaton_states", "exact_prob.max_automaton_states")
+            }
+            ModelCheckLimit::EvaluationMeter { counter } => match counter {
+                LimitKind::IntegerBits => ("integer_bits", "accounting.integer_bits"),
+                LimitKind::DecimalDigits => ("decimal_digits", "accounting.decimal_digits"),
+                LimitKind::ScaleExpansion => ("scale_expansion", "accounting.scale_expansion"),
+                LimitKind::TextInputBytes => ("text_input_bytes", "accounting.text_input_bytes"),
+                LimitKind::TextScalars => ("text_scalars", "accounting.text_scalars"),
+                LimitKind::NormalizedScalars => {
+                    ("normalized_scalars", "accounting.normalized_scalars")
+                }
+                LimitKind::UnitEdges => ("unit_edges", "accounting.unit_edges"),
+                LimitKind::ValueOccurrences => {
+                    ("value_occurrences", "accounting.value_occurrences")
+                }
+                LimitKind::WorkUnits => ("work_units", "accounting.work_units"),
+                LimitKind::ResultUnits => ("result_units", "accounting.result_units"),
+            },
+            ModelCheckLimit::MaxCandidates => ("max_candidates", "expansion.max_candidates"),
+            ModelCheckLimit::SolverSteps => ("max_solver_steps", "hybrid.max_solver_steps"),
+            ModelCheckLimit::WitnessSamples => ("witness_samples", "model_check.witness_samples"),
+            ModelCheckLimit::MaxWalkSteps => ("max_walk_steps", "model_check.max_walk_steps"),
+            ModelCheckLimit::MaxWitnessSet => ("max_witness_set", "model_check.max_witness_set"),
+            ModelCheckLimit::MaxRelationTuples => {
+                ("max_relation_tuples", "model_check.max_relation_tuples")
+            }
+            ModelCheckLimit::Statistical(budget) => match budget {
+                StatisticalLimit::MaxSamples => ("max_samples", "statistical.max_samples"),
+                StatisticalLimit::MaxDraws => ("max_draws", "statistical.max_draws"),
+                StatisticalLimit::MaxCycleSteps => {
+                    ("max_cycle_steps", "statistical.max_cycle_steps")
+                }
+            },
+        }
+    }
+
+    /// Every limit, one instance per variant, meter and statistical budget.
+    fn every_limit() -> Vec<ModelCheckLimit> {
+        let mut all = vec![
+            ModelCheckLimit::MaxStates,
+            ModelCheckLimit::MaxTransitions,
+            ModelCheckLimit::MaxAutomatonStates,
+            ModelCheckLimit::ExactProbMaxStates,
+            ModelCheckLimit::ExactProbMaxTransitions,
+            ModelCheckLimit::ExactProbMaxAutomatonStates,
+            ModelCheckLimit::MaxCandidates,
+            ModelCheckLimit::SolverSteps,
+            ModelCheckLimit::WitnessSamples,
+            ModelCheckLimit::MaxWalkSteps,
+            ModelCheckLimit::MaxWitnessSet,
+            ModelCheckLimit::MaxRelationTuples,
+            ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples),
+            ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
+            ModelCheckLimit::Statistical(StatisticalLimit::MaxCycleSteps),
+        ];
+        all.extend(
+            [
+                LimitKind::IntegerBits,
+                LimitKind::DecimalDigits,
+                LimitKind::ScaleExpansion,
+                LimitKind::TextInputBytes,
+                LimitKind::TextScalars,
+                LimitKind::NormalizedScalars,
+                LimitKind::UnitEdges,
+                LimitKind::ValueOccurrences,
+                LimitKind::WorkUnits,
+                LimitKind::ResultUnits,
+            ]
+            .map(|counter| ModelCheckLimit::EvaluationMeter { counter }),
+        );
+        all
+    }
+
+    /// FR-255-AC-12: every limit name matches `^[a-z][a-z0-9_]*$` and each
+    /// limit pairs with its engine-table (limit name, setting name) row.
+    #[trace("TC-1161", "FR-255-AC-12")]
+    #[test]
+    fn every_limit_spells_its_name_in_snake_case() {
+        for limit in every_limit() {
+            let (name, setting) = row(limit);
+            assert_eq!((limit.as_str(), limit.setting()), (name, setting));
+            assert!(
+                name.starts_with(|c: char| c.is_ascii_lowercase())
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "{name} must match ^[a-z][a-z0-9_]*$"
+            );
+        }
     }
 }
