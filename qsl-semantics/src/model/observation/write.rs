@@ -85,18 +85,18 @@ pub fn write_environment_document(
                     let fields: Map<String, Json> = object
                         .fields
                         .iter()
-                        .map(|(name, value)| (name.clone(), value.to_json()))
-                        .collect();
-                    json!({"key": object.key, "type": object.type_identity.node, "fields": fields})
+                        .map(|(name, value)| Ok((name.clone(), value.to_json()?)))
+                        .collect::<Result<_, AdmissionFailure>>()?;
+                    Ok(json!({"key": object.key, "type": object.type_identity.node, "fields": fields}))
                 })
-                .collect();
-            json!({
+                .collect::<Result<_, AdmissionFailure>>()?;
+            Ok(json!({
                 "population": population.population,
                 "complete": population.complete,
                 "objects": objects,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, AdmissionFailure>>()?;
     let document = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {

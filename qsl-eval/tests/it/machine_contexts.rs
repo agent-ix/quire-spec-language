@@ -1624,6 +1624,7 @@ fn a_context_field_follows_the_value_rules_of_an_object_field() {
 /// naming the earlier one, four members refuse `cardinality_out_of_bound`
 /// before any element is read, and a form of another kind or an element of
 /// another type is `wrong-value-kind`.
+#[trace("TC-1171", "FR-106-AC-51")]
 #[test]
 fn a_context_set_field_follows_the_collection_rules_of_an_object_field() {
     let orders = Orders::new(false);
@@ -1688,4 +1689,13 @@ fn a_context_set_field_follows_the_collection_rules_of_an_object_field() {
         &[],
     );
     assert!(record.path.is_empty());
+    // An element is admitted by its own type's rules: an uppercase UUID is
+    // not the canonical text.
+    let record = refusal(
+        json!({"set": [{"kind": "uuid", "text": "00000000-0000-0000-0000-00000000000A"}]}),
+        Code::InvalidRuntimeInput,
+        "invalid-value",
+        &[],
+    );
+    assert_eq!(record.path, vec![PathStep::Index(0)]);
 }

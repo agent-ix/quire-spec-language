@@ -2389,6 +2389,7 @@ pub(super) fn admit_population_values<'t>(
             if let Some(field) = population_collection_field(declared) {
                 return Err(refuse(
                     admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                        .with("feature", "Population")
                         .with("field", field),
                 ));
             }
@@ -2609,6 +2610,7 @@ fn admit_contexts<'t>(
         if let Some(field) = population_collection_field(declared) {
             return Err(named(
                 admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                    .with("feature", "Population")
                     .with("machine", machine.to_owned())
                     .with("field", field),
                 entry,

@@ -192,8 +192,12 @@ impl SnapshotValue {
     /// This value as its wire JSON. A `variant` writes exactly its `type` and
     /// `case`. Nodes are held children first, so one pass over the arena builds
     /// every value from the values it holds, in constant native stack.
-    #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
+    ///
+    /// # Errors
+    ///
+    /// A `Fault` when an element of a set or a bag has no RFC 8785 form, so
+    /// no canonical order.
+    pub fn to_json(&self) -> Result<serde_json::Value, AdmissionFailure> {
         use serde_json::{json, Map, Value as Json};
         let mut built: Vec<Option<Json>> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
@@ -231,7 +235,12 @@ impl SnapshotValue {
                     // A set and a bag carry no element order: the wire orders
                     // them by encoded bytes, so one value has one document.
                     if matches!(kind, CollectionKind::Set | CollectionKind::Bag) {
-                        items.sort_by_cached_key(canonical_bytes);
+                        let mut keyed = Vec::with_capacity(items.len());
+                        for item in items {
+                            keyed.push((canonical_bytes(&item)?, item));
+                        }
+                        keyed.sort_by(|left, right| left.0.cmp(&right.0));
+                        items = keyed.into_iter().map(|(_, item)| item).collect();
                     }
                     let mut object = Map::new();
                     object.insert(collection_tag(*kind).to_owned(), Json::Array(items));
@@ -264,19 +273,18 @@ impl SnapshotValue {
             };
             built.push(Some(value));
         }
-        take(&mut built, self.root)
+        Ok(take(&mut built, self.root))
     }
 }
 
 /// The RFC 8785 bytes of `value`, the order a set's and a bag's elements are
 /// written in.
-fn canonical_bytes(value: &serde_json::Value) -> Vec<u8> {
+fn canonical_bytes(value: &serde_json::Value) -> Result<Vec<u8>, AdmissionFailure> {
     let text = value.to_string().into_bytes();
-    let canonical = match quire_canonical::read(&text, u64::MAX) {
-        Ok(read) => quire_canonical::to_vec(&read, quire_canonical::Limits::new(u64::MAX)).ok(),
-        Err(_) => None,
-    };
-    canonical.unwrap_or(text)
+    let read = quire_canonical::read(&text, u64::MAX)
+        .map_err(|_| fault("collection-element-reads-back"))?;
+    quire_canonical::to_vec(&read, quire_canonical::Limits::new(u64::MAX))
+        .map_err(|_| fault("collection-element-has-a-canonical-form"))
 }
 
 /// The built value at `index`, left empty: every node is a child of at most
