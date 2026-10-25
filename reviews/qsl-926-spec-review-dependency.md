@@ -27,3 +27,9 @@ Examined units: FR-337 frontmatter and Dependencies, FR-125 frontmatter and its 
 ## Verdict
 
 Sound, with one low finding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-337 gains `references` FR-447 (and FR-218), and FR-125 gains `references` FR-337. No `depends_on` cycle is added. |

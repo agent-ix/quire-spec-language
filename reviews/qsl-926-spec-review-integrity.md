@@ -34,3 +34,10 @@ The Counter vectors were checked by hand. `= 1` gives `Violated` to 2 and `>= 2`
 ## Verdict
 
 Acceptable on integrity once FND-001 is fixed. The fixture statements are now consistent, and each AC has a step.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-125-AC-18 now asserts the seam's `G` reading per instance at the initial state (false for `t`, true for `k` and `d`), and that `always holds(false)` `when (G)` refutes naming `k` at position 0. TC-520 step 17 and its expected result read both. |
+| FND-002 | fixed | TC-1265 step 2 and its expected result now read each package back through the I2 reader. |

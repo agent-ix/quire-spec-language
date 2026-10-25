@@ -27,3 +27,9 @@ Examined units: every bullet of FR-337 "`on each` activation at S3", "`on each` 
 ## Verdict
 
 Conforms, with one low wording finding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The FR-125 bullets now read "The engine (FR-126) SHALL read ...", "the seam SHALL return an empty guard footprint" and "... checkers SHALL read the guard ...". The FR-337 S4 bullets read "The emitter SHALL key the clause node ..." and "The I2 reader SHALL return ...". |

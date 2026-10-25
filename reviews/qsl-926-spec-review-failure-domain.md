@@ -27,3 +27,9 @@ Examined units: FR-337 "`on each` activation at S3" and "at S4", FR-337-AC-7, FR
 ## Verdict
 
 One medium identity gap. Fix it with SR-17190 FND-002.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-337 S3 now refuses an `on each` binder named as the `over` parameter with `conflicting_declaration`/`duplicate-declaration` at the binder's name, naming both declarations. FR-337-AC-7 and TC-1265 step 3 cover `on each (c: M::Counter)`. |

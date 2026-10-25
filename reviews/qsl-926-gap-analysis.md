@@ -29,3 +29,9 @@ Examined units: FR-337-AC-5, FR-337-AC-6, FR-337-AC-7, FR-125-AC-18, FR-126-AC-1
 ## Verdict
 
 No coverage gap that this PR could close. The new ACs are untagged pending QSL-1037. One low ownership finding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-337 Dependencies now say the rules are specified under QSL-926 and that their implementation (S3 guard check, S4 emission, letter-seam read) is owned by QSL-1037, with capture emission under QSL-1081. |

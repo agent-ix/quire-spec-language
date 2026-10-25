@@ -45,3 +45,17 @@ Implementability: apart from these findings, QSL-1037 can be coded from the text
 The FR-125 bullet "stop the check exactly as a `holds` atom's evaluation that gives no reading" needs `ClauseLetters::activation`'s error type widened from `Incomplete` to `AtomStop` (qsl-eval/src/model_subject.rs:178-183), with qsl-replay's `?` conversion following. That is a code change the text implies, not a spec defect.
 
 EN-1 liveness still returns `ModelCheckRefusal::GuardedActivation` for a guarded TP-4 clause (qsl-analyze/src/model_check/liveness.rs:176,283, also on main). QSL-1037's comment calls that refusal already gone. It is not, and FR-126-AC-16's TP-4 halves need it removed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-337's new "Notes for the implementation (QSL-1037)" names `ModelLetters::activation` at `qsl-eval/src/model_subject.rs` lines 178-183. That location is the `ClauseLetters::activation` trait method. `ModelLetters`' implementation is at `qsl-eval/src/simulation/model/letters.rs:271-278`. Name the trait method, which is what widens to `AtomStop`, or both. | FR-337:264-267 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-218-AC-16 and TC-1056 row 23a keep the capture case as the goal and mark it satisfiable once S4 emits captures. FR-337 "Clauses S4 does not emit" states the interim refusal and names QSL-1081, which exists in Backlog. FR-337-AC-7 cites QSL-1081. |
+| FND-002 | fixed | FR-337 S3 now refuses `T` != `U` with `ill_typed`/`type-mismatch` at `T` and binds `q` at slot 1 as an alias of type `U` that the guard alone may read. A read of `q` lowers to the level-1 trigger node (FR-447 `ActivationVariable`). FR-337-AC-7 and TC-1265 step 3 have `q.value = 1` checking and `on each (q: Integer)` refusing. FR-125's seam binds slot 1 to the same reference. |
+| FND-003 | fixed | FR-337 S4 now records the trigger node's `expression` occurrence and its type node's `type` occurrence at the binder's name, as for `over`. FR-337-AC-6 and TC-1265 step 1 check it. |
