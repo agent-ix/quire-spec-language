@@ -7,7 +7,10 @@ use std::collections::BTreeSet;
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::ModelSystem;
-use qsl_eval::smt::{Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind};
+use qsl_eval::smt::{
+    encode_hyper_script, HyperScriptRequest, Refusal, SmtEncodingLimits, SmtEncodingRefusal,
+    SmtQueryKind,
+};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedHyperClause, HyperForm};
 use quire_exact::{Meter, ValueType};
@@ -223,4 +226,43 @@ fn check_instance(
         return Err(binding(&instance[clause.parameters().len()].0).into());
     }
     Ok(())
+}
+
+/// Encode the query `kind` of the HP-2 product and instance `request` names
+/// (FR-315 "Hyper self-composition queries").
+///
+/// The identity checks run first, in the order of
+/// [`HyperProductIdentity::of`], which this call computes before it writes
+/// any script and returns as [`HyperQuery::product`]. The encoding's own
+/// stages follow; `request.meter` is charged by `μ_U` only.
+///
+/// # Errors
+///
+/// [`SmtEncodingRefusal`], with the code of FR-315's table, naming the
+/// construct and its locus; no script is written.
+pub fn encode_hyper_query(
+    request: HyperQueryRequest<'_>,
+    kind: SmtQueryKind,
+) -> Result<HyperQuery, SmtEncodingRefusal> {
+    let product = HyperProductIdentity::of(&request)?;
+    let HyperQueryRequest {
+        clause,
+        subjects,
+        instance,
+        meter,
+        encoding,
+    } = request;
+    let script = encode_hyper_script(HyperScriptRequest {
+        clause,
+        subjects,
+        instance,
+        meter,
+        encoding,
+        kind,
+    })?;
+    Ok(HyperQuery {
+        product,
+        kind,
+        script,
+    })
 }

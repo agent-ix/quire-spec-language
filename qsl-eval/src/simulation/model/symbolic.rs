@@ -12,9 +12,10 @@ use qsl_semantics::check::CheckedStateClause;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::model_transition::ModelTransition;
 
 use super::domain::Domain;
-use super::encode::value_enc;
+use super::encode::{reference_enc, value_enc};
 use super::frames::text_limits;
 use super::{ClauseInfo, ModelSystem};
 use crate::smt::{LifecycleLocus, Refusal, SmtEncodingRefusal};
@@ -65,6 +66,9 @@ pub(crate) enum ResultValues {
 pub(crate) struct SymbolicOperation<'a> {
     /// The operation's declared name.
     pub(crate) name: String,
+    /// The text of the operation declaration's identity, which a transition
+    /// of the operation carries (`ModelTransition::operation`).
+    pub(crate) text: String,
     /// The declared parameters, in order.
     pub(crate) parameters: Vec<(String, ValueType)>,
     /// Each parameter's values in FR-120's domain order.
@@ -80,6 +84,47 @@ pub(crate) struct SymbolicOperation<'a> {
     pub(crate) preconditions: Vec<&'a CheckedStateClause>,
     /// The applicable `post` clauses, in ascending name order.
     pub(crate) postconditions: Vec<&'a CheckedStateClause>,
+}
+
+impl SymbolicOperation<'_> {
+    /// The transition FR-120 gives this operation applied to `receiver` with
+    /// `arguments`, one for each declared parameter.
+    pub(crate) fn transition(
+        &self,
+        receiver: &ObjectReference,
+        arguments: &[Value],
+    ) -> Result<ModelTransition, SmtEncodingRefusal> {
+        let broken = || fault("transition-identity-text");
+        let receiver = reference_enc(receiver)
+            .canonical_text(text_limits())
+            .map_err(|_| broken())?;
+        let arguments = arguments
+            .iter()
+            .map(|value| value_enc(value).canonical_text(text_limits()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| broken())?;
+        ModelTransition::new(self.text.clone(), Some(receiver), arguments, text_limits())
+            .map_err(|_| broken())
+    }
+}
+
+impl SymbolicOperation<'_> {
+    /// The operation applied to `arguments` as a refusal names it:
+    /// `receiver.name(a, b)`, without the receiver when `receiver` is `None`.
+    pub(crate) fn label(&self, receiver: Option<&str>, arguments: &[Value]) -> String {
+        let texts: Vec<String> = arguments
+            .iter()
+            .map(|value| {
+                value_enc(value)
+                    .canonical_text(text_limits())
+                    .unwrap_or_else(|_| "?".to_owned())
+            })
+            .collect();
+        match receiver {
+            Some(receiver) => format!("{receiver}.{}({})", self.name, texts.join(", ")),
+            None => format!("{}({})", self.name, texts.join(", ")),
+        }
+    }
 }
 
 /// One object of the subject's universe.
@@ -368,6 +413,7 @@ impl<'a> ModelSystem<'a> {
                 };
             operations.push(SymbolicOperation {
                 name: application.name.clone(),
+                text: application.text.clone(),
                 parameters,
                 domains,
                 result,

@@ -48,12 +48,40 @@ pub const UNLIMITED: ScalarLimits = ScalarLimits {
 
 /// ADR-023 section 1's `NonInterference`, with `match` when asked.
 pub fn non_interference(matched: &str, fairness: &str) -> String {
+    with_body(matched, fairness, "always holds(v.l @ a = v.l @ b)")
+}
+
+/// `NonInterference` with `body`.
+pub fn with_body(matched: &str, fairness: &str, body: &str) -> String {
     format!(
         "hyper NonInterference using inf over behaviours (v: V::Vault) \
          forall trace a of V {fairness} forall trace b of V {fairness} {matched} \
-         {{ always holds(v.l @ a = v.l @ b) }}"
+         {{ {body} }}"
     )
 }
+
+/// The body of FR-315-AC-43: in the safety fragment, not `always` over a
+/// state predicate.
+pub const MONITORED: &str =
+    "always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))";
+
+/// How the world's `Vault` is declared: with `reset` and the contract of
+/// `step`.
+pub struct Build<'a> {
+    /// Whether `Vault` has FR-176-AC-3's `reset`.
+    pub reset: bool,
+    /// The postcondition of `step`, over `self` and `i`.
+    pub post: &'a str,
+    /// Further declarations of the unit.
+    pub extra: &'a str,
+}
+
+/// ADR-023 section 8's secure vault: `step(i)` sets `l` to `i`.
+pub const SECURE: Build<'static> = Build {
+    reset: false,
+    post: "self.l = i",
+    extra: "",
+};
 
 /// The `match` of `NonInterference`: equal operations with equal inputs.
 pub const EQUAL_INPUTS: &str =
@@ -330,7 +358,7 @@ fn snapshot(
 
 /// The unit text: the header selecting the domain package as `V` (and the
 /// second as `N`), the secure `step` contract, and `body`.
-fn unit_text(document: &[u8], other: Option<&[u8]>, body: &str) -> String {
+fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &str) -> String {
     let digest = *package_input([document]).keys().next().expect("one model");
     let second = other.map_or_else(String::new, |other| {
         let digest = *package_input([other]).keys().next().expect("one model");
@@ -345,8 +373,10 @@ fn unit_text(document: &[u8], other: Option<&[u8]>, body: &str) -> String {
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n\
-         post Step using v on V::Vault::step {{ self.l = i }}\n{body}",
+         post Step using v on V::Vault::step {{ {} }}\n{}\n{body}",
         hex(&digest),
+        build.post,
+        build.extra,
     )
 }
 
@@ -370,11 +400,20 @@ impl World {
     /// the universe, and the hyper clause `declaration`; the vault is also the
     /// second model under alias `N` when `second`.
     pub fn new(universe: &[&str], second: bool, declaration: &str) -> Self {
-        let document = document(false, true);
+        let build = Build {
+            reset: true,
+            ..SECURE
+        };
+        Self::build(universe, second, declaration, &build)
+    }
+
+    /// As [`World::new`], with the vault declared as `build` says.
+    pub fn build(universe: &[&str], second: bool, declaration: &str, build: &Build<'_>) -> Self {
+        let document = document(false, build.reset);
         let other = second.then(|| other_document(&document));
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
-        let text = unit_text(&document, other, &format!("{declaration}\n"));
+        let text = unit_text(&document, other, build, &format!("{declaration}\n"));
         let graph = declarations(&documents, &text)
             .with_unwritten_terminals()
             .check(CheckingLimits::default())

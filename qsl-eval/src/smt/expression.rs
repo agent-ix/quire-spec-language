@@ -18,6 +18,7 @@ use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::{Integer, OrderingOperator, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::Location;
+use std::collections::BTreeMap;
 use std::ops::Not;
 
 use crate::simulation::model::SymbolicSubject;
@@ -97,8 +98,43 @@ impl Views {
     }
 }
 
+/// The components of a hyper atom: the layout and subject each trace variable
+/// reads, the state of its copy at the position read, and the component each
+/// model read of the condition reads (FR-315 "Hyper self-composition
+/// queries").
+pub struct Components<'r, 'a> {
+    /// The layout and subject of each trace variable, in quantifier order.
+    pub layouts: Vec<(&'r StateLayout, &'r SymbolicSubject<'a>)>,
+    /// The state of each trace variable's copy.
+    pub states: Vec<StateRef>,
+    /// The trace variable of each model read, by the read's location.
+    pub reads: &'r BTreeMap<Location, usize>,
+    /// The name of each trace variable.
+    pub variables: Vec<String>,
+}
+
+impl Components<'_, '_> {
+    /// The trace variable of the first model read at or below `node`.
+    fn component_of(&self, node: &Location) -> Option<usize> {
+        self.reads
+            .iter()
+            .find(|(read, _)| {
+                let mut at = Some((*read).clone());
+                while let Some(location) = at {
+                    if location == *node {
+                        return true;
+                    }
+                    at = location.parent();
+                }
+                false
+            })
+            .map(|(_, component)| *component)
+    }
+}
+
 /// Reads checked expressions of one clause or atom over one set of views.
 pub struct Reader<'r, 'a> {
+    components: Option<Components<'r, 'a>>,
     layout: &'r StateLayout,
     subject: &'r SymbolicSubject<'a>,
     clause: &'r str,
@@ -121,6 +157,7 @@ impl<'r, 'a> Reader<'r, 'a> {
         slots: Vec<Option<Sym>>,
     ) -> Self {
         Self {
+            components: None,
             layout,
             subject,
             clause,
@@ -129,6 +166,14 @@ impl<'r, 'a> Reader<'r, 'a> {
             views,
             slots,
         }
+    }
+
+    /// The reader reads each model read in the component `components` names
+    /// for it.
+    #[must_use]
+    pub fn in_components(mut self, components: Components<'r, 'a>) -> Self {
+        self.components = Some(components);
+        self
     }
 
     /// The Boolean `node` denotes and its definedness.
@@ -146,11 +191,16 @@ impl<'r, 'a> Reader<'r, 'a> {
     }
 
     fn refuse(&self, node: CheckedNode<'_>, form: &'static str) -> SmtEncodingRefusal {
+        let component = self.components.as_ref().and_then(|components| {
+            let at = components.component_of(node.location())?;
+            components.variables.get(at).cloned()
+        });
         Refusal::OutOfFragment {
             form,
             locus: ExpressionLocus {
                 clause: self.clause.to_owned(),
                 node: node.id().index(),
+                component,
             },
         }
         .into()
@@ -434,9 +484,24 @@ impl<'r, 'a> Reader<'r, 'a> {
             return Err(self.refuse(node, "attribute of a computed reference"));
         };
         let observation = self.observation_of(node.location());
-        let state = self.views.state(observation);
-        let layout = self
-            .layout
+        let (layout_of, state) = match &self.components {
+            Some(components) => {
+                let at = *components.reads.get(node.location()).ok_or_else(|| {
+                    SmtEncodingRefusal::fault("a read of a condition that component_reads records")
+                })?;
+                let (layout, _) = components
+                    .layouts
+                    .get(at)
+                    .ok_or_else(|| SmtEncodingRefusal::fault("a component has a layout"))?;
+                let state = components
+                    .states
+                    .get(at)
+                    .ok_or_else(|| SmtEncodingRefusal::fault("a component has a state"))?;
+                (*layout, state)
+            }
+            None => (self.layout, self.views.state(observation)),
+        };
+        let layout = layout_of
             .objects()
             .get(object)
             .ok_or_else(|| self.refuse(node, "object outside the layout"))?;
@@ -446,7 +511,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             .position(|field| field.name() == name)
             .ok_or_else(|| self.refuse(node, "field outside the layout"))?;
         let terms = state
-            .terms(self.layout, object, index)
+            .terms(layout_of, object, index)
             .ok_or_else(|| self.refuse(node, "field outside the layout"))?;
         let value = match layout.fields()[index].sort() {
             FieldSort::Bool => Sym::Bool(terms.value),
