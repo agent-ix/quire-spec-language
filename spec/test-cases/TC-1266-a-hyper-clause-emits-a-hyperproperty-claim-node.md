@@ -16,7 +16,7 @@ parameter nodes, `match` conjunct terms, operation anchors and fairness
 aggregates, that the clause exposes its `claim` occurrence, and that clauses
 with no encoding are refused.
 
-Scope: FR-488-AC-1 to FR-488-AC-22.
+Scope: FR-488-AC-1 to FR-488-AC-23.
 
 ## Test Procedure
 
@@ -49,7 +49,10 @@ device models, and FR-487's `Linked`.
     parameter, and one with two refusals.
 11. Compile bounded-profile and `until` clauses (FR-488-AC-19, AC-20).
 12. Compile `NonInterference` at and one below the node ceiling.
-13. Admit each emitted package through QSL's I2 admission, which runs strict
+13. Compile clauses whose parameter and trace variable names hold `_`,
+    `s`, `x`, digits and non-ASCII characters; check every slot node name
+    against the identifier grammar and for injectivity.
+14. Admit each emitted package through QSL's I2 admission, which runs strict
     wire validation of the flat body grammar first.
 
 Tag the tests `#[trace("TC-1266", "FR-488-AC-n")]`.
@@ -76,4 +79,5 @@ Tag the tests `#[trace("TC-1266", "FR-488-AC-n")]`.
 - Step 10: FR-488-AC-18: each is refused at the first refusal in order.
 - Step 11: FR-488-AC-19 and AC-20.
 - Step 12: FR-488-AC-21.
-- Step 13: no admission refusal and no `malformed_wire` (FR-488-AC-22).
+- Step 13: FR-488-AC-23's identifier-safe, pairwise distinct names.
+- Step 14: no admission refusal and no `malformed_wire` (FR-488-AC-22).
