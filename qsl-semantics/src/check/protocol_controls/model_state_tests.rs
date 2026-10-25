@@ -272,8 +272,13 @@ fn minimum_non_resource_budget(text: &str) -> u64 {
 fn choice_partition_charges_once_per_valuation() {
     let three_atoms = choice_with_guards("a and b and c", "not (a and b and c)");
     let one_atom = choice_with_guards("a and a and a", "not (a and a and a)");
-    check(&three_atoms).expect("the three-atom guards partition");
-    check(&one_atom).expect("the one-atom guards partition");
+    for text in [&three_atoms, &one_atom] {
+        let graph = check(text).expect("the choice guards partition");
+        let [protocol] = graph.protocols() else {
+            panic!("one checked protocol");
+        };
+        assert_eq!(protocol.slots.choices.len(), 1);
+    }
     assert!(check_with_limits(
         &three_atoms,
         CheckingLimits::default().with_work_budget(0),
@@ -281,6 +286,8 @@ fn choice_partition_charges_once_per_valuation() {
     .is_err());
     let three_atom_budget = minimum_work_budget(&three_atoms);
     let one_atom_budget = minimum_work_budget(&one_atom);
+    eprintln!("three={three_atom_budget}, one={one_atom_budget}");
+    eprintln!("budget1={:?}", check_with_limits(&three_atoms, CheckingLimits::default().with_work_budget(1)).err());
     assert_eq!(three_atom_budget - one_atom_budget, 6);
 }
 
