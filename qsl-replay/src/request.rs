@@ -20,7 +20,9 @@ use crate::identity::{
 };
 use crate::limits::CallerLimits;
 use crate::object_environment::ObjectEnvironmentRef;
-use crate::target::{ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal};
+use crate::target::{
+    ReplayOverBinding, ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal,
+};
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
@@ -250,6 +252,7 @@ pub struct ReplayRequest {
     source_digests: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
     replay_target: ReplayTarget,
+    over: Option<ReplayOverBinding>,
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
     obligation_identity: ObligationIdentity,
@@ -285,6 +288,11 @@ impl ReplayRequest {
     /// implicitly.
     pub fn replay_target(&self) -> &ReplayTarget {
         &self.replay_target
+    }
+    /// The object selected for a temporal clause's `over` parameter, when
+    /// this is an observed temporal replay request (FR-331).
+    pub fn over(&self) -> Option<&ReplayOverBinding> {
+        self.over.as_ref()
     }
     /// The witness or input replay source.
     pub fn source(&self) -> &ReplaySource {
@@ -591,6 +599,10 @@ pub enum ReplayRequestRefusal {
         /// The request's target member.
         target: TargetMember,
     },
+    /// The request supplies an observed `over` binding for a function or
+    /// frame target, which has no temporal clause binding.
+    #[error("invalid_runtime_input/unknown-member at /replay/over: only a state-clause target accepts over")]
+    UnexpectedOverBinding,
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
@@ -611,6 +623,7 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
         members,
         arguments,
         occurrence_key,
+        over: _,
     } = wire;
     let target = members.select().map_err(|refusal| match refusal {
         TargetSelectionRefusal::Missing => ReplayRequestRefusal::MissingReplayTarget,
@@ -724,7 +737,8 @@ impl ReplayRequestRefusal {
             | Self::MissingOccurrenceKey
             | Self::ConflictingReplayTarget { .. }
             | Self::UnexpectedArguments { .. }
-            | Self::UnexpectedOccurrenceKey { .. } => Code::InvalidRuntimeInput,
+            | Self::UnexpectedOccurrenceKey { .. }
+            | Self::UnexpectedOverBinding => Code::InvalidRuntimeInput,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
     }
@@ -735,9 +749,9 @@ impl ReplayRequestRefusal {
         match self {
             Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
-            Self::UnexpectedArguments { .. } | Self::UnexpectedOccurrenceKey { .. } => {
-                Some("unknown-member")
-            }
+            Self::UnexpectedArguments { .. }
+            | Self::UnexpectedOccurrenceKey { .. }
+            | Self::UnexpectedOverBinding => Some("unknown-member"),
             _ => None,
         }
     }
@@ -753,6 +767,7 @@ impl ReplayRequestRefusal {
             }
             Self::UnexpectedArguments { .. } => Some("/replay/arguments"),
             Self::UnexpectedOccurrenceKey { .. } => Some("/replay/occurrence_key"),
+            Self::UnexpectedOverBinding => Some("/replay/over"),
             _ => None,
         }
     }
@@ -804,6 +819,11 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             })
             .sum::<usize>()
         + wire.replay_target.members.measured_bytes()
+        + wire
+            .replay_target
+            .over
+            .as_ref()
+            .map_or(0, |over| over.population.len() + over.key.len())
         + wire.backend.len()
         + wire
             .state_environment
@@ -844,7 +864,11 @@ impl ReplayRequest {
     ) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
         // QSpec FR-323 decode rule 1: before any byte-provision rule.
+        let over = wire.replay_target.over.clone();
         let replay_target = decode_target(std::mem::take(&mut wire.replay_target))?;
+        if over.is_some() && replay_target.member() != TargetMember::StateClause {
+            return Err(ReplayRequestRefusal::UnexpectedOverBinding);
+        }
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -967,6 +991,7 @@ impl ReplayRequest {
             source_digests,
             dependencies,
             replay_target,
+            over,
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
@@ -985,6 +1010,8 @@ impl ReplayRequest {
     /// through [`Self::decode`] (FR-071-AC-1's construct -> serialize ->
     /// read round trip).
     pub fn to_wire(&self) -> ReplayRequestWire {
+        let mut replay_target: RequestTargetWire = self.replay_target.clone().into();
+        replay_target.over = self.over.clone();
         ReplayRequestWire {
             profile_selections: self.profile_selections.clone(),
             package_id: (
@@ -1008,7 +1035,7 @@ impl ReplayRequest {
                     sources: entry.sources.iter().map(RawSourceRef::to_wire).collect(),
                 })
                 .collect(),
-            replay_target: self.replay_target.clone().into(),
+            replay_target,
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
             backend: self.backend.as_str().to_owned(),
