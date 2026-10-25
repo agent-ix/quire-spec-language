@@ -31,7 +31,13 @@ are prospective qualification procedures; this artifact claims no execution.
    formula/profile/activation/binding; compare the full UTF-8 JCS key
    octets and the stated exact state-body octets. Construct equivalent
    subsets and window debts in reverse insertion/materialization order.
-6. Supply every listed malformed/context negative. Keep two distinct
+6. Supply every listed malformed/context negative, including the unguarded
+   `on each` TP-4 waiting/active `each-buchi` forms and a profile-appropriate
+   rejection of a `buchi` key under the timed profile. For the waiting-window
+   negative, use `eventually[1,*] holds(p)` and the otherwise well-formed
+   `["each-buchi","waiting",[[],[],[[[],"negative","shift","1"]],[]]]`;
+   the shift refers to the checked root occurrence, so refusal must reach the
+   waiting-phase shape rule rather than an unresolved-window rule. Keep two distinct
    operand occurrences of one shared interval subformula, changing one
    occurrence's debt only; change past memory and Büchi membership only.
 7. Read `eventually[0,1] p` over false/true and false/false letters and at
@@ -43,7 +49,10 @@ are prospective qualification procedures; this artifact claims no execution.
    `historically[0,1] true`, distinguishing missing atomic history from constants.
    Also read open `p until[1,*] q` and finite `p until[1,1] q` on
    p-false origin/q-true distance one and check their different prefix
-   semantics and release dual. Insert a false fork before the counted
+   semantics and release dual. On an ordinary subject, read open
+   `eventually[1,*] p` and `p until[1,*] q` before the shift completes,
+   then at the first letter at distance one; verify least-fixed-point
+   acceptance begins only after that shift. Insert a false fork before the counted
    p-true step; at distance one insert an uncounted p-true letter after
    a false letter. Compare all horizons/ages before and after a memory
    step, and compare mixed-truth protocol past bucket transforms.
@@ -80,6 +89,15 @@ are prospective qualification procedures; this artifact claims no execution.
     `guarded-buchi` key under the `"infinite"` activation, and the phase
     `"selected"`. With the condition undefined at version 0, check the
     empty certificate and FR-339-AC-5's accepted certificate.
+11. Over an unguarded infinite-trace TP-4 clause
+    `eventually holds(c.versionNumber = 2)` `on each`, encode the
+    `each-buchi` waiting key and an active key selected at a position where
+    the body is false. Verify that waiting has a waiting and an active
+    successor on every defined letter, active never selects a second
+    activation, and only active states belong to the derived
+    `["activation"]` acceptance set. Check that the same body under
+    `["buchi", branch]`, under `"each-when"`, and under a timed profile is
+    refused.
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -90,17 +108,22 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   state.
 - Step 3: `BadState` at value 3; accepted.
 - Step 4: `BadState` at `t1`.
-- Step 5: exact authored octets; reversed materialization yields equal
-  keys. Different counters, paths, past memory and acceptance membership
-  yield different full keys. No local graph index is an identity.
-- Step 6: malformed, unsorted, duplicate, wrong-context and unjustified
-  decided-state inputs refuse before certificate membership is used.
+- Step 5: exact authored octets, including distinct origin `buchi` and
+  unguarded-`on each` `each-buchi` state forms; reversed materialization
+  yields equal keys. Different counters, paths, past memory and acceptance
+  membership yield different full keys. No local graph index is an identity.
+- Step 6: malformed, unsorted, duplicate, wrong-context, timed-profile and
+  waiting-phase shift-window inputs refuse before certificate membership is
+  used. The shift-window refusal reaches the waiting-phase rule after its
+  checked occurrence has resolved.
 - Step 7: accept then reject respectively; terminal semantics match the
   evaluator and a new activation does not erase an older open debt.
   The two historical origin cases are false and true respectively.
   Open until rejects at origin while finite until accepts; release
   preserves its dual. Fork/memory letters do not reduce distance, and
   a final-region zero-distance true letter can satisfy the pending F.
+  For ordinary open-upper F/U, acceptance is absent during the lower shift
+  and begins when the unbounded least-fixed-point obligation starts.
   The unresolved F[1,1]true starvation closure rejects WitnessFails,
   even with a counted exit; counted-progress cycles discharge it.
   F[0,1]true and the empty-window G dual do not falsely reject. Only
@@ -123,3 +146,7 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   `(0,0)` with binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`
   for the empty certificate, and at binding `a`'s waiting `(0,0)` state for
   the accepted one.
+- Step 11: `each-buchi` waiting has both waiting and active successors for
+  every defined letter; active has no second-selection transition. The
+  activation acceptance set contains active states only. The origin
+  `buchi` tag, guarded `each-when` context and timed profile are refused.

@@ -222,9 +222,10 @@ No absent/default binding is synthesized. The property state is separate
 from the model state; its context does not copy the model subject or hash
 the existing obligation again. The certificate request still binds that
 subject through O-09 and FR-125. `profile` is the exact admitted temporal profile identity;
-`activation` is `"origin"` or `"each"` for a bounded monitor and
-`"infinite"` otherwise, except that a clause whose `on each` activation has
-a `when` condition uses `"each-when"` for every property form
+`activation` is `"origin"` or `"each"` for a bounded monitor, and
+`"infinite"` for an infinite-trace `on origin` property. An unguarded
+infinite-trace TP-4 clause with `on each` uses `"each"`; a clause whose
+`on each` activation has a `when` condition uses `"each-when"` for every property form
 (TP-1 to TP-4; "Guarded `on each` activation" below). A deadlock-freedom item's existing derived
 obligation identity selects its `always holds(not deadlocked)` formula.
 No absent root/profile/activation is defaulted.
@@ -257,7 +258,23 @@ The closed alternatives for `state` are:
 | TP-2 decided | `["accept"]` or `["reject"]`, absorbing under EN-5; under EN-1 `on each`, an accepted activation is removed from the live branches and new activations continue, so accepting one activation is not global acceptance. |
 | TP-1 / TP-3 / deadlock | `["safety", branches]`; these are the subset construction's viable elementary configurations of the formula itself after SM-6 trimming. The unique rejecting state is `["safety",[]]`. |
 | TP-4, guarded `on each` | `["guarded-buchi", phase, branch]`, only under activation `"each-when"`; `phase` is `"waiting"` or `"active"` ("Guarded `on each` activation" below). |
-| TP-4 | `["buchi", branch]`; one elementary configuration of the negated formula, with its acceptance membership. This is not a subset-determinized safety state. |
+| TP-4, unguarded `on each` | `["each-buchi", phase, branch]`, only under activation `"each"`; `phase` is `"waiting"` or `"active"`. The key represents the engine's activation-closed `always(guard implies phi)` form, with the unguarded condition fixed to `true`; its phase records whether the Büchi run has selected a violating activation. |
+| TP-4, `on origin` | `["buchi", branch]`, only under activation `"infinite"`; one elementary configuration of the negated formula, with its acceptance membership. This is not a subset-determinized safety state. |
+
+Every TP-4 key form SHALL have the infinite-trace profile. Timed profiles
+use FR-234's timed relation and have no key in this state algebra.
+
+For an unguarded TP-4 clause with `on each`, the initial key is
+`["each-buchi","waiting",branch]`. At every defined letter, a waiting
+state has both its waiting successor and an active successor obtained by
+expanding the negated clause formula at that position; the active state
+advances that selected violation and never selects a second activation.
+Its acceptance sets are one per signed least-fixed-point occurrence of the
+selected negated formula and the derived `["activation"]` set containing
+exactly active states. This is the unguarded specialization of the
+activation-closed `always(guard implies phi)` form: the true guard permits
+selection at every infinite-trace position, and an infinitely waiting run
+does not witness a violation.
 
 `branches` is a set of elementary configurations; an elementary configuration
 is exactly `[obligations,past,windows,acceptance]`. The four members are
@@ -267,7 +284,13 @@ member, extension map or local index is admitted.
 
 An obligation is `[o,s]` for an unbounded/current subformula, or
 `[o,s,lower,upper]` for an open interval obligation; `upper` is a finite
-decimal string or `"open"`. Bounds are remaining offsets. A bounded
+decimal string or `"open"`. Both bounds are remaining offsets from the
+last letter read: before the lower shift completes, `lower` decreases only
+by counted distance and saturates at zero; a finite `upper` decreases by
+the same distance, while `"open"` stays open. The matching `windows`
+entry is the canonical stored debt, not a duplicate obligation. A shift
+entry is removed exactly when `lower` reaches zero, when the open operator
+is expanded as its unbounded form. A bounded
 `on each` activation is a conjunction of its still-open obligations,
 and the entire branch holds the conjunction of all live activations.
 Identical obligations are idempotent. An empty obligation conjunction is
@@ -418,7 +441,13 @@ past/future nesting faithful to SM-7/SM-8 without retaining model states.
 
 `acceptance` is the set of `[o,s]` least-fixed-point occurrences whose
 acceptance set this elementary state belongs to: unbounded `F`/`U` or
-their signed dual, plus finite `F`/`U` on protocol subjects as below. This state
+their signed dual, and open-upper `F`/`U[a,open]` or its signed dual on
+an ordinary subject after the lower shift completes, plus finite `F`/`U`
+on protocol subjects as below. An open-upper ordinary `F`/`U` has no Büchi membership while its
+shift is pending; on the first letter at distance `a`, its unbounded
+least-fixed-point obligation begins contributing an acceptance set. This
+prevents a non-discharging open obligation from being accepted by omission.
+This state
 membership is explicit. The closure has one generalized Büchi acceptance set per such
 signed occurrence. A branch belongs to it when that occurrence is not
 carried from this position, or its current expansion discharged it through
@@ -597,9 +626,13 @@ The rules that tie the phases to the condition are:
 
 The checker SHALL refuse, as an admission negative: a `guarded-buchi` state
 under a context whose activation is not `"each-when"` or whose item is not
-a TP-4 clause; a `["buchi", branch]` state under an `"each-when"` context;
-a phase other than `"waiting"` or `"active"`; and a waiting `branch` with
-an obligation or a window entry.
+a TP-4 clause; an `each-buchi` state unless its activation is `"each"`
+and its profile is infinite-trace; a phase other than `"waiting"` or
+`"active"`; an origin `buchi` state under an `"each"` or `"each-when"`
+context; and a waiting branch with an obligation or a window entry. A
+well-formed shift window for a checked `F[a,open]`/ `U[a,open]` occurrence
+is still refused in the waiting phase: no activation has been selected, so
+there is no live interval debt.
 
 The checker SHALL recompute every successor by these rules, re-reading the
 condition at every reached product state through the letter seam and
@@ -745,6 +778,8 @@ after the encoded C and comma and ends with one additional `]`.
 | --- | --- |
 | `always holds(false)` bad prefix, TP-1 | `["safety",[]]` |
 | `always holds(true)`, TP-1, after a position | `["safety",[[[[[],"positive"]],[],[],[]]]]`; the retained root G obligation is carried. |
+| TP-4 `eventually holds(p)` `on each`, before selection | `["each-buchi","waiting",[[],[],[],[]]]`; the context activation is `"each"`. |
+| The same TP-4 clause after selecting a position where p is false | `["each-buchi","active",[[[[],"negative"]],[],[],[]]]`; it differs from the phase-less origin `buchi` key. |
 | bounded `eventually[0,1] holds(p)`, on origin, p false at position zero | `["bounded",["origin","1"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; the stored distance is from the letter just read. |
 | previous vector after p true at counted distance one | `["accept"]`; false gives `["reject"]` when that final distance region closes. A false fork before that counted step leaves clock/deadline 1 and does not reject. |
 | pending common `eventually[0,3] p` debts with remaining deadlines 1 and 3 | Retain `[[],"positive","deadline","1"]`, regardless of their insertion order; extent 3 would change the future and is refused. |
@@ -936,8 +971,8 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-2 | Rejected vectors: AC-1's certificate with the product state for model state `(1, 0)` removed is rejected `SuccessorMissing` at that state; with the initial product state removed, `InitialMissing` at it; over the `Counter` subject with no `terminal` declaration, a certificate holding every reachable state, offered for the deadlock-freedom item, is rejected `BadState` at value 3 (deadlocked), while the same certificate for `always holds(c.value <= 3)` is accepted, since the deadlock at 3 changes no authored claim (ADR-018 DL-6). | Test (TC-525) |
 | FR-338-AC-3 | Over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`, a certificate holding values 0 to 2 for `always holds(true)` is rejected `BadState` at value 2, whose expansion records `ContractUndetermined` for the undefined `pre CanInc`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
-| FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
-| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
+| FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership: a waiting `each-buchi` state carrying the well-formed shift window of its checked `eventually[1,*]` root, a `buchi` state under an unguarded `on each` context, an `each-buchi` state under an origin or `each-when` context, and a TP-4 key under a timed profile are refused; a same-shaped state under a foreign item, profile or activation is not admitted by the original context. | Test |
+| FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics, and an ordinary open-upper `F/U[a,open]` gains its least-fixed-point acceptance set only after the lower shift completes; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 | FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]` and `a` admitted, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has one instance, whose `context` is `[root, profile, "infinite", [[N, ["instance", "a"]]]]` with `N` the `over` parameter's NodeId; renaming `P1` or `P2` leaves the context's octets unchanged. Over populations `P1` with universe `["a"]` and `P2` with universe `["b"]`, the two instances' contexts differ exactly in the key, and a certificate state carrying `a`'s context is not admitted under `b`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the three-element `["instance", T, "a"]` with `T` the JSON string of `P1`'s declaration identity text; and `["instance", {"type":"text","value":"a"}]`. The context carries no type: over two subjects with population `P1` of `Counter` and universe `["a"]`, one whose initial state holds a `Counter` under `a` and one whose initial state holds a `Fast` (a subtype of `Counter`) under `a`, the instance's context octets are equal. | Test (TC-1164) |
