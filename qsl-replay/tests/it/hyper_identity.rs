@@ -1,0 +1,280 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-315 "Product identity" (TC-1190): `HyperProductIdentity::of` and the
+//! four refusals that precede every other check of `encode_hyper_query`.
+
+use ix_trace_rs::trace;
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
+use qsl_foundation::digest::WireNodeId;
+use qsl_package::CheckedPackage;
+use qsl_replay::{
+    HyperProductIdentity, HyperQueryRequest, SmtEncodingLimits, SmtEncodingRefusal, SubjectIdentity,
+};
+use qsl_semantics::check::{admitted_source, PackageDeclarations};
+use quire_exact::Meter;
+use quire_semantic_value::checking::CheckingLimits;
+
+use crate::vault_world::{
+    non_interference, World, EQUAL_INPUTS, FORALL_EXISTS, LIVENESS, SAVES_POWER, UNLIMITED,
+};
+
+fn instance(key: &str) -> Vec<(String, String)> {
+    vec![("v".to_owned(), key.to_owned())]
+}
+
+fn pairs(parameter: &str, key: &str) -> Vec<(String, String)> {
+    vec![(parameter.to_owned(), key.to_owned())]
+}
+
+/// `HyperProductIdentity::of` over `world`'s assembled clause and subject.
+fn identity(
+    world: &World,
+    instance: &[(String, String)],
+) -> Result<HyperProductIdentity, SmtEncodingRefusal> {
+    let subjects = [world.subject()];
+    let mut meter = Meter::new(UNLIMITED);
+    HyperProductIdentity::of(&HyperQueryRequest {
+        clause: world.clause(),
+        subjects: &subjects,
+        instance,
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    })
+}
+
+fn code(refusal: &SmtEncodingRefusal) -> (&'static str, String) {
+    (
+        refusal.code().expect("a refusal, not a fault"),
+        refusal.to_string(),
+    )
+}
+
+fn refused(result: Result<HyperProductIdentity, SmtEncodingRefusal>) -> SmtEncodingRefusal {
+    result.expect_err("the request is refused")
+}
+
+fn bound(maximum: u64) -> ProofBound {
+    ProofBound::new(
+        DomainKey::Node {
+            node: WireNodeId::from_digest([7; 32]),
+            path: Vec::new(),
+        },
+        Some(DomainKind::Population),
+        FiniteBound::Cardinality { maximum },
+    )
+    .expect("a population takes a cardinality bound")
+}
+
+/// FR-315-AC-12: the identity's three members are the clause's `claim`
+/// occurrence, FR-336's projection of the subject and the instance; the
+/// instance `w` differs only in `instance()`, a proof bound only in
+/// `subjects()`, and meters of different budgets give equal identities.
+#[trace("TC-1190", "FR-315-AC-12")]
+#[test]
+fn the_identity_is_the_clause_the_subjects_and_the_instance() {
+    let world = World::new(&["v", "w"], false, &non_interference(EQUAL_INPUTS, ""));
+    let base = identity(&world, &instance("v")).expect("the request is identified");
+    assert_eq!(
+        Some(base.clause()),
+        world.clause().assembled_occurrence(),
+        "the clause member is the assembled occurrence"
+    );
+    assert_eq!(
+        base.subjects(),
+        [SubjectIdentity::of(&world.subject()).expect("emits")]
+    );
+    assert_eq!(base.instance(), instance("v"));
+
+    let other = identity(&world, &instance("w")).expect("instance w");
+    assert_eq!(other.clause(), base.clause());
+    assert_eq!(other.subjects(), base.subjects());
+    assert_eq!(other.instance(), instance("w"));
+    assert_ne!(other, base);
+
+    let bounded = [world.subject_over(world.package(), vec![bound(2)])];
+    let mut meter = Meter::new(UNLIMITED);
+    let bounded = HyperProductIdentity::of(&HyperQueryRequest {
+        clause: world.clause(),
+        subjects: &bounded,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    })
+    .expect("a proof bound");
+    assert_eq!(bounded.clause(), base.clause());
+    assert_eq!(bounded.instance(), base.instance());
+    assert_ne!(bounded.subjects(), base.subjects());
+
+    let mut small = UNLIMITED;
+    small.work_units = 1;
+    let subjects = [world.subject()];
+    let mut meter = Meter::new(small);
+    let small = HyperProductIdentity::of(&HyperQueryRequest {
+        clause: world.clause(),
+        subjects: &subjects,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    })
+    .expect("a small budget");
+    assert_eq!(small, base);
+}
+
+/// FR-315-AC-12: a clause that differs only in a fairness set is a different
+/// item, so its identity differs in `clause()`.
+#[trace("TC-1190", "FR-315-AC-12")]
+#[test]
+fn a_fairness_set_changes_the_clause_member() {
+    let plain = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    let fair = World::new(
+        &["v"],
+        false,
+        &non_interference(EQUAL_INPUTS, "fair weak V::Vault::step;"),
+    );
+    let plain = identity(&plain, &instance("v")).expect("identified");
+    let fair = identity(&fair, &instance("v")).expect("identified");
+    assert_ne!(plain.clause(), fair.clause());
+}
+
+/// FR-315-AC-13: an `instance` that is not one pair for the parameter, with a
+/// key in its universe, names `instance-binding` at the parameter.
+#[trace("TC-1190", "FR-315-AC-13")]
+#[test]
+fn a_malformed_instance_names_the_parameter() {
+    let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    for bad in [Vec::new(), instance("x"), pairs("u", "v")] {
+        let refusal = refused(identity(&world, &bad));
+        let (code, text) = code(&refusal);
+        assert_eq!(code, "instance-binding", "{bad:?}");
+        assert!(text.contains("`v`"), "{text}");
+    }
+    let liveness = World::new(&["v"], false, LIVENESS);
+    let (code, _) = code(&refused(identity(&liveness, &[])));
+    assert_eq!(code, "instance-binding");
+}
+
+/// FR-315-AC-13: an HP-3 clause names `hyper-form`, before any other check.
+#[trace("TC-1190", "FR-315-AC-13")]
+#[test]
+fn an_hp3_clause_names_hyper_form() {
+    let world = World::new(&["v"], false, FORALL_EXISTS);
+    let (code, text) = code(&refused(identity(&world, &[])));
+    assert_eq!(code, "hyper-form");
+    assert!(text.contains("HP-3"), "{text}");
+}
+
+/// FR-315-AC-13: `SavesPower` with one subject, or with the `N` subject over
+/// another checked package, names `subject-binding` at alias `N`; a subject
+/// beyond the aliases names none.
+#[trace("TC-1190", "FR-315-AC-13")]
+#[test]
+fn a_missing_or_foreign_subject_names_its_alias() {
+    let world = World::new(&["v"], true, SAVES_POWER);
+    let both = [("d", "v"), ("e", "v")]
+        .iter()
+        .map(|(parameter, key)| ((*parameter).to_owned(), (*key).to_owned()))
+        .collect::<Vec<_>>();
+    let run = |subjects: &[qsl_eval::model_subject::ModelSubject<'_>]| {
+        let mut meter = Meter::new(UNLIMITED);
+        HyperProductIdentity::of(&HyperQueryRequest {
+            clause: world.clause(),
+            subjects,
+            instance: &both,
+            meter: &mut meter,
+            encoding: SmtEncodingLimits::default(),
+        })
+    };
+    let aliases: Vec<&str> = world
+        .clause()
+        .aliases()
+        .iter()
+        .map(|alias| alias.as_str())
+        .collect();
+    assert_eq!(aliases, ["V", "N"]);
+
+    let (code, text) = code(&refused(run(&[world.subject()])));
+    assert_eq!(code, "subject-binding");
+    assert!(text.contains("`N`"), "{text}");
+
+    let elsewhere = World::new(&["v"], true, SAVES_POWER);
+    let foreign = [world.subject(), elsewhere.subject()];
+    let (code, text) = code(&refused(run(&foreign)));
+    assert_eq!(code, "subject-binding");
+    assert!(text.contains("`N`"), "{text}");
+
+    let three = [world.subject(), world.subject(), world.subject()];
+    let (code, text) = code(&refused(run(&three)));
+    assert_eq!(code, "subject-binding");
+    assert!(text.contains("more subjects"), "{text}");
+
+    run(&[world.subject(), world.subject()]).expect("one subject per alias");
+}
+
+/// FR-315-AC-13: a subject whose checked package has no emission names
+/// `product-identity` at the clause.
+#[trace("TC-1190", "FR-315-AC-13")]
+#[test]
+fn a_package_with_no_emission_names_product_identity() {
+    let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    let graph = PackageDeclarations::new(
+        admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+            b"",
+        ),
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .check(CheckingLimits::default())
+    .expect("an empty package checks");
+    let empty = CheckedPackage::link(graph);
+    let subjects = [world.subject_over(&empty, Vec::new())];
+    let mut meter = Meter::new(UNLIMITED);
+    let refusal = refused(HyperProductIdentity::of(&HyperQueryRequest {
+        clause: world.clause(),
+        subjects: &subjects,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    }));
+    let (code, text) = code(&refusal);
+    assert_eq!(code, "product-identity");
+    assert!(text.contains("NonInterference"), "{text}");
+}
+
+/// FR-315-AC-49: the clause as S3 checked it, before any package assembled
+/// it, names `product-identity` and charges nothing; the assembled clause
+/// returns the identity.
+#[trace("TC-1190", "FR-315-AC-49")]
+#[test]
+fn an_unassembled_clause_names_product_identity_and_charges_nothing() {
+    let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    assert!(world.unassembled.assembled_occurrence().is_none());
+    let subjects = [world.subject()];
+    let mut meter = Meter::new(UNLIMITED);
+    let refusal = refused(HyperProductIdentity::of(&HyperQueryRequest {
+        clause: &world.unassembled,
+        subjects: &subjects,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    }));
+    assert_eq!(code(&refusal).0, "product-identity");
+    assert_eq!(meter.admission_count(), 0);
+    identity(&world, &instance("v")).expect("the assembled clause is identified");
+}
+
+/// FR-315-AC-13: `of` charges nothing to the request's meter.
+#[trace("TC-1190", "FR-315-AC-13")]
+#[test]
+fn identifying_a_request_charges_nothing() {
+    let world = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
+    let subjects = [world.subject()];
+    let mut meter = Meter::new(UNLIMITED);
+    HyperProductIdentity::of(&HyperQueryRequest {
+        clause: world.clause(),
+        subjects: &subjects,
+        instance: &instance("v"),
+        meter: &mut meter,
+        encoding: SmtEncodingLimits::default(),
+    })
+    .expect("identified");
+    assert_eq!(meter.admission_count(), 0);
+}
