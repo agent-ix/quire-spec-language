@@ -489,7 +489,7 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator Field: operand is not Composite | `field-composite-value-expected` |
 | Evaluator Field: the value's own declaration has no slot for the checked field identity | `field-slot-unresolved` |
 | Evaluator Attribute: operand is not Reference | `attribute-reference-value-expected` |
-| Evaluator Attribute: resolved object has no stored attribute slot | `attribute-slot-unresolved` |
+| Evaluator Attribute: its reference names an object absent from the current state, or the resolved object has no stored attribute slot | `attribute-slot-unresolved` |
 | Evaluator Present or Value: operand is not Option | `option-value-expected` |
 | Evaluator local Call, imported Call, dispatch guard or dispatch body: checked callable is not resolved | `evaluation-callable-unresolved` |
 | Evaluator imported Call: imported package graph is not resolved | `evaluation-imported-graph-unresolved` |
@@ -614,6 +614,7 @@ undefined cause type.
 | FR-090-AC-17 | A QSL-owned table fault propagated through public call, public evaluate or replay retains its stage and invariant identifier in the existing fault channel. | Test |
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
 | FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
+| FR-090-AC-22 | When an admitted state predicate reads an attribute through a reference to an object absent from the current state, S6a returns `Err(InternalFault)` with stage `S6a`, invariant `attribute-slot-unresolved` and category `Category::InternalFailure`; the public call or evaluate seam preserves it as `CallFailure::Fault`. The evaluator does not panic or manufacture a kernel/family result. | Test (TC-917) |
 
 ## Dependencies
 
