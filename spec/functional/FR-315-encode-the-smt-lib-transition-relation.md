@@ -878,7 +878,7 @@ pub struct HyperQueryRequest<'a> {
     pub clause: &'a CheckedHyperClause, // FR-172
     pub subjects: &'a [ModelSubject],   // one per alias, in `clause.aliases` order
     pub instance: &'a [(Name, Key)],    // FR-183's object-parameter binding
-    pub meter: Meter,                   // FR-107's meter, charged by `μ_U`
+    pub meter: &'a mut Meter,           // FR-107's meter, charged by `μ_U`
     pub encoding: SmtEncodingLimits,    // the request's encoding limits (Size limits)
 }
 
@@ -929,7 +929,11 @@ they produce:
   `HyperLetters`. HM-4's indexed atom `e @ t` is that read in `t`'s copy.
 
 `meter` is the budget for evaluating `μ_U` while the query is encoded. The
-caller sets it. The encoding evaluates `μ_U` once per tuple, in the
+caller sets it. The meter is borrowed mutably, so the caller reads what the
+encoding consumed from the same `Meter` after the call, refusal or not. It is
+one cumulative budget across every tuple and conjunct of the call, not a fresh
+budget per tuple. `HyperProductIdentity::of` takes the request by shared
+reference and never touches it. The encoding evaluates `μ_U` once per tuple, in the
 joint-step order below, through `CheckedStepMatch::universal`, which charges
 `meter` as FR-487 states: its conjuncts in index order, each once, stopping
 at the first that is not `Completed(true)`. The encoder charges nothing
@@ -1075,7 +1079,9 @@ HV-3 reads.
   undefined-match definedness failure above.
 - Equal requests, with meters of equal budget, and equal kinds SHALL give
   byte-equal scripts or equal refusals. The encoder owns its readers, so this
-  depends on no caller behaviour.
+  depends on no caller behaviour. No AC drives a Faults arm: a well-formed
+  request cannot break those invariants, as for FR-315-AC-29's single-subject
+  fault, which needs a hand-altered checked clause inside `qsl-eval`.
 
 #### Product identity
 
@@ -1170,7 +1176,13 @@ impl HyperProductIdentity {
   `match-conjunct`, `too-large` for `applications`, `monitor-atoms`,
   `monitor-states` and `candidates`,
   `out-of-fragment` per copy, and `too-large` for `script-bytes`, refusing on the
-  first that applies with no script. For one request, the two calls
+  first that applies with no script. The `constants` measure counts declared
+  constants and the `applications` measure counts joint disjuncts, so neither
+  reads an atom's term and an out-of-fragment atom does not change them; that
+  is why `out-of-fragment` comes after them. A fault of the Faults bullet is
+  returned at the stage that first reads the broken invariant: `μ_U`'s at the
+  `match-conjunct` stage, an atom's at the `out-of-fragment` stage, and it
+  takes the place of any `Refused` code of that stage. For one request, the two calls
   therefore give the same refusal whenever `of` refuses.
   `HyperProductIdentity::of` SHALL evaluate no `μ_U` conjunct and charge
   nothing to `meter`.
@@ -1239,11 +1251,11 @@ impl HyperProductIdentity {
 
 | FR-315-AC-44 | Over FR-315-AC-1's `Counter` with `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose canonical script declares 8 constants, direct calls with `max_constants` 8 and the default produce byte-equal scripts; limits 7 and 0 each refuse `too-large` with measure `constants`, value 8, the corresponding limit and setting `smt_encoding.max_constants`, and no script. With `max_script_bytes` 0, the query refuses `too-large` at value 1, limit 0 and setting `smt_encoding.max_script_bytes`; raising it to exactly the canonical script length succeeds, and lowering it by one refuses at the first byte past the limit. | Test (TC-1250) |
 | FR-315-AC-45 | For FR-315-AC-1's `Counter`, direct calls with `max_applications` 1 and `max_candidates` 4 produce the default script; values 0 and 3 respectively refuse `too-large` with the measure's value 1 or 4, the supplied limit and corresponding `smt_encoding.*` setting. For the TP-3 item `always (holds(c.value = 3) implies always holds(c.value = 3))`, whose monitor letter has two atoms and whose tabulation reaches three states, limits `max_monitor_atoms` 2 and `max_monitor_states` 3 produce the default script; limits 1 and 2 respectively refuse `too-large` with values 2 and 3 and their corresponding setting names. | Test (TC-1250) |
-| FR-315-AC-46 | `qsl_replay::HyperQueryRequest` is built by a struct literal with exactly the members `clause`, `subjects`, `instance`, `meter` and `encoding`, and has no member of type `StepMatch`, `HyperLetters` or any `dyn` reader. Over the secure vault, `encode_hyper_query` for `NonInterference` at instance `v` and `InductionBase{depth: 1}` leaves the request's meter with the charges that nine `CheckedStepMatch::universal` calls make, one per tuple of FR-315-AC-7's nine in lexicographic order, with the labels the encoder gives that tuple and no other charge. `InductionBase{depth: 3}`, `InductionStep{depth: 1}` and the same request at instance `w` leave the same charges. The consumed counters of `HyperProductIdentity::of` for the request stay at zero. | Test (TC-1120) |
+| FR-315-AC-46 | `qsl_replay::HyperQueryRequest` is built by a struct literal with exactly the members `clause`, `subjects`, `instance`, `meter` and `encoding`, and has no member of type `StepMatch`, `HyperLetters` or any `dyn` reader. Over the secure vault, `encode_hyper_query` for `NonInterference` at instance `v` and `InductionBase{depth: 1}` leaves the `Meter` that the request borrows with the consumed counters that one fresh `Meter` of the same budget has after nine `CheckedStepMatch::universal` calls on it in sequence, one per tuple of FR-315-AC-7's nine in lexicographic order with the labels the encoder gives that tuple, and no other charge. `InductionBase{depth: 3}`, `InductionStep{depth: 1}` and the same request at instance `w` leave the same counters. The consumed counters of `HyperProductIdentity::of` for the request stay at zero. | Test (TC-1120) |
 | FR-315-AC-47 | `NonInterference` with FR-487-AC-5's third conjunct 2, the `quire::value::ieee::sqrt` comparison under `Float64[exact]` that the kernel refuses `ieee_not_exact`, is refused `SmtEncodingRefusal` `match-conjunct` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, naming conjunct 2 of `mu_universal()`, its site `hyper <c> match 2` and the tuple `(step(0), step(0))`, the first tuple in joint-step order on which conjuncts 0 and 1 hold. The same clause with the exhausting-function conjunct of FR-315-AC-10 names the same tuple, and both give the same refusal when repeated with an equal budget. `HyperProductIdentity::of` over either returns its identity and charges nothing. | Test (TC-1120) |
-| FR-315-AC-48 | `NonInterference` with FR-176-AC-5's body `always holds(1 mod (1 - v.h @ a) = 1 mod (1 - v.h @ b))`, whose divisors are not literals, is refused `SmtEncodingRefusal` `out-of-fragment` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, located at the atom's site `hyper <c> holds <n>`. The same clause with a `match` conjunct that exhausts the meter is refused `match-conjunct`, not `out-of-fragment`, the refusal order being as this requirement states. Every script FR-315-AC-7 to FR-315-AC-9 and FR-315-AC-43 give is read by a `QF_LIA` solver without a nonlinear construct. | Test (TC-1120) |
+| FR-315-AC-48 | `NonInterference` with FR-176-AC-5's body `always holds(1 mod (1 - v.h @ a) = 1 mod (1 - v.h @ b))`, whose divisors are not literals, is refused `SmtEncodingRefusal` `out-of-fragment` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, located at the atom's site `hyper <c> holds <n>`. The same clause with a `match` conjunct that exhausts the meter is refused `match-conjunct`, not `out-of-fragment`, the refusal order being as this requirement states. The scripts of FR-315-AC-7 and FR-315-AC-9 and the base script of FR-315-AC-43 are accepted by a `QF_LIA` solver. | Test (TC-1120) |
 | FR-315-AC-49 | `HyperProductIdentity::of` and `encode_hyper_query` over `NonInterference` as S3 checked it, before any package assembled it (`assembled_occurrence()` is `None`), each refuse `SmtEncodingRefusal` `product-identity` at the clause, with no identity and no script, charging nothing to the meter. The same request over the assembled clause returns the identity of FR-315-AC-12. | Test (TC-1190) |
-| FR-315-AC-50 | For the TP-3 item of FR-315-AC-45 and for `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, the `MonitorTable` constructor over the body's `CheckedFormula` and profile gives tables with equal state counts, initial state, rejecting state and numbered moves, and `MonitorTable::of` over the TP-3 item gives that item's table through the constructor. FR-315-AC-45's and FR-315-AC-43's scripts are byte-equal before and after `MonitorTable::of` delegates to it. | Test (TC-1264) |
+| FR-315-AC-50 | For the TP-3 item of FR-315-AC-45 and for `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, the `MonitorTable` constructor over the body's `CheckedFormula` and profile gives tables with equal state counts, initial state, rejecting state and numbered moves, and `MonitorTable::of` over the TP-3 item gives that item's table through the constructor. FR-315-AC-45's and FR-315-AC-43's scripts are byte-equal to golden bytes recorded from `main` before `MonitorTable::of` delegates to the constructor, the golden files being added in the refactor's first commit. | Test (TC-1264) |
 
 ## Dependencies
 
