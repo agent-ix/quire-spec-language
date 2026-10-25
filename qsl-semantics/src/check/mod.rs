@@ -162,9 +162,9 @@ pub use refinement::{
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
     ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
     ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementFairness,
-    RefinementFairnessOrigin, RefinementRefusal, RefinementSupport, RefinementThreadTarget,
-    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
-    UnsupportedFeature,
+    RefinementFairnessOrigin, RefinementRefusal, RefinementStepSource, RefinementSupport,
+    RefinementThreadTarget, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow,
+    StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
