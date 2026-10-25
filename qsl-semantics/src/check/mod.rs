@@ -1771,14 +1771,10 @@ impl PackageDeclarations {
                     .copied()
                     .unwrap_or(false)
                     .then(|| model_scope.clone()),
-                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false)
-                    && self
-                        .function_selections
-                        .get(&index)
-                        .is_some_and(|selection| {
-                            crate::value::layer::HeaderLayer::from_identity(&selection.identity)
-                                == Some(crate::value::layer::HeaderLayer::ValueComplete)
-                        }),
+                // A model operation in the body selects the model family's
+                // typing for that body, whether the function's declared
+                // profile is value-complete or model-complete.
+                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -1967,6 +1963,8 @@ impl PackageDeclarations {
         // declaration, claim or requirement record; its body is kept for
         // evaluation per value.
         let mut type_invariants = Vec::with_capacity(self.type_invariants.len());
+        let function_bodies: Vec<&CheckedBody> =
+            drafts.iter().map(|(_, body, _)| &body.body).collect();
         for invariant in &self.type_invariants {
             let location = invariant.location();
             let declarations = state_clause::ClauseDeclarations {
@@ -1987,7 +1985,12 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match state_clause::check_type_invariant(invariant, &declarations, &mut contract_cx) {
+            match state_clause::check_type_invariant(
+                invariant,
+                &declarations,
+                &function_bodies,
+                &mut contract_cx,
+            ) {
                 Ok((checked, used)) => {
                     nodes_used = used;
                     type_invariants.push(checked);
