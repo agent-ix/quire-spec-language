@@ -4124,6 +4124,7 @@ fn state_graph_claims(
             continue;
         };
         claims.push(StateGraphDeclaration {
+            index: claims.len(),
             form,
             selection,
             context,
