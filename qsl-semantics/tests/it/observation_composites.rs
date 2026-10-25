@@ -1190,6 +1190,7 @@ fn the_writer_orders_sets_and_bags_by_encoded_bytes() {
                 .collect(),
         )
         .to_json()
+        .expect("encodes")
     };
     let written = |spellings: &[&str]| {
         json!(spellings
@@ -1273,5 +1274,53 @@ fn text_elements_are_one_member_when_their_retained_sequences_are_equal() {
             })
             .collect();
         assert_eq!(retained, [composed, composed]);
+    }
+}
+
+/// FR-106 "Set, bag and ordered-set values": comparing two raw values holds the
+/// native stack constant in the document's nesting. A `set` nested 20,000
+/// deep compares equal to itself and unequal to one whose innermost item
+/// differs, as a `sequence` of the same depth does.
+#[test]
+fn raw_comparison_of_deeply_nested_sets_does_not_grow_the_stack() {
+    const DEPTH: usize = 20_000;
+    let nest = |kind: CollectionKind, innermost: &str| {
+        let mut value = SnapshotValue::collection(kind, vec![SnapshotValue::integer(innermost)]);
+        for _ in 1..DEPTH {
+            value = SnapshotValue::collection(kind, vec![value]);
+        }
+        value
+    };
+    for kind in [
+        CollectionKind::Set,
+        CollectionKind::Bag,
+        CollectionKind::Sequence,
+    ] {
+        assert_eq!(nest(kind, "1"), nest(kind, "1"), "{kind:?}");
+        assert_ne!(nest(kind, "1"), nest(kind, "2"), "{kind:?}");
+    }
+}
+
+/// FR-106 "Set, bag and ordered-set values": with several duplicate groups the
+/// refusal is at the first element, in array order, that equals an earlier
+/// one, naming that earlier element: `1, 2, 2, 1` refuses at element 2 naming
+/// element 1, not at element 3 naming element 0.
+#[test]
+fn the_first_duplicate_in_array_order_is_the_one_refused() {
+    for kind in [CollectionKind::Set, CollectionKind::OrderedSet] {
+        let declared = collection_of(kind, int9(), None);
+        let records = refused_both_ways(
+            || collection_case(declared.clone(), kind, integers(&["1", "2", "2", "1"])),
+            Code::InvalidRuntimeInput,
+            "duplicate-member",
+        );
+        for record in records {
+            assert_eq!(record.path, vec![PathStep::Index(2)], "{kind:?}");
+            assert_eq!(
+                record.fields.get("earlier-index").map(String::as_str),
+                Some("1"),
+                "{kind:?}"
+            );
+        }
     }
 }

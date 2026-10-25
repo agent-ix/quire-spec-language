@@ -886,7 +886,8 @@ fn a_variant_form_names_a_non_identifier_case_by_its_exact_bytes() {
             encoder
                 .encode(&grade)
                 .expect("a variant value encodes")
-                .to_json(),
+                .to_json()
+                .expect("encodes"),
             form,
             "{case}"
         );
@@ -1479,7 +1480,10 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
         panic!("present");
     };
     let encoded = encoder.encode(&tier).expect("a variant value encodes");
-    assert_eq!(encoded.to_json(), variant_json("Tier", "Gold"));
+    assert_eq!(
+        encoded.to_json().expect("encodes"),
+        variant_json("Tier", "Gold")
+    );
 
     let FieldValue::Present(backup) = replay.slot(&closure, "backup") else {
         panic!("present");
@@ -1499,7 +1503,7 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
         ))
         .expect("an Option of a variant encodes");
     assert_eq!(
-        present.to_json(),
+        present.to_json().expect("encodes"),
         json!({"present": variant_json("Tier", "Standard")})
     );
 
@@ -1509,7 +1513,8 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     let written_history = encoder
         .encode(&history)
         .expect("a sequence encodes")
-        .to_json();
+        .to_json()
+        .expect("encodes");
     assert_eq!(
         written_history,
         json!({"sequence": [variant_json("Tier", "Gold"), variant_json("Tier", "Standard")]})
@@ -1571,7 +1576,8 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
         encoder
             .encode(&settings)
             .expect("a record encodes")
-            .to_json(),
+            .to_json()
+            .expect("encodes"),
         json!({"record": {"type": id("Settings"), "fields": {
             "size": {"integer": "3"},
             "tier": variant_json("Tier", "Standard"),
@@ -1761,7 +1767,7 @@ fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
         ))
         .expect("a bag of Text encodes");
     assert_eq!(
-        bag.to_json(),
+        bag.to_json().expect("encodes"),
         json!({"bag": [element("\u{e9}"), element("\u{e9}")]})
     );
     let sequence = encoder
@@ -1772,7 +1778,7 @@ fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
         ))
         .expect("a sequence of Text encodes");
     assert_eq!(
-        sequence.to_json(),
+        sequence.to_json().expect("encodes"),
         json!({"sequence": [element("\u{e9}"), element("e\u{301}")]})
     );
 
@@ -1797,7 +1803,10 @@ fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
     let set = encoder
         .encode(&integers(CollectionKind::Set, &["9", "10"], &mut meter))
         .expect("a set of integers encodes");
-    assert_eq!(set.to_json(), json!({"set": written(&["10", "9"])}));
+    assert_eq!(
+        set.to_json().expect("encodes"),
+        json!({"set": written(&["10", "9"])})
+    );
     let bag = encoder
         .encode(&integers(
             CollectionKind::Bag,
@@ -1805,7 +1814,10 @@ fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
             &mut meter,
         ))
         .expect("a bag of integers encodes");
-    assert_eq!(bag.to_json(), json!({"bag": written(&["10", "9", "9"])}));
+    assert_eq!(
+        bag.to_json().expect("encodes"),
+        json!({"bag": written(&["10", "9", "9"])})
+    );
     let ordered = encoder
         .encode(&integers(
             CollectionKind::OrderedSet,
@@ -1814,7 +1826,7 @@ fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
         ))
         .expect("an ordered set of integers encodes");
     assert_eq!(
-        ordered.to_json(),
+        ordered.to_json().expect("encodes"),
         json!({"ordered-set": written(&["9", "10"])})
     );
 }
