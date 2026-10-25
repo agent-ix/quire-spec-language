@@ -1572,7 +1572,7 @@ fn step_read(
             };
             let name = NameForm {
                 name: format!("{}::{operation}", alias.as_str()),
-                segments: vec![alias.as_str().to_owned(), operation.clone()],
+                segments: vec![alias.as_str().to_owned(), operation.clone()].into(),
                 span,
             };
             let (resolved, declaration) =

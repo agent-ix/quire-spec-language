@@ -156,7 +156,7 @@ fn admitted_owner_fixture(
 }
 
 fn claim_level(machine: &mut Machine<'_, '_>) {
-    machine.frames = vec![vec![]];
+    set_frames(machine, vec![vec![]]);
     machine.iterations = 0;
     machine.trail = Some(Trail::new(
         super::super::s6a::separation::ObservationIdentity {
@@ -289,6 +289,19 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
     )
 }
 
+fn set_values(machine: &mut Machine<'_, '_>, values: Vec<Value>) {
+    machine.values = values;
+    machine.value_guard_provenance = vec![false; machine.values.len()];
+}
+
+fn set_frames(machine: &mut Machine<'_, '_>, frames: Vec<Vec<Option<Value>>>) {
+    machine.frame_guard_provenance = frames
+        .iter()
+        .map(|frame| vec![false; frame.len()])
+        .collect();
+    machine.frames = frames;
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
@@ -306,7 +319,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         ObjectEnvironment::default(),
         [],
         {
-            m.values.push(Value::Reference(reference()));
+            m.push_value(Value::Reference(reference()), false);
             m.apply(node.root())
         }
     );
@@ -328,7 +341,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         ObjectEnvironment::default(),
         [ChargePoint::DispatchSelect],
         {
-            m.values.push(Value::Reference(foreign.clone()));
+            m.push_value(Value::Reference(foreign.clone()), false);
             m.apply(node.root())
         }
     );
@@ -338,7 +351,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         &ObjectEnvironment::default(),
         ChargePoint::DispatchSelect,
         |m| {
-            m.values.push(Value::Reference(foreign.clone()));
+            m.push_value(Value::Reference(foreign.clone()), false);
             m.apply(node.root())
         },
     );
@@ -368,7 +381,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
             [ChargePoint::DispatchSelect],
             {
                 m.dispatch_tables = &tables;
-                m.values.push(Value::Reference(reference()));
+                m.push_value(Value::Reference(reference()), false);
                 m.apply(node.root())
             }
         );
@@ -378,7 +391,7 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
             ChargePoint::DispatchSelect,
             |m| {
                 m.dispatch_tables = &tables;
-                m.values.push(Value::Reference(reference()));
+                m.push_value(Value::Reference(reference()), false);
                 m.apply(node.root())
             },
         );
@@ -390,8 +403,8 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
         ObjectEnvironment::default(),
         [],
         {
-            m.frames.push(vec![]);
-            m.values.push(Value::Boolean(true));
+            m.push_frame(vec![], vec![]);
+            m.push_value(Value::Boolean(true), false);
             m.step(Task::DispatchGuard(Box::new(DispatchGuard {
                 body_function: usize::MAX,
                 arguments: vec![Value::Reference(reference())],
@@ -438,7 +451,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
         )];
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let mut machine = Machine::new(graph.scope(), graph, &objects, &mut meter, &tables);
-        machine.values.push(Value::Reference(receiver.clone()));
+        machine.push_value(Value::Reference(receiver.clone()), false);
         machine
             .apply(node.root())
             .unwrap_or_else(|_| panic!("linked dispatch"));
@@ -460,10 +473,8 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
         &mut meter,
         graph.dispatch_tables(),
     );
-    machine
-        .frames
-        .push(vec![Some(Value::Reference(receiver.clone()))]);
-    machine.values.push(Value::Boolean(true));
+    machine.push_frame(vec![Some(Value::Reference(receiver.clone()))], vec![]);
+    machine.push_value(Value::Boolean(true), false);
     machine
         .step(Task::DispatchGuard(Box::new(DispatchGuard {
             body_function: 0,
@@ -496,7 +507,7 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
         &mut meter,
         graph.dispatch_tables(),
     );
-    machine.values.push(Value::Reference(receiver));
+    machine.push_value(Value::Reference(receiver), false);
     machine
         .apply(node.root())
         .unwrap_or_else(|_| panic!("local callable"));
@@ -683,7 +694,7 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
     let node = body(|ids| NodeKind::Quantity(ArithmeticOperator::Add, ids[0], ids[1]));
     probe!("quantity-operation-rejected", m, [], {
         m.units = UnitScope::new(&units);
-        m.values = vec![left.clone(), right.clone()];
+        set_values(m, vec![left.clone(), right.clone()]);
         m.apply(node.root())
     });
     probe!("ordered-quantity-comparison-rejected", m, [], {
@@ -716,7 +727,7 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
             &left
         )
         .unwrap_or_else(|_| panic!("same-unit comparison")));
-    machine.values = vec![left.clone(), left.clone()];
+    set_values(&mut machine, vec![left.clone(), left.clone()]);
     machine
         .apply(node.root())
         .unwrap_or_else(|_| panic!("same-unit addition"));
@@ -832,7 +843,7 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
 fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
     let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
     probe!("evaluation-result-stack-invalid", m, [], {
-        m.values.push(Value::Boolean(false));
+        m.push_value(Value::Boolean(false), false);
         m.drive(literal.root()).map(|_| ()).map_err(Halt::Fault)
     });
     let field = FieldRef::new(reference().object_type(), "missing");
@@ -846,7 +857,7 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         vec![Value::Boolean(true), Value::Reference(reference())],
     ] {
         probe!("reaches-reference-value-expected", m, [], {
-            m.values = values;
+            set_values(m, values);
             m.apply(reaches.root())
         });
     }
@@ -857,11 +868,11 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         derefed: false,
     });
     probe!("attribute-reference-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.apply(attribute.root())
     });
     probe!("attribute-slot-unresolved", m, [], {
-        m.values.push(Value::Reference(reference()));
+        m.push_value(Value::Reference(reference()), false);
         m.apply(attribute.root())
     });
     let dispatch = body(|ids| NodeKind::Dispatch {
@@ -871,7 +882,7 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
         arguments: vec![],
     });
     probe!("dispatch-operation-unresolved", m, [], {
-        m.values.push(Value::Reference(reference()));
+        m.push_value(Value::Reference(reference()), false);
         m.apply(dispatch.root())
     });
     let callee = qsl_semantics::library::PackageNodeKey::new(
@@ -904,7 +915,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
         ValueType::Boolean,
     );
     probe!("all-instances-collection-result-expected", m, [], {
-        m.values.push(population.clone());
+        m.push_value(population.clone(), false);
         m.apply(all.root())
     });
     let lookup = body(|ids| NodeKind::Lookup {
@@ -913,7 +924,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
         absence: qsl_foundation::absence::AbsenceMode::Empty,
     });
     probe!("query-population-type-expected", m, [], {
-        m.values = vec![population.clone(), Value::Boolean(true)];
+        set_values(m, vec![population.clone(), Value::Boolean(true)]);
         m.apply(lookup.root())
     });
     let lookup = CheckedBody::fixture(
@@ -933,7 +944,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
             .unwrap(),
         [],
         {
-            m.values = vec![population.clone(), Value::Boolean(true)];
+            set_values(m, vec![population.clone(), Value::Boolean(true)]);
             m.apply(lookup.root())
         }
     );
@@ -958,7 +969,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
                 .unwrap(),
             [],
             {
-                m.values = vec![population.clone(), Value::Reference(reference())];
+                set_values(m, vec![population.clone(), Value::Reference(reference())]);
                 m.apply(lookup.root())
             }
         );
@@ -977,10 +988,13 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         )
     });
     probe!("ieee-profile-unresolved", m, [], {
-        m.values = vec![
-            Value::Float(quire_exact::IeeeValue::binary32(0)),
-            Value::Float(quire_exact::IeeeValue::binary32(0)),
-        ];
+        set_values(
+            m,
+            vec![
+                Value::Float(quire_exact::IeeeValue::binary32(0)),
+                Value::Float(quire_exact::IeeeValue::binary32(0)),
+            ],
+        );
         m.apply(ieee.root())
     });
     let domain = quire_exact::RationalDomain::new(
@@ -990,12 +1004,11 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
     .unwrap();
     let convert = body(|ids| NodeKind::IeeeToRational(ids[0], domain));
     probe!("ieee-conversion-float-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.apply(convert.root())
     });
     probe!("ieee-profile-unresolved", m, [], {
-        m.values
-            .push(Value::Float(quire_exact::IeeeValue::binary32(0)));
+        m.push_value(Value::Float(quire_exact::IeeeValue::binary32(0)), false);
         m.apply(convert.root())
     });
     let lock = qsl_semantics::value::DefinitionLock::pinned();
@@ -1026,10 +1039,13 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         ObjectEnvironment::default(),
         [],
         {
-            m.values = vec![
-                Value::Float(quire_exact::IeeeValue::binary32(0)),
-                Value::Float(quire_exact::IeeeValue::binary64(0)),
-            ];
+            set_values(
+                m,
+                vec![
+                    Value::Float(quire_exact::IeeeValue::binary32(0)),
+                    Value::Float(quire_exact::IeeeValue::binary64(0)),
+                ],
+            );
             m.apply(ieee.root())
         }
     );
@@ -1045,10 +1061,13 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
         optional: false,
     });
     probe!("field-slot-unresolved", m, [], {
-        m.values.push(quire_exact::from_admitted_slots(
-            key,
-            vec![FieldValue::Present(Value::Boolean(true))].into_boxed_slice(),
-        ));
+        m.push_value(
+            quire_exact::from_admitted_slots(
+                key,
+                vec![FieldValue::Present(Value::Boolean(true))].into_boxed_slice(),
+            ),
+            false,
+        );
         m.apply(field.root())
     });
     let declaration = quire_semantic_value::declaration::CompositeDeclaration::new(
@@ -1337,7 +1356,7 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
             },
             value_type,
         );
-        machine.values.push(Value::Reference(receiver.clone()));
+        machine.push_value(Value::Reference(receiver.clone()), false);
         machine
             .apply(attribute.root())
             .unwrap_or_else(|_| panic!("admitted attribute read"));
@@ -1635,34 +1654,34 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
         m.pop_many(2).map(|_| ())
     });
     probe!("integer-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.pop_integer().map(|_| ())
     });
     probe!("boolean-value-expected", m, [], {
-        m.values.push(Value::Integer(Integer::one()));
+        m.push_value(Value::Integer(Integer::one()), false);
         m.pop_boolean().map(|_| ())
     });
     probe!("collection-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.pop_collection().map(|_| ())
     });
     probe!("rational-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.pop_rational().map(|_| ())
     });
     probe!("decimal-value-expected", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.pop_decimal().map(|_| ())
     });
     for frame in [vec![], vec![vec![]]] {
         probe!("evaluation-local-slot-unresolved", m, [], {
-            m.frames = frame;
+            set_frames(m, frame);
             m.slot(0).map(|_| ())
         });
     }
     let local = body(|_| NodeKind::Local(0));
     probe!("evaluation-local-value-unbound", m, [], {
-        m.frames.push(vec![None]);
+        m.push_frame(vec![None], vec![]);
         m.eval(local.root())
     });
     probe!("evaluation-return-frame-missing", m, [], {
@@ -1670,7 +1689,7 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
     });
     let root = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
     probe!("evaluation-return-frame-missing", m, [], {
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.step(Task::DispatchGuard(Box::new(DispatchGuard {
             body_function: 0,
             arguments: vec![],
@@ -1728,16 +1747,19 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
         &mut meter,
         graph.dispatch_tables(),
     );
-    machine.values.push(Value::Boolean(true));
+    machine.push_value(Value::Boolean(true), false);
     assert!(matches!(
         machine.pop().unwrap_or_else(|_| panic!("pop")),
         Value::Boolean(true)
     ));
-    machine.values = vec![
-        Value::Boolean(false),
-        Value::Integer(Integer::one()),
-        Value::Boolean(true),
-    ];
+    set_values(
+        &mut machine,
+        vec![
+            Value::Boolean(false),
+            Value::Integer(Integer::one()),
+            Value::Boolean(true),
+        ],
+    );
     let values = machine.pop_many(2).unwrap_or_else(|_| panic!("pop_many"));
     assert!(
         matches!(values.as_slice(), [Value::Integer(value), Value::Boolean(true)] if value == &Integer::one())
@@ -1746,7 +1768,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
     assert!(!machine
         .pop_boolean()
         .unwrap_or_else(|_| panic!("Boolean extraction")));
-    machine.values.push(Value::Integer(Integer::one()));
+    machine.push_value(Value::Integer(Integer::one()), false);
     assert_eq!(
         machine
             .pop_integer()
@@ -1754,7 +1776,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
         Integer::one()
     );
     let rational = Rational::new(Integer::one(), Integer::from(2_i64)).unwrap();
-    machine.values.push(Value::Rational(rational.clone()));
+    machine.push_value(Value::Rational(rational.clone()), false);
     assert_eq!(
         machine
             .pop_rational()
@@ -1762,7 +1784,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
         rational
     );
     let decimal = Decimal::new(Integer::from(125_i64), 2);
-    machine.values.push(Value::Decimal(decimal.clone()));
+    machine.push_value(Value::Decimal(decimal.clone()), false);
     let extracted = machine
         .pop_decimal()
         .unwrap_or_else(|_| panic!("Decimal extraction"));
@@ -1772,17 +1794,17 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
     );
     assert_eq!(extracted.normalized().scale(), 2);
     let source = collection(vec![Value::Boolean(true)]);
-    machine.values.push(Value::Collection(source.clone()));
+    machine.push_value(Value::Collection(source.clone()), false);
     assert!(Arc::ptr_eq(
         &machine
             .pop_collection()
             .unwrap_or_else(|_| panic!("collection extraction")),
         &source
     ));
-    machine.frames.push(vec![
-        Some(Value::Boolean(true)),
-        Some(Value::Boolean(false)),
-    ]);
+    machine.push_frame(
+        vec![Some(Value::Boolean(true)), Some(Value::Boolean(false))],
+        vec![],
+    );
     assert!(matches!(
         machine.slot(0).unwrap_or_else(|_| panic!("bound slot")),
         Some(Value::Boolean(true))
@@ -1809,7 +1831,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
             quire_semantic_value::checking::CheckingLimits::default(),
         )
         .unwrap_or_else(|_| panic!("typed branch fixture"));
-    machine.values.push(Value::Boolean(false));
+    machine.push_value(Value::Boolean(false), false);
     machine
         .step(Task::Branch(branch.root()))
         .unwrap_or_else(|_| panic!("checked branch"));
@@ -1971,7 +1993,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         ),
     ] {
         probe!(expected, m, [], {
-            m.values = values;
+            set_values(m, values);
             m.apply(root.root())
         });
     }
@@ -1989,8 +2011,10 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         m,
         [ChargePoint::CollectionVisit],
         {
-            m.values
-                .push(Value::Collection(collection(vec![Value::Boolean(true)])));
+            m.push_value(
+                Value::Collection(collection(vec![Value::Boolean(true)])),
+                false,
+            );
             m.apply(root.root())
         }
     );
@@ -2000,8 +2024,10 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         &ObjectEnvironment::default(),
         ChargePoint::CollectionVisit,
         |m| {
-            m.values
-                .push(Value::Collection(collection(vec![Value::Boolean(true)])));
+            m.push_value(
+                Value::Collection(collection(vec![Value::Boolean(true)])),
+                false,
+            );
             m.apply(root.root())
         },
     );
@@ -2009,7 +2035,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
     probe!("query-population-type-expected", m, [], {
         // Use a genuine binding identity; failure precedes population resolution.
         let binding = super::tests::population_binding(Some(3));
-        m.values.push(Value::Population(binding.population_id()));
+        m.push_value(Value::Population(binding.population_id()), false);
         m.apply(root.root())
     });
 }
@@ -2142,7 +2168,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         let mut i = iteration(literal.root());
         i.awaiting = true;
         i.next = 1;
-        m.values.push(Value::Boolean(true));
+        m.push_value(Value::Boolean(true), false);
         m.iterate(i)
     });
     probe!(
@@ -2187,7 +2213,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
             let mut i = iteration(root.root());
             i.awaiting = true;
             i.next = 1;
-            m.values.push(wrong);
+            m.push_value(wrong, false);
             m.iterate(i)
         });
     }
@@ -2202,7 +2228,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         i.awaiting = true;
         i.next = 1;
         i.accumulator = Some(Value::Boolean(true));
-        m.values.push(Value::Integer(Integer::one()));
+        m.push_value(Value::Integer(Integer::one()), false);
         m.iterate(i)
     });
     probe!("sum-accumulator-value-invalid", m, [], {
@@ -2243,7 +2269,7 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
             let mut i = iteration(query.root());
             i.awaiting = true;
             i.next = next;
-            m.values.push(Value::Boolean(true));
+            m.push_value(Value::Boolean(true), false);
             m.iterate(i)
         });
         probe!("query-stop-position-invalid", m, [], {
@@ -2314,7 +2340,7 @@ fn scalar_query_resume_retains_the_valid_result_and_preserves_earlier_stops() {
         pending.awaiting = true;
         pending.next = 1;
         machine.iterations = 1;
-        machine.values.push(result.clone());
+        machine.push_value(result.clone(), false);
         machine
             .iterate(pending)
             .unwrap_or_else(|_| panic!("valid scalar query resume"));
@@ -2341,7 +2367,7 @@ fn scalar_query_resume_retains_the_valid_result_and_preserves_earlier_stops() {
                 pending.awaiting = true;
                 pending.next = 1;
                 machine.iterations = 1;
-                machine.values.push(result.clone());
+                machine.push_value(result.clone(), false);
                 machine.iterate(pending)
             },
         );
@@ -2362,7 +2388,7 @@ fn fold_resume_and_finish_retain_the_real_accumulator_and_earlier_stop() {
         machine.iterations = 1;
         if resume {
             pending.awaiting = true;
-            machine.values.push(Value::Boolean(true));
+            machine.push_value(Value::Boolean(true), false);
             machine.iterate(pending)
         } else {
             machine.finish(*pending)

@@ -449,13 +449,13 @@ pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsRef
         [scale, offset] => (scale, Some(exact_number(cst, offset)?)),
         _ => return Err(unexpected(node)),
     };
-    Ok(DeclarationForm::Unit(UnitForm {
+    Ok(DeclarationForm::Unit(Box::new(UnitForm {
         name: declared_name(&items, node)?,
         dimension: name_form(cst, dimension)?,
         scale: exact_number(cst, scale)?,
         target,
         offset,
-    }))
+    })))
 }
 
 /// `type Name = T;` (FR-091 "Alias form").

@@ -1687,7 +1687,7 @@ mod tests {
                 },
                 unit: qsl_forms::NameForm {
                     name: "ms".to_owned(),
-                    segments: vec!["ms".to_owned()],
+                    segments: vec!["ms".to_owned()].into(),
                     span: qsl_foundation::Span { start: 0, end: 0 },
                 },
                 span: qsl_foundation::Span { start: 0, end: 0 },

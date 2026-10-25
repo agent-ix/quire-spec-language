@@ -252,7 +252,10 @@ fn reserved_ieee_intrinsic_calls_refuse_with_the_named_missing_identity() {
         let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
             panic!("the intrinsic refuses at checking");
         };
-        assert!(matches!(&refusals[0].cause, CheckCause::MissingName(name) if name == &identity));
+        assert!(matches!(
+            &refusals[0].cause,
+            CheckCause::MissingQualifiedName(name) if name.name == identity
+        ));
     }
 }
 
