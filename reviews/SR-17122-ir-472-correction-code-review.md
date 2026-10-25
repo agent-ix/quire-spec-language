@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-Reviewed PR #1510 at final candidate 1c7cfd652442a2610023b0e9e00209f382b102d7. The correction adds an admitted `Status` enum to both checker invocations and carries the earlier PR #1503 review artifacts with fixed dispositions. Main c4c3482eb independently supplied the xtask fixture timestamp fix, so that file is absent from this PR's final diff.
+Reviewed PR #1510 at final candidate 7727757881c95d4f767a0ade991247b2ed0d2f48. The correction adds an admitted `Status` enum to both checker invocations and carries the earlier PR #1503 review artifacts with fixed dispositions. Main independently supplied the xtask fixture timestamp fix, so that file is absent from this PR's final diff.
 
 ## Verdict
 
@@ -29,10 +29,11 @@ Reviewed PR #1510 at final candidate 1c7cfd652442a2610023b0e9e00209f382b102d7. T
 
 ## Checks
 
-- `git diff origin/main...HEAD --name-only` at 1c7cfd652 lists the enum integration test and four review artifacts. `git diff origin/main HEAD -- xtask/src/test_suites.rs` is empty because main c4c3482eb absorbed the independently reviewed timestamp change.
+- `git diff origin/main...HEAD --name-only` at 772775788 against current main 2662aecf lists the enum integration test and four review artifacts. `git diff origin/main HEAD -- xtask/src/test_suites.rs` is empty. The enum test's Git blob matches the previously reviewed e6e45e491 blob byte for byte.
 - `cargo fmt --check -- qsl-semantics/tests/it/enum_type_admission.rs` passed.
 - All four review artifacts in the final PR diff were inspected. The updated correction reviews passed targeted `quire validate`; the final aggregate gate remains with the code lead.
 - The focused xtask real Cargo test passed at earlier head e365525fdbb2f78e8821643e5e936188b02f9514. That code is now supplied by main and is outside this PR's changed scope.
+- `git diff origin/main...HEAD --check` passed at 772775788.
 
 ## Findings
 

@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-Reviewed the corrected enum test against RT TC-024 procedure 3 and the QSL requirement and test case previously tagged by mistake at final candidate 1c7cfd652442a2610023b0e9e00209f382b102d7. The previously reviewed xtask helper change is now supplied by main c4c3482eb and is absent from the final PR diff.
+Reviewed the corrected enum test against RT TC-024 procedure 3 and the QSL requirement and test case previously tagged by mistake at final candidate 7727757881c95d4f767a0ade991247b2ed0d2f48. The previously reviewed xtask helper change is now supplied by main and is absent from the final PR diff.
 
 ## Verdict
 
@@ -32,6 +32,7 @@ Plan completion: not assessed.
 - No new Test Matrix row was hand-written. Matrix-wide coverage of FR-091-AC-28 was outside this corrective PR.
 - Both carried SpecReview files passed targeted `quire validate`.
 - The earlier focused xtask real Cargo test passed at e365525fdbb2f78e8821643e5e936188b02f9514; main now owns that code, and the final PR has no xtask change.
+- Against current main 2662aecf, the final PR diff contains only the enum test and four review artifacts. The enum test has the same Git blob as the reviewed e6e45e491 version; the original fixed dispositions remain accurate.
 
 ## Findings
 
