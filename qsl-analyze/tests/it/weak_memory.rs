@@ -858,6 +858,206 @@ fn ordering_mismatches_are_accumulated_at_the_first_state() {
     }));
 }
 
+/// The V-8 failure shapes of `case` under `model`, or none when it explores.
+fn weak_shapes(case: &Case, model: MemoryModelName) -> Option<Vec<Json>> {
+    let selection = [select("SB::Both", model)];
+    match case.check(&selection, ModelCheckItem::DeadlockFreedom, None) {
+        ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            ..
+        } => {
+            let failures: Json =
+                serde_json::from_str(&shape.failures_text().expect("failure list text"))
+                    .expect("valid failure list JSON");
+            Some(
+                failures
+                    .as_array()
+                    .expect("a failure list")
+                    .iter()
+                    .map(|failure| failure["shape"].clone())
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
+}
+
+/// The V-8 failure entries (`shape`, `site`, `transition`) of `case` under
+/// `model`, in settled order.
+fn weak_entries(case: &Case, model: MemoryModelName) -> Option<Vec<Json>> {
+    let selection = [select("SB::Both", model)];
+    match case.check(&selection, ModelCheckItem::DeadlockFreedom, None) {
+        ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            ..
+        } => {
+            let failures: Json =
+                serde_json::from_str(&shape.failures_text().expect("failure list text"))
+                    .expect("valid failure list JSON");
+            failures.as_array().cloned()
+        }
+        _ => None,
+    }
+}
+
+/// The wire form of an `ordering-mismatch` shape.
+fn mismatch(access: &str, ordering: Json) -> Json {
+    json!({"type": "ordering-mismatch", "access": access, "ordering": ordering})
+}
+
+/// FR-220-AC-14 (TC-665 step 13): under `tso` and under `ra` the pre-check
+/// settles `ordering-mismatch` for a load with `release` or `acq_rel`, a
+/// store with `acquire` or `acq_rel`, an RMW with no ordering and a local
+/// access with `release`, and admits each under `sc`. A well-ordered attempt
+/// contributes nothing.
+#[trace("TC-665", "FR-220-AC-14")]
+#[test]
+fn each_ordering_mismatch_settles_its_shape_under_tso_and_ra() {
+    // `first` beside a read of `x` with ordering `other` in the other
+    // branch: a relaxed read makes `x` shared when `first` writes it, and
+    // the unordered read keeps the local case's only mismatch its own.
+    let one_branch = |first: String, other: &str| {
+        let run = format!(
+            "parallel Both {{ branch left sequence L {{ {first} }} branch right sequence R {{ {} }} }} \
+             join all [left, right];",
+            attempt("Lx", "c", "Core::read2", other, "ReadsX2, Read2"),
+        );
+        Case::new(&(contracts() + &protocol("SB", &run)))
+    };
+    let cases = [
+        (
+            Case::new(&sb_unit(&sb_run("", "relaxed", "release"))),
+            vec![mismatch("load", json!("release")); 2],
+        ),
+        (
+            Case::new(&sb_unit(&sb_run("", "relaxed", "acq_rel"))),
+            vec![mismatch("load", json!("acq_rel")); 2],
+        ),
+        (
+            Case::new(&sb_unit(&sb_run("", "acquire", "relaxed"))),
+            vec![mismatch("store", json!("acquire")); 2],
+        ),
+        (
+            Case::new(&sb_unit(&sb_run("", "acq_rel", "relaxed"))),
+            vec![mismatch("store", json!("acq_rel")); 2],
+        ),
+        (
+            one_branch(
+                attempt("Ad", "w", "Cell::add", "", "AddX, AddOne"),
+                "relaxed",
+            ),
+            vec![mismatch("rmw", Json::Null)],
+        ),
+        (
+            one_branch(attempt("Cp", "c", "Core::copy", "release", "CopyR"), ""),
+            vec![mismatch("local", json!("release"))],
+        ),
+    ];
+    for (case, expected) in &cases {
+        for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+            assert_eq!(weak_shapes(case, model).as_ref(), Some(expected));
+        }
+        assert!(
+            matches!(
+                case.check(&[], ModelCheckItem::DeadlockFreedom, None),
+                ModelCheckOutcome::Holds { .. }
+            ),
+            "admitted under sc"
+        );
+    }
+    let ordered = one_branch(
+        attempt("Ad", "w", "Cell::add", "acq_rel", "AddX, AddOne"),
+        "relaxed",
+    );
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        assert!(
+            matches!(
+                ordered.check(
+                    &[select("SB::Both", model)],
+                    ModelCheckItem::DeadlockFreedom,
+                    None
+                ),
+                ModelCheckOutcome::Holds { .. }
+            ),
+            "a well-ordered RMW is admitted under {model:?}"
+        );
+    }
+}
+
+/// FR-220-AC-14: an `acquire` attempt writing two shared fields contributes
+/// its `multi-location` entry and no ordering entry, and the pre-check goes
+/// on to collect a `release` load's `ordering-mismatch`.
+#[trace("TC-665", "FR-220-AC-14")]
+#[test]
+fn a_multi_location_attempt_is_not_tested_for_ordering_and_the_pre_check_continues() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} }} \
+         branch right sequence R {{ {} {} }} }} join all [left, right];",
+        attempt("Bx", "w", "Cell::both", "acquire", "BothX, BothOne"),
+        attempt("Lx", "c", "Core::read2", "release", "ReadsX2, Read2"),
+        attempt("Lw", "c", "Core::read3", "relaxed", "ReadsX3, ReadW"),
+    );
+    let case = Case::new(&(contracts() + &protocol("SB", &run)));
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        let entries = weak_entries(&case, model).expect("settles V-8");
+        let found: Vec<(&str, &str, Json)> = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry["site"].as_str().expect("a site"),
+                    entry["shape"]["type"].as_str().expect("a shape type"),
+                    entry["shape"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0].0, "Both/left/L/Bx");
+        assert_eq!(found[0].1, "multi-location");
+        assert_eq!(found[1].0, "Both/right/R/Lx");
+        assert_eq!(found[1].2, mismatch("load", json!("release")));
+    }
+}
+
+/// FR-220-AC-14: the collected failures come in canonical order, by the
+/// canonical bytes of each transition, which here differs from declaration
+/// order: the stores precede the loads, and each pair is ordered by receiver.
+#[trace("TC-665", "FR-220-AC-14")]
+#[test]
+fn ordering_mismatches_are_collected_in_canonical_order() {
+    let case = Case::new(&sb_unit(&sb_run("", "acquire", "release")));
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        let entries = weak_entries(&case, model).expect("settles V-8");
+        let found: Vec<(&str, Json)> = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry["site"].as_str().expect("a site"),
+                    entry["shape"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                ("Both/left/L/Sx", mismatch("store", json!("acquire"))),
+                ("Both/right/R/Sy", mismatch("store", json!("acquire"))),
+                ("Both/right/R/Lx", mismatch("load", json!("release"))),
+                ("Both/left/L/Ly", mismatch("load", json!("release"))),
+            ]
+        );
+        let bytes: Vec<&[u8]> = entries
+            .iter()
+            .map(|entry| {
+                entry["transition"]
+                    .as_str()
+                    .expect("a transition")
+                    .as_bytes()
+            })
+            .collect();
+        assert!(bytes.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+}
+
 /// FR-220-AC-11 (TC-665 step 10): EN-1 classifies `SB` under `tso` and
 /// under `ra` with `Sx` and `Sy` as stores, `Ly` and `Lx` as loads, the
 /// cells' `v` shared and the core's `r1` and `r2` branch-local.
