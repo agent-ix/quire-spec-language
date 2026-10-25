@@ -246,6 +246,10 @@ fn malformed_safety_keys_refuse_before_membership() {
             deadlock_key(r#"["accept"]"#),
             KeyRefusal::WrongForm("accept".to_owned()),
         ),
+        (
+            deadlock_key(r#"["each-buchi"]"#),
+            KeyRefusal::WrongForm("each-buchi".to_owned()),
+        ),
         (deadlock_key(r#"["safety",0]"#), KeyRefusal::Members),
         (deadlock_key(r#"["safety"]"#), KeyRefusal::Members),
         (deadlock_key(r#"["safety",[],[]]"#), KeyRefusal::Members),
@@ -862,7 +866,14 @@ fn safety_states_refuse_foreign_contexts_and_other_forms() {
         future.admit(foreign.as_bytes()).map(|_| ()),
         Err(KeyRefusal::ForeignContext)
     );
-    for tag in ["bounded", "accept", "reject", "buchi", "guarded-buchi"] {
+    for tag in [
+        "bounded",
+        "accept",
+        "reject",
+        "buchi",
+        "guarded-buchi",
+        "each-buchi",
+    ] {
         let other = states_key(&format!(r#"["{tag}"]"#));
         assert_eq!(
             future.admit(other.as_bytes()).map(|_| ()),
@@ -1423,9 +1434,24 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
     let plain = buchi(LIVE, "on origin");
     let guarded = buchi(LIVE, GUARD);
     let branch = r#"[[[[],"negative"]],[],[],[]]"#;
+    let activation = r#"[[[[],"negative"]],[],[],[["activation"]]]"#;
     let empty = "[[],[],[],[]]";
     let in_context = |activation: &str, body: String| buchi_key(activation, &body);
     let cases = [
+        // a supplied `["activation"]` member, which is derived from the phase
+        (
+            &plain,
+            in_context("infinite", format!(r#"["buchi",{activation}]"#)),
+            KeyRefusal::Members,
+        ),
+        (
+            &guarded,
+            in_context(
+                "each-when",
+                format!(r#"["guarded-buchi","active",{activation}]"#),
+            ),
+            KeyRefusal::Members,
+        ),
         (
             &plain,
             in_context(
@@ -1552,7 +1578,7 @@ fn buchi_keys_refuse_the_wrong_form_phase_and_waiting_facts() {
 /// `eventually[0,1]` row with its `accept` and `reject` successors, the
 /// deadlines 1 and 3 that retain deadline 1, two distinct interval
 /// occurrences, the general offset set and its reversal, the TP-4 `buchi`
-/// carry, both `guarded-buchi` rows and the deadlock item's complete key
+/// carry, both `guarded-buchi` rows, both `each-buchi` rows and the deadlock item's complete key
 /// with its refused profile and activation replacements. Reversing the
 /// insertion order of subsets and windows leaves the bytes equal, distinct
 /// occurrence paths and differing live facts leave them unequal, and no
@@ -1784,6 +1810,32 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
         assert_eq!(
             text_of(&guarded.key(&state).expect("encodes")),
             buchi_key("each-when", body)
+        );
+    }
+
+    // Unguarded `on each` TP-4: the activation is "each", the waiting state
+    // is empty and the active one carries the negated root; neither is the
+    // phase-less origin `buchi` key.
+    let each = buchi(LIVE, "on each (q: Counter)");
+    for (state, body) in [
+        (
+            BuchiState::Each(BuchiPhase::Waiting, Configuration::default()),
+            r#"["each-buchi","waiting",[[],[],[],[]]]"#,
+        ),
+        (
+            BuchiState::Each(
+                BuchiPhase::Active,
+                Configuration {
+                    obligations: vec![Obligation::Current(self::at(&[], Polarity::Negative))],
+                    ..Configuration::default()
+                },
+            ),
+            r#"["each-buchi","active",[[[[],"negative"]],[],[],[]]]"#,
+        ),
+    ] {
+        assert_eq!(
+            text_of(&each.key(&state).expect("encodes")),
+            buchi_key("each", body)
         );
     }
 
@@ -2411,6 +2463,20 @@ fn an_unguarded_on_each_tp4_clause_is_keyed_each_buchi() {
     assert_eq!(
         states.admit(active.as_bytes()).map(|(_, state)| state),
         Ok(BuchiState::Each(BuchiPhase::Active, carry))
+    );
+
+    // The derived `["activation"]` set is never a supplied member.
+    assert_eq!(
+        states
+            .admit(
+                key(
+                    "each-buchi",
+                    r#""active",[[[[],"negative"]],[],[],[["activation"]]]"#
+                )
+                .as_bytes()
+            )
+            .map(|_| ()),
+        Err(KeyRefusal::Members)
     );
 
     // The waiting state carries no window, though the shift window of the
