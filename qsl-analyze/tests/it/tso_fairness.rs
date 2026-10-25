@@ -19,8 +19,8 @@ use qsl_eval::fairness::{check_loop, EdgeLabel, Identity, LassoFairness, LoopSte
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    protocol_constraints, FairnessOrigin, MemorySelection, ProtocolFairness, ProtocolState,
-    ProtocolSystem, ProtocolTarget, ProtocolTransition, Ra, Sc, StepKind, Tso,
+    protocol_constraints, FairnessOrigin, MemoryModel, MemorySelection, ProtocolFairness,
+    ProtocolState, ProtocolSystem, ProtocolTarget, ProtocolTransition, Ra, Sc, StepKind, Tso,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
@@ -217,7 +217,7 @@ macro_rules! system {
 /// `SB` resolved to `tso` carries `fair weak each flush(left)` and
 /// `fair weak each flush(right)` with origin `memory` beside the three
 /// scheduler constraints; resolved to `sc` it carries no `memory` member.
-/// Not covered: the `ra` visibility member, which waits on QSL-933.
+/// The separate RA test below checks the visibility member.
 #[trace("TC-673")]
 #[trace("FR-228-AC-1")]
 #[test]
@@ -264,43 +264,12 @@ fn a_tso_clause_carries_flush_fairness_beside_the_scheduler_constraints() {
 }
 
 /// A reachable state and its steps, each with the index of its post-state.
-type Reach = (ProtocolState<Tso>, Vec<(ProtocolTransition, usize)>);
+type Reach<M> = (ProtocolState<M>, Vec<(ProtocolTransition, usize)>);
 
 /// The reachable states of `system` with each state's steps, breadth-first.
-fn reached(system: &ProtocolSystem<'_, Tso>) -> Vec<Reach> {
+fn reached<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reach<M>> {
     let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    let mut states: Vec<Reach> = Vec::new();
-    for state in system.initial() {
-        let key = system.state_key(&state).expect("a key").0;
-        known.insert(key, states.len());
-        states.push((state, Vec::new()));
-    }
-    let mut at = 0;
-    while at < states.len() {
-        let successors = system
-            .successors(&states[at].0)
-            .expect("expands")
-            .successors;
-        for (transition, next) in successors {
-            let key = system.state_key(&next).expect("a key").0;
-            let index = *known.entry(key).or_insert_with(|| {
-                states.push((next, Vec::new()));
-                states.len() - 1
-            });
-            states[at].1.push((transition, index));
-        }
-        at += 1;
-    }
-    states
-}
-
-/// A reachable RA state and its outgoing transitions.
-type RaReach = (ProtocolState<Ra>, Vec<(ProtocolTransition, usize)>);
-
-/// The reachable states of an RA protocol system, breadth-first.
-fn reached_ra(system: &ProtocolSystem<'_, Ra>) -> Vec<RaReach> {
-    let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    let mut states: Vec<RaReach> = Vec::new();
+    let mut states: Vec<Reach<M>> = Vec::new();
     for state in system.initial() {
         let key = system.state_key(&state).expect("a key").0;
         known.insert(key, states.len());
@@ -334,7 +303,7 @@ fn stale_load_lasso(
     usize,
     Vec<ProtocolTransition>,
 ) {
-    let states = reached_ra(system);
+    let states = reached(system);
     let (looped, load) = states
         .iter()
         .enumerate()
@@ -570,7 +539,7 @@ fn a_false_liveness_claim_over_tso_is_refuted_with_the_memory_constraints() {
 /// ADR-025 MK-2 (TC-672): the unflushed lasso over `Spin`, in which `w`'s buffer
 /// stays `[x := 1]` through `r`'s repeated load of `x`, refuses
 /// `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s
-/// constraint. Not covered: FR-227-AC-4's `ra` clause, which waits on QSL-933.
+/// constraint. The RA replay case is covered separately below.
 #[trace("TC-672")]
 #[test]
 fn replay_refuses_the_lasso_that_never_flushes_w() {
@@ -648,7 +617,7 @@ fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
         "the repeated stale read violates its visibility pair"
     );
 
-    let states = reached_ra(&system);
+    let states = reached(&system);
     let prefix: Vec<ModelStep<ProtocolTransition>> = stem
         .iter()
         .map(|(transition, at)| ModelStep {
