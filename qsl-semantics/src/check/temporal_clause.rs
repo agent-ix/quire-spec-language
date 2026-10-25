@@ -43,12 +43,10 @@
 //! `model-time`, its timed intervals are checked in exact rational time,
 //! and it is classified into one `TimedPropertyForm`.
 //!
-//! A `holds` condition is typed by [`condition::check_conditions`] once the
+//! The activation's `when` guard, each capture's initializer and each
+//! `holds` condition are typed by [`condition::check_conditions`] once the
 //! package's signatures are known, and the clause is emitted as FR-337's
-//! v2 temporal clause node. The activation's `when` and a capture's value
-//! are not checked: [`not_emitted`] refuses a clause that activates `on
-//! each` or declares a capture, so it is never compiled into a package
-//! that silently lacks them.
+//! v2 temporal clause node.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -444,6 +442,9 @@ pub struct CheckedTemporalClause {
     /// An `on each` activation's trigger binder: its name and resolved type,
     /// which is the `over` parameter's type (FR-337).
     trigger: Option<(String, ValueType)>,
+    /// The clause's captures in source order: each name and resolved
+    /// declared type (FR-337 "Captures at S3").
+    captures: Vec<(String, ValueType)>,
     fairness: Vec<FairnessConstraint>,
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
@@ -556,6 +557,14 @@ impl CheckedTemporalClause {
     pub fn trigger(&self) -> Option<(&str, &ValueType)> {
         self.trigger
             .as_ref()
+            .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// The clause's captures in source order, each by name and declared type
+    /// (FR-337 "Captures at S3").
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (&str, &ValueType)> {
+        self.captures
+            .iter()
             .map(|(name, value_type)| (name.as_str(), value_type))
     }
 
@@ -875,6 +884,10 @@ fn check_clause(
 
     let mut types: Vec<ValueType> = Vec::new();
     let mut trigger = None;
+    let mut captures = Vec::with_capacity(form.captures.len());
+    // The parameters before the first capture: `over`, and the trigger
+    // binder of an `on each` activation.
+    let binders = 1 + usize::from(matches!(form.activation, ActivationForm::Each { .. }));
     for (position, parameter) in parameters(form).into_iter().enumerate() {
         let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
             .map_err(|error| {
@@ -904,6 +917,21 @@ fn check_clause(
                 }));
             }
             trigger = Some((parameter.name.name.clone(), resolved.clone()));
+        } else if position >= binders {
+            // FR-337 "Captures at S3": a capture's name is new among the
+            // `over` parameter, the trigger binder and the earlier captures.
+            let first = parameters(form)
+                .into_iter()
+                .take(position)
+                .find(|earlier| earlier.name.name == parameter.name.name);
+            if let Some(first) = first {
+                return Err(refuse(TemporalCause::DuplicateCapture {
+                    name: parameter.name.name.clone(),
+                    first: first.name.span,
+                    span: parameter.name.span,
+                }));
+            }
+            captures.push((parameter.name.name.clone(), resolved.clone()));
         }
         types.push(resolved);
     }
@@ -1016,6 +1044,7 @@ fn check_clause(
         formula,
         activation,
         trigger,
+        captures,
         fairness,
         fairness_sources,
         protocol_fairness,
@@ -1544,15 +1573,12 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
-/// that declares no capture, names no protocol target and is not under the
-/// timed profile. S4 writes no capture, no emitted member names a protocol
-/// target, and S4 writes no timed interval (QSpec FR-370's timed form), so a
-/// clause with any of them is [`not_emitted`].
-pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
-    form.captures.is_empty()
-        && checked.protocol_fairness.is_empty()
-        && checked.time_binding.is_none()
+/// Whether S4 emits `checked` (FR-337, FR-212): one that names no protocol
+/// target and is not under the timed profile. No emitted member names a
+/// protocol target, and S4 writes no timed interval (QSpec FR-370's timed
+/// form), so a clause with either is [`not_emitted`].
+pub(crate) fn is_emitted(checked: &CheckedTemporalClause) -> bool {
+    checked.protocol_fairness.is_empty() && checked.time_binding.is_none()
 }
 
 /// Whether `refusal` of the clause `form` is located after its `on each`

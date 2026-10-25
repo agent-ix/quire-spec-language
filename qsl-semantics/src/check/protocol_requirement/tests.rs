@@ -195,6 +195,40 @@ fn a_requirement_binds_its_temporal_clause_by_position() {
     assert_eq!(at, "Accept");
 }
 
+/// FR-218-AC-16, TC-1056 row 23a (FR-337-AC-10): `requires temporal Due;`
+/// over a clause with an `on each` activation and a capture binds the
+/// requirement to `Due`'s position, and the unit checks, `Due` being
+/// emitted.
+#[trace("TC-1056", "FR-218-AC-16")]
+#[test]
+fn a_requirement_binds_a_clause_with_an_activation_and_a_capture() {
+    let due = "temporal Due using t over (c: Boolean) clock \"steps\" on each (x: Boolean) \
+               { capture n: Boolean = c; always holds(n) }\n";
+    let unit = format!(
+        "{}{}{}",
+        temporal("Other", "true"),
+        due,
+        protocol("Fill", "requires temporal Due;"),
+    );
+    let checked = requirements(&unit, "Fill").expect("the requirements check");
+    let [due] = checked.as_slice() else {
+        panic!("one requirement, got {checked:?}");
+    };
+    assert_eq!(due.temporal, 1);
+    let (_, assembled) = assemble(&unit);
+    let refusals = assembled
+        .check(CheckingLimits::default())
+        .err()
+        .unwrap_or_default();
+    assert!(
+        refusals.iter().all(|refusal| !matches!(
+            refusal.cause,
+            CheckCause::Temporal(_)
+        )),
+        "{refusals:?}"
+    );
+}
+
 /// FR-218-AC-25: `requires temporal Due;` where `Due` holds `protocol
 /// Fill` and the requiring protocol is `Fill`, and the same through a
 /// second clause that a protocol `Fill` names requires, each refuse

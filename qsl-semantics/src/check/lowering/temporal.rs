@@ -53,6 +53,10 @@ pub(crate) enum TemporalSite {
     Trigger,
     /// The `on each` activation's `when` guard: its expression tree.
     Guard,
+    /// The capture at this index: its declared name.
+    Capture(usize),
+    /// The initializer of the capture at this index: its expression tree.
+    CaptureValue(usize),
     /// The formula node at this arena index: its span.
     Node(usize),
     /// The condition of the `holds` atom at this formula arena index: its
@@ -71,6 +75,8 @@ pub(crate) fn temporal_site(clause: usize, site: TemporalSite) -> String {
         TemporalSite::Over => format!("temporal {clause} over"),
         TemporalSite::Trigger => format!("temporal {clause} trigger"),
         TemporalSite::Guard => format!("temporal {clause} guard"),
+        TemporalSite::Capture(index) => format!("temporal {clause} capture {index}"),
+        TemporalSite::CaptureValue(index) => format!("temporal {clause} capture {index} value"),
         TemporalSite::Node(node) => format!("temporal {clause} node {node}"),
         TemporalSite::Condition(node) => format!("temporal {clause} holds {node}"),
         TemporalSite::Fairness(index) => format!("temporal {clause} fair {index}"),
@@ -96,12 +102,16 @@ pub(crate) struct TemporalClauseInput<'a> {
 }
 
 /// A lowered temporal clause's keys.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LoweredTemporalClause {
     /// The `temporal`/`temporal_clause` node: the clause's identity.
     pub(crate) key: NodeKey,
     /// The `over` parameter's `value`/`parameter` node.
     pub(crate) over: NodeKey,
+    /// Every parameter node of the clause in the order of its parameters:
+    /// `over`, the trigger binder of an `on each` activation, then each
+    /// capture.
+    pub(crate) parameters: Vec<NodeKey>,
     /// The `Boolean` scalar type node: the clause's semantic type.
     pub(crate) boolean: NodeKey,
 }
@@ -129,6 +139,51 @@ impl Lowering<'_> {
             parameter: over,
             semantic_type: over_type,
         }];
+
+        // FR-337 "`on each` activation at S4" and "Captures at S4": the
+        // trigger binder is the level-1 parameter node typed as `over` is,
+        // and each capture the next level, typed by its declared type.
+        let mut parameters = vec![over];
+        let mut scope = scope.to_vec();
+        let trigger = match clause.trigger() {
+            None => None,
+            Some((trigger_name, _)) => {
+                let trigger_at = at(TemporalSite::Trigger);
+                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
+                self.record(over_type, OccurrenceRole::Type, trigger_at);
+                parameters.push(trigger);
+                scope.push(Binder {
+                    slot: 1,
+                    parameter: trigger,
+                    semantic_type: over_type,
+                });
+                Some(trigger)
+            }
+        };
+        let guard_scope = scope.clone();
+        let first_capture = scope.len();
+        let mut capture_terms = Vec::with_capacity(clause.captures().len());
+        for (index, (name, declared)) in clause.captures().enumerate() {
+            let at_name = at(TemporalSite::Capture(index));
+            let initializer = input
+                .conditions
+                .captures
+                .get(index)
+                .ok_or_else(|| stage_fault(&at_name, "capture-initializer-typed"))?;
+            let mut binders = Binders::new(&initializer.slot_names, &scope);
+            let term = self.expression(initializer.body.root(), &mut binders)?;
+            let declared = self.binder_type(declared, None, &at_name)?;
+            let level = first_capture + index;
+            let capture = self.parameter(name, level, declared, &at_name)?;
+            self.record(declared, OccurrenceRole::Type, at_name);
+            capture_terms.push(GroupMember::Binding(Binding::new(name, term)));
+            parameters.push(capture);
+            scope.push(Binder {
+                slot: level,
+                parameter: capture,
+                semantic_type: declared,
+            });
+        }
 
         let formula = self.temporal_formula(input, boolean, &scope)?;
 
@@ -172,35 +227,20 @@ impl Lowering<'_> {
             definition: clause.profile().definition(),
         };
         let mut activation = Vec::new();
-        match clause.trigger() {
+        match trigger {
             None => {
                 let kind = self.text_literal("origin", &claim)?;
                 activation.push(GroupMember::Binding(Binding::new("kind", kind)));
             }
-            Some((trigger_name, _)) => {
-                // FR-337 "`on each` activation at S4": the trigger is the
-                // binder's own level-1 parameter node, typed as `over` is.
+            Some(trigger) => {
                 let kind = self.text_literal("each", &claim)?;
                 activation.push(GroupMember::Binding(Binding::new("kind", kind)));
-                let trigger_at = at(TemporalSite::Trigger);
-                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
-                self.record(over_type, OccurrenceRole::Type, trigger_at);
                 activation.push(GroupMember::Binding(Binding::new(
                     "trigger",
                     LeafTerm::reference(trigger),
                 )));
                 if let Some(guard) = &input.conditions.guard {
-                    let mut binders = Binders::new(
-                        &guard.slot_names,
-                        &[
-                            scope[0],
-                            Binder {
-                                slot: 1,
-                                parameter: trigger,
-                                semantic_type: over_type,
-                            },
-                        ],
-                    );
+                    let mut binders = Binders::new(&guard.slot_names, &guard_scope);
                     let term = self.expression(guard.body.root(), &mut binders)?;
                     activation.push(GroupMember::Binding(Binding::new("guard", term)));
                 }
@@ -209,7 +249,7 @@ impl Lowering<'_> {
         let clock = self.text_literal(clause.clock(), &claim)?;
         // QSpec FR-370: over, clock, activation, captures, fairness and
         // formula, in that order. An `on origin` activation binds `kind`
-        // only, and an emitted clause declares no capture (`is_emitted`).
+        // only, and a clause with no capture binds the empty aggregate.
         let key = self.insert(
             &claim,
             NodeTag::Temporal,
@@ -227,14 +267,19 @@ impl Lowering<'_> {
                     MemberTerm::reference(over),
                     MemberTerm::Leaf(clock),
                     MemberTerm::Group(GroupTerm::new(activation)),
-                    MemberTerm::Group(GroupTerm::new(Vec::new())),
+                    MemberTerm::Group(GroupTerm::new(capture_terms)),
                     MemberTerm::Group(GroupTerm::references(fairness)),
                     MemberTerm::reference(formula),
                 ],
             ),
         )?;
         self.record(key, OccurrenceRole::Claim, claim);
-        Ok(LoweredTemporalClause { key, over, boolean })
+        Ok(LoweredTemporalClause {
+            key,
+            over,
+            parameters,
+            boolean,
+        })
     }
 
     /// Key every node of `input`'s formula, each operand before its
