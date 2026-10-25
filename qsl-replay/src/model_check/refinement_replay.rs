@@ -323,15 +323,17 @@ fn replay_lasso(
         &systems.concrete,
         &loop_states,
         lasso,
-        refinement.concrete_fairness(),
+        &refinement
+            .concrete_operation_fairness()
+            .cloned()
+            .collect::<Vec<_>>(),
     )? {
         return Err(ReplayRefusal::UnfairLasso { constraint });
     }
     // A strong constraint is outside the weak reading the engine writes
     // lassos by, so no lasso of one is replayed as a reproduction.
     let Some(index) = refinement
-        .abstract_fairness()
-        .iter()
+        .abstract_operation_fairness()
         .position(|abstract_constraint| {
             abstract_constraint == constraint && abstract_constraint.kind() == FairnessKind::Weak
         })
@@ -369,12 +371,9 @@ fn replay_lasso(
         }))
         .cloned()
         .collect();
-    let classes = abstract_classes(
-        &systems.abstract_system,
-        refinement.abstract_fairness(),
-        &identities,
-    )
-    .map_err(ReplayRefusal::Fault)?;
+    let abstract_fairness: Vec<_> = refinement.abstract_operation_fairness().cloned().collect();
+    let classes = abstract_classes(&systems.abstract_system, &abstract_fairness, &identities)
+        .map_err(ReplayRefusal::Fault)?;
     let violated = classes.iter().any(|class| {
         class.constraint() == index
             && enabled.iter().all(|here| class.is_enabled_in(here))
