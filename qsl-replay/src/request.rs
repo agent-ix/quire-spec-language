@@ -1534,6 +1534,25 @@ mod tests {
         assert_eq!(round_tripped.replay_target(), request.replay_target());
     }
 
+    /// FR-331-AC-6: an observed temporal replay request carries the object
+    /// that binds the clause's `over` parameter through decode and re-encode.
+    #[trace("TC-841", "FR-331-AC-6")]
+    #[test]
+    fn an_observed_temporal_request_round_trips_its_over_binding() {
+        let binding = ReplayOverBinding {
+            population: "Counters".to_owned(),
+            key: "c1".to_owned(),
+        };
+        let mut wire = wire(1);
+        wire.replay_target = RequestTargetWire::state_clause_over(clause_name(), binding.clone());
+        let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+        assert_eq!(request.over(), Some(&binding));
+
+        let round_tripped =
+            ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+        assert_eq!(round_tripped.over(), Some(&binding));
+    }
+
     fn frame_target() -> crate::witness::FrameOperation {
         crate::witness::FrameOperation {
             object: QualifiedName::new(vec![
