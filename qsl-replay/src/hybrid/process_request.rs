@@ -14,10 +14,82 @@ use quire_contract_model::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use thiserror::Error;
 
 use super::{BudgetRefusal, InconclusiveCause, SolverBudget};
 use crate::proof_result::{read_plugin_inconclusive_cause, PluginResultRefusal, TerminalRecord};
+
+/// QSL-owned admission context for a hybrid process request's checked package.
+///
+/// The checked-package reader uses bounded local limits. Callers provide the
+/// feature and dependency evidence that the package requires without exposing
+/// the contract-model reader types at the QSL API boundary.
+#[derive(Clone, Debug)]
+pub struct HybridProcessPackageContext {
+    evidence: CheckedPackageEvidence,
+    limits: CheckedPackageReadLimits,
+}
+
+impl HybridProcessPackageContext {
+    /// Start with bounded package-read limits and no feature or dependency
+    /// evidence.
+    pub fn new() -> Self {
+        Self {
+            evidence: CheckedPackageEvidence::new(),
+            limits: CheckedPackageReadLimits::bounded(),
+        }
+    }
+
+    /// Declare a checked-package feature supported by this QSL reader.
+    pub fn support_feature(&mut self, feature: impl Into<Box<str>>) {
+        self.evidence.support_feature(feature);
+    }
+
+    /// Supply the domain-package document selected by the checked package.
+    pub fn insert_domain_package_document(
+        &mut self,
+        digest: impl Into<Box<str>>,
+        document: impl Into<Box<[u8]>>,
+    ) -> Result<(), HybridProcessRequestRefusal> {
+        self.evidence
+            .insert_domain_package_document(digest, document)
+            .map_err(|_| HybridProcessRequestRefusal::PackageEvidenceConflict)
+    }
+
+    /// Admit a checked dependency package using this context's current
+    /// evidence. The resulting QSL wrapper can be added under its selected
+    /// library identity without exposing the contract-model package type.
+    pub fn read_dependency_package(
+        &self,
+        bytes: &[u8],
+    ) -> Result<HybridProcessDependencyPackage, HybridProcessRequestRefusal> {
+        admit_package(bytes, self).map(HybridProcessDependencyPackage)
+    }
+
+    /// Supply an already admitted dependency package selected by the checked
+    /// package.
+    pub fn insert_dependency_package(
+        &mut self,
+        identity: impl Into<Box<str>>,
+        package: HybridProcessDependencyPackage,
+    ) -> Result<(), HybridProcessRequestRefusal> {
+        self.evidence
+            .insert_dependency_package(identity, Arc::from(package.0))
+            .map_err(|_| HybridProcessRequestRefusal::PackageEvidenceConflict)
+    }
+}
+
+impl Default for HybridProcessPackageContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A checked dependency package admitted by a
+/// [`HybridProcessPackageContext`].
+#[derive(Clone, Debug)]
+pub struct HybridProcessDependencyPackage(Box<CheckedPackageV2>);
 
 /// A typed hybrid item to include in a process provider's FR-331 request.
 #[derive(Debug)]
@@ -62,6 +134,9 @@ pub enum HybridProcessRequestRefusal {
     /// The request's package identity did not match the admitted package.
     #[error("the request package identity does not match its package bytes")]
     PackageIdentityMismatch,
+    /// The context supplied conflicting evidence for one package identity.
+    #[error("the process package context contains conflicting evidence")]
+    PackageEvidenceConflict,
     /// The package did not contain the hybrid claim the item names.
     #[error("the item does not name an admitted hybrid claim")]
     ClaimMismatch,
@@ -108,12 +183,11 @@ impl HybridProcessRequest {
     /// caller set, leaving provider-published bounds to supply defaults.
     pub fn compose(
         package: &[u8],
-        evidence: &CheckedPackageEvidence,
-        package_limits: CheckedPackageReadLimits,
+        context: &HybridProcessPackageContext,
         deadline_ms: u64,
         items: &[HybridProcessItem],
     ) -> Result<Self, HybridProcessRequestRefusal> {
-        let admitted = admit_package(package, evidence, package_limits)?;
+        let admitted = admit_package(package, context)?;
         let package_id = serde_json::to_value(admitted.package_id())
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let mut wire_items = Vec::with_capacity(items.len());
@@ -150,7 +224,7 @@ impl HybridProcessRequest {
         let bytes = quire_canonical::to_vec(&request, Limits::new(u64::MAX))
             .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
         let composed = Self(bytes);
-        Self::read(composed.bytes(), evidence, package_limits)?;
+        Self::read(composed.bytes(), context)?;
         Ok(composed)
     }
 
@@ -163,8 +237,7 @@ impl HybridProcessRequest {
     /// bytes and bind every item's index and claim node to that package.
     pub fn read(
         bytes: &[u8],
-        evidence: &CheckedPackageEvidence,
-        package_limits: CheckedPackageReadLimits,
+        context: &HybridProcessPackageContext,
     ) -> Result<AdmittedHybridProcessRequest, HybridProcessRequestRefusal> {
         let wire: ProcessRequestWire = serde_json::from_slice(bytes)
             .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
@@ -174,13 +247,13 @@ impl HybridProcessRequest {
         if URL_SAFE_NO_PAD.encode(&package_bytes) != wire.package {
             return Err(HybridProcessRequestRefusal::MalformedRequest);
         }
-        let package = admit_package(&package_bytes, evidence, package_limits)?;
+        let package = admit_package(&package_bytes, context)?;
         let package_id = serde_json::to_value(package.package_id())
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         if wire.package_id != package_id {
             return Err(HybridProcessRequestRefusal::PackageIdentityMismatch);
         }
-        let hybrids = read_hybrids(&package, package_limits.nodes)
+        let hybrids = read_hybrids(&package, context.limits.nodes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let package_wire: Value = serde_json::from_slice(&package_bytes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
@@ -357,10 +430,9 @@ impl AdmittedHybridProcessItem {
 
 fn admit_package(
     bytes: &[u8],
-    evidence: &CheckedPackageEvidence,
-    limits: CheckedPackageReadLimits,
+    context: &HybridProcessPackageContext,
 ) -> Result<Box<CheckedPackageV2>, HybridProcessRequestRefusal> {
-    match read_checked_package(bytes, limits, evidence) {
+    match read_checked_package(bytes, context.limits, &context.evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => Ok(package),
         CheckedPackageDispatchResult::Refused(_) | CheckedPackageDispatchResult::Incomplete(_) => {
             Err(HybridProcessRequestRefusal::PackageRefused)

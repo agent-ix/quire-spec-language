@@ -229,14 +229,14 @@ pub enum StatisticalLimit {
 }
 
 impl StatisticalLimit {
-    /// The budget's FR-331 `limit` spelling: kebab-case, as every
-    /// [`ModelCheckLimit`](crate::ModelCheckLimit) spells its limit; the
-    /// snake-case member name is its setting's suffix ([`Self::setting`]).
+    /// The budget's FR-331 `limit` spelling: the snake_case member name, as
+    /// every [`ModelCheckLimit`](crate::ModelCheckLimit) spells its limit and
+    /// as its setting's suffix ([`Self::setting`]).
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::MaxSamples => "max-samples",
-            Self::MaxDraws => "max-draws",
-            Self::MaxCycleSteps => "max-cycle-steps",
+            Self::MaxSamples => "max_samples",
+            Self::MaxDraws => "max_draws",
+            Self::MaxCycleSteps => "max_cycle_steps",
         }
     }
 
