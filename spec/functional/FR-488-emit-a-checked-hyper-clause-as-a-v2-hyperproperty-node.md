@@ -131,27 +131,61 @@ with its seven bindings in that order:
 - `parameters`: one `binding(name, reference)` per object parameter in
   declaration order, the reference being to the `model` node of the object
   type `T` that `v: V::T` declares.
-- `quantifiers`: one `binding(variable, aggregate)` per quantifier in
-  source order. The aggregate holds, in order, a `text` literal `forall` or
-  `exists`, a `text` literal naming the alias, and an aggregate of the
-  variable's resolved fairness constraints, in fairness-set order, empty for
-  the empty set. A constraint is written as the aggregate of the bindings
-  `kind` (the text `fairness`), `fairness_kind` (`weak` or `strong`),
-  `granularity` (`whole` or `each`), `declaration` (a `reference` to the
-  declaring `model`/`object_type` node) and `name` (the operation's text),
-  the names and values of QSpec FR-370's `fairness` member, resolved as
-  FR-337 resolves them, so an unmarked constraint and its written
-  `weak whole` form emit identical bytes (ADR-018 FA-6). The emitter takes
-  `declaration` and `name` from the resolved constraint (FR-123, checked
-  at S3 against the quantifier's model): the most derived effective
-  operation and its declaring type, as FR-370 "Fairness resolution" does.
-  No reader validates them in a `hyperproperty` body (Q-1). The emitter
-  SHALL refuse a constraint whose declaring node is a
-  `model`/`systems_interface` node `unsupported_construct`/
-  `not-yet-implemented` at the constraint, as FR-370-AC-11 refuses such a
-  fairness member of a clause (Remaining work: QSL-1094). This inline form
-  replaces FR-402's "references to its fairness constraints" for the reason
-  in Q-1.
+- `quantifiers`: one `binding("quantifiers", tuple)`, `tuple` being an
+  `aggregate` whose members are all Groups (QSpec FR-322 "Body grammar"; Q-7),
+  in this order: for each quantifier in source order, one **quantifier
+  Group**, then one **fairness Group** per constraint of the variable's
+  resolved fairness set, in fairness-set order (none for the empty set).
+  - A quantifier Group is an `aggregate` of four `binding`s with `text`
+    literal values, in order: `kind` = `quantifier`, `variable` = the trace
+    variable's name, `quantifier` = `forall` or `exists`, and `alias` = the
+    alias's name.
+  - A fairness Group is an `aggregate` of six `binding`s with Leaf values, in
+    order: `kind` = the text `fairness`, `variable` = the text naming the
+    variable the constraint belongs to, `fairness_kind` (`weak` or `strong`),
+    `granularity` (`whole` or `each`), `declaration` (a `reference` to the
+    declaring `model`/`object_type` node) and `name` (the operation's text).
+    Its `kind`, `fairness_kind`, `granularity`, `declaration` and `name` are
+    the names and values of QSpec FR-370's `fairness` member, resolved as
+    FR-337 resolves them, so an unmarked constraint and its written
+    `weak whole` form emit identical bytes (ADR-018 FA-6).
+  - A fairness Group belongs to the variable it names, and stands after that
+    variable's quantifier Group; moving a constraint to another variable
+    changes `variable` and its position.
+  - The emitter takes `declaration` and `name` from the resolved constraint
+    (FR-123, checked at S3 against the quantifier's model): the most derived
+    effective operation and its declaring type, as FR-370 "Fairness
+    resolution" does. No reader validates them in a `hyperproperty` body
+    (Q-1). The emitter SHALL refuse a constraint whose declaring node is a
+    `model`/`systems_interface` node `unsupported_construct`/
+    `not-yet-implemented` at the constraint, as FR-370-AC-11 refuses such a
+    fairness member of a clause (Remaining work: QSL-1094).
+  - This flat form replaces FR-402's `binding(variable, aggregate)` per
+    quantifier with nested fairness references, which FR-322's body grammar
+    cannot express (Q-7), and FR-402's references to fairness constraint
+    nodes, for the reason in Q-1.
+
+**Grammar fit.** Every shape the aggregate uses is legal in FR-322 "Body
+grammar", and the pinned reader's flat-wire rules (`flat_wire.rs`, `Flat::enter`
+and `aggregate_stratum`) place it as follows. The node body is a Body
+aggregate, so each of the seven bindings stands as a Member `binding`
+(rule: Body aggregate members are Members; `Place::Member` takes a
+`binding`), whose value is read as `BindingValue`:
+`domain` a Leaf literal; `subjects`, `parameters` and `align_skip` an
+`aggregate` whose first non-Leaf member is a `binding` (or none), hence a
+Group whose members are `binding(name, Leaf)` or Leaves; `match` an `aggregate`
+of Leaves (references, or a literal for a constant conjunct), hence a Group;
+`quantifiers` an `aggregate` whose first non-Leaf member is an `aggregate`,
+hence a Tuple whose members are Groups, each Group's members being
+`binding(name, Leaf)` (`Place::GroupMember` takes a `binding` whose value is
+`LeafOnly`); `body` a `binding` of a Leaf reference. The depth chain is
+Member binding, Tuple, Group, binding, Leaf, the longest the grammar allows.
+An `aggregate` in a `GroupMember` or `LeafOnly` position, or a `binding`
+anywhere but a Member or Group member, is `malformed_wire`; this encoding has
+none. The `aggregate_stratum` rule reads a binding value by its first
+non-Leaf member, so the `quantifiers` Tuple SHALL hold only Groups and a
+Group only Leaves and bindings of Leaves.
+
 - `match`: one term per conjunct of `mu_universal()` and `mu_existential()`
   together, in source order. The order comes from
   `CheckedHyperClause::conjuncts()`, which this requirement adds to FR-487's
@@ -328,7 +362,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-488-AC-1 | Compiling `NonInterference` emits one `claim`/`hyperproperty` node of Boolean `semantic_type` whose body is an aggregate of exactly the seven bindings `domain`, `subjects`, `parameters`, `quantifiers`, `match`, `align_skip`, `body`, in that order. | Test (TC-1266) |
-| FR-488-AC-2 | In AC-1's node, `domain` is the text `behaviours`; `subjects` is one binding `V` to the `model` node of `Vault`; `parameters` is one binding `v` to the same node; `quantifiers` binds `a` and `b` each to `forall`, `V` and an empty aggregate; `align_skip` is empty; `body` references a `temporal`/`temporal_clause` node. | Test (TC-1266) |
+| FR-488-AC-2 | In AC-1's node, `domain` is the text `behaviours`; `subjects` is one binding `V` to the `model` node of `Vault`; `parameters` is one binding `v` to the same node; `quantifiers` is a Tuple of exactly two quantifier Groups, `a` then `b`, each binding `kind` `quantifier`, `variable`, `quantifier` `forall` and `alias` `V`, and no fairness Group; `align_skip` is empty; `body` references a `temporal`/`temporal_clause` node. | Test (TC-1266) |
 | FR-488-AC-3 | The I2 reader admits AC-1's package and returns the clause's `claim` triple and the body wrapper's NodeId. | Test (TC-1266) |
 | FR-488-AC-4 | The body wrapper of `NonInterference` is a `quire.op.temporal.clause` application with one `temporal_profile` law equal to the lock's row and the arguments `over` a reference to the `value`/`parameter` node `v@a` at level 0, clock `model-steps`, activation binding `kind` to `origin` alone, empty captures, empty fairness, and `formula` a reference to a `quire.op.temporal.always` node with a `null` interval whose operand is a `holds` node. | Test (TC-1266) |
 | FR-488-AC-5 | The `holds` operand of AC-4 is the equality of the field read `l` of `v@a` (level 0) and of `v@b` (level 1), with no term for `@`; the slot nodes have `expression` occurrences at `hyper 0 slot 0` and `hyper 0 slot 1` and `type` occurrences of their type node. | Test (TC-1266) |
@@ -337,9 +371,10 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | FR-488-AC-8 | In `match { a.step.op = V::Vault::step and b.step.op = stutter }` the first term compares its one slot with the `String` literal of `step`'s operation text and the second compares its one slot with the `String` literal `stutter`. A constant conjunct `true` is a `literal` term. A conjunct that reads only `b.step.op` has that slot at level 0, and `b.step.op` in `a.step.op = b.step.op` is a different node at level 1. | Test (TC-1266) |
 | FR-488-AC-9 | For a clause whose conjuncts `c0` (universal), `c1` (reads an existential variable) and `c2` (universal) are written in that order, `match` holds `c0`, `c1`, `c2`, as `CheckedHyperClause::conjuncts()` returns them, with `c1` at `hyper 0 match exists 0`. | Test (TC-1266) |
 | FR-488-AC-10 | `NonInterference` with `align skip { V::Vault::mix }` binds `align_skip` to one reference, to the `state`/`operation_anchor` node of `mix`, equal to the anchor node a state clause naming `mix` references; two listed operations give two references in written order. | Test (TC-1266) |
-| FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (also different from the one on `a`); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |
+| FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (a fairness Group naming `b`, after `b`'s quantifier Group, and different from the one on `a`); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |
 | FR-488-AC-12 | Reformatting and a changed clause name give `NonInterference` the same NodeId; two structurally equal clause declarations share one node and have two `claim` occurrences with ordinals 0 and 1. A renamed trace variable gives a different NodeId (Q-6). | Test (TC-1266) |
-| FR-488-AC-13 | With `fair weak V::Vault::step` on `a`, `quantifiers` binds `a` to an aggregate whose third member is one aggregate binding `kind` `fairness`, `fairness_kind` `weak`, `granularity` `each`, `declaration` a reference to `Vault`'s `model` node and `name` `step`; `b`'s fairness aggregate is empty. `fair step` and `fair weak whole step`, in the resolved forms, emit identical bytes and the package is admitted. A constraint whose declaring node is a `systems_interface` is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
+| FR-488-AC-13 | With `fair weak V::Vault::step` on `a`, the `quantifiers` Tuple holds the Groups for `a`, a fairness Group, and `b`, in that order; the fairness Group binds `kind` `fairness`, `variable` `a`, `fairness_kind` `weak`, `granularity` `each`, `declaration` a reference to `Vault`'s `model` node and `name` `step`. `fair step` and `fair weak whole step`, in the resolved forms, emit identical bytes and the package is admitted. A constraint whose declaring node is a `systems_interface` is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
+| FR-488-AC-22 | Every emitted `hyperproperty` body of AC-1 to AC-13 passes strict wire validation of the flat grammar (QSpec FR-322 "Body grammar"): no term is refused `malformed_wire`, and the `quantifiers` binding is a Tuple of Groups whose members are literals, references and bindings of Leaves. | Test (TC-1266) |
 | FR-488-AC-14 | After assembly, `CheckedHyperClause::occurrence()` of `NonInterference` equals the triple the I2 reader returns and FR-315-AC-12's `HyperProductIdentity::clause()`. A looked-up triple with an unknown NodeId, a non-`hyperproperty` NodeId, role `invariant` or another ordinal returns `hyper-root-unresolved` at the triple. | Test (TC-1266) |
 | FR-488-AC-15 | The body wrapper is not among the I2 reader's temporal clause roots, looking it up as a clause root returns `clause-root-unresolved`, and FR-338's resolution of the wrapper's triple does the same. | Test (TC-1266) |
 | FR-488-AC-16 | `Linked` with `B` = `(let r = v.next in present(r) and deref(value(r)).l = 1) @ a` emits. | Test (TC-1266) |
@@ -357,8 +392,8 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   `temporal_clause` node's fairness argument and refuses any other with
   `ill_typed`/`operator-ineligible` at the referencing node. A reference
   from a `hyperproperty` quantifier is therefore refused. QSL writes the
-  constraint inline (the `kind`, `granularity`, `declaration`, `name`
-  aggregate, with FR-370's `fairness` member names) so the package is admitted
+  constraint inline (a fairness Group of `kind`, `variable`,
+  `fairness_kind`, `granularity`, `declaration`, `name`) so the package is admitted
   today. Nothing in the package validates `declaration` and `name`: FR-370's
   fairness resolution runs on a clause's fairness argument only, and QSpec
   states no reader refusal for a `hyperproperty` body. QSpec should either admit the
@@ -393,6 +428,16 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   appear in slot names (`<p>@<t>`), so renaming a trace variable changes the
   NodeId (FR-488-AC-12). QSpec should say whether bound-variable renaming is
   spelling.
+
+- **Q-7.** FR-402's `quantifiers` shape, `binding(variable, aggregate)` with
+  the `forall`/`exists` literal, the alias literal and a nested aggregate of
+  fairness constraints, is not expressible in FR-322 "Body grammar": a
+  `binding` in a Group has a Leaf value only, and a constraint of several
+  members needs a further aggregate, a stratum below the Group. The pinned
+  reader refuses it `malformed_wire`. QSL writes a Tuple of Groups (one
+  quantifier Group per quantifier, one fairness Group per constraint, naming
+  its variable) and asks QSpec to state a legal shape; QSL then changes this
+  one encoding. QSL-1093 owns the QSpec change.
 
 ## Dependencies
 
