@@ -75,7 +75,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
-use super::state_clause::{populations_covering, PopulationDomain};
+use super::state_clause::{populations_overlapping, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
@@ -1003,7 +1003,7 @@ fn check_clause(
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
     let populations: Vec<PopulationDomain> = match types.first() {
         Some(ValueType::Reference(object)) => {
-            populations_covering(declarations.models, *object, declarations.scope.types())
+            populations_overlapping(declarations.models, *object, declarations.scope.types())
                 .into_iter()
                 .filter(|domain| domain.maximum.is_none())
                 .collect()
