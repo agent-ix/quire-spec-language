@@ -48,9 +48,15 @@ fn unit(profile: &str, declarations: &str) -> String {
 
 /// The clause `name` over `c: Config::ConfigVersion` whose body is `body`.
 fn declared(name: &str, body: &str) -> String {
+    declared_on(name, "on origin", body)
+}
+
+/// The clause `name` over `c: Config::ConfigVersion`, activated as
+/// `activation`, whose body is `body`.
+fn declared_on(name: &str, activation: &str, body: &str) -> String {
     format!(
         "temporal {name} using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-         on origin {{ {body} }}"
+         {activation} {{ {body} }}"
     )
 }
 
@@ -751,4 +757,294 @@ fn the_emitted_record_carries_the_population_domain_and_no_universe() {
         panic!("the formula is infinite-trace");
     };
     assert_eq!(domains.len(), 1);
+}
+
+/// The body of the `Over` clause every activation test shares.
+const BODY: &str = "always holds(c.versionNumber <= 1)";
+
+/// `ONE` compiled `on each (q: Config::ConfigVersion)` under `suffix`.
+fn each(binder: &str, suffix: &str) -> String {
+    format!("on each ({binder}: Config::ConfigVersion){suffix}")
+}
+
+/// Whether the node `term` references, directly or through the nodes it
+/// references, the node whose id digest is `digest`.
+fn reaches(wire: &Value, term: &Value, digest: &str) -> bool {
+    match term {
+        Value::Object(fields) => {
+            if fields.get("term").and_then(Value::as_str) == Some("reference") {
+                let target = target(term);
+                return target == digest || reaches(wire, &node_with(wire, target)["body"], digest);
+            }
+            fields.values().any(|value| reaches(wire, value, digest))
+        }
+        Value::Array(items) => items.iter().any(|item| reaches(wire, item, digest)),
+        _ => false,
+    }
+}
+
+/// The member of `activation` named `name`.
+fn member<'a>(activation: &'a Value, name: &str) -> Option<&'a Value> {
+    activation["members"]
+        .as_array()
+        .expect("an activation aggregate")
+        .iter()
+        .find(|member| member["name"] == name)
+}
+
+/// The clause node digest of the clause `activation` compiles to.
+fn key_of(activation: &str, body: &str) -> (Compiled, String) {
+    let compiled = compile(&unit(INFINITE, &declared_on("Each", activation, body)));
+    let digest = clause_node(&compiled.wire)["node_id"]["digest"]
+        .as_str()
+        .expect("a node id")
+        .to_owned();
+    (compiled, digest)
+}
+
+/// FR-337-AC-6 (TC-1265 steps 1 and 2): an `on each` clause emits with no
+/// `NotEmitted` refusal; its activation binds `kind` `each`, `trigger` the
+/// level-1 parameter node `q` typed as `over` is, and `guard` only when
+/// written, the guard's read of `c` referencing the level-0 `over` node. The
+/// guard-less, `when (true)`, guarded and `on origin` clauses have four
+/// keys; the guard and the binder name each change the key, formatting does
+/// not; the I2 read admits each package and returns its triple and `over`.
+#[trace("TC-1265", "FR-337-AC-6")]
+#[test]
+fn an_on_each_clause_emits_its_trigger_and_guard() {
+    let guarded = each("q", " when (c.versionNumber >= 3)");
+    let (compiled, guarded_key) = key_of(&guarded, BODY);
+    let wire = &compiled.wire;
+    let clause = clause_node(wire);
+    let arguments = clause["body"]["arguments"].as_array().expect("arguments");
+    let over = node_with(wire, target(&arguments[0]));
+    let activation = &arguments[2];
+    assert_eq!(
+        member(activation, "kind").unwrap()["value"]["value"],
+        "each"
+    );
+    let trigger = node_with(
+        wire,
+        target(&member(activation, "trigger").unwrap()["value"]),
+    );
+    assert_eq!(trigger["node_tag"], "value");
+    assert_eq!(trigger["semantic_form"], "parameter");
+    assert_eq!(trigger["body"]["members"][0]["value"]["value"], "q");
+    assert_eq!(trigger["body"]["members"][1]["value"]["value"], "1");
+    assert_eq!(over["body"]["members"][1]["value"]["value"], "0");
+    assert_eq!(trigger["semantic_type"], over["semantic_type"]);
+    assert_ne!(trigger["node_id"], over["node_id"]);
+    let over_digest = over["node_id"]["digest"].as_str().unwrap();
+    let guard = &member(activation, "guard").expect("a guard")["value"];
+    assert!(reaches(wire, guard, over_digest), "the guard reads `c`");
+    assert!(
+        !reaches(wire, guard, trigger["node_id"]["digest"].as_str().unwrap()),
+        "the guard does not read `q`"
+    );
+
+    // The trigger node's `expression` occurrence and its type node's `type`
+    // occurrence are located at the binder's name.
+    let text = unit(INFINITE, &declared_on("Each", &guarded, BODY));
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
+    let regions = declarations.regions();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let at = u64::try_from(text.find("(q:").unwrap() + 1).unwrap();
+    let located = |digest: &str, role: &str| -> Vec<u64> {
+        graph
+            .occurrences()
+            .filter(|(key, origin, _)| {
+                key.to_string() == digest && origin.role().to_string() == role
+            })
+            .map(|(_, _, location)| regions.region(location).expect("a region").start())
+            .collect()
+    };
+    assert_eq!(
+        located(trigger["node_id"]["digest"].as_str().unwrap(), "expression"),
+        [at]
+    );
+    let type_digest = over["semantic_type"]["digest"].as_str().unwrap();
+    assert!(located(type_digest, "type").contains(&at));
+
+    let (none, none_key) = key_of(&each("q", ""), BODY);
+    let (truth, truth_key) = key_of(&each("q", " when (true)"), BODY);
+    let (origin, origin_key) = key_of("on origin", BODY);
+    let [none_activation, truth_activation, origin_activation] = [&none, &truth, &origin]
+        .map(|compiled| clause_node(&compiled.wire)["body"]["arguments"][2].clone());
+    assert!(member(&none_activation, "trigger").is_some());
+    assert!(member(&none_activation, "guard").is_none());
+    assert!(member(&truth_activation, "guard").is_some());
+    assert_eq!(
+        origin_activation["members"].as_array().map(Vec::len),
+        Some(1)
+    );
+    let (_, changed_guard) = key_of(&each("q", " when (c.versionNumber >= 2)"), BODY);
+    let (_, renamed) = key_of(&each("r", " when (c.versionNumber >= 3)"), BODY);
+    let (reformatted, reformatted_key) =
+        key_of(&each("q", "\n   when  ( c.versionNumber   >= 3 )"), BODY);
+    let keys = [&guarded_key, &none_key, &truth_key, &origin_key];
+    for (index, key) in keys.iter().enumerate() {
+        for other in &keys[index + 1..] {
+            assert_ne!(key, other);
+        }
+    }
+    let ids: BTreeSet<_> = [&compiled, &none, &truth, &origin]
+        .iter()
+        .map(|compiled| package_id(compiled))
+        .collect();
+    assert_eq!(ids.len(), 4, "four package ids");
+    assert_ne!(changed_guard, guarded_key);
+    assert_ne!(renamed, guarded_key);
+    assert_eq!(reformatted_key, guarded_key);
+    assert_eq!(package_id(&reformatted), package_id(&compiled));
+
+    for compiled in [&compiled, &none, &truth, &origin] {
+        let [checked] = compiled.clauses.as_slice() else {
+            panic!("one emitted clause");
+        };
+        let admitted = admit(compiled);
+        let [root] = clause_roots(&admitted)
+            .expect("the roots read")
+            .try_into()
+            .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
+        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
+        assert_eq!(root.over(), Some(wire_id(checked.over())));
+    }
+}
+
+/// The code and tag of the one refusal of `activation` and `body`, and the
+/// start offset of its region in the unit text.
+fn refused_on(activation: &str, body: &str) -> (Code, Option<&'static str>, u64, String) {
+    let text = unit(INFINITE, &declared_on("Each", activation, body));
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
+    let regions = declarations.regions();
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the clause is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let start = regions.refusal_region(refusal).expect("a region").start();
+    (refusal.cause.code(), refusal.cause.cause(), start, text)
+}
+
+/// FR-337-AC-7 (TC-1265 steps 3 and 4): S3 checks the guard as a `holds`
+/// condition, reads of `q` resolve in the guard alone, the binder is typed as
+/// `over` is and named otherwise, and a capture stays `NotEmitted`.
+#[trace("TC-1265", "FR-337-AC-7")]
+#[test]
+fn s3_checks_the_on_each_guard_and_binder() {
+    // A guard reading `q` checks, and its read references the trigger node.
+    let (compiled, _) = key_of(&each("q", " when (q.versionNumber = 1)"), BODY);
+    let wire = &compiled.wire;
+    let activation = &clause_node(wire)["body"]["arguments"][2];
+    let trigger = target(&member(activation, "trigger").unwrap()["value"]);
+    assert!(reaches(
+        wire,
+        &member(activation, "guard").unwrap()["value"],
+        trigger
+    ));
+
+    // Each case: the activation, the body, the refusal's code and tag, and
+    // the text it is located at with the index of that text's occurrence.
+    let cases: [(String, &str, Code, &str, &str, usize); 6] = [
+        (
+            each("q", " when (c.versionNumber)"),
+            BODY,
+            Code::IllTyped,
+            "non-boolean-root",
+            "c.versionNumber)",
+            0,
+        ),
+        (
+            each("q", ""),
+            "always holds(q.versionNumber <= 1)",
+            Code::MissingDeclaration,
+            "missing-name",
+            "q.versionNumber",
+            0,
+        ),
+        (
+            each("q", " when (c.versionNumber = c.versionNumber + 1)"),
+            BODY,
+            Code::UndefinedExpression,
+            "unproved-range",
+            "c.versionNumber + 1",
+            0,
+        ),
+        (
+            "on each (q: Config::Absent)".to_owned(),
+            BODY,
+            Code::MissingDeclaration,
+            "missing-name",
+            "Config::Absent",
+            0,
+        ),
+        (
+            "on each (q: Integer)".to_owned(),
+            BODY,
+            Code::IllTyped,
+            "type-mismatch",
+            "Integer",
+            0,
+        ),
+        (
+            each("c", ""),
+            BODY,
+            Code::ConflictingDeclaration,
+            "duplicate-declaration",
+            "c:",
+            1,
+        ),
+    ];
+    for (activation, body, code, tag, at, nth) in cases {
+        let (found, found_tag, start, text) = refused_on(&activation, body);
+        assert_eq!((found, found_tag), (code, Some(tag)), "{activation}");
+        let (offset, _) = text.match_indices(at).nth(nth).expect("the refused text");
+        assert_eq!(start, u64::try_from(offset).unwrap(), "{activation}");
+    }
+
+    // A divisor with no S3 law checks, in a unit that selects the complete
+    // value layer through a function.
+    let text = unit(
+        INFINITE,
+        &format!(
+            "function Noop using v(): Boolean pure {{ true }}\n{}",
+            declared_on(
+                "Each",
+                &each("q", " when (6 mod (2 - c.versionNumber) = 0)"),
+                BODY
+            )
+        ),
+    );
+    compile(&text);
+
+    // A guard that is not Boolean and a `holds` condition that is not refuse
+    // once, at the guard.
+    let (code, tag, start, text) = refused_on(
+        &each("q", " when (c.versionNumber)"),
+        "always holds(c.versionNumber)",
+    );
+    assert_eq!((code, tag), (Code::IllTyped, Some("non-boolean-root")));
+    assert_eq!(
+        start,
+        u64::try_from(text.find("c.versionNumber)").unwrap()).unwrap()
+    );
+
+    // A capture stays `NotEmitted` at the clause.
+    let (code, tag, start, text) = refused_on(
+        &each("q", ""),
+        "capture n: Int[0, 3] = c.versionNumber; always holds(c.versionNumber <= 1)",
+    );
+    assert_eq!(
+        (code, tag),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+    assert_eq!(
+        start,
+        u64::try_from(text.find("temporal Each").unwrap()).unwrap()
+    );
 }

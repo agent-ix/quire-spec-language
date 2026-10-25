@@ -1159,6 +1159,26 @@ pub enum TemporalCause {
         /// The type form's span.
         span: Span,
     },
+    /// FR-337 "`on each` activation at S3": the `on each` parameter's type is
+    /// not the `over` parameter's. `ill_typed`/`type-mismatch`, located at
+    /// the type form.
+    TriggerType {
+        /// The `on each` parameter's name.
+        parameter: String,
+        /// The type form's span.
+        span: Span,
+    },
+    /// FR-337 "`on each` activation at S3": the `on each` parameter is named
+    /// as the `over` parameter is. `conflicting_declaration`/
+    /// `duplicate-declaration`, located at the `on each` binder's name.
+    DuplicateTrigger {
+        /// The repeated name.
+        name: String,
+        /// The `over` parameter name's span, the first declaration.
+        first: Span,
+        /// The `on each` binder name's span.
+        span: Span,
+    },
     /// FR-123 "Fairness constraints": a fairness constraint names no
     /// operation of an admitted model. Located at the operation's name.
     UnresolvedFairnessOperation {
@@ -1322,6 +1342,8 @@ impl TemporalCause {
             | Self::OpenInterval { span }
             | Self::InvertedInterval { span, .. }
             | Self::ParameterType { span, .. }
+            | Self::TriggerType { span, .. }
+            | Self::DuplicateTrigger { span, .. }
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
@@ -1377,7 +1399,8 @@ impl TemporalCause {
                 }
             },
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
-            Self::InvertedInterval { .. } => Code::IllTyped,
+            Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
+            Self::DuplicateTrigger { .. } => Code::ConflictingDeclaration,
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
     }
@@ -1401,7 +1424,8 @@ impl TemporalCause {
             | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
-            Self::InvertedInterval { .. } => "type-mismatch",
+            Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
+            Self::DuplicateTrigger { .. } => "duplicate-declaration",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
