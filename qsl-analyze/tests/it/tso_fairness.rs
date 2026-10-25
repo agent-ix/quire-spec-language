@@ -621,6 +621,7 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
 /// because the same thread can load the mo-last message at that state.
 #[trace("TC-673")]
 #[trace("TC-672")]
+#[trace("FR-228-AC-1", "FR-227-AC-4")]
 #[test]
 fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
     let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);

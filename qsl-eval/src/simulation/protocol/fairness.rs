@@ -473,7 +473,12 @@ pub fn protocol_constraints<E>(
 ) -> Result<Vec<(usize, Constraint)>, E> {
     let mut constraints = Vec::new();
     for (index, member) in fairness.iter().enumerate() {
-        if matches!(member.target(), ProtocolTarget::Visibility { .. }) {
+        if matches!(
+            member.target(),
+            ProtocolTarget::Visibility {
+                model: MemoryModelName::Ra
+            }
+        ) {
             let mut pairs = Vec::new();
             for transition in transitions {
                 let Some(read) = transition.visibility_read() else {
@@ -601,6 +606,7 @@ mod tests {
     /// FR-228-AC-1: the RA member has one exact canonical target shape and
     /// is strong, each and memory-derived.
     #[trace("TC-673")]
+    #[trace("FR-228-AC-1")]
     #[test]
     fn ra_visibility_member_has_the_specified_wire_form() {
         let member = ProtocolFairness::visibility(MemoryModelName::Ra);
