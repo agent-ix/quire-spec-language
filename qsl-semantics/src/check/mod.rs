@@ -1737,13 +1737,48 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let mut type_spans = self.declared_type_spans;
+        let mut site_spans = self.declared_site_spans;
+        for (index, claim) in self.state_graph_claims.iter().enumerate() {
+            let name = lowering::state_graph_location(index, lowering::StateGraphSite::Claim);
+            if let Origin::TypeDeclaration { name } = name.origin {
+                type_spans.insert(name, claim.form.name.span);
+            }
+            if let Some(over) = &claim.form.over {
+                let site = lowering::state_graph_location(index, lowering::StateGraphSite::Over);
+                if let Origin::TypeDeclaration { name } = site.origin {
+                    type_spans.insert(name, over.name.span);
+                }
+            }
+            if matches!(
+                &claim.form.kind,
+                qsl_forms::StateGraphClaimKind::AlwaysPossible { from: None, .. }
+            ) {
+                let site = lowering::state_graph_location(index, lowering::StateGraphSite::From);
+                if let Origin::TypeDeclaration { name } = site.origin {
+                    // The implicit `true` predicate has no operand span of
+                    // its own; locate its emitted occurrence at the claim.
+                    type_spans.insert(name, claim.form.span);
+                }
+            }
+            for (role, predicate) in state_graph_claim::predicates(&claim.form.kind) {
+                let site = match role {
+                    PredicateRole::From => lowering::StateGraphSite::From,
+                    PredicateRole::Target | PredicateRole::To => lowering::StateGraphSite::Target,
+                };
+                let location = lowering::state_graph_location(index, site);
+                if let Origin::TypeDeclaration { name } = location.origin {
+                    if let Some(expression) = predicate.operands.first() {
+                        site_spans.insert(name, expression.spans.clone());
+                    }
+                }
+            }
+        }
         for (index, source) in self.time_sources.iter().enumerate() {
             type_spans.insert(time_source_origin(index), source.span);
             if let Some(span) = source.tick_operation_span {
                 type_spans.insert(time_operation_origin(index), span);
             }
         }
-        let site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
