@@ -2487,6 +2487,8 @@ impl PackageDeclarations {
                         &checked,
                         &slot_declarations,
                         &mut slot_cx,
+                        &regions,
+                        protocol_profile.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = slots;
