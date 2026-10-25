@@ -2255,14 +2255,8 @@ impl<'a> Run<'_, 'a> {
             sequence: sequence.to_vec(),
         };
         let mut meter = Meter::new(self.request.meter).with_cancel(self.cancel.clone());
-        let outcome = evaluate_tuple(
-            self.request.clause,
-            &components,
-            &mut letters,
-            &mut meter,
-            Some(self.cancel),
-        )
-        .map_err(|_| fault("the-evaluator-reads-the-lasso"))?;
+        let outcome = evaluate_tuple(self.request.clause, &components, &mut letters, &mut meter)
+            .map_err(|_| fault("the-evaluator-reads-the-lasso"))?;
         Ok(match outcome {
             TemporalOutcome::Violated { at } => Ok(at.index()),
             TemporalOutcome::Incomplete(incomplete) => Err(exhausted(
