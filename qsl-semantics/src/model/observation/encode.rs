@@ -10,8 +10,8 @@ use quire_exact::{CollectionKind, EnumMember, FieldValue, NodeKey, Value, Varian
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 use super::{
-    fault, model_views, AdmissionFailure, ModelNormalizationLimits, NativeKind, RawNativeKind,
-    RawNode, SnapshotValue,
+    collection_tag, fault, model_views, AdmissionFailure, ModelNormalizationLimits, NativeKind,
+    RawNativeKind, RawNode, SnapshotValue,
 };
 use crate::model::domain_package::DomainPackageRef;
 
@@ -72,23 +72,33 @@ impl ValueEncoder {
 
     /// `value` as a value form, or `None` when it holds a form this encoder
     /// does not write: an enum member of no variant type, a record of no
-    /// selected record value type, or any of Text, a reference, a `Set`, a
-    /// `Bag` and an `OrderedSet`. Admission reads only `Sequence` collections
-    /// (the others refuse `unsupported-feature`), and a reference needs the
-    /// population only a snapshot knows, so the encoder writes exactly the
-    /// forms admission reads back from a value: a Boolean, an integer, a
-    /// variant, a record, an `Option` and a `Sequence` of them. The walk keeps its own heap
-    /// stack, so a value of any depth encodes in constant native stack.
+    /// selected record value type, or a reference, which needs the
+    /// population only a snapshot knows. The encoder writes exactly the forms
+    /// admission reads back from a value: a Boolean, an integer, a Text, a
+    /// variant, a record, an `Option` and a `Sequence`, `Set`, `Bag` or
+    /// `OrderedSet` of them.
+    ///
+    /// Every value inside the element of a `Set` or `Bag` is written in its
+    /// canonical encoding (FR-106 "Set, bag and ordered-set values"): a Text
+    /// by its retained sequence under its profile, the FR-141 compared form,
+    /// so that equal elements write identically. A Text elsewhere keeps the
+    /// payload it was admitted with. [`SnapshotValue::to_json`] then orders a
+    /// set's or bag's elements by their encoded bytes.
+    ///
+    /// The walk keeps its own heap stack, so a value of any depth encodes in
+    /// constant native stack.
     #[must_use]
     pub fn encode(&self, value: &Value) -> Option<SnapshotValue> {
         enum Work<'v> {
-            Read(&'v Value),
+            /// Write the value; the flag is whether it sits inside the
+            /// element of a set or bag.
+            Read(&'v Value, bool),
             Present,
             Absent,
-            Sequence(usize),
+            Collection(CollectionKind, usize),
             Record(String, Vec<String>),
         }
-        let mut work = vec![Work::Read(value)];
+        let mut work = vec![Work::Read(value, false)];
         let mut done: Vec<SnapshotValue> = Vec::new();
         while let Some(next) = work.pop() {
             match next {
@@ -104,32 +114,48 @@ impl ValueEncoder {
                         names.into_iter().zip(values).collect(),
                     ));
                 }
-                Work::Sequence(len) => {
+                Work::Collection(kind, len) => {
                     let items = done.split_off(done.len().checked_sub(len)?);
-                    done.push(SnapshotValue::sequence(items));
+                    done.push(SnapshotValue::collection(kind, items));
                 }
-                Work::Read(Value::Boolean(held)) => done.push(SnapshotValue::boolean(*held)),
-                Work::Read(Value::Integer(held)) => {
+                Work::Read(Value::Boolean(held), _) => done.push(SnapshotValue::boolean(*held)),
+                Work::Read(Value::Integer(held), _) => {
                     done.push(SnapshotValue::integer(held.to_string()));
                 }
-                Work::Read(Value::Enum(member)) => done.push(self.variant(member)?),
-                Work::Read(Value::Option(option)) => match option.payload() {
+                Work::Read(Value::Text(held), canonical) => {
+                    let written = if canonical {
+                        held.retained()
+                    } else {
+                        held.payload().as_str()
+                    };
+                    done.push(SnapshotValue::native(
+                        RawNativeKind::Known(NativeKind::Text),
+                        vec![("text".to_owned(), Some(written.to_owned()))],
+                    ));
+                }
+                Work::Read(Value::Enum(member), _) => done.push(self.variant(member)?),
+                Work::Read(Value::Option(option), canonical) => match option.payload() {
                     None => done.push(SnapshotValue::absent()),
                     Some(payload) => {
                         work.push(Work::Present);
-                        work.push(Work::Read(payload));
+                        work.push(Work::Read(payload, canonical));
                     }
                 },
-                Work::Read(Value::Collection(collection)) => {
-                    if collection.collection_type().kind() != CollectionKind::Sequence {
-                        return None;
-                    }
+                Work::Read(Value::Collection(collection), canonical) => {
+                    let kind = collection.collection_type().kind();
+                    let canonical =
+                        canonical || matches!(kind, CollectionKind::Set | CollectionKind::Bag);
                     let elements = collection.elements();
-                    work.push(Work::Sequence(elements.len()));
+                    work.push(Work::Collection(kind, elements.len()));
                     // Pushed last-first, so the first element is written first.
-                    work.extend(elements.iter().rev().map(Work::Read));
+                    work.extend(
+                        elements
+                            .iter()
+                            .rev()
+                            .map(|element| Work::Read(element, canonical)),
+                    );
                 }
-                Work::Read(Value::Composite(composite)) => {
+                Work::Read(Value::Composite(composite), canonical) => {
                     let type_identity = self.records.get(&composite.declaration())?;
                     let CompositeShape::Record(declared) =
                         self.types.composite(composite.declaration())?.shape()
@@ -144,13 +170,13 @@ impl ValueEncoder {
                     // Pushed last-first, so the first field is written first.
                     for slot in composite.slots().iter().rev() {
                         work.push(match slot {
-                            FieldValue::Present(held) => Work::Read(held),
+                            FieldValue::Present(held) => Work::Read(held, canonical),
                             FieldValue::Absent => Work::Absent,
                             FieldValue::Null => return None,
                         });
                     }
                 }
-                Work::Read(_) => return None,
+                Work::Read(_, _) => return None,
             }
         }
         done.pop()
@@ -199,10 +225,17 @@ impl SnapshotValue {
                 RawNode::Reference(reference) => json!({"reference": {
                     "population": reference.population, "key": reference.key,
                 }}),
-                RawNode::Sequence(items) => {
-                    let items: Vec<Json> =
+                RawNode::Collection { kind, items } => {
+                    let mut items: Vec<Json> =
                         items.iter().map(|item| take(&mut built, *item)).collect();
-                    json!({ "sequence": items })
+                    // A set and a bag carry no element order: the wire orders
+                    // them by encoded bytes, so one value has one document.
+                    if matches!(kind, CollectionKind::Set | CollectionKind::Bag) {
+                        items.sort_by_cached_key(canonical_bytes);
+                    }
+                    let mut object = Map::new();
+                    object.insert(collection_tag(*kind).to_owned(), Json::Array(items));
+                    Json::Object(object)
                 }
                 RawNode::Record {
                     type_identity,
@@ -233,6 +266,17 @@ impl SnapshotValue {
         }
         take(&mut built, self.root)
     }
+}
+
+/// The RFC 8785 bytes of `value`, the order a set's and a bag's elements are
+/// written in.
+fn canonical_bytes(value: &serde_json::Value) -> Vec<u8> {
+    let text = value.to_string().into_bytes();
+    let canonical = match quire_canonical::read(&text, u64::MAX) {
+        Ok(read) => quire_canonical::to_vec(&read, quire_canonical::Limits::new(u64::MAX)).ok(),
+        Err(_) => None,
+    };
+    canonical.unwrap_or(text)
 }
 
 /// The built value at `index`, left empty: every node is a child of at most

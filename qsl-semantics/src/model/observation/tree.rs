@@ -11,8 +11,12 @@
 //! depth.
 
 use quire_canonical::{Node, NodeRef};
+use quire_exact::CollectionKind;
 
-use super::{NativeKind, NativeObject, RawNativeKind, RawNode, SelectedObject, SnapshotValue};
+use super::{
+    collection_kind_of_tag, NativeKind, NativeObject, RawNativeKind, RawNode, SelectedObject,
+    SnapshotValue,
+};
 
 /// One value of a document read by `quire-canonical`.
 #[derive(Clone, Copy, Debug)]
@@ -126,8 +130,13 @@ pub(super) fn read_raw_value<E>(
     enum Open {
         /// `{"present": <value>}`, waiting for its payload.
         Present,
-        /// `{"sequence": [...]}`, waiting for `remaining` more items.
-        Sequence { remaining: usize, items: Vec<usize> },
+        /// `{"sequence" | "set" | "bag" | "ordered-set": [...]}`, waiting
+        /// for `remaining` more items.
+        Collection {
+            kind: CollectionKind,
+            remaining: usize,
+            items: Vec<usize>,
+        },
         /// `{"record": {"type": .., "fields": {..}}}`, waiting for the
         /// values of `names[items.len()..]`, its field names in document
         /// order.
@@ -174,16 +183,18 @@ pub(super) fn read_raw_value<E>(
                         });
                     }
                 }
-                Some(Open::Sequence {
+                Some(Open::Collection {
+                    kind,
                     remaining,
                     mut items,
                 }) => {
                     items.push(done);
                     if remaining == 1 {
-                        nodes.push(RawNode::Sequence(items));
+                        nodes.push(RawNode::Collection { kind, items });
                         finished = Some(nodes.len() - 1);
                     } else {
-                        open.push(Open::Sequence {
+                        open.push(Open::Collection {
+                            kind,
                             remaining: remaining - 1,
                             items,
                         });
@@ -268,15 +279,25 @@ pub(super) fn read_raw_value<E>(
                     }),
                 ));
             }
-            "sequence" => {
+            "sequence" | "set" | "bag" | "ordered-set" => {
+                let Some(kind) = collection_kind_of_tag(tag) else {
+                    return Ok(None);
+                };
                 let Some(items) = payload.as_array() else {
                     return Ok(None);
                 };
                 let count = items.len();
                 if count == 0 {
-                    finished = Some(push(&mut nodes, RawNode::Sequence(Vec::new())));
+                    finished = Some(push(
+                        &mut nodes,
+                        RawNode::Collection {
+                            kind,
+                            items: Vec::new(),
+                        },
+                    ));
                 } else {
-                    open.push(Open::Sequence {
+                    open.push(Open::Collection {
+                        kind,
                         remaining: count,
                         items: Vec::with_capacity(count),
                     });

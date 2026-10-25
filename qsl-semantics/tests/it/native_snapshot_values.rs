@@ -89,6 +89,15 @@ struct Replay {
     model: Value,
     /// The field values of `Item.i1` in the base snapshot.
     base: Vec<(String, Value)>,
+    /// Whether the package is the collection fixture (TC-1171), whose
+    /// snapshots also hold `z1` of `items` and `a1` of `others`.
+    collections: bool,
+}
+
+/// The collection fixture (TC-1171): `Item` also holding `ids`, `counts`,
+/// `order`, `stamps` and `peers`.
+fn collection_replay() -> Replay {
+    replay_of(fixture::collection_document(), collection_fields())
 }
 
 fn replay() -> Replay {
@@ -147,12 +156,14 @@ fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
         "identity": fixture::PACKAGE, "version": "1",
         "digest": format!("sha256-jcs:{digest}"),
     });
+    let collections = base.iter().any(|(name, _)| name == "peers");
     Replay {
         declarations,
         graph,
         packages,
         model,
         base,
+        collections,
     }
 }
 
@@ -226,6 +237,34 @@ fn snapshot_text(
     label: &str,
     fields: &[(String, Value)],
 ) -> String {
+    // The collection fixture's snapshot lists `a1` of `others` and `z1` of
+    // `items` before `child`, so the last value in walk order is the last
+    // field of `child`.
+    let populations = if replay.collections {
+        let empty = fields_text(&collection_fields());
+        json!([
+            {
+                "population": id("others"), "complete": true,
+                "objects": [{"key": "a1", "type": id("Item"), "fields": "EMPTY"}],
+            },
+            {
+                "population": id("items"), "complete": true,
+                "objects": [
+                    {"key": "z1", "type": id("Item"), "fields": "EMPTY"},
+                    {"key": OBJECT, "type": id("Item"), "fields": "FIELDS"},
+                ],
+            },
+        ])
+        .to_string()
+        .replace("\"EMPTY\"", &empty)
+        .parse::<Value>()
+        .expect("the populations are JSON")
+    } else {
+        json!([{
+            "population": id("items"), "complete": true,
+            "objects": [{"key": OBJECT, "type": id("Item"), "fields": "FIELDS"}],
+        }])
+    };
     let document = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
@@ -234,10 +273,7 @@ fn snapshot_text(
         },
         "observation": observation,
         "model": replay.model,
-        "populations": [{
-            "population": id("items"), "complete": true,
-            "objects": [{"key": OBJECT, "type": id("Item"), "fields": "FIELDS"}],
-        }],
+        "populations": populations,
     });
     document
         .to_string()
@@ -652,6 +688,7 @@ fn default_call(operation: &str) -> (Value, Value) {
             uuid(OTHER_UUID),
         ),
         "retitle" | "rekeep" => (json!({"name": text("Ready")}), text("Steady")),
+        "retag" | "restock" => (retag_parameters(), json!({"set": []})),
         _ => (json!({"name": string("n")}), string("r")),
     }
 }
@@ -2102,4 +2139,432 @@ fn the_frame_decides_each_declared_type_by_its_own_equality() {
     );
     // A UUID changed to another canonical payload is a change.
     assert_violation(changed(&pre, "token", uuid(OTHER_UUID)), "token");
+}
+
+// ---------------------------------------------------------------------------
+// TC-1171: set, bag and ordered-set values
+// ---------------------------------------------------------------------------
+
+/// [`base_fields`] and then the five collection fields of TC-1171, each empty:
+/// `ids: Set<UUID>[0, 3]`, `counts: Bag<Digit>[0, 4]`, `order:
+/// OrderedSet<Digit>[0, 3]`, `stamps: OrderedSet<Timestamp>[0, 2]` and
+/// `peers: Set<Reference<Item>>[0, 2]`.
+fn collection_fields() -> Vec<(String, Value)> {
+    let mut fields = base_fields();
+    fields.extend(
+        [
+            ("ids", json!({"set": []})),
+            ("counts", json!({"bag": []})),
+            ("order", json!({"ordered-set": []})),
+            ("stamps", json!({"ordered-set": []})),
+            ("peers", json!({"set": []})),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value)),
+    );
+    fields
+}
+
+/// The parameters of a well-formed `retag` call.
+fn retag_parameters() -> Value {
+    json!({"ids": {"set": []}, "counts": {"bag": []}, "order": {"ordered-set": []}})
+}
+
+/// `{"integer": ..}` for each spelling.
+fn integers(spellings: &[&str]) -> Vec<Value> {
+    spellings.iter().map(|spelling| integer(spelling)).collect()
+}
+
+fn uuid_ending(last: u8) -> Value {
+    uuid(&format!("00000000-0000-0000-0000-0000000000{last:02x}"))
+}
+
+fn peer(population: &str, key: &str) -> Value {
+    json!({"reference": {"population": id(population), "key": key}})
+}
+
+/// The elements of an admitted collection, in the order it holds them.
+fn elements_of(value: &Datum) -> Vec<Datum> {
+    let Datum::Collection(collection) = value else {
+        panic!("a collection, not {value:?}");
+    };
+    collection.elements().to_vec()
+}
+
+fn integer_text(value: &Datum) -> String {
+    let Datum::Integer(held) = value else {
+        panic!("an integer, not {value:?}");
+    };
+    held.to_string()
+}
+
+fn timestamp_of(value: &Datum) -> i128 {
+    let Datum::Timestamp(held) = value else {
+        panic!("a Timestamp, not {value:?}");
+    };
+    held.nanoseconds()
+}
+
+fn uuid_last_octet(value: &Datum) -> u8 {
+    let Datum::Uuid(held) = value else {
+        panic!("a UUID, not {value:?}");
+    };
+    held.octets()[15]
+}
+
+fn reference_key(value: &Datum) -> String {
+    let Datum::Reference(held) = value else {
+        panic!("a reference, not {value:?}");
+    };
+    held.object().as_str().to_owned()
+}
+
+/// The admission record of a refused outcome.
+fn record_of<T: Debug>(
+    outcome: Result<T, AdmissionFailure>,
+) -> qsl_semantics::model::observation::AdmissionRecord {
+    match outcome {
+        Err(AdmissionFailure::Refused(record)) => record,
+        other => panic!("a refusal, not {other:?}"),
+    }
+}
+
+/// TC-1171 step 1 (FR-106-AC-50): the snapshot admits `ids` as two members,
+/// `counts` as the member `1` once and `2` twice, `order` in the order
+/// `3, 1`, `stamps` in the order `5, -1` and `peers` written `a1` of `others`
+/// before `z1` of `items`; the same document with the `ids`, `counts` and
+/// `peers` elements in another order gives an equal typed observation and a
+/// different document digest; with `order` reversed it gives an unequal one.
+#[trace("TC-1171", "FR-106-AC-50")]
+#[test]
+fn set_bag_and_ordered_set_fields_admit_with_their_element_order() {
+    let replay = collection_replay();
+    let fields = |ids: [u8; 2], counts: [&str; 3], order: [&str; 2], peers: [(&str, &str); 2]| {
+        let mut fields = collection_fields();
+        for (name, value) in [
+            ("ids", json!({"set": ids.map(uuid_ending)})),
+            ("counts", json!({"bag": integers(&counts)})),
+            ("order", json!({"ordered-set": integers(&order)})),
+            (
+                "stamps",
+                json!({"ordered-set": [timestamp("5"), timestamp("-1")]}),
+            ),
+            (
+                "peers",
+                json!({"set": peers.map(|(population, key)| peer(population, key))}),
+            ),
+        ] {
+            fields = with(fields, name, value);
+        }
+        fields
+    };
+    let written = fields(
+        [2, 1],
+        ["2", "1", "2"],
+        ["3", "1"],
+        [("items", "z1"), ("others", "a1")],
+    );
+    let closure = replay
+        .admit(&written, ObservationLimits::default())
+        .unwrap_or_else(|failure| panic!("the snapshot admits: {failure:?}"));
+    let members = |name: &str| elements_of(&replay.value(&closure, name));
+    assert_eq!(members("ids").len(), 2);
+    let mut ids: Vec<u8> = members("ids").iter().map(uuid_last_octet).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, [1, 2]);
+    let counts: Vec<String> = members("counts").iter().map(integer_text).collect();
+    assert_eq!(counts, ["1", "2", "2"], "member 1 once and member 2 twice");
+    let order: Vec<String> = members("order").iter().map(integer_text).collect();
+    assert_eq!(order, ["3", "1"]);
+    let stamps: Vec<i128> = members("stamps").iter().map(timestamp_of).collect();
+    assert_eq!(stamps, [5, -1]);
+    let peers: Vec<String> = members("peers").iter().map(reference_key).collect();
+    assert_eq!(peers, ["a1", "z1"], "ordered by key");
+
+    let reversed = fields(
+        [1, 2],
+        ["1", "2", "2"],
+        ["3", "1"],
+        [("others", "a1"), ("items", "z1")],
+    );
+    let again = replay
+        .admit(&reversed, ObservationLimits::default())
+        .expect("the reordered document admits");
+    for name in ["ids", "counts", "peers"] {
+        assert!(
+            same(&replay.value(&again, name), &replay.value(&closure, name)),
+            "{name} is one value in either array order"
+        );
+    }
+    let (first, _) = snapshot(&replay, "current", "current", &written);
+    let (second, _) = snapshot(&replay, "current", "current", &reversed);
+    assert_ne!(
+        first.digest, second.digest,
+        "the document digest keeps array order"
+    );
+
+    let turned = with(
+        written.clone(),
+        "order",
+        json!({"ordered-set": integers(&["1", "3"])}),
+    );
+    let other = replay
+        .admit(&turned, ObservationLimits::default())
+        .expect("the reversed ordered set admits");
+    assert!(
+        !same(
+            &replay.value(&other, "order"),
+            &replay.value(&closure, "order")
+        ),
+        "an ordered set keeps its order"
+    );
+}
+
+/// One defect and the refusal it gives, as a field of the snapshot and as a
+/// `retag` parameter: the value, the cause, the nested path and the other
+/// members the record names.
+struct Defect {
+    name: &'static str,
+    value: Value,
+    code: Code,
+    cause: &'static str,
+    path: Vec<PathStep>,
+    members: Vec<(&'static str, &'static str)>,
+}
+
+fn defects() -> Vec<Defect> {
+    let invalid = |name, value, path| Defect {
+        name,
+        value,
+        code: Code::InvalidRuntimeInput,
+        cause: "invalid-value",
+        path,
+        members: vec![],
+    };
+    vec![
+        Defect {
+            name: "order",
+            value: json!({"ordered-set": integers(&["1", "1"])}),
+            code: Code::InvalidRuntimeInput,
+            cause: "duplicate-member",
+            path: vec![PathStep::Index(1)],
+            members: vec![("earlier-index", "0")],
+        },
+        Defect {
+            name: "ids",
+            value: json!({"set": [uuid_ending(7), uuid_ending(7)]}),
+            code: Code::InvalidRuntimeInput,
+            cause: "duplicate-member",
+            path: vec![PathStep::Index(1)],
+            members: vec![("earlier-index", "0")],
+        },
+        // The bound comes before any element is read: none of the five
+        // elements is an integer.
+        Defect {
+            name: "counts",
+            value: json!({"bag": integers(&["x", "x", "x", "x", "x"])}),
+            code: Code::CardinalityOutOfBound,
+            cause: "above-maximum",
+            path: vec![],
+            members: vec![("minimum", "0"), ("maximum", "4"), ("count", "5")],
+        },
+        Defect {
+            name: "ids",
+            value: json!({"set": [integer("1")]}),
+            code: Code::InvalidRuntimeInput,
+            cause: "wrong-value-kind",
+            path: vec![PathStep::Index(0)],
+            members: vec![],
+        },
+        Defect {
+            name: "ids",
+            value: json!({"sequence": [uuid_ending(1)]}),
+            code: Code::InvalidRuntimeInput,
+            cause: "wrong-value-kind",
+            path: vec![],
+            members: vec![],
+        },
+        invalid(
+            "ids",
+            json!({"set": [uuid("00000000-0000-0000-0000-00000000000A")]}),
+            vec![PathStep::Index(0)],
+        ),
+        // Every element is read before a duplicate is decided.
+        invalid(
+            "counts",
+            json!({"bag": [integer("x"), integer("1"), integer("1")]}),
+            vec![PathStep::Index(0)],
+        ),
+    ]
+}
+
+/// TC-1171 step 2 (FR-106-AC-51): the refusals of a defective collection, as
+/// a field of the snapshot and as a parameter of an invocation, each with its
+/// code, cause and path.
+#[trace("TC-1171", "FR-106-AC-51")]
+#[test]
+fn defective_collections_refuse_in_a_field_and_in_a_parameter() {
+    let replay = collection_replay();
+    let check = |record: &qsl_semantics::model::observation::AdmissionRecord,
+                 defect: &Defect,
+                 place: &str| {
+        assert_eq!(record.code, defect.code, "{place} {}", defect.value);
+        assert_eq!(record.cause, defect.cause, "{place} {}", defect.value);
+        assert_eq!(record.path, defect.path, "{place} {}", defect.value);
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some(defect.name),
+            "{place} {}",
+            defect.value
+        );
+        for (member, expected) in &defect.members {
+            assert_eq!(
+                record.fields.get(*member).map(String::as_str),
+                Some(*expected),
+                "{place} {member} {}",
+                defect.value
+            );
+        }
+    };
+    for defect in defects() {
+        let field = record_of(replay.admit(
+            &with(collection_fields(), defect.name, defect.value.clone()),
+            ObservationLimits::default(),
+        ));
+        check(&field, &defect, "field");
+        let mut parameters = retag_parameters();
+        parameters[defect.name] = defect.value.clone();
+        let parameter = record_of(replay.invoke(
+            "retag",
+            Selected::Postcondition,
+            parameters,
+            json!({"set": []}),
+            ObservationLimits::default(),
+        ));
+        check(&parameter, &defect, "parameter");
+    }
+    // A Timestamp elements's spelling is judged like any Timestamp.
+    let stamps = record_of(replay.admit(
+        &with(
+            collection_fields(),
+            "stamps",
+            json!({"ordered-set": [timestamp("01")]}),
+        ),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(
+        (stamps.code, stamps.cause, stamps.path),
+        (
+            Code::InvalidRuntimeInput,
+            "invalid-value",
+            vec![PathStep::Index(0)]
+        )
+    );
+}
+
+/// TC-1171 step 3 (FR-106-AC-52): an invocation whose post `ids` or `counts`
+/// holds the pre members in another order is no change; a post `counts` that
+/// drops a `2`, or a post `order` of `1, 3` against `3, 1`, is a change that
+/// refuses `frame_violation`/`unauthorized-change` naming the object and the
+/// field; under `Witness` a post `counts` of `1, 10, 2` admits and reports
+/// one `OutOfRange` at the supplied index 1; `observation.values` counts the
+/// last element of `order` exactly.
+#[trace("TC-1171", "FR-106-AC-52")]
+#[test]
+fn the_frame_and_the_limits_see_collections_by_value() {
+    let replay = collection_replay();
+    let pre = {
+        let mut fields = collection_fields();
+        for (name, value) in [
+            ("ids", json!({"set": [uuid_ending(1), uuid_ending(2)]})),
+            ("counts", json!({"bag": integers(&["1", "2", "2"])})),
+            ("order", json!({"ordered-set": integers(&["3", "1"])})),
+        ] {
+            fields = with(fields, name, value);
+        }
+        fields
+    };
+    let frame = |post: Vec<(String, Value)>| replay.frame_from("retag", &pre, &post);
+    let reordered = with(
+        with(
+            pre.clone(),
+            "ids",
+            json!({"set": [uuid_ending(2), uuid_ending(1)]}),
+        ),
+        "counts",
+        json!({"bag": integers(&["2", "1", "2"])}),
+    );
+    assert_eq!(frame(reordered), FrameVerdict::Holds);
+    for (field, value) in [
+        ("counts", json!({"bag": integers(&["1", "2"])})),
+        ("order", json!({"ordered-set": integers(&["1", "3"])})),
+    ] {
+        let FrameVerdict::Violation(witness) = frame(with(pre.clone(), field, value)) else {
+            panic!("{field}: a change without a grant violates the frame");
+        };
+        assert_eq!(witness.code, Code::FrameViolation);
+        assert_eq!(witness.cause, "unauthorized-change");
+        assert!(
+            writes(&witness.change, field),
+            "{field}: {:?}",
+            witness.change
+        );
+    }
+
+    // Under `Witness` a post element above the declared range admits exactly
+    // and is reported at its supplied array index.
+    let witness = ObservationLimits {
+        post_state: PostStateRange::Witness,
+        ..ObservationLimits::default()
+    };
+    let post = with(
+        collection_fields(),
+        "counts",
+        json!({"bag": integers(&["1", "10", "2"])}),
+    );
+    let admitted = replay
+        .invoke_with_post("restock", &post, witness)
+        .unwrap_or_else(|failure| panic!("the post snapshot admits: {failure:?}"));
+    let post = admitted
+        .post
+        .expect("a postcondition admits a post snapshot");
+    let [violation] = &post.out_of_range[..] else {
+        panic!("one range violation, not {:?}", post.out_of_range);
+    };
+    assert_eq!(violation.field.name, "counts");
+    assert_eq!(violation.index, Some(1));
+    assert_eq!(violation.observed.to_string(), "10");
+    assert_eq!(violation.range.upper().to_string(), "9");
+    assert!(admitted
+        .pre
+        .expect("a postcondition admits a pre snapshot")
+        .out_of_range
+        .is_empty());
+
+    // The last value in walk order is the last element of `order`.
+    let walked: Vec<(String, Value)> = pre
+        .iter()
+        .filter(|(name, _)| name != "order")
+        .cloned()
+        .chain(pre.iter().filter(|(name, _)| name == "order").cloned())
+        .collect();
+    let used = replay.values_used(&walked);
+    // Every field and every element counts one value: `child` holds its ten
+    // base fields, `ids` and its two members, `counts` and its three, `order`
+    // and its two, and the empty `stamps` and `peers` (22); `z1` and `a1`
+    // hold the ten base fields and five empty collections each (15 + 15).
+    assert_eq!(used, 22 + 15 + 15);
+    replay
+        .admit(
+            &walked,
+            ObservationLimits::default().with_values_per_document(used),
+        )
+        .expect("the exact count admits");
+    assert_values_limit(
+        replay.admit(
+            &walked,
+            ObservationLimits::default().with_values_per_document(used - 1),
+        ),
+        used - 1,
+    );
 }
