@@ -2016,3 +2016,44 @@ pub(crate) const IMPLIES_ALWAYS_MOVES: [(usize, u64, usize); 12] = [
     (2, 2, 2),
     (2, 3, 2),
 ];
+
+/// FR-315-AC-32: the hyper refusals are codes of the closed set, applied in
+/// the order FR-315 states them.
+#[trace("TC-900", "FR-315-AC-32")]
+#[test]
+fn the_hyper_refusals_are_closed_codes_in_their_stated_order() {
+    let clause = || "NonInterference".to_owned();
+    let refusals = [
+        Refusal::HyperForm {
+            clause: clause(),
+            form: "HP-3",
+        },
+        Refusal::SubjectBinding { alias: None },
+        Refusal::InstanceBinding {
+            parameter: "v".to_owned(),
+        },
+        Refusal::ProductIdentity { clause: clause() },
+        Refusal::HyperBody { clause: clause() },
+        Refusal::MatchConjunct {
+            clause: clause(),
+            conjunct: 2,
+            site: "hyper NonInterference match 2".to_owned(),
+            tuple: vec!["step(0)".to_owned(), "step(0)".to_owned()],
+        },
+    ];
+    let codes: Vec<&str> = refusals.iter().map(Refusal::code).collect();
+    assert_eq!(
+        codes,
+        [
+            "hyper-form",
+            "subject-binding",
+            "instance-binding",
+            "product-identity",
+            "hyper-body",
+            "match-conjunct"
+        ]
+    );
+    let rows: Vec<u8> = refusals.iter().map(Refusal::row).collect();
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{rows:?}");
+    assert!(rows[0] > 17);
+}

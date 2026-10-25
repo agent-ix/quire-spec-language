@@ -177,6 +177,7 @@ pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
     settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
 };
+pub use model_check::hyper_smt_query::{HyperProductIdentity, HyperQuery, HyperQueryRequest};
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
