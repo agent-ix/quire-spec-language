@@ -29,7 +29,8 @@ Scope: FR-315-AC-7 to FR-315-AC-11.
    FR-176-AC-4's added `match` conjunct.
 4. Call `encode_hyper_query` with the HP-3 clause, FR-176-AC-3's liveness
    clause, `Unrolling{depth: 1}`, `SavesPower` with one subject, and a
-   `match` conjunct whose function exhausts the request's `meter`, the last
+   `match` conjunct whose function exhausts the request's `meter` through its
+   `matcher`, the last
    twice with equal budgets.
 5. Submit step 1's base query and step 2's depth-1 step query to a `QF_LIA`
    solver; then the base query at depth 1 over the vault whose post clause

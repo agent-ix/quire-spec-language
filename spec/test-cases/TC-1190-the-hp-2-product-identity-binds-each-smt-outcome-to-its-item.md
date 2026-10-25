@@ -37,7 +37,8 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    subject.
 2. Repeat step 1's base query at instance `w`; for the clause with
    `fair { weak V::Vault::step }` on `a`; for a subject that differs only in
-   a proof bound; and with a meter of a different budget. Compare each
+   a proof bound; with a meter of a different budget; and with different
+   `matcher` and `letters` seams. Compare each
    identity and script with step 1's.
 3. Call `HyperProductIdentity::of` and `encode_hyper_query` for
    `NonInterference` with an empty `instance`; with the key `x` over the
@@ -46,8 +47,8 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    package has no emission; for the HP-3 clause of FR-315-AC-10; and for
    FR-176-AC-3's liveness clause with an empty `instance`. Call
    `HyperProductIdentity::of` for `NonInterference` with a `match` conjunct
-   whose evaluation exhausts the request's `meter`, and read the meter's
-   consumed counters.
+   whose evaluation through the request's `matcher` exhausts the request's
+   `meter`, and read the meter's consumed counters and that no seam was called.
 4. Build a test crate whose only QSL dependency is `qsl-replay`, whose
    `replay` module names `HyperProductIdentity`, `HyperQuery`,
    `HyperQueryRequest`, `SubjectIdentity` and `HyperSmtOutcome` and calls
