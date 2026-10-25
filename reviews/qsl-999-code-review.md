@@ -104,3 +104,34 @@ on control constructs beyond a straight-line `sequence`, and the
     Sy`, so zero iterations): 0 warnings, against 1 expected by the spec. This
     confirms FND-004.
   - The `await` half of FND-004 was found by reading the code only.
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 reviews PR #1505 (head `29b0b4d93`, branch
+`qsl-999-load-buffering-v2`), which replaces the closed #1495. It is based on
+`ed7abb55b`, and `git diff origin/main...HEAD` holds only QSL-999 (25 files,
++1087 -113, including this file and the gap-analysis SR). Every removed line is
+a positional call-site argument converted into `ManifestMembers`. Nothing from
+main is reverted. It merges cleanly with current main (`9c8673cbf`), and the
+GitHub mergeable state is MERGEABLE.
+
+| ID | Severity | Summary | Refs |
+|----|----------|---------|------|
+| FND-010 | medium | The new registration cause `invalid-memory-models` (`RegistrationCause::InvalidMemoryModels`) is in neither the QSpec FR-272 `invalid_capability` cause vocabulary nor QSL FR-075, which list `invalid-domains`, `invalid-fairness-kinds`, `invalid-dynamics` and so on; a wire-visible cause is being minted without a spec | qsl-route/src/lib.rs:377-378,1022 |
+| FND-011 | low | The doc says `memory_models` "is judged last, after `evidence_kinds`", but the code admits it before `evidence_kinds`; a manifest with both defects refuses `invalid-memory-models`, not the documented `unknown-evidence-kind` (and the `evidence_kinds` paragraph still says it is judged last) | qsl-route/src/lib.rs:320,377-379 |
+| FND-012 | low | A `repeat` body is always walked twice, whatever its `max`: probe G, `repeat max 1 while {true} { Sy; Lx }`, reports 1 shape (Lx of iteration 1 with Sy of an impossible iteration 2), against 0 expected by the spec | qsl-eval/src/simulation/protocol/access.rs:1151-1160 |
+| FND-013 | low | The new fail-the-item path when `load_buffering_warnings` returns `None` (it overwrites value, label, basis, execution, truth and counterexample with `Row::failed()`) has no test, as the coder states | qsl-replay/src/model_check/settle.rs:285-301 |
+
+## Dispositions
+
+| FND | outcome | reason |
+|-----|---------|--------|
+| FND-001 | fixed | #1505 is a clean rebuild on ed7abb55b with only the QSL-999 change; no main content reverted; merges clean with current main |
+| FND-002 | fixed | Only an acquire-or-stronger Load clears pending; a seq_cst store keeps it; covered by "a seq_cst store is no acquire" |
+| FND-003 | fixed | A choice joins its cases' results only (`after` starts empty, `pending` only when there are no cases); covered by "every choice case fences" / "one choice case fences" |
+| FND-004 | fixed | `repeat` exits are the zero-, one- and two-iteration results, with `exhausted` after the body; `await` takes `then` or `timeout`; all covered by tests (FND-012 is a new low over-approximation) |
+| FND-005 | fixed | `admit_memory_models` refuses an empty list, a repeated model and a non-temporal carrier; tested by `a_defective_memory_models_member_refuses_the_registration` (cause name: FND-010) |
+| FND-006 | fixed | The AC-1 test now checks the warned record against the engine outcome (Holds, then Proved/ClosedScope, no counterexample) and compares the obligation identity with the quiet variant |
+| FND-007 | fixed | A pre-check failure now settles the item `failed` instead of silently giving no warnings (untested: FND-013) |
+| FND-008 | fixed | `descriptor_from_manifest_with_dynamics` takes `ManifestMembers`; `a_provider_with_dynamics_keeps_its_memory_models` covers it |
+| FND-009 | fixed | evidence_kinds.rs call sites reformatted, with comments above the field; `cargo fmt --check` clean |
