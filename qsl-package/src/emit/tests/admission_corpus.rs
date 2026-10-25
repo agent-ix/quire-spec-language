@@ -94,13 +94,15 @@ enum Fixture {
     /// TC-524: ADR-018 §6's [`TEMPORAL_CLAUSE`] over the ConfigVersion
     /// domain package.
     TemporalClause,
+    /// TC-1266: [`HYPER_CLAUSE`] over the ConfigVersion domain package.
+    HyperClause,
     /// TC-1187, TC-1220: [`HYBRID_UNIT`], hybrid models and their claims.
     Hybrid,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 23] = [
+    const ALL: [Self; 24] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -123,6 +125,7 @@ impl Fixture {
         Self::NativeScalars,
         Self::UnionNodes,
         Self::TemporalClause,
+        Self::HyperClause,
         Self::Hybrid,
     ];
 }
@@ -165,6 +168,17 @@ const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";
      fair weak each Config::ConfigVersion::attemptUpdate;\n\
      always eventually holds(c.versionNumber = 2)\n\
      }\n";
+
+/// FR-488: a hyper clause over `behaviours`, with a fairness constraint, a
+/// `match` conjunct and a `holds` atom, emitting the `claim`/`hyperproperty`
+/// family and its `temporal`/`temporal_clause` body wrapper.
+const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
+     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     hyper Same using t over behaviours (c: Config::ConfigVersion) \
+     forall trace a of Config fair weak each Config::ConfigVersion::attemptUpdate; \
+     forall trace b of Config \
+     match { a.step.op = b.step.op } \
+     { always holds(c.versionNumber @ a = c.versionNumber @ b) }\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
@@ -320,6 +334,14 @@ impl Fixture {
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
                     TEMPORAL_CLAUSE.replace("{}", &document_digest(document))
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
+            Self::HyperClause => {
+                let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}{}",
+                    HYPER_CLAUSE.replace("{}", &document_digest(document))
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -500,6 +522,7 @@ fn rows() -> Vec<Row> {
         row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
         row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
         row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
+        row(K::Claim(ClaimForm::Hyperproperty), F::HyperClause),
         row(K::Hybrid(HybridForm::Model), F::Hybrid),
         row(K::Hybrid(HybridForm::Mode), F::Hybrid),
         row(K::Hybrid(HybridForm::Transition), F::Hybrid),
@@ -558,7 +581,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Protocol(ProtocolForm::Compensation), NO_TAG),
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
-        (K::Claim(ClaimForm::Hyperproperty), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (

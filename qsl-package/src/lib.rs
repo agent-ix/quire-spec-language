@@ -31,13 +31,13 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, read_hybrids, read_import_view, resolve_clause_root, supply_closure,
-    AdmittedPackages, CheckedClockConstraint, CheckedClockPlace, CheckedClockReset,
-    CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate,
-    CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockPathStep, ClockSlotSelector, HybridRead,
-    HybridReadError, ImportViewRefusal, ReadHybridClaim, ReadHybridModel, ResolvedClockPathStep,
-    SourceMapDefect, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits,
-    V2ReadRefusal,
+    clause_roots, hyper_roots, read_hybrids, read_import_view, resolve_clause_root,
+    resolve_hyper_root, supply_closure, AdmittedPackages, CheckedClockConstraint,
+    CheckedClockPlace, CheckedClockReset, CheckedTimeSource, CheckedTimeSourceKind,
+    CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
+    ClockPathStep, ClockSlotSelector, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, ReadHybridClaim, ReadHybridModel, ResolvedClockPathStep, SourceMapDefect,
+    TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{
@@ -137,6 +137,22 @@ pub use emit::{checked_node_id_of, emit_checked_with_fault};
 ///
 /// ```compile_fail,E0432
 /// use qsl_package::resolve_clause_root;
+/// ```
+///
+/// ```compile_fail,E0432
+/// use qsl_package::hyper_roots;
+/// ```
+///
+/// ```compile_fail,E0432
+/// use qsl_package::resolve_hyper_root;
+/// ```
+///
+/// ```compile_fail,E0432
+/// use qsl_package::HyperRoot;
+/// ```
+///
+/// ```compile_fail,E0432
+/// use qsl_package::HyperRootUnresolved;
 /// ```
 ///
 /// ```compile_fail,E0432

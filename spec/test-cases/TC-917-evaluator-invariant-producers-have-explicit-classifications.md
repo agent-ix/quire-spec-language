@@ -17,7 +17,8 @@ relationships:
 
 Verify every production evaluator detecting site in FR-090's producer
 table. Scope: FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18,
-FR-090-AC-20, FR-096-AC-15 and FR-397-AC-9 (the `ieee-profile-unresolved` producer row).
+FR-090-AC-20, FR-090-AC-22, FR-096-AC-15 and FR-397-AC-9 (the
+`ieee-profile-unresolved` producer row).
 Fixtures are private malformed checked-state probes, not public unchecked
 authority. A test of `InternalFault::new` alone does not exercise a producer.
 `record-present-value-missing` uses its existing local source-inspection
@@ -47,7 +48,10 @@ producer proof.
    even with a shorter declaration or a malformed value stack. Record this
    proof against FR-090-AC-18 and inspect the defensive branch's table
    classification. Do not replace producer logic or inject a preconstructed
-   fault to simulate execution of that branch.
+   fault to simulate execution of that branch. Include a state predicate
+   whose attribute receiver is a reference to an object removed from the
+   current state; drive it through public evaluate (and public call where the
+   fixture admits a call) rather than only a private malformed-state probe.
 2. Include direct S6a `not x`, `x: Boolean`, with an Integer argument bypassing
    admission. Pair it with a valid Boolean argument and with the same Integer
    supplied through each public package API's normal admission.
@@ -99,3 +103,6 @@ Step 5 keeps each existing outcome or independently named fault and does not
 route it through a default table classification. Ordinary IEEE outcomes and
 QSL-owned cancellation retain their actual channels, meter prefixes and loss
 provenance; this inspection exception does not weaken their execution tests.
+For the removed-object attribute case, the exact fault is
+`attribute-slot-unresolved` at S6a and crosses the public seam as
+`CallFailure::Fault`, without a panic or a manufactured semantic outcome.

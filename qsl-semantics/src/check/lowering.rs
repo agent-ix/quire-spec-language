@@ -89,6 +89,7 @@ use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
 mod hybrid;
+mod hyper;
 mod model;
 mod protocol;
 mod state;
@@ -99,6 +100,7 @@ pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
+pub(crate) use hyper::HyperClauseInput;
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
     bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
