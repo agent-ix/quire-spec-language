@@ -23,7 +23,7 @@ use std::ops::ControlFlow;
 
 use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal};
-use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
+use qsl_forms::{BuiltinType, NameForm, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, FloatType,
@@ -213,15 +213,19 @@ pub(crate) fn native_scalar_named(name: &str) -> Option<ValueType> {
 /// spellings. A name that binds more than one of these is ambiguous.
 fn named_type(
     names: &impl TypeNames,
-    name: &str,
+    name: &qsl_forms::NameForm,
     form: &TypeForm,
 ) -> Result<ValueType, TypeFormError> {
-    let native = native_scalar_named(name);
-    match (names.named_types(name), native) {
-        ([], None) => Err(fault(form, TypeFormFault::MissingName(name.to_owned()))),
+    let native = native_scalar_named(&name.name);
+    match (names.named_types(&name.name), native) {
+        ([], None) if name.is_qualified() => Err(fault(
+            form,
+            TypeFormFault::MissingQualifiedName(name.clone()),
+        )),
+        ([], None) => Err(fault(form, TypeFormFault::MissingName(name.name.clone()))),
         ([], Some(native)) => Ok(native),
         ([value_type], None) => Ok(value_type.clone()),
-        _ => Err(fault(form, TypeFormFault::AmbiguousName(name.to_owned()))),
+        _ => Err(fault(form, TypeFormFault::AmbiguousName(name.name.clone()))),
     }
 }
 
@@ -235,8 +239,10 @@ pub(crate) fn resolve_named_type(
     name: &str,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
-    let form = TypeForm::name(name, Span { start: 0, end: 0 });
-    named_type(scope, name, &form).map_err(|error| error.into_refusal(location))
+    let span = Span { start: 0, end: 0 };
+    let name = NameForm::new(name, span);
+    let form = TypeForm::new(TypeFormHead::Name(name.clone()), span);
+    named_type(scope, &name, &form).map_err(|error| error.into_refusal(location))
 }
 
 fn bound_text(form: &TypeForm, index: usize) -> Result<&str, TypeFormError> {
@@ -497,7 +503,7 @@ fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'
                 .transpose()?;
             Ok(Step::Leaf(ValueType::Population(maximum)))
         }
-        TypeFormHead::Name(name) => named_type(names, &name.name, form).map(Step::Leaf),
+        TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
     }
 }
 

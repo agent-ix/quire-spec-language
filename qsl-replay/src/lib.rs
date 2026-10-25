@@ -132,9 +132,11 @@ pub use execute::{
     ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
-    settle_hybrid_candidates, BoundDimension, BudgetRefusal, ClaimHorizon, HybridSettlement,
-    NegativeHorizon, SolverBudget, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome,
-    SolverResult, SolverStop,
+    settle_hybrid_candidates, AdmittedHybridProcessItem, AdmittedHybridProcessRequest,
+    BoundDimension, BudgetRefusal, ClaimHorizon, HybridProcessDependencyPackage, HybridProcessItem,
+    HybridProcessPackageContext, HybridProcessRequest, HybridProcessRequestRefusal,
+    HybridSettlement, NegativeHorizon, SolverBudget, SolverCoverage, SolverHorizon, SolverMethod,
+    SolverOutcome, SolverResult, SolverStop,
 };
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
@@ -147,7 +149,7 @@ pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
-pub use limits::{AccountingLimits, CallerLimits, PrepareLimits, RenderLimits};
+pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
     MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
@@ -199,6 +201,7 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
     STEP_INDUCTION_DEPTH,
 };
+pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,

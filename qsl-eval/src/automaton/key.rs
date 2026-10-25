@@ -26,6 +26,11 @@
 //! formula. The other forms of FR-338's algebra (bounded, TP-3 with
 //! intervals, Büchi) belong to the EN-1 phases that decide them; a clause of
 //! another shape is not translated here.
+//!
+//! [`SafetyStates`] is the general `["safety", branches]` algebra of any
+//! unbounded-profile clause: obligations, past memory, interval windows and
+//! acceptance membership (`key_state.rs`), which it writes sorted and admits
+//! by resolving every member in the clause's formula.
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -36,6 +41,7 @@ use qsl_semantics::check::{
 use quire_canonical::{Limits, Node, NodeRef};
 use quire_exact::Value;
 
+use super::key_state::{safety_enc, Configuration, FormulaShape, Reader};
 use crate::simulation::model::encode::{hex, value_enc, Enc};
 
 /// The discriminator of a key's octet encoding (not a digest domain).
@@ -407,23 +413,9 @@ impl SafetyTranslation {
     ///
     /// The first [`KeyRefusal`] the octets meet.
     pub fn admit(&self, octets: &[u8]) -> Result<(AutomatonStateKey, SafetyState), KeyRefusal> {
-        let document =
-            quire_canonical::read(octets, self.max_bytes).map_err(|_| KeyRefusal::Malformed)?;
-        if canonical(document.root(), self.max_bytes)? != octets {
-            return Err(KeyRefusal::NotCanonical);
-        }
-        let Node::Array(items) = document.root().node() else {
-            return Err(KeyRefusal::Shape);
-        };
-        let [discriminator, context, state] = exactly(items).ok_or(KeyRefusal::Shape)?;
-        if !matches!(discriminator.node(), Node::String(AUTOMATON_STATE_KEY_V1)) {
-            return Err(KeyRefusal::Discriminator);
-        }
-        if canonical(context, self.max_bytes)? != self.context_octets {
-            return Err(KeyRefusal::ForeignContext);
-        }
-        let state = self.state(state)?;
-        Ok((AutomatonStateKey(octets.to_vec()), state))
+        admit_envelope(&self.context_octets, self.max_bytes, octets, |state| {
+            self.state(state)
+        })
     }
 
     /// The safety state `body` encodes. `#[string_edge]`: reads an imported
@@ -548,6 +540,139 @@ impl SafetyTranslation {
     }
 }
 
+/// Admit `octets` as one key under the context whose canonical octets are
+/// `context_octets`: every envelope refusal, then `read` of the state body.
+fn admit_envelope<T>(
+    context_octets: &[u8],
+    max_bytes: u64,
+    octets: &[u8],
+    read: impl FnOnce(NodeRef<'_>) -> Result<T, KeyRefusal>,
+) -> Result<(AutomatonStateKey, T), KeyRefusal> {
+    let document = quire_canonical::read(octets, max_bytes).map_err(|_| KeyRefusal::Malformed)?;
+    if canonical(document.root(), max_bytes)? != octets {
+        return Err(KeyRefusal::NotCanonical);
+    }
+    let Node::Array(items) = document.root().node() else {
+        return Err(KeyRefusal::Shape);
+    };
+    let [discriminator, context, state] = exactly(items).ok_or(KeyRefusal::Shape)?;
+    if !matches!(discriminator.node(), Node::String(AUTOMATON_STATE_KEY_V1)) {
+        return Err(KeyRefusal::Discriminator);
+    }
+    if canonical(context, max_bytes)? != context_octets {
+        return Err(KeyRefusal::ForeignContext);
+    }
+    let state = read(state)?;
+    Ok((AutomatonStateKey(octets.to_vec()), state))
+}
+
+/// The safety translation of a checked clause whose states carry the whole
+/// `["safety", branches]` algebra (FR-338): obligations, past memory, interval
+/// windows and acceptance membership, resolved in the clause's own formula.
+///
+/// [`SafetyTranslation`] is the two-state special case EN-1 decides for
+/// `always holds(A)`. This type writes and admits the keys of any
+/// configuration set the checked formula can reach, but does not itself
+/// decide which sets a run reaches.
+#[derive(Clone, Debug)]
+pub struct SafetyStates {
+    context: Enc,
+    context_octets: Vec<u8>,
+    max_bytes: u64,
+    shape: FormulaShape,
+}
+
+impl SafetyStates {
+    /// The states of the unbounded-profile clause `clause` under `context`.
+    ///
+    /// # Errors
+    ///
+    /// [`TranslationRefusal::NotTranslated`] when the clause is under a
+    /// bounded profile, holds a timed interval, has more operand paths than
+    /// the path bound, or `context` names another profile;
+    /// [`TranslationRefusal::Key`] when the context does not encode.
+    pub fn clause(
+        clause: &CheckedTemporalClause,
+        context: &StateContext,
+    ) -> Result<Self, TranslationRefusal> {
+        let not_translated = || TranslationRefusal::NotTranslated(NotTranslated);
+        if clause.profile().is_bounded() || context.profile != clause.profile() {
+            return Err(not_translated());
+        }
+        let shape = FormulaShape::of(clause.formula()).ok_or_else(not_translated)?;
+        let max_bytes = IdentityLimits::default().input_bytes;
+        let (context, context_octets) = context
+            .encoded(max_bytes)
+            .map_err(TranslationRefusal::Key)?;
+        Ok(Self {
+            context,
+            context_octets,
+            max_bytes,
+            shape,
+        })
+    }
+
+    /// The canonical key of the state whose viable configurations are
+    /// `branches`, in any order and with any set order inside them: every
+    /// set is written sorted and duplicate-free.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
+    /// budget; no truncated key is produced.
+    pub fn key(&self, branches: &[Configuration]) -> Result<AutomatonStateKey, KeyRefusal> {
+        let key = Enc::Array(vec![
+            Enc::text(AUTOMATON_STATE_KEY_V1),
+            self.context.clone(),
+            safety_enc(branches, self.max_bytes)?,
+        ]);
+        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
+            .map(AutomatonStateKey)
+            .map_err(|_| KeyRefusal::Encoding)
+    }
+
+    /// Admit `octets` as a safety key of this clause's context, resolving
+    /// every member in its formula, and return the configurations it holds.
+    ///
+    /// # Errors
+    ///
+    /// The first [`KeyRefusal`] the octets meet.
+    pub fn admit(
+        &self,
+        octets: &[u8],
+    ) -> Result<(AutomatonStateKey, Vec<Configuration>), KeyRefusal> {
+        admit_envelope(&self.context_octets, self.max_bytes, octets, |state| {
+            self.state(state)
+        })
+    }
+
+    /// The configurations `body` encodes. `#[string_edge]`: reads an
+    /// imported key's state tag by its wire spelling.
+    #[ix_trace_rs::string_edge]
+    fn state(&self, body: NodeRef<'_>) -> Result<Vec<Configuration>, KeyRefusal> {
+        let Node::Array(mut items) = body.node() else {
+            return Err(KeyRefusal::Members);
+        };
+        let tag = match items.next().map(|tag| tag.node()) {
+            Some(Node::String(tag)) => tag,
+            _ => return Err(KeyRefusal::Members),
+        };
+        match tag {
+            "safety" => {}
+            "bounded" | "accept" | "reject" | "buchi" => {
+                return Err(KeyRefusal::WrongForm(tag.to_owned()))
+            }
+            other => return Err(KeyRefusal::UnknownTag(other.to_owned())),
+        }
+        let [branches] = exactly(items).ok_or(KeyRefusal::Members)?;
+        Reader {
+            shape: &self.shape,
+            max_bytes: self.max_bytes,
+        }
+        .branches(branches)
+    }
+}
+
 /// Why a clause has no [`SafetyTranslation`].
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TranslationRefusal {
@@ -597,6 +722,23 @@ pub(super) fn ascending(previous: &mut Option<Vec<u8>>, next: Vec<u8>) -> Result
     }
     *previous = Some(next);
     Ok(())
+}
+
+/// A canonical unsigned decimal string in `0..=2^64`: the u64 domain plus
+/// the one saturation value `b+1` of a counter whose bound is `u64::MAX`.
+/// `#[string_edge]`: reads an imported key's decimal string.
+#[ix_trace_rs::string_edge]
+pub(super) fn decimal_wide(text: &str) -> Result<u128, KeyRefusal> {
+    let refuse = || KeyRefusal::Decimal(text.to_owned());
+    let canonical =
+        text == "0" || (text.bytes().all(|byte| byte.is_ascii_digit()) && !text.starts_with('0'));
+    if text.is_empty() || !canonical {
+        return Err(refuse());
+    }
+    match text.parse::<u128>() {
+        Ok(value) if value <= u128::from(u64::MAX) + 1 => Ok(value),
+        _ => Err(refuse()),
+    }
 }
 
 /// A canonical unsigned decimal string in the u64 domain: `"0"` or

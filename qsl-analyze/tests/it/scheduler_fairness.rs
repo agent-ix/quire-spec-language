@@ -106,7 +106,7 @@ impl ModelLetters for AtV {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, quire_exact::Incomplete> {
+    ) -> Result<AtomReading, qsl_eval::model_subject::AtomStop> {
         Ok(if (self.0)(v(state, &instance.key)) {
             AtomReading::True
         } else {

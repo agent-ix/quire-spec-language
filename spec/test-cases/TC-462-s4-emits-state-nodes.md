@@ -87,3 +87,8 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
   aggregate `[self]`, anchor the `ConfigVersion` node, one `claim`
   occurrence, no new anchor or frame; the `invariant` variant has another
   node id; both packages read; the triple decodes to `Constraint`.
+- Step 8: with only the attempt, the frame's `generated` occurrence region is
+  the qualified operation reference in the attempt, not its declared name.
+  With both declarations, attempt-first selects the attempt reference and
+  clause-first selects the clause reference. The frame occurrence's
+  `(node_id, role, ordinal)` is identical after reordering.

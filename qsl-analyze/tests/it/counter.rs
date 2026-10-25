@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
@@ -23,7 +23,7 @@ use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
+use quire_exact::{Meter, ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -203,7 +203,24 @@ fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
 
 /// The S3 declarations of [`unit_text_in`]'s unit.
 pub(crate) fn declarations_in(identity: &str, document: &[u8], body: &str) -> PackageDeclarations {
-    let text = unit_text_in(identity, document, body);
+    declarations_from_text(document, unit_text_in(identity, document, body))
+}
+
+/// The native unit of [`unit_text_in`] with an explicit model profile in its
+/// header, for tests of model-aware helper admission.
+pub(crate) fn declarations_with_model_profile(
+    identity: &str,
+    document: &[u8],
+    body: &str,
+) -> PackageDeclarations {
+    let text = unit_text_in(identity, document, body).replace(
+        "profile v = \"quire.value.complete/v1\";",
+        "profile v = \"quire.value.complete/v1\";\nprofile m = \"quire.model.complete/v1\";",
+    );
+    declarations_from_text(document, text)
+}
+
+fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations {
     let packages = package_input([document]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -452,7 +469,7 @@ impl ModelLetters for Letters {
         instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(match (self.atom)(value(state, &instance.key)) {
             Some(true) => AtomReading::True,
             Some(false) => AtomReading::False,

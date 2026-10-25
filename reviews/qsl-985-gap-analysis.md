@@ -49,7 +49,7 @@ killed.
 
 Reverse gap:
 
-- `nests_reference`, `holds_reference` and `PopulationRow::abstract_node`
+- `nests_reference`, `holds_reference` and `PopulationRow::order_key`
   each have a production caller and an owning requirement (FR-135, FR-140).
 - The composite arms of `holds_reference` have no test, and no well-typed row
   can reach them (SR-17011 FND-001).

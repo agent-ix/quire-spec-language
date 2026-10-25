@@ -816,10 +816,7 @@ fn a_meter_or_candidate_stop_settles_naming_its_setting() {
         assert_eq!(limit.setting(), setting);
         assert!(!matches!(setting, "meter" | "max_candidates"));
         assert!(!setting.eq(name), "no bare counter name: {setting}");
-        if setting.starts_with("accounting.") {
-            CallerLimits::from_operands([operand])
-                .expect("the settings operation accepts the name");
-        }
+        CallerLimits::from_operands([operand]).expect("the settings operation accepts the name");
     }
 }
 

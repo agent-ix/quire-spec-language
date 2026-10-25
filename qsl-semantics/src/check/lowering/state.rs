@@ -55,7 +55,8 @@ pub(crate) struct AnchorInput<'a> {
     /// placed if this is the first clause or attempt naming it (FR-105
     /// "Outputs"): the operation reference's own position, a real location
     /// of the unit. A clause's is [`state_operation_location`]; an
-    /// attempt's or template's is its own `location`.
+    /// attempt's is its qualified operation reference; a template's is its
+    /// own `location`.
     pub(crate) reference: &'a Location,
 }
 
@@ -71,6 +72,21 @@ pub(crate) fn state_operation_site(clause: usize) -> String {
 pub(crate) fn state_operation_location(clause: usize) -> Location {
     Location::root(LocationOrigin::TypeDeclaration {
         name: state_operation_site(clause),
+    })
+}
+
+/// The `Origin::TypeDeclaration` name under which protocol `protocol`'s
+/// attempt `attempt` qualified operation reference is located (FR-105
+/// Outputs). Spaced, so it names no declared type.
+pub(crate) fn protocol_attempt_operation_site(protocol: usize, attempt: usize) -> String {
+    format!("protocol {protocol} attempt {attempt} operation")
+}
+
+/// The source location of a protocol attempt's qualified operation
+/// reference, kept separate from the attempt root used by its other nodes.
+pub(crate) fn protocol_attempt_operation_location(protocol: usize, attempt: usize) -> Location {
+    Location::root(LocationOrigin::TypeDeclaration {
+        name: protocol_attempt_operation_site(protocol, attempt),
     })
 }
 

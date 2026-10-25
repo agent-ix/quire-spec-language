@@ -62,7 +62,7 @@ use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
 };
 use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
-use super::lowering::{population_node, preimage_refusal, AdmittedModel};
+use super::lowering::AdmittedModel;
 use super::observation::Observations;
 use super::profile::TemporalProfile;
 use super::protocol_clause::ProtocolNodeId;
@@ -73,6 +73,8 @@ use crate::model::clause_observation::Observation;
 use crate::model::domain_package::PopulationRecord;
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
+use crate::value::definition::DefinitionLock;
+use crate::value::layer::HeaderLayer;
 use quire_checked::key::DeclarationKey;
 
 /// One `refinement` declaration the assembler resolved: its form and the
@@ -234,6 +236,23 @@ pub enum RefinementCause {
         /// feature alone does not say.
         subject: Option<&'static str>,
     },
+    /// A row expression uses a form outside the value and model layers that
+    /// the governing infinite-trace profile requires: `unsupported_construct`/
+    /// `expression-form` (QSpec FR-375 "Row layers").
+    UnsupportedRowForm {
+        /// The identity of the layer that admits the expression form.
+        layer: &'static str,
+    },
+    /// The abstract model declares relationships, which a refinement cannot
+    /// map into its abstract state (FR-135-AC-7).
+    AbstractRelationships {
+        /// The unsupported declaration form.
+        form: &'static str,
+        /// The refinement whose abstract side declares it.
+        refinement: String,
+        /// The selected profile identity.
+        profile: String,
+    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -313,7 +332,9 @@ impl RefinementCause {
                     Code::InvalidModelBinding
                 }
             },
-            Self::Unsupported { .. } => Code::UnsupportedConstruct,
+            Self::Unsupported { .. }
+            | Self::UnsupportedRowForm { .. }
+            | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -337,6 +358,8 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
+            Self::UnsupportedRowForm { .. } => Some("expression-form"),
+            Self::AbstractRelationships { .. } => Some("declaration-form"),
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -573,10 +596,9 @@ impl CheckedRefinement {
 pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
-    /// The node key of the abstract population's model declaration node,
-    /// whose ascending order is the order a mapping reads the populations
-    /// in (FR-140, QSpec FR-375).
-    pub abstract_node: NodeKey,
+    /// The population declaration's canonical model-node key. FR-140 reads
+    /// population rows in this digest order, independently of source names.
+    pub order_key: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
 }
@@ -1109,6 +1131,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     env: &RefinementEnv<'_>,
+    identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
@@ -1164,6 +1187,23 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         }
         return (RefinementCheck::Refused(findings.refusals), nodes);
     };
+    if matches!(form.abstract_side, AbstractSideForm::Model(_))
+        && abstract_side
+            .model
+            .relationship_declarations()
+            .next()
+            .is_some()
+    {
+        findings.refuse(
+            abstract_alias.span,
+            RefinementCause::AbstractRelationships {
+                form: "relationship",
+                refinement: form.name.name.clone(),
+                profile: declaration.selection.identity.clone(),
+            },
+        );
+        return (RefinementCheck::Refused(findings.refusals), nodes);
+    }
     let subject = match &form.abstract_side {
         AbstractSideForm::Model(_) => ListSubject::Model,
         AbstractSideForm::Protocol { clause, .. } => resolve_protocol(
@@ -1187,6 +1227,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         protocols,
         abstract_side,
         concrete_side,
+        identity,
         findings,
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
@@ -1204,7 +1245,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     };
     checker.baseline = checker.findings.refusals.len();
     let headers = checker.history_headers(form, &declaration.selection.identity);
-    let populations = checker.populations(form, env.identity);
+    let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let StepRows {
         operations,
@@ -1265,6 +1306,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         // not wait on them (FR-136 "Order of the checks").
         Some((selection, rows)) => RefinementCheck::Protocol(Box::new(ProtocolRefinement {
             checked,
+            identity,
             operations,
             written,
             selection,
@@ -1313,8 +1355,6 @@ pub(crate) struct RefinementEnv<'e> {
     pub(crate) lists: &'e ParsedLists,
     /// The unit's protocol clauses, which a protocol subject selects among.
     pub(crate) protocols: &'e [ProtocolView<'e>],
-    /// The unit's identity budget, which keys the abstract populations.
-    pub(crate) identity: qsl_foundation::IdentityLimits,
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1372,6 +1412,8 @@ fn resolve_protocol(
         checked.roles.iter().any(|role| {
             role.context
                 .is_some_and(|context| object_types.iter().any(|object| object.id == context))
+                || role.model_selection.as_deref()
+                    == Some(abstract_side.model.selection().identity.as_str())
         })
     };
     if !acts_on_abstract_model {
@@ -1463,6 +1505,7 @@ struct Checker<'c, 'a> {
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
     concrete_side: Side<'c>,
+    identity: qsl_foundation::IdentityLimits,
     findings: Findings,
     nodes: &'c mut u64,
     /// Each abstract object type an object row maps, with the concrete type
@@ -1490,6 +1533,50 @@ struct Checker<'c, 'a> {
     /// The classes the internal list makes internal, each with the pointer
     /// of the entry that names it.
     internal: Vec<(AbstractStepClass, String)>,
+}
+
+/// The first expression form in a refinement row that the governing
+/// infinite-trace profile does not admit, with the token span and the layer
+/// that admits it (QSpec FR-375 "Row layers").
+fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
+    let lock = DefinitionLock::pinned();
+    let required: std::collections::BTreeSet<_> = lock
+        .admitted_forms(HeaderLayer::ValueComplete)
+        .into_iter()
+        .chain(lock.admitted_forms(HeaderLayer::ModelComplete))
+        .collect();
+    let predicates = std::collections::BTreeSet::new();
+    let mut unsupported = None;
+    super::layer::visit_located(
+        &expression.expression,
+        &expression.spans,
+        expression
+            .spans
+            .at(&[])
+            .unwrap_or(Span { start: 0, end: 0 }),
+        |node, span| {
+            let layer = match node {
+                qsl_forms::ExprNode::ProtocolReference { .. } => Some("quire.protocol.complete/v1"),
+                qsl_forms::ExprNode::StepLabel { .. } | qsl_forms::ExprNode::Stutter => {
+                    Some("quire.temporal.complete/v1")
+                }
+                _ => super::layer::expression_form(node, &predicates).and_then(|form| {
+                    if required.contains(&form) {
+                        None
+                    } else {
+                        HeaderLayer::ALL
+                            .into_iter()
+                            .find(|layer| lock.admits(*layer, form))
+                            .map(HeaderLayer::identity)
+                    }
+                }),
+            };
+            let layer = layer?;
+            unsupported = Some((layer, span));
+            Some(())
+        },
+    );
+    unsupported
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -1537,11 +1624,7 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 
     /// FR-135 "Population map".
-    fn populations(
-        &mut self,
-        form: &RefinementForm,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Vec<PopulationRow> {
+    fn populations(&mut self, form: &RefinementForm) -> Vec<PopulationRow> {
         let abstract_populations = {
             let found = self.abstract_side.populations();
             self.or_fault(found)
@@ -1618,23 +1701,18 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
             if let Some(source) = source {
-                let node = match population_node(&target.record.key, identity) {
-                    Ok(Some(node)) => node.key(),
-                    Ok(None) => {
-                        self.fault("abstract-population-has-a-node-key");
-                        continue;
-                    }
-                    Err(refusal) => {
-                        let location = Location::root(Origin::Expression);
-                        let cause = preimage_refusal(&location, refusal).cause;
-                        self.findings
-                            .refuse(row.span, RefinementCause::Check(cause));
-                        continue;
-                    }
+                let Some(order_key) =
+                    super::lowering::population_node(&target.record.key, self.identity)
+                        .ok()
+                        .flatten()
+                        .map(|node| node.key())
+                else {
+                    self.fault("admitted-abstract-population-has-a-population-node-key");
+                    continue;
                 };
                 rows.push(PopulationRow {
                     abstract_population: target.record.key.clone(),
-                    abstract_node: node,
+                    order_key,
                     concrete_population: source.record.key.clone(),
                 });
             }
@@ -1977,6 +2055,11 @@ impl<'c, 'a> Checker<'c, 'a> {
         context: RowContext,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Option<CheckedRow> {
+        if let Some((layer, span)) = unsupported_row_form(expression) {
+            self.findings
+                .refuse(span, RefinementCause::UnsupportedRowForm { layer });
+            return None;
+        }
         let declarations = self.declarations;
         let location = Location::root(Origin::Expression);
         let RowContext {

@@ -11,12 +11,12 @@
 //! index.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{RequestRefusal, SubjectContext, SubjectIdentity};
+use qsl_analyze::model_check::{RequestRefusal, SubjectContext};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::{node_occurrence, TerminalRecord};
+use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal, TerminalRecord};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::ExtentClassification;
@@ -212,4 +212,107 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
         }
     );
     assert!(request.items().is_empty());
+}
+
+fn hash_of(identity: &SubjectIdentity) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    identity.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn bound(node: u8, maximum: u64) -> ProofBound {
+    ProofBound::new(
+        DomainKey::Node {
+            node: WireNodeId::from_digest([node; 32]),
+            path: Vec::new(),
+        },
+        Some(DomainKind::Population),
+        FiniteBound::Cardinality { maximum },
+    )
+    .expect("a population takes a cardinality bound")
+}
+
+/// `qsl_replay::SubjectIdentity::of` is the identity the request path writes
+/// into the item, and listing the initial states, the universe's keys and the
+/// proof bounds in reverse order gives an equal identity with an equal hash.
+#[trace("TC-1190", "FR-336-AC-6")]
+#[test]
+fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order() {
+    let mut fixture = reaches_two();
+    let second = fixture.documents.start("s1", &[("c", 1)]);
+    let [clause] = fixture.package.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+
+    let first = fixture.initial[0].clone();
+    let bounds: Vec<ProofBound> = (1..=8).map(|node| bound(node, u64::from(node))).collect();
+    let mut forward = over(&fixture, &["a", "b", "c"]);
+    forward.simulation.initial = vec![first.clone(), second.clone()];
+    forward.proof_bounds = bounds.clone();
+    let mut reverse = over(&fixture, &["c", "b", "a"]);
+    reverse.simulation.initial = vec![second, first];
+    reverse.proof_bounds = bounds.iter().rev().cloned().collect();
+
+    // The item the request path writes holds the facade's identity.
+    let identity = SubjectIdentity::of(&forward).expect("the package emits");
+    let mut request = ModelRequest::new();
+    let index = author(&mut request, &forward, clause).expect("the clause has a record");
+    let item = request
+        .obligation(index)
+        .expect("the item is in the request");
+    assert_eq!(item.subject, identity);
+
+    // Every rebuild of the reversed subject, and of each rotation of the
+    // bounds, is equal with an equal hash: no listing order or per-set hash
+    // seed shows through.
+    for rotation in 0..bounds.len() {
+        let mut rotated = bounds.clone();
+        rotated.rotate_left(rotation);
+        for list in [rotated.clone(), rotated.into_iter().rev().collect()] {
+            reverse.proof_bounds = list;
+            let rebuilt = SubjectIdentity::of(&reverse).expect("the package emits");
+            assert_eq!(rebuilt, identity);
+            assert_eq!(hash_of(&rebuilt), hash_of(&identity));
+        }
+    }
+
+    // The order-independence is not an identity that ignores its members.
+    let mut other = over(&fixture, &["a", "b", "c"]);
+    other.proof_bounds = bounds.iter().skip(1).cloned().collect();
+    assert_ne!(SubjectIdentity::of(&other).expect("emits"), identity);
+}
+
+/// A subject whose checked package has no emission is refused
+/// `SubjectIdentityRefusal::Package`.
+#[trace("TC-1190", "FR-336-AC-6")]
+#[test]
+fn a_package_with_no_emission_is_refused_package() {
+    use qsl_package::{CheckedPackage, EmitRefusal};
+    use qsl_semantics::check::{admitted_source, PackageDeclarations};
+    use quire_semantic_value::checking::CheckingLimits;
+
+    let fixture = reaches_two();
+    let graph = PackageDeclarations::new(
+        admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+            b"",
+        ),
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .check(CheckingLimits::default())
+    .expect("an empty package checks");
+    let empty = CheckedPackage::link(graph);
+    let subject = subject(
+        &empty,
+        &fixture.documents,
+        fixture.initial.clone(),
+        &["a"],
+        UNLIMITED,
+    );
+    let refusal = SubjectIdentity::of(&subject).expect_err("nothing to emit");
+    assert!(matches!(
+        refusal,
+        SubjectIdentityRefusal::Package(EmitRefusal::NothingToEmit { .. })
+    ));
 }

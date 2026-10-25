@@ -308,7 +308,7 @@ fn populations_are_read_in_node_key_digest_order_not_declaration_key_order() {
         (second, first)
     };
     assert!(cells.abstract_population < queues.abstract_population);
-    assert!(queues.abstract_node.as_bytes() < cells.abstract_node.as_bytes());
+    assert!(queues.order_key.as_bytes() < cells.order_key.as_bytes());
 
     let concrete = world.concrete_system();
     let items = MappingRowRef::Field {

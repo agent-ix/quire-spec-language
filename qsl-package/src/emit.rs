@@ -96,7 +96,9 @@ use quire_contract_model::{
     CheckedSourceRef, CheckedSourceRegion, CheckedTerm, NominalIdentityPreimage, NominalOwner,
     ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
+use serde::Deserialize;
 
+use ix_trace_rs::string_edge;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
@@ -603,7 +605,8 @@ impl<'g> Candidate<'g> {
                     .collect(),
             }),
             owner: node.owner().map(wire_owner),
-            body: serde_json::from_value(node.wire_body().map_err(encoding)?).map_err(encoding)?,
+            body: CheckedTerm::deserialize(node.wire_body().map_err(encoding)?)
+                .map_err(encoding)?,
         })
     }
 }
@@ -1449,6 +1452,9 @@ fn candidates_of<'g>(
 /// node would be written; every production call site is `emit_package`,
 /// which passes `|_| None`, so this behaves exactly as `emit_package`
 /// always has for every non-test caller.
+/// `#[string_edge]`: the nominal preimage's `form` wire discriminator selects
+/// the unit-node emission branch.
+#[string_edge]
 fn emit_package_inner(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
@@ -1608,8 +1614,10 @@ fn emit_package_inner(
                 if nodes.iter().any(|node| node.node_id == id) {
                     continue;
                 }
-                let preimage = serde_json::from_slice(&nominal.preimage).map_err(encoding)?;
-                let preimage = serde_json::from_value(preimage).map_err(encoding)?;
+                let preimage = NominalIdentityPreimage::deserialize(
+                    nominal.preimage_value().map_err(encoding)?,
+                )
+                .map_err(encoding)?;
                 let declaration_name = match &preimage {
                     NominalIdentityPreimage::Dimension(preimage) => {
                         preimage.qualified_declaration.clone()

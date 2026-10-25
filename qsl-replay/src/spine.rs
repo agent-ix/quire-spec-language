@@ -379,7 +379,18 @@ impl CompileRefusal {
                 | Setting::ObservationValues
                 | Setting::ReplayInputBytes
                 | Setting::ExploreStates
-                | Setting::ExploreTransitions => SpineStage::Emit,
+                | Setting::ExploreTransitions
+                | Setting::ModelCheckMaxStates
+                | Setting::ModelCheckMaxTransitions
+                | Setting::ModelCheckMaxAutomatonStates
+                | Setting::ModelCheckWitnessSamples
+                | Setting::ModelCheckMaxWalkSteps
+                | Setting::ModelCheckMaxWitnessSet
+                | Setting::ModelCheckMaxRelationTuples
+                | Setting::ModelCheckMaxLiveInstances
+                | Setting::ModelCheckMaxStoreBuffer
+                | Setting::ModelCheckMaxMessages
+                | Setting::ExpansionMaxCandidates => SpineStage::Emit,
             },
         }
     }

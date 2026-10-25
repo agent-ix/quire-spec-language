@@ -173,9 +173,12 @@ pub struct CheckedVia {
 pub struct CheckedRole {
     /// The declared role name.
     pub name: String,
-    /// The object type the role is `on` or `each`; `None` when the name is
-    /// no object type, which the controls check refuses.
+    /// The object type the role is `on` or `each`; `None` for a role bound
+    /// statically to a whole model or a name the controls check refuses.
     pub context: Option<quire_exact::EffectiveId>,
+    /// The selected package when a static role is `on` a model alias. This
+    /// retains the model binding identity for checked protocol consumers.
+    pub model_selection: Option<String>,
     /// Whether the role is replicated (`each`).
     pub replicated: bool,
 }

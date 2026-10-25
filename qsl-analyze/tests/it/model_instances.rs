@@ -19,10 +19,10 @@ use qsl_analyze::model_check::{
     check_model, check_state_graph, ModelCheckRefusal, ModelCheckRequest, StateGraphItem,
     StateGraphRequest,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
-    ExpansionLimits, LettersRefusal, ModelSimState, ModelSimulationRequest, ModelSystem,
-    PopulationUniverse,
+    ClauseOutcome, ExpansionLimits, LettersRefusal, ModelSimState, ModelSimulationRequest,
+    ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
@@ -40,12 +40,14 @@ use qsl_semantics::model::intake::{meaning, package_input};
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Incomplete, Meter};
+use quire_exact::{Cancel, ChargePoint, LimitKind, Meter};
 use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-use crate::counter::{declarations_in, document_digest, UNLIMITED};
+use crate::counter::{
+    declarations_in, declarations_with_model_profile, document_digest, UNLIMITED, ZERO,
+};
 
 const PACKAGE: &str = "test/things";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -396,7 +398,7 @@ impl ModelLetters for Constant {
         _instance: &ModelInstance,
         _state: &ModelSimState,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         Ok(if self.0 {
             AtomReading::True
         } else {
@@ -954,6 +956,84 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
     ));
 }
 
+/// FR-125-AC-17: an absent `x` remains a guard when forwarded through a let
+/// alias and unchanged helper returns, while a helper that reads its argument
+/// as a field still produces `absent-key`.
+#[trace("TC-520", "FR-125-AC-17", "FR-361-AC-16")]
+#[test]
+fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
+    let world = world(
+        &[("animals", &["Animal"]), ("dogs", &["Dog"])],
+        &[
+            ("animals", &[("k", "Dog"), ("t", "Cat")]),
+            ("dogs", &[("d", "Dog")]),
+        ],
+    );
+    let bounded = universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
+    let helpers = "\
+        function same using v(r: Reference<M::Dog>): Reference<M::Dog> pure { r }\n\
+        function isDog using v(r: Reference<M::Dog>): Boolean pure {\n\
+            present(lookup<M::Dog>(M::animals, same(r)) absent empty) or\n\
+            present(lookup<M::Dog>(M::dogs, same(r)) absent empty)\n\
+        }\n\
+        function ageOK using v(r: Reference<M::Dog>): Boolean pure { r.age >= 0 }\n";
+    let package_for = |formula: &str| {
+        let body = format!(
+            "{helpers}temporal C using t0 over (x: M::Dog) clock \"model-steps\" on origin {{ {formula} }}\n"
+        );
+        CheckedPackage::link(
+            declarations_with_model_profile(PACKAGE, &world.document, &body)
+                .with_unwritten_terminals()
+                .check(CheckingLimits::default())
+                .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
+        )
+    };
+    let check = |formula: &str| {
+        let package = package_for(formula);
+        let subject = world.subject(&package, bounded.clone());
+        let system = ModelSystem::new(subject.simulation.clone()).expect("the subject admits");
+        let node = &package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("an unguarded clause");
+        check_model(
+            ModelCheckRequest {
+                subject,
+                item: ModelCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("the model check runs")
+    };
+
+    assert!(matches!(
+        check("always holds(let y = x in (isDog(y) implies ageOK(y)))"),
+        ModelCheckOutcome::Holds { .. }
+    ));
+    let unguarded = check("always holds(let y = x in ageOK(y))");
+    let ModelCheckOutcome::Violated { counterexample, .. } = unguarded else {
+        panic!("expected Violated, got {unguarded:?}");
+    };
+    assert_eq!(counterexample.over_binding, Some(instance("animals", "t")));
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = counterexample.kind else {
+        panic!(
+            "expected undefined-evaluation, got {:?}",
+            counterexample.kind
+        );
+    };
+    assert_eq!(
+        AtomReading::Undefined(evaluation.cause),
+        AtomReading::Undefined(UndefinedCause::Family(UndefinedRecord {
+            reason: UndefinedReason::AbsentKey,
+            fields: BTreeMap::new(),
+        }))
+    );
+}
+
 /// `ModelSystem::clause_letters` refuses a clause whose `over` parameter is
 /// no object reference.
 #[trace("TC-520")]
@@ -972,4 +1052,204 @@ fn letters_refuse_a_non_reference_over() {
         system.clause_letters(node).err(),
         Some(LettersRefusal::OverNotReference)
     );
+}
+
+// ---------------------------------------------------------------------------
+// The fault channel and the observation (QSL-1039)
+// ---------------------------------------------------------------------------
+
+impl World {
+    /// The package declaring `declarations` and then the clause `C`,
+    /// `always holds(true)`, over `x: M::Thing`.
+    fn always_true_with(&self, declarations: &str) -> CheckedPackage {
+        self.always_with(declarations, "true")
+    }
+
+    /// [`Self::always_true_with`] with the atom's condition `condition`.
+    fn always_with(&self, declarations: &str, condition: &str) -> CheckedPackage {
+        let body = format!(
+            "{declarations}temporal C using t0 over (x: M::Thing) clock \"model-steps\" on origin {{ always holds({condition}) }}\n"
+        );
+        CheckedPackage::link(
+            declarations_with_model_profile(PACKAGE, &self.document, &body)
+                .with_unwritten_terminals()
+                .check(CheckingLimits::default())
+                .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
+        )
+    }
+}
+
+/// The `holds(true)` atom of `node`'s formula.
+fn holds_atom(node: &qsl_semantics::check::TemporalClauseNode) -> FormulaNodeId {
+    let formula = node.clause().formula();
+    let index = (0..formula.nodes().len())
+        .find(|index| matches!(formula.nodes()[*index], FormulaNode::Holds { .. }))
+        .expect("a holds atom");
+    formula.node_id(index).expect("a node")
+}
+
+/// QSL-1039: an atom id that is no `holds` atom of the clause is a typed
+/// fault of the letters, not a panic.
+#[trace("TC-520")]
+#[test]
+fn an_atom_that_is_no_holds_atom_of_the_clause_is_a_fault() {
+    let world = world(&[P1], &[("P1", &[("l", "Lamp")])]);
+    let package = world.always_true_with("");
+    let system = ModelSystem::new(
+        world
+            .subject(&package, universes(&[("P1", &["l"])]))
+            .simulation,
+    )
+    .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("an unguarded clause");
+    let formula = node.clause().formula();
+    let not_holds = (0..formula.nodes().len())
+        .find(|index| !matches!(formula.nodes()[*index], FormulaNode::Holds { .. }))
+        .expect("the `always` node");
+    let start = system.initial_states()[0].clone();
+    let read = letters.atom(
+        formula.node_id(not_holds).expect("a node"),
+        &instance("P1", "l"),
+        &start,
+        &mut Meter::new(UNLIMITED),
+    );
+    assert!(
+        matches!(read, Err(AtomStop::Fault(_))),
+        "expected a fault, got {read:?}"
+    );
+}
+
+/// QSL-1039: a `holds` evaluation that is refused (here an authored
+/// population bound exceeded, FR-380) is `AtomStop::Refused` at the letters
+/// and the refusal `AtomRefused` of the model check, not a panic.
+#[trace("TC-520")]
+#[test]
+fn a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check() {
+    const PM: Declared<'_> = ("PM", &["Lamp", "Thing"]);
+    let world = world(&[PM], &[("PM", &[("a", "Lamp"), ("b", "Lamp")])]);
+    let package = world.always_with(
+        "bound OnePerSet on M::PM [1]\n",
+        "contains(allInstances<M::Thing>(M::PM), x)",
+    );
+    let bounded = || universes(&[("PM", &["a", "b"])]);
+    let system = ModelSystem::new(world.subject(&package, bounded()).simulation)
+        .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("an unguarded clause");
+    let start = system.initial_states()[0].clone();
+    let read = letters.atom(
+        holds_atom(node),
+        &instance("PM", "a"),
+        &start,
+        &mut Meter::new(UNLIMITED),
+    );
+    assert!(
+        matches!(
+            &read,
+            Err(AtomStop::Refused(ClauseOutcome::KernelRefused(
+                quire_exact::Refusal::CardinalityOutOfBound { count: 2, .. }
+            )))
+        ),
+        "expected the bound's refusal, got {read:?}"
+    );
+
+    let checked = check_model(
+        ModelCheckRequest {
+            subject: world.subject(&package, bounded()),
+            item: ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(
+            checked,
+            Err(ModelCheckRefusal::AtomRefused(
+                ClauseOutcome::KernelRefused(quire_exact::Refusal::CardinalityOutOfBound {
+                    count: 2,
+                    ..
+                })
+            ))
+        ),
+        "expected the atom's refusal, got {checked:?}"
+    );
+}
+
+/// QSL-1039: the observation of a state is charged to the meter, so a meter
+/// that cannot pay for the objects the state holds stops the read as
+/// incomplete at the observation, before any evaluation; and a read charges
+/// the same whether or not the state was observed before.
+#[trace("TC-520")]
+#[test]
+fn the_state_observation_is_charged_to_the_meter_on_every_read() {
+    let world = world(&[P1], &[("P1", &[("l", "Lamp"), ("s", "Switch")])]);
+    let package = world.always_true_with("");
+    let system = ModelSystem::new(
+        world
+            .subject(&package, universes(&[("P1", &["l", "s"])]))
+            .simulation,
+    )
+    .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("an unguarded clause");
+    let start = system.initial_states()[0].clone();
+    let atom = holds_atom(node);
+    let instance = instance("P1", "l");
+
+    let stopped = letters.atom(atom, &instance, &start, &mut Meter::new(ZERO));
+    let Err(AtomStop::Incomplete(incomplete)) = stopped else {
+        panic!("expected the meter to stop the read, got {stopped:?}");
+    };
+    assert_eq!(incomplete.charge_point, ChargePoint::CollectionVisit);
+
+    let charged = |letters: &dyn ModelLetters| {
+        let mut meter = Meter::new(UNLIMITED);
+        letters
+            .atom(atom, &instance, &start, &mut meter)
+            .expect("the meter is not exhausted");
+        meter.consumed(LimitKind::WorkUnits)
+    };
+    let fresh = charged(&letters);
+    assert!(fresh >= 2, "one visit for each of the two objects: {fresh}");
+    assert_eq!(
+        charged(&letters),
+        fresh,
+        "the cached read charges as the first"
+    );
+}
+
+/// QSL-1039 / SR-16618 FND-005: a state is observed once however many atoms
+/// and instances read it.
+#[trace("TC-520")]
+#[test]
+fn a_state_is_observed_once_for_all_the_reads_of_it() {
+    let world = world(&[P1], &[("P1", &[("l", "Lamp"), ("s", "Switch")])]);
+    let package = world.always_true_with("");
+    let system = ModelSystem::new(
+        world
+            .subject(&package, universes(&[("P1", &["l", "s"])]))
+            .simulation,
+    )
+    .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("an unguarded clause");
+    let start = system.initial_states()[0].clone();
+    assert_eq!(letters.observations(), 0);
+    for key in ["l", "s", "l"] {
+        letters
+            .atom(
+                holds_atom(node),
+                &instance("P1", key),
+                &start,
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("the meter is not exhausted");
+    }
+    assert_eq!(letters.observations(), 1);
 }

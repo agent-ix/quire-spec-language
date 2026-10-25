@@ -822,7 +822,7 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
-                DeclarationForm::Unit(quantity) => unit.units.push(quantity),
+                DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
@@ -2846,10 +2846,23 @@ impl PackageDeclarations {
                         function_selections.insert(index, profile.clone());
                         // FR-110 "Layer selection".
                         if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
-                            errors.extend(
-                                LayerAdmission::new(&lock, layer, &predicates, selects_model)
-                                    .function(function),
-                            );
+                            let selected_admission =
+                                LayerAdmission::new(&lock, layer, &predicates, selects_model);
+                            if selects_model && selected_admission.body_needs_model_family(function)
+                            {
+                                let model_admission = LayerAdmission::new(
+                                    &lock,
+                                    HeaderLayer::ModelComplete,
+                                    &predicates,
+                                    selects_model,
+                                );
+                                errors.extend(
+                                    selected_admission
+                                        .function_with_body_admission(function, &model_admission),
+                                );
+                            } else {
+                                errors.extend(selected_admission.function(function));
+                            }
                         }
                     }
                     None => errors.push(AssemblyError {
@@ -3519,6 +3532,20 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-105-AC-11: a frame's generated occurrence uses the qualified
+        // operation reference in a protocol attempt, while the attempt's
+        // other occurrences remain rooted at its declared name.
+        for (protocol_index, protocol) in unit.protocols.iter().enumerate() {
+            for (attempt_index, attempt) in protocol.attempts.iter().enumerate() {
+                declared_type_spans.insert(
+                    super::lowering::protocol_attempt_operation_site(protocol_index, attempt_index),
+                    Span {
+                        start: attempt.context.span.start,
+                        end: attempt.operation.span.end,
+                    },
+                );
+            }
+        }
         // FR-105: a clause's frame `generated` occurrence is located at the
         // clause's operation reference.
         declared_type_spans.extend(

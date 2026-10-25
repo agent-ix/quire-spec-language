@@ -185,7 +185,15 @@ identity of a row whose `requires` closure names it, which is
     is not selected) is the one a user can fix; the layer rule's refusal names
     only a layer. In a unit that selects the model profile, a construct whose
     `using` alias resolves to a lower layer is refused by FR-110's layer rule
-    alone, and this requirement reports nothing.
+    alone, and this requirement reports nothing, except for a model construct
+    in a function or predicate body. When the unit selects the model profile,
+    S3 SHALL derive `quire.model.complete/v1` as the family's body layer for
+    a function or predicate body that writes a model construct. Its
+    declaration and `decreases` measure remain checked under its declared
+    `using` selection. A helper body that cannot resolve or assemble a model
+    construct SHALL retain its ordinary located refusal; deriving the model
+    family SHALL NOT admit an unsupported helper. Without a selected model
+    profile, item 11 still refuses each model construct.
 13. **Presence in unreachable syntax counts.** A model construct in a
     declaration nothing uses is refused the same way (QSpec
     native-diagnostics: presence in unreachable syntax does not erase the
@@ -201,8 +209,13 @@ identity of a row whose `requires` closure names it, which is
 ### Admission under the selection
 
 16. A unit that selects the model profile SHALL admit each family of item 5
-    exactly as FR-056, FR-102, FR-103, FR-302 and FR-304 state. This
-    requirement changes no behaviour of a selecting unit.
+    exactly as FR-056, FR-102, FR-103, FR-302 and FR-304 state. A function or
+    predicate body that writes a model construct SHALL use the derived body
+    family of item 12 even when its `using` alias resolves to a lower layer;
+    its declaration and `decreases` measure remain under that alias. The
+    model body is checked and carried with the StateModel family, and its
+    constructs remain subject to ordinary StateModel assembly and type
+    checks. A unit without the model profile receives no derived body family.
 
 ### Retiring the object navigation exception
 
@@ -276,6 +289,7 @@ identity of a row whose `requires` closure names it, which is
 | FR-361-AC-13 | A declaration that writes a `deref` and a declaration that writes a `reaches`, each with a `using` alias that resolves to `quire.value.complete/v1`, are each refused once by FR-110's layer rule naming that layer and retain no family of item 5; the same declarations with an alias that resolves to `quire.state.graph/v1` and with one that resolves to `quire.model.complete/v1` compile, and a declaration whose alias resolves to `quire.value.complete/v1` is still refused in a unit whose header also selects `quire.state.graph/v1` through a second alias. | Test (TC-1015) |
 | FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal because its selected-layer union contains `quire.model.complete/v1` through the temporal layer's `requires` closure; the same unit whose header profile names only `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. Its emitted lock's `definition_selections` hold the layer, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1` and `quire.state.core/v1`, the complete-value lock's `package_selection` rows FR-110 selects for the union, the complete-model lock's `package_selection.always` rows and the complete-temporal lock's `package_selection.always` rows, and a unit that selects only `quire.model.complete/v1` emits no complete-temporal lock row. | Test (TC-1017) |
 | FR-361-AC-15 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-temporal lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-temporal lock, and the `quire.temporal.complete/v1` row of its layer table (identity, `requires`, admitted-form file and witness request) equals QSpec's `header_selectable_layers` row, read at run time. | Test (TC-1017) |
+| FR-361-AC-16 | In a unit selecting `quire.model.complete/v1`, helper functions `isDog` and `ageOK` whose `using` alias selects `quire.value.complete/v1`, where `isDog` performs the population lookup disjunction and `ageOK` reads a model field, are admitted with their declaration and any `decreases` measure checked under `quire.value.complete/v1` and their bodies checked under the derived `quire.model.complete/v1` family. The guarded property of FR-125-AC-17 proves, and the unguarded property refutes `undefined-evaluation`/`absent-key`. Without a selected model profile, the model constructs in those helper bodies receive the S3 refusal of item 11. A body construct that still cannot resolve or assemble retains its ordinary located refusal. | Test (TC-520) |
 
 ## Dependencies
 

@@ -62,7 +62,7 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
     let activation = match nodes_of(&activation_items, Production::Parameter).first() {
         None => ActivationForm::Origin,
         Some(parameter) => ActivationForm::Each {
-            parameter: parameter_form(cst, parameter)?,
+            parameter: Box::new(parameter_form(cst, parameter)?),
             when: nodes_of(&activation_items, Production::Expression)
                 .first()
                 .map(|condition| expression_form(cst, condition))
@@ -540,7 +540,10 @@ pub(crate) fn timed_interval_form(
     };
     let quantities = nodes_of(&interval_items, Production::QuantityLiteral);
     let (lower, upper) = match (&quantities[..], has_token(&interval_items, b"*")) {
-        ([lower, upper], false) => (*lower, TimedUpper::Finite(quantity_form(cst, upper)?)),
+        ([lower, upper], false) => (
+            *lower,
+            TimedUpper::Finite(Box::new(quantity_form(cst, upper)?)),
+        ),
         ([lower], true) => (*lower, TimedUpper::Open),
         _ => return Err(unexpected(node)),
     };

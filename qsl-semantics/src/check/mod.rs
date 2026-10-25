@@ -1085,7 +1085,7 @@ impl PackageDeclarations {
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
-                                        let operations = model.tick_operation_keys(&operation);
+                                        let operations = model.tick_operation_keys(operation);
                                         let [resolved] = operations.as_slice() else {
                                             let cause = if operations.is_empty() {
                                                 TemporalCause::MissingTickOperation {
@@ -1316,17 +1316,14 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
-        let complete_identity = crate::value::definition::DefinitionLock::pinned()
-            .entry(crate::value::definition::CatalogRole::Root)
-            .identity;
         let complete_value = self
             .function_selections
             .values()
-            .any(|selection| selection.identity == complete_identity)
+            .any(state_clause::is_complete_value)
             || self
                 .state_clauses
                 .iter()
-                .any(|clause| clause.selection.identity == complete_identity);
+                .any(|clause| state_clause::is_complete_value(&clause.selection));
         // Model intake currently admits only `quire.model.complete/v1`.
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
@@ -1349,12 +1346,27 @@ impl PackageDeclarations {
         .with_known_populations(refinement::population_names(&self.models))
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
+        .with_model_selections(
+            self.models
+                .iter()
+                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
+                .collect(),
+        )
         .with_declared_units(&self.units)
         .with_protocols(
             self.protocols
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
+        let model_selected = crate::value::definition::DefinitionLock::pinned()
+            .closure(&self.header_layers)
+            .contains(&crate::value::layer::HeaderLayer::ModelComplete);
+        let model_function_bodies: Vec<bool> = self
+            .functions
+            .iter()
+            .map(|function| model_selected && layer::body_needs_model_family(&function.body))
+            .collect();
+        let model_scope = check::NamedScope::of(&self.models, &scope);
         let symmetric_objects = self
             .models
             .iter()
@@ -1737,7 +1749,20 @@ impl PackageDeclarations {
                 complete_value: self
                     .function_selections
                     .get(&index)
-                    .is_some_and(|selection| selection.identity == complete_identity),
+                    .is_some_and(state_clause::is_complete_value),
+                model_scope: model_function_bodies
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false)
+                    .then(|| model_scope.clone()),
+                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false)
+                    && self
+                        .function_selections
+                        .get(&index)
+                        .is_some_and(|selection| {
+                            crate::value::layer::HeaderLayer::from_identity(&selection.identity)
+                                == Some(crate::value::layer::HeaderLayer::ValueComplete)
+                        }),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -2078,7 +2103,6 @@ impl PackageDeclarations {
                     support: self.refinement_support,
                     lists: &internal_lists,
                     protocols: $views,
-                    identity: self.identity,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,
@@ -2086,6 +2110,7 @@ impl PackageDeclarations {
                     &declarations,
                     &mut contract_cx,
                     &env,
+                    self.identity,
                 );
                 nodes_used = used;
                 // A limit or a cancellation stops the unit at a refusal, as
@@ -2461,8 +2486,12 @@ impl PackageDeclarations {
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_controls::check(protocol, &control_declarations, &mut control_cx)
-                    {
+                    match protocol_controls::check(
+                        protocol,
+                        &self.alias_names,
+                        &control_declarations,
+                        &mut control_cx,
+                    ) {
                         Ok((channels, used)) => {
                             checked.channels = channels;
                             checked.owners = protocol_clause::owners(protocol, &checked);
@@ -3033,6 +3062,17 @@ impl PackageDeclarations {
                     .collect()
             })
             .collect();
+        let attempt_reference_locations: Vec<Vec<Location>> = protocol_bindings
+            .iter()
+            .enumerate()
+            .map(|(protocol_index, bindings)| {
+                (0..bindings.len())
+                    .map(|attempt_index| {
+                        lowering::protocol_attempt_operation_location(protocol_index, attempt_index)
+                    })
+                    .collect()
+            })
+            .collect();
         // FR-381: each `compensate` template's own location, under which its
         // operation is lowered to the same shared anchor and frame nodes an
         // attempt naming the operation is (index-aligned with each checked
@@ -3052,30 +3092,56 @@ impl PackageDeclarations {
                     .collect()
             })
             .collect();
-        let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
+        // FR-105-AC-11: a frame occurrence uses the first operation-naming
+        // clause or protocol attempt in source order. The declaration span
+        // start orders candidates; the reference location itself resolves to
+        // the qualified operation name in that declaration.
+        let mut source_ordered_anchors: Vec<(usize, lowering::AnchorInput<'_>)> =
+            state_clause_forms
+                .iter()
+                .zip(clause_locations.iter().zip(&reference_locations))
+                .filter_map(|(form, (location, reference))| {
+                    form.operation.as_ref().map(|operation| {
+                        (
+                            form.spans.declaration.start,
+                            lowering::AnchorInput {
+                                declaring: operation.declaring,
+                                operation: &operation.declaration,
+                                location,
+                                reference,
+                            },
+                        )
+                    })
+                })
+                .collect();
+        for (protocol_index, ((bindings, locations), references)) in protocol_bindings
             .iter()
-            .zip(clause_locations.iter().zip(&reference_locations))
-            .filter_map(|(form, (location, reference))| {
-                form.operation
-                    .as_ref()
-                    .map(|operation| lowering::AnchorInput {
-                        declaring: operation.declaring,
-                        operation: &operation.declaration,
+            .zip(&attempt_locations)
+            .zip(&attempt_reference_locations)
+            .enumerate()
+        {
+            for ((bound, location), reference) in bindings.iter().zip(locations).zip(references) {
+                let source_order = self
+                    .protocols
+                    .get(protocol_index)
+                    .and_then(|protocol| protocol.declarations.get(bound.declaration))
+                    .map_or(usize::MAX, |declaration| declaration.name.span.start);
+                source_ordered_anchors.push((
+                    source_order,
+                    lowering::AnchorInput {
+                        declaring: bound.operation.declaring,
+                        operation: &bound.operation.declaration,
                         location,
                         reference,
-                    })
-            })
-            .collect();
-        for (bindings, locations) in protocol_bindings.iter().zip(&attempt_locations) {
-            for (bound, location) in bindings.iter().zip(locations) {
-                anchors.push(lowering::AnchorInput {
-                    declaring: bound.operation.declaring,
-                    operation: &bound.operation.declaration,
-                    location,
-                    reference: location,
-                });
+                    },
+                ));
             }
         }
+        source_ordered_anchors.sort_by_key(|(source_order, _)| *source_order);
+        let mut anchors: Vec<lowering::AnchorInput<'_>> = source_ordered_anchors
+            .into_iter()
+            .map(|(_, anchor)| anchor)
+            .collect();
         for (checked, locations) in checked_protocols.iter().zip(&template_locations) {
             for (template, location) in checked.obligations.compensations.iter().zip(locations) {
                 anchors.push(lowering::AnchorInput {

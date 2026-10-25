@@ -551,7 +551,7 @@ impl AdmittedModel {
     /// returned declaration identities distinguish a resolved operation
     /// from merely retaining its source spelling.
     pub(crate) fn tick_operation_keys(&self, written: &NameForm) -> Vec<&DeclarationKey> {
-        let (owner, operation) = match written.segments.as_slice() {
+        let (owner, operation) = match &written.segments[..] {
             [operation] => (None, operation.as_str()),
             [owner, operation] => (Some(owner.as_str()), operation.as_str()),
             [qualifier, owner, operation] if self.alias() == Some(qualifier.as_str()) => {

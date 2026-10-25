@@ -24,13 +24,13 @@ What changed:
   `seen` guard for self-naming composites. It is not in
   `RefinementSupport::BUILD`. The payload carries the selected profile
   identity and no `subject`.
-- `PopulationRow.abstract_node`. It is computed with `population_node`, the
+- `PopulationRow.order_key`. It is computed with `population_node`, the
   same `relation`/`population` content (`ModelOwner` from the declaration's
   package and node, no body) that lowering's `population_reference_node` and
   the abstraction relation's `population_target` key. It is therefore
   consistent with the node every population read lowers to. It does not depend
   on the still-partial QSL-548/563 minting.
-- `map_state` sorts populations by `abstract_node` bytes, ascending, with the
+- `map_state` sorts populations by `order_key` bytes, ascending, with the
   `DeclarationKey` as a tie-break. This matches FR-140's "ascending node-key
   digest order of the row's first named declaration, the abstract population".
 
