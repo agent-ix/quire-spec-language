@@ -26,7 +26,7 @@
 //! already compiled -- a re-admission failure is therefore an
 //! [`InternalFault`], never a document defect.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{BudgetDenial, Code, LimitExceeded, ALLOCATION_FAILED};
@@ -895,9 +895,13 @@ impl SnapshotValue {
     /// [`Self::to_json`]; the order given is not the wire order there.
     #[must_use]
     pub fn collection(kind: CollectionKind, items: Vec<Self>) -> Self {
-        let mut nodes =
-            Vec::with_capacity(items.iter().map(|item| item.nodes.len()).sum::<usize>() + 1);
-        let mut roots = Vec::with_capacity(items.len());
+        // The first item's arena is kept as it is (its offset is zero), so a
+        // chain of single-item collections builds in linear time.
+        let mut items = items.into_iter();
+        let (mut nodes, mut roots) = match items.next() {
+            Some(first) => (first.nodes, vec![first.root]),
+            None => (Vec::new(), Vec::new()),
+        };
         for item in items {
             let offset = nodes.len();
             nodes.extend(item.nodes.into_iter().map(|node| node.shifted(offset)));
@@ -1040,109 +1044,204 @@ impl SnapshotValue {
         Self::forms_equal(declared, self.form(), other.form(), field_type)
     }
 
-    /// [`Self::equals_by`] over two value forms. An iterative walk, except
-    /// that the items of a `set` or `bag` pair up in any order (FR-106 "Set,
-    /// bag and ordered-set values"), each pairing a nested call, so the
-    /// native stack is bounded by the declared type's collection nesting.
+    /// [`Self::equals_by`] over two value forms. Both are reduced to the
+    /// identity of their canonical structure in one shared interner, so equal
+    /// values get one identity: a `set` and a `bag` sort the identities of
+    /// their items (FR-106 "Set, bag and ordered-set values": any order), every
+    /// other form keeps its order. The walk keeps its own heap stack, so the
+    /// native stack does not grow with document nesting, and costs
+    /// O(n log n) in the values read.
     fn forms_equal<'t>(
         declared: Option<&'t quire_exact::ValueType>,
         left: RawForm<'_>,
         right: RawForm<'_>,
         field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
     ) -> bool {
-        use quire_exact::ValueType;
-        let mut work = vec![(declared, left, right)];
-        while let Some((declared, left, right)) = work.pop() {
-            match (left, right) {
-                (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
-                (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
-                (RawForm::Native(left), RawForm::Native(right)) => {
-                    let equal = match (declared, left.kind, right.kind) {
+        let mut interner = HashMap::new();
+        let left = structure_identity(&mut interner, declared, left, field_type);
+        let right = structure_identity(&mut interner, declared, right, field_type);
+        left == right
+    }
+}
+
+/// The identity of `form`'s canonical structure in `interner`: two forms get
+/// the same identity exactly when [`SnapshotValue::equals_by`] holds.
+fn structure_identity<'t>(
+    interner: &mut HashMap<Vec<u8>, u64>,
+    declared: Option<&'t quire_exact::ValueType>,
+    form: RawForm<'_>,
+    field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
+) -> u64 {
+    use quire_exact::ValueType;
+    enum Task<'a, 't> {
+        Read(Option<&'t ValueType>, RawForm<'a>),
+        /// Combine the identities of the last `count` values read.
+        Combine {
+            tag: u8,
+            names: Vec<String>,
+            count: usize,
+            sorted: bool,
+        },
+    }
+    fn text(bytes: &mut Vec<u8>, text: &str) {
+        let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+    }
+    fn intern(interner: &mut HashMap<Vec<u8>, u64>, bytes: Vec<u8>) -> u64 {
+        let next = u64::try_from(interner.len()).unwrap_or(u64::MAX);
+        *interner.entry(bytes).or_insert(next)
+    }
+    let mut work = vec![Task::Read(declared, form)];
+    let mut done: Vec<u64> = Vec::new();
+    while let Some(task) = work.pop() {
+        match task {
+            Task::Combine {
+                tag,
+                names,
+                count,
+                sorted,
+            } => {
+                let at = done.len().saturating_sub(count);
+                let mut children = done.split_off(at);
+                if sorted {
+                    children.sort_unstable();
+                }
+                let mut bytes = vec![tag];
+                for name in &names {
+                    text(&mut bytes, name);
+                }
+                for child in children {
+                    bytes.extend_from_slice(&child.to_le_bytes());
+                }
+                done.push(intern(interner, bytes));
+            }
+            Task::Read(declared, form) => match form {
+                RawForm::Boolean(held) => done.push(intern(interner, vec![b'b', u8::from(held)])),
+                RawForm::Integer(spelling) => {
+                    let mut bytes = vec![b'i'];
+                    text(&mut bytes, spelling);
+                    done.push(intern(interner, bytes));
+                }
+                RawForm::Native(native) => {
+                    let mut bytes = vec![b'n'];
+                    match (declared, native.kind) {
                         (
                             Some(ValueType::Text(text_type)),
                             RawNativeKind::Known(NativeKind::Text),
-                            RawNativeKind::Known(NativeKind::Text),
-                        ) => match (text_member(left), text_member(right)) {
-                            (Some(left), Some(right)) => {
-                                retained_text(text_type, left) == retained_text(text_type, right)
+                        ) => match text_member(native) {
+                            Some(held) => {
+                                bytes[0] = b't';
+                                text(&mut bytes, &retained_text(text_type, held));
                             }
-                            _ => false,
+                            // A Text with no `text` member equals nothing, not
+                            // even another: its identity is unique.
+                            None => {
+                                bytes[0] = b'!';
+                                bytes.extend_from_slice(&interner.len().to_le_bytes());
+                            }
                         },
-                        _ => left.kind == right.kind && left.members == right.members,
-                    };
-                    if !equal {
-                        return false;
+                        _ => {
+                            text(&mut bytes, &format!("{:?}", native.kind));
+                            for (name, member) in native.members() {
+                                text(&mut bytes, name);
+                                match member {
+                                    Some(held) => {
+                                        bytes.push(1);
+                                        text(&mut bytes, held);
+                                    }
+                                    None => bytes.push(0),
+                                }
+                            }
+                        }
                     }
+                    done.push(intern(interner, bytes));
                 }
-                (RawForm::Absent, RawForm::Absent) => {}
-                (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
-                (RawForm::Present(left), RawForm::Present(right)) => {
+                RawForm::Absent => done.push(intern(interner, vec![b'a'])),
+                RawForm::Reference(reference) => {
+                    let mut bytes = vec![b'r'];
+                    text(&mut bytes, &reference.population);
+                    text(&mut bytes, &reference.key);
+                    done.push(intern(interner, bytes));
+                }
+                RawForm::Present(inner) => {
                     // A field's declared type is its bare type: `Option` only
                     // wraps an operation parameter or result.
-                    let inner = match declared {
+                    let inner_type = match declared {
                         Some(ValueType::Option(payload)) => Some(&**payload),
                         other => other,
                     };
-                    work.push((inner, left.form(), right.form()));
+                    work.push(Task::Combine {
+                        tag: b'p',
+                        names: Vec::new(),
+                        count: 1,
+                        sorted: false,
+                    });
+                    work.push(Task::Read(inner_type, inner.form()));
                 }
-                (RawForm::Collection(left_kind, left), RawForm::Collection(right_kind, right))
-                    if left_kind == right_kind && left.iter().len() == right.iter().len() =>
-                {
+                RawForm::Collection(kind, items) => {
                     let element = match declared {
                         Some(ValueType::Collection(collection)) => Some(collection.element()),
                         _ => None,
                     };
-                    if matches!(left_kind, CollectionKind::Set | CollectionKind::Bag) {
-                        // Equal as multisets: each left item takes a distinct,
-                        // equal right item. Equality of items is an
-                        // equivalence, so taking the first free match decides.
-                        let mut free: Vec<RawValue<'_>> = right.iter().collect();
-                        for item in left.iter() {
-                            let Some(at) = free.iter().position(|candidate| {
-                                Self::forms_equal(
-                                    element,
-                                    item.form(),
-                                    candidate.form(),
-                                    field_type,
-                                )
-                            }) else {
-                                return false;
-                            };
-                            free.swap_remove(at);
-                        }
-                    } else {
-                        work.extend(
-                            left.iter()
-                                .zip(right.iter())
-                                .map(|(left, right)| (element, left.form(), right.form())),
-                        );
-                    }
+                    let count = items.iter().len();
+                    work.push(Task::Combine {
+                        tag: b'0' + collection_discriminant(kind),
+                        names: Vec::new(),
+                        count,
+                        sorted: matches!(kind, CollectionKind::Set | CollectionKind::Bag),
+                    });
+                    // Pushed last-first, so the first item reads first.
+                    let items: Vec<_> = items.iter().collect();
+                    work.extend(
+                        items
+                            .into_iter()
+                            .rev()
+                            .map(|item| Task::Read(element, item.form())),
+                    );
                 }
-                (RawForm::Record(left_record), RawForm::Record(right_record))
-                    if left_record.type_identity() == right_record.type_identity()
-                        && left_record.fields().len() == right_record.fields().len() =>
-                {
-                    for ((left_name, left), (right_name, right)) in
-                        left_record.fields().zip(right_record.fields())
-                    {
-                        if left_name != right_name {
-                            return false;
-                        }
-                        work.push((
-                            field_type(left_record.type_identity(), left_name),
-                            left.form(),
-                            right.form(),
-                        ));
-                    }
+                RawForm::Record(record) => {
+                    let names: Vec<String> = std::iter::once(record.type_identity().to_owned())
+                        .chain(record.fields().map(|(name, _)| name.to_owned()))
+                        .collect();
+                    let fields: Vec<_> = record.fields().collect();
+                    work.push(Task::Combine {
+                        tag: b'R',
+                        names,
+                        count: fields.len(),
+                        sorted: false,
+                    });
+                    work.extend(fields.into_iter().rev().map(|(name, value)| {
+                        Task::Read(field_type(record.type_identity(), name), value.form())
+                    }));
                 }
-                (RawForm::Variant(left), RawForm::Variant(right))
-                    if left.type_identity() == right.type_identity()
-                        && left.case() == right.case()
-                        && left.has_extra_member() == right.has_extra_member() => {}
-                _ => return false,
-            }
+                RawForm::Variant(variant) => {
+                    let mut bytes = vec![b'v', u8::from(variant.has_extra_member())];
+                    for part in [variant.type_identity(), variant.case()] {
+                        match part {
+                            Some(held) => {
+                                bytes.push(1);
+                                text(&mut bytes, held);
+                            }
+                            None => bytes.push(0),
+                        }
+                    }
+                    done.push(intern(interner, bytes));
+                }
+            },
         }
-        true
+    }
+    // The walk leaves exactly one identity; a malformed stack identifies as 0
+    // on both sides, which only a program error could reach.
+    done.pop().unwrap_or(0)
+}
+
+fn collection_discriminant(kind: CollectionKind) -> u8 {
+    match kind {
+        CollectionKind::Sequence => 0,
+        CollectionKind::Set => 1,
+        CollectionKind::Bag => 2,
+        CollectionKind::OrderedSet => 3,
     }
 }
 
