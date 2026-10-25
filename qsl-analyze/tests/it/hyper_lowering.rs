@@ -381,10 +381,10 @@ fn a_label_constant_equals_the_operation_text_of_its_steps() {
     ] {
         let holds = |reading: MatchReading| matches!(reading, MatchReading::Holds);
         assert_eq!(
-            holds(reading(&equal, a.clone(), StepLabel::Stutter)),
+            holds(reading(&equal, a, StepLabel::Stutter)),
             expected_equal
         );
-        let unequal_reading = holds(reading(&unequal, a.clone(), StepLabel::Stutter));
+        let unequal_reading = holds(reading(&unequal, a, StepLabel::Stutter));
         assert_eq!(unequal_reading, !expected_equal);
         assert_eq!(
             holds(reading(&mirrored, a, StepLabel::Stutter)),

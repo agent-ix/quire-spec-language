@@ -12,7 +12,7 @@ use quire_semantic_value::catalog::InternalFault;
 use crate::hyper::{
     MatchIncomplete, MatchPart, MatchReading, ParameterBinding, StepLabel, StepMatch,
 };
-use crate::simulation::model::{verdict, ClauseOutcome, Verdict, BROKEN};
+use crate::simulation::model::{verdict, ClauseOutcome, Verdict};
 use crate::value::CheckedPackageEvaluation;
 
 /// The `match` conjuncts of one checked hyper clause, evaluated over the
