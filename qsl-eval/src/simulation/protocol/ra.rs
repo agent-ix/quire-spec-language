@@ -34,9 +34,9 @@
 //! po|≠loc` clause and its fence clause through `eco` are not built: PSC-2's
 //! frontier does not decide them, and a `seq_cst` fence's happens-before
 //! reach is carried by `S` (RA-5); STD-239. A collected SC event leaves its
-//! predecessors to its thread's later events (STD-246), and a thread's older
-//! fence leaves when it fences again, which `S` makes sound while fences
-//! take only fence-to-fence edges (STD-247). Garbage collection pins a message
+//! predecessors to its thread's later events (STD-246). A fence leaves only
+//! when every retained view's frontier has advanced past it (PSC-4), and
+//! `S` carries the fence-to-fence edges (STD-247). Garbage collection pins a message
 //! by the running threads' current views alone, and a store or local access
 //! observes its thread's current view (STD-240). The typed form of a view's
 //! frontier and of the SC event graph in the key is this module's (STD-241).
@@ -605,12 +605,15 @@ impl RaComponent {
                 .get(&event.thread)
                 .is_some_and(|latest| id <= latest);
             let Some(at) = location else {
-                if program_order || (happens_before && event.kind == EventKind::Fence) {
+                if program_order || happens_before {
                     before.insert(*id);
                 }
                 continue;
             };
-            if program_order || (happens_before && event.location.as_ref() == Some(at)) {
+            if program_order
+                || (happens_before
+                    && (event.kind == EventKind::Fence || event.location.as_ref() == Some(at)))
+            {
                 before.insert(*id);
             }
             if event.location.as_ref() != Some(at) {
@@ -680,7 +683,7 @@ impl RaComponent {
                     && old.kind == kind
                     && old.location.as_ref() == location
                     && match kind {
-                        EventKind::Fence => true,
+                        EventKind::Fence => false,
                         EventKind::Read => old.read == read,
                         EventKind::Write | EventKind::Rmw => false,
                     }
@@ -699,6 +702,11 @@ impl RaComponent {
         );
         if let Some(views) = self.threads.get_mut(thread) {
             views.cur.frontier.insert(thread.clone(), id);
+            if kind == EventKind::Fence {
+                for view in views.rel.values_mut() {
+                    view.frontier.insert(thread.clone(), id);
+                }
+            }
         }
         self.drop_events(&superseded, false);
         true
@@ -791,6 +799,7 @@ impl RaComponent {
     /// SC events on it (PSC-4).
     fn collect(&mut self) {
         if self.threads.is_empty() {
+            self.collect_fences();
             return;
         }
         let from = self.kept_from();
@@ -803,6 +812,7 @@ impl RaComponent {
             }
         }
         if removed.is_empty() {
+            self.collect_fences();
             return;
         }
         let events: BTreeSet<Id> = self
@@ -815,6 +825,43 @@ impl RaComponent {
             .map(|(id, _)| *id)
             .collect();
         self.drop_events(&events, true);
+        self.collect_fences();
+    }
+
+    /// PSC-4(e): a fence stays live while any retained view's frontier names
+    /// it as the latest live fence of its thread.
+    fn collect_fences(&mut self) {
+        let mut kept = BTreeSet::new();
+        let mut retain_frontier =
+            |view: &View| {
+                for (thread, latest) in &view.frontier {
+                    if let Some((id, _)) = self.events.range(..=*latest).rev().find(|(_, event)| {
+                        event.thread == *thread && event.kind == EventKind::Fence
+                    }) {
+                        kept.insert(*id);
+                    }
+                }
+            };
+        retain_frontier(&self.sc);
+        for views in self.threads.values() {
+            retain_frontier(&views.cur);
+            retain_frontier(&views.acq);
+            for view in views.rel.values() {
+                retain_frontier(view);
+            }
+        }
+        for shared in self.shared.values() {
+            for message in &shared.messages {
+                retain_frontier(&message.view);
+            }
+        }
+        let obsolete = self
+            .events
+            .iter()
+            .filter(|(id, event)| event.kind == EventKind::Fence && !kept.contains(id))
+            .map(|(id, _)| *id)
+            .collect();
+        self.drop_events(&obsolete, false);
     }
 
     /// RA-5: `thread`'s fence of `ordering`; `None` when its SC event would
@@ -829,8 +876,9 @@ impl RaComponent {
             join(&next.shared, &mut views.cur, &acquired);
         }
         if releases(Some(ordering)) {
-            for view in views.rel.values_mut() {
-                *view = views.cur.clone();
+            let locations: Vec<Location> = next.shared.keys().cloned().collect();
+            for location in locations {
+                views.rel.insert(location, views.cur.clone());
             }
         }
         next.threads.insert(thread.clone(), views);
