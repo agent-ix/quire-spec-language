@@ -118,8 +118,12 @@ impl Ty {
 
 /// Where a body is read.
 pub(crate) enum Site {
-    /// A `holds(...)` atom or a relation body.
+    /// A relation body.
     Body,
+    /// A `holds(...)` atom. The atom is lowered to a checked node, so the
+    /// value typer decides the forms this pass does not type (FR-487
+    /// "Dependencies").
+    Atom,
     /// A `match` conjunction: it reads step labels only, and any other read is
     /// refused by the `match` check.
     Match,
@@ -211,6 +215,7 @@ pub(crate) fn type_condition(
             Ty::Unknown
         };
         let silent = matches!(env.site, Site::Match);
+        let lowered = matches!(env.site, Site::Atom);
         let ty = match node.node() {
             ExprNode::Boolean(_) => Ty::Boolean,
             ExprNode::Integer(_) => Ty::Integer,
@@ -266,7 +271,7 @@ pub(crate) fn type_condition(
                 }
                 child(*body)
             }
-            ExprNode::Call { name, arguments } if !silent => {
+            ExprNode::Call { name, arguments } if !silent && !lowered => {
                 match env.signatures.callable(&name.name) {
                     None => missing(&mut faults, &name.name),
                     Some((_, signature)) => {
@@ -362,8 +367,11 @@ pub(crate) fn type_condition(
                         } else if matches!(left, Ty::Quantity(_))
                             || matches!(right, Ty::Quantity(_))
                         {
-                            // A product of units has no type here.
-                            faults.push(BodyFault::Unsupported { span: at });
+                            // A product of units has no type here; a lowered
+                            // atom's value typer decides it.
+                            if !lowered {
+                                faults.push(BodyFault::Unsupported { span: at });
+                            }
                             Ty::Unknown
                         } else {
                             known(left, right)
@@ -405,7 +413,7 @@ pub(crate) fn type_condition(
             | ExprNode::Result
             | ExprNode::Reaches { .. }
             | ExprNode::ProtocolReference { .. } => {
-                if !silent {
+                if !silent && !lowered {
                     faults.push(BodyFault::Unsupported { span: at });
                 }
                 Ty::Unknown

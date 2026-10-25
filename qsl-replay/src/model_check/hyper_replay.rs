@@ -56,6 +56,7 @@ use qsl_eval::hyper::{
     ComponentStep, Halt, HyperFinding, HyperLetters, HyperState, HyperTransition, MatchReading,
     ParameterBinding, Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
+use qsl_eval::model_subject::AtomStop;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{
@@ -500,6 +501,7 @@ fn universal_lasso(
     for joint in 1..=steps {
         match matched(replay, counterexample, joint)? {
             Some(MatchReading::Holds) => {}
+            Some(MatchReading::Fault(_)) => return Err(fault("the-match-evaluates")),
             Some(_) => {
                 return Err(refused(ModelTraceRefusal::HyperUnmatched {
                     joint: u64::try_from(joint).unwrap_or(u64::MAX),
@@ -736,7 +738,9 @@ fn halted(
             },
             count: Some(count),
         }),
-        Some(Halt::Fault(_) | Halt::Encoding(_)) => Err(fault("the-witness-product-expands")),
+        Some(Halt::Fault(_) | Halt::Encoding(_) | Halt::Atom(AtomStop::Fault(_))) => {
+            Err(fault("the-witness-product-expands"))
+        }
         Some(_) => Ok(no_value()),
         None => Err(fault("a-halted-product-recorded-its-halt")),
     }
@@ -836,6 +840,7 @@ fn undefined(
                         joint: u64::try_from(joint).unwrap_or(u64::MAX),
                     }))
                 }
+                Some(MatchReading::Fault(_)) => return Err(fault("the-match-evaluates")),
                 Some(MatchReading::Refused { .. }) | None => return Ok(no_value()),
             }
             match matched_existentially(replay, counterexample, joint) {
@@ -857,6 +862,7 @@ fn undefined(
                         Category::Success,
                     )))
                 }
+                Some(MatchReading::Fault(_)) => return Err(fault("the-match-evaluates")),
                 Some(MatchReading::Refused { .. }) | None => return Ok(no_value()),
             }
         }
@@ -983,6 +989,7 @@ fn projected(
         };
         match reading {
             Some(MatchReading::Holds) => {}
+            Some(MatchReading::Fault(_)) => return Err(fault("the-match-evaluates")),
             Some(_) => {
                 return Err(refused(ModelTraceRefusal::HyperUnmatched {
                     joint: u64::try_from(joint).unwrap_or(u64::MAX),
