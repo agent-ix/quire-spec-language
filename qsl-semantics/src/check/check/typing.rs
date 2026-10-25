@@ -22,7 +22,7 @@ use std::sync::Arc;
 use super::native_literal::NativeConstructor;
 use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
-    node, refuse, LocalKind, Typer,
+    node, refuse, HyperType, LocalKind, Typer,
 };
 use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
@@ -221,6 +221,7 @@ enum Step<'e, 'r> {
 
 /// A form waiting on the node of one of its operands.
 enum Frame<'e, 'r> {
+    HyperPassthrough(Location),
     /// Admit the typed node where this type is expected ([`coerce`]).
     Coerce(Want<'r>),
     /// Admit the typed node as a dispatch argument of this parameter type,
@@ -1002,6 +1003,31 @@ impl<'a> Typer<'a> {
                 self.population_objects(&name.name, &location)?
             }
             ExprNode::Name(name) => {
+                if let Some(local) = self.local(&name.name) {
+                    if let Some(hyper_type) = local.hyper_type.clone() {
+                        let typed = node(
+                            NodeKind::Local(local.slot),
+                            local.value_type.clone(),
+                            &location,
+                        );
+                        self.remember_hyper(&location, hyper_type);
+                        return Ok(Step::Typed(typed));
+                    }
+                    if self.hyper_match {
+                        let typed = node(
+                            NodeKind::Local(local.slot),
+                            local.value_type.clone(),
+                            &location,
+                        );
+                        self.remember_hyper(&location, HyperType::Unknown);
+                        return Ok(Step::Typed(typed));
+                    }
+                }
+                if self.hyper_match {
+                    let typed =
+                        self.hyper_node(ValueType::Boolean, Some(HyperType::Unknown), &location)?;
+                    return Ok(Step::Typed(typed));
+                }
                 let resolved = match resolve_target(self, &name.name, &location, || Ok(())) {
                     Ok(ResolvedTarget::UnionMember(member)) => member
                         .admit_shape(None, &location)
@@ -1031,6 +1057,29 @@ impl<'a> Typer<'a> {
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
             // A `hyper` clause's reads and labels have a meaning only inside
             // the clause; S2 builds them nowhere else.
+            ExprNode::Indexed { read, .. } if !self.hyper_roots.is_empty() || self.hyper_match => {
+                frames.push(Frame::HyperPassthrough(location.clone()));
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*read),
+                    hint,
+                    location.child(0),
+                )));
+            }
+            ExprNode::StepLabel { .. } | ExprNode::Stutter if self.hyper_match => {
+                let (value_type, marker) = self
+                    .hyper_labels
+                    .get(&expression.id())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        if matches!(expression.node(), ExprNode::Stutter) {
+                            (ValueType::Boolean, Some(HyperType::StepLabel))
+                        } else {
+                            (ValueType::Boolean, Some(HyperType::Unknown))
+                        }
+                    });
+                let typed = self.hyper_node(value_type, marker, &location)?;
+                return Ok(Step::Typed(typed));
+            }
             ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter => {
                 return Err(CheckRefusal {
                     location,
@@ -1132,6 +1181,10 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Pre(operand) => {
                 let operand = expression.at(*operand);
+                if !self.hyper_roots.is_empty() {
+                    frames.push(Frame::HyperPassthrough(location.clone()));
+                    return Ok(Step::Descend(Goal::Infer(operand, hint, location.child(0))));
+                }
                 // FR-153/FR-042 (FR-208 applies FR-042 to invariants and
                 // preconditions, naming this same cause explicitly): `pre(...)`
                 // is legal only in an operation's postcondition -- every other
@@ -1925,6 +1978,15 @@ impl<'a> Typer<'a> {
         'a: 'r,
     {
         match frame {
+            Frame::HyperPassthrough(location) => {
+                let hyper_type = self.hyper_type(&typed.location).cloned();
+                let mut typed = typed;
+                typed.location = location.clone();
+                if let Some(hyper_type) = hyper_type {
+                    self.remember_hyper(&location, hyper_type);
+                }
+                Ok(Step::Typed(typed))
+            }
             Frame::Coerce(required) => self.coerce(typed, &required).map(Step::Typed),
             Frame::Upcast(required, location) => {
                 self.upcast(typed, &required, &location).map(Step::Typed)
@@ -2090,6 +2152,19 @@ impl<'a> Typer<'a> {
             }
             IfStage::Otherwise { condition, then } => {
                 let otherwise = typed;
+                let then_hyper = self.hyper_type(&then.location).cloned();
+                let otherwise_hyper = self.hyper_type(&otherwise.location).cloned();
+                let hyper_type = match (&then_hyper, &otherwise_hyper) {
+                    (Some(HyperType::Unknown), other) | (other, Some(HyperType::Unknown)) => {
+                        other.clone().or(Some(HyperType::Unknown))
+                    }
+                    (Some(left), Some(right)) if left == right => Some(left.clone()),
+                    (None, None) => None,
+                    _ if then_hyper.is_some() || otherwise_hyper.is_some() => {
+                        return Err(mismatch(&otherwise.location));
+                    }
+                    _ => None,
+                };
                 let value_type = match branches {
                     Branches::Expected(expected) => expected.into_type(),
                     Branches::Inferred(_) => {
@@ -2103,7 +2178,7 @@ impl<'a> Typer<'a> {
                         }
                     }
                 };
-                Ok(Step::Typed(node(
+                let typed = node(
                     NodeKind::If {
                         condition: self.push(condition),
                         then: self.push(then),
@@ -2111,7 +2186,11 @@ impl<'a> Typer<'a> {
                     },
                     value_type,
                     &location,
-                )))
+                );
+                if let Some(hyper_type) = hyper_type {
+                    self.remember_hyper(&location, hyper_type);
+                }
+                Ok(Step::Typed(typed))
             }
         }
     }
@@ -2124,12 +2203,16 @@ impl<'a> Typer<'a> {
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
         match frame.value.take() {
             None => {
+                let hyper_type = self.hyper_type(&typed.location).cloned();
                 let slot = self.bind(
                     frame.name,
                     typed.value_type.clone(),
                     &frame.location,
                     LocalKind::Bound,
                 )?;
+                if let Some(local) = self.locals.get_mut(slot) {
+                    local.hyper_type = hyper_type;
+                }
                 let goal = frame.branches.goal(frame.body, frame.location.child(1));
                 frame.value = Some((typed, slot));
                 frames.push(Frame::Let(frame));
@@ -2137,6 +2220,7 @@ impl<'a> Typer<'a> {
             }
             Some((value, slot)) => {
                 self.unbind(1);
+                let hyper_type = self.hyper_type(&typed.location).cloned();
                 let LetFrame {
                     branches, location, ..
                 } = *frame;
@@ -2145,7 +2229,7 @@ impl<'a> Typer<'a> {
                     Branches::Expected(expected) => expected.into_type(),
                     Branches::Inferred(_) => body.value_type.clone(),
                 };
-                Ok(Step::Typed(node(
+                let typed = node(
                     NodeKind::Let {
                         slot,
                         value: self.push(value),
@@ -2153,7 +2237,11 @@ impl<'a> Typer<'a> {
                     },
                     value_type,
                     &location,
-                )))
+                );
+                if let Some(hyper_type) = hyper_type {
+                    self.remember_hyper(&location, hyper_type);
+                }
+                Ok(Step::Typed(typed))
             }
         }
     }

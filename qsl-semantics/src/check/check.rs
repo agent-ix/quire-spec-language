@@ -1649,9 +1649,37 @@ pub(crate) enum LocalKind {
 struct Local {
     name: String,
     value_type: ValueType,
+    hyper_type: Option<HyperType>,
     slot: Slot,
     location: Location,
     kind: LocalKind,
+}
+
+/// A type needed only while checking one hyper/relation expression.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum HyperType {
+    Object(EffectiveId),
+    Trace,
+    Execution(String),
+    ExecutionSelf(String),
+    StepLabel,
+    StepReceiver,
+    Unknown,
+}
+
+/// The additional roots a hyper/relation expression may read.
+#[derive(Clone, Debug)]
+pub(crate) enum HyperRoot {
+    Object(EffectiveId),
+    Trace,
+    Execution(Box<HyperExecution>),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct HyperExecution {
+    pub(crate) declaring: EffectiveId,
+    pub(crate) parameters: Vec<(String, ValueType)>,
+    pub(crate) result: Option<ValueType>,
 }
 
 /// One typing pass over a function or standalone expression.
@@ -1672,6 +1700,10 @@ pub(crate) struct Typer<'a> {
     /// bound at most once at a time ([`Self::bind`] refuses a second
     /// binding), so a name resolves in constant time at any nesting.
     local_names: HashMap<String, usize>,
+    hyper_roots: BTreeMap<String, HyperRoot>,
+    hyper_labels: HashMap<qsl_forms::ExprId, (ValueType, Option<HyperType>)>,
+    hyper_values: HashMap<Location, HyperType>,
+    hyper_match: bool,
     slots: usize,
     /// The name each slot was bound under, indexed by slot (FR-092: a
     /// parameter node binds its binder's name).
@@ -2014,6 +2046,18 @@ impl Typer<'_> {
         node: Node,
         required: &ValueType,
     ) -> Result<Node, CheckRefusal> {
+        if let Some(hyper_type) = self.hyper_type(&node.location) {
+            if matches!(hyper_type, HyperType::Unknown) {
+                return Ok(node);
+            }
+            if self.hyper_match
+                && matches!(hyper_type, HyperType::StepLabel | HyperType::StepReceiver)
+                && matches!(node.kind, NodeKind::If { .. })
+            {
+                return Ok(node);
+            }
+            return Err(mismatch(&node.location));
+        }
         if &node.value_type == required {
             return Ok(node);
         }
@@ -2075,6 +2119,10 @@ impl<'a> Typer<'a> {
             cancel: None,
             locals: Vec::new(),
             local_names: HashMap::new(),
+            hyper_roots: BTreeMap::new(),
+            hyper_labels: HashMap::new(),
+            hyper_values: HashMap::new(),
+            hyper_match: false,
             slots: 0,
             slot_names: Vec::new(),
             clause_kind,
@@ -2278,11 +2326,72 @@ impl<'a> Typer<'a> {
         self.locals.push(Local {
             name: name.to_owned(),
             value_type,
+            hyper_type: None,
             slot,
             location: location.clone(),
             kind,
         });
         Ok(slot)
+    }
+
+    pub(crate) fn bind_hyper(
+        &mut self,
+        name: &str,
+        value_type: ValueType,
+        hyper_type: HyperType,
+        location: &Location,
+    ) -> Result<Slot, CheckRefusal> {
+        let slot = self.bind(name, value_type, location, LocalKind::Parameter)?;
+        if let Some(local) = self.locals.get_mut(slot) {
+            local.hyper_type = Some(hyper_type);
+        }
+        Ok(slot)
+    }
+
+    pub(crate) fn hyper_context(
+        &mut self,
+        roots: BTreeMap<String, HyperRoot>,
+        labels: HashMap<qsl_forms::ExprId, (ValueType, Option<HyperType>)>,
+        match_only: bool,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
+        for (name, root) in &roots {
+            let (value_type, hyper_type) = match root {
+                HyperRoot::Object(object) => {
+                    (ValueType::Reference(*object), HyperType::Object(*object))
+                }
+                HyperRoot::Trace => (ValueType::Boolean, HyperType::Trace),
+                HyperRoot::Execution(_) => (ValueType::Boolean, HyperType::Execution(name.clone())),
+            };
+            self.bind_hyper(name, value_type, hyper_type, location)?;
+        }
+        self.hyper_roots = roots;
+        self.hyper_labels = labels;
+        self.hyper_match = match_only;
+        Ok(())
+    }
+
+    pub(crate) fn hyper_type(&self, location: &Location) -> Option<&HyperType> {
+        self.hyper_values.get(location)
+    }
+
+    pub(crate) fn remember_hyper(&mut self, location: &Location, ty: HyperType) {
+        self.hyper_values.insert(location.clone(), ty);
+    }
+
+    pub(crate) fn hyper_node(
+        &mut self,
+        value_type: ValueType,
+        hyper_type: Option<HyperType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let name = format!("\0hyper-{}", self.slots);
+        let slot = self.bind(&name, value_type.clone(), location, LocalKind::Parameter)?;
+        let typed = node(NodeKind::Local(slot), value_type, location);
+        if let Some(hyper_type) = hyper_type {
+            self.remember_hyper(location, hyper_type);
+        }
+        Ok(typed)
     }
 
     fn unbind(&mut self, count: usize) {
@@ -2709,6 +2818,20 @@ impl<'a> Typer<'a> {
         right: TypedOperand,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let left_hyper = self.hyper_type(&left.node.location).cloned();
+        let right_hyper = self.hyper_type(&right.node.location).cloned();
+        if left_hyper.is_some() || right_hyper.is_some() {
+            let comparable = matches!(
+                (&left_hyper, &right_hyper),
+                (Some(HyperType::Unknown), _)
+                    | (_, Some(HyperType::Unknown))
+                    | (Some(HyperType::StepLabel), Some(HyperType::StepLabel))
+                    | (Some(HyperType::StepReceiver), Some(HyperType::StepReceiver))
+            );
+            if !comparable {
+                return Err(mismatch(location));
+            }
+        }
         // FR-359 item 4: FR-208 gives an event type no equality, so an
         // operand holding one is ineligible, not compared.
         if self.scope.reaches_event(&left.node.value_type)
@@ -2753,6 +2876,24 @@ impl<'a> Typer<'a> {
         right: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if self.hyper_type(&left.location).is_some() || self.hyper_type(&right.location).is_some() {
+            if self.hyper_match
+                && (matches!(self.hyper_type(&left.location), Some(HyperType::Unknown))
+                    || matches!(self.hyper_type(&right.location), Some(HyperType::Unknown)))
+            {
+                return Ok(node(
+                    NodeKind::Order(
+                        operator,
+                        OrderedKind::Integers,
+                        self.push(left),
+                        self.push(right),
+                    ),
+                    ValueType::Boolean,
+                    location,
+                ));
+            }
+            return Err(mismatch(location));
+        }
         let kind = match (&left.value_type, &right.value_type) {
             (l, r) if is_integer(l) && is_integer(r) => OrderedKind::Integers,
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
@@ -3263,6 +3404,59 @@ impl<'a> Typer<'a> {
         field: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if let Some(hyper_type) = self.hyper_type(&operand.location).cloned() {
+            let resolved = match hyper_type {
+                HyperType::Object(object) => self
+                    .scope
+                    .types()
+                    .attribute(object, field)
+                    .map(|attribute| attribute.field().value_type().clone())
+                    .ok_or_else(|| refuse(location, CheckCause::MissingName(field.to_owned()))),
+                HyperType::Execution(name) => match (self.hyper_roots.get(&name), field) {
+                    (Some(HyperRoot::Execution(_)), "self") => {
+                        return self.hyper_node(
+                            ValueType::Boolean,
+                            Some(HyperType::ExecutionSelf(name)),
+                            location,
+                        );
+                    }
+                    (Some(HyperRoot::Execution(execution)), "result") => {
+                        execution.result.as_ref().cloned().ok_or_else(|| {
+                            refuse(location, CheckCause::MissingName(field.to_owned()))
+                        })
+                    }
+                    (Some(HyperRoot::Execution(execution)), parameter) => execution
+                        .parameters
+                        .iter()
+                        .find(|(name, _)| name == parameter)
+                        .map(|(_, value_type)| value_type.clone())
+                        .ok_or_else(|| refuse(location, CheckCause::MissingName(field.to_owned()))),
+                    _ => Err(mismatch(location)),
+                },
+                HyperType::ExecutionSelf(name) => match self.hyper_roots.get(&name) {
+                    Some(HyperRoot::Execution(execution)) => self
+                        .scope
+                        .types()
+                        .attribute(execution.declaring, field)
+                        .map(|attribute| attribute.field().value_type().clone())
+                        .ok_or_else(|| refuse(location, CheckCause::MissingName(field.to_owned()))),
+                    _ => Err(mismatch(location)),
+                },
+                HyperType::Unknown => {
+                    return self.hyper_node(ValueType::Boolean, Some(HyperType::Unknown), location)
+                }
+                HyperType::Trace | HyperType::StepLabel | HyperType::StepReceiver => {
+                    Err(mismatch(location))
+                }
+            };
+            match resolved {
+                Ok(value_type) => return self.hyper_node(value_type, None, location),
+                Err(_) if self.hyper_match => {
+                    return self.hyper_node(ValueType::Boolean, Some(HyperType::Unknown), location)
+                }
+                Err(refusal) => return Err(refusal),
+            }
+        }
         let ValueType::Composite(key) = operand.value_type else {
             return Err(mismatch(location));
         };
