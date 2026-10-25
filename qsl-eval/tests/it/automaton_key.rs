@@ -1183,7 +1183,58 @@ fn the_writer_retains_one_counter_per_occurrence_and_refuses_what_admit_refuses(
 fn a_protocol_subject_is_translated_with_its_own_forms() {
     let fixture = fixture(INFINITE, "c: Counter", "on origin", FUTURE);
     let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
-    assert!(SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol).is_ok());
+    let protocol =
+        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Protocol).expect("translates");
+    let ordinary =
+        SafetyStates::clause(&fixture.clause, &context, SubjectKind::Ordinary).expect("translates");
+    // The same past facts are `distance-history` for the protocol subject and
+    // `history` for the ordinary one, and each refuses the other's key.
+    let window = "always (holds(c.level = 1) implies once[1,2] holds(c.level = 2))";
+    let window = self::fixture(INFINITE, "c: Counter", "on origin", window);
+    let context = StateContext::clause(&window.clause, occurrence(0), Vec::new());
+    let protocol_window =
+        SafetyStates::clause(&window.clause, &context, SubjectKind::Protocol).expect("translates");
+    let ordinary_window =
+        SafetyStates::clause(&window.clause, &context, SubjectKind::Ordinary).expect("translates");
+    let distance = Configuration {
+        past: vec![PastMemory::DistanceHistory {
+            path: vec![0, 1],
+            buckets: vec![bucket(1, [false, true])],
+            tail: None,
+        }],
+        ..Configuration::default()
+    };
+    let history = Configuration {
+        past: vec![PastMemory::History {
+            path: vec![0, 1],
+            operands: vec![HistoryOperand {
+                path: vec![0, 1, 0],
+                offsets: vec![1],
+            }],
+        }],
+        ..Configuration::default()
+    };
+    assert!(protocol_window.key(std::slice::from_ref(&distance)).is_ok());
+    assert!(ordinary_window.key(std::slice::from_ref(&history)).is_ok());
+    assert_eq!(
+        ordinary_window.key(std::slice::from_ref(&distance)),
+        Err(KeyRefusal::Unresolved)
+    );
+    assert_eq!(
+        protocol_window.key(std::slice::from_ref(&history)),
+        Err(KeyRefusal::Unresolved)
+    );
+    // A finite `eventually` not carried is an acceptance member only for the
+    // protocol subject.
+    let free = [Configuration::default()];
+    let member = [Configuration {
+        acceptance: vec![at(&[0, 1], Polarity::Positive)],
+        ..Configuration::default()
+    }];
+    assert!(ordinary.key(&free).is_ok());
+    assert_eq!(protocol.key(&free), Err(KeyRefusal::NonNormal));
+    assert!(protocol.key(&member).is_ok());
+    assert_eq!(ordinary.key(&member), Err(KeyRefusal::Unresolved));
     let live = self::fixture(INFINITE, "c: Counter", "on origin", LIVE);
     let context = StateContext::clause(&live.clause, occurrence(0), Vec::new());
     assert!(BuchiStates::clause(&live.clause, &context, SubjectKind::Protocol).is_ok());
@@ -1748,8 +1799,8 @@ fn every_canonical_octet_vector_is_the_authored_octets() {
 }
 
 /// A TP-4 clause is not translated when its key form is not derived: an
-/// unguarded `on each` (ruling R-5 pending), an open-upper least fixed point
-/// in the negated closure (R-2 pending), a clause checked under another
+/// unguarded `on each` and an open-upper least fixed point in the negated
+/// closure (both ruled by #1516 and not implemented yet), a clause checked under another
 /// profile, and any clause the safety key cannot carry.
 #[trace("TC-525")]
 #[test]
@@ -1936,10 +1987,10 @@ fn a_protocol_past_window_is_distance_history() {
         &finite,
         PastMemory::DistanceHistory {
             path: path.clone(),
-            buckets: vec![bucket(0, [false, false])],
+            buckets: vec![bucket(0, [true, true])],
             tail: None,
         },
-        r#"[["0","1"],"distance-history",[["0",[false,false]]],null]"#,
+        r#"[["0","1"],"distance-history",[["0",[true,true]]],null]"#,
     );
     let shifted =
         protocol("always (holds(c.level = 1) implies historically[2,*] holds(c.level = 2))");
@@ -2021,10 +2072,27 @@ fn a_protocol_past_window_is_distance_history() {
             r#"[["0","1"],"distance-history",[],null]"#,
             KeyRefusal::Members,
         ),
+        // a transform no composition of the operator's update gives: a
+        // negation, constant false for once, constant true for historically
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &finite,
+            r#"[["0","1"],"distance-history",[["0",[false,false]]],null]"#,
+            KeyRefusal::Unresolved,
+        ),
+        (
+            &shifted,
+            r#"[["0","1"],"distance-history",[["0",[true,true]]],true]"#,
+            KeyRefusal::Unresolved,
+        ),
         // two buckets at one distance, unsorted, malformed transforms
         (
             &finite,
-            r#"[["0","1"],"distance-history",[["0",[false,false]],["0",[false,true]]],null]"#,
+            r#"[["0","1"],"distance-history",[["0",[false,true]],["0",[true,true]]],null]"#,
             KeyRefusal::Members,
         ),
         (
@@ -2056,6 +2124,21 @@ fn a_protocol_past_window_is_distance_history() {
         );
     }
 
+    // Since and triggered compose all three non-negating transforms.
+    let since = protocol(
+        "always (holds(c.level = 1) implies (holds(c.level = 2) since[1,3] holds(c.level = 3)))",
+    );
+    for transform in ["[false,true]", "[true,true]", "[false,false]"] {
+        let text = format!(r#"[["0","1"],"distance-history",[["0",{transform}]],null]"#);
+        assert!(since.admit(state(&text).as_bytes()).is_ok(), "{text}");
+    }
+    assert_eq!(
+        since
+            .admit(state(r#"[["0","1"],"distance-history",[["0",[true,false]]],null]"#).as_bytes())
+            .map(|_| ()),
+        Err(KeyRefusal::Unresolved)
+    );
+
     // The flag and age forms are the subject's own on both.
     let age = protocol("always (holds(c.level = 1) implies once[0,2] holds(c.level = 2))");
     assert!(age
@@ -2070,8 +2153,8 @@ fn a_protocol_past_window_is_distance_history() {
 /// FR-338: on a protocol subject a finite `F`/`U` (and a signed dual, and a
 /// debt before its lower shift) has a least-fixed-point acceptance set: a
 /// carry excludes membership, not carrying includes it. An ordinary subject
-/// has none for a finite deadline, and `F[a,open]` has none on either
-/// (ruling R-2 pending).
+/// has none for a finite deadline, and `F[a,open]` has none on either until
+/// the follow-up implements #1516's ruling.
 #[trace("TC-525")]
 #[test]
 fn a_protocol_finite_eventuality_has_an_acceptance_set() {

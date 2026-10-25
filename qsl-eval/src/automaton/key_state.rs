@@ -170,6 +170,19 @@ pub enum PastOperator {
 }
 
 impl PastOperator {
+    /// Whether `[false_result, true_result]` is a composition of the
+    /// operator's one-position updates (`z or A`, `z and A`,
+    /// `B or (A and z)`, `B and (A or z)`): once yields the identity or
+    /// constant true, historically the identity or constant false, since and
+    /// triggered all three; none yields a negation.
+    const fn composes(self, transform: [bool; 2]) -> bool {
+        match (self, transform) {
+            (_, [true, false]) => false,
+            (Self::Once, [false, false]) | (Self::Historically, [true, true]) => false,
+            _ => true,
+        }
+    }
+
     /// The operator's operand count.
     const fn arity(self) -> usize {
         match self {
@@ -582,7 +595,8 @@ impl FormulaShape {
 
     /// Whether some occurrence is an open-upper least-fixed-point operator
     /// (`F`/`U[a,open]`, or a dual) at a polarity it is read at: it has a
-    /// Büchi acceptance set this algebra does not derive (spec ruling R-2).
+    /// Büchi acceptance set this algebra does not derive yet: #1516 settled
+    /// it, and the refusal is a stand-in until the follow-up implements it.
     pub(super) fn has_open_upper_eventuality(&self) -> bool {
         self.nodes.values().any(|node| {
             node.interval.is_some_and(|bounds| bounds.upper.is_none())
@@ -923,8 +937,8 @@ impl Reader<'_> {
 
     /// Whether the occurrence has a least-fixed-point acceptance set on this
     /// subject: an unbounded `F`/`U`, or on a protocol subject a finite one
-    /// too. An open-upper `F`/`U[a,open]` has none here (spec ruling R-2
-    /// pending).
+    /// too. An open-upper `F`/`U[a,open]` has none here: #1516 gives
+    /// it one after its shift completes, which the follow-up implements.
     fn has_acceptance(&self, node: &Shaped) -> bool {
         match node.interval {
             None => true,
@@ -1021,8 +1035,9 @@ impl Reader<'_> {
     fn accepted(&self, entry: NodeRef<'_>) -> Result<Occurrence, KeyRefusal> {
         let [path, polarity] = exactly(members(entry)?.into_iter()).ok_or(KeyRefusal::Members)?;
         let (occurrence, node) = self.occurrence(path, polarity)?;
-        // Spec ruling R-2 pending: an `F`/`U[a,open]` occurrence has no
-        // acceptance membership here; only an unbounded `F`/`U` does.
+        // An `F`/`U[a,open]` occurrence has no acceptance membership yet
+        // (#1516 rules one; the follow-up implements it); only an unbounded
+        // `F`/`U` does, and a finite one on a protocol subject.
         if node.least_fixed_point(occurrence.polarity) == Some(true)
             && self.has_acceptance(node)
             && node.reached(occurrence.polarity)
@@ -1145,7 +1160,7 @@ impl Reader<'_> {
                     return Err(KeyRefusal::Unresolved);
                 }
                 Ok(PastMemory::DistanceHistory {
-                    buckets: self.buckets(*buckets, bound)?,
+                    buckets: self.buckets(*buckets, bound, operator)?,
                     tail: None,
                     path: held,
                 })
@@ -1154,7 +1169,7 @@ impl Reader<'_> {
                 if tag == "distance-history" && self.subject == SubjectKind::Protocol =>
             {
                 Ok(PastMemory::DistanceHistory {
-                    buckets: self.buckets(*buckets, shift)?,
+                    buckets: self.buckets(*buckets, shift, operator)?,
                     tail: Some(boolean(*tail)?),
                     path: held,
                 })
@@ -1173,8 +1188,14 @@ impl Reader<'_> {
     }
 
     /// The buckets of a `distance-history` entry: one `[distance,
-    /// [false_result,true_result]]` per counted distance in `0..=bound`.
-    fn buckets(&self, node: NodeRef<'_>, bound: u64) -> Result<Vec<DistanceBucket>, KeyRefusal> {
+    /// [false_result,true_result]]` per counted distance in `0..=bound`, each
+    /// a transform `operator` can compose.
+    fn buckets(
+        &self,
+        node: NodeRef<'_>,
+        bound: u64,
+        operator: PastOperator,
+    ) -> Result<Vec<DistanceBucket>, KeyRefusal> {
         let buckets = set(node, self.max_bytes, |bucket| {
             let [distance, transform] =
                 exactly(members(bucket)?.into_iter()).ok_or(KeyRefusal::Members)?;
@@ -1184,9 +1205,15 @@ impl Reader<'_> {
             }
             let [false_result, true_result] =
                 exactly(members(transform)?.into_iter()).ok_or(KeyRefusal::Members)?;
+            let transform = [boolean(false_result)?, boolean(true_result)?];
+            // A transform is a composition of the operator's one-position
+            // update; one it cannot produce is not a reachable state.
+            if !operator.composes(transform) {
+                return Err(KeyRefusal::Unresolved);
+            }
             Ok(DistanceBucket {
                 distance,
-                transform: [boolean(false_result)?, boolean(true_result)?],
+                transform,
             })
         })?;
         // One bucket per distance: two would name one position set twice.

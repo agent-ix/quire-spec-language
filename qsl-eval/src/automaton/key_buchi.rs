@@ -84,8 +84,9 @@ impl BuchiStates {
             ContextActivation::Infinite => false,
             ContextActivation::Origin | ContextActivation::Each => return Err(not_translated()),
         };
-        // Spec ruling R-5 pending: an unguarded `on each` TP-4 clause is the
-        // selection of one violating activation, a form FR-338 does not key.
+        // An unguarded `on each` TP-4 clause is `["each-buchi", phase,
+        // branch]` under activation "each" (#1516); until the follow-up
+        // implements it the clause is not translated.
         let form_agrees = clause
             .property_form()
             .is_none_or(|form| form == PropertyForm::Liveness);
