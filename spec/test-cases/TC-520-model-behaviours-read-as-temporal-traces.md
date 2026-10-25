@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-125
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-361
+    type: verifies
 ---
 # TC-520: A model subject's behaviours read as temporal traces, with terminal stutter and interval wrap
 
@@ -16,7 +18,7 @@ and past operators over a lasso, the `over` binding, its admitted and
 excluded keys, instance order and guard, and the order of the instancing
 outcomes.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17; FR-361-AC-16.
 
 ## Test Procedure
 
@@ -80,7 +82,11 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17.
 15. Build FR-125-AC-16's `all` with `all = [c, e]` and check the unguarded
     `always holds(x.value <= 0)`; repeat with `all = [e, c]` and compare the
     request identities (FR-125-AC-16).
-16. Using AC-12's `dogs` and `animals` subject, define an immutable `let`
+16. Using AC-12's `dogs` and `animals` subject, select the model profile and
+    define helper functions under `quire.value.complete/v1`; S3 derives the
+    StateModel family for a function body that writes model constructs while
+    retaining ordinary assembly refusals for unresolved or unsupported forms.
+    Define an immutable `let`
     alias `y` of `x`, an identity helper that returns its reference argument,
     a Boolean helper that performs the `animals`/`dogs` lookup disjunction
     through that identity helper, and a property helper that reads the

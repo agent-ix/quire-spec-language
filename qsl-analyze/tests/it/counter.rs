@@ -203,7 +203,24 @@ fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
 
 /// The S3 declarations of [`unit_text_in`]'s unit.
 pub(crate) fn declarations_in(identity: &str, document: &[u8], body: &str) -> PackageDeclarations {
-    let text = unit_text_in(identity, document, body);
+    declarations_from_text(document, unit_text_in(identity, document, body))
+}
+
+/// The native unit of [`unit_text_in`] with an explicit model profile in its
+/// header, for tests of model-aware helper admission.
+pub(crate) fn declarations_with_model_profile(
+    identity: &str,
+    document: &[u8],
+    body: &str,
+) -> PackageDeclarations {
+    let text = unit_text_in(identity, document, body).replace(
+        "profile v = \"quire.value.complete/v1\";",
+        "profile v = \"quire.value.complete/v1\";\nprofile m = \"quire.model.complete/v1\";",
+    );
+    declarations_from_text(document, text)
+}
+
+fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations {
     let packages = package_input([document]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
