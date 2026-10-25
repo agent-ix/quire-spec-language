@@ -1349,6 +1349,12 @@ impl PackageDeclarations {
         .with_known_populations(refinement::population_names(&self.models))
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
+        .with_model_selections(
+            self.models
+                .iter()
+                .filter_map(|model| Some((model.alias()?.to_owned(), model.selection().clone())))
+                .collect(),
+        )
         .with_declared_units(&self.units)
         .with_protocols(
             self.protocols
@@ -2460,8 +2466,12 @@ impl PackageDeclarations {
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_controls::check(protocol, &control_declarations, &mut control_cx)
-                    {
+                    match protocol_controls::check(
+                        protocol,
+                        &self.alias_names,
+                        &control_declarations,
+                        &mut control_cx,
+                    ) {
                         Ok((channels, used)) => {
                             checked.channels = channels;
                             checked.owners = protocol_clause::owners(protocol, &checked);
