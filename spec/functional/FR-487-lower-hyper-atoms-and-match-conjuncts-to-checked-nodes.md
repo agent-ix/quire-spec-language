@@ -413,7 +413,9 @@ evaluator seam is added to `HyperQueryRequest`.
   HP-1). FR-172 notes that its lowering remains.
 - Writing these nodes into the clause's checked-package v2 `hyperproperty`
   node (QSpec FR-402) and exposing its occurrence on `CheckedHyperClause`.
-  That is Linear QSL-1071. The emitter lowers each condition as
+  That is Linear QSL-1071, specified by
+  [FR-488](FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md).
+  The emitter lowers each condition as
   [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
   lowers a Boolean expression, with the slots becoming its parameter nodes.
 - SMT encoding of `μ_E`: FR-315 encodes HP-2 only.
@@ -480,6 +482,8 @@ holds(B) }`, its body atom `B` varying by criterion, read at the instance `n1`.
   [FR-183](FR-183-replay-a-hyper-counterexample.md) read the seams.
   [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) defines the
   hyper queries.
+- [FR-488](FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md)
+  writes the lowered nodes into the `hyperproperty` node.
 - ADR-023 HS-3, HS-4, HS-5, HM-3, HM-4, HV-7 and HV-8; QSpec FR-395 ("Step
   labels"); QSpec FR-402 (the `hyperproperty` node that QSL-1071 emits).
 
