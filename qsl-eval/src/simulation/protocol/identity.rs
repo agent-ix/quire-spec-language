@@ -591,6 +591,17 @@ pub struct ProtocolTransition {
     send_record: Option<SendRecord>,
     memory: Option<CarriedComponent>,
     actor: Option<Actor>,
+    visibility_read: Option<VisibilityRead>,
+}
+
+/// Resolver metadata for a shared RA load. It is deliberately outside the
+/// transition identity: visibility fairness resolves this execution detail
+/// into a Streett pair after transition identities have been assigned.
+#[derive(Clone, Debug)]
+pub(crate) struct VisibilityRead {
+    pub(crate) thread: Vec<u8>,
+    pub(crate) location: Vec<u8>,
+    pub(crate) fresh: bool,
 }
 
 impl ProtocolTransition {
@@ -616,6 +627,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -631,6 +643,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -656,6 +669,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -665,6 +679,15 @@ impl ProtocolTransition {
             *held = choice;
         }
         self
+    }
+
+    pub(crate) fn observing_visibility(mut self, read: VisibilityRead) -> Self {
+        self.visibility_read = Some(read);
+        self
+    }
+
+    pub(crate) fn visibility_read(&self) -> Option<&VisibilityRead> {
+        self.visibility_read.as_ref()
     }
 
     /// A step of `kind` by `thread` at `node` that binds `record`: an
@@ -679,6 +702,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -699,6 +723,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -727,6 +752,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -745,6 +771,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -758,6 +785,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -773,6 +801,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
@@ -797,6 +826,7 @@ impl ProtocolTransition {
             send_record: None,
             memory: None,
             actor: None,
+            visibility_read: None,
         }
     }
 
