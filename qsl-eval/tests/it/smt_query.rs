@@ -9,8 +9,8 @@ use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_eval::smt::{
-    encode_smt_query, Measure, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtItem,
-    SmtQueryKind,
+    encode_smt_query, Measure, MonitorTable, Refusal, SmtEncodingLimits, SmtEncodingRefusal,
+    SmtItem, SmtQueryKind,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -1967,3 +1967,52 @@ fn monitored_scripts_are_byte_equal_to_the_recorded_golden_bytes() {
         }
     }
 }
+
+/// FR-315-AC-50: the table of a TP-3 item is the one the constructor over the
+/// item's formula and profile gives, with the numbering of the golden scripts.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn the_tp3_item_table_is_the_constructors_table() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let clause = &world.clauses[0];
+    let limits = SmtEncodingLimits::default();
+    let of = MonitorTable::of(clause, limits.max_monitor_atoms, limits.max_monitor_states)
+        .expect("tabulates");
+    let over = MonitorTable::over(
+        clause.formula(),
+        clause.profile(),
+        limits.max_monitor_atoms,
+        limits.max_monitor_states,
+    )
+    .expect("tabulates");
+    assert_eq!(of, over);
+    assert_eq!(of.atoms().len(), 2);
+    assert_eq!((of.states(), of.initial()), (3, 0));
+    assert!(of.rejecting().is_some());
+    let moves: Vec<(usize, u64, usize)> = of
+        .moves()
+        .iter()
+        .map(|step| (step.from, step.letter, step.to))
+        .collect();
+    assert_eq!(moves, IMPLIES_ALWAYS_MOVES);
+}
+
+/// The numbered moves of `always (A implies always B)` over two atoms:
+/// breadth-first numbering, initial state 0, letter bit `j` being atom `j`.
+pub(crate) const IMPLIES_ALWAYS_MOVES: [(usize, u64, usize); 12] = [
+    (0, 0, 0),
+    (0, 1, 1),
+    (0, 2, 0),
+    (0, 3, 2),
+    (1, 0, 1),
+    (1, 1, 1),
+    (1, 2, 1),
+    (1, 3, 1),
+    (2, 0, 1),
+    (2, 1, 1),
+    (2, 2, 2),
+    (2, 3, 2),
+];

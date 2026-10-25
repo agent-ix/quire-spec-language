@@ -8,9 +8,13 @@
 //! the initial monitor state stepped over the letter at position 0. The
 //! property at a position is the monitor state there not rejecting.
 
-use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{
+    Activation, CheckedFormula, CheckedTemporalClause, FormulaNodeId, TemporalProfile,
+};
 
-use crate::automaton::{translate, AutomatonError, Letter, Monitor, StateId};
+use crate::automaton::{
+    translate, translate_body, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,
+};
 use crate::smt::{Measure, Refusal, SmtEncodingRefusal};
 
 /// One monitor transition: from a state over a letter to a state.
@@ -25,7 +29,7 @@ pub struct Move {
 }
 
 /// A monitor tabulated over every letter of its atoms.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MonitorTable {
     atoms: Vec<FormulaNodeId>,
     initial: usize,
@@ -61,7 +65,34 @@ impl MonitorTable {
         max_atoms: u64,
         max_states: u64,
     ) -> Result<Self, SmtEncodingRefusal> {
+        if clause.activation() == Activation::Origin {
+            return Self::over(clause.formula(), clause.profile(), max_atoms, max_states);
+        }
         let automaton = translate(clause, max_states).map_err(Self::translation)?;
+        Self::tabulate(automaton, max_atoms, max_states)
+    }
+
+    /// Tabulate the bad-prefix monitor of `body` read from the origin under
+    /// `profile`, as [`MonitorTable::of`] tabulates an `on origin` clause.
+    ///
+    /// # Errors
+    ///
+    /// As [`MonitorTable::of`].
+    pub fn over(
+        body: &CheckedFormula,
+        profile: TemporalProfile,
+        max_atoms: u64,
+        max_states: u64,
+    ) -> Result<Self, SmtEncodingRefusal> {
+        let automaton = translate_body(body, profile, max_states).map_err(Self::translation)?;
+        Self::tabulate(automaton, max_atoms, max_states)
+    }
+
+    fn tabulate(
+        automaton: PropertyAutomaton,
+        max_atoms: u64,
+        max_states: u64,
+    ) -> Result<Self, SmtEncodingRefusal> {
         let atoms = automaton.atoms().to_vec();
         if u64::try_from(atoms.len()).unwrap_or(u64::MAX) > max_atoms {
             return Err(Refusal::TooLarge {
