@@ -92,10 +92,8 @@ impl CheckedClosureHandle {
             }
             if id == owner_package_id {
                 selected = Some(package);
-            } else if has_node(package, wire_node_id) {
-                if other_owner.replace(id).is_some() {
-                    ambiguous = true;
-                }
+            } else if has_node(package, wire_node_id) && other_owner.replace(id).is_some() {
+                ambiguous = true;
             }
             packages.extend(
                 package
@@ -1117,8 +1115,7 @@ mod tests {
                 stages.clone(),
                 ReplayLimits::default(),
             )
-            .err()
-            .expect("existing refusal");
+            .expect_err("existing refusal");
             let actual = acquire_checked_closure(
                 identity("unit"),
                 "unit.native",
