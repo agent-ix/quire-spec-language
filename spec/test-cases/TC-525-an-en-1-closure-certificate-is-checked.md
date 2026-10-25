@@ -71,8 +71,9 @@ are prospective qualification procedures; this artifact claims no execution.
    closure call; compare exact limit/value/setting or cancellation source.
 9. Over the `Counter` subject with no `terminal` declaration, build a
    checked package of its unit carrying each guarded clause's
-   `temporal_clause` node in QSpec FR-370's shape (`kind` `each`, `trigger`
-   the `over` parameter's node, `guard` the clause's guard term); use it as
+   `temporal_clause` node in the shape S4 emits (FR-337-AC-6: `kind`
+   `each`, `trigger` the `on each` parameter's node, `guard` the clause's
+   guard term); use it as
    the engine's clause source and as the request's recompiled package, and
    read each `when` condition by the test's own letters. Check the
    certificates of FR-338-AC-10: `always holds(c.value <= 1)` infinite-trace

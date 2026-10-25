@@ -21,8 +21,8 @@ Scope: FR-339-AC-5.
 
 Fixtures: ADR-018 §6's example unit, universe `{a, b}`, both versions 0, and
 a test-built checked package carrying the guarded clause's `temporal_clause`
-node in QSpec FR-370's shape (`kind` `each`, `trigger` the `over`
-parameter's node, `guard` the clause's guard term), used as the engine's
+node in the shape S4 emits (FR-337-AC-6: `kind` `each`, `trigger` the
+`on each` parameter's node, `guard` the clause's guard term), used as the engine's
 clause source and as the request's recompiled package. Each `when`
 condition is read by the test's own letters.
 

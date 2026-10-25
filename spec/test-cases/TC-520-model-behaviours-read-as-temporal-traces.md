@@ -15,10 +15,11 @@ relationships:
 Verify positions and anchors of a model behaviour, the closed reading under
 a bounded profile and the terminal stutter under infinite-trace, interval
 and past operators over a lasso, the `over` binding, its admitted and
-excluded keys, instance order and guard, and the order of the instancing
-outcomes.
+excluded keys, instance order and guard, the order of the instancing
+outcomes, and the production letter seam's reading of an `on each`
+activation guard.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17; FR-361-AC-16.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-18; FR-361-AC-16.
 
 ## Test Procedure
 
@@ -92,6 +93,14 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-17; FR-361-AC-16.
     through that identity helper, and a property helper that reads the
     reference's `age`. Check `always holds(isDog(y) implies ageOK(y))`, then
     check the same property helper without the guard (FR-125-AC-17).
+17. Compile each `on each` clause of FR-125-AC-18 from source and check it
+    through the production letter seam: the two false-extension clauses and
+    the two infinite-trace clauses over `Counter`, replaying the
+    `c.value >= 3` counterexample; read that clause's guard footprint and run
+    it under partial-order reduction; then, over step 11's subject, the
+    `x.age >= 1` activation guard; read the seam's `G` activation reading at
+    the initial state for `k`, `t` and `d`, and check `always holds(false)`
+    `when (G)` (FR-125-AC-18).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -141,3 +150,11 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   false without `absent-key` and short-circuits the property helper, and at `k`
   and `d` both helpers return true. The unguarded property helper refutes at
   `t` with `undefined-evaluation`/`absent-key`.
+- Step 17: `Violated` with the prefix `0 -inc-> 1 -inc-> 2` and
+  `Holds{Exhaustive}`; `Violated` with the prefix to value 3, which replays
+  to `reproduced-with-evaluated-witness`; `Violated` with
+  `kind: UndefinedEvaluation` at position 2, cause `division-by-zero`, at
+  the activation; the footprint is `c`'s `value` and `inc` is visible. Over
+  step 11's subject, `undefined-evaluation` naming `t` for `x.age >= 1`;
+  the `G` reading is true for `k`, false for `t` and true for `d`; the
+  `always holds(false)` clause refutes naming `k` at position 0.

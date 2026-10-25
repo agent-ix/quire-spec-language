@@ -53,8 +53,9 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    c.versionNumber) >= 0)` over the example unit with both versions 0 and
    with `a` 0 and `b` 1 (FR-126-AC-11).
 9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each from a
-   test-built checked package carrying its `temporal_clause` node in QSpec
-   FR-370's shape, with its `when` condition read by the test's own letters.
+   test-built checked package carrying its `temporal_clause` node in the
+   shape S4 emits (FR-337-AC-6), with its `when` condition read by the
+   test's own letters.
    Then, from the same package form, the guarded TP-4 clauses of
    FR-126-AC-16: over the example unit, `eventually holds(c.versionNumber =
    2)` `on each` when `c.versionNumber = 1` under a weak `each` constraint and

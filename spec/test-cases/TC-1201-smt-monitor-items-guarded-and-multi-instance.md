@@ -23,13 +23,13 @@ by rules 4, 4b and 4c.
 
 Scope: FR-315-AC-33 to FR-315-AC-39, FR-314-AC-8 and FR-127-AC-15.
 
-S3 and S4 refuse an `on each` clause, guarded or not, `NotEmitted`
-(FR-337, QSL-926), so the test builds the checked package of each `on each`
-and guarded item itself, as FR-126-AC-16 does: a package of the unit that
-carries the clause's `temporal`/`temporal_clause` node in QSpec FR-370's
-shape (activation `kind` `each`, `trigger` the `over` parameter's node and,
-for a guarded item, `guard` the condition's term). The `on origin` and
-unguarded TP-3 items of steps 3, 6 and 7 compile from source.
+S4 emits an `on each` clause, guarded or not (FR-337-AC-6). The test
+still builds the checked package of each `on each` and guarded item itself,
+as FR-126-AC-16 does, in the shape S4 emits (activation `kind` `each`,
+`trigger` the `on each` parameter's node and, for a guarded item, `guard`
+the condition's term), so that its letters read each condition as the step
+writes it. The `on origin` and unguarded TP-3 items of steps 3, 6 and 7
+compile from source.
 
 Steps 2, 3, 5 and 7 read scripts with a `QF_LIA` solver, and read their
 models by FR-315's rules with FR-128's replay. Steps 1, 4 and 6 read the
