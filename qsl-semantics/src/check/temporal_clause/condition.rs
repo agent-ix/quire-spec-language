@@ -117,6 +117,44 @@ pub(crate) fn check_conditions(
     Ok((conditions, nodes))
 }
 
+/// FR-337 "`on each` activation at S3": the activation is checked before the
+/// clause's body, so a guard defect refuses ahead of a body refusal. For a
+/// clause with a `when` guard whose binder types resolve alike, the refusal of
+/// typing the guard; `None` when the clause has no guard, its binder types
+/// are refused by the clause check itself, or the guard types.
+pub(crate) fn guard_refusal(
+    clause: usize,
+    form: &qsl_forms::TemporalClauseForm,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+) -> Option<CheckRefusal> {
+    let ActivationForm::Each {
+        parameter,
+        when: Some(when),
+    } = &form.activation
+    else {
+        return None;
+    };
+    let resolve = |type_form| {
+        crate::check::type_form::resolve_form(input.scope, type_form)
+            .ok()
+            .filter(|resolved| !matches!(resolved, ValueType::Population(_)))
+    };
+    let over = resolve(&form.over.value_type)?;
+    let trigger = resolve(&parameter.value_type)?;
+    if trigger != over || parameter.name.name == form.over.name.name {
+        return None;
+    }
+    let bound = [
+        (form.over.name.name.clone(), over),
+        (parameter.name.name.clone(), trigger),
+    ];
+    let named = crate::check::check::NamedScope::of(input.models, input.scope);
+    let mut nodes = input.nodes_used;
+    let location = temporal_location(clause, TemporalSite::Guard);
+    type_condition(when, &bound, &location, input, &named, &mut nodes, cx).err()
+}
+
 /// Type `condition` as a Boolean over `bound`, bound from slot 0, at
 /// `location`, and check its definedness over the current-state observation.
 fn type_condition(

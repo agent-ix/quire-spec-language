@@ -141,6 +141,7 @@ impl World {
                 meter,
             ),
             item,
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         }
     }
 

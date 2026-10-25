@@ -18,6 +18,7 @@
 mod expression;
 mod kind;
 mod layout;
+mod limits;
 mod monitor;
 mod query;
 mod refusal;
@@ -25,5 +26,6 @@ pub(crate) mod relation;
 pub mod script;
 
 pub use kind::SmtQueryKind;
+pub use limits::SmtEncodingLimits;
 pub use query::{encode_smt_query, SmtItem};
 pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, Refusal, SmtEncodingRefusal};

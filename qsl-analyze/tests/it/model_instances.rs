@@ -378,6 +378,7 @@ impl World {
                     clause: &clause,
                     letters: &letters,
                 },
+                smt_encoding: qsl_replay::SmtEncodingLimits::default(),
             },
             &ClosureCertificate::default(),
             &ModelCheckLimits::default(),
@@ -725,6 +726,61 @@ impl World {
         )
     }
 
+    /// EN-1's run of `formula` over `x: M::<over>` with the activation
+    /// `activation`, through the production letters of its checked clause.
+    fn run_activation(
+        &self,
+        over: &str,
+        activation: &str,
+        formula: &str,
+        universes: Vec<PopulationUniverse>,
+    ) -> ModelCheckOutcome {
+        let package = self.clause_text(&format!("M::{over}"), activation, formula);
+        let system = ModelSystem::new(self.subject(&package, universes.clone()).simulation)
+            .expect("the subject admits");
+        let node = &package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("a clause");
+        check_model(
+            ModelCheckRequest {
+                subject: self.subject(&package, universes),
+                item: ModelCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("checked")
+    }
+
+    /// The reading of the `when` condition of `activation` over `x: M::<over>`
+    /// at the initial state, for each of `instances`.
+    fn activation_readings(
+        &self,
+        over: &str,
+        activation: &str,
+        universes: Vec<PopulationUniverse>,
+        instances: &[ModelInstance],
+    ) -> Vec<AtomReading> {
+        let package = self.clause_text(&format!("M::{over}"), activation, "always holds(true)");
+        let system = ModelSystem::new(self.subject(&package, universes).simulation)
+            .expect("the subject admits");
+        let node = &package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("a clause");
+        let start = system.initial_states()[0].clone();
+        instances
+            .iter()
+            .map(|instance| {
+                letters
+                    .activation(instance, &start, &mut Meter::new(UNLIMITED))
+                    .expect("the meter is not exhausted")
+            })
+            .collect()
+    }
+
     /// Each `holds` atom of `formula` over `x: M::<over>`, read at the
     /// initial state for each of `keys`' instances: `readings[atom][key]`.
     fn atom_readings(
@@ -958,6 +1014,167 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
             .expect("checked"),
         ModelCheckOutcome::Violated { .. }
     ));
+}
+
+/// FR-337: the guard of `on each (y: Dog) when (g)` is read
+/// through the production letters at every instance, with `y` bound to the
+/// same reference as the clause's `over`. Over `animals` (`k` a `Dog`, `t` a
+/// `Cat`) and `dogs` (`d`), the guard `G` reads false at `t` and true at `k`
+/// and `d`; `always holds(false)` is then refuted at `k` (the first instance
+/// whose guard holds) while a `when (false)` guard makes the same property
+/// hold vacuously. A guard that reads a field through the absent `Cat` is
+/// undefined there, naming `t`.
+#[trace("TC-520", "FR-337")]
+#[test]
+fn a_guarded_activation_is_read_through_the_production_letters_at_each_instance() {
+    let world = world(
+        &[("animals", &["Animal"]), ("dogs", &["Dog"])],
+        &[
+            ("animals", &[("k", "Dog"), ("t", "Cat")]),
+            ("dogs", &[("d", "Dog")]),
+        ],
+    );
+    let bounded = || universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
+    let instances = [
+        instance("animals", "k"),
+        instance("animals", "t"),
+        instance("dogs", "d"),
+    ];
+    let on_each = |guard: &str| format!("on each (y: M::Dog) when ({guard})");
+    let absent_key = AtomReading::Undefined(UndefinedCause::Family(UndefinedRecord {
+        reason: UndefinedReason::AbsentKey,
+        fields: BTreeMap::new(),
+    }));
+
+    // P1: a guard that is false holds the property vacuously.
+    assert!(matches!(
+        world.run_activation("Dog", &on_each("false"), "always holds(false)", bounded()),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    // G reads false at t and true at k and d.
+    let guard = "present(lookup<M::Dog>(M::animals, y) absent empty) \
+        or present(lookup<M::Dog>(M::dogs, y) absent empty)";
+    assert_eq!(
+        world.activation_readings("Dog", &on_each(guard), bounded(), &instances),
+        [AtomReading::True, AtomReading::False, AtomReading::True]
+    );
+    let outcome = world.run_activation("Dog", &on_each(guard), "always holds(false)", bounded());
+    let ModelCheckOutcome::Violated { counterexample, .. } = outcome else {
+        panic!("expected Violated, got {outcome:?}");
+    };
+    assert_eq!(counterexample.over_binding, Some(instance("animals", "k")));
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+
+    // A guard reading through the absent key is undefined at t.
+    assert_eq!(
+        world.activation_readings("Dog", &on_each("y.age >= 1"), bounded(), &instances)[1],
+        absent_key
+    );
+    let outcome = world.run_activation(
+        "Dog",
+        &on_each("y.age >= 1"),
+        "always holds(true)",
+        bounded(),
+    );
+    let ModelCheckOutcome::Violated { counterexample, .. } = outcome else {
+        panic!("expected Violated, got {outcome:?}");
+    };
+    assert_eq!(counterexample.over_binding, Some(instance("animals", "t")));
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(AtomReading::Undefined(evaluation.cause.clone()), absent_key);
+}
+
+/// FR-337 and FR-391: the populations a guard names join the clause's. Over
+/// `x: Dog`, covered by `animals` and `dogs`, a body that names no
+/// population has those two population domains; a guard that names `lamps`,
+/// which does not cover `Dog`, adds `lamps` to the clause's named populations
+/// and to its unbounded population domains, as a `holds` atom naming it does;
+/// a guard that reads a `Dog` field adds that object to the record's elements.
+#[trace("TC-520", "FR-337")]
+#[test]
+fn the_populations_a_guard_names_join_the_clauses() {
+    let world = world(
+        &[
+            ("animals", &["Animal"]),
+            ("dogs", &["Dog"]),
+            ("lamps", &["Lamp"]),
+        ],
+        &[("animals", &[]), ("dogs", &[]), ("lamps", &[])],
+    );
+    let named = "exists(o in allInstances<M::Lamp>(M::lamps) : true)";
+    let domains = |package: &CheckedPackage| {
+        package
+            .graph()
+            .requirements()
+            .values()
+            .filter_map(|record| match record.requirements().extent() {
+                ClaimExtent::Unbounded(domains) => Some(
+                    domains
+                        .iter()
+                        .filter(|(_, kind)| *kind == DomainKind::Population)
+                        .count(),
+                ),
+                ClaimExtent::Bounded => None,
+            })
+            .sum::<usize>()
+    };
+    let populations =
+        |package: &CheckedPackage| package.graph().temporal_clauses()[0].named_populations();
+
+    let plain = world.clause_text(
+        "M::Dog",
+        "on each (y: M::Dog) when (true)",
+        "always holds(true)",
+    );
+    assert_eq!(domains(&plain), 2);
+    assert!(populations(&plain).is_empty());
+
+    let guarded = world.clause_text(
+        "M::Dog",
+        &format!("on each (y: M::Dog) when ({named})"),
+        "always holds(true)",
+    );
+    assert_eq!(domains(&guarded), 3);
+    assert_eq!(populations(&guarded).len(), 1);
+    assert!(
+        populations(&guarded)[0].ends_with("lamps"),
+        "{:?}",
+        populations(&guarded)
+    );
+
+    let atom = world.clause_text(
+        "M::Dog",
+        "on each (y: M::Dog) when (true)",
+        &format!("always holds({named})"),
+    );
+    assert_eq!(domains(&atom), 3);
+    assert_eq!(populations(&atom), populations(&guarded));
+
+    let elements = |package: &CheckedPackage| {
+        package
+            .graph()
+            .requirements()
+            .keys()
+            .flat_map(|key| {
+                package
+                    .graph()
+                    .item_elements(key)
+                    .expect("a record")
+                    .expect("resolves")
+            })
+            .filter(|element| matches!(element, qsl_semantics::check::AbstractionKey::Object(_)))
+            .count()
+    };
+    let reading = world.clause_text(
+        "M::Dog",
+        "on each (y: M::Dog) when (y.age >= 0)",
+        "always holds(true)",
+    );
+    assert_eq!(elements(&plain), 0);
+    assert_eq!(elements(&reading), 1);
 }
 
 /// FR-125-AC-17: an absent `x` remains a guard when forwarded through a let

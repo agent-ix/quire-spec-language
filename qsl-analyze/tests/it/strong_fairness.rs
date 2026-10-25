@@ -384,6 +384,7 @@ pub(crate) fn settle_en1(
                 clause: &fixture.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |payload| replay_with(fixture, payload.clone(), atom),

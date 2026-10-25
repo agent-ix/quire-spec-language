@@ -64,6 +64,18 @@ impl Measure {
             Self::ScriptBytes => "script-bytes",
         }
     }
+
+    /// The request setting which raises this measure (FR-255).
+    pub const fn setting(self) -> &'static str {
+        match self {
+            Self::Constants => "smt_encoding.max_constants",
+            Self::Applications => "smt_encoding.max_applications",
+            Self::MonitorAtoms => "smt_encoding.max_monitor_atoms",
+            Self::MonitorStates => "smt_encoding.max_monitor_states",
+            Self::Candidates => "smt_encoding.max_candidates",
+            Self::ScriptBytes => "smt_encoding.max_script_bytes",
+        }
+    }
 }
 
 /// A refusal: the construct the encoding has no form for, or the size limit
@@ -154,7 +166,10 @@ pub enum Refusal {
         count: usize,
     },
     /// `too-large`: a size measure passes its limit.
-    #[error("{} is {value}, over the limit {limit}", measure.name())]
+    #[error(
+        "{} is {value}, over the limit {limit} set by {setting}",
+        measure.name()
+    )]
     TooLarge {
         /// The measure.
         measure: Measure,
@@ -162,6 +177,8 @@ pub enum Refusal {
         value: u64,
         /// Its limit.
         limit: u64,
+        /// The request setting which raises this limit.
+        setting: &'static str,
     },
     /// `out-of-fragment`: an expression is outside the `QF_LIA` fragment.
     #[error("the {form} at {locus} has no QF_LIA form")]
