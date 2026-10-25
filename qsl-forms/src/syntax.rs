@@ -2308,7 +2308,7 @@ pub struct CaseForm {
 }
 
 /// A qualified name as written, with its ordered identifier segments and span.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct NameForm {
     /// The name as written.
     pub name: String,
@@ -2316,6 +2316,24 @@ pub struct NameForm {
     pub segments: Vec<String>,
     /// The span of the name.
     pub span: Span,
+}
+
+// Source locations are carried for diagnostics, but they do not change the
+// identity or meaning of a name. Keeping them out of equality also lets
+// callers compare a parsed name with a synthesized expected form.
+impl PartialEq for NameForm {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.segments == other.segments
+    }
+}
+
+impl Eq for NameForm {}
+
+impl std::hash::Hash for NameForm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.segments.hash(state);
+    }
 }
 
 impl NameForm {
@@ -4282,7 +4300,7 @@ mod tests {
             assert_eq!(copy, tree);
             let rendered = format!("{tree:?}");
             assert!(rendered.starts_with(&format!("#{} ", tree.len() - 1)));
-            assert_eq!(rendered.matches("Name(\"bottom\")").count(), 1);
+            assert_eq!(rendered.matches("Name(NameForm { name: \"bottom\"").count(), 1);
             drop(copy);
             drop(tree);
         });
@@ -4307,7 +4325,7 @@ mod tests {
             format!("{tree:?}"),
             "#5 Binary { operator: Add, left: #2, right: #4 } \
              [#2 Binary { operator: Subtract, left: #0, right: #1 } \
-             [#0 Name(\"a\"), #1 Name(\"b\")], #4 Not(#3) [#3 Name(\"c\")]]"
+             [#0 Name(NameForm { name: \"a\", segments: [\"a\"], span: Span { start: 0, end: 0 } }), #1 Name(NameForm { name: \"b\", segments: [\"b\"], span: Span { start: 0, end: 0 } })], #4 Not(#3) [#3 Name(NameForm { name: \"c\", segments: [\"c\"], span: Span { start: 0, end: 0 } })]]"
         );
         let built = {
             let mut builder = ExpressionBuilder::new();
