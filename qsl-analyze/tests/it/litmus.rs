@@ -215,6 +215,9 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
 pub(crate) fn contracts() -> String {
     let mut text = String::from(
         "pre IsX using v on M::Cell::set { self.id = 0 }\n\
+         pre XZero using v on M::Cell::set { self.id = 0 and self.v = 0 }\n\
+         pre XWZero using v on M::Cell::set { self.id = 0 and self.w = 0 }\n\
+         pre XWZeroBoth using v on M::Cell::both { self.id = 0 and self.w = 0 }\n\
          pre IsY using v on M::Cell::set { self.id = 1 }\n\
          post StoreOne using v on M::Cell::set { self.v = 1 }\n\
          post StoreTwo using v on M::Cell::set { self.v = 2 }\n\

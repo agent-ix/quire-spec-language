@@ -753,10 +753,10 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     governing: BTreeMap<qsl_semantics::check::ProtocolNodeId, qsl_foundation::MemoryModelName>,
     /// EN-1's initial enabled-footprint classification of the attempts of
     /// every weak `parallel` (FR-220).
-    enabled: WeakAccesses,
+    initial_enabled: WeakAccesses,
     /// EN-1's potential footprints, used to reserve memory backing for
     /// operations that may become enabled (ADR-025 MA-1).
-    weak: WeakAccesses,
+    potential: WeakAccesses,
     /// The `over` parameter's bound value.
     over: Value,
     /// Each static role's binding: role name, then model identity.
@@ -874,8 +874,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             program,
             memory,
             governing,
-            weak,
-            enabled,
+            potential: weak,
+            initial_enabled: enabled,
             over,
             roles,
             universes: Vec::new(),
@@ -1000,10 +1000,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self.memory
     }
 
-    /// EN-1's sharing and classification of the attempts of every weak
-    /// `parallel` (FR-220).
+    /// Initial-observation EN-1 access snapshot, retained for inspection.
+    /// Runtime expansion derives a fresh classification for each reachable
+    /// protocol state and thread observation (FR-220, ADR-025 MA-1).
     pub fn weak_accesses(&self) -> &WeakAccesses {
-        &self.enabled
+        &self.initial_enabled
     }
 
     /// The live threads of `state`, by instance and path.

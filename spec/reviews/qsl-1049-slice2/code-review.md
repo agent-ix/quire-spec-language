@@ -24,3 +24,7 @@ The direct Rust review covered the listed diff, FR-220 and ADR-025 MA-1/MA-4, th
 ## Coverage
 
 The scoped computed matrix reported `tagged` for FR-219-AC-4, FR-220-AC-5, FR-220-AC-14, FR-220-AC-15, and FR-229-AC-3. Targeted validation passed: 34 weak-memory integration tests, 18 release/acquire integration tests, `cargo check -p qsl-eval -p qsl-replay -p qsl-analyze`, and `cargo clippy -p qsl-analyze -p qsl-eval -p qsl-replay --all-targets -- -D warnings`. `cargo test -p qsl-replay --lib` passed 847 tests. `cargo fmt --all -- --check` and `git diff --check` passed. Plan completion: not assessed.
+
+## Dispositions
+
+- FND-001: fixed in QSL-1065. Runtime expansion and transition-footprint calculation now derive the enabled applications and failures per reachable state and thread path; attempt failures use the thread observation and node/attempt failures enter the same typed-transition ordering.
