@@ -170,6 +170,12 @@ fn a_relation_changes_no_clause_disposition() {
                 case.id()
             );
         } else {
+            assert_ne!(
+                carried.package_id,
+                plain.package_id,
+                "{}: the relation is part of the package",
+                case.id()
+            );
             assert_eq!(
                 format!("{:?}", carried.disposition),
                 format!("{:?}", plain.disposition),

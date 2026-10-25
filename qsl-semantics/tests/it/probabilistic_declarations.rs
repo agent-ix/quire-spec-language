@@ -10,9 +10,9 @@
 //! domain package nor complete-V1 source can declare a quantity-typed
 //! parameter yet (STD-113), so this fixture types `d` as `Millis = Int[1,
 //! 12]` and the ADR's `1 ms`, `3 ms` and `12 ms` are written `1`, `3` and
-//! `12`. That is why FR-185-AC-1 and FR-185-AC-2, which name the quantity
-//! type, are not tagged here; the unit does declare `dimension Time` and
-//! `unit ms`, so a quantity literal types.
+//! `12`. FR-185-AC-1 and FR-185-AC-2, which name the quantity type, are
+//! therefore tagged on the `Millis` form of the same checks; the unit also
+//! declares `dimension Time` and `unit ms`, so a quantity literal types.
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
@@ -430,6 +430,23 @@ fn the_service_model_checks_and_records_its_declarations() {
             .map(|value| value.probability.clone())
             .collect::<Vec<_>>(),
         [ratio(49, 50), ratio(1, 50)]
+    );
+    // The support lists `Ok` then `Fail`: this fixture's `Outcome` ranks
+    // `Ok` 1 and `Fail` 0, so the members, in declared order, are ranks 1 and
+    // 0, each with its own probability.
+    let members: Vec<(String, Rational)> = outcome
+        .support()
+        .iter()
+        .map(|value| (format!("{:?}", value.value), value.probability.clone()))
+        .collect();
+    let [(ok, ok_probability), (fail, fail_probability)] = &members[..] else {
+        panic!("two outcome values: {members:?}");
+    };
+    assert!(ok.contains("rank: 1"), "{ok}");
+    assert!(fail.contains("rank: 0"), "{fail}");
+    assert_eq!(
+        (ok_probability, fail_probability),
+        (&ratio(49, 50), &ratio(1, 50))
     );
     assert_eq!(outcome.position(), 1);
     assert_eq!(
