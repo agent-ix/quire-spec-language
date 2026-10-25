@@ -316,6 +316,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::IdentityObservingForm(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
+        | CheckCause::MissingQualifiedName(_)
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
         | CheckCause::AmbiguousName { .. }
