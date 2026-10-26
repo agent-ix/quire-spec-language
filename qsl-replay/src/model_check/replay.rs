@@ -1842,6 +1842,7 @@ fn deadlock<S: SubjectSystem>(
                     state_key: last.digest,
                     locus: UndefinedLocus::Terminal(model),
                     transition: None,
+                    time: None,
                 },
                 cause,
             }),
@@ -1925,6 +1926,7 @@ fn undefined<S: SubjectSystem>(
             state_key: position.digest,
             locus,
             transition,
+            time: None,
         };
         // An authored clause's letter is read first at a position, and the
         // state constraint only where the letter is defined (the engine's

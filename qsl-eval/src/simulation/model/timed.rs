@@ -784,7 +784,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// FR-236's post-state digest of `state`: the canonical identity of its
     /// model state (FR-181's `simulation-state`) together with its exact
-    /// clock valuation, each clock named by its object and field.
+    /// clock valuation, each clock named by its object and field. A clock of
+    /// an object the state does not hold has no value and is left out
+    /// (STD-493's byte form).
     ///
     /// # Errors
     ///
@@ -798,6 +800,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .places
             .iter()
             .zip(state.clocks.values())
+            .filter(|(place, _)| place.present(&state.discrete))
             .map(|(place, value)| {
                 let field = self
                     .model

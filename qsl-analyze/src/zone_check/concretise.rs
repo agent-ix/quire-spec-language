@@ -15,7 +15,6 @@ use num_integer::Integer as _;
 use qsl_eval::simulation::model::{
     ClockValuation, GuardedStep, PlaceConstraint, TimedState, TimedSystem,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::ModelStep;
 use qsl_semantics::check::ClockOp;
 use quire_exact::{Integer, Rational};
@@ -49,8 +48,10 @@ pub(super) enum Target {
 pub(super) struct Concrete {
     /// Its steps, each with its delay and post-state digest.
     pub prefix: Vec<ModelStep>,
-    /// The digest of its last timed state.
-    pub last_digest: DigestRecord,
+    /// Its last clock valuation, every place in order.
+    pub last_clocks: Vec<Rational>,
+    /// The time stamp of its last position.
+    pub last_stamp: Rational,
 }
 
 /// Why a path has no concretisation.
@@ -114,11 +115,11 @@ fn apply(
     Ok(())
 }
 
-/// FR-241: the path from `initial` through `stages`, its last valuation in
-/// `target`, with exact delays; `scale` is the zone's scale factor.
+/// FR-241: the path from the initial zero valuation through `stages`, its
+/// last valuation in `target`, with exact delays; `scale` is the zone's
+/// scale factor.
 pub(super) fn concretise(
     timed: &TimedSystem<'_, '_>,
-    initial: &TimedState,
     stages: &[Stage],
     target: &Target,
     scale: &BigInt,
@@ -191,9 +192,6 @@ pub(super) fn concretise(
     let mut prefix = Vec::with_capacity(stages.len());
     let mut values = vec![zero.clone(); places];
     let mut last_reset = vec![0_usize; places];
-    let mut last_digest = timed
-        .state_digest(initial)
-        .map_err(|_| NotConcretised::Digest)?;
     for (index, stage) in stages.iter().enumerate() {
         let at = index + 1;
         let delay = loop {
@@ -245,18 +243,19 @@ pub(super) fn concretise(
             stage.step.post().clone(),
             ClockValuation::new(values.clone()),
         );
-        last_digest = timed
+        let post_state = timed
             .state_digest(&state)
             .map_err(|_| NotConcretised::Digest)?;
         prefix.push(ModelStep {
             transition: stage.step.transition().clone(),
-            post_state: last_digest,
+            post_state,
             delay: Some(delay),
         });
     }
     Ok(Concrete {
         prefix,
-        last_digest,
+        last_clocks: values,
+        last_stamp: stamps.last().cloned().unwrap_or(zero),
     })
 }
 

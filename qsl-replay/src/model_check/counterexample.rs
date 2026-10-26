@@ -139,6 +139,19 @@ pub struct UndefinedSite {
     pub locus: UndefinedLocus,
     /// For an undefined guard only: the transition identity it guards.
     pub transition: Option<ModelTransition>,
+    /// Over a timed subject, the position's time stamp and exact clock
+    /// valuation (ADR-026 TV-1); `None` over an untimed subject.
+    pub time: Option<Box<TimedPoint>>,
+}
+
+/// A position's time over a timed subject: its time stamp and the exact
+/// value of each present clock place, in the subject's place order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimedPoint {
+    /// The time stamp.
+    pub stamp: Rational,
+    /// The clock valuation.
+    pub clocks: Vec<Rational>,
 }
 
 /// ADR-018 UE-2: where an evaluation was undefined, and why.

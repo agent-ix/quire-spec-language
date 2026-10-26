@@ -14,12 +14,10 @@
 //! automaton has one carried state and needs no product: a symbolic state
 //! violates the claim when its atom is false, or undefined, for some
 //! instance. A violation ends the search only when it is admitted: some
-//! state its forward closure reaches is quiescent, from which time diverges
-//! by the idle tail. A violation whose closure provably has no
-//! time-divergent behaviour (no quiescent state, and every cycle bounded in
-//! time by a clock an invariant bounds and the cycle never resets) holds
-//! vacuously, is kept as a `locked` node, and the search goes on. One whose
-//! closure is neither is reported, and FR-237's replay settles it.
+//! valuation of it has a time-divergent continuation, by FR-240's test
+//! ([`super::divergence`]). Its counterexample ends at such a valuation. A
+//! violation with none holds vacuously, is kept as a `locked` node, and the
+//! search goes on; nodes are judged in breadth-first order.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -30,12 +28,14 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
-    CounterexampleKind, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile};
 use quire_exact::{Cancel, Meter, Rational};
 
-use super::concretise::{concretise, Target};
+use super::concretise::{concretise, Concrete, Target};
+use super::divergence::Escape;
 use super::{scale_constants, Bound, Dbm, DbmError};
 
 /// FR-239's budgets.
@@ -118,12 +118,12 @@ pub enum ZoneUndecided {
     /// No initial symbolic state has a time-divergent behaviour (ADR-026
     /// TD-6): the claim would hold vacuously.
     NoAdmittedBehaviour,
-    /// Whether some initial state has a time-divergent behaviour is not
-    /// decided: its closure reaches no quiescent state, and a cycle in it is
-    /// not bounded in time by an unreset clock.
-    DivergenceUnknown,
+    /// FR-241: a violation has a time-divergent continuation, but no
+    /// concretisation of its path ends at a valuation that has one.
+    LassoNotConcretized,
     /// A quiescent symbolic state has deadlocked valuations only after a
-    /// delay, which no position of a counterexample names.
+    /// delay, which no position of a counterexample names: FR-236 and QSpec
+    /// FR-417 give `final_delay` to time-locks only (spec gap STD-493).
     DeadlockAfterDelay,
 }
 
@@ -262,17 +262,6 @@ impl From<DbmError> for ZoneCheckRefusal {
     }
 }
 
-/// What a violation's forward closure admits.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Divergence {
-    /// It reaches a quiescent state.
-    Admitted,
-    /// No behaviour through it diverges.
-    Locked,
-    /// Not decided.
-    Unknown,
-}
-
 /// What makes a node bad.
 #[derive(Clone, Debug)]
 enum Badness {
@@ -285,7 +274,7 @@ enum Badness {
 }
 
 /// A halt of the search.
-enum Halt {
+pub(super) enum Halt {
     Outcome(Box<ZoneCheckOutcome>),
     Refusal(ZoneCheckRefusal),
 }
@@ -352,10 +341,10 @@ struct Claim<'r> {
     instances: Vec<ModelInstance>,
 }
 
-struct Run<'r, 's, 'a> {
-    timed: &'r TimedSystem<'s, 'a>,
+pub(super) struct Run<'r, 's, 'a> {
+    pub(super) timed: &'r TimedSystem<'s, 'a>,
     claim: Option<Claim<'r>>,
-    limits: ZoneCheckLimits,
+    pub(super) limits: ZoneCheckLimits,
     cancel: &'r Cancel,
     scale: BigInt,
     lower: Vec<Option<BigInt>>,
@@ -370,11 +359,8 @@ struct Run<'r, 's, 'a> {
     out: Vec<Vec<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
     zone_bytes: u64,
-    /// The guarded steps of each expanded node's model state.
-    steps: BTreeMap<usize, Vec<GuardedStep>>,
-    /// Nodes a closure exploration created, which the search has still to
-    /// judge.
-    pending: Vec<usize>,
+    /// The guarded steps of each model state reached, by its key.
+    steps: BTreeMap<Vec<u8>, Vec<GuardedStep>>,
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
@@ -402,7 +388,6 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             passed: BTreeMap::new(),
             zone_bytes: 0,
             steps: BTreeMap::new(),
-            pending: Vec::new(),
         }
     }
 
@@ -415,28 +400,28 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         }
     }
 
-    fn stop(&self, cause: ZoneStop) -> Halt {
+    pub(super) fn stop(&self, cause: ZoneStop) -> Halt {
         Halt::Outcome(Box::new(ZoneCheckOutcome::Stopped {
             cause,
             stats: self.stats(),
         }))
     }
 
-    fn undecided(&self, cause: ZoneUndecided) -> Halt {
+    pub(super) fn undecided(&self, cause: ZoneUndecided) -> Halt {
         Halt::Outcome(Box::new(ZoneCheckOutcome::Undecided {
             cause,
             stats: self.stats(),
         }))
     }
 
-    fn poll(&self) -> Result<(), Halt> {
+    pub(super) fn poll(&self) -> Result<(), Halt> {
         if self.cancel.poll() {
             return Err(self.stop(ZoneStop::Cancelled));
         }
         Ok(())
     }
 
-    fn timed<T>(&self, result: Result<T, TimedStop>) -> Result<T, Halt> {
+    pub(super) fn timed<T>(&self, result: Result<T, TimedStop>) -> Result<T, Halt> {
         result.map_err(|stop| self.undecided(ZoneUndecided::UndecidedSuccessor(stop)))
     }
 
@@ -446,38 +431,80 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
 
     /// Intersect `zone` with `constraints`.
     fn constrain(&self, zone: &mut Dbm, constraints: &[PlaceConstraint]) -> Result<(), DbmError> {
-        for constraint in constraints {
-            let clock = constraint.place() + 1;
-            let bound = self.scaled(constraint.bound());
-            match constraint.op() {
-                ClockOp::Less => zone.constrain(clock, 0, Bound::lt(bound))?,
-                ClockOp::LessOrEqual => zone.constrain(clock, 0, Bound::le(bound))?,
-                ClockOp::Equal => {
-                    zone.constrain(clock, 0, Bound::le(bound.clone()))?;
-                    zone.constrain(0, clock, Bound::le(-bound))?;
-                }
-                ClockOp::GreaterOrEqual => zone.constrain(0, clock, Bound::le(-bound))?,
-                ClockOp::Greater => zone.constrain(0, clock, Bound::lt(-bound))?,
-            }
-        }
-        Ok(())
+        constrain_at(zone, constraints, &self.scale)
     }
 
     /// Whether time may elapse at `state`.
-    fn elapses(&self, state: &ModelSimState) -> Result<bool, Halt> {
+    pub(super) fn elapses(&self, state: &ModelSimState) -> Result<bool, Halt> {
         Ok(self.timed.tick_period().is_none() && !self.timed(self.timed.is_urgent(state))?)
     }
 
     /// `zone` intersected with `state`'s invariants, let time elapse unless
     /// `state` is urgent, and intersected with them again.
     fn settle(&self, state: &ModelSimState, zone: &mut Dbm) -> Result<(), Halt> {
+        self.settle_at(state, zone, &self.scale)
+    }
+
+    /// [`Self::settle`] with bounds in units of `1 / factor`.
+    pub(super) fn settle_at(
+        &self,
+        state: &ModelSimState,
+        zone: &mut Dbm,
+        factor: &BigInt,
+    ) -> Result<(), Halt> {
         let invariants = self.timed(self.timed.invariants(state))?;
-        self.constrain(zone, &invariants)?;
+        constrain_at(zone, &invariants, factor)?;
         if !zone.is_empty() && self.elapses(state)? {
             zone.up();
-            self.constrain(zone, &invariants)?;
+            constrain_at(zone, &invariants, factor)?;
         }
         Ok(())
+    }
+
+    /// The symbolic successors of `(state, zone)` in canonical order, each
+    /// with its step's and part's indices among `state`'s guarded steps, and
+    /// whether the step is the tick operation of a tick source. Bounds are
+    /// in units of `1 / factor`; a clock past the places is untouched but
+    /// for elapsing time.
+    pub(super) fn successors(
+        &mut self,
+        state: &ModelSimState,
+        zone: &Dbm,
+        factor: &BigInt,
+    ) -> Result<Vec<Successor>, Halt> {
+        let mut found = Vec::new();
+        for (index, step) in self.steps_for(state)?.iter().enumerate() {
+            let target = self.timed(self.timed.invariants(step.post()))?;
+            let tick = self.timed.tick_of(step.operation())
+                > Rational::from_integer(quire_exact::Integer::zero());
+            for (part_index, part) in step.parts().iter().enumerate() {
+                self.poll()?;
+                let mut next = zone.clone();
+                constrain_at(&mut next, part, factor)?;
+                if next.is_empty() {
+                    continue;
+                }
+                for (place, value) in step.resets() {
+                    next.reset(place + 1, &scaled(value, factor))?;
+                }
+                constrain_at(&mut next, &target, factor)?;
+                if next.is_empty() {
+                    continue;
+                }
+                self.settle_at(step.post(), &mut next, factor)?;
+                if next.is_empty() {
+                    continue;
+                }
+                found.push(Successor {
+                    step: index,
+                    part: part_index,
+                    state: step.post().clone(),
+                    zone: next,
+                    tick,
+                });
+            }
+        }
+        Ok(found)
     }
 
     fn search(&mut self) -> Result<ZoneCheckOutcome, Halt> {
@@ -518,33 +545,23 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 queue.push_back(created);
                 delayed_deadlock |= self.judge(created)?;
             }
-            // Nodes a closure created lie where the judged node's closure
-            // does, and are judged, and expanded, like any other.
-            while let Some(created) = self.pending.pop() {
-                queue.push_back(created);
-                delayed_deadlock |= self.judge(created)?;
-            }
         }
         // Vacuity (ADR-026 TD-6): an initial state with a time-divergent
         // behaviour.
-        let mut divergence = Divergence::Locked;
+        let mut admitted = false;
         for root in roots {
-            match self.divergence(root)? {
-                Divergence::Admitted => {
-                    divergence = Divergence::Admitted;
-                    break;
-                }
-                Divergence::Unknown => divergence = Divergence::Unknown,
-                Divergence::Locked => {}
+            if self.node_escape(root)?.diverges {
+                admitted = true;
+                break;
             }
         }
-        match divergence {
-            Divergence::Locked => Err(self.undecided(ZoneUndecided::NoAdmittedBehaviour)),
-            Divergence::Unknown => Err(self.undecided(ZoneUndecided::DivergenceUnknown)),
-            Divergence::Admitted if delayed_deadlock => {
-                Err(self.undecided(ZoneUndecided::DeadlockAfterDelay))
-            }
-            Divergence::Admitted => Ok(ZoneCheckOutcome::Holds {
+        match admitted {
+            false => Err(self.undecided(ZoneUndecided::NoAdmittedBehaviour)),
+            // STD-493: a deadlock reached only by waiting at a quiescent
+            // state has no counterexample form (FR-236 gives `final_delay`
+            // to time-locks only), so it is neither proved away nor refuted.
+            true if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
+            true => Ok(ZoneCheckOutcome::Holds {
                 stats: self.stats(),
                 graph: SymbolicGraph {
                     scale: self.scale.clone(),
@@ -645,12 +662,28 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
 
     /// The guarded steps of `node`'s model state, computed once.
     fn steps_of(&mut self, node: usize) -> Result<Vec<GuardedStep>, Halt> {
-        if let Some(steps) = self.steps.get(&node) {
+        let state = self.nodes[node].state.clone();
+        self.steps_for(&state)
+    }
+
+    /// The guarded steps of `state`, computed once per model state.
+    fn steps_for(&mut self, state: &ModelSimState) -> Result<Vec<GuardedStep>, Halt> {
+        let key = self.key(state)?;
+        if let Some(steps) = self.steps.get(&key) {
             return Ok(steps.clone());
         }
-        let steps = self.timed(self.timed.guarded_steps(&self.nodes[node].state))?;
-        self.steps.insert(node, steps.clone());
+        let steps = self.timed(self.timed.guarded_steps(state))?;
+        self.steps.insert(key, steps.clone());
         Ok(steps)
+    }
+
+    /// `state`'s state-key bytes.
+    pub(super) fn key(&self, state: &ModelSimState) -> Result<Vec<u8>, Halt> {
+        self.timed
+            .system()
+            .state_key(state)
+            .map(|(key, _)| key)
+            .map_err(|_| ZoneCheckRefusal::Fault("state-key").into())
     }
 
     /// Expand `node` once: the nodes it creates, in canonical order.
@@ -659,35 +692,18 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             return Ok(Vec::new());
         }
         self.expanded[node] = true;
+        let state = self.nodes[node].state.clone();
+        let zone = self.nodes[node].zone.clone();
+        let scale = self.scale.clone();
         let mut created = Vec::new();
-        for (index, step) in self.steps_of(node)?.iter().enumerate() {
-            let target = self.timed(self.timed.invariants(step.post()))?;
-            for (part_index, part) in step.parts().iter().enumerate() {
-                self.poll()?;
-                let mut zone = self.nodes[node].zone.clone();
-                self.constrain(&mut zone, part)?;
-                if zone.is_empty() {
-                    continue;
-                }
-                for (place, value) in step.resets() {
-                    zone.reset(place + 1, &self.scaled(value))?;
-                }
-                self.constrain(&mut zone, &target)?;
-                if zone.is_empty() {
-                    continue;
-                }
-                self.settle(step.post(), &mut zone)?;
-                if zone.is_empty() {
-                    continue;
-                }
-                if let Some(new) = self.insert(
-                    step.post().clone(),
-                    zone,
-                    None,
-                    Some((node, index, part_index)),
-                )? {
-                    created.push(new);
-                }
+        for successor in self.successors(&state, &zone, &scale)? {
+            if let Some(new) = self.insert(
+                successor.state,
+                successor.zone,
+                None,
+                Some((node, successor.step, successor.part)),
+            )? {
+                created.push(new);
             }
         }
         Ok(created)
@@ -701,19 +717,26 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             Some(Err(())) => return Ok(true),
             None => return Ok(false),
         };
-        match self.divergence(node)? {
-            Divergence::Locked => {
-                self.nodes[node].locked = true;
-                Ok(false)
-            }
-            Divergence::Admitted | Divergence::Unknown => {
-                let counterexample = self.counterexample(node, badness)?;
-                Err(Halt::Outcome(Box::new(ZoneCheckOutcome::Violated {
-                    counterexample: Box::new(counterexample),
-                    stats: self.stats(),
-                })))
-            }
+        let escape = self.node_escape(node)?;
+        if !escape.diverges {
+            // Every behaviour through it is Zeno: the violation holds
+            // vacuously and the time-lock-freedom item reports it.
+            self.nodes[node].locked = true;
+            return Ok(false);
         }
+        let counterexample = self.counterexample(node, badness, escape)?;
+        Err(Halt::Outcome(Box::new(ZoneCheckOutcome::Violated {
+            counterexample: Box::new(counterexample),
+            stats: self.stats(),
+        })))
+    }
+
+    /// FR-240's test from `node`.
+    fn node_escape(&mut self, node: usize) -> Result<Escape, Halt> {
+        let state = self.nodes[node].state.clone();
+        let zone = self.nodes[node].zone.clone();
+        let (scale, lower, upper) = (self.scale.clone(), self.lower.clone(), self.upper.clone());
+        self.escape(&state, &zone, &scale, &lower, &upper)
     }
 
     /// Whether `node` violates the item: `Some(Err(()))` for a deadlock only
@@ -851,85 +874,67 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         Ok(zone)
     }
 
-    /// The forward closure of `node` on the retained graph, expanding every
-    /// node it reaches, and what it admits.
-    fn divergence(&mut self, node: usize) -> Result<Divergence, Halt> {
-        // Under a tick source every infinite behaviour counts ticks, the
-        // terminal stutter step among them (FR-231 "Digital time").
-        if self.timed.tick_period().is_some() {
-            return Ok(Divergence::Admitted);
-        }
-        let mut seen = vec![false; self.nodes.len()];
-        let mut closure = vec![node];
-        seen[node] = true;
-        let mut frontier = vec![node];
-        while let Some(at) = frontier.pop() {
-            self.poll()?;
-            let created = self.expand(at)?;
-            self.pending.extend(created);
-            seen.resize(self.nodes.len(), false);
-            for &edge in &self.out[at] {
-                let (_, to) = self.edges[edge].ends();
-                if !seen[to] {
-                    seen[to] = true;
-                    closure.push(to);
-                    frontier.push(to);
-                }
+    /// The valuations, at the entry of the first source of `path`, from
+    /// which its model steps are taken, each after an admissible delay: the
+    /// exact predecessors of every valuation of the quiescent state it ends
+    /// at, all of which diverge.
+    fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
+        let mut region = Dbm::universe(self.timed.places().len() + 1);
+        for (source, step, part) in path.iter().rev() {
+            let steps = self.steps_for(source)?;
+            let step = steps
+                .get(*step)
+                .ok_or(ZoneCheckRefusal::Fault("path-step"))?;
+            let part = step
+                .parts()
+                .get(*part)
+                .ok_or(ZoneCheckRefusal::Fault("path-part"))?;
+            let target = self.timed(self.timed.invariants(step.post()))?;
+            self.constrain(&mut region, &target)?;
+            for (place, value) in step.resets().iter().rev() {
+                let value = self.scaled(value);
+                region.constrain(place + 1, 0, Bound::le(value.clone()))?;
+                region.constrain(0, place + 1, Bound::le(-value))?;
+                region.free(place + 1)?;
+            }
+            self.constrain(&mut region, part)?;
+            let invariants = self.timed(self.timed.invariants(source))?;
+            self.constrain(&mut region, &invariants)?;
+            if self.elapses(source)? {
+                region.down();
             }
         }
-        for &at in &closure {
-            let state = self.nodes[at].state.clone();
-            if self.timed(self.timed.is_quiescent(&state))? {
-                return Ok(Divergence::Admitted);
-            }
-        }
-        for component in components(&closure, &self.edges, &self.out) {
-            if !self.zeno(&component)? {
-                return Ok(Divergence::Unknown);
-            }
-        }
-        Ok(Divergence::Locked)
+        Ok(region)
     }
 
-    /// Whether every behaviour that stays in the strongly connected
-    /// `component` is Zeno: some clock place is bounded above by an
-    /// invariant at every node of it and reset by no step inside it.
-    fn zeno(&mut self, component: &[usize]) -> Result<bool, Halt> {
-        let places = self.timed.places().len();
-        let mut candidates: Vec<usize> = (0..places).collect();
-        for &at in component {
-            let state = self.nodes[at].state.clone();
-            let bounded: Vec<usize> = self
-                .timed(self.timed.invariants(&state))?
-                .iter()
-                .filter(|bound| {
-                    matches!(
-                        bound.op(),
-                        ClockOp::Less | ClockOp::LessOrEqual | ClockOp::Equal
-                    )
-                })
-                .map(PlaceConstraint::place)
-                .collect();
-            candidates.retain(|place| bounded.contains(place));
-        }
-        let inner: Vec<SymbolicEdge> = self
-            .edges
+    /// Whether the last valuation of `concrete`, at `state`, has a
+    /// time-divergent continuation: FR-240's test from that one point, in
+    /// units fine enough to hold it.
+    fn point_diverges(&mut self, state: &ModelSimState, concrete: &Concrete) -> Result<bool, Halt> {
+        use num_integer::Integer as _;
+        let factor = concrete
+            .last_clocks
             .iter()
-            .filter(|edge| {
-                let (from, to) = edge.ends();
-                component.contains(&from) && component.contains(&to)
-            })
-            .cloned()
-            .collect();
-        for edge in inner {
-            let (SymbolicEdge::Step { from, step, .. } | SymbolicEdge::Covering { from, step, .. }) =
-                edge;
-            let steps = self.steps_of(from)?;
-            if let Some(step) = steps.get(step) {
-                candidates.retain(|place| step.resets().iter().all(|(reset, _)| reset != place));
-            }
+            .fold(self.scale.clone(), |factor, value| {
+                factor.lcm(value.denominator().as_big())
+            });
+        let finer = &factor / &self.scale;
+        let rescale = |bounds: &[Option<BigInt>]| -> Vec<Option<BigInt>> {
+            bounds
+                .iter()
+                .map(|bound| bound.as_ref().map(|value| value * &finer))
+                .collect()
+        };
+        let (lower, upper) = (rescale(&self.lower), rescale(&self.upper));
+        let mut point = Dbm::universe(self.timed.places().len() + 1);
+        for (place, value) in concrete.last_clocks.iter().enumerate() {
+            let value = scaled(value, &factor);
+            point.constrain(place + 1, 0, Bound::le(value.clone()))?;
+            point.constrain(0, place + 1, Bound::le(-value))?;
         }
-        Ok(!candidates.is_empty())
+        Ok(self
+            .escape(state, &point, &factor, &lower, &upper)?
+            .diverges)
     }
 
     /// FR-241: the counterexample through the real edges to `node`.
@@ -937,6 +942,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         &mut self,
         node: usize,
         badness: Badness,
+        escape: Escape,
     ) -> Result<TemporalCounterexample, Halt> {
         let mut path = Vec::new();
         let mut at = node;
@@ -970,18 +976,46 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 step,
             });
         }
+        // FR-241: the last valuation is one with a time-divergent
+        // continuation, never a time-locked one. A deadlocked valuation of a
+        // quiescent state diverges by its idle tail; otherwise the target is
+        // the valuations from which the model steps to a quiescent state are
+        // taken, and failing that the least-delay point, checked.
         let target = match &badness {
-            Badness::Deadlock(zone) => Target::Within(zone.clone()),
-            Badness::False(_) | Badness::Undefined(..) => Target::Any,
+            Badness::Deadlock(zone) => Some(zone.clone()),
+            Badness::False(_) | Badness::Undefined(..) => match &escape.to_quiescent {
+                Some(path) => Some(self.pre_path(path)?),
+                None => None,
+            },
         };
-        let initial_state = self
+        let within = target.and_then(|zone| {
+            concretise(self.timed, &stages, &Target::Within(zone), &self.scale).ok()
+        });
+        let state = self.nodes[node].state.clone();
+        let concrete = match within {
+            Some(concrete) => concrete,
+            None => {
+                let concrete = concretise(self.timed, &stages, &Target::Any, &self.scale)
+                    .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
+                if !self.point_diverges(&state, &concrete)? {
+                    return Err(self.undecided(ZoneUndecided::LassoNotConcretized));
+                }
+                concrete
+            }
+        };
+        let (_, discrete_key) = self
             .timed
-            .initial()
-            .get(initial)
-            .cloned()
-            .ok_or(ZoneCheckRefusal::Fault("initial-state"))?;
-        let concrete = concretise(self.timed, &initial_state, &stages, &target, &self.scale)
-            .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
+            .system()
+            .state_key(&state)
+            .map_err(|_| ZoneCheckRefusal::Fault("state-key"))?;
+        let present: Vec<Rational> = self
+            .timed
+            .places()
+            .iter()
+            .zip(&concrete.last_clocks)
+            .filter(|(place, _)| place.present(&state))
+            .map(|(_, value)| value.clone())
+            .collect();
         let (kind, over_binding, fairness) = match badness {
             Badness::False(instance) => (
                 CounterexampleKind::Formula,
@@ -999,9 +1033,13 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                     CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                         site: UndefinedSite {
                             position: widen(concrete.prefix.len()),
-                            state_key: concrete.last_digest,
+                            state_key: discrete_key,
                             locus: UndefinedLocus::Atom(claim.atom),
                             transition: None,
+                            time: Some(Box::new(TimedPoint {
+                                stamp: concrete.last_stamp.clone(),
+                                clocks: present,
+                            })),
                         },
                         cause,
                     }),
@@ -1025,8 +1063,45 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 }
 
+/// One symbolic successor.
+pub(super) struct Successor {
+    /// The step's index among the source's guarded steps.
+    pub step: usize,
+    /// The convex part's index among the step's parts.
+    pub part: usize,
+    /// The model state it reaches.
+    pub state: ModelSimState,
+    /// The zone it reaches.
+    pub zone: Dbm,
+    /// Whether the step is a tick source's tick operation.
+    pub tick: bool,
+}
+
+/// Intersect `zone` with `constraints`, bounds in units of `1 / factor`.
+pub(super) fn constrain_at(
+    zone: &mut Dbm,
+    constraints: &[PlaceConstraint],
+    factor: &BigInt,
+) -> Result<(), DbmError> {
+    for constraint in constraints {
+        let clock = constraint.place() + 1;
+        let bound = scaled(constraint.bound(), factor);
+        match constraint.op() {
+            ClockOp::Less => zone.constrain(clock, 0, Bound::lt(bound))?,
+            ClockOp::LessOrEqual => zone.constrain(clock, 0, Bound::le(bound))?,
+            ClockOp::Equal => {
+                zone.constrain(clock, 0, Bound::le(bound.clone()))?;
+                zone.constrain(0, clock, Bound::le(-bound))?;
+            }
+            ClockOp::GreaterOrEqual => zone.constrain(0, clock, Bound::le(-bound))?,
+            ClockOp::Greater => zone.constrain(0, clock, Bound::lt(-bound))?,
+        }
+    }
+    Ok(())
+}
+
 /// `zone` intersected with `other`.
-fn intersect(zone: &mut Dbm, other: &Dbm) -> Result<(), DbmError> {
+pub(super) fn intersect(zone: &mut Dbm, other: &Dbm) -> Result<(), DbmError> {
     for i in 0..zone.dim() {
         for j in 0..zone.dim() {
             if i != j {
@@ -1070,71 +1145,6 @@ fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
         }
     }
     Ok(parts)
-}
-
-/// The non-trivial strongly connected components of the subgraph that
-/// `nodes`, a forward-closed set, spans: those with an edge inside them, by
-/// Tarjan's algorithm run without recursion.
-fn components(nodes: &[usize], edges: &[SymbolicEdge], out: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let size = out.len();
-    let mut index = vec![usize::MAX; size];
-    let mut low = vec![0_usize; size];
-    let mut on_stack = vec![false; size];
-    let mut stack = Vec::new();
-    let mut next = 0_usize;
-    let mut found = Vec::new();
-    for &root in nodes {
-        if index[root] != usize::MAX {
-            continue;
-        }
-        // Each frame: a node and how many of its edges are visited.
-        let mut frames = vec![(root, 0_usize)];
-        index[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&mut (at, ref mut visited)) = frames.last_mut() {
-            if let Some(&edge) = out[at].get(*visited) {
-                *visited += 1;
-                let (_, to) = edges[edge].ends();
-                if index[to] == usize::MAX {
-                    index[to] = next;
-                    low[to] = next;
-                    next += 1;
-                    stack.push(to);
-                    on_stack[to] = true;
-                    frames.push((to, 0));
-                } else if on_stack[to] {
-                    low[at] = low[at].min(index[to]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                low[parent] = low[parent].min(low[at]);
-            }
-            if low[at] == index[at] {
-                let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == at {
-                        break;
-                    }
-                }
-                let cyclic = component.iter().any(|&member| {
-                    out[member]
-                        .iter()
-                        .any(|&edge| component.contains(&edges[edge].ends().1))
-                });
-                if cyclic {
-                    found.push(component);
-                }
-            }
-        }
-    }
-    found
 }
 
 /// Each place's `L` and `U` and the scale factor: every constant of the

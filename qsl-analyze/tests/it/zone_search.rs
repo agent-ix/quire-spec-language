@@ -8,8 +8,9 @@ use qsl_analyze::zone_check::{
     ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
-use qsl_replay::{CounterexampleKind, TemporalCounterexample};
-use quire_exact::{Cancel, Integer, Rational};
+use qsl_eval::temporal::UndefinedCause;
+use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
+use quire_exact::{Cancel, Integer, Rational, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
@@ -135,11 +136,12 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
         .collect()
 }
 
-/// FR-239-AC-1 and FR-241-AC-1: `NoLateReply` holds over `Rpc` with
-/// `T = 4 ms` and, with `T = 3 ms`, is violated at `trace_position` 3 by
-/// `send`, `timeout`, `reply` with the least delays `0`, `3`, `0`; the
-/// deadlock-freedom item holds under both.
-#[trace("TC-694", "FR-239-AC-1")]
+/// FR-241-AC-1, and part of FR-239-AC-1 (TC-694): `NoLateReply` holds over
+/// `Rpc` with `T = 4 ms` and, with `T = 3 ms`, is violated at
+/// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
+/// `0`, `3`, `0`; the deadlock-freedom item holds under both. Not covered:
+/// the `Holds` certificate, which FR-244 builds.
+#[trace("TC-694")]
 #[trace("TC-696", "FR-241-AC-1")]
 #[test]
 fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
@@ -194,11 +196,13 @@ fn retry() -> World {
     )
 }
 
-/// FR-239-AC-2 and FR-241-AC-2: the retry is reachable in dense time, by a
-/// heartbeat after `d1` in `(0, 1)` and a retry after `d2 < 1` with
-/// `d1 + d2 > 1`, each exact; two runs give equal counterexamples.
+/// FR-239-AC-2, and part of FR-241-AC-2 (TC-696): the retry is reachable in
+/// dense time, by a heartbeat after `d1` in `(0, 1)` and a retry after
+/// `d2 < 1` with `d1 + d2 > 1`, each exact; two runs give equal
+/// counterexamples. Not covered: its replay to
+/// `reproduced-with-evaluated-witness` (FR-237).
 #[trace("TC-694", "FR-239-AC-2")]
-#[trace("TC-696", "FR-241-AC-2")]
+#[trace("TC-696")]
 #[test]
 fn the_retry_that_integer_time_misses_is_found() {
     let world = retry();
@@ -252,10 +256,12 @@ fn stored_states_do_not_grow_with_the_constant() {
     assert_eq!(small, count("1000000000000"));
 }
 
-/// FR-239-AC-4 (the zone engine's stops): `max_symbolic_states` 2 stops
-/// naming the value 2, a cancelled handle stops `Cancelled`, and two runs
-/// give equal outcomes.
-#[trace("TC-694", "FR-239-AC-4")]
+/// Part of FR-239-AC-4 (TC-694): `max_symbolic_states` 2 stops naming the
+/// value 2, a cancelled handle stops `Cancelled`, and two runs give equal
+/// outcomes, over `NoLateReply`. Not covered: `Settles`, its
+/// `RequiresBound` refusal with no state explored, and byte-equal
+/// certificates.
+#[trace("TC-694")]
 #[test]
 fn budgets_and_cancellation_stop_the_search() {
     let world = rpc(4);
@@ -309,12 +315,16 @@ fn ticker(locked: bool) -> World {
     )
 }
 
-/// FR-239-AC-5: over `Ticker`, `6 mod (2 - n)` is undefined at `n = 2`,
-/// reached by `step` after delay 1 twice, and the state there is quiescent,
-/// so the search is violated with an undefined evaluation at position 2.
-/// With the unconditional invariant that state is a time-lock, and no
-/// behaviour diverges: `NoAdmittedBehaviour`.
-#[trace("TC-710", "FR-239-AC-5")]
+/// Part of FR-239-AC-5 (TC-710): over `Ticker`, `6 mod (2 - n)` is undefined
+/// at `n = 2`, reached by `step` after delay 1 twice, and the state there is
+/// quiescent, so the search is violated with an undefined evaluation of
+/// cause `division-by-zero` at position 2, time stamp 2 and `x = 0`, keyed
+/// by the model state alone. With the unconditional invariant that state is
+/// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`. Not
+/// covered: the AC's atom `2 / (2 - t.n) >= 1`, whose literals the checker
+/// refuses as ambiguous here (`6 mod (2 - n)` has the same cause), and the
+/// time-lock-freedom item refuted over the time-locked variant.
+#[trace("TC-710")]
 #[test]
 fn an_undefined_atom_refutes_only_where_time_diverges() {
     let counterexample = violated(claim(
@@ -332,6 +342,20 @@ fn an_undefined_atom_refutes_only_where_time_diverges() {
     };
     assert_eq!(undefined.site.position, 2);
     assert_eq!(
+        undefined.cause,
+        UndefinedCause::Kernel(Undefined::DivisionByZero)
+    );
+    assert!(matches!(undefined.site.locus, UndefinedLocus::Atom(_)));
+    assert_eq!(
+        undefined.site.time,
+        Some(Box::new(TimedPoint {
+            stamp: exact(2, 1),
+            clocks: vec![exact(0, 1)],
+        }))
+    );
+    // The site's key names the model state; the step's post-state digest
+    // names it with its clocks.
+    assert_ne!(
         undefined.site.state_key,
         counterexample.prefix[1].post_state
     );
@@ -429,4 +453,67 @@ fn a_violation_on_time_locked_states_holds_vacuously() {
     ));
     assert_eq!(operations(&counterexample), ["go"]);
     assert_eq!(delays(&counterexample), [exact(0, 1)]);
+}
+
+/// FR-239 "Vacuity" under a tick source (FR-231 "Digital time"): with the
+/// tick operation never enabled and `work` enabled forever, no behaviour
+/// takes a tick, so none diverges and the claim is `NoAdmittedBehaviour`;
+/// with the tick enabled the claim holds.
+#[trace("TC-694")]
+#[test]
+fn a_tick_source_admits_only_behaviours_that_tick() {
+    let ticks = |enabled: bool| {
+        world(
+            &document(&[], &[("work", &[]), ("tick", &[])]),
+            INFINITE,
+            &format!(
+                "dimension Time;\nunit s : Time = rational(1, 1);\n\
+                 unit ms : Time = rational(1, 1000) * s;\n\
+                 time M tick M::Call::tick period 5 ms unit ms;\n\
+                 pre Tick using v on M::Call::tick {{ {enabled} }}\n\
+                 temporal Quiet using inf over (c: M::Call) clock \"model-steps\" on origin \
+                 {{ always holds(not c.retried) }}\n"
+            ),
+        )
+    };
+    match claim(&ticks(false), ZoneCheckLimits::default(), &Cancel::new()) {
+        ZoneCheckOutcome::Undecided { cause, .. } => {
+            assert_eq!(cause, ZoneUndecided::NoAdmittedBehaviour);
+        }
+        other => panic!("expected no admitted behaviour, got {other:?}"),
+    }
+    assert!(matches!(
+        claim(&ticks(true), ZoneCheckLimits::default(), &Cancel::new()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+}
+
+/// FR-241: a counterexample ends at a valuation with a time-divergent
+/// continuation. `go` (`x > 2 ms`) moves `A` to `B`, where `x <= 4 ms`, and
+/// `ping` (`x < 3 ms`) leaves `B` for the quiescent `C`. `B` violates
+/// `always holds(c.phase = 0)`; entered at `x = 3` it is time-locked, so the
+/// counterexample takes `go` after `5/2`, from where `ping` escapes.
+#[trace("TC-696")]
+#[test]
+fn a_counterexample_ends_where_time_can_diverge() {
+    let counterexample = violated(claim(
+        &world(
+            &document(&["x"], &[("go", &["phase"]), ("ping", &["phase"])]),
+            INFINITE,
+            &format!(
+                "{DENSE}\
+                 pre Go using v on M::Call::go {{ self.phase = 0 and self.x > 2 ms }}\n\
+                 post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+                 pre Ping using v on M::Call::ping {{ self.phase = 1 and self.x < 3 ms }}\n\
+                 post Pinged using v on M::Call::ping {{ self.phase = 2 }}\n\
+                 time invariant InB when {{ self.phase = 1 }} {{ self.x <= 4 ms }}\n\
+                 temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+                 {{ always holds(c.phase = 0) }}\n"
+            ),
+        ),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    assert_eq!(operations(&counterexample), ["go"]);
+    assert_eq!(delays(&counterexample), [exact(5, 2)]);
 }

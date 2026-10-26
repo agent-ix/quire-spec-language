@@ -160,8 +160,8 @@ pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, Re
 pub use model_check::counterexample::{
     deadlock_freedom_clause, race_freedom_clause, undefined_finding, ClaimPredicate,
     CounterexampleKind, Lasso, MappingSite, ModelStep, ObservedTemporalCounterexample,
-    ObservedTemporalKind, ObservedTemporalStep, Race, TemporalCounterexample, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    ObservedTemporalKind, ObservedTemporalStep, Race, TemporalCounterexample, TimedPoint,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
 pub use model_check::graph_settle::{

@@ -311,6 +311,44 @@ impl Dbm {
         }
     }
 
+    /// This zone with one more clock, the last, equal to 0.
+    #[must_use]
+    pub fn with_clock_at_zero(&self) -> Self {
+        let dim = self.dim + 1;
+        let mut bounds = vec![Bound::zero_le(); dim * dim];
+        for i in 0..dim {
+            for j in 0..dim {
+                // The new clock reads as the reference clock.
+                let at = |k: usize| if k == self.dim { 0 } else { k };
+                bounds[i * dim + j] = self.at(at(i), at(j)).clone();
+            }
+        }
+        Self { dim, bounds }
+    }
+
+    /// Free `clock`: drop every constraint on it but `clock >= 0`, the
+    /// inverse image of a reset once the reset value is constrained.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::ClockOutOfRange`] or [`DbmError::ResetReferenceClock`].
+    pub fn free(&mut self, clock: usize) -> Result<(), DbmError> {
+        self.in_range(clock)?;
+        if clock == 0 {
+            return Err(DbmError::ResetReferenceClock);
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        for k in (0..self.dim).filter(|&k| k != clock) {
+            self.set(clock, k, Bound::Infinite);
+            let lower = self.at(k, 0).clone();
+            self.set(k, clock, lower);
+        }
+        self.set(0, clock, Bound::zero_le());
+        Ok(())
+    }
+
     /// The time predecessors: every valuation from which a delay reaches
     /// the zone. Each clock's lower bound against the reference clock is
     /// relaxed to the tightest one other clocks still imply.

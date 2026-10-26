@@ -2568,6 +2568,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             state_key: node.digest,
             locus,
             transition,
+            time: None,
         }
     }
 

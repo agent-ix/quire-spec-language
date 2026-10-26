@@ -9,6 +9,7 @@
 
 mod concretise;
 mod dbm;
+mod divergence;
 mod scale;
 mod search;
 

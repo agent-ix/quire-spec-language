@@ -606,6 +606,7 @@ impl ClaimSampler for Coin {
                     state_key: DigestRecord::raw_artifact(b"v = 1"),
                     locus: UndefinedLocus::Contract("holds(1 / (1 - c.v) = 1)".to_owned()),
                     transition: None,
+                    time: None,
                 },
                 cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
             }),
@@ -1373,6 +1374,7 @@ fn undefined_evaluation(position: u64) -> UndefinedEvaluation {
             state_key: DigestRecord::raw_artifact(b"z.v = 1"),
             locus: UndefinedLocus::Contract("holds(1 / (1 - z.v) = 1)".to_owned()),
             transition: None,
+            time: None,
         },
         cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
     }

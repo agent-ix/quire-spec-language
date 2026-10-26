@@ -1215,6 +1215,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     state_key: self.model_digest(at)?,
                     locus: UndefinedLocus::Atom(*atom),
                     transition: None,
+                    time: None,
                 },
                 cause: cause.clone(),
             },
