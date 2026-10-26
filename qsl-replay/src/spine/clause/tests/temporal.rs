@@ -937,6 +937,32 @@ fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
     assert_eq!(exit_code(&report), 21);
 }
 
+/// FR-109-AC-13: a completed temporal verdict reports its consequent source
+/// events as the typed temporal refusal, not an empty list; a pending verdict
+/// completes no truth and reports them unavailable.
+#[trace("TC-1269", "FR-109-AC-13")]
+#[test]
+fn a_temporal_run_refuses_consequent_events_typed() {
+    use crate::spine::{ConsequentEventRefusal, ConsequentSourceEvents};
+    let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
+    assert_eq!(held.disposition.truth(), Some(true));
+    assert_eq!(
+        held.consequent_source_events,
+        ConsequentSourceEvents::Refused(ConsequentEventRefusal::Temporal)
+    );
+    let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
+    assert_eq!(
+        violated.consequent_source_events,
+        ConsequentSourceEvents::Refused(ConsequentEventRefusal::Temporal)
+    );
+    let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    assert_eq!(pending.disposition.truth(), None);
+    assert_eq!(
+        pending.consequent_source_events,
+        ConsequentSourceEvents::Unavailable
+    );
+}
+
 /// `Reaches` run at S6a on a lasso where it holds is evidence for that trace
 /// only: it settles no truth and derives no witness, so nothing joins it to a
 /// requested item. This is the report half of FR-332-AC-4; the accounting
