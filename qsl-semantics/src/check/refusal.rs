@@ -794,12 +794,20 @@ pub enum ProtocolConstruct {
     ActivationGuard,
     /// A `terminal` member (FR-465 "Terminal"): QSL-1121f.
     Terminal,
-    /// A `channel` that carries a type whose node IR's reader does not admit
-    /// as `carries` (FR-465 "Channel"): a bounded scalar or collection
-    /// (`bounded_domain`), a quantity or a nominal enum. The reader at
-    /// `quire-contract-ir` `9a84e654` admits only a `scalar_type`,
-    /// `composite_type` or model record, event or variant node: QSL-1137.
-    ChannelCarries,
+    /// A `relationship` member (FR-464 "Clause body"): a real model package
+    /// cannot name a relationship yet, so the clause `relationships` set is
+    /// unproved against IR's reader: QSL-1141.
+    Relationships,
+    /// A `channel` that carries a bounded scalar or collection
+    /// (`Int[a, b]`, `Text`, `Decimal`, `Rational`, `Float`, a bounded
+    /// `Sequence`/`Set`/`Bag`; FR-465 "Channel"). Each lowers to a
+    /// `bounded_domain` node, which IR's reader at `quire-contract-ir`
+    /// `9a84e654` does not admit as `carries`: QSL-1137.
+    ChannelCarriesBounded,
+    /// A FIFO `channel` whose key is typed by a quantity: the check admits
+    /// `=` over it but IR's reader refuses the key as not equality-stable
+    /// (`ill_typed`/`operator-ineligible`): QSL-1142.
+    ChannelKeyNotEqualityStable,
     /// A `finish` constraint that calls a function or refers to a protocol:
     /// the node is written before the functions are, so the constraint
     /// cannot name them yet. QSL-1121g.
@@ -816,7 +824,9 @@ impl ProtocolConstruct {
             Self::Captures | Self::ActivationGuard => "QSL-1121e",
             Self::Terminal => "QSL-1121f",
             Self::FinishReadsDeclaration => "QSL-1121g",
-            Self::ChannelCarries => "QSL-1137",
+            Self::ChannelCarriesBounded => "QSL-1137",
+            Self::Relationships => "QSL-1141",
+            Self::ChannelKeyNotEqualityStable => "QSL-1142",
         }
     }
 }

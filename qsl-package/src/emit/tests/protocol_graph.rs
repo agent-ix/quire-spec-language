@@ -436,7 +436,7 @@ fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
 /// give one clause key and the same four sets; the queues are ordered by
 /// their own digests, which is not their channels' order for the channel
 /// names chosen here.
-#[trace("FR-383-AC-12", "TC-1062")]
+#[trace("TC-1062")]
 #[test]
 fn the_sets_of_a_clause_do_not_follow_source_order() {
     let source = |forward: bool| -> String {
@@ -563,7 +563,7 @@ fn role_and_channel_binders_follow_the_clause_binders() {
 /// FR-464-AC-3: a channel's premises change its key, and the clause's: the
 /// channel node and its queue follow every premise, so two protocols that
 /// differ in one premise have different clause keys.
-#[trace("FR-464-AC-3", "TC-1021")]
+#[trace("TC-1021")]
 #[test]
 fn every_channel_premise_changes_the_clause_key() {
     let key = |ordering: &str, delivery: &str, bound: &str, ends: (&str, &str)| -> String {
@@ -691,12 +691,12 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             plain("on origin", "", main, "ok()"),
         ),
         (
-            C::ChannelCarries,
+            C::ChannelCarriesBounded,
             "QSL-1137",
             plain("on origin", &carrying("Int[0, 5]"), main, "true"),
         ),
         (
-            C::ChannelCarries,
+            C::ChannelCarriesBounded,
             "QSL-1137",
             plain(
                 "on origin",
@@ -740,4 +740,134 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
         assert_eq!(clauses(&open), 0, "{construct:?} writes no clause node");
     }
+}
+
+/// Declarations the `carries` cases use: a record, a nominal enum and a unit.
+const CARRIED: &str = "record Point { x: Integer; }\nenum Color { RED, GREEN }\n\
+                       dimension Length;\nunit m : Length = rational(1, 1);\n";
+
+/// A `Flow` of two roles and a channel over `carries` and `ordering`,
+/// after [`CARRIED`].
+fn carrying_flow(carries: &str, ordering: &str) -> String {
+    let members = format!(
+        "{BUYER}\n{SELLER}\n{}",
+        channel(
+            "C",
+            ("Buyer", "Seller"),
+            ordering,
+            "unknown",
+            "capacity 4 overflow block"
+        )
+        .replace("carries Boolean", &format!("carries {carries}"))
+    );
+    format!("{CARRIED}{}", flow("on origin", &members))
+}
+
+/// FR-465 "Channel" (`carries` a `scalar_type`, `composite_type` or model
+/// node): every admitted family is emitted and read back by IR's reader,
+/// unordered and FIFO, and the channel's `carries` is the node of that type.
+#[test]
+fn a_channel_carries_every_type_the_reader_admits() {
+    let cases = [
+        ("Integer", "scalar_type", "integer"),
+        ("String", "scalar_type", "string"),
+        ("UUID", "scalar_type", "uuid"),
+        ("Timestamp", "scalar_type", "timestamp"),
+        ("Option<Boolean>", "composite_type", "option"),
+        ("Sequence<Boolean>", "composite_type", "sequence"),
+        ("Point", "composite_type", "record"),
+        ("Quantity<m>", "scalar_type", "unit"),
+        ("Color", "scalar_type", "enum"),
+    ];
+    for (carries, tag, form) in cases {
+        for ordering in [
+            "unordered".to_owned(),
+            format!("fifo by (m: {carries}) {{ m }}"),
+        ] {
+            if carries == "Quantity<m>" && ordering != "unordered" {
+                continue;
+            }
+            let text = carrying_flow(carries, &ordering);
+            let lowered = lower_with(model(), PROFILES, &text);
+            assert!(
+                lowered.ir.is_ok(),
+                "{carries} {ordering}: {:?}",
+                lowered.ir.err()
+            );
+            assert!(lowered.verified, "{carries} {ordering}");
+            let channels = set(&lowered.wire, "channels");
+            let [pay] = channels[..] else {
+                panic!("one channel");
+            };
+            let carried = target(&lowered.wire, argument(pay, &CHANNEL, "carries"));
+            assert_eq!(
+                (
+                    carried["node_tag"].as_str().unwrap(),
+                    carried["semantic_form"].as_str().unwrap()
+                ),
+                (tag, form),
+                "{carries}"
+            );
+        }
+    }
+}
+
+/// FR-465 "Channel": a bounded scalar or collection lowers to a
+/// `bounded_domain`, which the reader does not admit as `carries`, so the
+/// protocol refuses typed (QSL-1137) and, with the gate open, writes no
+/// clause. A FIFO key typed by a quantity is refused by the reader, so the
+/// check refuses it typed (QSL-1142).
+#[test]
+fn a_bounded_carries_and_a_quantity_key_refuse_typed() {
+    let bounded = [
+        "Int[0, 5]",
+        "Text[0, 8; nfc]",
+        "Decimal[-100,100;0,0;nearest-even]",
+        "Rational[-100, 100; 1, 1]",
+        "Float64[nearest-even]",
+        "Sequence<Boolean>[0, 3]",
+    ];
+    let mut cases: Vec<(ProtocolConstruct, String)> = bounded
+        .iter()
+        .map(|carries| {
+            (
+                ProtocolConstruct::ChannelCarriesBounded,
+                carrying_flow(carries, "unordered"),
+            )
+        })
+        .collect();
+    cases.push((
+        ProtocolConstruct::ChannelCarriesBounded,
+        carrying_flow("Int[0, 5]", "fifo by (m: Int[0, 5]) { m }"),
+    ));
+    cases.push((
+        ProtocolConstruct::ChannelKeyNotEqualityStable,
+        carrying_flow("Quantity<m>", "fifo by (m: Quantity<m>) { m }"),
+    ));
+    for (construct, text) in cases {
+        let refusals = checked(&text, false).expect_err(&text);
+        assert_eq!(
+            refusals
+                .iter()
+                .map(|refusal| &refusal.cause)
+                .collect::<Vec<_>>(),
+            [&not_emitted(construct)],
+            "{text}"
+        );
+        let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+        let clauses = open
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == "protocol_clause")
+            .count();
+        assert_eq!(clauses, 0, "{text}");
+    }
+    assert_eq!(
+        ProtocolConstruct::ChannelCarriesBounded.tracking(),
+        "QSL-1137"
+    );
+    assert_eq!(
+        ProtocolConstruct::ChannelKeyNotEqualityStable.tracking(),
+        "QSL-1142"
+    );
 }

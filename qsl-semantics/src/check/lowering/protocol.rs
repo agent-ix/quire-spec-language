@@ -142,6 +142,30 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::WholeModelRole);
         }
+        if !form.relationships.is_empty() {
+            unemitted.push(ProtocolConstruct::Relationships);
+        }
+        if self
+            .checked
+            .channels
+            .iter()
+            .any(|channel| bounded_carries(&channel.carries))
+        {
+            unemitted.push(ProtocolConstruct::ChannelCarriesBounded);
+        }
+        if self
+            .checked
+            .channels
+            .iter()
+            .any(|channel| match &channel.ordering {
+                CheckedOrdering::Unordered => false,
+                CheckedOrdering::Fifo { key, .. } => {
+                    matches!(key.root().value_type(), ValueType::Quantity(_))
+                }
+            })
+        {
+            unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
+        }
         if !form.requirements.is_empty() {
             unemitted.push(ProtocolConstruct::Requirements);
         }
@@ -191,6 +215,32 @@ impl ProtocolInput<'_> {
             .iter()
             .find(|body| body.node == *finish)
             .map(|body| &body.body)
+    }
+}
+
+/// Whether `carries` lowers to a `bounded_domain` node, which IR's reader
+/// does not admit as a channel's `carries`. An `option` is a `composite_type`
+/// whatever its payload; a quantity is a `scalar_type` and a nominal enum a
+/// `value` node, both of which the reader admits.
+fn bounded_carries(carries: &ValueType) -> bool {
+    match carries {
+        ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Text(_) => true,
+        ValueType::Collection(collection) => collection.bound().is_some(),
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
+        | ValueType::Reference(_)
+        | ValueType::Composite(_)
+        | ValueType::Option(_)
+        | ValueType::Enum(_)
+        | ValueType::Quantity(_)
+        | ValueType::Population(_) => false,
     }
 }
 
@@ -299,15 +349,7 @@ impl Lowering<'_> {
                 }
                 Err(other) => return Err(other),
             };
-            let mut unemitted = protocol.unemitted();
-            if protocol
-                .checked
-                .channels
-                .iter()
-                .any(|channel| !self.carries_admitted(&channel.carries))
-            {
-                unemitted.push(ProtocolConstruct::ChannelCarries);
-            }
+            let unemitted = protocol.unemitted();
             if let Some(first) = unemitted.first() {
                 refusals.extend(
                     unemitted
@@ -322,35 +364,6 @@ impl Lowering<'_> {
         }
         self.protocol_keys = keys;
         Ok(refusals)
-    }
-
-    /// Whether the node of `carries` is one IR's reader admits as a
-    /// channel's `carries`: a `scalar_type`, a `composite_type` or a model
-    /// variant. A bounded scalar or collection is a `bounded_domain`, a
-    /// quantity is neither, and a nominal enum is a `value` node.
-    fn carries_admitted(&self, carries: &ValueType) -> bool {
-        match carries {
-            ValueType::Boolean
-            | ValueType::Integer
-            | ValueType::String
-            | ValueType::Uuid
-            | ValueType::Timestamp
-            | ValueType::Reference(_)
-            | ValueType::Composite(_)
-            | ValueType::Option(_) => true,
-            ValueType::Collection(collection) => collection.bound().is_none(),
-            ValueType::Enum(shape) => {
-                self.scope.enum_binding_of(shape).is_none()
-                    && self.scope.variant_type_of(shape).is_some()
-            }
-            ValueType::Int(_)
-            | ValueType::Rational(_)
-            | ValueType::Decimal(_)
-            | ValueType::Float(_)
-            | ValueType::Text(_)
-            | ValueType::Quantity(_)
-            | ValueType::Population(_) => false,
-        }
     }
 
     /// The `value`/`parameter` node of `binder`, at `level`, and the scope
@@ -437,7 +450,6 @@ impl Lowering<'_> {
         let readable: Vec<Binder> = [Some(over), trigger].into_iter().flatten().collect();
 
         let roles = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
-        let relationships = self.relationship_nodes_of(protocol)?;
         let (channels, queues) = self.channel_nodes(
             protocol,
             &ChannelOperations {
@@ -484,10 +496,7 @@ impl Lowering<'_> {
                         BindingValue::Tuple(TupleTerm::new(Vec::new())),
                     ),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
-                    MemberTerm::binding(
-                        "relationships",
-                        BindingValue::Group(GroupTerm::references(relationships)),
-                    ),
+                    MemberTerm::binding("relationships", empty_group()),
                     MemberTerm::binding(
                         "channels",
                         BindingValue::Group(GroupTerm::references(channels)),
@@ -626,22 +635,6 @@ impl Lowering<'_> {
             }
         }
         Ok(BindingValue::Group(GroupTerm::new(members)))
-    }
-
-    /// The model relationship node of each `relationship` member of
-    /// `protocol` (FR-464 "Clause body": a relationship declaration has no
-    /// node of its own), ascending by digest, one entry for two members that
-    /// bind one model relationship (FR-383 "Order, sets and collapse").
-    fn relationship_nodes_of(
-        &mut self,
-        protocol: &ProtocolInput<'_>,
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
-        let location = protocol.location();
-        let mut keys = Vec::with_capacity(protocol.checked.relationships.len());
-        for relationship in &protocol.checked.relationships {
-            keys.push(self.model_node(&relationship.key, &location)?);
-        }
-        Ok(sorted(keys))
     }
 
     /// The `channel` nodes of `protocol` (FR-465 "Channel") and the one

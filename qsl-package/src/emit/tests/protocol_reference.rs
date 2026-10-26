@@ -123,6 +123,9 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
         (ProtocolConstruct::WholeModelRole, "IR-874"),
+        (ProtocolConstruct::Relationships, "QSL-1141"),
+        (ProtocolConstruct::ChannelCarriesBounded, "QSL-1137"),
+        (ProtocolConstruct::ChannelKeyNotEqualityStable, "QSL-1142"),
         (ProtocolConstruct::Control("attempt"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),

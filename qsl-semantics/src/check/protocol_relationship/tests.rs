@@ -9,7 +9,6 @@ use qsl_foundation::SourceIdentity;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 
-use crate::check::node_key::NodeRef;
 use crate::check::refusal::{
     ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, RelatedEnd,
 };
@@ -326,79 +325,6 @@ fn a_related_clause_types_each_end_by_its_relationship() {
     assert_eq!(at, "sent.id");
 }
 
-/// The packaged `Bare` protocol with `members` over fixture P, checked under
-/// the production gate, and the `relationships` argument of its clause node:
-/// each target's key text and its tag and form.
-fn clause_relationships(members: &str) -> (Vec<(String, String, String)>, String) {
-    let text = bare("on origin", members, "true").replacen(
-        "model M",
-        "profile pp = \"quire.protocol.finite-global/v1\";\nmodel M",
-        1,
-    );
-    let graph = checks(&text);
-    let nodes: Vec<_> = graph.semantic_graph().nodes().collect();
-    let clause = nodes
-        .iter()
-        .find(|node| node.semantic_form() == "protocol_clause")
-        .expect("the protocol writes its clause");
-    let body = serde_json::to_value(clause.body()).expect("a body serializes");
-    let argument = body["arguments"]
-        .as_array()
-        .and_then(|arguments| arguments.iter().find(|a| a["name"] == "relationships"))
-        .expect("the relationships argument");
-    let targets = argument["value"]["members"]
-        .as_array()
-        .expect("a set")
-        .iter()
-        .map(|term| {
-            let target = serde_json::to_string(&term["target"]["digest"]).unwrap();
-            let node = nodes
-                .iter()
-                .find(|node| {
-                    serde_json::to_value(NodeRef(node.key())).unwrap()["digest"]
-                        == term["target"]["digest"]
-                })
-                .expect("a listed relationship is a node of the graph");
-            (
-                target,
-                format!("{:?}", node.node_tag()),
-                node.semantic_form().to_owned(),
-            )
-        })
-        .collect();
-    (targets, serde_json::to_string(&body).unwrap())
-}
-
-/// FR-383 "Order, sets and collapse": a `relationship` member writes no node
-/// of its own. The clause's `relationships` set holds each model
-/// relationship's `relation`/`relationship` node, in ascending key order,
-/// once: two members that bind one relationship give one entry, and the
-/// member's alias is carried nowhere.
-#[trace("TC-1056")]
-#[test]
-fn relationships_lower_to_the_model_relationship_nodes_once_each() {
-    let (none, _) = clause_relationships("");
-    assert!(none.is_empty());
-    let (pipe, _) = clause_relationships("relationship Pipe = M::pipe;");
-    assert_eq!(pipe.len(), 1);
-    assert_eq!(
-        (pipe[0].1.as_str(), pipe[0].2.as_str()),
-        ("Relation", "relationship")
-    );
-    let (both, body) =
-        clause_relationships("relationship Owns = M::owns;\nrelationship Pipe = M::pipe;");
-    assert_eq!(both.len(), 2);
-    assert!(both[0].0 < both[1].0, "ascending: {both:?}");
-    assert!(!body.contains("Owns") && !body.contains("Pipe"), "no alias");
-    let (reversed, _) =
-        clause_relationships("relationship Pipe = M::pipe;\nrelationship Owns = M::owns;");
-    assert_eq!(both, reversed, "source order changes nothing");
-    let (repeated, _) = clause_relationships(
-        "relationship Pipe = M::pipe;\nrelationship Again = M::pipe;\nrelationship Owns = M::owns;",
-    );
-    assert_eq!(both, repeated, "a repeat is one entry");
-}
-
 /// The constructs the production check (no `with_unwritten_protocols`)
 /// refuses `text` for, in order, with a protocol profile selected. Every
 /// refusal must be a `NotEmitted` one.
@@ -449,6 +375,11 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
     use ProtocolConstruct as C;
     let cases: Vec<(String, Vec<C>, &str)> = vec![
         (bare("on origin", "", "true"), vec![], ""),
+        (
+            bare("on origin", "relationship Pipe = M::pipe;", "true"),
+            vec![C::Relationships],
+            "QSL-1141",
+        ),
         (
             bare("on origin", "capture start: M::Total = view.total;", "true"),
             vec![C::Captures],
