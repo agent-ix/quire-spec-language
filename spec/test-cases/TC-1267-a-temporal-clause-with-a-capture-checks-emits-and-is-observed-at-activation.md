@@ -59,6 +59,12 @@ infinite-trace unless a step names another profile.
    `on each` clause for the certificate; the replay of an undefined capture
    and FR-339's checker wait on QSL-1096 and FR-339), and read the footprint of AC-14's clause with and without the
    capture.
+8. **Proposal, unconfirmed by operator:** Compile event-position and
+   timestamped-event clauses containing each aggregate kind, including a
+   duration-window quantile with a threshold converted between compatible
+   units. Compare omitted and explicit `min_count 1`, reformat the source,
+   mutate each aggregate binding, and read the emitted formula node and
+   source map.
 
 Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
 
@@ -97,3 +103,8 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
   `UndefinedEvaluation` at `z` is QSL-1096's, FR-339's rejection waits on its
   checker); the footprint holds `Counter::value` with the `over` receiver only with the
   capture.
+- Step 8: **Proposal, unconfirmed by operator:** each emitted formula atom
+  uses `quire.op.temporal.aggregate` with the closed ordered payload in the
+  proposed QSpec FR-370 shape; omitted and explicit `min_count 1` yield the
+  same key, reformatting changes neither key nor package identity, and each
+  semantic payload mutation changes both.
