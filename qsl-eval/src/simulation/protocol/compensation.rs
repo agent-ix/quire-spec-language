@@ -33,7 +33,7 @@ use super::{
     ProtocolSystem, Registered, Registration, Status, Thread,
 };
 use crate::simulation::expansion::ExpansionStop;
-use crate::simulation::model::encode::{reference_enc, value_enc};
+use crate::simulation::model::encode::{reference_enc, typed_value_enc, value_enc};
 use crate::simulation::model::{verdict, FirstApplication, ModelFinding, OperationRef, Verdict};
 use crate::value::evaluate_protocol_slot;
 
@@ -138,6 +138,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             for (key, registration) in &mut instance.registrations {
                 if closes.contains(&key.template) && registration.status == Status::Registered {
                     registration.status = Status::Closed;
+                }
+            }
+            // PS-8: from the commit step on, no thread holds an attempt
+            // record.
+            for compensating in instance.compensating.values_mut() {
+                if closes.contains(&compensating.registration.template) {
+                    compensating.attempt = None;
                 }
             }
         }
@@ -286,6 +293,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Compensating {
                     registration: key,
                     count: 0,
+                    attempt: None,
                 },
             );
         }
@@ -366,24 +374,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if compensating.count >= template.attempts || Self::closed(instance, template) {
             return Ok(());
         }
-        if retry {
-            // The relation reads no attempt record when it can be reached:
-            // `Program::new` refuses one that does with more than one
-            // attempt.
-            let mut frame = vec![None, None];
-            frame.extend(Self::captured(registration, usize::MAX));
-            frame.push(Some(self.over.clone()));
-            if self.holds(
-                template,
-                template.retry,
-                frame,
-                state,
-                &mut gathered.findings,
-            )? != Some(true)
-            {
-                return Ok(());
-            }
-        }
+        let records =
+            self.attempt_records(state, template, compensating, registration, retry, gathered)?;
         if !self.gate(state, path, GatedStep::Attempt) {
             return Ok(());
         }
@@ -394,48 +386,106 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .apply_operation(&observed, &operation, &|_| true, &mut gathered.budget)?;
         gathered.findings.extend(applications.findings);
         for applied in applications.successors {
-            let identity = ProtocolTransition::cattempt(
-                path.clone(),
-                key.clone(),
-                applied.transition,
-                reference_enc(&applied.receiver),
-                applied.arguments.iter().map(value_enc).collect(),
-            );
-            // A compensation thread is no branch thread of any `parallel`,
-            // so no resolved memory model governs it (ADR-025 MM-3): its
-            // attempt is local, as an attempt outside every weak `parallel`
-            // is (FR-220).
-            for chosen in self.memory.write(
-                &state.memory,
-                path,
-                &Access::local(),
-                None,
-                &state.model,
-                applied.state.clone(),
-            ) {
-                let (model, memory) = match chosen.written {
-                    Written::Applied(model, memory) => (model, memory),
-                    Written::Disabled => continue,
-                    Written::Cut => {
-                        gathered.cut.memory = true;
-                        continue;
+            for record in &records {
+                let identity = ProtocolTransition::cattempt(
+                    path.clone(),
+                    key.clone(),
+                    applied.transition.clone(),
+                    reference_enc(&applied.receiver),
+                    applied.arguments.iter().map(value_enc).collect(),
+                    record.enc.clone(),
+                );
+                // A compensation thread is no branch thread of any `parallel`,
+                // so no resolved memory model governs it (ADR-025 MM-3): its
+                // attempt is local, as an attempt outside every weak `parallel`
+                // is (FR-220).
+                for chosen in self.memory.write(
+                    &state.memory,
+                    path,
+                    &Access::local(),
+                    None,
+                    &state.model,
+                    applied.state.clone(),
+                ) {
+                    let (model, memory) = match chosen.written {
+                        Written::Applied(model, memory) => (model, memory),
+                        Written::Disabled => continue,
+                        Written::Cut => {
+                            gathered.cut.memory = true;
+                            continue;
+                        }
+                    };
+                    let mut next = state.clone();
+                    next.model = model;
+                    next.memory = memory;
+                    let target = Self::instance_mut(&mut next, ordinal)?;
+                    if let Some(thread) = target.threads.get_mut(path) {
+                        thread.rest = Rest::Retry(index);
                     }
-                };
-                let mut next = state.clone();
-                next.model = model;
-                next.memory = memory;
-                let target = Self::instance_mut(&mut next, ordinal)?;
-                if let Some(thread) = target.threads.get_mut(path) {
-                    thread.rest = Rest::Retry(index);
+                    if let Some(entry) = target.compensating.get_mut(path) {
+                        entry.count = entry.count.saturating_add(1);
+                        // PS-8: the record stays only while a retry can read it.
+                        entry.attempt = (template.keeps_attempt && entry.count < template.attempts)
+                            .then(|| record.clone());
+                    }
+                    self.normalize(&mut next, ordinal)?;
+                    gathered.successors.push((identity.clone(), next));
                 }
-                if let Some(entry) = target.compensating.get_mut(path) {
-                    entry.count = entry.count.saturating_add(1);
-                }
-                self.normalize(&mut next, ordinal)?;
-                gathered.successors.push((identity.clone(), next));
             }
         }
         Ok(())
+    }
+
+    /// ST-11: the attempt records a `cattempt` of `template` can bind, one
+    /// per record of the attempt type; at a retry only each record the
+    /// retry relation admits with `earlier` bound to the thread's attempt
+    /// record and `later` to the step's record. At the first attempt the
+    /// relation is not evaluated.
+    fn attempt_records(
+        &self,
+        state: &ProtocolState<M>,
+        template: &Template<'_>,
+        compensating: &Compensating,
+        registration: &Registration,
+        retry: bool,
+        gathered: &mut Gathered<M>,
+    ) -> Result<Vec<Bound>, ExpansionStop> {
+        let values = self
+            .model
+            .values_of(template.attempt_type, &state.model, &mut gathered.budget)?
+            .ok_or_else(|| ProtocolRefusal::fault("an-attempt-type-is-bounded"))?;
+        let earlier = if retry && template.keeps_attempt {
+            let held = compensating
+                .attempt
+                .as_ref()
+                .ok_or_else(|| ProtocolRefusal::fault("a-retry-thread-holds-its-attempt-record"))?;
+            held.value.clone()
+        } else {
+            None
+        };
+        let mut records = Vec::with_capacity(values.len());
+        for value in values {
+            if retry {
+                let mut frame = vec![earlier.clone(), Some(value.clone())];
+                frame.extend(Self::captured(registration, usize::MAX));
+                frame.push(Some(self.over.clone()));
+                if self.holds(
+                    template,
+                    template.retry,
+                    frame,
+                    state,
+                    &mut gathered.findings,
+                )? != Some(true)
+                {
+                    continue;
+                }
+            }
+            records.push(Bound {
+                enc: typed_value_enc(&value, self.model.types()),
+                value: Some(value),
+            });
+        }
+        Ok(records)
     }
 
     /// ST-12: the thread ends and is removed; the registration's status

@@ -4,10 +4,12 @@
 //! product of domains one element at a time.
 
 use quire_exact::{
-    from_admitted, CollectionKind, CollectionType, Integer, ObjectReference, OptionValue, Value,
-    ValueType,
+    from_admitted, from_admitted_slots, CollectionKind, CollectionType, FieldValue, Integer,
+    NodeKey, ObjectReference, OptionValue, Presence, Value, ValueType,
 };
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+};
 
 /// Whether this module can enumerate `value_type`: `Boolean`, `Int[..]`,
 /// `Option<T>`, `Reference<T>` and a sequence with a declared maximum over
@@ -34,6 +36,67 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
         | ValueType::Composite(_)
         | ValueType::Population(_) => false,
     }
+}
+
+/// The fields of the record `declaration` when every one is required and
+/// enumerable; `None` for a tuple, a union, a record with an optional field
+/// or one with a field this module cannot enumerate.
+fn record_fields(declaration: NodeKey, types: &TypeEnvironment) -> Option<&[FieldDeclaration]> {
+    let Some(CompositeShape::Record(fields)) = types
+        .composite(declaration)
+        .map(CompositeDeclaration::shape)
+    else {
+        return None;
+    };
+    fields
+        .iter()
+        .all(|field| field.presence() == Presence::Required && enumerable(field.value_type()))
+        .then_some(fields.as_slice())
+}
+
+/// [`enumerable`], and a record type whose fields are all required and
+/// enumerable (ADR-027 ST-11: the records of a template's attempt type).
+pub(crate) fn enumerable_in(value_type: &ValueType, types: &TypeEnvironment) -> bool {
+    match value_type {
+        ValueType::Composite(declaration) => record_fields(*declaration, types).is_some(),
+        other => enumerable(other),
+    }
+}
+
+/// Every value of the record type `declaration`, one per combination of its
+/// fields' domains, the last field moving fastest; `charge` is called once
+/// per record. `None` when the type is not [`enumerable_in`].
+pub(super) fn record_values<E>(
+    declaration: NodeKey,
+    objects: &[ObjectReference],
+    types: &TypeEnvironment,
+    mut charge: impl FnMut() -> Result<(), E>,
+) -> Result<Option<Vec<Value>>, E> {
+    let Some(fields) = record_fields(declaration, types) else {
+        return Ok(None);
+    };
+    let Some(domains) = fields
+        .iter()
+        .map(|field| Domain::of(field.value_type(), objects, types))
+        .collect::<Option<Vec<Domain>>>()
+    else {
+        return Ok(None);
+    };
+    let mut combinations = Odometer::new(domains.iter().map(Domain::len).collect());
+    let mut values = Vec::new();
+    while let Some(digits) = combinations.next_digits() {
+        charge()?;
+        let slots: Option<Vec<FieldValue>> = domains
+            .iter()
+            .zip(digits)
+            .map(|(domain, digit)| domain.nth(digit).map(FieldValue::Present))
+            .collect();
+        let Some(slots) = slots else {
+            return Ok(None);
+        };
+        values.push(from_admitted_slots(declaration, slots.into_boxed_slice()));
+    }
+    Ok(Some(values))
 }
 
 /// The finite domain of one declared type over a set of objects, in

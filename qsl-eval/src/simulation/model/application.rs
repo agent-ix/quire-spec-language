@@ -84,6 +84,11 @@ impl<'a> ModelSystem<'a> {
             .into_iter()
             .map(|row| row.reference)
             .collect();
+        if let quire_exact::ValueType::Composite(declaration) = value_type {
+            return super::domain::record_values(*declaration, &references, self.types, || {
+                budget.charge()
+            });
+        }
         let Some(domain) = super::domain::Domain::of(value_type, &references, self.types) else {
             return Ok(None);
         };
@@ -95,6 +100,12 @@ impl<'a> ModelSystem<'a> {
             index = index.saturating_add(1);
         }
         Ok(Some(values))
+    }
+
+    /// Whether [`Self::values_of`] enumerates `value_type`: a type FR-120
+    /// enumerates, or a record of required enumerable fields.
+    pub(crate) fn enumerates(&self, value_type: &quire_exact::ValueType) -> bool {
+        super::domain::enumerable_in(value_type, self.types)
     }
 
     /// The candidate budget of one expansion (FR-120 "Post-states").

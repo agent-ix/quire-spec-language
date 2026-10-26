@@ -10,7 +10,8 @@
 //! declared nesting level and never per element.
 
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
-use quire_exact::{CollectionKind, IeeeWidth, ObjectReference, Value};
+use quire_exact::{CollectionKind, FieldValue, IeeeWidth, ObjectReference, Value};
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 
 use qsl_semantics::model::key::effective_id_from_digest;
 use qsl_semantics::model::state::{ModelState, StateModel};
@@ -186,6 +187,41 @@ fn unhex32(text: &str) -> Option<[u8; 32]> {
 /// FR-181's typed canonical form of `value`.
 pub(crate) fn value_enc(value: &Value) -> Enc {
     value_enc_with(value, &|_| None)
+}
+
+/// FR-120's typed canonical form of `value`, where a record value is
+/// `{"type":"record","name":…,"fields":[{name, value}…]}` with `name` the
+/// declaration's checked node id, one entry per declared field in
+/// declaration order and an absent field `null`. A value that is not a
+/// record is [`value_enc`]'s.
+pub(crate) fn typed_value_enc(value: &Value, types: &TypeEnvironment) -> Enc {
+    let Value::Composite(composite) = value else {
+        return value_enc(value);
+    };
+    let Some(CompositeShape::Record(fields)) = types
+        .composite(composite.declaration())
+        .map(CompositeDeclaration::shape)
+    else {
+        return Enc::Unencodable("a tuple or union value");
+    };
+    let entries = fields
+        .iter()
+        .zip(composite.slots())
+        .map(|(field, slot)| {
+            let value = match slot {
+                FieldValue::Present(inner) => typed_value_enc(inner, types),
+                FieldValue::Absent | FieldValue::Null => Enc::Null,
+            };
+            Enc::Object(vec![("name", Enc::text(field.name())), ("value", value)])
+        })
+        .collect();
+    Enc::tagged(
+        "record",
+        vec![
+            ("name", Enc::text(hex(composite.declaration().as_bytes()))),
+            ("fields", Enc::Array(entries)),
+        ],
+    )
 }
 
 /// A reference's replacement in a key-free encoding (FR-152): `Some` for a

@@ -65,7 +65,12 @@ fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
 }
 
 fn level() -> Json {
-    let identity = ident("Level");
+    bounded("Level", "3")
+}
+
+/// The integer value type `name`, from 0 to `max`.
+fn bounded(name: &str, max: &str) -> Json {
+    let identity = ident(name);
     let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"), "keyword": keyword,
@@ -77,7 +82,7 @@ fn level() -> Json {
         &identity,
         "value_type",
         json!({"scalar": "integer",
-            "constraints": [constraint("min", "0"), constraint("max", "3")]}),
+            "constraints": [constraint("min", "0"), constraint("max", max)]}),
     )
 }
 
@@ -133,14 +138,23 @@ pub(crate) fn document() -> Vec<u8> {
     let value = ident("Cell/v");
     let weight = ident("Cell/w");
     let population = ident("cells");
-    let attempt = ident("Attempt");
-    let attempt_tally = ident("Attempt/n");
-    let attempt_field = json!({
-        "identity": attempt_tally, "name": "n", "typeRef": ident("Level"),
-        "presence": "required", "nullable": false, "defaultKind": "none",
-        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-        "origin": origin(&attempt_tally),
-    });
+    // A record type of one field, whose type is `type_ref`.
+    let record = |name: &str, field: &str, type_ref: &str| {
+        let identity = ident(&format!("{name}/{field}"));
+        let member = json!({
+            "identity": identity, "name": field, "typeRef": type_ref,
+            "presence": "required", "nullable": false, "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": origin(&identity),
+        });
+        wire_type(
+            &ident(name),
+            "record_value_type",
+            json!({
+                "supertypes": [], "fields": [member], "operations": [],
+            }),
+        )
+    };
     let fields: Vec<Json> = [("v", &value), ("w", &weight)]
         .into_iter()
         .map(|(name, field)| {
@@ -163,6 +177,7 @@ pub(crate) fn document() -> Vec<u8> {
         "constructs": constructs,
         "types": [
             level(),
+            bounded("Tally", "0"),
             wire_type(&cell, "object_type", json!({
                 "supertypes": [],
                 "fields": fields,
@@ -180,11 +195,11 @@ pub(crate) fn document() -> Vec<u8> {
             wire_type(&ident("Idle"), "object_type", json!({
                 "supertypes": [], "fields": [], "operations": [], "relationships": [],
             })),
-            wire_type(&attempt, "record_value_type", json!({
-                "supertypes": [],
-                "fields": [attempt_field],
-                "operations": [],
-            })),
+            // One record, so a `cattempt` of `Attempt` has one choice of
+            // record.
+            record("Attempt", "n", &ident("Tally")),
+            record("RefundAttempt", "ok", "ix://quire/native/Boolean"),
+            record("PeerAttempt", "p", &cell),
         ],
         "populations": [{
             "identity": population, "displayName": population,

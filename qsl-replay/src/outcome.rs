@@ -274,6 +274,9 @@ pub struct ItemCause {
     /// Every `weak-access-shape` failure, with its shape written as JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     failures: Option<Vec<ItemWeakAccessFailure>>,
+    /// A `recovery-view` cause's template, by its qualified name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    predicate: Option<String>,
 }
 
 /// One `weak-access-shape` failure in an item cause.
@@ -359,6 +362,7 @@ impl ItemCause {
             bound: None,
             states: None,
             failures: None,
+            predicate: None,
         }
     }
 
@@ -582,6 +586,9 @@ impl OutcomeItem {
                     }
                     UnavailabilityCause::WeakAccessShape { failures } => {
                         item.failures = Some(failures.iter().map(Into::into).collect());
+                    }
+                    UnavailabilityCause::RecoveryView { predicate } => {
+                        item.predicate = Some(predicate.clone());
                     }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent

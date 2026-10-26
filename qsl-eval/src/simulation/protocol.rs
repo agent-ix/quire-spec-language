@@ -110,12 +110,6 @@ pub enum Unsupported {
     /// A `choice` guard, `repeat` guard or `check` undecided at an initial
     /// state, before any position a finding can name.
     UndecidedInitialGuard,
-    /// A retry relation of a template with more than one attempt that reads
-    /// the attempt records, which no operation result binds here (ST-11).
-    UnboundAttemptRecord,
-    /// A recovery predicate that reads its recovery binder, whose recovery
-    /// view no rule derives from a model state (ST-12).
-    RecoveryView,
     /// A capture of the protocol clause.
     Capture,
     /// `activation on each` in a protocol with a compensation template,
@@ -149,8 +143,6 @@ impl Unsupported {
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
-            Self::UnboundAttemptRecord => "retry relation over unbound attempt records",
-            Self::RecoveryView => "recovery predicate over the recovery view",
             Self::Capture => "protocol capture",
             Self::ActivationOnEachTemplate => "activation on each with a compensation template",
             Self::JoinPredicate => "join predicate",
@@ -206,6 +198,15 @@ pub enum ProtocolRefusal {
     /// (FR-219, FR-220): the item settles V-8 `WeakAccessShape`.
     #[error("unsupported: weak-access-shape at {}", .0.site)]
     WeakAccessShape(Box<WeakAccessShape>),
+    /// A template's recovery predicate reads its recovery binder, whose
+    /// recovery view no rule derives from a model state (ADR-027 ST-12,
+    /// FR-207-AC-5): the item settles V-8 `unsupported`, `RecoveryView`.
+    #[error("unsupported: recovery-view of {predicate}")]
+    RecoveryView {
+        /// The template whose recovery predicate reads the view, by its
+        /// qualified name.
+        predicate: String,
+    },
     /// The protocol holds a construct this system does not step
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
@@ -242,9 +243,10 @@ impl ProtocolRefusal {
             | Self::OverBinding { .. }
             | Self::RolePopulation { .. }
             | Self::Memory(_) => Code::InvalidRuntimeInput,
-            Self::Unsupported(_) | Self::NodeFootprint { .. } | Self::WeakAccessShape(_) => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unsupported(_)
+            | Self::NodeFootprint { .. }
+            | Self::WeakAccessShape(_)
+            | Self::RecoveryView { .. } => Code::UnsupportedConstruct,
             Self::InitialStop(stop) => {
                 Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
             }
@@ -262,6 +264,7 @@ impl ProtocolRefusal {
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) | Self::NodeFootprint { .. } => "not-yet-implemented",
             Self::WeakAccessShape(_) => "weak-access-shape",
+            Self::RecoveryView { .. } => "recovery-view",
             Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
         }
@@ -418,12 +421,14 @@ struct Registration {
     captures: Vec<Bound>,
 }
 
-/// One compensation thread (ADR-027 CP-3): the registration it compensates
-/// and its attempt count.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One compensation thread (ADR-027 CP-3): the registration it compensates,
+/// its attempt count and its attempt record (PS-8), which it holds only
+/// while the key keeps it.
+#[derive(Clone, Debug)]
 struct Compensating {
     registration: Registered,
     count: u64,
+    attempt: Option<Bound>,
 }
 
 /// A role instance's status (ADR-027 RR-3).
@@ -584,11 +589,12 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// FR-215 "Model checking a protocol subject" (ADR-027 TS-5): the roots of
 /// `protocol` beside its model's: the record type of every binder of an
 /// `event`, `send`, `receive` and `finish` step, each named by the
-/// protocol and the binder. A bounded record type this module cannot
+/// protocol and the binder, and the attempt type of every compensation
+/// template. A bounded record type this module cannot
 /// enumerate is refused when the system is built
 /// ([`Unsupported::UnenumerableRecord`]).
 pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
-    protocol
+    let binders = protocol
         .slots
         .binders
         .iter()
@@ -598,8 +604,15 @@ pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueTyp
                 binder_root(&protocol.name, &binder.name),
                 binder.value_type.clone(),
             )
-        })
-        .collect()
+        });
+    // A `cattempt` takes one record of its template's attempt type (ST-11).
+    let attempts = protocol.obligations.compensations.iter().map(|template| {
+        (
+            binder_root(&protocol.name, &format!("{}.attempt", template.name)),
+            template.attempt_type.clone(),
+        )
+    });
+    binders.chain(attempts).collect()
 }
 
 /// The root a protocol binder's record type is named by: the digest of
@@ -881,6 +894,18 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
         }
         let program = Program::new(protocol)?;
+        // ST-11: a `cattempt` takes one step per record of its template's
+        // attempt type.
+        if protocol
+            .obligations
+            .compensations
+            .iter()
+            .any(|template| !model.enumerates(&template.attempt_type))
+        {
+            return Err(ProtocolRefusal::Unsupported(
+                Unsupported::UnenumerableRecord,
+            ));
+        }
         let enabled = access::classify(
             &model,
             protocol,
@@ -1127,7 +1152,9 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// PS-8 lists no member for it. A compensation thread's `thread-state`
     /// also names the registration it compensates, as `registration`: which
     /// registration each thread's `cattempt` and `cend` act on decides its
-    /// successors, and PS-8 lists no member for that mapping either.
+    /// successors, and PS-8 lists no member for that mapping either. A
+    /// compensation thread's attempt record is an `observations` entry
+    /// `{"type":"attempt-record","thread"}`.
     fn key_members(&self, state: &ProtocolState<M>) -> Vec<(&'static str, Enc)> {
         let text = |value: &str| Enc::tagged("text", vec![("value", Enc::text(value))]);
         let mut control = Vec::new();
@@ -1279,6 +1306,12 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 ));
             }
             for (thread, compensating) in &instance.compensating {
+                if let Some(attempt) = &compensating.attempt {
+                    observations.push((
+                        Enc::tagged("attempt-record", vec![("thread", thread.enc())]),
+                        attempt.enc.clone(),
+                    ));
+                }
                 bounds.push((
                     Enc::tagged("attempt-count", vec![("thread", thread.enc())]),
                     Enc::tagged(
