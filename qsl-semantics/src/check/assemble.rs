@@ -862,6 +862,9 @@ impl Unit {
                 DeclarationForm::Response(claim) => unit
                     .task_sets
                     .push(super::task_set::TaskSetDeclaration::Response(claim)),
+                DeclarationForm::Release(release) => unit
+                    .task_sets
+                    .push(super::task_set::TaskSetDeclaration::Release(release)),
                 DeclarationForm::HyperBehaviours(clause) => unit
                     .hyper_clauses
                     .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),

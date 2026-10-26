@@ -336,6 +336,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::TasksetDeclaration),
         r(P::SchedulableDeclaration),
         r(P::ResponseDeclaration),
+        r(P::ReleaseDeclaration),
         r(P::RandomDeclaration),
         r(P::RewardDeclaration),
         r(P::DelayDeclaration),
@@ -1533,6 +1534,22 @@ fn temporal(g: &mut Grammar) {
             r(P::QuantityLiteral),
             literal("under"),
             literal("fixed_priority"),
+            x(";"),
+        ]),
+    );
+    // `release-decl`. `release` is the reserved temporal operator (`until`,
+    // `release`, `since`, `triggered`), so the head is the reserved word, not a
+    // contextual one. The operator is infix and follows an operand, a
+    // declaration head never does, so the two never compete for a position.
+    g.insert(
+        P::ReleaseDeclaration,
+        s(vec![
+            x("release"),
+            ident(),
+            x("."),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
             x(";"),
         ]),
     );

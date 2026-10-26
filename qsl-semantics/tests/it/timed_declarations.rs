@@ -738,3 +738,15 @@ fn a_delay_in_an_untimed_model_refuses_at_the_declaration() {
         )
     );
 }
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_second_delay_of_one_operation_refuses_at_the_second_declaration() {
+    let first = "delay ConfigVersion::attemptUpdate ~ uniform;";
+    let second = "delay ConfigVersion::attemptUpdate ~ exponential(1);";
+    let (code, tag, at) = delay_refusal(true, &format!("{first}\n{second}"));
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (Code::InvalidModelBinding, "malformed-declaration", second)
+    );
+}

@@ -829,6 +829,8 @@ pub enum TimedConstruct {
     Schedulable,
     /// A `response` claim (QSpec FR-419, QSL FR-246).
     Response,
+    /// A `release` declaration (QSpec FR-419, QSL FR-249).
+    Release,
 }
 
 impl TimedConstruct {
@@ -843,6 +845,7 @@ impl TimedConstruct {
             Self::Taskset => "a `taskset` declaration",
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
+            Self::Release => "a `release` declaration",
         }
     }
 }
@@ -1396,6 +1399,56 @@ pub enum TemporalCause {
         /// The name's span.
         span: Span,
     },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task set of the unit.
+    /// Located at the task set name the declaration wrote.
+    UnknownReleaseTaskSet {
+        /// The task set as written.
+        name: String,
+        /// The operation the declaration releases on, as written.
+        operation: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task of its task set.
+    /// Located at the task name the declaration wrote.
+    UnknownReleaseTask {
+        /// The task set.
+        task_set: String,
+        /// The task as written.
+        task: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names no operation of a model. Located at
+    /// the operation name.
+    UnresolvedReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names operations of several declaring types,
+    /// none more derived than the others. Located at the operation name.
+    AmbiguousReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: an operation releases one task twice. Located at the
+    /// second declaration.
+    DuplicateRelease {
+        /// The task set.
+        task_set: String,
+        /// The task.
+        task: String,
+        /// The operation as written.
+        operation: String,
+        /// The first declaration's span.
+        first: Span,
+        /// The second declaration's span.
+        span: Span,
+    },
     /// A clause over a non-hybrid subject that writes no `clock` member: its
     /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
     /// built, so the clause is refused rather than stepped by a guessed
@@ -1534,6 +1587,11 @@ impl TemporalCause {
             | Self::DuplicateTaskSet { span, .. }
             | Self::MissingTaskSet { span, .. }
             | Self::UnknownResponseTask { span, .. }
+            | Self::UnknownReleaseTaskSet { span, .. }
+            | Self::UnknownReleaseTask { span, .. }
+            | Self::UnresolvedReleaseOperation { span, .. }
+            | Self::AmbiguousReleaseOperation { span, .. }
+            | Self::DuplicateRelease { span, .. }
             | Self::MissingClock { span } => *span,
         }
     }
@@ -1573,12 +1631,15 @@ impl TemporalCause {
             Self::InvalidTimedInterval { .. }
             | Self::ModelTimeOnUntimedModel { .. }
             | Self::InvalidTaskSet { .. } => Code::InvalidTimedModel,
-            Self::DuplicateTask { .. } | Self::DuplicateTaskSet { .. } => {
-                Code::ConflictingDeclaration
-            }
-            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => {
-                Code::MissingDeclaration
-            }
+            Self::DuplicateTask { .. }
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => Code::ConflictingDeclaration,
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
@@ -1627,9 +1688,15 @@ impl TemporalCause {
             Self::DuplicateTrigger { .. }
             | Self::DuplicateCapture { .. }
             | Self::DuplicateTask { .. }
-            | Self::DuplicateTaskSet { .. } => "duplicate-declaration",
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => "duplicate-declaration",
             Self::InvalidTaskSet { .. } => "invalid-task-set",
-            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => "missing-name",
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => "missing-name",
+            Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
