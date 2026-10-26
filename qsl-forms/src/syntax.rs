@@ -9,6 +9,7 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`ExprNode::children`] lists the children.
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
@@ -1736,6 +1737,43 @@ impl Expression {
         Self { nodes }
     }
 
+    /// The tree under `root`, with each node `leaves` names replaced,
+    /// together with its descendants, by the childless node it maps to.
+    /// Nodes keep their relative order, so the copy is numbered children
+    /// first as every tree is. `None` when `root` or a leaf is no node of
+    /// this arena, or a replacement has children.
+    pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        if leaves.values().any(|leaf| !leaf.children().is_empty()) {
+            return None;
+        }
+        let mut kept = Vec::new();
+        let mut pending = vec![root];
+        while let Some(id) = pending.pop() {
+            let node = self.nodes.get(id.0)?;
+            kept.push(id);
+            if !leaves.contains_key(&id) {
+                pending.extend(node.children());
+            }
+        }
+        kept.sort_unstable();
+        let mut renumbered = vec![None; self.nodes.len()];
+        for (new, old) in kept.iter().enumerate() {
+            renumbered[old.0] = Some(ExprId(new));
+        }
+        let nodes = kept
+            .iter()
+            .map(|id| match leaves.get(id) {
+                Some(leaf) => leaf.clone(),
+                None => {
+                    let mut copy = self.nodes[id.0].clone();
+                    copy.shift_children(|child| renumbered[child.0].unwrap_or(ExprId(usize::MAX)));
+                    copy
+                }
+            })
+            .collect();
+        Some(Self { nodes })
+    }
+
     /// Every node with its id, each after its children, the root last.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = ExprRef<'_>> + '_ {
         self.nodes.iter().enumerate().map(|(index, node)| ExprRef {
@@ -3340,6 +3378,57 @@ pub struct ExpressionForm {
     pub expression: Expression,
     /// The span of each expression node.
     pub spans: ExpressionSpans,
+}
+
+impl ExpressionForm {
+    /// The form under `root`, each node `leaves` names replaced, with its
+    /// descendants, by its childless node, which keeps the replaced node's
+    /// span. `None` when the spans do not fit the expression, a node is
+    /// not of this tree, or a replacement has children.
+    pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        let replaced = leaves.keys().copied().collect();
+        Some(Self {
+            expression: self.expression.cut(root, leaves)?,
+            spans: self.spans.cut(&self.expression, root, &replaced)?,
+        })
+    }
+
+    /// `not self`, spanned as `self` is.
+    pub fn negated(self) -> Option<Self> {
+        let span = self.spans.span(self.spans.root())?;
+        let spans = ExpressionSpans::joined(span, &[self.spans]).ok()?;
+        Some(Self {
+            expression: Expression::logical_not(self.expression),
+            spans,
+        })
+    }
+
+    /// The left-nested conjunction of `operands`, each `and` spanned from
+    /// its first operand's start to its last's end. The operands are
+    /// disjoint parts of one source, in source order. `None` for no
+    /// operand, or operands out of source order.
+    pub fn conjunction(operands: Vec<Self>) -> Option<Self> {
+        let mut operands = operands.into_iter();
+        let mut joined = operands.next()?;
+        for operand in operands {
+            let left = joined.spans.span(joined.spans.root())?;
+            let right = operand.spans.span(operand.spans.root())?;
+            let span = Span {
+                start: left.start,
+                end: right.end.max(left.end),
+            };
+            let spans = ExpressionSpans::joined(span, &[joined.spans, operand.spans]).ok()?;
+            joined = Self {
+                expression: Expression::binary(
+                    BinaryOperator::And,
+                    joined.expression,
+                    operand.expression,
+                ),
+                spans,
+            };
+        }
+        Some(joined)
+    }
 }
 
 /// One operator node of a temporal formula (FR-325 "Outputs").
