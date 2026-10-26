@@ -228,6 +228,11 @@ pub enum ClosureRefusal {
     /// clause, which has no components (FR-339).
     #[error("the item is not a TP-4 clause, so it has no component certificate")]
     NotLiveness,
+    /// A closure certificate alone was offered for a TP-4 clause. A liveness
+    /// proof is a component certificate (FR-339): a closure says nothing of
+    /// acceptance, so it never proves one.
+    #[error("a TP-4 clause is proved by a component certificate, not a closure")]
+    LivenessNeedsComponents,
     /// The subject has no initial state (ADR-016 EX-10), so no behaviour is
     /// examined and there is nothing to certify.
     #[error("the subject has no initial state")]
@@ -568,12 +573,12 @@ fn check_system<S: SubjectSystem>(
     if instances.is_empty() {
         return Err(ClosureRefusal::NoInstance);
     }
-    if proof.components.is_some()
-        && instances
-            .iter()
-            .any(|instance| !matches!(instance.translation, Translation::Liveness(_)))
-    {
+    let liveness = |instance: &Instance| matches!(instance.translation, Translation::Liveness(_));
+    if proof.components.is_some() && !instances.iter().all(liveness) {
         return Err(ClosureRefusal::NotLiveness);
+    }
+    if proof.components.is_none() && instances.iter().any(liveness) {
+        return Err(ClosureRefusal::LivenessNeedsComponents);
     }
     if system.initial().is_empty() {
         return Err(ClosureRefusal::NoInitialState);
