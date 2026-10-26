@@ -1143,11 +1143,12 @@ fn tc_774_a_transitive_dependency_replays() {
     ));
 }
 
-/// FR-290-AC-1, the two clauses `main` can assert: a process provider's
-/// `proved` entry for a routed non-hybrid item reads through the FR-331
-/// readers (`certification` first, then `basis`) and settles `proved` with
-/// the provider's `BackendId` and certification `trusted`, and the
-/// `bounded-solver` basis is refused on that non-hybrid path; a Kani
+/// FR-290-AC-1, the two clauses `main` can assert. The driver below reads an
+/// entry's `certification`, then its `basis`, and builds a record only when
+/// both readers accept: a `trusted` entry settles `proved` with the read
+/// basis, the provider's `BackendId` and certification `trusted`; a
+/// `certified` entry is refused with `CertificationNotTrusted` and builds no
+/// record. `bounded-solver` is refused on the non-hybrid path. A Kani
 /// `proved` record built as C-09 carries `certified`.
 ///
 /// Not asserted here, so no `FR-290-AC-1` tag: FR-281-AC-1's `certified`
@@ -1159,23 +1160,28 @@ fn tc_774_a_transitive_dependency_replays() {
 #[trace("TC-774")]
 #[test]
 fn tc_774_plugin_proof_settles_trusted_and_kani_proof_certified() {
-    let entry = json!({
-        "certification": "trusted",
-        "basis": {"type": "inductive-solver", "method": "inductive-enclosure"},
-    });
-    read_plugin_certification(entry.get("certification")).unwrap();
-    let basis = read_plugin_basis(&entry["basis"]).unwrap();
-    let record =
-        TerminalRecord::from_plugin_proof(RequestIndex::new(3), plugin(), basis.clone()).unwrap();
+    let settle_entry = |entry: &Value| {
+        read_plugin_certification(entry.get("certification"))?;
+        let basis = read_plugin_basis(&entry["basis"])?;
+        TerminalRecord::from_plugin_proof(RequestIndex::new(3), plugin(), basis)
+    };
+    let basis = json!({"type": "inductive-solver", "method": "inductive-enclosure"});
+    let record = settle_entry(&json!({"certification": "trusted", "basis": basis})).unwrap();
     assert_eq!(
         record.value(),
         &TerminalValue::Proved {
-            basis,
+            basis: read_plugin_basis(&basis).unwrap(),
             certification: Certification::Trusted,
         }
     );
     assert_eq!(record.backend(), Some(&plugin()));
     assert_eq!(record.request_index(), RequestIndex::new(3));
+    assert_eq!(
+        settle_entry(&json!({"certification": "certified", "basis": basis})),
+        Err(PluginResultRefusal::CertificationNotTrusted {
+            received: "certified".to_owned()
+        })
+    );
 
     let solver = read_plugin_basis(&json!({
         "type": "bounded-solver", "exhaustive": [], "jumps": 0, "method": "unclassified",
