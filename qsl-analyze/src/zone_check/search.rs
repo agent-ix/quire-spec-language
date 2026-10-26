@@ -34,9 +34,11 @@ use qsl_replay::{
 use qsl_semantics::check::{CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile};
 use quire_exact::{Cancel, Meter, Rational};
 
+use super::certificate::ZoneCertificate;
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
 use super::{scale_constants, Bound, Dbm, DbmError};
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
 
 /// FR-239's budgets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,11 +79,14 @@ pub enum ZoneCheckItem<'a> {
 }
 
 /// A request to EN-6.
-pub struct ZoneCheckRequest<'r, 's, 'a> {
+pub struct ZoneCheckRequest<'r, 's, 'a, S> {
     /// The timed subject (FR-231).
     pub subject: &'r TimedSystem<'s, 'a>,
     /// The item.
     pub item: ZoneCheckItem<'r>,
+    /// The item's obligation identity, which its certificate names
+    /// (FR-244).
+    pub obligation: ItemObligation<S>,
     /// The budgets.
     pub limits: ZoneCheckLimits,
 }
@@ -126,6 +131,11 @@ pub enum ZoneUndecided {
     /// delay, which no position of a counterexample names: FR-236 and QSpec
     /// FR-417 give `final_delay` to time-locks only (spec gap STD-493).
     DeadlockAfterDelay,
+    /// The divergence test admits a time-divergent behaviour, but no path
+    /// of retained edges reaches a quiescent node or a cycle of positive
+    /// total delay, so FR-244's `admitted` part has no witness (spec gap
+    /// STD-493).
+    NoDivergenceWitness,
 }
 
 /// The run's counts.
@@ -143,7 +153,7 @@ pub struct ZoneStats {
 
 /// A stored symbolic state.
 #[derive(Clone, Debug)]
-pub struct SymbolicNode {
+pub(super) struct SymbolicNode {
     /// The model state.
     pub state: ModelSimState,
     /// The zone over clock places, in scaled units.
@@ -156,7 +166,7 @@ pub struct SymbolicNode {
 
 /// A retained edge.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SymbolicEdge {
+pub(super) enum SymbolicEdge {
     /// A successor by a step's convex guard part, in canonical order.
     Step {
         /// The source node.
@@ -182,36 +192,21 @@ pub enum SymbolicEdge {
 }
 
 impl SymbolicEdge {
-    fn ends(&self) -> (usize, usize) {
+    pub(super) fn ends(&self) -> (usize, usize) {
         match self {
             Self::Step { from, to, .. } | Self::Covering { from, to, .. } => (*from, *to),
         }
     }
 }
 
-/// The retained symbolic graph, which FR-240 and FR-244 read.
-#[derive(Clone, Debug)]
-pub struct SymbolicGraph {
-    /// The scale factor of every zone bound.
-    pub scale: BigInt,
-    /// Each clock place's `L` and `U`, in scaled units.
-    pub lower: Vec<Option<BigInt>>,
-    /// Each clock place's `U`.
-    pub upper: Vec<Option<BigInt>>,
-    /// The stored nodes, in creation order.
-    pub nodes: Vec<SymbolicNode>,
-    /// The retained edges.
-    pub edges: Vec<SymbolicEdge>,
-}
-
 /// FR-239's outcome.
 #[derive(Clone, Debug)]
-pub enum ZoneCheckOutcome {
+pub enum ZoneCheckOutcome<S> {
     /// No admitted violation is reachable, and an initial state has a
     /// time-divergent behaviour.
     Holds {
-        /// The retained graph the certificate is built from (FR-244).
-        graph: SymbolicGraph,
+        /// FR-244's certificate, built from the retained graph.
+        certificate: Box<ZoneCertificate<S>>,
         /// The run's counts.
         stats: ZoneStats,
     },
@@ -276,7 +271,7 @@ enum Badness {
 
 /// A halt of the search.
 pub(super) enum Halt {
-    Outcome(Box<ZoneCheckOutcome>),
+    Outcome(Box<ZoneCheckOutcome<()>>),
     Refusal(ZoneCheckRefusal),
 }
 
@@ -299,10 +294,10 @@ impl From<DbmError> for Halt {
 /// [`ZoneCheckRefusal`] when the clause is not a TT-1 invariant, its
 /// instances are not finite, an atom gives no reading, or the engine
 /// breaks an invariant.
-pub fn check_timed_model(
-    request: ZoneCheckRequest<'_, '_, '_>,
+pub fn check_timed_model<S: Clone>(
+    request: ZoneCheckRequest<'_, '_, '_, S>,
     cancel: &Cancel,
-) -> Result<ZoneCheckOutcome, ZoneCheckRefusal> {
+) -> Result<ZoneCheckOutcome<S>, ZoneCheckRefusal> {
     let claim = match request.item {
         ZoneCheckItem::Invariant { clause, letters } => {
             let atom = qsl_eval::automaton::invariant_atom(clause)
@@ -328,10 +323,32 @@ pub fn check_timed_model(
         ZoneCheckItem::DeadlockFreedom => None,
     };
     let mut run = Run::new(request.subject, claim, request.limits, cancel);
-    match run.search() {
-        Ok(outcome) => Ok(outcome),
-        Err(Halt::Outcome(outcome)) => Ok(*outcome),
-        Err(Halt::Refusal(refusal)) => Err(refusal),
+    let outcome = match run.search() {
+        Ok(outcome) => outcome,
+        Err(Halt::Outcome(outcome)) => *outcome,
+        Err(Halt::Refusal(refusal)) => return Err(refusal),
+    };
+    Ok(outcome.proving(request.obligation))
+}
+
+impl ZoneCheckOutcome<()> {
+    /// This outcome with its certificate naming `obligation`.
+    fn proving<S>(self, obligation: ItemObligation<S>) -> ZoneCheckOutcome<S> {
+        match self {
+            Self::Holds { certificate, stats } => ZoneCheckOutcome::Holds {
+                certificate: Box::new(certificate.proving(obligation)),
+                stats,
+            },
+            Self::Violated {
+                counterexample,
+                stats,
+            } => ZoneCheckOutcome::Violated {
+                counterexample,
+                stats,
+            },
+            Self::Undecided { cause, stats } => ZoneCheckOutcome::Undecided { cause, stats },
+            Self::Stopped { cause, stats } => ZoneCheckOutcome::Stopped { cause, stats },
+        }
     }
 }
 
@@ -347,15 +364,15 @@ pub(super) struct Run<'r, 's, 'a> {
     claim: Option<Claim<'r>>,
     pub(super) limits: ZoneCheckLimits,
     cancel: &'r Cancel,
-    scale: BigInt,
-    lower: Vec<Option<BigInt>>,
-    upper: Vec<Option<BigInt>>,
-    nodes: Vec<SymbolicNode>,
+    pub(super) scale: BigInt,
+    pub(super) lower: Vec<Option<BigInt>>,
+    pub(super) upper: Vec<Option<BigInt>>,
+    pub(super) nodes: Vec<SymbolicNode>,
     keys: Vec<Vec<u8>>,
     expanded: Vec<bool>,
     /// The real edge that created each node, `None` for an initial one.
     parent: Vec<Option<usize>>,
-    edges: Vec<SymbolicEdge>,
+    pub(super) edges: Vec<SymbolicEdge>,
     /// The retained edges leaving each node, by index into `edges`.
     out: Vec<Vec<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
@@ -516,7 +533,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         Ok(found)
     }
 
-    fn search(&mut self) -> Result<ZoneCheckOutcome, Halt> {
+    fn search(&mut self) -> Result<ZoneCheckOutcome<()>, Halt> {
         let initial = self.timed.initial();
         if initial.is_empty() {
             return Err(self.undecided(ZoneUndecided::NoInitialState));
@@ -558,7 +575,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         // Vacuity (ADR-026 TD-6): an initial state with a time-divergent
         // behaviour.
         let mut admitted = false;
-        for root in roots {
+        for &root in &roots {
             if self.node_escape(root)?.diverges {
                 admitted = true;
                 break;
@@ -570,16 +587,22 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             // state has no counterexample form (FR-236 gives `final_delay`
             // to time-locks only), so it is neither proved away nor refuted.
             true if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
-            true => Ok(ZoneCheckOutcome::Holds {
-                stats: self.stats(),
-                graph: SymbolicGraph {
-                    scale: self.scale.clone(),
-                    lower: self.lower.clone(),
-                    upper: self.upper.clone(),
-                    nodes: std::mem::take(&mut self.nodes),
-                    edges: std::mem::take(&mut self.edges),
+            true => match self.certificate(
+                ItemObligation {
+                    subject: (),
+                    kind: ObligationKind::DeadlockFreedom,
                 },
-            }),
+                &roots,
+            )? {
+                Some(certificate) => Ok(ZoneCheckOutcome::Holds {
+                    certificate: Box::new(certificate),
+                    stats: self.stats(),
+                }),
+                // STD-493: the divergence test admits a behaviour that no
+                // path of retained edges witnesses, so FR-244's `admitted`
+                // part cannot be written.
+                None => Err(self.undecided(ZoneUndecided::NoDivergenceWitness)),
+            },
         }
     }
 
@@ -697,7 +720,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     /// The guarded steps of `node`'s model state, computed once.
-    fn steps_of(&mut self, node: usize) -> Result<Vec<GuardedStep>, Halt> {
+    pub(super) fn steps_of(&mut self, node: usize) -> Result<Vec<GuardedStep>, Halt> {
         let state = self.nodes[node].state.clone();
         self.steps_for(&state)
     }

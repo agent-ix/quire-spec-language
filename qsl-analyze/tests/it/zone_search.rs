@@ -4,13 +4,16 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneCheckRequest, ZoneStop, ZoneUndecided,
+    check_timed_model, DivergentTarget, ZoneCertificate, ZoneCheckItem, ZoneCheckLimit,
+    ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
-use quire_exact::{Cancel, Integer, Rational, Undefined};
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use quire_exact::{Cancel, Integer, Origin, Rational, Role, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
@@ -62,8 +65,22 @@ fn exact(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a rational")
 }
 
+/// The subject every item here is over.
+const SUBJECT: &str = "c";
+
+/// An outcome over [`SUBJECT`].
+type Outcome = ZoneCheckOutcome<&'static str>;
+
+/// The occurrence of the claim each world's first clause is.
+fn claim_occurrence() -> OccurrenceKey {
+    OccurrenceKey::new(
+        WireNodeId::from_digest([1; 32]),
+        Origin::new(Role::new("temporal"), 0),
+    )
+}
+
 /// The first clause of `world`, decided by EN-6 under `limits`.
-fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> ZoneCheckOutcome {
+fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -75,6 +92,10 @@ fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> ZoneCheckOu
                 clause: node.clause(),
                 letters: &letters,
             },
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::Authored(claim_occurrence()),
+            },
             limits,
         },
         cancel,
@@ -82,13 +103,17 @@ fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> ZoneCheckOu
     .expect("EN-6 takes the claim")
 }
 
-fn deadlock(world: &World) -> ZoneCheckOutcome {
+fn deadlock(world: &World) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
         ZoneCheckRequest {
             subject: &timed,
             item: ZoneCheckItem::DeadlockFreedom,
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::DeadlockFreedom,
+            },
             limits: ZoneCheckLimits::default(),
         },
         &Cancel::new(),
@@ -96,7 +121,7 @@ fn deadlock(world: &World) -> ZoneCheckOutcome {
     .expect("EN-6 takes the item")
 }
 
-fn violated(outcome: ZoneCheckOutcome) -> TemporalCounterexample {
+fn violated(outcome: Outcome) -> TemporalCounterexample {
     match outcome {
         ZoneCheckOutcome::Violated { counterexample, .. } => *counterexample,
         other => panic!("expected a violation, got {other:?}"),
@@ -136,26 +161,25 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
         .collect()
 }
 
-/// FR-241-AC-1, and part of FR-239-AC-1 (TC-694): `NoLateReply` holds over
-/// `Rpc` with `T = 4 ms` and, with `T = 3 ms`, is violated at
+/// FR-239-AC-1 and FR-241-AC-1: `NoLateReply` holds over `Rpc` with
+/// `T = 4 ms`, with a certificate, and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
-/// `0`, `3`, `0`; the deadlock-freedom item holds under both. Not covered:
-/// the `Holds` certificate, which FR-244 builds.
-#[trace("TC-694")]
+/// `0`, `3`, `0`; the deadlock-freedom item holds under both.
+#[trace("TC-694", "FR-239-AC-1")]
 #[trace("TC-696", "FR-241-AC-1")]
 #[test]
 fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     let four = rpc(4);
-    let ZoneCheckOutcome::Holds { graph, stats } =
+    let ZoneCheckOutcome::Holds { certificate, stats } =
         claim(&four, ZoneCheckLimits::default(), &Cancel::new())
     else {
         panic!("NoLateReply holds at T = 4");
     };
     assert_eq!(
         stats.symbolic_states,
-        u64::try_from(graph.nodes.len()).unwrap()
+        u64::try_from(certificate.nodes.len()).unwrap()
     );
-    assert!(graph.nodes.iter().all(|node| !node.locked));
+    assert!(certificate.nodes.iter().all(|node| !node.locked));
 
     let three = rpc(3);
     let counterexample = violated(claim(&three, ZoneCheckLimits::default(), &Cancel::new()));
@@ -287,7 +311,7 @@ fn budgets_and_cancellation_stop_the_search() {
     };
     assert_eq!(cause, ZoneStop::Cancelled);
 
-    let summary = |outcome: ZoneCheckOutcome| format!("{outcome:?}");
+    let summary = |outcome: Outcome| format!("{outcome:?}");
     assert_eq!(
         summary(claim(&world, ZoneCheckLimits::default(), &Cancel::new())),
         summary(claim(&world, ZoneCheckLimits::default(), &Cancel::new()))
@@ -441,12 +465,15 @@ fn a_violation_on_time_locked_states_holds_vacuously() {
             ),
         )
     };
-    let ZoneCheckOutcome::Holds { graph, .. } =
+    let ZoneCheckOutcome::Holds { certificate, .. } =
         claim(&lock(false), ZoneCheckLimits::default(), &Cancel::new())
     else {
         panic!("the claim holds vacuously in B");
     };
-    assert_eq!(graph.nodes.iter().filter(|node| node.locked).count(), 1);
+    assert_eq!(
+        certificate.nodes.iter().filter(|node| node.locked).count(),
+        1
+    );
 
     let counterexample = violated(claim(
         &lock(true),
@@ -540,12 +567,12 @@ fn a_tight_budget_stops_a_divergence_check() {
              {{ always holds(c.phase = 0) }}\n"
         ),
     );
-    let ZoneCheckOutcome::Holds { graph, .. } =
+    let ZoneCheckOutcome::Holds { certificate, .. } =
         claim(&lock, ZoneCheckLimits::default(), &Cancel::new())
     else {
         panic!("the claim holds vacuously in B");
     };
-    let searched = u64::try_from(graph.nodes.len()).expect("a small graph");
+    let searched = u64::try_from(certificate.nodes.len()).expect("a small graph");
     let limits = ZoneCheckLimits {
         max_symbolic_states: searched,
         ..ZoneCheckLimits::default()
@@ -557,4 +584,161 @@ fn a_tight_budget_stops_a_divergence_check() {
         cause,
         ZoneStop::LimitReached(ZoneCheckLimit::MaxSymbolicStates(searched))
     );
+}
+
+/// The `Lock` model of FR-244-AC-4: `go` moves `A` (`0`) to `B` (`1`) with
+/// no guard, `x <= 1 ms` while in `B`, and `ping`, enabled in `B`, changes
+/// no data field; the claim is `always holds(c.phase = 0)`.
+fn lock() -> World {
+    world(
+        &document(&["x"], &[("go", &["phase"]), ("ping", &[])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             pre Ping using v on M::Call::ping {{ self.phase = 1 }}\n\
+             time invariant Locked when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+             temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(c.phase = 0) }}\n"
+        ),
+    )
+}
+
+/// The certificate of a `Holds` outcome.
+fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
+    match outcome {
+        ZoneCheckOutcome::Holds { certificate, .. } => *certificate,
+        other => panic!("expected a proof, got {other:?}"),
+    }
+}
+
+/// The operation an edge's transition names.
+fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'static str {
+    let operation = certificate.edges[edge].transition.operation();
+    ["send", "reply", "timeout", "reset", "go", "ping"]
+        .into_iter()
+        .find(|name| operation.contains(&format!("Call/{name}\"")))
+        .unwrap_or("?")
+}
+
+/// Part of FR-244-AC-1 (TC-699): `NoLateReply` over `Rpc` with `T = 4 ms`
+/// is proved with a certificate naming the claim's obligation, with a
+/// reachability part and no component or divergence part, every edge
+/// joining listed nodes, and an `admitted` path from the initial node to
+/// the quiescent `Idle` node; two runs give equal certificates, and the
+/// deadlock-freedom item's names `deadlock-freedom`. Not covered: FR-245
+/// accepting it, which checks each edge's coverage (QSL-582).
+#[trace("TC-699")]
+#[test]
+fn a_safety_proof_carries_a_reachability_certificate() {
+    let four = rpc(4);
+    let certificate = proved(claim(&four, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(certificate.obligation.subject, SUBJECT);
+    assert_eq!(
+        certificate.obligation.kind,
+        ObligationKind::Authored(claim_occurrence())
+    );
+    assert!(certificate.components.is_none());
+    assert!(certificate.divergence.is_none());
+    assert_eq!(certificate.initial, [0]);
+    assert_eq!(certificate.lu_bounds.len(), 1);
+    let size = certificate.nodes.len();
+    assert!(size > 1);
+    assert!(certificate
+        .edges
+        .iter()
+        .all(|edge| edge.from < size && edge.to < size));
+    // Edges by source in discovery order.
+    assert!(certificate
+        .edges
+        .windows(2)
+        .all(|pair| pair[0].from <= pair[1].from));
+    // `Idle`, the initial state with no invariant, is quiescent.
+    let admitted = &certificate.admitted;
+    assert_eq!(admitted.start, 0);
+    assert!(admitted.path.is_empty());
+    assert_eq!(admitted.target, DivergentTarget::Quiescent(0));
+    assert_eq!(
+        certificate,
+        proved(claim(&four, ZoneCheckLimits::default(), &Cancel::new()))
+    );
+
+    let deadlock_free = proved(deadlock(&four));
+    assert_eq!(
+        deadlock_free.obligation.kind,
+        ObligationKind::DeadlockFreedom
+    );
+}
+
+/// FR-244-AC-4: over `Lock`, `always holds(c.phase = A)` is proved, and its
+/// certificate lists the node `(B, x <= 1)` marked `locked`, whose `ping`
+/// edges stay in locked `B` nodes, so they reach no quiescent node; the
+/// `admitted` witness is the quiescent initial node `A`.
+#[trace("TC-699", "FR-244-AC-4")]
+#[test]
+fn a_locked_node_is_listed_with_its_edges() {
+    let certificate = proved(claim(&lock(), ZoneCheckLimits::default(), &Cancel::new()));
+    let locked: Vec<usize> = (0..certificate.nodes.len())
+        .filter(|&node| certificate.nodes[node].locked)
+        .collect();
+    let [b] = locked.as_slice() else {
+        panic!("one locked node: {locked:?}");
+    };
+    // `x <= 1` in scaled units: the upper bound of `x` is the scale.
+    let zone = &certificate.nodes[*b].zone;
+    assert_eq!(
+        zone.bound(1, 0).expect("x"),
+        &qsl_analyze::zone_check::Bound::le(certificate.scale.clone())
+    );
+    let leaving: Vec<usize> = (0..certificate.edges.len())
+        .filter(|&edge| certificate.edges[edge].from == *b)
+        .collect();
+    assert!(!leaving.is_empty());
+    for edge in leaving {
+        assert_eq!(operation(&certificate, edge), "ping");
+        assert!(certificate.nodes[certificate.edges[edge].to].locked);
+    }
+    assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
+    assert!(!certificate.nodes[0].locked);
+}
+
+/// FR-244 "Admitted part" with no quiescent state: `x <= 1 ms` always holds
+/// as an invariant and `ping`, which needs `x >= 1 ms`, resets `x`, so time
+/// diverges only around the `ping` loop. The certificate's `admitted` part
+/// is a cycle of its own edges, from and back to the initial node.
+#[trace("TC-699")]
+#[test]
+fn a_proof_with_no_quiescent_state_is_admitted_by_a_cycle() {
+    let heartbeat = world(
+        &document(&["x"], &[("ping", &["x"])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Ping using v on M::Call::ping {{ self.x >= 1 ms }}\n\
+             post Pinged using v on M::Call::ping {{ self.x = 0 ms }}\n\
+             time invariant Beat when {{ true }} {{ self.x <= 1 ms }}\n\
+             temporal Quiet using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(not c.retried) }}\n"
+        ),
+    );
+    let certificate = proved(claim(
+        &heartbeat,
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    let admitted = &certificate.admitted;
+    let DivergentTarget::Cycle(cycle) = &admitted.target else {
+        panic!("a cycle witness: {admitted:?}");
+    };
+    assert!(!cycle.is_empty());
+    let end = admitted
+        .path
+        .last()
+        .map_or(admitted.start, |&edge| certificate.edges[edge].to);
+    assert_eq!(certificate.edges[cycle[0]].from, end);
+    assert_eq!(certificate.edges[*cycle.last().expect("an edge")].to, end);
+    for &edge in cycle {
+        assert_eq!(operation(&certificate, edge), "ping");
+    }
 }
