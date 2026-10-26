@@ -7,6 +7,8 @@
 //! the one `encode_hyper_query` returned with the queries, so the settlement
 //! can refuse an outcome that answers another item.
 
+use quire_semantic_value::catalog::InternalFault;
+
 use crate::model_check::hyper_smt_query::HyperProductIdentity;
 
 /// The result of one EN-3 k-induction run over an HP-2 item.
@@ -31,6 +33,7 @@ pub enum HyperSmtResult {
 pub struct HyperSmtOutcome {
     /// What the run found.
     pub result: HyperSmtResult,
-    /// The `product` of the queries the result answers.
-    pub product: HyperProductIdentity,
+    /// The `product` of the queries the result answers; `Err` only when
+    /// FR-315's `of` faulted (FR-315 "Outcome handoff").
+    pub product: Result<HyperProductIdentity, InternalFault>,
 }
