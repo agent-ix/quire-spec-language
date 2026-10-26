@@ -450,6 +450,18 @@ For QSL-1081 (captures):
 | FR-337-AC-12 | The clause `eventually[0,1] holds(n < 3 and c.value = n + 1)` under event-position false-extension, `on each (q: M::Counter) when (c.value = 1)` with `capture n: Int[0, 3] = c.value;` checks and S4 emits it, and the engine returns `ModelCheckRefusal::CaptureRead` naming the clause and `n` and no verdict, exploring no state (no state is charged to the meter); the same refusal results for `always holds(n < 3 and c.value <= n + 1)` under infinite-trace `on each`, for a bounded monitor clause `on origin` with `capture n: Int[0, 3] = c.value;` and `always holds(c.value >= n)`, and for a clause reading its second capture only, naming that capture; a clause whose unit has an unbounded root returns `RequiresBound`, not `CaptureRead`; the same clause with the `holds` condition `c.value = 3` returns AC-11's verdict with the capture unread. | Test (TC-1267) |
 | FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. The replay of an undefined capture (FR-128 reproducing `UndefinedEvaluation` at position 2 located at `z`) is deferred to QSL-1096, which builds the replay of an authored clause's undefined evaluation; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
 | FR-337-AC-14 | The footprint (FR-156 "Atom footprints") of `always holds(true)` `on each (q: M::Counter) when (true)` with `capture n: Int[0, 3] = c.value;` holds the location `Counter::value` with the `over` parameter as its receiver, which the same clause with no capture does not, and FR-126's partial-order run joins it into the atoms'; a capture initializer reading through `q` has the same receiver. | Test (TC-1267) |
+| FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node with identity `quire.op.temporal.aggregate` and the normalized typed argument defined by QSpec FR-370-AC-14; its expression terms bind the clause's `over` parameter and captures, spans resolve through the source map, and changing the window, normalized `min_count`, expression, comparison or converted threshold changes the formula key and package identity. | Test (TC-1267) |
+
+### Aggregate formula emission
+
+For a checked temporal clause containing aggregate atoms, the emitter SHALL
+write each aggregate atom as a `temporal`/`formula` node using
+`quire.op.temporal.aggregate`, with the normalized, typed aggregate argument
+defined by QSpec FR-370. Each value, filter, predicate
+and threshold term SHALL be lowered in the clause's binder scope; the
+aggregate node identity SHALL include the window, normalized `min_count`,
+aggregate expressions, comparison and threshold. Source spans SHALL remain
+in the package source map and SHALL NOT enter the identity preimage.
 
 ## Dependencies
 
