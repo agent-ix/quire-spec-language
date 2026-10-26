@@ -4,10 +4,11 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     settle_hyper_smt, Certification, HyperProductIdentity, HyperQueryRequest, HyperSettleRefusal,
-    HyperSmtOutcome, HyperSmtResult, InconclusiveCause, InternalFault, ModelCheckLimits,
-    ProductMember, ProofBasis, SettlementBasis, SmtEncodingLimits, TerminalValue,
+    HyperSmtOutcome, HyperSmtResult, InconclusiveCause, ModelCheckLimits, ProductMember,
+    ProofBasis, SettlementBasis, SmtEncodingLimits, TerminalValue,
 };
 use quire_exact::Meter;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::vault_world::{non_interference, World, EQUAL_INPUTS, UNLIMITED};
 
