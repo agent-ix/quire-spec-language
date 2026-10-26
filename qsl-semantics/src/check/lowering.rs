@@ -34,7 +34,7 @@
 //! `clause` binding, and quantity type nodes. `check` records each model
 //! declaration node it keys in the model correspondence.
 
-use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
+use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 use std::ops::ControlFlow;
 
@@ -2651,16 +2651,29 @@ impl<'a> Lowering<'a> {
         let alias = |key: NodeKey| aliases.get(&key).copied().unwrap_or(key);
         let handles: Vec<NodeKey> = drafts.keys().copied().collect();
         let drafts: Vec<Draft> = drafts.into_values().collect();
-        let position: BTreeMap<NodeKey, usize> = handles
+        let position: HashMap<NodeKey, usize> = handles
             .iter()
             .enumerate()
             .map(|(position, handle)| (*handle, position))
             .collect();
+        let mut graph_refusal = None;
         let edges: Vec<Vec<usize>> = drafts
             .iter()
-            .map(|draft| {
+            .enumerate()
+            .map(|(at, draft)| {
+                if let Err(refusal) = charge_work(self.meter, 1) {
+                    graph_refusal = Some(preimage_refusal(&draft.location, refusal));
+                    return Vec::new();
+                }
                 let mut named = Vec::new();
                 let mut visit = |key: NodeKey| {
+                    if graph_refusal.is_some() {
+                        return;
+                    }
+                    if let Err(refusal) = charge_work(self.meter, 1) {
+                        graph_refusal = Some(preimage_refusal(&drafts[at].location, refusal));
+                        return;
+                    }
                     if let Some(target) = position.get(&alias(key)) {
                         named.push(*target);
                     }
@@ -2672,13 +2685,20 @@ impl<'a> Lowering<'a> {
                 named
             })
             .collect();
-        let mut resolved: BTreeMap<NodeKey, NodeKey> = BTreeMap::new();
+        if let Some(refusal) = graph_refusal {
+            return Err(refusal);
+        }
+        let mut resolved: HashMap<NodeKey, NodeKey> = HashMap::new();
         // A name of a draft that is keyed nowhere: dependency order keys
         // every draft outside a component before the component.
         let unresolved = |location: &Location| fault(location, KeyFault::UnresolvedDraft);
-        for component in strongly_connected(&edges) {
+        let components = strongly_connected_metered(&edges, |node| {
+            charge_work(self.meter, 1)
+                .map_err(|refusal| preimage_refusal(&drafts[node].location, refusal))
+        })?;
+        for component in components {
             let members: Vec<NodeKey> = component.iter().map(|at| handles[*at]).collect();
-            let member_set: BTreeSet<NodeKey> = members.iter().copied().collect();
+            let member_set: HashSet<NodeKey> = members.iter().copied().collect();
             // Names outside the component take their keys; names inside it
             // stay the members' handles; other keys are not drafts.
             let mut stranded = false;
@@ -2777,7 +2797,7 @@ impl<'a> Lowering<'a> {
         handles: &[NodeKey],
         bodies: &[BodyTerm],
         types: &[Option<NodeKey>],
-        resolved: &mut BTreeMap<NodeKey, NodeKey>,
+        resolved: &mut HashMap<NodeKey, NodeKey>,
     ) -> Result<(), CheckRefusal> {
         let members: Vec<&Draft> = component.iter().map(|at| &drafts[*at]).collect();
         let Some(first) = members.first() else {
@@ -4615,6 +4635,16 @@ pub(crate) fn lowering_order(callees: &[Vec<usize>]) -> Vec<FunctionGroup> {
 /// algorithm, with an explicit stack), each component after every
 /// component it has an edge to.
 pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    strongly_connected_metered(edges, |_| Ok(())).expect("unmetered SCC discovery succeeds")
+}
+
+/// The strongly-connected components of `edges`, charging one unit for
+/// each discovered vertex and each examined edge. `charge` receives the
+/// source vertex whose work is about to be performed.
+fn strongly_connected_metered(
+    edges: &[Vec<usize>],
+    mut charge: impl FnMut(usize) -> Result<(), CheckRefusal>,
+) -> Result<Vec<Vec<usize>>, CheckRefusal> {
     const UNVISITED: usize = usize::MAX;
     let count = edges.len();
     let mut index = vec![UNVISITED; count];
@@ -4627,6 +4657,7 @@ pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
         if index[root] != UNVISITED {
             continue;
         }
+        charge(root)?;
         let mut work = vec![(root, 0_usize)];
         while let Some((node, edge)) = work.pop() {
             if edge == 0 && index[node] == UNVISITED {
@@ -4637,6 +4668,7 @@ pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
                 on_stack[node] = true;
             }
             if let Some(&target) = edges[node].get(edge) {
+                charge(node)?;
                 work.push((node, edge + 1));
                 if index[target] == UNVISITED {
                     work.push((target, 0));
@@ -4661,7 +4693,7 @@ pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
             }
         }
     }
-    components
+    Ok(components)
 }
 
 /// The location of the `declaration` occurrence of the type declared as
