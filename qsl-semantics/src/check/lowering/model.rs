@@ -644,6 +644,24 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// The object type a `terminal` declaration's model node names (FR-411):
+    /// the one object type the package's populations range over (FR-124),
+    /// else its least object type by declaration key, so that a model with
+    /// no population still names a model node. QSpec FR-476 does not say
+    /// which model node a `terminal any` over several object types names;
+    /// the least is the current choice until STD-492 settles it.
+    pub(crate) fn terminal_object(&self) -> Option<EffectiveId> {
+        let populated = self.population_objects();
+        let mut populated = populated.iter();
+        match (populated.next(), populated.next()) {
+            (Some(only), None) => Some(*only),
+            _ => self
+                .object_types()
+                .min_by(|(left, _), (right, _)| left.cmp(right))
+                .map(|(_, id)| id),
+        }
+    }
+
     /// The declaring object type's effective identity and operation name for
     /// one admitted FCD operation member.
     pub(crate) fn operation_anchor_declaration(
@@ -893,6 +911,30 @@ impl AdmittedModel {
                 Some((owner, &field.key, name))
             })
             .collect()
+    }
+
+    /// Whether every field member of the package named `name` is a clock,
+    /// and one is: a read of `.name` through any path reads a clock.
+    pub(crate) fn names_only_clocks(&self, name: &str) -> bool {
+        let mut clock = false;
+        for record in self.records.values() {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                continue;
+            };
+            if crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)
+                != Some(name)
+            {
+                continue;
+            }
+            if !matches!(
+                field.value_type,
+                crate::model::domain_package::ValueTypeRef::Clock
+            ) {
+                return false;
+            }
+            clock = true;
+        }
+        clock
     }
 
     /// The clock field `name` an object of type `object` holds: one declared

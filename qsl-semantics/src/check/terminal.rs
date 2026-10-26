@@ -17,12 +17,15 @@
 
 use qsl_forms::{ExpressionForm, StateClauseKind};
 use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, NodeKey, ValueType};
 
 use super::ir::{CheckedBody, CheckedNode};
+use super::node_key::{BindingValue, BodyTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag};
 use super::refusal::{CheckCause, CheckRefusal};
 use super::state_clause::{check_clause, ClauseDeclarations, ClauseView, PopulationDomain};
+use super::CheckedGraph;
 use crate::family::CheckContext;
 
 /// One `terminal` declaration the assembler resolved (FR-124 "Inputs"): its
@@ -65,6 +68,7 @@ pub struct CheckedTerminalPredicate {
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
+    pub(crate) slot_names: Vec<String>,
 }
 
 impl CheckedTerminalPredicate {
@@ -101,6 +105,10 @@ pub struct CheckedTerminal {
     pub(crate) model: String,
     pub(crate) name: Option<String>,
     pub(crate) declaration: TerminalDeclaration,
+    /// The `claim` occurrence `[node, "claim", ordinal]` of the declaration's
+    /// `temporal`/`terminal` node, set when a package is built; `None` for a
+    /// model with no declaration.
+    pub(crate) occurrence: Option<OccurrenceKey>,
 }
 
 impl CheckedTerminal {
@@ -112,6 +120,12 @@ impl CheckedTerminal {
     /// The declared name; `None` when the model declares none.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    /// The occurrence of the declaration's emitted node (FR-411): how a
+    /// reader of the emitted package finds the declaration.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
     }
 
     /// The model's intended terminal states.
@@ -170,19 +184,77 @@ pub(crate) fn check_terminal<'a>(
             parameters: typed.parameters,
             body: typed.body,
             slots: typed.slots,
+            slot_names: typed.slot_names,
         }),
         typed.nodes_used,
     ))
 }
 
-/// The refusal for a `terminal` declaration that checks but that no S4
-/// emission writes yet (FR-124): refused rather than compiled and silently
-/// missing from the package's identity.
-pub(crate) fn not_emitted(name: String, span: qsl_foundation::Span) -> CheckRefusal {
-    CheckRefusal {
-        location: quire_semantic_value::location::Location::root(
-            quire_semantic_value::location::Origin::Expression,
-        ),
-        cause: CheckCause::TerminalNotEmitted { name, span },
+/// The mode of a `temporal`/`terminal` node (QSpec FR-476).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerminalMode {
+    /// `when`: a terminal state is intended when the condition holds.
+    When,
+    /// `any`: every terminal state is intended.
+    Any,
+}
+
+/// One `temporal`/`terminal` node of a checked graph (FR-411), read from the
+/// graph's own semantic nodes: no emission is needed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerminalNode {
+    /// The node.
+    pub node: NodeKey,
+    /// The `model` node it is on.
+    pub model: NodeKey,
+    /// The node's mode.
+    pub mode: TerminalMode,
+}
+
+impl TerminalNode {
+    /// The node read from `body`, the aggregate `lowering` writes: `model`
+    /// and `mode` first. `None` for a body of another shape, which no
+    /// lowering writes under this tag and form.
+    fn of(node: NodeKey, body: &BodyTerm) -> Option<Self> {
+        let BodyTerm::Aggregate(aggregate) = body else {
+            return None;
+        };
+        let mut members = aggregate.members.iter().map(|member| match member {
+            MemberTerm::Binding(binding) => match &binding.value {
+                BindingValue::Leaf(leaf) => Some((binding.name.as_str(), leaf)),
+                _ => None,
+            },
+            _ => None,
+        });
+        let (("model", LeafTerm::Reference { target }), ("mode", LeafTerm::Literal { value, .. })) =
+            (members.next()??, members.next()??)
+        else {
+            return None;
+        };
+        let mode = match value {
+            LiteralValue::Text(mode) if mode == "when" => TerminalMode::When,
+            LiteralValue::Text(mode) if mode == "any" => TerminalMode::Any,
+            _ => return None,
+        };
+        Some(Self {
+            node,
+            model: target.0,
+            mode,
+        })
+    }
+}
+
+impl CheckedGraph {
+    /// FR-411: every `temporal`/`terminal` node of this graph, ascending by
+    /// key. The node, not the S3 value, says whether a model declares a
+    /// terminal and in which mode.
+    pub fn terminal_nodes(&self) -> Vec<TerminalNode> {
+        self.semantic_graph()
+            .nodes()
+            .filter(|node| {
+                node.node_tag() == NodeTag::Temporal && node.semantic_form() == "terminal"
+            })
+            .filter_map(|node| TerminalNode::of(node.key(), node.body()))
+            .collect()
     }
 }

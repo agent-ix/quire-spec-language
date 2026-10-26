@@ -81,6 +81,11 @@ identity changes when the declaration does.
 - Replay of a deadlock-freedom counterexample (FR-128) SHALL read the
   model's `TerminalDeclaration` from the recompiled package's
   `temporal`/`terminal` node.
+  Presence and mode are read from the checked graph's own `temporal`/`terminal`
+  nodes with no emission; a `when` predicate's body is the checked body the
+  node's `claim` occurrence names, since a checked body cannot be rebuilt from
+  the wire. A declaration without its node, or a node without its declaration,
+  is a disagreement and is refused, never read from the declaration alone.
 - The I2 reader SHALL admit an emitted terminal node and return the model's
   `TerminalDeclaration`, and return `TerminalDeclaration::None` for a model
   with no terminal node.

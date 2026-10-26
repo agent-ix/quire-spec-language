@@ -29,6 +29,7 @@ mod state_predicate;
 mod symbolic;
 mod symmetry;
 mod terminal;
+mod timed;
 mod walk;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,6 +93,11 @@ pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub(crate) use symbolic::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
+pub use timed::{
+    BehaviourLetters, ClockPlace, ClockValuation, GuardedStep, MoveRefusal, PlaceConstraint,
+    TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop, TimedSubjectRefusal,
+    TimedSystem,
+};
 pub(crate) use walk::{Applied, Budget};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
@@ -404,6 +410,9 @@ pub struct ModelSystem<'a> {
     types: &'a TypeEnvironment,
     operations: &'a qsl_semantics::model::operation::OperationTable,
     package: &'a CheckedPackage,
+    /// FR-411: the package's `terminal` declarations, read from its emitted
+    /// `temporal`/`terminal` nodes.
+    terminals: Vec<qsl_package::PackageTerminal<'a>>,
     model: StateModel,
     universes: BTreeMap<DeclarationKey, Vec<String>>,
     initial: Vec<ModelSimState>,
@@ -600,6 +609,8 @@ impl<'a> ModelSystem<'a> {
             types,
             operations: graph.scope().operations(),
             package: request.package,
+            terminals: qsl_package::resolve_terminals(request.package)
+                .map_err(|_| fault("terminal-nodes-resolve"))?,
             clauses: Self::clauses_of(request.package)?,
             model,
             universes,

@@ -100,6 +100,7 @@ mod clause_root;
 mod hybrid;
 mod hyper_root;
 mod state_graph_root;
+mod terminal;
 #[cfg(test)]
 pub(crate) mod tests;
 mod timed_model;
@@ -109,6 +110,10 @@ pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, Rea
 pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
 pub use state_graph_root::{
     resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
+};
+pub use terminal::{
+    read_terminal, read_terminals, resolve_terminals, PackageTerminal, PackageTerminalDeclaration,
+    ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
 };
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
