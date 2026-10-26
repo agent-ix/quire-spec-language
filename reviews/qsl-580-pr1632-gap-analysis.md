@@ -45,3 +45,10 @@ leave out vectors without saying which ones in the tag.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-230-AC-10's `peer_clock` is deferred because "FR-230 does not define which instance a non-self place denotes". FR-230 "Parameters" does define it: "A path through a reference field ... SHALL check as one place for each object ... it can reach, each with the data condition that selects it, and a constraint over it SHALL record the disjunction". AC-10 fixes the universe `{c1, c2}`. That universe is available where the subject expands places (FR-231 `TimedSystem` already lists places per object), or S3 can record the reference place symbolically. This is an implementation gap that can be built now, not a spec gap. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:315-323, 589; qsl-semantics/src/check/timed_model/reading.rs:150-170 |
 | FND-002 | low | The two tests tagged FR-230-AC-9 cover only part of AC-9. The time-invariant vector and the reset vector are missing (spec gaps), and the predicate is named `near`. The tag claims the whole AC, and only the doc comments record what is missing. | qsl-semantics/tests/it/timed_model.rs:560-640 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Moved to slice 580h (coordinator ruling, 2026-10-26). STD-493 comment 582cd0a5 withdraws item 11 as an implementation gap. Until then, `peer_clock` refuses `TimedNotChecked { ReferencedClock }`. |
+| FND-002 | fixed | Both AC-9 tests carry only `#[trace("TC-685")]`, and their doc comments say "Part of FR-230-AC-9" and name the missing vectors. |

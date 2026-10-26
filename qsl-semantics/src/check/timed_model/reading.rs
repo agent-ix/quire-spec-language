@@ -896,8 +896,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
     ) -> Result<T, CheckCause> {
         let name = &called.function.name;
         if stack.contains(name) {
-            // FR-230 does not say what a recursive clock-reading
-            // declaration expands to (STD-493).
+            // FR-230 does not say what a measured recursive clock-reading
+            // declaration expands to (STD-493 item 19); an unmeasured one is
+            // refused before expansion (`unmeasured_cycle`).
             return Err(not_checked(
                 TimedConstruct::RecursiveClockReading,
                 frame.body.span(id),
@@ -1079,4 +1080,86 @@ pub(super) fn first_call(
         .filter(|node| declarations.is_call(expression, node.id()))
         .filter_map(|node| spans.get(node.id().index()).copied())
         .min_by_key(|span| span.start)
+}
+
+/// The region site a clock-reading declaration's name is registered under,
+/// which locates a refusal of the declaration as a whole.
+pub(crate) fn site(name: &str) -> String {
+    format!("clock-reading {name}")
+}
+
+/// The first cycle of calls among `declarations` (FR-146's call graph over
+/// them) with a member written without `decreases`, as the member names
+/// from the first member back to it, and the name of its first member: a
+/// recursive declaration with no measure (FR-091-AC-30 `missing-measure`).
+pub(crate) fn unmeasured_cycle(
+    declarations: &[ClockReadingDeclaration],
+) -> Option<(Vec<String>, &str)> {
+    let index: BTreeMap<&str, usize> = declarations
+        .iter()
+        .enumerate()
+        .map(|(position, declaration)| (declaration.function.name.as_str(), position))
+        .collect();
+    let calls: Vec<Vec<usize>> = declarations
+        .iter()
+        .map(|declaration| {
+            let body = &declaration.function.body;
+            let mut called: Vec<usize> = body
+                .iter()
+                .filter_map(|node| match node.node() {
+                    ExprNode::Call { name, .. } if name.segments.len() == 1 => {
+                        index.get(name.name.as_str()).copied()
+                    }
+                    _ => None,
+                })
+                .collect();
+            called.sort_unstable();
+            called.dedup();
+            called
+        })
+        .collect();
+    for (start, declaration) in declarations.iter().enumerate() {
+        // The shortest call path from `start` back to itself.
+        let mut previous: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut pending = std::collections::VecDeque::from([start]);
+        let mut closing = None;
+        'walk: while let Some(at) = pending.pop_front() {
+            for &next in calls.get(at).into_iter().flatten() {
+                if next == start {
+                    closing = Some(at);
+                    break 'walk;
+                }
+                if previous.contains_key(&next) {
+                    continue;
+                }
+                previous.insert(next, at);
+                pending.push_back(next);
+            }
+        }
+        let Some(mut at) = closing else {
+            continue;
+        };
+        let mut members = vec![start];
+        let mut back = Vec::new();
+        while at != start {
+            back.push(at);
+            at = previous.get(&at).copied().unwrap_or(start);
+        }
+        members.extend(back.into_iter().rev());
+        members.push(start);
+        let unmeasured = members.iter().any(|member| {
+            declarations
+                .get(*member)
+                .is_some_and(|member| member.function.measure.is_none())
+        });
+        if unmeasured {
+            let names = members
+                .iter()
+                .filter_map(|member| declarations.get(*member))
+                .map(|member| member.function.name.clone())
+                .collect();
+            return Some((names, declaration.function.name.as_str()));
+        }
+    }
+    None
 }

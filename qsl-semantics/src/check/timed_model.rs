@@ -52,6 +52,8 @@ use crate::family::CheckContext;
 
 mod reading;
 
+pub(crate) use reading::site as clock_reading_site;
+
 /// The index of a clock field in [`TimedModel::clocks`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClockId(usize);
@@ -1325,6 +1327,21 @@ pub(crate) fn prepare(
     inputs: &Inputs<'_>,
     state_clauses: &mut [StateClauseDeclaration],
 ) -> Result<TimedDrafts, CheckRefusal> {
+    // FR-146 over the clock-reading declarations, which have no function
+    // node for the value checker's measure check to reach (FR-091-AC-30).
+    if let Some((cycle, name)) = reading::unmeasured_cycle(inputs.clock_reading) {
+        return Err(CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::TypeDeclaration {
+                    name: clock_reading_site(name),
+                },
+            ),
+            cause: CheckCause::UnprovedDecrease {
+                cycle,
+                obligation: super::refusal::MeasureObligation::MissingMeasure,
+            },
+        });
+    }
     prepare_models(inputs, state_clauses).map_err(refusal)
 }
 

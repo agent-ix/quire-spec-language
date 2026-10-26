@@ -3365,6 +3365,16 @@ impl PackageDeclarations {
             ));
             declared_type_spans.insert(composite.name.name.clone(), composite.name.span);
         }
+        // Each clock-reading declaration's name, which locates a refusal of
+        // the declaration as a whole (`timed_model::prepare`).
+        for declaration in &unit.clock_reading {
+            if let Some(spans) = declaration.function.spans() {
+                declared_type_spans.insert(
+                    super::timed_model::clock_reading_site(&declaration.function.name),
+                    spans.declaration,
+                );
+            }
+        }
 
         // Each function's check-owned resolved signature.
         let mut signatures: Vec<ResolvedSignature> = Vec::with_capacity(unit.functions.len());

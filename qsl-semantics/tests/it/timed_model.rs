@@ -8,8 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp, NodeKind, StatePredicate,
-    TemporalCause, TimeSourceKind, TimedConstruct, TimedModel,
+    CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp, MeasureObligation, NodeKind,
+    StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct, TimedModel,
 };
 use qsl_semantics::model::intake::meaning;
 use quire_exact::{Integer, Rational};
@@ -913,9 +913,10 @@ fn a_clock_reading_call_elsewhere_reads_a_clock_outside_a_constraint() {
 
 /// FR-230 "Parameters" (TC-685): an `if` whose condition reads a clock is no
 /// data condition, so a place it selects refuses `clock-read-outside-
-/// constraint` at the condition; a clock-reading declaration whose
-/// expansion reaches its own call, which FR-230 gives no expansion
-/// (STD-493), is not checked.
+/// constraint` at the condition; a recursive clock-reading declaration
+/// with no `decreases` refuses `missing-measure` (FR-091-AC-30), and one
+/// with a measure, which FR-230 gives no expansion (STD-493 item 19), is
+/// not checked.
 #[trace("TC-685")]
 #[test]
 fn a_place_selected_by_a_clock_or_a_recursive_expansion_refuses() {
@@ -940,11 +941,43 @@ fn a_place_selected_by_a_clock_or_a_recursive_expansion_refuses() {
             "near(a)"
         )
     );
+    // A recursive declaration written without `decreases` refuses FR-146
+    // `missing-measure` (FR-091-AC-30), located at the declaration.
+    let unmeasured = format!(
+        "{dense}predicate loop using v(c: Clock): Boolean {{ loop(c) }}\n\
+         pre L using v on Config::Call::reply {{ loop(self.x) }}\n"
+    );
+    let declarations = admit_and_assemble_with_profiles(&document, TEMPORAL, &unmeasured)
+        .expect("S2 builds every form")
+        .with_unwritten_timed_members();
+    let regions = declarations.regions();
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("a recursive declaration needs a measure");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(
+        refusal.cause,
+        CheckCause::UnprovedDecrease {
+            cycle: vec!["loop".to_owned(), "loop".to_owned()],
+            obligation: MeasureObligation::MissingMeasure,
+        }
+    );
+    let region = regions.refusal_region(refusal).expect("a region");
+    let (text, _) = config_unit_with_profiles(&document, TEMPORAL, &unmeasured);
+    assert!(
+        text[region.start() as usize..region.end() as usize].starts_with("predicate loop"),
+        "{region:?}"
+    );
+    // A measured one, whose expansion FR-230 does not define (STD-493 item
+    // 19), is not checked.
     let refusals = check(
         &document,
         &format!(
-            "{dense}predicate loop using v(c: Clock): Boolean {{ loop(c) }}\n\
-             pre L using v on Config::Call::reply {{ loop(self.x) }}\n"
+            "{dense}function loop using v(c: Clock, n: Integer): Boolean pure decreases(n) {{ \
+                 loop(c, n - 1) }}\n\
+             pre L using v on Config::Call::reply {{ loop(self.x, 3) }}\n"
         ),
     )
     .expect_err("the expansion does not end");
