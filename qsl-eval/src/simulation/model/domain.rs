@@ -4,12 +4,10 @@
 //! product of domains one element at a time.
 
 use quire_exact::{
-    from_admitted, from_admitted_slots, CollectionKind, CollectionType, FieldValue, Integer,
-    NodeKey, ObjectReference, OptionValue, Presence, Value, ValueType,
+    from_admitted, from_admitted_slots, CollectionKind, CollectionType, EnumMember, FieldValue,
+    Integer, NodeKey, ObjectReference, OptionValue, Presence, Value, ValueType,
 };
-use quire_semantic_value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
-};
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 
 /// Whether this module can enumerate `value_type`: `Boolean`, `Int[..]`,
 /// `Option<T>`, `Reference<T>` and a sequence with a declared maximum over
@@ -38,63 +36,132 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
     }
 }
 
-/// The fields of the record `declaration` when every one is required and
-/// enumerable; `None` for a tuple, a union, a record with an optional field
-/// or one with a field this module cannot enumerate.
-fn record_fields(declaration: NodeKey, types: &TypeEnvironment) -> Option<&[FieldDeclaration]> {
-    let Some(CompositeShape::Record(fields)) = types
-        .composite(declaration)
-        .map(CompositeDeclaration::shape)
-    else {
-        return None;
-    };
-    fields
-        .iter()
-        .all(|field| field.presence() == Presence::Required && enumerable(field.value_type()))
-        .then_some(fields.as_slice())
+/// The finite space of a template's attempt type (ADR-027 ST-11): a type FR-120
+/// enumerates, an enum, a record with optional fields, or a record or tuple of
+/// such, indexed in declaration order with the last field moving fastest and
+/// an absent optional field first.
+enum Space {
+    Plain(Domain),
+    Enum(Vec<Value>),
+    Composite {
+        declaration: NodeKey,
+        fields: Vec<(bool, Space)>,
+    },
 }
 
-/// [`enumerable`], and a record type whose fields are all required and
-/// enumerable (ADR-027 ST-11: the records of a template's attempt type).
-pub(crate) fn enumerable_in(value_type: &ValueType, types: &TypeEnvironment) -> bool {
-    match value_type {
-        ValueType::Composite(declaration) => record_fields(*declaration, types).is_some(),
-        other => enumerable(other),
+impl Space {
+    /// The space of `value_type`; `None` for a type with no finite space
+    /// here (a union, or a recursive record).
+    fn of(
+        value_type: &ValueType,
+        objects: &[ObjectReference],
+        types: &TypeEnvironment,
+        visiting: &mut Vec<NodeKey>,
+    ) -> Option<Self> {
+        match value_type {
+            ValueType::Enum(shape) => Some(Self::Enum(
+                shape
+                    .variants()
+                    .enumerate()
+                    .map(|(rank, variant)| {
+                        u32::try_from(rank)
+                            .ok()
+                            .map(|rank| Value::Enum(EnumMember::new(variant, rank)))
+                    })
+                    .collect::<Option<Vec<Value>>>()?,
+            )),
+            ValueType::Composite(declaration) => {
+                if visiting.contains(declaration) {
+                    return None;
+                }
+                let members: Vec<(bool, &ValueType)> = match types
+                    .composite(*declaration)
+                    .map(CompositeDeclaration::shape)?
+                {
+                    CompositeShape::Record(fields) => fields
+                        .iter()
+                        .map(|field| (field.presence() == Presence::Optional, field.value_type()))
+                        .collect(),
+                    CompositeShape::Tuple(positions) => {
+                        positions.iter().map(|position| (false, position)).collect()
+                    }
+                    CompositeShape::Union(_) => return None,
+                };
+                visiting.push(*declaration);
+                let fields = members
+                    .into_iter()
+                    .map(|(optional, member)| {
+                        Self::of(member, objects, types, visiting).map(|space| (optional, space))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                visiting.pop();
+                Some(Self::Composite {
+                    declaration: *declaration,
+                    fields: fields?,
+                })
+            }
+            other => Domain::of(other, objects, types).map(Self::Plain),
+        }
+    }
+
+    /// How many values the space holds, saturating at `u128::MAX`.
+    fn len(&self) -> u128 {
+        match self {
+            Self::Plain(domain) => domain.len(),
+            Self::Enum(values) => values.len() as u128,
+            Self::Composite { fields, .. } => {
+                fields.iter().fold(1u128, |total, (optional, space)| {
+                    total.saturating_mul(space.len().saturating_add(u128::from(*optional)))
+                })
+            }
+        }
+    }
+
+    /// The value at `index`; `None` past the end.
+    fn nth(&self, index: u128) -> Option<Value> {
+        match self {
+            Self::Plain(domain) => domain.nth(index),
+            Self::Enum(values) => values.get(usize::try_from(index).ok()?).cloned(),
+            Self::Composite {
+                declaration,
+                fields,
+            } => {
+                let mut remaining = index;
+                let mut slots = Vec::with_capacity(fields.len());
+                for (optional, space) in fields.iter().rev() {
+                    let radix = space.len().saturating_add(u128::from(*optional));
+                    let digit = remaining.checked_rem(radix)?;
+                    remaining = remaining.checked_div(radix)?;
+                    slots.push(match (optional, digit.checked_sub(1)) {
+                        (true, None) => FieldValue::Absent,
+                        (true, Some(inner)) => FieldValue::Present(space.nth(inner)?),
+                        (false, _) => FieldValue::Present(space.nth(digit)?),
+                    });
+                }
+                slots.reverse();
+                Some(from_admitted_slots(*declaration, slots.into_boxed_slice()))
+            }
+        }
     }
 }
 
-/// Every value of the record type `declaration`, one per combination of its
-/// fields' domains, the last field moving fastest; `charge` is called once
-/// per record. `None` when the type is not [`enumerable_in`].
-pub(super) fn record_values<E>(
-    declaration: NodeKey,
+/// Every value of the composite type `value_type`, in index order; `charge`
+/// is called once per value. `None` when the type has no finite space.
+pub(super) fn composite_values<E>(
+    value_type: &ValueType,
     objects: &[ObjectReference],
     types: &TypeEnvironment,
     mut charge: impl FnMut() -> Result<(), E>,
 ) -> Result<Option<Vec<Value>>, E> {
-    let Some(fields) = record_fields(declaration, types) else {
+    let Some(space) = Space::of(value_type, objects, types, &mut Vec::new()) else {
         return Ok(None);
     };
-    let Some(domains) = fields
-        .iter()
-        .map(|field| Domain::of(field.value_type(), objects, types))
-        .collect::<Option<Vec<Domain>>>()
-    else {
-        return Ok(None);
-    };
-    let mut combinations = Odometer::new(domains.iter().map(Domain::len).collect());
     let mut values = Vec::new();
-    while let Some(digits) = combinations.next_digits() {
+    let mut index = 0u128;
+    while let Some(value) = space.nth(index) {
         charge()?;
-        let slots: Option<Vec<FieldValue>> = domains
-            .iter()
-            .zip(digits)
-            .map(|(domain, digit)| domain.nth(digit).map(FieldValue::Present))
-            .collect();
-        let Some(slots) = slots else {
-            return Ok(None);
-        };
-        values.push(from_admitted_slots(declaration, slots.into_boxed_slice()));
+        values.push(value);
+        index = index.saturating_add(1);
     }
     Ok(Some(values))
 }
@@ -394,5 +461,97 @@ mod tests {
     fn an_unenumerable_type_has_no_domain() {
         assert!(!enumerable(&ValueType::Integer));
         assert!(Domain::of(&ValueType::String, &[], &types()).is_none());
+    }
+
+    /// The type environment of `Inner { e: <enum of two>, o?: Boolean }` and
+    /// `Outer { inner: Inner, flag: Boolean }`.
+    fn nested() -> (TypeEnvironment, NodeKey, NodeKey) {
+        use quire_exact::{EnumShape, VariantId};
+        use quire_semantic_value::declaration::FieldDeclaration;
+        let inner = NodeKey::from_digest([2; 32]);
+        let outer = NodeKey::from_digest([3; 32]);
+        let shape = EnumShape::new(
+            false,
+            [
+                VariantId::from_digest([1; 32]),
+                VariantId::from_digest([4; 32]),
+            ],
+        );
+        let declarations = [
+            CompositeDeclaration::new(
+                inner,
+                "Inner",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("e", ValueType::Enum(shape), Presence::Required),
+                    FieldDeclaration::new("o", ValueType::Boolean, Presence::Optional),
+                ]),
+            ),
+            CompositeDeclaration::new(
+                outer,
+                "Outer",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("inner", ValueType::Composite(inner), Presence::Required),
+                    FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required),
+                ]),
+            ),
+        ];
+        (
+            TypeEnvironment::new(declarations, []).expect("the declarations admit"),
+            inner,
+            outer,
+        )
+    }
+
+    /// ADR-027 ST-11 (FR-207-AC-6): the records of an attempt type range over
+    /// its whole finite domain: an enum, an optional field (absent first) and
+    /// a nested record of finite fields all enumerate, each combination once.
+    #[trace("TC-652", "FR-207-AC-6")]
+    #[test]
+    fn an_attempt_type_of_finite_fields_enumerates_every_record() {
+        let (types, inner, outer) = nested();
+        let mut charged = 0;
+        let values = |declaration, charged: &mut u32| {
+            composite_values::<()>(&ValueType::Composite(declaration), &[], &types, || {
+                *charged += 1;
+                Ok(())
+            })
+            .expect("no stop")
+            .expect("a finite domain")
+        };
+        assert_eq!(values(inner, &mut charged).len(), 6);
+        assert_eq!(values(outer, &mut charged).len(), 12);
+        assert_eq!(charged, 18);
+        let all = values(outer, &mut charged);
+        let distinct: std::collections::BTreeSet<String> = all
+            .iter()
+            .map(|value| format!("{:?}", super::super::encode::typed_value_enc(value, &types)))
+            .collect();
+        assert_eq!(distinct.len(), 12);
+    }
+
+    /// FR-120's record form, written exactly: `type`, the declaration's node
+    /// id as `name`, and one `{name, value}` entry per declared field with an
+    /// absent optional field `null`; an enum value is its variant id and rank.
+    #[trace("TC-652", "FR-205-AC-8")]
+    #[test]
+    fn a_record_value_is_written_in_fr_120_s_record_form() {
+        let (types, inner, _) = nested();
+        let first = composite_values::<()>(&ValueType::Composite(inner), &[], &types, || Ok(()))
+            .expect("no stop")
+            .expect("a finite domain")
+            .remove(0);
+        let written = quire_canonical::to_vec(
+            &super::super::encode::typed_value_enc(&first, &types),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .expect("encodes");
+        let variant = "01".repeat(32);
+        let name = "02".repeat(32);
+        assert_eq!(
+            String::from_utf8(written).expect("UTF-8"),
+            format!(
+                r#"{{"fields":[{{"name":"e","value":{{"member":"{variant}","rank":"0","type":"enum"}}}},{{"name":"o","value":null}}],"name":"{name}","type":"record"}}"#
+            )
+        );
     }
 }

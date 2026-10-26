@@ -894,18 +894,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
         }
         let program = Program::new(protocol)?;
-        // ST-11: a `cattempt` takes one step per record of its template's
-        // attempt type.
-        if protocol
-            .obligations
-            .compensations
-            .iter()
-            .any(|template| !model.enumerates(&template.attempt_type))
-        {
-            return Err(ProtocolRefusal::Unsupported(
-                Unsupported::UnenumerableRecord,
-            ));
-        }
         let enabled = access::classify(
             &model,
             protocol,

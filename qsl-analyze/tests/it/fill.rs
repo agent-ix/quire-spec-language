@@ -139,11 +139,11 @@ pub(crate) fn document() -> Vec<u8> {
     let weight = ident("Cell/w");
     let population = ident("cells");
     // A record type of one field, whose type is `type_ref`.
-    let record = |name: &str, field: &str, type_ref: &str| {
+    let record = |name: &str, field: &str, type_ref: &str, presence: &str| {
         let identity = ident(&format!("{name}/{field}"));
         let member = json!({
             "identity": identity, "name": field, "typeRef": type_ref,
-            "presence": "required", "nullable": false, "defaultKind": "none",
+            "presence": presence, "nullable": false, "defaultKind": "none",
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
             "origin": origin(&identity),
         });
@@ -197,9 +197,13 @@ pub(crate) fn document() -> Vec<u8> {
             })),
             // One record, so a `cattempt` of `Attempt` has one choice of
             // record.
-            record("Attempt", "n", &ident("Tally")),
-            record("RefundAttempt", "ok", "ix://quire/native/Boolean"),
-            record("PeerAttempt", "p", &cell),
+            record("Attempt", "n", &ident("Tally"), "required"),
+            record("RefundAttempt", "ok", "ix://quire/native/Boolean", "required"),
+            record("PeerAttempt", "p", &cell, "required"),
+            // An optional field: three records, absent first.
+            record("OptAttempt", "ok", "ix://quire/native/Boolean", "optional"),
+            // An unbounded field: no finite domain.
+            record("WideAttempt", "n", "ix://quire/native/Integer", "required"),
         ],
         "populations": [{
             "identity": population, "displayName": population,

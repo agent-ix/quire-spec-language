@@ -13,6 +13,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::simulation::protocol::{
     visible, AnchorName, ClaimReads, PathStep, ProtocolLocation, ProtocolSystem,
     ProtocolTransition, RegistrationKey, RestKind, Sc, StepKind, ThreadPath, WaitCause,
@@ -20,9 +21,10 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::{independent, Footprint, Location, SubjectSystem};
 use qsl_foundation::BackendId;
 use qsl_replay::{
-    ModelCheckOutcome, OutcomeItem, RequestIndex, ResultLabel, TerminalRecord, TerminalValue,
-    UnavailabilityCause,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, OutcomeItem, RequestIndex, ResultLabel,
+    TerminalRecord, TerminalValue, UnavailabilityCause,
 };
+use quire_exact::Cancel;
 use serde_json::{json, Value as Json};
 
 use crate::fill::{contracts, json_of, key, protocol, reachable, sc_system, Reached};
@@ -1204,6 +1206,14 @@ fn attempt_records(key: &Json) -> Vec<(Json, Json)> {
         .collect()
 }
 
+/// The commit entries `key` holds.
+fn commit_entries(key: &Json) -> Vec<(Json, Json)> {
+    entries(key, "control")
+        .into_iter()
+        .filter(|(key, _)| key["type"] == "commit")
+        .collect()
+}
+
 /// The state `reached[at]` reaches by the step of `Committed`.
 fn committed(reached: &[Reached], at: usize) -> usize {
     let found: Vec<usize> = reached[at]
@@ -1306,7 +1316,7 @@ fn a_cattempt_takes_one_step_per_attempt_record_the_retry_relation_admits() {
     }
 }
 
-/// FR-205-AC-8 (TC-650), the attempt record: with `attempts 2 of
+/// Part of FR-205-AC-8 (TC-650), the attempt record and the commit entry: with `attempts 2 of
 /// M::RefundAttempt`, a precondition-free operation and the retry relation
 /// `not e.ok`, `observations` holds the thread's attempt record with `ok`
 /// after its first `cattempt`, a retry `cattempt` is enabled after `ok` false
@@ -1316,7 +1326,9 @@ fn a_cattempt_takes_one_step_per_attempt_record_the_retry_relation_admits() {
 /// at its retry point holding one. With the relation `l.ok`, which does not
 /// read `e`, no state holds a record and the two first `cattempt` steps
 /// reach one state.
-#[trace("TC-650", "FR-205-AC-8")]
+/// The registration naming under crosswise activation is
+/// `a_compensation_thread_keys_its_registration`'s; not covered here: the
+/// `repeat` of two registrations with captures and the `parallel Triggers`.
 #[test]
 fn the_attempt_record_is_keyed_while_a_retry_can_read_it() {
     explore(
@@ -1337,6 +1349,14 @@ fn the_attempt_record_is_keyed_while_a_retry_can_read_it() {
                 .map(|(_, at, _)| key_json(system, &reached[*at]))
                 .collect();
             assert_ne!(keys[0], keys[1]);
+            // The commit entry is absent once the instance has finished.
+            for state in reached {
+                let key = key_json(system, state);
+                let live = entries(&key, "control")
+                    .iter()
+                    .any(|(key, _)| key["type"] == "protocol-instance");
+                assert!(live || commit_entries(&key).is_empty());
+            }
             for (ok, at, _) in &first {
                 let held = attempt_records(&key_json(system, &reached[*at]));
                 assert_eq!(held.len(), 1, "after ok = {ok}");
@@ -1354,7 +1374,9 @@ fn the_attempt_record_is_keyed_while_a_retry_can_read_it() {
                 let ended = after(reached, *at, StepKind::CEnd);
                 assert!(attempt_records(&key_json(system, &reached[ended])).is_empty());
                 let closed = committed(reached, *at);
-                assert!(attempt_records(&key_json(system, &reached[closed])).is_empty());
+                let closed_key = key_json(system, &reached[closed]);
+                assert!(attempt_records(&closed_key).is_empty());
+                assert_eq!(commit_entries(&closed_key).len(), 1);
             }
         },
     );
@@ -1415,6 +1437,8 @@ fn cattempt_and_the_commit_step_cover_the_attempt_record() {
                 population: key("cells"),
             };
             assert!(!footprint.reads.contains(&cells), "{footprint:?}");
+            // Every change, the attempt record's included, is confined to a write.
+            assert!(assert_changes_are_written(system, reached) > 0);
 
             let mut with_record = false;
             let mut checked = 0;
@@ -1450,7 +1474,11 @@ fn cattempt_and_the_commit_step_cover_the_attempt_record() {
                 StepKind::Event,
             );
             let (_, t4) = fail(system, reached, t2, true);
-            let (cattempt, _) = &reached[t4].steps[0];
+            let (cattempt, _) = reached[t4]
+                .steps
+                .iter()
+                .find(|(step, _)| step.kind() == StepKind::CAttempt)
+                .expect("a cattempt");
             let footprint = footprint_at(system, reached, t4, cattempt);
             let cells = Location::AnyMembership {
                 population: key("cells"),
@@ -1458,5 +1486,58 @@ fn cattempt_and_the_commit_step_cover_the_attempt_record() {
             assert!(footprint.reads.contains(&cells), "{footprint:?}");
             assert!(footprint.enabling.contains(&cells), "{footprint:?}");
         },
+    );
+}
+
+/// FR-207-AC-6 (TC-652): the records of the attempt type are its whole
+/// finite domain. An attempt type with an optional field has three records,
+/// the absent one first, each its own `cattempt` step; one with an unbounded
+/// field has no finite domain, so the item refuses `requires-bound` before
+/// any state is explored.
+#[trace("TC-652", "FR-207-AC-6")]
+#[test]
+fn an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound() {
+    explore(
+        &attempt_unit("1 of M::OptAttempt", "false", false),
+        |system, explored| {
+            let reached = &explored.reached;
+            let t2 = after(
+                reached,
+                after(reached, 0, StepKind::Attempt),
+                StepKind::Event,
+            );
+            let (_, t4) = fail(system, reached, t2, true);
+            let records: Vec<Json> = reached[t4]
+                .steps
+                .iter()
+                .filter(|(step, _)| step.kind() == StepKind::CAttempt)
+                .map(|(step, _)| identity(system, step)["record"].clone())
+                .collect();
+            assert_eq!(records.len(), 3);
+            let absent = records
+                .iter()
+                .filter(|record| record["fields"][0]["value"].is_null())
+                .count();
+            assert_eq!(absent, 1, "{records:?}");
+        },
+    );
+
+    let body = attempt_unit("1 of M::WideAttempt", "false", false);
+    let case = Case::new(&body, &[0]);
+    let refused = check_protocol(
+        ProtocolCheckRequest {
+            subject: case.subject("Pay"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(refused, Err(ModelCheckRefusal::RequiresBound(_))),
+        "{refused:?}"
     );
 }

@@ -192,36 +192,61 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
 /// FR-120's typed canonical form of `value`, where a record value is
 /// `{"type":"record","name":…,"fields":[{name, value}…]}` with `name` the
 /// declaration's checked node id, one entry per declared field in
-/// declaration order and an absent field `null`. A value that is not a
-/// record is [`value_enc`]'s.
+/// declaration order and an absent field `null`, and a tuple is
+/// `{"type":"tuple","name":…,"components":[…]}`. An enum value is
+/// `{"type":"enum","member":…,"rank":…}` with `member` its variant id, the
+/// declared identifier being no part of the value. Any other value is
+/// [`value_enc`]'s.
 pub(crate) fn typed_value_enc(value: &Value, types: &TypeEnvironment) -> Enc {
-    let Value::Composite(composite) = value else {
-        return value_enc(value);
+    let slot_enc = |slot: &FieldValue| match slot {
+        FieldValue::Present(inner) => typed_value_enc(inner, types),
+        FieldValue::Absent | FieldValue::Null => Enc::Null,
     };
-    let Some(CompositeShape::Record(fields)) = types
-        .composite(composite.declaration())
-        .map(CompositeDeclaration::shape)
-    else {
-        return Enc::Unencodable("a tuple or union value");
-    };
-    let entries = fields
-        .iter()
-        .zip(composite.slots())
-        .map(|(field, slot)| {
-            let value = match slot {
-                FieldValue::Present(inner) => typed_value_enc(inner, types),
-                FieldValue::Absent | FieldValue::Null => Enc::Null,
-            };
-            Enc::Object(vec![("name", Enc::text(field.name())), ("value", value)])
-        })
-        .collect();
-    Enc::tagged(
-        "record",
-        vec![
-            ("name", Enc::text(hex(composite.declaration().as_bytes()))),
-            ("fields", Enc::Array(entries)),
-        ],
-    )
+    match value {
+        Value::Enum(member) => Enc::tagged(
+            "enum",
+            vec![
+                ("member", Enc::text(hex(member.variant().as_bytes()))),
+                ("rank", Enc::text(member.rank().to_string())),
+            ],
+        ),
+        Value::Composite(composite) => {
+            let name = Enc::text(hex(composite.declaration().as_bytes()));
+            match types
+                .composite(composite.declaration())
+                .map(CompositeDeclaration::shape)
+            {
+                Some(CompositeShape::Record(fields)) => {
+                    let entries = fields
+                        .iter()
+                        .zip(composite.slots())
+                        .map(|(field, slot)| {
+                            Enc::Object(vec![
+                                ("name", Enc::text(field.name())),
+                                ("value", slot_enc(slot)),
+                            ])
+                        })
+                        .collect();
+                    Enc::tagged(
+                        "record",
+                        vec![("name", name), ("fields", Enc::Array(entries))],
+                    )
+                }
+                Some(CompositeShape::Tuple(_)) => Enc::tagged(
+                    "tuple",
+                    vec![
+                        ("name", name),
+                        (
+                            "components",
+                            Enc::Array(composite.slots().iter().map(slot_enc).collect()),
+                        ),
+                    ],
+                ),
+                Some(CompositeShape::Union(_)) | None => Enc::Unencodable("a union value"),
+            }
+        }
+        other => value_enc(other),
+    }
 }
 
 /// A reference's replacement in a key-free encoding (FR-152): `Some` for a
