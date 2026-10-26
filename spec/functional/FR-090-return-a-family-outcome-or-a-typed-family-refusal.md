@@ -135,8 +135,11 @@ This requirement carries testable criteria for decisions already taken:
     `cause.undefined_record()` is the family cause's `UndefinedRecord`: its
     undefined reason and that reason's catalog payload.
 - `e.location`, the `quire_semantic_value::location::ExpressionLocation` of the node at which an evaluation that
-  did not complete stopped, or `None` when the evaluation completed or
-  stopped before any node ran (a meter charge denied at call entry).
+  did not complete stopped. A root `function.call` charge denied or cancelled
+  after successful Begin carries the checked body root location
+  (FR-262-AC-13). A completed evaluation carries `None`. A refusal raised
+  before any node runs without an established root call site, such as the
+  FR-380-AC-7 population-bound refusal, also carries `None`.
 - `e.losses`, the loss records of the operations a completed evaluation
   performed, in evaluation order; empty unless `e.outcome` is
   `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
@@ -211,11 +214,14 @@ location.
 `location` is `quire_semantic_value::location::ExpressionLocation`, the declaration
 origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
-not complete stopped, or `None` when the evaluation completed or stopped
-before any node ran (a meter charge denied at call entry). A consumer
-reports `None` as "unavailable" (`quire.native.diagnostics/v1` common
-context). `losses` holds the loss records of the operations a completed
-evaluation performed, in evaluation order, as QSpec FR-140-AC-3 requires
+not complete stopped. A root `function.call` charge denied or cancelled after
+successful Begin carries the checked body root location (FR-262-AC-13). A
+completed evaluation carries `None`. A refusal raised before any node runs
+without an established root call site, such as the FR-380-AC-7
+population-bound refusal, also carries `None`; a consumer reports `None` as
+"unavailable" (`quire.native.diagnostics/v1` common context). `losses` holds
+the loss records of operations a completed evaluation performed, in
+evaluation order, as QSpec FR-140-AC-3 requires
 ("the rounded value plus a canonical-rational loss record"); it is empty
 unless the outcome is `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
 `Evaluation` is a layer-E `quire-eval` type, because the shared evaluation
@@ -489,7 +495,7 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator Field: operand is not Composite | `field-composite-value-expected` |
 | Evaluator Field: the value's own declaration has no slot for the checked field identity | `field-slot-unresolved` |
 | Evaluator Attribute: operand is not Reference | `attribute-reference-value-expected` |
-| Evaluator Attribute: resolved object has no stored attribute slot | `attribute-slot-unresolved` |
+| Evaluator Attribute: its reference names an object absent from the current state, or the resolved object has no stored attribute slot | `attribute-slot-unresolved` |
 | Evaluator Present or Value: operand is not Option | `option-value-expected` |
 | Evaluator local Call, imported Call, dispatch guard or dispatch body: checked callable is not resolved | `evaluation-callable-unresolved` |
 | Evaluator imported Call: imported package graph is not resolved | `evaluation-imported-graph-unresolved` |
@@ -614,6 +620,7 @@ undefined cause type.
 | FR-090-AC-17 | A QSL-owned table fault propagated through public call, public evaluate or replay retains its stage and invariant identifier in the existing fault channel. | Test |
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
 | FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
+| FR-090-AC-22 | When an admitted state predicate reads an attribute through a reference to an object absent from the current state, S6a returns `Err(InternalFault)` with stage `S6a`, invariant `attribute-slot-unresolved` and category `Category::InternalFailure`; the public call or evaluate seam preserves it as `CallFailure::Fault`. The evaluator does not panic or manufacture a kernel/family result. | Test (TC-917) |
 
 ## Dependencies
 

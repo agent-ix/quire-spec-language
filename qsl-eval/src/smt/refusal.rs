@@ -18,11 +18,18 @@ pub struct ExpressionLocus {
     pub clause: String,
     /// The node's index in the clause's body.
     pub node: usize,
+    /// The trace variable of the component the expression reads, for an atom
+    /// of a hyper clause.
+    pub component: Option<String>,
 }
 
 impl std::fmt::Display for ExpressionLocus {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "clause `{}` node {}", self.clause, self.node)
+        write!(formatter, "clause `{}` node {}", self.clause, self.node)?;
+        match &self.component {
+            Some(component) => write!(formatter, " in component `{component}`"),
+            None => Ok(()),
+        }
     }
 }
 
@@ -188,6 +195,58 @@ pub enum Refusal {
         /// Where it is.
         locus: ExpressionLocus,
     },
+    /// `hyper-form`: FR-173 classifies the clause as other than HP-2.
+    #[error("hyper clause `{clause}` is {form}, not an HP-2 clause")]
+    HyperForm {
+        /// The clause's declared name.
+        clause: String,
+        /// The form the clause has, as the refusal names it.
+        form: &'static str,
+    },
+    /// `hyper-body`: the clause's body is outside the safety fragment.
+    #[error("the body of hyper clause `{clause}` is outside the safety fragment")]
+    HyperBody {
+        /// The clause's declared name.
+        clause: String,
+    },
+    /// `subject-binding`: `subjects` is not one subject per alias, over one
+    /// checked package.
+    #[error("{}", match alias {
+        Some(alias) => format!("alias `{alias}` has no subject over the clause's checked package"),
+        None => "the request supplies more subjects than the clause has aliases".to_owned(),
+    })]
+    SubjectBinding {
+        /// The first alias that has no subject or the wrong one; `None` when
+        /// every alias has one and the request supplies more subjects.
+        alias: Option<String>,
+    },
+    /// `instance-binding`: `instance` is not one key of the universe of each
+    /// object parameter, in parameter order.
+    #[error("the instance does not bind parameter `{parameter}` to a key of its universe")]
+    InstanceBinding {
+        /// The first parameter that breaks the binding.
+        parameter: String,
+    },
+    /// `product-identity`: the clause names no `hyperproperty` node of the
+    /// subjects' checked-package emission.
+    #[error("hyper clause `{clause}` has no identity in the checked-package emission")]
+    ProductIdentity {
+        /// The clause's declared name.
+        clause: String,
+    },
+    /// `match-conjunct`: a `match` conjunct evaluated refused, or the meter
+    /// ran out during it, on a tuple of joint disjuncts.
+    #[error("conjunct {conjunct} of `{clause}` at {site} is refused on tuple ({})", tuple.join(", "))]
+    MatchConjunct {
+        /// The clause's declared name.
+        clause: String,
+        /// The conjunct's index in `mu_universal()`.
+        conjunct: usize,
+        /// The conjunct's site, `hyper <c> match <k>`.
+        site: String,
+        /// The tuple's component disjuncts, in quantifier order.
+        tuple: Vec<String>,
+    },
 }
 
 impl Refusal {
@@ -210,11 +269,19 @@ impl Refusal {
             Self::SeveralInstances { .. } => "several-instances",
             Self::TooLarge { .. } => "too-large",
             Self::OutOfFragment { .. } => "out-of-fragment",
+            Self::HyperForm { .. } => "hyper-form",
+            Self::HyperBody { .. } => "hyper-body",
+            Self::SubjectBinding { .. } => "subject-binding",
+            Self::InstanceBinding { .. } => "instance-binding",
+            Self::ProductIdentity { .. } => "product-identity",
+            Self::MatchConjunct { .. } => "match-conjunct",
         }
     }
 
-    /// The row of FR-315's refusal table this refusal is on, 1 to 17: the
-    /// order the encoding applies the checks in.
+    /// The position of this refusal in the order the encoding applies its
+    /// checks: rows 1 to 17 of FR-315's refusal table, and 18 to 23 for the
+    /// hyper refusals in the order FR-315 "Refusals and their order" states
+    /// (the table itself lists no hyper row).
     pub const fn row(&self) -> u8 {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => 1,
@@ -237,6 +304,12 @@ impl Refusal {
             } => 17,
             Self::TooLarge { .. } => 15,
             Self::OutOfFragment { .. } => 16,
+            Self::HyperForm { .. } => 18,
+            Self::SubjectBinding { .. } => 19,
+            Self::InstanceBinding { .. } => 20,
+            Self::ProductIdentity { .. } => 21,
+            Self::HyperBody { .. } => 22,
+            Self::MatchConjunct { .. } => 23,
         }
     }
 }

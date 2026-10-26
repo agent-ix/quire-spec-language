@@ -48,15 +48,16 @@ infinite-trace unless a step names another profile.
    3)` `on each (q: M::Counter) when (c.value = 1)` and `when (c.value >= 2)`
    each with an unread `capture n: Int[0, 3] = c.value;`; under
    infinite-trace `always holds(true)` `on each (q: M::Counter) when (true)`
-   and `when (c.value = 7)` with `capture z: Boolean = (6 mod (2 - c.value) =
+   and `when (false)` (S3 refuses `c.value = 7` over `Int[0, 3]`) with `capture z: Boolean = (6 mod (2 - c.value) =
    0);`.
 6. Run `eventually[0,1] holds(n < 3 and c.value = n + 1)` `on each (q: M::Counter) when
    (c.value = 1)` with `capture n: Int[0, 3] = c.value;` through the engine,
    and the same clause with the `holds` condition `c.value = 3`; the refusal
    cases of AC-12 (infinite-trace `always`, a bounded `on origin` monitor, a
    second capture, an unbounded root), checking that no state is charged.
-7. Run FR-128 replay and the FR-338 and FR-339 checkers over AC-13's
-   clauses, and read the footprint of AC-14's clause with and without the
+7. Run FR-128 replay and the FR-338 checker over AC-13's clauses (the unguarded
+   `on each` clause for the certificate; the replay of an undefined capture
+   and FR-339's checker wait on QSL-1096 and FR-339), and read the footprint of AC-14's clause with and without the
    capture.
 
 Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
@@ -91,7 +92,8 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
   verdict and no state explored, likewise for each listed case, `RequiresBound`
   for the unbounded root; the second clause returns step 5's first verdict.
 - Step 7: replay `reproduced-with-evaluated-witness`; `Holds{Exhaustive}`
-  accepted by FR-338; the undefined `z` replays to `UndefinedEvaluation` at
-  `z` and its certificate is rejected `BadState` by FR-338 and FR-339; the
-  footprint holds `Counter::value` with the `over` receiver only with the
+  accepted by FR-338; a certificate for a reached state at which `z` is
+  undefined is rejected `BadState` by FR-338 (the replay to
+  `UndefinedEvaluation` at `z` is QSL-1096's, FR-339's rejection waits on its
+  checker); the footprint holds `Counter::value` with the `over` receiver only with the
   capture.

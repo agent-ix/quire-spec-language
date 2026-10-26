@@ -1520,7 +1520,13 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
         panic!("expected Incomplete for a zero work limit, got {denied:?}");
     };
     assert_eq!(incomplete.charge_point, ChargePoint::FunctionCall);
-    assert_eq!(location, None);
+    assert_eq!(
+        location,
+        Some(Location::root(Origin::Body {
+            function: "f".to_owned(),
+            index: 0,
+        }))
+    );
     assert!(losses.is_empty());
 
     let decimal = |coefficient: i64| Value::Decimal(Decimal::new(integer(coefficient), 0));

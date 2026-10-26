@@ -21,6 +21,7 @@ use std::rc::Rc;
 
 use qsl_semantics::check::CheckedStateClause;
 use quire_exact::Value;
+use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::simulation::model::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 use crate::smt::expression::{Reader, Sym, Views};
@@ -422,6 +423,37 @@ impl CopyFacts {
     /// The copy is terminal: no application is enabled.
     pub fn terminal(&self) -> Option<Term> {
         self.terminal.clone()
+    }
+}
+
+impl Application<'_, '_> {
+    /// The transition FR-120 gives this application: the step label `μ_U`
+    /// reads (FR-315 "Hyper self-composition queries").
+    pub(crate) fn transition(
+        &self,
+        subject: &SymbolicSubject<'_>,
+    ) -> Result<ModelTransition, SmtEncodingRefusal> {
+        let receiver = subject
+            .objects
+            .get(self.receiver)
+            .ok_or_else(|| SmtEncodingRefusal::fault("an application has a receiver"))?;
+        self.operation
+            .transition(&receiver.reference, &self.arguments)
+    }
+
+    /// The application as a refusal names it: the operation applied to its
+    /// arguments, led by the receiver's key when the subject holds several
+    /// objects.
+    pub(crate) fn label(&self, subject: &SymbolicSubject<'_>) -> String {
+        let receiver = if subject.objects.len() > 1 {
+            subject
+                .objects
+                .get(self.receiver)
+                .map(|object| object.key.as_str())
+        } else {
+            None
+        };
+        self.operation.label(receiver, &self.arguments)
     }
 }
 

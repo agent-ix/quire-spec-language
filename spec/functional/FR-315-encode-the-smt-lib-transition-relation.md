@@ -53,7 +53,10 @@ to rebuild the queries a certificate claims to refute, so the two compare
 byte for byte under the canonical printing below. The same encoding gives
 EN-3's base and step queries over an HP-2 item's self-composition product
 (ADR-023 HC-1, HC-7) through `encode_hyper_query`, which CG's SMT backend
-calls for HP-2 `k`-induction.
+calls for HP-2 `k`-induction. `encode_hyper_query`, `HyperQueryRequest`, `HyperQuery` and
+`HyperProductIdentity` are defined in `qsl-replay`, because the identity holds FR-336's `SubjectIdentity`,
+which `qsl-replay` defines; `qsl-eval` supplies the script entry that runs the checks after the identity
+checks, and the refusal codes.
 
 ## Use case
 
@@ -166,7 +169,11 @@ checked package. Such a request guarantees these invariants:
 - a `terminal when P` predicate is a state predicate over an object type of
   the subject (FR-124);
 - every monitor state number is below the request's `max_monitor_states`
-  (Size limits), which the `monitor-states` check has passed.
+  (Size limits), which the `monitor-states` check has passed;
+- a checked hyper clause of an HP-2 request has a checked condition and a
+  component record for every `holds` atom of its body, as many slots as
+  `atom_slots()` holds, and conjuncts that `CheckedStepMatch` reads without a
+  `Fault` (FR-487).
 
 The encoding's own build order guarantees one more: it reads a term (copy
 `i` terminal, an enabledness, an application count) only after building
@@ -874,7 +881,7 @@ pub struct HyperQueryRequest<'a> {
     pub clause: &'a CheckedHyperClause, // FR-172
     pub subjects: &'a [ModelSubject],   // one per alias, in `clause.aliases` order
     pub instance: &'a [(Name, Key)],    // FR-183's object-parameter binding
-    pub meter: Meter,                   // FR-107's meter, charged by `μ_U`
+    pub meter: &'a mut Meter,           // FR-107's meter, charged by `μ_U`
     pub encoding: SmtEncodingLimits,    // the request's encoding limits (Size limits)
 }
 
@@ -895,9 +902,45 @@ of the clause's instances, so one query covers one instance. `instance`
 holds one `(parameter, key)` pair per member of `clause.parameters`, in
 parameter order, each key drawn from FR-125's instancing of a hyper clause.
 It is the same binding FR-183's `HyperCounterexample.instance` carries.
+
+The request has these five members and no other. It carries no evaluator
+seam: no `StepMatch`, no `HyperLetters` and no other caller-supplied
+reader of the body or of `μ`. The body's `holds` atoms and `μ_U`'s conjuncts
+are read from the checked nodes that
+[FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)
+lowers, which `clause` holds. Two readers do this, and they differ in what
+they produce:
+
+- **`μ_U` is evaluated.** It reads step labels only (HS-5). The encoder
+  evaluates it, once per tuple, through FR-487's `CheckedStepMatch`, which it
+  builds as `CheckedStepMatch::new(package, clause)` over the one checked
+  package of the request's subjects (see Product identity, "One checked
+  package"), `package` being the first subject's. `CheckedStepMatch` reads no
+  state and no instance, so the encoder passes one `ParameterBinding` per
+  `clause.parameters` member, in parameter order, whose population is that
+  parameter's population and whose key is the request's key, and the readings
+  do not depend on them.
+- **The body's atoms are not evaluated.** An atom is read symbolically. The
+  encoder reads `clause.condition(atom)` and `clause.component_reads(atom)`
+  through this requirement's expression reader (`Reader::boolean`), with
+  atom slot (`t`, `p`) bound to the layout object of the key that `instance`
+  holds for `p` in the layout of `t`'s subject, and each model read read in
+  copy `s<i>.<r>`, `r` being the component that `component_reads` records for
+  it. The result is a `QF_LIA` value term and a definedness term over the
+  copies, not a reading at a concrete state. No state of any subject is
+  evaluated for an atom, which is why the request needs, and has, no
+  `HyperLetters`. HM-4's indexed atom `e @ t` is that read in `t`'s copy.
+
 `meter` is the budget for evaluating `μ_U` while the query is encoded. The
-caller sets it. The encoding evaluates `μ_U` once per tuple, in the
-joint-step order below, and charges `meter` for each of those evaluations.
+caller sets it. The meter is borrowed mutably, so the caller reads what the
+encoding consumed from the same `Meter` after the call, refusal or not. It is
+one cumulative budget across every tuple and conjunct of the call, not a fresh
+budget per tuple. `HyperProductIdentity::of` takes the request by shared
+reference and never touches it. The encoding evaluates `μ_U` once per tuple, in the
+joint-step order below, through `CheckedStepMatch::universal`, which charges
+`meter` as FR-487 states: its conjuncts in index order, each once, stopping
+at the first that is not `Completed(true)`. The encoder charges nothing
+else.
 `μ_U` reads no state, so one evaluation serves every step `i`, and the
 charge does not depend on `depth`. `depth` counts joint steps, the length ADR-023
 HV-3 reads.
@@ -931,11 +974,16 @@ HV-3 reads.
   joint disjunct is the conjunction of its component disjuncts, each over
   its variable's copies `i` and `i+1`. A tuple SHALL be a joint disjunct
   exactly when `μ_U`, evaluated through the one clause evaluator (FR-107)
-  over the tuple's step labels (HS-5) under the request's instance, is true
-  or undefined. The encoder evaluates `μ_U`'s conjuncts as
+  over the tuple's step labels (HS-5), is true or undefined. The encoder
+  evaluates `μ_U`'s conjuncts as
   [FR-487](FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md)
-  lowers and evaluates them. `μ_U` reads no state, so the script prints no
-  term for it. An empty `μ_U` admits every tuple.
+  lowers and evaluates them (`CheckedStepMatch::universal`): `Holds` and
+  `Undefined` keep the tuple, `Fails` drops it. The label of an operation
+  disjunct is the `ModelTransition` that FR-120 gives the same application
+  (operation, receiver and argument vector), and the label of the
+  proof-query stutter is `StepLabel::Stutter`. `μ_U` reads no state, so the
+  script prints no term for it, and every tuple is evaluated once whatever
+  `depth` and `kind` are. An empty `μ_U` admits every tuple.
 - **Undefined match.** A tuple on which `μ_U` evaluates undefined SHALL be a
   definedness failure at position `i+1` when its component disjuncts hold
   between copies `i` and `i+1` (ADR-023 HV-8, ADR-018 UE-1).
@@ -949,7 +997,13 @@ HV-3 reads.
   `m<i>` itself. An indexed atom `e @ t` SHALL read `t`'s copy at the position
   (ADR-023 HM-4), and it carries its definedness condition as any atom
   does. The encoder reads each atom through its FR-487 checked condition,
-  and builds and tabulates the monitor as FR-487 states.
+  and builds and tabulates the monitor as FR-487 states: the tabulation is
+  `MonitorTable`'s constructor over the body's `CheckedFormula` and the
+  clause's profile, the one constructor that `MonitorTable::of` delegates to
+  for an `on origin` temporal clause, so a hyper body and a temporal clause
+  with the same formula give the same table. Every term the property, the
+  letters and the joint steps print SHALL be linear (`QF_LIA`); an atom
+  outside the fragment is refused `out-of-fragment` (Refusals).
 - **Negated property.** The query SHALL assert the negated property as for
   a temporal item's `InductionBase` and `InductionStep`, over joint
   positions and with the undefined-match failures among the definedness
@@ -1005,15 +1059,40 @@ HV-3 reads.
   - `subject-binding`, when `subjects` does not hold exactly one subject
     per alias of `clause.aliases` with that alias's model, at the first
     alias that has none or the wrong one;
-  - `match-conjunct`, when a `μ_U` conjunct evaluates refused on some tuple,
-    or is incomplete because `meter` ran out during its one evaluation for
-    some tuple, at the conjunct, naming the tuple;
+  - `match-conjunct`, when `CheckedStepMatch::universal` returns `Refused`
+    or `Err(MatchIncomplete)` on some tuple (a conjunct evaluates refused, or
+    `meter` ran out during its one evaluation), at the conjunct it names (its
+    index in `mu_universal()` and its site `hyper <c> match <k>`), naming
+    the first such tuple in the joint-step order by its component disjuncts
+    in quantifier order, each as the operation's declared name applied to its
+    arguments, an Integer or Boolean argument as its text (decimal for an
+    Integer), an enum member as `#` and its rank, and any other value as its
+    canonical text, `step(0)`, led by the receiver's key and a dot,
+    `v.step(0)`, when the subject holds more than one object, or `stutter`;
   - and this requirement's `field-sort`, `parameter-domain`, `field-domain`
-    and `out-of-fragment` refusals, per copy, and its `too-large` refusal,
+    and `out-of-fragment` refusals, per copy, the last also for an atom
+    outside the fragment, located at the atom's site `hyper <c> holds <n>`
+    (FR-487) and naming the component copy it reads, and its `too-large` refusal,
     whose `constants` measure counts every copy's constants and whose
     `applications` measure counts the joint disjuncts of one step.
+- **Faults.** A `MatchReading::Fault`; a `Refused` or `Undefined` reading
+  or a `MatchIncomplete` whose `conjunct` is not below `mu_universal().len()`;
+  a `holds` atom of the body for which `clause.condition(atom)` or
+  `clause.component_reads(atom)` is `None`; a condition whose slot count
+  differs from `clause.atom_slots().len()`; or a read of a condition that
+  `component_reads` does not record SHALL return `SmtEncodingRefusal::Fault`
+  naming that invariant (Internal faults), never a `Refused` code.
+  `Undefined { conjunct, .. }` is not a refusal: the tuple is kept with the
+  undefined-match definedness failure above. `HyperProductIdentity::of`, and
+  so `encode_hyper_query` in its first four checks, returns `Fault` for an
+  object parameter that names an alias the clause's `aliases` do not hold,
+  because the clause's aliases hold every alias its parameters name; it
+  returns that fault in place of `instance-binding`.
 - Equal requests, with meters of equal budget, and equal kinds SHALL give
-  byte-equal scripts or equal refusals.
+  byte-equal scripts or equal refusals. The encoder owns its readers, so this
+  depends on no caller behaviour. No AC drives a Faults arm of the encoding stages: a well-formed
+  request cannot break those invariants, as for FR-315-AC-29's single-subject
+  fault, which needs a hand-altered checked clause inside the crate that defines the call.
 
 #### Product identity
 
@@ -1090,14 +1169,29 @@ impl HyperProductIdentity {
   applies, in this order:
   1. `hyper-form`, as above: an identity is of an HP-2 product only;
   2. `subject-binding`, as above and for a subject over another checked
-     package;
+     package, or when `subjects` holds more subjects than `clause.aliases`
+     (the refusal then names no alias). The checked graph keeps no map from
+     an alias to its model, so the check is one subject per alias over one
+     checked package;
   3. `instance-binding`, when `instance` does not hold exactly one pair per
      member of `clause.parameters`, in parameter order, each key in that
-     parameter's universe, at the first parameter that breaks this;
+     parameter's universe, at the first parameter that breaks this. The
+     parameter's universe is the key list of the populations of its alias's
+     subject that admit the parameter's object type (FR-125 Instancing); an admitting subject
+     whose instances cannot be listed refuses `instance-binding`; and when
+     FR-120 does not admit the subject, it is the keys of all of that
+     subject's universes, so that a subject whose checked package has no
+     emission is refused `product-identity` and not `instance-binding`.
+     `encode_hyper_query` then refuses a subject that FR-120 does not admit
+     as `subject-binding` at its alias (FR-315-AC-51), after these four
+     checks and before `hyper-body`;
   4. `product-identity`, when the subjects' checked package has no
      checked-package v2 emission, so FR-336's `SubjectIdentity::of`
      refuses, or when that emission has no `hyperproperty` node for the
-     clause, at the clause.
+     clause, or when the clause is one no package assembled
+     (`CheckedHyperClause::assembled_occurrence()` is `None`, so
+     `occurrence()` is the zero occurrence that names no node), at the
+     clause.
 
   `encode_hyper_query` SHALL apply these four checks first, in the same
   order, and then `hyper-body`, `query-kind`, `too-large` for `constants`,
@@ -1105,7 +1199,13 @@ impl HyperProductIdentity {
   `match-conjunct`, `too-large` for `applications`, `monitor-atoms`,
   `monitor-states` and `candidates`,
   `out-of-fragment` per copy, and `too-large` for `script-bytes`, refusing on the
-  first that applies with no script. For one request, the two calls
+  first that applies with no script. The `constants` measure counts declared
+  constants and the `applications` measure counts joint disjuncts, so neither
+  reads an atom's term and an out-of-fragment atom does not change them; that
+  is why `out-of-fragment` comes after them. A fault of the Faults bullet is
+  returned at the stage that first reads the broken invariant: `μ_U`'s at the
+  `match-conjunct` stage, an atom's at the `out-of-fragment` stage, and it
+  takes the place of any `Refused` code of that stage. For one request, the two calls
   therefore give the same refusal whenever `of` refuses.
   `HyperProductIdentity::of` SHALL evaluate no `μ_U` conjunct and charge
   nothing to `meter`.
@@ -1139,9 +1239,9 @@ impl HyperProductIdentity {
 | FR-315-AC-9 | `NonInterference` over the secure vault with FR-176-AC-4's added `match` conjunct, which is undefined on every tuple whose `a` step is `step(0)`, keeps `(step(0), step(0))` as a joint disjunct, and `InductionBase{depth: 1}` makes the negated property hold when that disjunct holds between copies 0 and 1. | Test (TC-1120) |
 | FR-315-AC-10 | Each call refuses `SmtEncodingRefusal` and writes no script: an HP-3 clause (`forall trace a of V exists trace b of V`, FR-177) names `hyper-form`; FR-176-AC-3's clause `forall trace a of V { always eventually holds(v.l @ a = 0) }` names `hyper-body`; `Unrolling{depth: 1}` for `NonInterference` names `query-kind`; ADR-023 §1's `SavesPower` with one subject, for `S`, names `subject-binding` at alias `N`; `NonInterference` with a `match` conjunct that calls a function whose evaluation exhausts the request's `meter` names `match-conjunct` at that conjunct and the tuple `(step(0), step(0))`, the first in the joint-step order. The same request with an equal budget gives the same refusal. | Test (TC-1120) |
 | FR-315-AC-11 | Over the secure vault, a matched joint step sets `l` to the same input `i` in both copies, so `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for `NonInterference` are both unsatisfiable, the HP-2 outcome `Inductive{depth: 1}` that FR-182-AC-7 settles. Over a vault whose post clause is `self.l = self.h`, `InductionBase{depth: 1}` is satisfiable from the initial tuple `((0, 0), (1, 0))` with the joint step `(step(0), step(0))`. That model is a matched bad prefix, not a `HyperCounterexample`: it has no lasso, so no outcome follows from it alone, and the clause is refuted only through EN-2's lasso and FR-183's replay. | Analysis (TC-1120) |
-| FR-315-AC-12 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `NonInterference`'s `InductionBase{depth: 1}`, `InductionStep{depth: 1}` and `InductionStep{depth: 2}` queries for instance `v` carry three equal `product` values, each equal to `HyperProductIdentity::of` over the same request. Its `clause()` is the `claim` occurrence of the clause's `hyperproperty` node in the vault package's checked-package v2 emission; its `subjects()` holds one member, equal to FR-336's projection of the vault subject; its `instance()` is the one pair binding the clause's parameter to `v`. The request for instance `w` gives an identity that differs only in `instance()`. The clause with `fair { weak V::Vault::step }` on `a` gives byte-equal scripts and an identity that differs only in `clause()`. A subject that differs only in a proof bound gives an identity that differs only in `subjects()`. Meters of different budgets give equal identities. | Test (TC-1190) |
+| FR-315-AC-12 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `NonInterference`'s `InductionBase{depth: 1}`, `InductionStep{depth: 1}` and `InductionStep{depth: 2}` queries for instance `v` carry three equal `product` values, each equal to `HyperProductIdentity::of` over the same request. Its `clause()` is the `claim` occurrence of the clause's `hyperproperty` node in the vault package's checked-package v2 emission; its `subjects()` holds one member, equal to FR-336's projection of the vault subject; its `instance()` is the one pair binding the clause's parameter to `v`. The request for instance `w` gives an identity that differs only in `instance()`. The clause with `fair { weak V::Vault::step }` on `a` gives byte-equal scripts and an identity that differs in `clause()` and in the checked package of `subjects()`, because the clause is a node of the subject's checked package, and not in `instance()`. A subject that differs only in a proof bound gives an identity that differs only in `subjects()`. Meters of different budgets give equal identities. | Test (TC-1190) |
 | FR-315-AC-13 | Each of these requests is refused `SmtEncodingRefusal` with the same code by both `HyperProductIdentity::of` and `encode_hyper_query`, with no identity and no script: `NonInterference` with an empty `instance` names `instance-binding` at the clause's parameter; with the key `x`, outside the universe `{v}`, it names `instance-binding` at that parameter; ADR-023 §1's `SavesPower` with its `N` subject over a checked package other than the `S` subject's names `subject-binding` at alias `N`; `NonInterference` over a subject whose checked package has no checked-package v2 emission names `product-identity` at the clause; the HP-3 clause of FR-315-AC-10 names `hyper-form`; FR-176-AC-3's liveness clause with an empty `instance` names `instance-binding`, not `hyper-body`. `HyperProductIdentity::of` over `NonInterference` with a `match` conjunct whose evaluation exhausts the request's `meter` returns the identity and leaves the meter's consumed counters at zero. | Test (TC-1190) |
-| FR-315-AC-14 | A crate whose only QSL dependency is `qsl-replay` names `qsl_replay::HyperProductIdentity`, `HyperQuery`, `HyperQueryRequest`, `SubjectIdentity`, `HyperSmtOutcome` and `settle_hyper_smt` from its `replay` module, calls `encode_hyper_query`, `HyperProductIdentity::of` and `settle_hyper_smt` there, and compiles. In that crate a struct literal of `HyperProductIdentity`, serializing one and deserializing one each fail to compile. | Test (TC-1190) |
+| FR-315-AC-14 | A crate whose only QSL dependency is `qsl-replay` names `qsl_replay::HyperProductIdentity`, `HyperQuery`, `HyperQueryRequest` and `SubjectIdentity` from its `replay` module, calls `encode_hyper_query` and `HyperProductIdentity::of` there, and compiles. In that crate a struct literal of `HyperProductIdentity` fails to compile with E0451, and serializing one and deserializing one each fail with E0277. `HyperSmtOutcome` and `settle_hyper_smt` are the settle half of the facade, checked by FR-182-AC-16. | Test (TC-1190) |
 | FR-315-AC-15 | Over the `Tally` subject of FR-315-AC-4 under infinite-trace, each step assertion of `Unrolling{depth: 3}` for `always holds(t.tally < 2)` is the disjunction of exactly two disjuncts, `bump`'s and then the proof-query stutter. The stutter between copies `i` and `i+1` is the conjunction of `(= s<i+1>.t.next s<i>.t.next)` and `(= s<i+1>.t.tally s<i>.t.tally)` and holds no other conjunct: no precondition, enabledness or candidate term. | Test (TC-900) |
 | FR-315-AC-16 | Read by a `QF_LIA` solver: over `Tally`, `Unrolling{depth: 3}` and `InductionBase{depth: 3}` for `always holds(t.tally < 2)` are satisfiable, the path `(0, 1)`, `(1, 2)`, `(2, 3)` reaching the violation at position 2 and depth 3 by the stutter at `(2, 3)`, where `G` holds and no candidate satisfies `C`. `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for `always holds(t.tally < 3)` are both unsatisfiable. For `Tally`'s deadlock-freedom item, with no `terminal` declaration, `InductionBase{depth: 2}` is satisfiable, `(2, 3)` being a deadlock at position 2, and `InductionBase{depth: 1}` is unsatisfiable; with DL-1's `terminal when P` for `P` the state predicate `t.tally = 2`, `InductionBase{depth: 3}` is unsatisfiable. | Analysis (TC-900) |
 | FR-315-AC-17 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` declares `h0` to `h5` and asserts `(not h0)`. Each step assertion `i` is printed as `(and (= h<i+1> (or h<i> (not E))) (or h<i+1> D))`, with no stutter disjunct: `D` is `inc`'s disjunct between copies `i` and `i+1`, and `E` is `inc`'s enabledness, `(and A (or B0 B1 B2 B3))`, `A` being `CanInc` on copy `i` and `Bv` being `Inc` read with `value` `v` as a literal, for the candidates 0, 1, 2 and 3 in that order. The violation at each position `p` in `0..=5` includes `h<p>`. `InductionBase{depth: 3}` for `always[0,3] holds(c.value <= 3)` refuses `query-kind`, and so does `Unrolling{depth: 2}` for `eventually[0,3] holds(c.value = 3)`. | Test (TC-900) |
@@ -1157,7 +1257,7 @@ impl HyperProductIdentity {
 | FR-315-AC-27 | Over FR-315-AC-4's `Tally` with an added operation `peek(): Boolean` (empty frame, postcondition `post P { result = (self.tally < 3 and self.next = self.tally + 1) }`), `bump` unchanged, the postcondition failure of `peek` at copy `i` is printed over its one candidate as `(or U1 (and (not A1) U2))`: `U1` and `A1` read with `result` `false` (first in FR-120's result order), `U2` with `true`. `peek`'s disjunct has the postcondition part `(or A1 A2)`. | Test (TC-900) |
 | FR-315-AC-28 | Over FR-315-AC-1's `Counter` under event-position false-extension, a model of `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` has live copies `0` to `3` and `h4`, `h5` true; CG reads it as the prefix `0, 1, 2, 3` ending at the terminal state 3, which FR-128 replays to `refuted`. A model of `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` gives the prefix `0, 1, 2`. Over the AC-26 base model for `always holds(c.value <= 1)` with a prefix step altered so that it is not enabled at its pre-state, replay refuses naming that step, and CG settles it as FR-127's table settles that refusal, V-6 `ReplayRefused` (FR-127-AC-3), not `InductionNotClosed`. A model of `Unrolling{depth: 2}` for `always[0,5] holds(c.value <= 1)` fails at the live, non-terminal position 2, below the horizon 5, so it is no CX-1 counterexample and the query gives no outcome at depth 2. | Analysis (TC-900) |
 | FR-315-AC-29 | Inside `qsl-eval`, `encode_smt_query` called with FR-315-AC-2's TP-1 item `always holds(c.value <= 3)` whose checked clause has had its profile set to event-position false-extension after S3, and with FR-315-AC-23's TP-3 item altered the same way, returns `SmtEncodingRefusal::Fault` carrying `InternalFault` (`runtime_invariant`, `established-invariant-broken`) naming the invariant that a TP-1, TP-3 or deadlock-freedom item binds infinite-trace, with no script and no `Refused` code. No well-formed request carries such an item. | Test (TC-900) |
-| FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` from a later check of `encode_hyper_query`, whose `product` is `Ok` and equal to the item's identity, settles `failed`, `Failed`, not V-8. Inside `qsl-eval`, with the request's checked clause altered after S3 so that `HyperProductIdentity::of` returns `Fault(f)`, CG's outcome is `EncodingRefused { refusal: Fault(f) }` with `product: Err(f)`, and `settle_hyper_smt` over that item writes a `failed`, `Failed` record and refuses no `ItemIdentity`. The same `Err` outcome settled for an item whose `of` returns an identity is refused `ProductMismatch` naming `clause`. | Test (TC-900) |
+| FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` from a later check of `encode_hyper_query`, whose `product` is `Ok` and equal to the item's identity, settles `failed`, `Failed`, not V-8. Inside `qsl-replay`'s own tests, with the request's checked clause altered after S3 so that `HyperProductIdentity::of` returns `Fault(f)`, CG's outcome is `EncodingRefused { refusal: Fault(f) }` with `product: Err(f)`, and `settle_hyper_smt` over that item writes a `failed`, `Failed` record and refuses no `ItemIdentity`. The same `Err` outcome settled for an item whose `of` returns an identity is refused `ProductMismatch` naming `clause`. | Test (TC-900) |
 | FR-315-AC-31 | FR-315-AC-1's `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` has, at each position `p` in `0..=3`, the violation disjuncts `h<p>` and then `(not (<= s<p>.c.value 3))`, followed by `inc`'s postcondition failure `(and (not h<p>) F)`, and no disjunct for a position past 3. `inc` has that failure term because `Inc`'s right side `pre(self.value) + 1` is an integer sum compared by `=` with the `Int[0, 3]` field `self.value`, so FR-104's equality typing (TC-1084) coerces it into `Int[0, 3]`, a range coercion with a definedness condition. The query has no atom-failure disjunct, because `c.value <= 3` holds no partial construct, and no precondition-failure disjunct, because `CanInc` (`self.value < 3`) holds none. | Test (TC-900) |
 | FR-315-AC-32 | `SmtEncodingRefusal` has exactly the two arms `Refused { code, locus }`, its code one of the closed refusal set, and `Fault(InternalFault)`. No refusal code names a broken invariant. None of FR-315-AC-21's requests returns `Fault`. Inside `qsl-eval`, an encoding called with a TP-1 item whose checked clause has had its one atom removed after S3, which no well-formed request carries, returns `Fault` naming the atom invariant, not `Refused` with `item-form`. | Test (TC-900) |
 | FR-315-AC-33 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 2}` for the TP-2 claim `eventually[0,1] holds(c.value = 3)` with activation `on each` declares `s0.c.value`, `m0.0`, `h0`, `s1.c.value`, `m1.0`, `h1`, `s2.c.value`, `m2.0`, `h2` in that order; asserts at each position the range assertion of `s<i>.c.value` and then `(and (<= 0 m<i>.0) (<= m<i>.0 s-1))`, `s` the tabulated monitor states; asserts `(= s0.c.value 0)`, `(not h0)` and two step assertions in FR-315-AC-17's false-extension form with no stutter disjunct; and then the monitor implications. The monitor has one letter member, the atom `A<i>` = `(= s<i>.c.value 3)`, so the position-0 implications are one per move from the initial state on the letters 0, 1 and the end letter 2, whose terms are `(and (not h0) (not A0))`, `(and (not h0) A0)` and `h0`; positions 1 and 2 have one implication per tabulated move. The negated property has, at each position `p` in `0..=2`, the violation `(= m<p>.0 r)`, `r` the rejecting state's number, followed by `inc`'s postcondition failure `(and (not h<p>) F)` (FR-315-AC-31). Encoding it twice gives byte-equal scripts. `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for the same item are encoded, not refused `query-kind`; the step asserts no initial-state predicate, no `(not h0)` and no position-0 implication, and its one distinctness assertion is `(not (and (= h1 h0) (or h1 (= s1.c.value s0.c.value)) (= m1.0 m0.0)))`. | Test (TC-1201) |
@@ -1174,6 +1274,13 @@ impl HyperProductIdentity {
 
 | FR-315-AC-44 | Over FR-315-AC-1's `Counter` with `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose canonical script declares 8 constants, direct calls with `max_constants` 8 and the default produce byte-equal scripts; limits 7 and 0 each refuse `too-large` with measure `constants`, value 8, the corresponding limit and setting `smt_encoding.max_constants`, and no script. With `max_script_bytes` 0, the query refuses `too-large` at value 1, limit 0 and setting `smt_encoding.max_script_bytes`; raising it to exactly the canonical script length succeeds, and lowering it by one refuses at the first byte past the limit. | Test (TC-1250) |
 | FR-315-AC-45 | For FR-315-AC-1's `Counter`, direct calls with `max_applications` 1 and `max_candidates` 4 produce the default script; values 0 and 3 respectively refuse `too-large` with the measure's value 1 or 4, the supplied limit and corresponding `smt_encoding.*` setting. For the TP-3 item `always (holds(c.value = 3) implies always holds(c.value = 3))`, whose monitor letter has two atoms and whose tabulation reaches three states, limits `max_monitor_atoms` 2 and `max_monitor_states` 3 produce the default script; limits 1 and 2 respectively refuse `too-large` with values 2 and 3 and their corresponding setting names. | Test (TC-1250) |
+| FR-315-AC-46 | `qsl_replay::HyperQueryRequest` is built by a struct literal with exactly the members `clause`, `subjects`, `instance`, `meter` and `encoding`, and has no member of type `StepMatch`, `HyperLetters` or any `dyn` reader. Over the secure vault, `encode_hyper_query` for `NonInterference` at instance `v` and `InductionBase{depth: 1}` leaves the `Meter` that the request borrows with the consumed counters that one fresh `Meter` of the same budget has after nine `CheckedStepMatch::universal` calls on it in sequence, one per tuple of FR-315-AC-7's nine in lexicographic order with the labels the encoder gives that tuple, and no other charge. `InductionBase{depth: 3}`, `InductionStep{depth: 1}` and the same request at instance `w` leave the same counters. The consumed counters of `HyperProductIdentity::of` for the request stay at zero. The vault here holds only the instance's vault in its `vaults` universe (`{v}`, and `{w}` for the request at `w`), so the nine tuples are those of one receiver, unlike FR-315-AC-12's universe `{v, w}`. | Test (TC-1120) |
+| FR-315-AC-47 | `NonInterference` with a third conjunct 2 that the kernel refuses, is refused `SmtEncodingRefusal` `match-conjunct` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, naming conjunct 2 of `mu_universal()`, its site `hyper <c> match 2` and the tuple `(step(0), step(0))`, the first tuple in joint-step order on which conjuncts 0 and 1 hold. The refused conjunct is the exhausting-function conjunct of FR-315-AC-10, which names that tuple, and the refusal is given again with an equal budget. FR-487-AC-5's `quire::value::ieee::sqrt` comparison under `Float64[exact]`, which the kernel refuses `ieee_not_exact`, takes the `Refused` arm of the same code path and names the same fields; no test here authors it, because S2 represents no float literal, and the arm is checked when it does. Both give the same refusal when repeated with an equal budget. `HyperProductIdentity::of` returns its identity and charges nothing. | Test (TC-1120) |
+| FR-315-AC-48 | `NonInterference` with FR-176-AC-5's body `always holds(1 mod (1 - v.h @ a) = 1 mod (1 - v.h @ b))`, whose divisors are not literals, is refused `SmtEncodingRefusal` `out-of-fragment` with no script by `InductionBase{depth: 1}` and `InductionStep{depth: 1}`, located at the atom's site `hyper <c> holds <n>`. The same clause with a `match` conjunct that exhausts the meter is refused `match-conjunct`, not `out-of-fragment`, the refusal order being as this requirement states. The scripts of FR-315-AC-7 and FR-315-AC-9 and the base script of FR-315-AC-43 are accepted by a `QF_LIA` solver. | Test (TC-1120) |
+| FR-315-AC-49 | `HyperProductIdentity::of` and `encode_hyper_query` over `NonInterference` as S3 checked it, before any package assembled it (`assembled_occurrence()` is `None`), each refuse `SmtEncodingRefusal` `product-identity` at the clause, with no identity and no script, charging nothing to the meter. The same request over the assembled clause returns the identity of FR-315-AC-12. | Test (TC-1190) |
+| FR-315-AC-50 | For the TP-3 item of FR-315-AC-45 and for `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, the `MonitorTable` constructor over the body's `CheckedFormula` and profile gives tables with equal state counts, initial state, rejecting state and numbered moves, and `MonitorTable::of` over the TP-3 item gives that item's table through the constructor. FR-315-AC-45's scripts are byte-equal to golden bytes recorded from `main` before `MonitorTable::of` delegates to the constructor, the golden files being added in the refactor's first commit. FR-315-AC-43's hyper scripts are byte-equal to golden bytes recorded from `encode_hyper_query` itself when it was introduced, so they pin its output against change and are not evidence of equality with `main`. | Test (TC-1264) |
+| FR-315-AC-51 | Over ADR-023 §8's secure vault, `encode_hyper_query` for `NonInterference` at instance `v` over a subject that FR-120 does not admit (its `snapshots` provision lacks the document an initial state names) is refused `SmtEncodingRefusal` `subject-binding` at alias `V`, with no script, after `HyperProductIdentity::of` has returned the identity for the same request. | Test (TC-1190) |
+| FR-315-AC-52 | Inside `qsl-replay`'s tests, with the request's checked clause altered after S3 so that an object parameter names an alias the clause does not hold, `HyperProductIdentity::of` returns `Fault` and not `instance-binding`, and `encode_hyper_query` returns the same `Fault`. | Test (TC-1190) |
 
 ## Dependencies
 
@@ -1222,4 +1329,6 @@ impl HyperProductIdentity {
   Linear STD-340; monitor items (every bounded TP-2 formula, `on each`
   activations, guarded clauses) and per-instance monitors: Linear STD-407;
   the hyper queries' checked atoms, `match` conjuncts and body monitor:
-  Linear QSL-1072.
+  Linear QSL-1072; `encode_hyper_query` and its request: Linear QSL-1010
+  and QSL-1083. The earlier seam-carrying draft (quire-spec-language #1484)
+  was closed by SR-17048 to SR-17053.

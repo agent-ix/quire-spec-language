@@ -1,0 +1,15 @@
+[package]
+name = "checked-closure-consumer"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+qsl-replay = { path = "../../../qsl-replay" }
+quire-eval = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

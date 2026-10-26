@@ -1047,6 +1047,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::DuplicateReward {
                     reward, operation, ..
                 } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::InvalidDelay {
+                    operation, fault, ..
+                } => format!("{message}: the delay of `{operation}` is malformed ({fault:?})"),
+                ProbabilisticCause::DelayOnUntimedModel { operation, .. } => format!(
+                    "{message}: `{operation}` has a delay, but its model is not `time dense`"
+                ),
                 ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
                     "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
                 ),
@@ -1206,6 +1212,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::OpenInterval { .. } => {
                     format!("{message}: this profile admits no `[a,*]` interval")
                 }
+                TemporalCause::Multiple { causes } => format!(
+                    "{message}: multiple temporal faults in source order ({})",
+                    causes.len()
+                ),
                 TemporalCause::InvertedInterval { lower, upper, .. } => {
                     format!("{message}: the interval [{lower},{upper}] has a > b")
                 }
@@ -1219,6 +1229,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::DuplicateTrigger { name, .. } => format!(
                     "{message}: the `on each` parameter `{name}` repeats the `over` parameter's name"
                 ),
+                TemporalCause::DuplicateCapture { name, .. } => format!(
+                    "{message}: the capture `{name}` repeats the name of the `over` parameter, \
+                     the `on each` parameter or an earlier capture"
+                ),
                 TemporalCause::UnresolvedFairnessOperation { name, .. } => {
                     format!("{message}: the fairness operation `{name}` names no model operation")
                 }
@@ -1227,6 +1241,21 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")
+                }
+                TemporalCause::AggregateModelSubject { .. } => {
+                    format!("{message}: aggregate terms require a trace subject")
+                }
+                TemporalCause::InvalidAggregateValue { .. } => {
+                    format!("{message}: an aggregate literal is outside its admitted range")
+                }
+                TemporalCause::InvalidAggregateWindow { .. } => {
+                    format!("{message}: the aggregate window has a > b")
+                }
+                TemporalCause::AggregateWindowKindMismatch { .. } => {
+                    format!("{message}: the aggregate window bound has the wrong kind for this profile")
+                }
+                TemporalCause::AggregateProfileUnsupported { .. } => {
+                    format!("{message}: this temporal profile admits no aggregate window")
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")

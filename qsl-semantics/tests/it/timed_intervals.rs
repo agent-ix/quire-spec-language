@@ -470,34 +470,15 @@ fn timed_bounds_are_time_quantities_of_the_unit_graph() {
     );
 }
 
-/// A clause that checks under the timed profile is refused by the package
-/// check as not emitted: S4 writes no timed interval (QSpec FR-370's timed
-/// form), so the clause never compiles into a package that lacks it.
+/// A clause that checks under the timed profile emits the QSpec FR-370 timed
+/// interval member and reaches the package check.
 #[trace("TC-689", "FR-234")]
 #[test]
-fn a_checked_timed_clause_is_refused_as_not_emitted() {
-    let body = "eventually[0 ms, 3 ms] holds(c.healthy)";
-    let (text, package, outcome) = check_with(UNITS, OVER, "model-time", body, vec![dense_ms()]);
+fn a_checked_timed_clause_reaches_package_check() {
+    let body = "eventually[0 ms, 3 ms] holds(c.versionNumber = 2)";
+    let (_, package, outcome) = check_with(UNITS, OVER, "model-time", body, vec![dense_ms()]);
     assert!(outcome.is_ok(), "{outcome:?}");
-    let refusals = package
+    package
         .check(quire_semantic_value::checking::CheckingLimits::default())
-        .expect_err("a timed clause is not emitted");
-    let causes: Vec<&TemporalCause> = refusals
-        .iter()
-        .filter_map(|refusal| match &refusal.cause {
-            CheckCause::Temporal(cause) => Some(&**cause),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        causes,
-        [&TemporalCause::NotEmitted {
-            name: "C".to_owned(),
-            span: Span {
-                start: first(&text, "temporal C").start,
-                end: text.trim_end().len(),
-            },
-        }],
-        "{refusals:?}"
-    );
+        .expect("FR-370 carries the checked timed interval through S4");
 }

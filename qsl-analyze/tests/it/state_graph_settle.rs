@@ -1153,3 +1153,38 @@ fn a_witnessed_outcome_missing_a_witness_never_settles_proved() {
     assert_eq!(record.value, TerminalValue::Failed);
     assert_eq!(replays, 0);
 }
+
+/// FR-410-AC-3 (settlement half): a request whose claim triple does not
+/// resolve in the request's recompiled package settles `Failed`; no
+/// certificate is checked and no evidence replayed. `ReachesTwo`'s triple
+/// names a node the package of `ReachesThree` does not hold.
+#[trace("TC-1140", "FR-410-AC-3")]
+#[test]
+fn a_claim_the_request_package_does_not_hold_settles_failed() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let foreign = config_world(REACHES_THREE, &[(0, 0)]);
+    let result = run(world.request(
+        AB,
+        vec![world.item("ReachesTwo")],
+        ModelCheckLimits::default(),
+    ));
+    let instance = &result.items[0][0];
+    let mut replays = 0;
+    let record = settle_state_graph(
+        instance,
+        &method(ModelCheckLimits::default()),
+        &foreign.package_id().record(),
+        foreign.subject(AB, UNLIMITED),
+        world.claim("ReachesTwo"),
+        &Cancel::new(),
+        |_| {
+            replays += 1;
+            Ok(GraphReplayResult {
+                settlement: GraphReplaySettlement::Reproduced,
+                package_id: foreign.package_id(),
+            })
+        },
+    );
+    assert_eq!(record.value, TerminalValue::Failed);
+    assert_eq!(replays, 0);
+}

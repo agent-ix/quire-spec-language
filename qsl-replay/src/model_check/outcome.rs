@@ -2,7 +2,7 @@
 //! FR-126 Outputs (ADR-018 LA-3, LA-5): what an EN-1 run returns, which
 //! FR-127's settlement map settles.
 
-use crate::certificate::closure::ClosureCertificate;
+use crate::certificate::scc::ProofCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{
@@ -143,7 +143,7 @@ pub enum ModelCheckOutcome<T: SubjectTransition = ModelTransition> {
     /// settles (ADR-018 PC-3).
     Holds {
         /// The explored product states.
-        certificate: ClosureCertificate,
+        certificate: ProofCertificate,
         /// The run's counts.
         stats: RunStats,
     },

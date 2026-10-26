@@ -131,27 +131,85 @@ with its seven bindings in that order:
 - `parameters`: one `binding(name, reference)` per object parameter in
   declaration order, the reference being to the `model` node of the object
   type `T` that `v: V::T` declares.
-- `quantifiers`: one `binding(variable, aggregate)` per quantifier in
-  source order. The aggregate holds, in order, a `text` literal `forall` or
-  `exists`, a `text` literal naming the alias, and an aggregate of the
-  variable's resolved fairness constraints, in fairness-set order, empty for
-  the empty set. A constraint is written as the aggregate of the bindings
-  `kind` (the text `fairness`), `fairness_kind` (`weak` or `strong`),
-  `granularity` (`whole` or `each`), `declaration` (a `reference` to the
-  declaring `model`/`object_type` node) and `name` (the operation's text),
-  the names and values of QSpec FR-370's `fairness` member, resolved as
-  FR-337 resolves them, so an unmarked constraint and its written
-  `weak whole` form emit identical bytes (ADR-018 FA-6). The emitter takes
-  `declaration` and `name` from the resolved constraint (FR-123, checked
-  at S3 against the quantifier's model): the most derived effective
-  operation and its declaring type, as FR-370 "Fairness resolution" does.
-  No reader validates them in a `hyperproperty` body (Q-1). The emitter
-  SHALL refuse a constraint whose declaring node is a
-  `model`/`systems_interface` node `unsupported_construct`/
-  `not-yet-implemented` at the constraint, as FR-370-AC-11 refuses such a
-  fairness member of a clause (Remaining work: QSL-1094). This inline form
-  replaces FR-402's "references to its fairness constraints" for the reason
-  in Q-1.
+- `quantifiers`: one `binding("quantifiers", tuple)`, `tuple` being an
+  `aggregate` whose members are all Groups (QSpec FR-322 "Body grammar"; Q-7),
+  in this order: for each quantifier in source order, one **quantifier
+  Group**, then one **fairness Group** per constraint of the variable's
+  resolved fairness set, in fairness-set order (none for the empty set).
+  - A quantifier Group is an `aggregate` of four `binding`s with `text`
+    literal values, in order: `kind` = `quantifier`, `variable` = the trace
+    variable's name, `quantifier` = `forall` or `exists`, and `alias` = the
+    alias's name.
+  - A fairness Group is an `aggregate` of six `binding`s with Leaf values, in
+    order: `kind` = the text `fairness`, `variable` = the text naming the
+    variable the constraint belongs to, `fairness_kind` (`weak` or `strong`),
+    `granularity` (`whole` or `each`), `declaration` (a `reference` to the
+    declaring `model`/`object_type` node) and `name` (the operation's text).
+    Its `kind`, `fairness_kind`, `granularity`, `declaration` and `name` are
+    the names and values of QSpec FR-370's `fairness` member, resolved as
+    FR-337 resolves them, so an unmarked constraint and its written
+    `weak whole` form emit identical bytes (ADR-018 FA-6).
+  - A fairness Group belongs to the variable it names, and stands after that
+    variable's quantifier Group; moving a constraint to another variable
+    changes `variable` and its position.
+  - The emitter takes `declaration` and `name` from the resolved constraint
+    (FR-123, checked at S3 against the quantifier's model): the most derived
+    effective operation and its declaring type, as FR-370 "Fairness
+    resolution" does. No reader validates them in a `hyperproperty` body
+    (Q-1). The emitter SHALL refuse a constraint whose declaring node is a
+    `model`/`systems_interface` node `unsupported_construct`/
+    `not-yet-implemented` at the constraint, as FR-370-AC-11 refuses such a
+    fairness member of a clause (Remaining work: QSL-1094).
+  - This flat form replaces FR-402's `binding(variable, aggregate)` per
+    quantifier with nested fairness references, which FR-322's body grammar
+    cannot express (Q-7), and FR-402's references to fairness constraint
+    nodes, for the reason in Q-1.
+
+**Grammar fit.** Every shape the aggregate uses is legal in FR-322 "Body
+grammar", and the pinned reader's flat-wire rules (`flat_wire.rs`, `Flat::enter`
+and `aggregate_stratum`) place it as follows. The node body is a Body
+aggregate, so each of the seven bindings stands as a Member `binding`
+(rule: Body aggregate members are Members; `Place::Member` takes a
+`binding`), whose value is read as `BindingValue`:
+`domain` a Leaf literal; `subjects`, `parameters` and `align_skip` an
+`aggregate` whose first non-Leaf member is a `binding` (or none), hence a
+Group whose members are `binding(name, Leaf)` or Leaves; `match` an `aggregate`
+of Leaves (references, or a literal for a constant conjunct), hence a Group;
+`quantifiers` an `aggregate` whose first non-Leaf member is an `aggregate`,
+hence a Tuple whose members are Groups, each Group's members being
+`binding(name, Leaf)` (`Place::GroupMember` takes a `binding` whose value is
+`LeafOnly`); `body` a `binding` of a Leaf reference. The depth chain is
+Member binding, Tuple, Group, binding, Leaf, the longest the grammar allows.
+An `aggregate` in a `GroupMember` or `LeafOnly` position, or a `binding`
+anywhere but a Member or Group member, is `malformed_wire`; this encoding has
+none. The `aggregate_stratum` rule reads a binding value by its first
+non-Leaf member, so the `quantifiers` Tuple SHALL hold only Groups and a
+Group only Leaves and bindings of Leaves.
+
+**Structural stage.** After the flat wire, the pinned reader's structural
+stage (`structural.rs`, `validate_structural_nodes`) checks per node kind. For
+the kinds this requirement emits:
+
+- `value`/`parameter` (`parameter_defect`): the `semantic_type` is a binder
+  type, a node of tag `scalar_type`, `composite_type` or `bounded_domain` (a
+  `Reference<T>`, `Option<…>` or `String` slot type qualifies) or a record or
+  hybrid model type; the body is the aggregate of `binding("name", text
+  literal)` and `binding("level", integer literal)` with the name an ASCII
+  identifier (§ "Slot node names") and the level a non-negative integer
+  string; `dependencies` is empty; every occurrence has role `expression`.
+- `state`/`operation_anchor`: `typed_anchor_body`, written by the existing
+  anchor routine.
+- `claim`/`hyperproperty`, `temporal`/`temporal_clause`, `temporal`/`formula`
+  and `expression` nodes have no structural form; an application node's
+  `dependencies` equal the references of its body (`application_dependencies`),
+  as the existing emitters write them. The `hyperproperty` body is an
+  aggregate and has no application join; its `dependencies` are the nodes it
+  references (QSpec FR-402).
+- The `model` nodes the body references are existing declaration nodes.
+
+No other structural rule applies to a node of these kinds, so the slot name is
+the one rule this requirement's new nodes can break there.
+
 - `match`: one term per conjunct of `mu_universal()` and `mu_existential()`
   together, in source order. The order comes from
   `CheckedHyperClause::conjuncts()`, which this requirement adds to FR-487's
@@ -185,24 +243,55 @@ occurrence, or for the copy-swap symmetry, a function of the clause.
   `j` in `slots()` for a conjunct. The wrapper binds only atom slot 0
   (through `over`); every other slot of an atom or a conjunct is a free
   parameter of its term, as an `on each` trigger is of its guard. The same
-  read therefore mints different nodes where its position differs: `b.step.op`
-  is level 1 in a conjunct that reads `a.step.op` first and level 0 in a
-  conjunct that reads only `b`. Parameter nodes are keyed by name, level and
+  read therefore mints different nodes where its position differs: the node
+  `op_sb` (the `b.step.op` read) is level 1 in a conjunct that reads
+  `a.step.op` first and level 0 in a conjunct that reads only `b`. Parameter nodes are keyed by name, level and
   type (FR-322), so equal reads at equal levels share one node across atoms,
   conjuncts and clauses. QSpec states no binder scope for them (Q-3).
 - The emitter SHALL mint, for each atom slot (`t`, `p`) of
   `atom_slots()` (FR-487 "Atom slots"), one `value`/`parameter` node named
-  `<p>@<t>` (parameter name, `@`, trace variable name; neither name can
-  contain `@`), at the level the rule above gives, typed by the type node of
+  `slot_s<esc(p)>_s<esc(t)>` (§ "Slot node names"), at the level the rule above gives, typed by the type node of
   the slot's checked type `Reference<T>`.
 - It SHALL record the node's one `expression` occurrence at the site
   `hyper <c> slot <k>` and a `type` occurrence of its type node there, as
   FR-337 records the `over` parameter node's.
 - Every atom of the clause SHALL read the same slot nodes, whatever the atom.
 
-The slot is the component: a read of slot `v@a` is a read in the state of
+The slot is the component: a read of slot `slot_sv_sa` (`v@a`) is a read in the state of
 the component that trace variable `a` names (QSpec states no other carrier,
 Q-3).
+
+### Slot node names
+
+The pinned reader requires a `value`/`parameter` node's `name` to be an ASCII
+identifier, `[A-Za-z_][A-Za-z0-9_]*` (`typed_parameter_binding` with
+`is_identifier`, structural stage), so a name cannot carry `@`, `.` or `:`.
+The emitter SHALL write every slot node name by this encoding, which is
+deterministic and injective:
+
+- `esc(x)` maps each byte of the UTF-8 text `x` as follows: an ASCII letter
+  or digit is itself; `_` is `__`; any other byte is `_x` followed by two
+  uppercase hexadecimal digits.
+- A name is a tag, then one `_s` and `esc(field)` for each field, in order:
+  - atom slot (`p`, `t`): `slot_s<esc(p)>_s<esc(t)>` (object parameter name,
+    trace variable name), e.g. `slot_sv_sa` for `v@a`;
+  - conjunct `op` read of `t`: `op_s<esc(t)>`, e.g. `op_sa`;
+  - conjunct `receiver` read of `t`: `rcv_s<esc(t)>`;
+  - conjunct argument read of `t`, operation `O` = `T::name`, parameter `p`:
+    `arg_s<esc(t)>_s<esc(T)>_s<esc(name)>_s<esc(p)>`, e.g.
+    `arg_sa_sVault_sstep_si`.
+- **Injective.** The tags `slot`, `op`, `rcv` and `arg` contain no `_` and
+  each name begins with a tag followed by `_s`, so the tag, and with it the
+  number of fields, is determined by the name. Within the remainder every `_`
+  starts exactly one of the codes `__` (a literal `_`), `_x` plus two hex
+  digits (one byte) or `_s` (a field separator), and no code is a prefix of
+  another, so reading left to right splits the name into its fields uniquely
+  and each field decodes uniquely. Two distinct (tag, fields) therefore give
+  distinct names, whatever underscores or non-ASCII characters the source
+  names hold, and a name begins with a letter, as an identifier must.
+- The name is unique per (tag, fields); the node's identity still comes from
+  its (name, level, type) key (FR-322), and the level rule above is
+  unchanged.
 
 ### The body
 
@@ -236,12 +325,13 @@ Q-3).
 - The emitter SHALL record one `claim` occurrence of the wrapper at the site
   `hyper <c> body`, one `expression` occurrence of each formula node at
   `hyper <c> node <i>`, `i` its arena index, and the condition's
-  occurrences at `hyper <c> holds <n>` (FR-487). The wrapper's name
-  `<p>@<t>` for `over` contains `@`, which no source identifier does, so the
-  wrapper equals no temporal clause a unit declares.
+  occurrences at `hyper <c> holds <n>` (FR-487). The wrapper's `over`
+  parameter is named `slot_s<esc(p)>_s<esc(t)>`, a name a unit's temporal
+  clause could in principle also declare; a standalone clause that equalled
+  the wrapper in every node would share it (Q-5).
 - **Consequence.** FR-370 gives a `temporal_clause` node `claim`
   occurrences only, so the wrapper is, to a consumer that does not know it, a
-  single-trace temporal claim over slot `v@a` with a free level-1 parameter.
+  single-trace temporal claim over slot `slot_sv_sa` with a free level-1 parameter.
   Mitigation inside QSL: the I2 reader SHALL skip a
   `temporal`/`temporal_clause` node that is the `body` target of a
   `hyperproperty` node when it lists FR-337's clause roots; a looked-up
@@ -255,13 +345,13 @@ Q-3).
 
 - Each conjunct is its checked condition lowered as FR-093 lowers a Boolean
   expression. The aggregate member is the term the lowering returns: a
-  `reference` to the condition's root `expression` node, or a `literal`
-  term for a constant conjunct such as `true` (Q-4).
+  `reference` to the condition's root `expression` node; a constant conjunct
+  such as `true` lowers to a boolean `literal` `value` node and the
+  term is a `reference` to it (Q-4).
 - The condition's slot `j` (FR-487 "Slots") is bound to a
-  `value`/`parameter` node, at level `j` (the level rule above), named by the step-label read it
-  stands for, written `<t>.step.op`, `<t>.step.receiver` or
-  `<t>.step.<O>.<p>`, `O` being the operation as `<T>::<name>` with `T` the
-  declaring object type, typed by the type node of `StepRead::read_type()`,
+  `value`/`parameter` node, at level `j` (the level rule above), named by the
+  step-label read it stands for as § "Slot node names" gives (`op_s<t>`,
+  `rcv_s<t>` or `arg_s<t>_s<T>_s<name>_s<p>`, each field escaped), typed by the type node of `StepRead::read_type()`,
   which is a `String` for `op` (FR-487 "Lowered form") and an `Option` for a
   receiver or argument. A conjunct reading `a.step.op` twice has one slot.
 - The emitter SHALL record each slot node's `expression` occurrence and its
@@ -328,18 +418,20 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-488-AC-1 | Compiling `NonInterference` emits one `claim`/`hyperproperty` node of Boolean `semantic_type` whose body is an aggregate of exactly the seven bindings `domain`, `subjects`, `parameters`, `quantifiers`, `match`, `align_skip`, `body`, in that order. | Test (TC-1266) |
-| FR-488-AC-2 | In AC-1's node, `domain` is the text `behaviours`; `subjects` is one binding `V` to the `model` node of `Vault`; `parameters` is one binding `v` to the same node; `quantifiers` binds `a` and `b` each to `forall`, `V` and an empty aggregate; `align_skip` is empty; `body` references a `temporal`/`temporal_clause` node. | Test (TC-1266) |
+| FR-488-AC-2 | In AC-1's node, `domain` is the text `behaviours`; `subjects` is one binding `V` to the `model` node of `Vault`; `parameters` is one binding `v` to the same node; `quantifiers` is a Tuple of exactly two quantifier Groups, `a` then `b`, each binding `kind` `quantifier`, `variable`, `quantifier` `forall` and `alias` `V`, and no fairness Group; `align_skip` is empty; `body` references a `temporal`/`temporal_clause` node. | Test (TC-1266) |
 | FR-488-AC-3 | The I2 reader admits AC-1's package and returns the clause's `claim` triple and the body wrapper's NodeId. | Test (TC-1266) |
-| FR-488-AC-4 | The body wrapper of `NonInterference` is a `quire.op.temporal.clause` application with one `temporal_profile` law equal to the lock's row and the arguments `over` a reference to the `value`/`parameter` node `v@a` at level 0, clock `model-steps`, activation binding `kind` to `origin` alone, empty captures, empty fairness, and `formula` a reference to a `quire.op.temporal.always` node with a `null` interval whose operand is a `holds` node. | Test (TC-1266) |
-| FR-488-AC-5 | The `holds` operand of AC-4 is the equality of the field read `l` of `v@a` (level 0) and of `v@b` (level 1), with no term for `@`; the slot nodes have `expression` occurrences at `hyper 0 slot 0` and `hyper 0 slot 1` and `type` occurrences of their type node. | Test (TC-1266) |
-| FR-488-AC-6 | `SavesPower` emits `subjects` with two bindings `S` and `N` in order of first naming, each to the `model` node of its alias's first object parameter's type, `parameters` `d` and `e` in declaration order, slot nodes `d@s` and `e@n`, and a `holds` operand reading `used` of `d@s` and of `e@n`. | Test (TC-1266) |
-| FR-488-AC-7 | `NonInterference`'s `match` aggregate holds, in source order, a reference to the equality of the `parameter` nodes `a.step.op` and `b.step.op` (levels 0 and 1, `String`), then a reference to the equality of `a.step.Vault::step.i` and `b.step.Vault::step.i` (`Option<Int[0, 1]>`), with each conjunct root's `expression` occurrence at `hyper 0 match <k>`. | Test (TC-1266) |
-| FR-488-AC-8 | In `match { a.step.op = V::Vault::step and b.step.op = stutter }` the first term compares its one slot with the `String` literal of `step`'s operation text and the second compares its one slot with the `String` literal `stutter`. A constant conjunct `true` is a `literal` term. A conjunct that reads only `b.step.op` has that slot at level 0, and `b.step.op` in `a.step.op = b.step.op` is a different node at level 1. | Test (TC-1266) |
+| FR-488-AC-4 | The body wrapper of `NonInterference` is a `quire.op.temporal.clause` application with one `temporal_profile` law equal to the lock's row and the arguments `over` a reference to the `value`/`parameter` node `slot_sv_sa` at level 0, clock `model-steps`, activation binding `kind` to `origin` alone, empty captures, empty fairness, and `formula` a reference to a `quire.op.temporal.always` node with a `null` interval whose operand is a `holds` node. | Test (TC-1266) |
+| FR-488-AC-5 | The `holds` operand of AC-4 is the equality of the field read `l` of `slot_sv_sa` (level 0) and of `slot_sv_sb` (level 1), with no term for `@`; the slot nodes have `expression` occurrences at `hyper 0 slot 0` and `hyper 0 slot 1` and `type` occurrences of their type node. | Test (TC-1266) |
+| FR-488-AC-6 | `SavesPower` emits `subjects` with two bindings `S` and `N` in order of first naming, each to the `model` node of its alias's first object parameter's type, `parameters` `d` and `e` in declaration order, slot nodes `slot_sd_ss` and `slot_se_sn`, and a `holds` operand reading `used` of `slot_sd_ss` and of `slot_se_sn`. | Test (TC-1266) |
+| FR-488-AC-7 | `NonInterference`'s `match` aggregate holds, in source order, a reference to the equality of the `parameter` nodes `op_sa` and `op_sb` (levels 0 and 1, `String`), then a reference to the equality of `arg_sa_sVault_sstep_si` and `arg_sb_sVault_sstep_si` (`Option<Int[0, 1]>`), with each conjunct root's `expression` occurrence at `hyper 0 match <k>`. | Test (TC-1266) |
+| FR-488-AC-8 | In `match { a.step.op = V::Vault::step and b.step.op = stutter }` the first term compares its one slot with the `String` literal of `step`'s operation text and the second compares its one slot with the `String` literal `stutter`. A constant conjunct `true` is a `reference` to a boolean `literal` `value` node. A conjunct that reads only `b.step.op` has `op_sb` at level 0, and `op_sb` in `a.step.op = b.step.op` is a different node at level 1. | Test (TC-1266) |
 | FR-488-AC-9 | For a clause whose conjuncts `c0` (universal), `c1` (reads an existential variable) and `c2` (universal) are written in that order, `match` holds `c0`, `c1`, `c2`, as `CheckedHyperClause::conjuncts()` returns them, with `c1` at `hyper 0 match exists 0`. | Test (TC-1266) |
 | FR-488-AC-10 | `NonInterference` with `align skip { V::Vault::mix }` binds `align_skip` to one reference, to the `state`/`operation_anchor` node of `mix`, equal to the anchor node a state clause naming `mix` references; two listed operations give two references in written order. | Test (TC-1266) |
-| FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (also different from the one on `a`); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |
+| FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (a fairness Group naming `b`, after `b`'s quantifier Group, and different from the one on `a`); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |
 | FR-488-AC-12 | Reformatting and a changed clause name give `NonInterference` the same NodeId; two structurally equal clause declarations share one node and have two `claim` occurrences with ordinals 0 and 1. A renamed trace variable gives a different NodeId (Q-6). | Test (TC-1266) |
-| FR-488-AC-13 | With `fair weak V::Vault::step` on `a`, `quantifiers` binds `a` to an aggregate whose third member is one aggregate binding `kind` `fairness`, `fairness_kind` `weak`, `granularity` `each`, `declaration` a reference to `Vault`'s `model` node and `name` `step`; `b`'s fairness aggregate is empty. `fair step` and `fair weak whole step`, in the resolved forms, emit identical bytes and the package is admitted. A constraint whose declaring node is a `systems_interface` is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
+| FR-488-AC-13 | With `fair weak V::Vault::step` on `a`, the `quantifiers` Tuple holds the Groups for `a`, a fairness Group, and `b`, in that order; the fairness Group binds `kind` `fairness`, `variable` `a`, `fairness_kind` `weak`, `granularity` `whole` (an unmarked granularity is `whole`, ADR-018 FA-6, FR-123), `declaration` a reference to `Vault`'s `model` node and `name` `step`. `fair weak whole V::Vault::step` emits identical bytes and `fair weak each V::Vault::step` binds `granularity` `each` and a different NodeId. The package is admitted. A constraint whose declaring node is a `systems_interface` is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
+| FR-488-AC-23 | Every slot node name of AC-5 to AC-8 matches `[A-Za-z_][A-Za-z0-9_]*`, and the encoding is injective: `slot_s` names for object parameters `a_b` with trace variable `c` and `a` with trace variable `b_c` differ (`slot_sa__b_sc` and `slot_sa_sb__c`), a non-ASCII or punctuation byte is `_x` plus two uppercase hex digits, and names built from every pair of distinct (tag, fields) over a set including `_`, `s`, `x` and digit-leading names are pairwise distinct. The I2 admission raises no structural refusal (`invalid_package`/`InvalidSemanticGraph`) at any parameter node. | Test (TC-1266) |
+| FR-488-AC-22 | Every emitted `hyperproperty` body of AC-1 to AC-13 passes strict wire validation of the flat grammar (QSpec FR-322 "Body grammar"): no term is refused `malformed_wire`, and the `quantifiers` binding is a Tuple of Groups whose members are literals, references and bindings of Leaves. | Test (TC-1266) |
 | FR-488-AC-14 | After assembly, `CheckedHyperClause::occurrence()` of `NonInterference` equals the triple the I2 reader returns and FR-315-AC-12's `HyperProductIdentity::clause()`. A looked-up triple with an unknown NodeId, a non-`hyperproperty` NodeId, role `invariant` or another ordinal returns `hyper-root-unresolved` at the triple. | Test (TC-1266) |
 | FR-488-AC-15 | The body wrapper is not among the I2 reader's temporal clause roots, looking it up as a clause root returns `clause-root-unresolved`, and FR-338's resolution of the wrapper's triple does the same. | Test (TC-1266) |
 | FR-488-AC-16 | `Linked` with `B` = `(let r = v.next in present(r) and deref(value(r)).l = 1) @ a` emits. | Test (TC-1266) |
@@ -357,8 +449,8 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   `temporal_clause` node's fairness argument and refuses any other with
   `ill_typed`/`operator-ineligible` at the referencing node. A reference
   from a `hyperproperty` quantifier is therefore refused. QSL writes the
-  constraint inline (the `kind`, `granularity`, `declaration`, `name`
-  aggregate, with FR-370's `fairness` member names) so the package is admitted
+  constraint inline (a fairness Group of `kind`, `variable`,
+  `fairness_kind`, `granularity`, `declaration`, `name`) so the package is admitted
   today. Nothing in the package validates `declaration` and `name`: FR-370's
   fairness resolution runs on a clause's fairness argument only, and QSpec
   states no reader refusal for a `hyperproperty` body. QSpec should either admit the
@@ -369,7 +461,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   the alias's first object parameter. QSpec should state which node.
 - **Q-3.** A field read in a package carries no observation or component
   member, so a hyper atom's per-trace read has no carrier but the slot
-  parameter node it is rooted in. QSL names the slot `<p>@<t>`, refuses a
+  parameter node it is rooted in. QSL names the slot `slot_s<p>_s<t>` (escaped), refuses a
   read it cannot root, and asks QSpec to state a slot or component
   encoding (a `hyper_slot` member or a component on the read). QSpec also
   states no binder scope for an atom slot beyond slot 0 or for a `match`
@@ -390,9 +482,26 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   directly.
 - **Q-6.** FR-402-AC-3 says clauses that differ only in source spelling share
   one identity. QSL's trace-variable names are bound in `quantifiers` and
-  appear in slot names (`<p>@<t>`), so renaming a trace variable changes the
+  appear in slot names (`slot_s<p>_s<t>`), so renaming a trace variable changes the
   NodeId (FR-488-AC-12). QSpec should say whether bound-variable renaming is
   spelling.
+
+- **Q-7.** FR-402's `quantifiers` shape, `binding(variable, aggregate)` with
+  the `forall`/`exists` literal, the alias literal and a nested aggregate of
+  fairness constraints, is not expressible in FR-322 "Body grammar": a
+  `binding` in a Group has a Leaf value only, and a constraint of several
+  members needs a further aggregate, a stratum below the Group. The pinned
+  reader refuses it `malformed_wire`. QSL writes a Tuple of Groups (one
+  quantifier Group per quantifier, one fairness Group per constraint, naming
+  its variable) and asks QSpec to state a legal shape; QSL then changes this
+  one encoding. QSL-1093 owns the QSpec change.
+
+- **Q-8.** FR-402 states no name for the parameter nodes a hyper body
+  reads, and the reader requires a parameter's `name` to be an ASCII
+  identifier. QSL encodes `<parameter>@<trace>` and the step-label reads as
+  identifier-safe, injective names (§ "Slot node names"). QSpec should state
+  the slot naming, or a slot term that needs none, so the name is not a QSL
+  convention that every consumer must parse.
 
 ## Dependencies
 

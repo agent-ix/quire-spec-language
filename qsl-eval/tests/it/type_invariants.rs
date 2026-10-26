@@ -1538,29 +1538,43 @@ fn pair_of_references(peer: &str) -> Value {
 #[trace("TC-1050", "FR-366-AC-10")]
 #[test]
 fn a_record_invariant_follows_only_object_reading_helpers() {
-    let functions = concat!(
-        "function total_of using v(b: Reference<M::Order>): Integer pure { b.total.amount_minor }\n",
-        "function checked using v(b: Reference<M::Order>): Boolean pure { total_of(b) >= 0 }\n",
-        "function linked using v(b: Option<Reference<M::Order>>): Boolean pure { present(b) }\n",
-        "function same using v(a: Reference<M::Order>, b: Reference<M::Order>): Boolean pure { a = b }\n",
-        "function wrap using v(b: Option<Reference<M::Order>>): Boolean pure { linked(b) }\n",
+    let total_of =
+        "function total_of using v(b: Reference<M::Order>): Integer pure { b.total.amount_minor }\n";
+    let checked = format!(
+        "{total_of}function checked using v(b: Reference<M::Order>): Boolean pure {{ total_of(b) >= 0 }}\n"
+    );
+    let linked =
+        "function linked using v(b: Option<Reference<M::Order>>): Boolean pure { present(b) }\n";
+    let same = "function same using v(a: Reference<M::Order>, b: Reference<M::Order>): Boolean pure { a = b }\n";
+    let wrap = format!(
+        "{linked}function wrap using v(b: Option<Reference<M::Order>>): Boolean pure {{ linked(b) }}\n"
     );
 
-    for (peer, reads_object) in [
+    // Each case declares only the helpers its invariant reaches. A helper
+    // with an object read but no call site remains in its declared Value
+    // family and is separately exercised by TC-1031 N16.
+    for (peer, functions, reads_object) in [
         (
             "present(self.buddy) implies total_of(value(self.buddy)) >= 0",
+            total_of.to_owned(),
             true,
         ),
         (
             "present(self.buddy) implies checked(value(self.buddy))",
+            checked,
             true,
         ),
-        ("linked(self.buddy) or not linked(self.buddy)", false),
         (
-            "present(self.buddy) implies same(value(self.buddy), value(self.buddy))",
+            "linked(self.buddy) or not linked(self.buddy)",
+            linked.to_owned(),
             false,
         ),
-        ("wrap(self.buddy) or not wrap(self.buddy)", false),
+        (
+            "present(self.buddy) implies same(value(self.buddy), value(self.buddy))",
+            same.to_owned(),
+            false,
+        ),
+        ("wrap(self.buddy) or not wrap(self.buddy)", wrap, false),
     ] {
         let unit = format!("{functions}\n");
         let (compiled, _) = compile_unit(&pair_of_references(peer), &unit);
@@ -1589,11 +1603,10 @@ fn a_record_invariant_follows_only_object_reading_helpers() {
         }
     }
 
-    let named_predicate = format!(
-        "{functions}predicate positive using v(b: Reference<M::Order>): Boolean {{ b.total.amount_minor >= 0 }}\n"
-    );
+    let named_predicate =
+        "predicate positive using v(b: Reference<M::Order>): Boolean { b.total.amount_minor >= 0 }\n";
     let peer = "present(self.buddy) implies positive(value(self.buddy))";
-    let (compiled, _) = compile_unit(&pair_of_references(peer), &named_predicate);
+    let (compiled, _) = compile_unit(&pair_of_references(peer), named_predicate);
     let refusal = sole_refusal(compiled);
     assert_eq!(
         refusal.type_invariant_clause(),

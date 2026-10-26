@@ -44,6 +44,7 @@
 #![forbid(unsafe_code)]
 
 mod admitted;
+mod application;
 mod bounds;
 mod call_replay_context;
 mod call_requirements;
@@ -64,6 +65,7 @@ mod hybrid_replay;
 mod identity;
 mod limits;
 mod model_check;
+mod monitor_plan;
 mod object_environment;
 mod outcome;
 mod proof_result;
@@ -81,6 +83,11 @@ pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
     AdmittedContext, AdmittedDimension, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal,
     AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
+};
+pub use application::{
+    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
+    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
+    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
@@ -106,7 +113,7 @@ pub use certificate::closure::{
     ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
     TemporalCertificateCheck,
 };
-pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::scc::{Component, ComponentWitness, ProofCertificate};
 pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
     IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
@@ -170,7 +177,12 @@ pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
     settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
 };
-pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
+pub use model_check::hyper_smt_query::{
+    encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
+};
+pub use model_check::identity::{
+    node_occurrence, ClauseIdentity, ClauseRootRefusal, StateGraphIdentity,
+};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
     meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
@@ -205,6 +217,11 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
+pub use monitor_plan::{
+    plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
+    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
+    TimingObligation, TimingObligationSettings,
+};
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,

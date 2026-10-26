@@ -16,6 +16,7 @@
 //! - `query` assembles a script for an item and a [`SmtQueryKind`].
 
 mod expression;
+mod hyper;
 mod kind;
 mod layout;
 mod limits;
@@ -25,7 +26,9 @@ mod refusal;
 pub(crate) mod relation;
 pub mod script;
 
+pub use hyper::{encode_hyper_script, HyperScriptRequest};
 pub use kind::SmtQueryKind;
 pub use limits::SmtEncodingLimits;
+pub use monitor::{MonitorTable, Move};
 pub use query::{encode_smt_query, SmtItem};
 pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, Refusal, SmtEncodingRefusal};

@@ -9,8 +9,8 @@ use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_eval::smt::{
-    encode_smt_query, Measure, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtItem,
-    SmtQueryKind,
+    encode_smt_query, Measure, MonitorTable, Refusal, SmtEncodingLimits, SmtEncodingRefusal,
+    SmtItem, SmtQueryKind,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -1935,4 +1935,125 @@ fn the_always_violation_is_two_disjuncts_per_position() {
         expected.push(format!("(not (<= s{position}.c.value 3))"));
     }
     assert_eq!(negated, expected);
+}
+
+/// FR-315-AC-45 and FR-315-AC-50: the scripts of TP-3 items, which read a
+/// tabulated monitor, are byte-equal to the golden bytes recorded from `main`
+/// before the table was built through the `CheckedFormula` constructor.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn monitored_scripts_are_byte_equal_to_the_recorded_golden_bytes() {
+    let world = counter(
+        INFINITE,
+        &[
+            "always (holds(c.value = 3) implies always holds(c.value = 3))",
+            "always[0,1] holds(c.value <= 3)",
+        ],
+    );
+    let kinds = [
+        ("unrolling-2", SmtQueryKind::Unrolling { depth: 2 }),
+        ("base-1", SmtQueryKind::InductionBase { depth: 1 }),
+        ("step-2", SmtQueryKind::InductionStep { depth: 2 }),
+    ];
+    for (clause, name) in [(0, "implies-always"), (1, "bounded-always")] {
+        for (label, kind) in kinds {
+            let script = world.query(clause, kind).expect("encodes");
+            let path = format!(
+                "{}/tests/golden/smt_monitor/{name}-{label}.smt2",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let golden = std::fs::read(&path).expect("the golden file");
+            assert_eq!(script.as_bytes(), golden.as_slice(), "{name}-{label}");
+        }
+    }
+}
+
+/// FR-315-AC-50: the table of a TP-3 item is the one the constructor over the
+/// item's formula and profile gives, with the numbering of the golden scripts.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn the_tp3_item_table_is_the_constructors_table() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let clause = &world.clauses[0];
+    let limits = SmtEncodingLimits::default();
+    let of = MonitorTable::of(clause, limits.max_monitor_atoms, limits.max_monitor_states)
+        .expect("tabulates");
+    let over = MonitorTable::over(
+        clause.formula(),
+        clause.profile(),
+        limits.max_monitor_atoms,
+        limits.max_monitor_states,
+    )
+    .expect("tabulates");
+    assert_eq!(of, over);
+    assert_eq!(of.atoms().len(), 2);
+    assert_eq!((of.states(), of.initial()), (3, 0));
+    assert!(of.rejecting().is_some());
+    let moves: Vec<(usize, u64, usize)> = of
+        .moves()
+        .iter()
+        .map(|step| (step.from, step.letter, step.to))
+        .collect();
+    assert_eq!(moves, IMPLIES_ALWAYS_MOVES);
+}
+
+/// The numbered moves of `always (A implies always B)` over two atoms:
+/// breadth-first numbering, initial state 0, letter bit `j` being atom `j`.
+pub(crate) const IMPLIES_ALWAYS_MOVES: [(usize, u64, usize); 12] = [
+    (0, 0, 0),
+    (0, 1, 1),
+    (0, 2, 0),
+    (0, 3, 2),
+    (1, 0, 1),
+    (1, 1, 1),
+    (1, 2, 1),
+    (1, 3, 1),
+    (2, 0, 1),
+    (2, 1, 1),
+    (2, 2, 2),
+    (2, 3, 2),
+];
+
+/// FR-315-AC-32: the hyper refusals are codes of the closed set, applied in
+/// the order FR-315 states them.
+#[trace("TC-900", "FR-315-AC-32")]
+#[test]
+fn the_hyper_refusals_are_closed_codes_in_their_stated_order() {
+    let clause = || "NonInterference".to_owned();
+    let refusals = [
+        Refusal::HyperForm {
+            clause: clause(),
+            form: "HP-3",
+        },
+        Refusal::SubjectBinding { alias: None },
+        Refusal::InstanceBinding {
+            parameter: "v".to_owned(),
+        },
+        Refusal::ProductIdentity { clause: clause() },
+        Refusal::HyperBody { clause: clause() },
+        Refusal::MatchConjunct {
+            clause: clause(),
+            conjunct: 2,
+            site: "hyper NonInterference match 2".to_owned(),
+            tuple: vec!["step(0)".to_owned(), "step(0)".to_owned()],
+        },
+    ];
+    let codes: Vec<&str> = refusals.iter().map(Refusal::code).collect();
+    assert_eq!(
+        codes,
+        [
+            "hyper-form",
+            "subject-binding",
+            "instance-binding",
+            "product-identity",
+            "hyper-body",
+            "match-conjunct"
+        ]
+    );
+    let rows: Vec<u8> = refusals.iter().map(Refusal::row).collect();
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{rows:?}");
+    assert!(rows[0] > 17);
 }

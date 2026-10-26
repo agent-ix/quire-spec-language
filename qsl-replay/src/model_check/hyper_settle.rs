@@ -81,16 +81,9 @@ pub struct HyperRecord {
 /// rule, and no engine runs for it. `None` for every admitted form, which an
 /// engine settles.
 pub fn settle_hyper_form(form: &HyperForm) -> Option<TerminalValue> {
-    match form {
-        HyperForm::Other { reason } => Some(TerminalValue::Unsupported(
-            UnavailabilityCause::UnsupportedHyperForm { reason: *reason },
-        )),
-        HyperForm::StepRelation
-        | HyperForm::Universal
-        | HyperForm::ForallExistsSafety
-        | HyperForm::SingleExistential
-        | HyperForm::ProjectionAligned => None,
-    }
+    form.unsupported_reason().map(|reason| {
+        TerminalValue::Unsupported(UnavailabilityCause::UnsupportedHyperForm { reason })
+    })
 }
 
 /// Why a hyper outcome settles no record.

@@ -1815,12 +1815,17 @@ mod cargo_deny_bans_the_three_registry_crates {
             .parent()
             .expect("qsl-route lives one level below the workspace root")
             .join("deny.toml");
+        // `--config` moved from `check` to the top level between cargo-deny
+        // 0.19 and 0.20, so no version accepts one placement. Both read
+        // `<cwd>/deny.toml` by default; copy the workspace's file there and
+        // run from the scratch directory.
+        std::fs::copy(&deny_toml, scratch.path().join("deny.toml"))
+            .expect("copy the workspace deny.toml next to the throwaway manifest");
         let output = Command::new("cargo-deny")
+            .current_dir(scratch.path())
             .arg("--manifest-path")
             .arg(scratch.path().join("Cargo.toml"))
             .arg("check")
-            .arg("--config")
-            .arg(&deny_toml)
             .arg("bans")
             .output()
             .expect("run cargo-deny against the throwaway manifest");

@@ -22,8 +22,9 @@ use quire_exact::Cancel;
 
 use crate::certificate::closure::{
     check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
-    ClosureCertificate, ClosureRefusal, ProtocolCertificateRequest, TemporalCertificateCheck,
+    ClosureRefusal, ProtocolCertificateRequest, TemporalCertificateCheck,
 };
+use crate::certificate::scc::ProofCertificate;
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
@@ -236,7 +237,11 @@ pub fn settle_model_check(
         package_id,
         certificate.subject.simulation.package,
         cancel,
-        |closure| check_closure(certificate, closure, limits, cancel),
+        |proof| match proof {
+            ProofCertificate::Closure(closure) => {
+                check_closure(certificate, closure, limits, cancel)
+            }
+        },
         replay,
     )
 }
@@ -264,7 +269,11 @@ pub fn settle_protocol_check(
         package_id,
         certificate.subject.model.simulation.package,
         cancel,
-        |closure| check_protocol_closure(certificate, closure, limits, cancel),
+        |proof| match proof {
+            ProofCertificate::Closure(closure) => {
+                check_protocol_closure(certificate, closure, limits, cancel)
+            }
+        },
         replay,
     );
     let bound = match SubjectMemory::of(
@@ -391,7 +400,7 @@ fn settle<T: SubjectTransition>(
     package_id: &DigestRecord,
     package: &CheckedPackage,
     cancel: &Cancel,
-    closure: impl FnOnce(&ClosureCertificate) -> Result<TemporalCertificateCheck, ClosureRefusal>,
+    closure: impl FnOnce(&ProofCertificate) -> Result<TemporalCertificateCheck, ClosureRefusal>,
     replay: impl FnOnce(&TemporalCounterexample<T>) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord<T> {
     let mut counterexample = None;
@@ -668,6 +677,7 @@ impl Row {
     ) -> Self {
         match check {
             Ok(TemporalCertificateCheck::Accepted) => accepted(),
+            Ok(TemporalCertificateCheck::PackageMismatch { .. }) => Self::stale(),
             Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
                 Self::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
             }

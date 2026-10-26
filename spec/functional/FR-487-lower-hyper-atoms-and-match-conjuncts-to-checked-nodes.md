@@ -345,12 +345,18 @@ evaluator.
       Fails,                                                // the first conjunct not `true` completed `false`
       Undefined { conjunct: usize, cause: UndefinedCause }, // the first such conjunct had no value
       Refused { conjunct: usize, outcome: ClauseOutcome },  // the first such conjunct was refused
+      Fault(InternalFault),                                 // `evaluate_step_predicate` returned a fault
   }
   pub struct MatchIncomplete { pub conjunct: usize, pub incomplete: Incomplete }
   ```
 
   For a clause with no conjunct in a part, the reading of that part SHALL be
   `Holds`, with nothing charged.
+- `Fault(f)` SHALL carry the `CallFailure::Fault(f)` that
+  `evaluate_step_predicate` returned for a conjunct, and ends the reading. The
+  products read it as a fault of their own run. FR-315's `encode_hyper_query`
+  returns `SmtEncodingRefusal::Fault` for it (FR-315 "Refusals", the Faults
+  bullet, and "Internal faults").
 - The products SHALL read `Refused { .. }` and `Err(MatchIncomplete { .. })`
   as they read `Refused` and `Err(Incomplete)` today: FR-176
   `MatchUndetermined`, and the matching findings of FR-177 and FR-178. This

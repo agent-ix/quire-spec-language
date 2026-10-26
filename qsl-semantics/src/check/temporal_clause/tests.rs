@@ -18,6 +18,7 @@ const VALUE: &str = "quire.value.complete/v1";
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
+const TIMESTAMPED: &str = "quire.temporal.timestamped-event.finite-window/v1";
 
 /// A unit selecting the value profile and `temporal` profiles, declaring a
 /// bounded `Counter` and an unbounded `Loose`, with one temporal clause
@@ -36,6 +37,15 @@ fn source(temporal: &[&str], over: &str, formula: &str) -> String {
          {{ {formula} }}\n"
     ));
     text
+}
+
+fn timestamped_source(formula: &str) -> String {
+    source(&[TIMESTAMPED], "Int[0,9]", formula)
+        .replace("over (c: Int[0,9])", "over (c: Quantity<ms>)")
+        .replace(
+            "temporal C using",
+            "dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\ndimension Length;\nunit m : Length = rational(1, 1);\ntemporal C using",
+        )
 }
 
 fn assemble(text: &str) -> PackageDeclarations {
@@ -402,53 +412,185 @@ fn package_refusal(text: &str) -> TemporalCause {
         ..
     }] = refusals.as_slice()
     else {
-        panic!("one temporal refusal: {refusals:?}");
+        panic!("one temporal refusal for `{text}`: {refusals:?}");
     };
     (**cause).clone()
 }
 
-/// FR-326, FR-337: a clause that activates `on origin` or `on each` and
-/// declares no capture checks and compiles into the package; one that
-/// declares a capture checks but no S4 emission writes it, so `check`
-/// refuses it as `unsupported_construct`/`not-yet-implemented` at the
-/// clause; a clause that does not check reports its own refusal.
+/// FR-326, FR-337: a clause that activates `on origin` or `on each`, with or
+/// without a capture, checks and compiles into the package, keeping its
+/// captures; a clause that does not check reports its own refusal.
 #[trace("FR-326", "FR-337-AC-7")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes() {
     let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
     let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
-    for text in [&origin, &each] {
-        let graph = assemble(text)
+    let captured = origin.replace(
+        "{ eventually",
+        "{ capture before: Int[0, 9] = c.level; eventually",
+    );
+    for (text, captures) in [
+        (origin.clone(), 0),
+        (each, 0),
+        (captured.clone(), 1),
+        (captured.replace("on origin", "on each (d: Counter)"), 1),
+    ] {
+        let graph = assemble(&text)
             .check(CheckingLimits::default())
             .expect("an emitted clause compiles");
         let [clause] = graph.temporal_clauses() else {
             panic!("one emitted clause");
         };
         assert_eq!(clause.clause().name(), "C");
-    }
-
-    let captured = origin.replace(
-        "{ eventually",
-        "{ capture before: Int[0, 9] = c.level; eventually",
-    );
-    for text in [
-        captured.clone(),
-        captured.replace("on origin", "on each (d: Counter)"),
-    ] {
-        let cause = package_refusal(&text);
-        assert!(
-            matches!(cause, TemporalCause::NotEmitted { .. }),
-            "{cause:?}"
-        );
-        assert_eq!(cause.code(), Code::UnsupportedConstruct);
-        assert_eq!(cause.tag(), "not-yet-implemented");
-        assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+        assert_eq!(clause.clause().captures().len(), captures);
     }
 
     let bounded = source(&[EVENT], "Counter", "eventually holds(c.level = 3)");
     assert!(matches!(
         package_refusal(&bounded),
         TemporalCause::MissingInterval { .. }
+    ));
+}
+
+/// FR-194-AC-4 (TC-629): aggregate expressions are type checked at S3, while
+/// the clause remains explicitly not emitted until FR-370's wire is confirmed.
+#[trace("TC-629", "FR-194-AC-4", "FR-194-AC-7", "FR-194-AC-8", "FR-194-AC-10")]
+#[test]
+fn aggregate_atoms_are_checked_before_the_unconfirmed_wire_refusal() {
+    let valid = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= 1");
+    let refusal = package_refusal(&valid);
+    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
+    assert_eq!(refusal.tag(), "not-yet-implemented");
+
+    let zero_minimum_count = source(
+        &[EVENT],
+        "Int[0,9]",
+        "count over past[0,3] min_count 0 >= 1",
+    );
+    assert_eq!(
+        package_refusal(&zero_minimum_count).tag(),
+        "not-yet-implemented"
+    );
+
+    let invalid_quantile = source(&[EVENT], "Int[0,9]", "quantile 1 of c over past[0,3] <= 1");
+    assert!(matches!(
+        package_refusal(&invalid_quantile),
+        TemporalCause::InvalidAggregateValue { .. }
+    ));
+
+    let zero_minimum = source(
+        &[EVENT],
+        "Int[0,9]",
+        "max of c over past[0,3] min_count 0 <= 1",
+    );
+    assert!(matches!(
+        package_refusal(&zero_minimum),
+        TemporalCause::InvalidAggregateValue { .. }
+    ));
+
+    let mixed_window = source(&[EVENT], "Int[0,9]", "count over past[5,2 s] >= 1");
+    let mixed_window_refusal = package_refusal(&mixed_window);
+    assert_eq!(mixed_window_refusal.code(), Code::IllTyped);
+    assert_eq!(mixed_window_refusal.tag(), "unit-mismatch");
+    assert!(matches!(
+        mixed_window_refusal,
+        TemporalCause::AggregateWindowKindMismatch { .. }
+    ));
+
+    let inverted_window = source(&[EVENT], "Int[0,9]", "count over past[5,2] >= 1");
+    assert!(matches!(
+        package_refusal(&inverted_window),
+        TemporalCause::InvalidAggregateWindow { .. }
+    ));
+
+    let several_faults = source(
+        &[EVENT],
+        "Int[0,9]",
+        "quantile 1 of c over past[5,2 s] min_count 0 <= 1",
+    );
+    let TemporalCause::Multiple { causes } = package_refusal(&several_faults) else {
+        panic!("all aggregate faults must be reported");
+    };
+    assert_eq!(
+        causes
+            .iter()
+            .map(|cause| (cause.code(), cause.tag()))
+            .collect::<Vec<_>>(),
+        [
+            (Code::InvalidPackage, "invalid-value"),
+            (Code::IllTyped, "unit-mismatch"),
+            (Code::InvalidPackage, "invalid-value"),
+        ]
+    );
+
+    let timestamped = timestamped_source("count over past[0 s, 1000 ms] >= 1");
+    assert_eq!(
+        package_refusal(&timestamped).tag(),
+        "not-yet-implemented",
+        "duration bounds convert exactly before emission is refused"
+    );
+    let inverted_duration = timestamped_source("count over past[2 s, 1000 ms] >= 1");
+    assert!(matches!(
+        package_refusal(&inverted_duration),
+        TemporalCause::InvalidAggregateWindow { .. }
+    ));
+    let wrong_duration_dimension = timestamped_source("count over past[0 m, 1 m] >= 1");
+    assert!(matches!(
+        package_refusal(&wrong_duration_dimension),
+        TemporalCause::TimeQuantity { .. }
+    ));
+
+    let converted_threshold = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1000 ms");
+    assert_eq!(
+        package_refusal(&converted_threshold).tag(),
+        "not-yet-implemented",
+        "the threshold may use another unit of the value's dimension"
+    );
+    let wrong_threshold_dimension = timestamped_source("sum of c over past[0 s, 1000 ms] <= 1 m");
+    let refusals = assemble(&wrong_threshold_dimension)
+        .check(CheckingLimits::default())
+        .expect_err("a threshold of another dimension is refused at S3");
+    assert_eq!(refusals[0].cause.code(), Code::IllTyped);
+
+    let ill_typed = source(
+        &[EVENT],
+        "Int[0,9]",
+        "count where holds(c) over past[0,3] >= 1",
+    );
+    let refusals = assemble(&ill_typed)
+        .check(CheckingLimits::default())
+        .expect_err("a non-Boolean aggregate filter is refused");
+    assert_eq!(refusals[0].cause.code(), Code::IllTyped);
+    assert!(matches!(refusals[0].cause, CheckCause::NonBooleanRoot));
+
+    let mismatched_threshold = source(&[EVENT], "Int[0,9]", "sum of c over past[0,3] <= true");
+    let refusals = assemble(&mismatched_threshold)
+        .check(CheckingLimits::default())
+        .expect_err("a threshold must match the aggregate value type");
+    assert!(matches!(
+        refusals[0].cause,
+        CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+    ));
+
+    let nonnumeric_count_threshold = source(&[EVENT], "Int[0,9]", "count over past[0,3] >= true");
+    let refusals = assemble(&nonnumeric_count_threshold)
+        .check(CheckingLimits::default())
+        .expect_err("a count threshold is dimensionless numeric");
+    assert!(matches!(
+        refusals[0].cause,
+        CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+    ));
+
+    let bounded = check(&assemble(&source(
+        &[EVENT],
+        "Int[0,9]",
+        "always[0,2] count over past[0,3] >= 1",
+    )))
+    .expect("the family checks the formula before S4 emission");
+    assert_eq!(bounded.horizon(), Some(2));
+    assert!(matches!(
+        bounded.formula().nodes().get(1),
+        Some(FormulaNode::Aggregate { .. })
     ));
 }
 

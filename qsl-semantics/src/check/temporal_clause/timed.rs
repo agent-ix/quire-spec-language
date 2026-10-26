@@ -269,6 +269,7 @@ fn timed(node: &FormulaNode) -> Option<&TimedInterval> {
         | FormulaNode::Binary { .. }
         | FormulaNode::Constant(_)
         | FormulaNode::Holds { .. }
+        | FormulaNode::Aggregate { .. }
         | FormulaNode::Not(_)
         | FormulaNode::And(..)
         | FormulaNode::Or(..)

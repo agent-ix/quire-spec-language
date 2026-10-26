@@ -100,6 +100,13 @@ pub enum HyperForm {
   alias the item names, and SHALL add the deadlock-freedom item of each
   distinct subject as FR-124 states; a hyper or relation item SHALL report
   no deadlock itself.
+- When negotiation evaluates an `Other` form before provider selection, S3 SHALL
+  apply FR-182's hyper-form settlement as V-8
+  `unsupported-requested-capability` and produce no engine outcome for that
+  item. When `qsl-route` receives the resulting `unsupported` disposition,
+  qsl-route SHALL route the item to no candidate. This item-local result SHALL NOT
+  prevent an independently supported sibling item from routing to its
+  selected candidate.
 
 ## Acceptance Criteria
 
@@ -109,6 +116,7 @@ pub enum HyperForm {
 | FR-173-AC-2 | `Other`, each naming its rule: `exists trace b of V forall trace a of V`; `Opaque` with body `always eventually holds(v.l @ a = v.l @ b)`; `Opaque` with `fair { weak V::Vault::step }` on `b`; §13's clause with an `exists` variable. Each settles V-8 `unsupported-requested-capability` in negotiation with no engine run. | Test (TC-598) |
 | FR-173-AC-3 | `SingleExistential` with a `match` block refuses `unsupported_construct`/`expression-form` at the block. `NonInterference` under the event-position profile records no form and settles V-8. | Test (TC-598) |
 | FR-173-AC-4 | A request with `SavesPower` supplies subjects for `S` and `N` and carries two deadlock-freedom items; a request with `NonInterference` and `Opaque` over `V` carries one. | Test (TC-598) |
+| FR-173-AC-5 | For a request containing an HP-4 `Other` item and a supported `Universal` sibling, negotiation settles the HP-4 item as `unsupported` V-8 without an engine outcome and `qsl-route` gives it no target; the sibling keeps its `supported` disposition and selected candidate. | Test (TC-598) |
 
 ## Dependencies
 

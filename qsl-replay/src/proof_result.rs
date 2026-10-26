@@ -483,6 +483,7 @@ impl From<&UnsupportedItem> for UnavailabilityCause {
     fn from(item: &UnsupportedItem) -> Self {
         match item {
             UnsupportedItem::PunctualInterval { span } => Self::PunctualInterval { span: *span },
+            UnsupportedItem::HyperForm { reason } => Self::UnsupportedHyperForm { reason: *reason },
         }
     }
 }

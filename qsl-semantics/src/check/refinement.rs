@@ -26,6 +26,7 @@
 //! row's use once a subject supplies the universes. A bound that depends on
 //! `n` through any other form is refused as not yet checked.
 
+mod catalog;
 mod history;
 mod internal_list;
 mod protocol;
@@ -33,6 +34,7 @@ mod step_label;
 
 use std::collections::BTreeMap;
 
+pub use catalog::{RefinementCatalogClass, RefinementCatalogNode, RefinementClassCatalog};
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
 pub(crate) use internal_list::{NodeClass, ParsedLists, ProtocolClasses};
@@ -710,6 +712,28 @@ pub struct StepRow {
     pub target: StepTarget,
 }
 
+/// The original source region of one checked, authored step row (FR-136,
+/// QSpec FR-375-AC-22). The containing [`CheckedRefinement`] is its owner;
+/// `ordinal` is its position among that refinement's authored step rows,
+/// before S4 reorders the semantic `steps` array.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefinementStepSource {
+    ordinal: usize,
+    span: Span,
+}
+
+impl RefinementStepSource {
+    /// The source-order ordinal among authored `step` rows.
+    pub const fn ordinal(&self) -> usize {
+        self.ordinal
+    }
+
+    /// The original checked source span of the entire row.
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+}
+
 /// The origin of a checked refinement fairness member (FR-137).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RefinementFairnessOrigin {
@@ -807,10 +831,17 @@ pub struct CheckedRefinement {
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
+    /// Every authored step row's source provenance, including rows whose
+    /// mapping makes this refinement ineligible for a proof. This remains
+    /// attached to the checked owner independently of any S5 proof records.
+    pub(crate) step_sources: Vec<RefinementStepSource>,
     pub(crate) history: Vec<HistoryRow>,
     pub(crate) concrete_fairness: Vec<RefinementFairness>,
     pub(crate) abstract_fairness: Vec<RefinementFairness>,
     pub(crate) concrete_object_types: Vec<EffectiveId>,
+    /// The complete checked classes of protocol or memory subjects, derived
+    /// independently of the authored step rows (FR-375, QSpec FR-464).
+    pub(crate) class_catalog: Option<RefinementClassCatalog>,
     /// The protocol clause the step rows select; absent for a model subject.
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
@@ -866,10 +897,22 @@ impl CheckedRefinement {
         &self.steps
     }
 
+    /// Every authored step row's source region in source-row order.
+    pub fn step_sources(&self) -> &[RefinementStepSource] {
+        &self.step_sources
+    }
+
     /// The protocol clause the step rows select (FR-136 "Selecting the
     /// concrete protocol"); `None` for a model subject.
     pub fn concrete_protocol(&self) -> Option<NodeKey> {
         self.concrete_protocol
+    }
+
+    /// The complete checked class catalogs for a refinement whose subjects
+    /// contribute protocol or memory step classes. Model-only refinements
+    /// have no catalog.
+    pub fn class_catalog(&self) -> Option<&RefinementClassCatalog> {
+        self.class_catalog.as_ref()
     }
 
     /// The history rows, in source order (FR-138).
@@ -1363,6 +1406,27 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         .object_types()
         .map(|(_, id)| id)
         .collect();
+    let class_catalog = match catalog::build(catalog::CatalogBuildInput {
+        concrete_alias: checker.concrete_side.alias,
+        concrete_model: checker.concrete_side.model,
+        abstract_alias: checker.abstract_side.alias,
+        abstract_model: checker.abstract_side.model,
+        abstract_classes: checker.protocol.as_ref(),
+        declarations,
+        protocols: env.protocols,
+        has_abstract_protocol: checker.protocol_subject && checker.protocol.is_some(),
+    }) {
+        Ok(catalog) => catalog,
+        Err(fault) => {
+            return (
+                RefinementCheck::Refused(vec![CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                }]),
+                nodes,
+            );
+        }
+    };
     let Checker {
         findings,
         lifting,
@@ -1393,10 +1457,24 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         populations,
         objects,
         steps: Vec::new(),
+        step_sources: form
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                RefinementRowForm::Step(row) => Some(row.span),
+                RefinementRowForm::Population(_)
+                | RefinementRowForm::Object(_)
+                | RefinementRowForm::History(_)
+                | RefinementRowForm::Fairness(_) => None,
+            })
+            .enumerate()
+            .map(|(ordinal, span)| RefinementStepSource { ordinal, span })
+            .collect(),
         history,
         concrete_fairness,
         abstract_fairness,
         concrete_object_types,
+        class_catalog,
         concrete_protocol: None,
     };
     // A protocol abstract side refused by its own clause checks reported
