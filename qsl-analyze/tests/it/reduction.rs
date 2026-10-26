@@ -646,11 +646,44 @@ fn a_constraint_reports_real_violations_and_never_proves_past_its_boundary() {
     assert_eq!(path(&world, &unconstrained).last(), Some(&(3, 3, 3)));
 }
 
+/// FR-128's read order at one position: an authored clause's letter is read
+/// before a state constraint. With the atom and the constraint `Odd` both
+/// undefined at `v = 2`, the engine reports the atom, the payload at the atom
+/// reproduces, and the payload at `Odd` settles `inconclusive`,
+/// `ReplayParity`.
+#[trace("TC-539")]
+#[test]
+fn an_authored_clauses_letter_is_read_before_a_state_constraint() {
+    let world = count(&[infinite("always holds(x.v <= 3)")]);
+    let undefined_at_two = || vec![atom(|v| (v != 2).then_some(true))];
+    let outcome = run(&world, Some(0), undefined_at_two(), constraint("Odd"));
+    let payload = violation(&outcome).clone();
+    let CounterexampleKind::UndefinedEvaluation(claimed) = payload.kind.clone() else {
+        panic!("expected an undefined evaluation: {outcome:?}");
+    };
+    assert!(matches!(claimed.site.locus, UndefinedLocus::Atom(_)));
+    assert_eq!(claimed.site.position, 2);
+    assert_eq!(
+        world.replay_clause(0, undefined_at_two(), payload.clone()),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(claimed.clone()),
+            trace_position: payload.trace_position(),
+        }
+    );
+    let mut at_constraint = payload.clone();
+    let mut constrained = claimed;
+    constrained.site.locus = UndefinedLocus::Constraint("Odd".to_owned());
+    at_constraint.kind = CounterexampleKind::UndefinedEvaluation(constrained);
+    assert!(matches!(
+        world.replay_clause(0, undefined_at_two(), at_constraint),
+        ModelTraceSettlement::Inconclusive(qsl_replay::DisagreementCause::Verdicts { .. })
+    ));
+}
+
 /// FR-158-AC-3: a constraint undefined at `v = 2` settles the item violated
 /// with `UndefinedEvaluation` at `(2,0,0)`, whose prefix re-executes, and
 /// the deadlock-freedom item's such counterexample reproduces through
-/// FR-128's `replay_model_trace` (an authored clause's replay refuses until
-/// FR-337); a
+/// FR-128's `replay_model_trace`; a
 /// constraint name the package does not declare refuses
 /// `invalid_runtime_input`/`invalid-value` naming it; a constraint false at
 /// the initial state stores that one boundary state; with no universe, the

@@ -320,8 +320,8 @@ fn corpus() -> Vec<Case> {
 
 /// FR-160-AC-6: every case of the corpus settles the same verdict unreduced
 /// and under each selection that admits it, and every counterexample from
-/// either run replays (an authored undefined evaluation, which FR-128
-/// refuses, is held to its prefix by the case's own test).
+/// either run replays (an authored undefined evaluation is held to its
+/// prefix by the case's own test).
 #[trace("TC-886", "FR-160-AC-6")]
 #[test]
 fn reduced_and_unreduced_runs_agree_over_the_corpus() {

@@ -169,8 +169,9 @@ pub enum ModelCheckRefusal {
         form: Option<PropertyForm>,
     },
     /// A `holds` condition of the clause reads a capture (FR-337 "Capture
-    /// observation"); what a read of a capture means is undecided (QSL-1092),
-    /// so no state is explored.
+    /// observation"): FR-338's automaton-state keys carry no capture vector, so
+    /// the engine returns no verdict (the standing decision of QSL-1092) and
+    /// explores no state.
     #[error("a `holds` condition of clause `{clause}` reads the capture `{capture}`")]
     CaptureRead {
         /// The clause's name.

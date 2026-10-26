@@ -117,8 +117,8 @@ FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelCheckRefusal` holds FR-106's `AdmissionFailure` from building the
 subject's `ModelSystem`, FR-101's `NotSimulated::RequiresBound`, or
 `CaptureRead { clause, capture }` (FR-337 "Capture observation"), the
-clause's checked `holds` condition reading a capture, which the engine does
-not yet decide.
+clause's checked `holds` condition reading a capture, which the engine
+refuses as a standing decision (FR-337 "Capture observation", QSL-1092).
 
 ## Outputs
 

@@ -96,11 +96,11 @@ struct Unit {
     body: String,
     documents: Documents,
     checked: CheckedPackage,
-    letters: &'static R1,
+    letters: &'static dyn ModelLetters,
 }
 
 impl Unit {
-    fn new(run: &str, claim: &str, letters: &'static R1) -> Self {
+    fn new(run: &str, claim: &str, letters: &'static dyn ModelLetters) -> Self {
         let body = contracts() + &protocol("SB", run) + claim;
         Self {
             checked: package(&body),
@@ -828,4 +828,88 @@ fn a_cut_store_met_only_by_the_model_only_pass_settles_inconclusive() {
         !matches!(uncut, Ok(ModelCheckOutcome::Memory { .. })),
         "{uncut:?}"
     );
+}
+
+/// The claim's atom, undefined once the bound core's `r1` holds 1.
+struct UndefinedAtOne;
+
+impl ModelLetters for UndefinedAtOne {
+    crate::units::unguarded!();
+
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
+    fn atom(
+        &self,
+        _atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, AtomStop> {
+        Ok(if field(state, "cores", &instance.key, "r1") == 1 {
+            AtomReading::Undefined(qsl_eval::temporal::UndefinedCause::Kernel(
+                quire_exact::Undefined::DivisionByZero,
+            ))
+        } else {
+            AtomReading::False
+        })
+    }
+}
+
+static UNDEFINED_AT_ONE: UndefinedAtOne = UndefinedAtOne;
+
+/// FR-128's authored clause through `replay_protocol_trace` (FR-217): the
+/// undefined-evaluation counterexample of a protocol clause whose atom has no
+/// value once `r1` is 1 replays to `reproduced-with-evaluated-witness` with
+/// the undefined value; with `where` moved, another locus or another cause it
+/// settles `inconclusive`.
+#[trace("TC-539")]
+#[test]
+fn a_protocol_clauses_undefined_evaluation_replays() {
+    use qsl_replay::{DisagreementCause, ModelTraceSettlement, ModelTraceValue, UndefinedLocus};
+    let unit = Unit::new(&spin_run(), SETTLES, &UNDEFINED_AT_ONE);
+    let outcome = unit.check(&[], None).expect("the subject checks");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    let payload = counterexample.as_ref().clone();
+    let CounterexampleKind::UndefinedEvaluation(claimed) = payload.kind.clone() else {
+        panic!("expected an undefined evaluation: {payload:?}");
+    };
+    assert!(matches!(claimed.site.locus, UndefinedLocus::Atom(_)));
+    let settle = |payload: TemporalCounterexample<ProtocolTransition>| {
+        unit.replay(&[], payload).expect("replays").settlement
+    };
+    assert_eq!(
+        settle(payload.clone()),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(claimed.clone()),
+            trace_position: payload.trace_position(),
+        }
+    );
+    let altered = |edit: &dyn Fn(&mut qsl_replay::UndefinedEvaluation)| {
+        let mut payload = payload.clone();
+        let CounterexampleKind::UndefinedEvaluation(evaluation) = &mut payload.kind else {
+            panic!("an undefined evaluation");
+        };
+        edit(evaluation);
+        payload
+    };
+    for payload in [
+        altered(&|evaluation| evaluation.site.position += 1),
+        altered(&|evaluation| evaluation.site.locus = UndefinedLocus::Activation),
+        altered(&|evaluation| {
+            evaluation.cause =
+                qsl_eval::temporal::UndefinedCause::Kernel(quire_exact::Undefined::IeeeNotFinite)
+        }),
+    ] {
+        assert!(
+            matches!(
+                settle(payload),
+                ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts { .. })
+            ),
+            "an altered undefined evaluation is a disagreement"
+        );
+    }
 }
