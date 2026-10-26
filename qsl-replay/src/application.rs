@@ -146,18 +146,20 @@ impl CheckedClosureHandle {
     pub fn nested_call_site(
         &self,
         caller: &CallableSelection,
-        call: CheckedCallOccurrence,
-    ) -> Result<CheckedCallSite, CheckedCallSiteRefusal> {
+        call: NestedCallOccurrence,
+    ) -> Result<NestedCallSite, NestedCallSiteRefusal> {
         if !Arc::ptr_eq(&self.acquisition, &caller.acquisition) {
-            return Err(CheckedCallSiteRefusal::WrongAcquisition);
+            return Err(NestedCallSiteRefusal::WrongAcquisition);
         }
         let packages = self.closure_packages();
+        // A selection of this acquisition names an owner and body of this
+        // closure; were either absent, no occurrence could be reached from it.
         let Some(owner) = packages
             .iter()
             .find(|(id, _)| *id == caller.owner_package_id)
             .map(|(_, package)| *package)
         else {
-            return Err(CheckedCallSiteRefusal::UnknownCaller);
+            return Err(NestedCallSiteRefusal::Unreachable);
         };
         let graph = owner.graph();
         let Some(node) = graph
@@ -165,30 +167,31 @@ impl CheckedClosureHandle {
             .nodes()
             .find(|node| node.key().as_bytes() == call.call_node.as_bytes())
         else {
-            let mut others = packages.iter().filter(|(id, package)| {
-                *id != caller.owner_package_id && has_node(package, call.call_node)
-            });
-            return match (others.next(), others.next()) {
-                (Some((id, _)), None) => Err(CheckedCallSiteRefusal::ForeignCall(*id)),
-                _ => Err(CheckedCallSiteRefusal::UnknownCall),
-            };
+            let owners: Vec<_> = packages
+                .iter()
+                .filter(|(id, package)| {
+                    *id != caller.owner_package_id && has_node(package, call.call_node)
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            return Err(foreign_or_unknown(&owners));
         };
         if !is_call_form(node.semantic_form()) {
-            return Err(CheckedCallSiteRefusal::WrongKind);
+            return Err(NestedCallSiteRefusal::WrongKind);
         }
         let Some(site) = graph.occurrence(
             node.key(),
             &OccurrenceOrigin::new(Role::new("expression"), call.ordinal),
         ) else {
-            return Err(CheckedCallSiteRefusal::UnknownOccurrence);
+            return Err(NestedCallSiteRefusal::UnknownOccurrence);
         };
         let Some(caller_function) = graph.function_by_identity(caller.key) else {
-            return Err(CheckedCallSiteRefusal::UnknownCaller);
+            return Err(NestedCallSiteRefusal::Unreachable);
         };
         if !body_holds_call_at(caller_function.body, site) {
-            return Err(CheckedCallSiteRefusal::Unreachable);
+            return Err(NestedCallSiteRefusal::Unreachable);
         }
-        Ok(CheckedCallSite {
+        Ok(NestedCallSite {
             owner_package_id: caller.owner_package_id,
             location: site.clone(),
         })
@@ -229,6 +232,15 @@ fn has_node(package: &CheckedPackage, node: WireNodeId) -> bool {
         .semantic_graph()
         .nodes()
         .any(|candidate| candidate.key().as_bytes() == node.as_bytes())
+}
+
+/// The refusal for a node the caller's package lacks: its one actual owner, and
+/// never an arbitrary one of several.
+fn foreign_or_unknown(owners: &[DigestRecord]) -> NestedCallSiteRefusal {
+    match owners {
+        [owner] => NestedCallSiteRefusal::ForeignCall(*owner),
+        _ => NestedCallSiteRefusal::UnknownCall,
+    }
 }
 
 /// Whether the checked body holds a `call` or imported `call` node whose
@@ -303,12 +315,12 @@ pub enum CallableLookupRefusal {
 /// pair its checked-package source map records. It names nothing by itself;
 /// [`CheckedClosureHandle::nested_call_site`] resolves it inside a selected caller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedCallOccurrence {
+pub struct NestedCallOccurrence {
     call_node: WireNodeId,
     ordinal: u64,
 }
 
-impl CheckedCallOccurrence {
+impl NestedCallOccurrence {
     /// Name the `ordinal`th `expression` occurrence of the `call_node`.
     pub fn new(call_node: WireNodeId, ordinal: u64) -> Self {
         Self { call_node, ordinal }
@@ -319,17 +331,25 @@ impl CheckedCallOccurrence {
 /// constructible nowhere else.
 ///
 /// ```compile_fail
-/// fn forge(site: qsl_replay::CheckedCallSite) {
+/// fn forge(site: qsl_replay::NestedCallSite) {
 ///     let _ = site.location;
 /// }
 /// ```
+///
+/// The struct is exported, so a literal fails only because its fields are private:
+///
+/// ```compile_fail
+/// fn forge(owner: qsl_replay::DigestRecord, location: quire_semantic_value::location::Location) {
+///     let _ = qsl_replay::NestedCallSite { owner_package_id: owner, location };
+/// }
+/// ```
 #[derive(Clone, Debug)]
-pub struct CheckedCallSite {
+pub struct NestedCallSite {
     owner_package_id: DigestRecord,
     location: Location,
 }
 
-impl CheckedCallSite {
+impl NestedCallSite {
     /// The declaring package whose checked body holds the call.
     pub fn owner_package_id(&self) -> DigestRecord {
         self.owner_package_id
@@ -343,13 +363,10 @@ impl CheckedCallSite {
 
 /// Why no call site was issued.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum CheckedCallSiteRefusal {
+pub enum NestedCallSiteRefusal {
     /// The caller selection was issued by another acquisition.
     #[error("caller selection belongs to another acquisition")]
     WrongAcquisition,
-    /// The caller's owner or checked body is not in this closure.
-    #[error("caller is not in this closure")]
-    UnknownCaller,
     /// No package owns the node, or several other packages do.
     #[error("unknown call node")]
     UnknownCall,
@@ -362,7 +379,8 @@ pub enum CheckedCallSiteRefusal {
     /// The call node has no `expression` occurrence with this ordinal.
     #[error("call node has no such occurrence")]
     UnknownOccurrence,
-    /// The occurrence is not a call within the selected caller's body.
+    /// The occurrence is not a call within the selected caller's checked body
+    /// (including a caller body the closure does not hold).
     #[error("call occurrence is not reachable from the caller body")]
     Unreachable,
 }
@@ -1396,7 +1414,7 @@ mod tests {
         handle: &CheckedClosureHandle,
         package: &CheckedPackage,
         caller: &CallableSelection,
-    ) -> Vec<(CheckedCallOccurrence, CheckedCallSite)> {
+    ) -> Vec<(NestedCallOccurrence, NestedCallSite)> {
         let mut found = Vec::new();
         for node in package.graph().semantic_graph().nodes() {
             if !is_call_form(node.semantic_form()) {
@@ -1404,7 +1422,7 @@ mod tests {
             }
             let wire = WireNodeId::from_digest(*node.key().as_bytes());
             for ordinal in 0..16 {
-                let occurrence = CheckedCallOccurrence::new(wire, ordinal);
+                let occurrence = NestedCallOccurrence::new(wire, ordinal);
                 if let Ok(site) = handle.nested_call_site(caller, occurrence) {
                     found.push((occurrence, site));
                 }
@@ -1434,7 +1452,7 @@ mod tests {
         locations.sort();
         locations
     }
-    fn sorted(sites: &[(CheckedCallOccurrence, CheckedCallSite)]) -> Vec<Location> {
+    fn sorted(sites: &[(NestedCallOccurrence, NestedCallSite)]) -> Vec<Location> {
         let mut locations: Vec<_> = sites
             .iter()
             .map(|(_, site)| site.location().clone())
@@ -1575,7 +1593,7 @@ mod tests {
             assert!(!site.location().path().is_empty(), "a child path");
             assert!(matches!(
                 &site.location().origin,
-                quire_semantic_value::location::Origin::Body { function, .. } if function == "twice"
+                quire_semantic_value::location::Origin::Body { function, index: 2 } if function == "twice"
             ));
             let result = denied_nested_call(handle, &twice, &f, site.location());
             assert!(matches!(
@@ -1590,7 +1608,7 @@ mod tests {
         assert_eq!(sorted(&imported_calls), oracle(&package, &k));
         assert!(matches!(
             &imported_calls[0].1.location().origin,
-            quire_semantic_value::location::Origin::Body { function, .. } if function == "k"
+            quire_semantic_value::location::Origin::Body { function, index: 3 } if function == "k"
         ));
     }
 
@@ -1622,7 +1640,7 @@ mod tests {
             assert_ne!(dependency_id, handle.package_id());
             assert!(matches!(
                 &site.location().origin,
-                quire_semantic_value::location::Origin::Body { function, .. } if function == "outer"
+                quire_semantic_value::location::Origin::Body { function, index: 1 } if function == "outer"
             ));
             for own in &own_functions {
                 assert!(!oracle(&handle.package, own).contains(site.location()));
@@ -1669,29 +1687,29 @@ mod tests {
             handle.nested_call_site(&g, outer_call),
             handle.nested_call_site(&outer, g_call),
             handle.nested_call_site(&g, k_call),
-            handle.nested_call_site(&g, CheckedCallOccurrence::new(wire(&package, "g"), 0)),
+            handle.nested_call_site(&g, NestedCallOccurrence::new(wire(&package, "g"), 0)),
             handle.nested_call_site(
                 &g,
-                CheckedCallOccurrence::new(WireNodeId::from_digest([7; 32]), 0),
+                NestedCallOccurrence::new(WireNodeId::from_digest([7; 32]), 0),
             ),
-            handle.nested_call_site(&g, CheckedCallOccurrence::new(g_call.call_node, 99)),
+            handle.nested_call_site(&g, NestedCallOccurrence::new(g_call.call_node, 99)),
         ]
         .map(|result| result.expect_err("refused"));
         assert_eq!(
             refusals,
             [
-                CheckedCallSiteRefusal::WrongAcquisition,
-                CheckedCallSiteRefusal::ForeignCall(dependency_id),
-                CheckedCallSiteRefusal::ForeignCall(own),
-                CheckedCallSiteRefusal::Unreachable,
-                CheckedCallSiteRefusal::WrongKind,
-                CheckedCallSiteRefusal::UnknownCall,
-                CheckedCallSiteRefusal::UnknownOccurrence,
+                NestedCallSiteRefusal::WrongAcquisition,
+                NestedCallSiteRefusal::ForeignCall(dependency_id),
+                NestedCallSiteRefusal::ForeignCall(own),
+                NestedCallSiteRefusal::Unreachable,
+                NestedCallSiteRefusal::WrongKind,
+                NestedCallSiteRefusal::UnknownCall,
+                NestedCallSiteRefusal::UnknownOccurrence,
             ]
         );
         for (index, left) in refusals.iter().enumerate() {
             assert!(refusals[index + 1..].iter().all(
-                |right| right != left || matches!(left, CheckedCallSiteRefusal::ForeignCall(_))
+                |right| right != left || matches!(left, NestedCallSiteRefusal::ForeignCall(_))
             ));
         }
         assert_eq!(meter_before.admission_count(), 0);
@@ -1761,5 +1779,30 @@ mod tests {
             assert_eq!(later.location(), before.location());
             assert_eq!(later.owner_package_id(), before.owner_package_id());
         }
+    }
+
+    /// A call node several other packages own is never attributed to one of them.
+    /// Node keys are owner-scoped, and two dependencies sharing an owner are refused
+    /// at acquisition, so no real closure holds one node in two packages; the branch
+    /// is therefore tested on its pure decision.
+    #[test]
+    fn a_call_node_in_several_other_packages_is_unknown() {
+        let first = DigestRecord::mint(
+            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
+            [1; 32],
+        );
+        let second = DigestRecord::mint(
+            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
+            [2; 32],
+        );
+        assert_eq!(
+            foreign_or_unknown(&[first]),
+            NestedCallSiteRefusal::ForeignCall(first)
+        );
+        assert_eq!(
+            foreign_or_unknown(&[first, second]),
+            NestedCallSiteRefusal::UnknownCall
+        );
+        assert_eq!(foreign_or_unknown(&[]), NestedCallSiteRefusal::UnknownCall);
     }
 }
