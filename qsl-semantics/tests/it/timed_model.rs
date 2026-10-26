@@ -302,11 +302,12 @@ fn a_bound_converts_exactly_to_the_model_unit() {
     assert_eq!(model.resets()[0].resets()[0].value(), &exact(0, 1));
 }
 
-/// Part of FR-230-AC-4 (TC-685): `(x < 1 or x > 2) and self.ready` is two
-/// convex parts, `x < 1` and `x > 2`, each with the data predicate
-/// `self.ready`. Not covered here: the S2 forms, and the 6,400 clock places
-/// of the subject (FR-231's `TimedSystem`).
-#[trace("TC-685")]
+/// FR-230-AC-4's S3 half (TC-685 step 4): `(x < 1 or x > 2) and
+/// self.ready` is two convex parts, `x < 1` and `x > 2`, each with the data
+/// predicate `self.ready`. The S2 forms are `qsl-forms`' `time_forms` test
+/// and the 6,400 clock places with the `10^40 ms` constant `qsl-eval`'s
+/// `timed_subject` test.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn a_disjunctive_guard_splits_into_convex_parts() {
     let body = format!(
@@ -341,10 +342,10 @@ fn a_disjunctive_guard_splits_into_convex_parts() {
     );
 }
 
-/// Part of FR-230-AC-4 (TC-685): 64 package clock fields are 64 clocks of
-/// `Call`, and a `10^40 ms` constant checks exactly. Not covered: the 6,400
-/// clock places over 100 objects, which the subject (FR-231) lists.
-#[trace("TC-685")]
+/// FR-230-AC-4 (TC-685 step 4): 64 package clock fields are 64 clocks of
+/// `Call`, and a `10^40 ms` constant checks exactly. The 6,400 places over
+/// 100 objects are `qsl-eval`'s `timed_subject` test.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn many_clocks_and_a_huge_constant_check() {
     let names: Vec<String> = (0..64).map(|index| format!("c{index:02}")).collect();

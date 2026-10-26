@@ -451,6 +451,68 @@ fn zero_tick_period_refuses_at_the_period() {
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::InvalidTickPeriod { .. }))), "{refusals:?}");
 }
 
+/// FR-230-AC-3's S3 half (TC-685 step 3): the tick source over
+/// `attemptUpdate` with period `rational(1,2) ms` checks to a tick source
+/// with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/
+/// `malformed-declaration` at the period; an operation name that resolves
+/// to nothing refuses `missing_declaration`/`missing-name` at the name. The
+/// S2 half is `qsl-forms`' `time_forms` test.
+#[trace("TC-685", "FR-230-AC-3")]
+#[test]
+fn tick_sources_check_and_refuse_at_their_spans() {
+    let units = "dimension Time;\nunit ms : Time = rational(1, 1);\n";
+    let temporal = "profile t = \"quire.temporal.complete/v1\";\n";
+    let body = format!(
+        "{units}time Config tick ConfigVersion::attemptUpdate period rational(1,2) ms unit ms;\n"
+    );
+    let checked = admit_and_assemble_with_profiles(&document(), temporal, &body)
+        .expect("S2 retains the tick form")
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the tick source checks");
+    let qsl_semantics::check::TimeSourceKind::Tick { period, .. } =
+        &checked.time_sources()[0].source
+    else {
+        panic!("a tick source: {:?}", checked.time_sources());
+    };
+    assert_eq!(
+        *period,
+        quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half")
+    );
+    for (line, code, tag, at) in [
+        (
+            "time Config tick ConfigVersion::attemptUpdate period 0 ms unit ms;\n",
+            Code::InvalidModelBinding,
+            "malformed-declaration",
+            "0 ms",
+        ),
+        (
+            "time Config tick ConfigVersion::absent period 1 ms unit ms;\n",
+            Code::MissingDeclaration,
+            "missing-name",
+            "ConfigVersion::absent",
+        ),
+    ] {
+        let body = format!("{units}{line}");
+        let refusals = admit_and_assemble_with_profiles(&document(), temporal, &body)
+            .expect("S2 retains the form")
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect_err("S3 refuses the tick source");
+        let [refusal] = refusals.as_slice() else {
+            panic!("{line}: one refusal: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("{line}: a timed refusal: {refusal:?}");
+        };
+        let (text, _) = config_unit_with_profiles(&document(), temporal, &body);
+        let span = cause.span();
+        assert_eq!(
+            (cause.code(), cause.tag(), &text[span.start..span.end]),
+            (code, tag, at),
+            "{line}"
+        );
+    }
+}
+
 #[trace("TC-685")]
 #[test]
 fn a_tick_period_with_zero_denominator_refuses_at_the_magnitude() {

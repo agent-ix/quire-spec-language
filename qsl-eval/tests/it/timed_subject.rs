@@ -587,19 +587,25 @@ fn a_tick_source_stamps_positions_by_tick_count() {
     assert_eq!(timed.tick_period(), Some(&exact(5, 1)));
 }
 
-/// Part of FR-230-AC-4 (TC-685): 64 package clock fields over a universe of
-/// 100 objects are 6,400 clock places, each 0 initially. The guard's convex
-/// parts and the `10^40 ms` constant are S3's (qsl-semantics `timed_model`).
-#[trace("TC-685")]
+/// FR-230-AC-4's subject half (TC-685 step 4): a model with 64 package
+/// clock fields over a universe of 100 objects has 6,400 clock places, each
+/// 0 initially, and its guard `x <= 10^40 ms` checks with no refusal and
+/// reads the exact constant. The S2 forms are `qsl-forms`' and the convex
+/// parts `qsl-semantics`' `timed_model` tests.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn every_object_holds_its_own_clock_of_every_clock_field() {
     let names: Vec<String> = (0..63).map(|index| format!("c{index:02}")).collect();
     let extra: Vec<&str> = names.iter().map(String::as_str).collect();
+    let huge = format!("1{}", "0".repeat(40));
     let world = world_over(
         clocked_document(true, &extra),
         "",
-        "dimension Time;\nunit s : Time = rational(1, 1);\n\
-         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+        &format!(
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n\
+             pre Big using v on M::Call::work {{ self.x <= {huge} ms }}\n"
+        ),
     );
     let keys: Vec<String> = std::iter::once("c".to_owned())
         .chain((1..100).map(|index| format!("k{index:03}")))
@@ -609,6 +615,13 @@ fn every_object_holds_its_own_clock_of_every_clock_field() {
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     assert_eq!(timed.model().clocks().len(), 64);
     assert_eq!(timed.places().len(), 6_400);
+    let [guard] = timed.model().guards() else {
+        panic!("one guard: {:?}", timed.model().guards());
+    };
+    assert_eq!(
+        guard.parts()[0].clocks()[0].bound().numerator().to_string(),
+        huge
+    );
     let initial = timed.initial().remove(0);
     assert!(initial
         .clocks()
