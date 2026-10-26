@@ -266,7 +266,6 @@ pub(crate) fn timed_package(document: &[u8], body: &str) -> CheckedPackage {
         "profile t0 = \"quire.temporal.complete/v1\";",
     );
     let graph = declarations_from_text(document, text)
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
