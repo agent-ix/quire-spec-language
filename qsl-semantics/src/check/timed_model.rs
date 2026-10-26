@@ -405,6 +405,14 @@ impl TimedModel {
         &self.clocks
     }
 
+    /// Each clock field with its id, in order.
+    pub fn clock_fields(&self) -> impl Iterator<Item = (ClockId, &ClockField)> {
+        self.clocks
+            .iter()
+            .enumerate()
+            .map(|(index, field)| (ClockId(index), field))
+    }
+
     /// The clock field `id` names.
     pub fn clock(&self, id: ClockId) -> Option<&ClockField> {
         self.clocks.get(id.0)
