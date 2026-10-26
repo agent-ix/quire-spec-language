@@ -445,6 +445,14 @@ pub enum ProtocolAnchorCause {
         /// The `repeat`'s name span.
         span: Span,
     },
+    /// FR-218: a post-test repeat with a zero maximum cannot execute its
+    /// required first body iteration. `invalid_package`/`invalid-value`.
+    RepeatMaxConflict {
+        /// The repeat's declared name.
+        repeat: String,
+        /// The repeat declaration's name span.
+        span: Span,
+    },
     /// FR-218 "Choice and repeat decisions": a `choice` whose guards are not
     /// proved exhaustive and exclusive. `undefined_expression`/
     /// `unproved-exhaustiveness`, at the choice.
@@ -979,6 +987,7 @@ impl ProtocolAnchorCause {
             | Self::CarriesMismatch { span, .. }
             | Self::CausalCycle { span, .. }
             | Self::NoProgress { span, .. }
+            | Self::RepeatMaxConflict { span, .. }
             | Self::Exhaustiveness { span, .. }
             | Self::KeyClause { span, .. }
             | Self::KeyModelState { span, .. }
@@ -1041,7 +1050,9 @@ impl ProtocolAnchorCause {
             | Self::AwaitedForm { .. }
             | Self::WeakJoin { .. }
             | Self::AccessShape { .. } => Code::UnsupportedConstruct,
-            Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
+            Self::CausalCycle { .. }
+            | Self::RepeatMaxConflict { .. }
+            | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).0
@@ -1101,6 +1112,7 @@ impl ProtocolAnchorCause {
             | Self::AccessShape { .. } => "declaration-form",
             Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
+            Self::RepeatMaxConflict { .. } => "invalid-value",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).1

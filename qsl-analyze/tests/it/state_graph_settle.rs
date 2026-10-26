@@ -92,6 +92,9 @@ fn settle_with(
             Ok(GraphReplayResult {
                 settlement: settling.replay.clone(),
                 package_id: settling.replayed,
+                evaluated_predicates: Vec::new(),
+                closure_nodes: None,
+                first_target: None,
             })
         },
     )
@@ -1182,6 +1185,9 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
             Ok(GraphReplayResult {
                 settlement: GraphReplaySettlement::Reproduced,
                 package_id: foreign.package_id(),
+                evaluated_predicates: Vec::new(),
+                closure_nodes: None,
+                first_target: None,
             })
         },
     );

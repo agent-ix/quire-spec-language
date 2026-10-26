@@ -14,7 +14,7 @@ Verify that every concrete operation, and over a protocol subject every
 concrete step class, needs exactly one written-out step row, and that
 receivers, arguments and results are typed against the abstract operation.
 
-Scope: FR-136-AC-1 to FR-136-AC-11.
+Scope: FR-136-AC-1 to FR-136-AC-12.
 
 ## Test Procedure
 
@@ -52,6 +52,9 @@ protocol subject over a model with operations `incA` and `incB`.
     non-Boolean field read, `CasTwice` with its `population` row written twice, and
     step 6's `Run` refinement with a row naming `Other` and no control-node
     rows; then check it with the invariant and the `Other` row removed.
+12. Emit `CasRefinesCounter` over object-type models; emit a refinement
+    whose abstract package declares two `state_machine` records; emit one
+    with a single `state_machine` on each side.
 
 Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 
@@ -94,3 +97,6 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
   `CheckedRefinement`. Without the invariant and the `Other` row: the
   `population` `conflicting-binding` and `missing-name` naming the `fork`
   node.
+- Step 12: `unsupported_construct`/`declaration-form` naming the abstract side
+  and its alias, never `not-yet-implemented`; `ambiguous_declaration`/
+  `ambiguous-name` with count 2; no subject refusal with one on each side.
