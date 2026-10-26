@@ -19,6 +19,7 @@ mod source_grammar_vectors;
 mod state_graph_forms;
 mod state_model_forms;
 mod sum_case_forms;
+mod task_set_forms;
 mod temporal_clause_forms;
 mod terminal_declaration_forms;
 mod time_forms;

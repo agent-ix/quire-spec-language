@@ -1310,6 +1310,26 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::AmbiguousTickOperation { name, .. } => {
                     format!("{message}: the tick operation `{name}` resolves more than once")
                 }
+                TemporalCause::InvalidTaskSet { task_set, .. } => {
+                    format!("{message}: task set `{task_set}` breaks a rule of the task model")
+                }
+                TemporalCause::DuplicateTask { task_set, task, .. } => format!(
+                    "{message}: task set `{task_set}` already declares a task `{task}`"
+                ),
+                TemporalCause::DuplicateTaskSet { name, .. } => {
+                    format!("{message}: the unit already declares a task set `{name}`")
+                }
+                TemporalCause::MissingTaskSet { claim, name, .. } => {
+                    format!("{message}: claim `{claim}` names no task set `{name}`")
+                }
+                TemporalCause::UnknownResponseTask {
+                    claim,
+                    task_set,
+                    task,
+                    ..
+                } => format!(
+                    "{message}: claim `{claim}` names no task `{task}` of task set `{task_set}`"
+                ),
             };
         }
         _ => {}

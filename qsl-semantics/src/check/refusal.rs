@@ -823,6 +823,12 @@ pub enum TimedConstruct {
     Clock,
     /// A temporal operator's timed interval (FR-233, FR-234).
     TimedInterval,
+    /// A `taskset` declaration (QSpec FR-419, QSL FR-246).
+    Taskset,
+    /// A `schedulable` claim (QSpec FR-419, QSL FR-246).
+    Schedulable,
+    /// A `response` claim (QSpec FR-419, QSL FR-246).
+    Response,
 }
 
 impl TimedConstruct {
@@ -834,6 +840,9 @@ impl TimedConstruct {
             Self::Urgent => "an `urgent` declaration",
             Self::Clock => "the `Clock` type",
             Self::TimedInterval => "a timed interval",
+            Self::Taskset => "a `taskset` declaration",
+            Self::Schedulable => "a `schedulable` claim",
+            Self::Response => "a `response` claim",
         }
     }
 }
@@ -1275,7 +1284,8 @@ pub enum TemporalCause {
         /// Why the unit is not a time unit (boxed: an affine unit's offset
         /// is an exact rational).
         cause: Box<TimeUnitCause>,
-        /// The unit name's span.
+        /// The unit name's span; for a task's time value (QSL FR-246), the span of
+        /// the whole quantity.
         span: Span,
     },
     /// A clause under the timed profile whose clock binding is not
@@ -1297,6 +1307,64 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// QSL FR-246, QSpec FR-419: a task set or a claim over it that breaks a
+    /// rule of the task model. Located at the offending value, or at the
+    /// declaration for a task set with no task.
+    InvalidTaskSet {
+        /// The task set.
+        task_set: String,
+        /// The tasks the refusal names: none for a task set that declares
+        /// none, one task, or both tasks of a priority clash.
+        tasks: Vec<String>,
+        /// The broken rule.
+        defect: TaskSetDefect,
+        /// The span of the offending value or declaration.
+        span: Span,
+    },
+    /// QSL FR-246: two tasks of one task set share a name. Located at the
+    /// second task's name.
+    DuplicateTask {
+        /// The task set.
+        task_set: String,
+        /// The shared name.
+        task: String,
+        /// The first task's name span.
+        first: Span,
+        /// The second task's name span.
+        span: Span,
+    },
+    /// QSL FR-246: two task sets of one unit share a name. Located at the
+    /// second task set's name.
+    DuplicateTaskSet {
+        /// The shared name.
+        name: String,
+        /// The first task set's name span.
+        first: Span,
+        /// The second task set's name span.
+        span: Span,
+    },
+    /// QSL FR-246: a claim names no task set of the unit. Located at the
+    /// task set name the claim wrote.
+    MissingTaskSet {
+        /// The claim.
+        claim: String,
+        /// The task set as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-246: a `response` claim names no task of its task set.
+    /// Located at the task name the claim wrote.
+    UnknownResponseTask {
+        /// The claim.
+        claim: String,
+        /// The task set.
+        task_set: String,
+        /// The task as written.
+        task: String,
+        /// The name's span.
+        span: Span,
+    },
     /// A clause over a non-hybrid subject that writes no `clock` member: its
     /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
     /// built, so the clause is refused rather than stepped by a guessed
@@ -1305,6 +1373,58 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+}
+
+/// A time member of a task, for a refusal to name (QSL FR-246).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TaskTimeMember {
+    /// The period or minimum inter-arrival time.
+    Period,
+    /// The relative deadline.
+    Deadline,
+    /// The `wcet` budget: `C`, or `C(LO)` for a `hi` task.
+    Wcet,
+    /// The `wcet_hi` budget `C(HI)`.
+    WcetHi,
+    /// The release jitter.
+    Jitter,
+    /// The blocking term.
+    Blocking,
+}
+
+/// Which rule of the task model an [`TemporalCause::InvalidTaskSet`] broke
+/// (QSL FR-246, QSpec FR-419). Every one is catalog `invalid_timed_model`/
+/// `invalid-task-set`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum TaskSetDefect {
+    /// The task set declares no task.
+    NoTask,
+    /// A period, minimum inter-arrival time, deadline or WCET is not
+    /// positive.
+    NotPositive(TaskTimeMember),
+    /// A jitter or blocking term is negative.
+    Negative(TaskTimeMember),
+    /// A `hi` task's `C(LO)` exceeds its `C(HI)`.
+    BudgetOrder,
+    /// A `lo` task states a `wcet_hi`.
+    LoDualBudgets,
+    /// A priority is past the largest natural number S3 holds.
+    PriorityOutOfRange,
+    /// A `fixed_priority`, `amc` or `response` claim over a task with no
+    /// priority.
+    MissingPriority,
+    /// A `fixed_priority`, `amc` or `response` claim over two tasks of one
+    /// priority.
+    PriorityClash {
+        /// The shared priority.
+        priority: u64,
+    },
+    /// An `edf` claim over a task whose jitter or blocking term is not zero,
+    /// which the processor-demand test does not read.
+    EdfTerm(TaskTimeMember),
+    /// An `amc` claim over a task whose deadline exceeds its period, which
+    /// AMC-rtb does not cover.
+    AmcDeadlineBeyondPeriod,
 }
 
 /// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
@@ -1370,6 +1490,11 @@ impl TemporalCause {
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
             | Self::TimedTraceSubject { span }
+            | Self::InvalidTaskSet { span, .. }
+            | Self::DuplicateTask { span, .. }
+            | Self::DuplicateTaskSet { span, .. }
+            | Self::MissingTaskSet { span, .. }
+            | Self::UnknownResponseTask { span, .. }
             | Self::MissingClock { span } => *span,
         }
     }
@@ -1398,8 +1523,14 @@ impl TemporalCause {
             | Self::TimedTraceSubject { .. }
             | Self::MissingClock { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
-            Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
-                Code::InvalidTimedModel
+            Self::InvalidTimedInterval { .. }
+            | Self::ModelTimeOnUntimedModel { .. }
+            | Self::InvalidTaskSet { .. } => Code::InvalidTimedModel,
+            Self::DuplicateTask { .. } | Self::DuplicateTaskSet { .. } => {
+                Code::ConflictingDeclaration
+            }
+            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => {
+                Code::MissingDeclaration
             }
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
@@ -1440,9 +1571,12 @@ impl TemporalCause {
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
-            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
-                "duplicate-declaration"
-            }
+            Self::DuplicateTrigger { .. }
+            | Self::DuplicateCapture { .. }
+            | Self::DuplicateTask { .. }
+            | Self::DuplicateTaskSet { .. } => "duplicate-declaration",
+            Self::InvalidTaskSet { .. } => "invalid-task-set",
+            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => "missing-name",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
