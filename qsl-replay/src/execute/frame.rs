@@ -199,9 +199,12 @@ pub fn replay_frame(
     let request = ReplayRequest::decode(wire, replay_limits)?;
     // FR-116's three envelope checks, in order, after decode and before the
     // recompile.
-    let ReplayTarget::FrameOperation(target) = request.replay_target() else {
+    let Some(replay_target) = request.replay_target() else {
+        return Err(ReplayRefusal::WrongModelGraphEntry);
+    };
+    let ReplayTarget::FrameOperation(target) = replay_target else {
         return Err(wrong_target(
-            request.replay_target(),
+            replay_target,
             ReplayEntry::ReplayFrame,
             TargetMember::FrameOperation,
         ));

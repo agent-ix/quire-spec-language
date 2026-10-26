@@ -251,7 +251,7 @@ pub struct ReplayRequest {
     package_id: DigestRecord,
     source_digests: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
-    replay_target: ReplayTarget,
+    replay_target: Option<ReplayTarget>,
     over: Option<ReplayOverBinding>,
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
@@ -280,14 +280,15 @@ impl ReplayRequest {
     pub fn dependencies(&self) -> &[DependencyEntry] {
         &self.dependencies
     }
-    /// The replay target (QSpec FR-323): exactly one of a function, a
-    /// frame operation or a state clause, held as typed names only. No
+    /// The replay target (QSpec FR-323), when this source selects through
+    /// one. A model-graph request selects its claim from the evidence
+    /// envelope identity. A present target is held as typed names only. No
     /// constructor or decoder on this type ever accepts a bare `&str` or
     /// `String` in a target position (FR-071-AC-3), and no `impl
     /// From<&str>`/`impl From<String>` exists that could satisfy one
     /// implicitly.
-    pub fn replay_target(&self) -> &ReplayTarget {
-        &self.replay_target
+    pub fn replay_target(&self) -> Option<&ReplayTarget> {
+        self.replay_target.as_ref()
     }
     /// The object selected for a temporal clause's `over` parameter, when
     /// this is an observed temporal replay request (FR-331).
@@ -605,6 +606,13 @@ pub enum ReplayRequestRefusal {
     /// frame target, which has no temporal clause binding.
     #[error("invalid_runtime_input/unknown-member at /replay/over: only a state-clause target accepts over")]
     UnexpectedOverBinding,
+    /// A model-graph request carries a generic target instead of selecting
+    /// its claim from the evidence envelope identity.
+    #[error("invalid_runtime_input/unknown-member at {pointer}: model-graph replay selects its claim from the evidence envelope", pointer = .member.map_or("/replay", TargetMember::pointer))]
+    UnexpectedModelGraphTarget {
+        /// The supplied target member, when present.
+        member: Option<TargetMember>,
+    },
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
@@ -740,7 +748,8 @@ impl ReplayRequestRefusal {
             | Self::ConflictingReplayTarget { .. }
             | Self::UnexpectedArguments { .. }
             | Self::UnexpectedOccurrenceKey { .. }
-            | Self::UnexpectedOverBinding => Code::InvalidRuntimeInput,
+            | Self::UnexpectedOverBinding
+            | Self::UnexpectedModelGraphTarget { .. } => Code::InvalidRuntimeInput,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
         }
     }
@@ -753,7 +762,8 @@ impl ReplayRequestRefusal {
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. }
             | Self::UnexpectedOccurrenceKey { .. }
-            | Self::UnexpectedOverBinding => Some("unknown-member"),
+            | Self::UnexpectedOverBinding
+            | Self::UnexpectedModelGraphTarget { .. } => Some("unknown-member"),
             _ => None,
         }
     }
@@ -770,6 +780,9 @@ impl ReplayRequestRefusal {
             Self::UnexpectedArguments { .. } => Some("/replay/arguments"),
             Self::UnexpectedOccurrenceKey { .. } => Some("/replay/occurrence_key"),
             Self::UnexpectedOverBinding => Some("/replay/over"),
+            Self::UnexpectedModelGraphTarget { member } => {
+                Some(member.map_or("/replay", TargetMember::pointer))
+            }
             _ => None,
         }
     }
@@ -866,11 +879,33 @@ impl ReplayRequest {
     ) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
         // QSpec FR-323 decode rule 1: before any byte-provision rule.
-        let over = wire.replay_target.over.clone();
-        let replay_target = decode_target(std::mem::take(&mut wire.replay_target))?;
-        if over.is_some() && replay_target.member() != TargetMember::StateClause {
-            return Err(ReplayRequestRefusal::UnexpectedOverBinding);
-        }
+        let (replay_target, over) = if matches!(wire.source, ReplaySource::ModelGraph(_)) {
+            let target = std::mem::take(&mut wire.replay_target);
+            let member = if target.members.function.is_some() {
+                Some(TargetMember::Function)
+            } else if target.members.frame_operation.is_some() {
+                Some(TargetMember::FrameOperation)
+            } else if target.members.state_clause.is_some() {
+                Some(TargetMember::StateClause)
+            } else {
+                None
+            };
+            if member.is_some()
+                || target.arguments
+                || target.occurrence_key.is_some()
+                || target.over.is_some()
+            {
+                return Err(ReplayRequestRefusal::UnexpectedModelGraphTarget { member });
+            }
+            (None, None)
+        } else {
+            let over = wire.replay_target.over.clone();
+            let replay_target = decode_target(std::mem::take(&mut wire.replay_target))?;
+            if over.is_some() && replay_target.member() != TargetMember::StateClause {
+                return Err(ReplayRequestRefusal::UnexpectedOverBinding);
+            }
+            (Some(replay_target), over)
+        };
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -1012,7 +1047,10 @@ impl ReplayRequest {
     /// through [`Self::decode`] (FR-071-AC-1's construct -> serialize ->
     /// read round trip).
     pub fn to_wire(&self) -> ReplayRequestWire {
-        let mut replay_target: RequestTargetWire = self.replay_target.clone().into();
+        let mut replay_target: RequestTargetWire = self
+            .replay_target
+            .clone()
+            .map_or_else(RequestTargetWire::default, Into::into);
         replay_target.over = self.over.clone();
         ReplayRequestWire {
             profile_selections: self.profile_selections.clone(),
@@ -1527,7 +1565,7 @@ mod tests {
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
-        let Some(function) = request.replay_target().as_function() else {
+        let Some(function) = request.replay_target().and_then(ReplayTarget::as_function) else {
             panic!("the wire's target is a function");
         };
         assert_eq!(function.segments().len(), 2);
@@ -1570,6 +1608,24 @@ mod tests {
         QualifiedName::new(vec![Identifier::new("VersionUnchanged").unwrap()]).unwrap()
     }
 
+    fn model_graph_source() -> ReplaySource {
+        ReplaySource::ModelGraph(Box::new(crate::GraphEvidenceEnvelope::new(
+            ObligationIdentity::from_digest([2; 32]),
+            crate::target::test_key(),
+            WireNodeId::from_digest([3; 32]),
+            DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]),
+            Vec::new(),
+            Vec::new(),
+            wire(1).accounting_limits,
+            Vec::new(),
+            qsl_foundation::BackendId::new("test-backend".to_owned()),
+            crate::GraphEvidence::Witness {
+                paths: Vec::new(),
+                over: None,
+            },
+        )))
+    }
+
     fn refusal_of(wire: ReplayRequestWire) -> ReplayRequestRefusal {
         ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err()
     }
@@ -1591,10 +1647,10 @@ mod tests {
             let mut wire = wire(1);
             wire.replay_target = target.clone().into();
             let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
-            assert_eq!(request.replay_target(), &target);
+            assert_eq!(request.replay_target(), Some(&target));
             let again =
                 ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
-            assert_eq!(again.replay_target(), &target);
+            assert_eq!(again.replay_target(), Some(&target));
         }
     }
 
@@ -1612,11 +1668,48 @@ mod tests {
             let mut wire = wire(1);
             wire.replay_target = RequestTargetWire::function(function.clone(), key.clone());
             let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
-            assert_eq!(request.replay_target().occurrence_key(), Some(&key));
+            assert_eq!(
+                request
+                    .replay_target()
+                    .and_then(ReplayTarget::occurrence_key),
+                Some(&key)
+            );
             let again =
                 ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
-            assert_eq!(again.replay_target().occurrence_key(), Some(&key));
+            assert_eq!(
+                again.replay_target().and_then(ReplayTarget::occurrence_key),
+                Some(&key)
+            );
         }
+    }
+
+    /// FR-071-AC-16 (TC-595): only ModelGraph requests omit a generic target.
+    #[trace("TC-595", "FR-071-AC-16")]
+    #[test]
+    fn model_graph_request_uses_envelope_identity_without_a_target() {
+        let mut request_wire = wire(1);
+        request_wire.replay_target = RequestTargetWire::default();
+        request_wire.source = model_graph_source();
+        let request = ReplayRequest::decode(request_wire, crate::ReplayLimits::default()).unwrap();
+        assert_eq!(request.replay_target(), None);
+        assert!(matches!(request.source(), ReplaySource::ModelGraph(_)));
+
+        let mut with_target = wire(1);
+        with_target.source = model_graph_source();
+        assert!(matches!(
+            ReplayRequest::decode(with_target, crate::ReplayLimits::default()),
+            Err(ReplayRequestRefusal::UnexpectedModelGraphTarget {
+                member: Some(TargetMember::Function)
+            })
+        ));
+
+        let mut ordinary_without_target = wire(1);
+        ordinary_without_target.replay_target = RequestTargetWire::default();
+        assert_eq!(
+            ReplayRequest::decode(ordinary_without_target, crate::ReplayLimits::default())
+                .unwrap_err(),
+            ReplayRequestRefusal::MissingReplayTarget
+        );
     }
 
     /// FR-071-AC-14 (TC-185 step 6): the reader refuses none, two and a
@@ -1949,6 +2042,7 @@ mod tests {
             }
             ReplaySource::Witness(_) => panic!("expected the Input arm"),
             ReplaySource::ObservedTemporal(_) => panic!("expected the Input arm"),
+            ReplaySource::ModelGraph(_) => panic!("expected the Input arm"),
         }
     }
 }

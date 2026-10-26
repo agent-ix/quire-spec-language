@@ -352,6 +352,7 @@ fn tc_1044_eight_retained_scalars_are_admitted_on_input_and_witness() {
             ReplayResult::Input(result) => result.value(),
             ReplayResult::Witness(result) => result.value(),
             ReplayResult::ObservedTemporal(_) => panic!("scalar replay returned a temporal arm"),
+            ReplayResult::ModelGraph(_) => panic!("scalar replay returned a state-graph arm"),
         };
         assert_eq!(evaluated, Some(EvaluatedValue::Boolean(false)), "{arm}");
     }

@@ -46,6 +46,12 @@ that consumes it (ADR-013 C-13, TK-01 executor entry, is #243's), and it
 performs no recompilation, no `package_id` recomputation, and no function
 call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
+The FR-170 `ModelGraph` source is the sole exception: it carries no generic
+replay-target member, because its `GraphEvidenceEnvelope` selects the checked
+claim by claim-node and occurrence identity. Its decoder accepts an absent
+target only for that source arm and refuses a target, arguments, occurrence
+key or request `over` member on that arm.
+
 ## Inputs
 
 - An ADR-013 O-25 counterexample packet.
@@ -204,6 +210,11 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - The replay target SHALL hold typed names only (`QualifiedName`,
   `Identifier`); the request's public constructors and decoders SHALL NOT
   accept a bare `&str` or `String` in any replay target position.
+- A request whose source is `ModelGraph` SHALL carry no generic replay
+  target. The decoder SHALL accept that absence for `ModelGraph` and no other
+  source, and SHALL refuse target members, arguments, occurrence key or
+  request `over` data on it; the model-graph claim identity comes from its
+  evidence envelope (FR-170).
 - The request type SHALL provide no implicit string-to-`QualifiedName` or
   string-to-`Identifier` conversion.
 - The reader SHALL refuse a request by QSpec FR-323's decode rule 1 (no
@@ -239,6 +250,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-13 | A request whose package reference carries `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` and whose `dependencies` entry carries its own value round-trips both exactly; a request with the member absent round-trips with it absent; the values `{}`, `null` and `7` decode and round-trip unchanged. | Test (TC-186) |
 | FR-071-AC-14 | A request whose replay target is `function`, one whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and one whose replay target is `state_clause` (`VersionUnchanged`) each round-trip with that one target unchanged. The reader refuses a request with no target `invalid_runtime_input`/`missing-member` at `/replay`, one with `function` and `frame_operation` `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation`, one with `function` and `state_clause` the same at `/replay/state_clause`, and the frame request carrying `arguments` `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, each with a byte-provision entry removed changing none of these refusals (QSpec FR-323-AC-19). | Test (TC-185) |
 | FR-071-AC-15 | A `function` request carrying the `declaration` occurrence key of its function, and one carrying an `expression` occurrence key at ordinal 1, each round-trip with the key unchanged; the same request without `occurrence_key` refuses `invalid_runtime_input`/`missing-member` at `/replay/occurrence_key`, and refuses so with a byte-provision entry removed. | Test (TC-185) |
+| FR-071-AC-16 | A `ModelGraph` request with no target members decodes with no replay target and uses its envelope identity; the same source with a function target, arguments, occurrence key or request `over` refuses `invalid_runtime_input`/`unknown-member`; a non-`ModelGraph` request with no target still refuses `missing-member` at `/replay`. | Test (TC-595) |
 
 ## Dependencies
 
