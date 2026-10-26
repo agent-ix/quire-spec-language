@@ -175,7 +175,7 @@ pub use refinement::{
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
-    TerminalDeclaration, TerminalRefusal,
+    TerminalDeclaration, TerminalMode, TerminalNode, TerminalRefusal,
 };
 mod type_form;
 mod type_invariant;

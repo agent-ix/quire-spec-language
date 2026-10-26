@@ -16,7 +16,7 @@
 
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{
-    Capability, CheckedGraph, CheckedProtocol, CheckedTerminalMember, TerminalDeclaration,
+    Capability, CheckedGraph, CheckedProtocol, CheckedTerminalMember, TerminalMode,
 };
 use quire_semantic_value::fairness::PropertyForm;
 
@@ -120,9 +120,9 @@ impl<S: Clone> DeadlockFreedomItem<S> {
 /// a selected model declares `terminal any`.
 fn opts_out(package: &CheckedGraph) -> bool {
     package
-        .terminals()
+        .terminal_nodes()
         .iter()
-        .any(|terminal| matches!(terminal.declaration(), TerminalDeclaration::Any))
+        .any(|terminal| terminal.mode == TerminalMode::Any)
 }
 
 /// FR-124 and FR-165: the deadlock-freedom items of a request's temporal and

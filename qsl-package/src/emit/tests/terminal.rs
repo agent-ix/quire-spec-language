@@ -427,3 +427,37 @@ fn a_packages_terminals_resolve_through_their_emitted_nodes() {
     );
     assert_eq!(resolved(NONE), []);
 }
+
+/// FR-411-AC-1: resolution follows the node. With the declaration's node
+/// taken out of the graph while the S3 value still holds the declaration, the
+/// terminals do not resolve, naming the model; with the node present they do.
+#[trace("TC-1142", "FR-411-AC-1")]
+#[test]
+fn resolution_follows_the_node_not_the_checked_declaration() {
+    use crate::checked_v2::{resolve_terminals, TerminalResolveRefusal};
+
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let checked = || {
+        assemble_with_models(unit(WHEN).as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .expect("the package checks")
+    };
+    let mut graph = checked();
+    let [node] = graph.terminal_nodes()[..] else {
+        panic!("one terminal node");
+    };
+    assert_eq!(
+        resolve_terminals(&CheckedPackage::link(checked()))
+            .expect("resolves")
+            .len(),
+        1
+    );
+    assert!(graph.semantic_graph_mut().remove(node.node).is_some());
+    assert_eq!(
+        resolve_terminals(&CheckedPackage::link(graph)).err(),
+        Some(TerminalResolveRefusal::Disagrees {
+            model: "Config".to_owned()
+        })
+    );
+}

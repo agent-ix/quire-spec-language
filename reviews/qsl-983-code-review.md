@@ -82,3 +82,22 @@ On the coder's notes:
 Mergeable once FND-002 is fixed and FND-001 is settled, either by code or by an FR-411
 amendment. FND-003 and FND-004 can go to the QSpec ticket, with the edge refused or tested in
 this PR.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | This is a capability regression. `resolve_terminals` runs `emit_checked` over the whole package to find the terminal nodes, and `ModelSystem::new` and `encode_smt_query` call it whenever a unit declares a terminal. `emit_checked` refuses every unit with a probabilistic declaration (`EmitRefusal::ProbabilisticModelNotEmitted`, emit.rs:1481), and it refuses on any other emission defect. `ModelSystem::new` maps that refusal to the internal fault `terminal-nodes-resolve`. So a model with a `terminal` declaration plus a `random`, `workload` or `reward` declaration can no longer be built at all; on main it was admitted. FR-187-AC-2's `Link` model is exactly this case: the AC itself declares `terminal when self.delivered or self.attempts = 2`. The fix round deleted `terminal Stop ...` from `sampled/world.rs` so the tests pass. That makes the TC-622 and TC-623 tests (FR-187-AC-2, the stutter test) run a model the AC does not describe, which hides the regression. Fix: read the terminal nodes from the checked graph's own `SemanticGraph` (`package.graph().semantic_graph()`), which holds the lowered nodes emission would serialize, with no emission and no dependence on unrelated features. Then restore `terminal Stop` in `link()`. | qsl-package/src/checked_v2/terminal.rs:290-316, qsl-eval/src/simulation/model.rs:606-607, qsl-eval/src/smt/query.rs:409-410, qsl-eval/src/simulation/sampled/world.rs:444-447, qsl-package/src/emit.rs:1481-1488 |
+| FND-008 | low | The new optional `serde_json` dependency in qsl-package's `std` feature exists only to parse back the bytes `emit_checked` has just written. It is also declared with an inline version instead of the workspace entry. With FND-007's fix (reading `SemanticGraph` nodes) it has no use, so delete it. | qsl-package/Cargo.toml:19, qsl-package/Cargo.toml:59-60 |
+| FND-009 | low | When the number of terminal nodes and checked declarations differs, `resolve_terminals` returns `Disagrees { model: "" }`, which names no model. Name the node that has no checked declaration. | qsl-package/src/checked_v2/terminal.rs:349-351 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The model checker and the SMT encoder now read presence and mode through `resolve_terminals`, but the read does not meet FR-411/FR-476. It emits the whole package, which is the cause of the FND-007 regression. It also parses the emitted JSON without IR admission (`read_checked_package_v2`). The `when` predicate is the S3 body, found by an occurrence computed from the same lowering key, so the node check can only catch a dropped node; no test makes the S3 value and the node disagree. `qsl-route` deadlock.rs `opts_out`, which derives the deadlock item, still reads S3 alone. The checked body cannot be rebuilt from the wire, so the predicate will always come from S3. To close this: read presence, mode and model from the `SemanticGraph` terminal nodes (FND-007's fix), and use them in `opts_out` too. Then amend FR-411 to say the `when` predicate is the checked body of the node's claim occurrence. |
+| FND-002 | fixed | admission_corpus.rs now has a `Terminal` fixture and the row `row(K::Temporal(TemporalForm::Terminal), F::Terminal)`. The `NOT_EMITTED_BY_QSL` entry for `temporal`/`terminal` is gone. |
+| FND-003 | fixed | mod.rs now refuses `terminal any` on a model with no object type at S3, before lowering: `CheckCause::TerminalWithoutObjectType`, `unsupported_construct`/`declaration-form`, at the declaration span. Assembly already requires exactly one population object type for every `when`, so `terminal_object` cannot return `None` for `when`. The cause and its placement are right for an interim refusal: it is located at the declaration, and replay classifies it as `unsupported`. No requirement names this refusal yet; record it under STD-492. |
+| FND-004 | deferred | Filed upstream as QSpec STD-492. lowering/model.rs now cites STD-492 at the least-object-type choice. |
+| FND-005 | fixed | counter.rs: the doc is now "The checked package of `body` over `document`." |
+| FND-006 | fixed | `terminal_site(index, site) -> String` was added. mod.rs inserts both spans by name with no `if let` on a constructed `Location`. |

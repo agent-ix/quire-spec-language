@@ -1687,10 +1687,6 @@ fn a_checked_refinement_refuses_not_emitted_at_package_build() {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect_err("a refinement is not emitted yet");
-    assert!(
-        matches!(refusals[0].cause, CheckCause::RefinementNotEmitted { .. }),
-        "{refusals:?}"
-    );
     assert_eq!(
         refusals
             .iter()
@@ -1798,6 +1794,10 @@ fn only_the_refinement_beside_a_terminal_is_refused_not_emitted() {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect_err("the refinement is not emitted yet");
+    assert!(
+        matches!(refusals[0].cause, CheckCause::RefinementNotEmitted { .. }),
+        "{refusals:?}"
+    );
     assert_eq!(
         refusals
             .iter()

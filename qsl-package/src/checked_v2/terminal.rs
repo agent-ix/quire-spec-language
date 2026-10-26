@@ -7,6 +7,8 @@
 //! and the nodes of its `self` parameter and condition. A model with no node
 //! reads as [`ReadTerminalDeclaration::None`].
 
+use std::collections::BTreeSet;
+
 use qsl_foundation::digest::WireNodeId;
 use quire_contract_model::{
     CheckedNodeKind, CheckedNodeTag, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm,
@@ -174,96 +176,74 @@ pub enum PackageTerminalDeclaration<'p> {
 }
 
 /// Why a package's terminal declarations could not be resolved through its
-/// emitted nodes.
+/// terminal nodes.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TerminalResolveRefusal {
-    /// The package did not emit.
-    #[error("the package did not emit: {0}")]
-    Emit(String),
-    /// The emitted bytes are not a graph this read follows.
-    #[error("the emitted package's terminal nodes did not read: {0}")]
-    Read(String),
-    /// A checked declaration has no emitted node of its occurrence, or the
-    /// node's mode is not the declaration's, or a terminal node has no
-    /// checked declaration.
-    #[error("the emitted terminal nodes disagree with the checked declaration of model {model}")]
+    /// A checked declaration has no node of its occurrence, or the node's
+    /// mode is not the declaration's, or a terminal node has no checked
+    /// declaration. `model` is the model alias, or the node for a node no
+    /// declaration claims.
+    #[error("the terminal nodes disagree with the checked declaration of {model}")]
     Disagrees {
-        /// The model alias.
+        /// The model alias, or the node's identity.
         model: String,
     },
 }
 
 /// The `terminal` declarations of `package`, resolved through the
-/// `temporal`/`terminal` nodes of its emitted package (FR-411, QSpec
-/// FR-476: the node is the only carrier of the declaration). A declaration
-/// is present exactly when the package holds its node, in model-alias order,
-/// and its mode is the node's.
+/// `temporal`/`terminal` nodes of its checked graph (FR-411, QSpec FR-476:
+/// the node is the only carrier of the declaration). A declaration is
+/// present exactly when the graph holds its node, in model-alias order, and
+/// its mode is the node's. A `when` declaration's predicate is the checked
+/// body the node's `claim` occurrence names, because a checked body cannot
+/// be rebuilt from the wire.
 ///
 /// # Errors
 ///
-/// [`TerminalResolveRefusal`] when the package does not emit, its terminal
-/// nodes do not read, or they do not match the checked declarations.
+/// [`TerminalResolveRefusal`] when the nodes and the checked declarations do
+/// not match.
 pub fn resolve_terminals(
     package: &crate::CheckedPackage,
 ) -> Result<Vec<PackageTerminal<'_>>, TerminalResolveRefusal> {
-    use qsl_semantics::check::TerminalDeclaration;
+    use qsl_semantics::check::{TerminalDeclaration, TerminalMode};
 
-    // A package that declares no `terminal` has no node to read, and need not
-    // be emittable for its terminal states to be none.
-    if package
-        .graph()
-        .terminals()
-        .iter()
-        .all(|terminal| matches!(terminal.declaration(), TerminalDeclaration::None))
-    {
-        return Ok(Vec::new());
-    }
-    let emission = crate::emit::emit_checked(package)
-        .map_err(|refusal| TerminalResolveRefusal::Emit(refusal.to_string()))?;
-    let wire: serde_json::Value = serde_json::from_slice(emission.package().bytes())
-        .map_err(|error| TerminalResolveRefusal::Read(error.to_string()))?;
-    let nodes = wire["semantic_graph"]["nodes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|node| node["node_tag"] == "temporal" && node["semantic_form"] == "terminal")
-        .map(|node| serde_json::from_value::<CheckedSemanticNodeV2>(node.clone()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| TerminalResolveRefusal::Read(error.to_string()))?;
-    let read =
-        read_nodes(&nodes).map_err(|fault| TerminalResolveRefusal::Read(format!("{fault:?}")))?;
-
+    let nodes = package.graph().terminal_nodes();
     let mut resolved = Vec::new();
-    let mut matched = 0;
+    let mut claimed = BTreeSet::new();
     for checked in package.graph().terminals() {
-        let Some(occurrence) = checked.occurrence() else {
-            if matches!(checked.declaration(), TerminalDeclaration::None) {
-                continue;
-            }
-            return Err(disagrees(checked.model()));
-        };
-        let node = read
-            .iter()
-            .find(|terminal| terminal.node == occurrence.node())
-            .ok_or_else(|| disagrees(checked.model()))?;
-        matched += 1;
-        let declaration = match (node.declaration, checked.declaration()) {
-            (ReadTerminalDeclaration::Any, TerminalDeclaration::Any) => {
+        let found = checked.occurrence().and_then(|occurrence| {
+            nodes
+                .iter()
+                .find(|node| node.node.as_bytes() == occurrence.node().as_bytes())
+        });
+        let declaration = match (found, checked.declaration()) {
+            (None, TerminalDeclaration::None) => continue,
+            (Some(node), TerminalDeclaration::Any) if node.mode == TerminalMode::Any => {
                 PackageTerminalDeclaration::Any
             }
-            (ReadTerminalDeclaration::When { .. }, TerminalDeclaration::When(predicate)) => {
+            (Some(node), TerminalDeclaration::When(predicate))
+                if node.mode == TerminalMode::When =>
+            {
                 PackageTerminalDeclaration::When(predicate)
             }
             _ => return Err(disagrees(checked.model())),
         };
+        if let Some(node) = found {
+            claimed.insert(*node.node.as_bytes());
+        }
         resolved.push(PackageTerminal {
             model: checked.model(),
             name: checked.name().unwrap_or("terminal"),
             declaration,
         });
     }
-    if matched != read.len() {
-        return Err(disagrees(""));
+    if let Some(orphan) = nodes
+        .iter()
+        .find(|node| !claimed.contains(node.node.as_bytes()))
+    {
+        return Err(disagrees(
+            &WireNodeId::from_digest(*orphan.node.as_bytes()).to_string(),
+        ));
     }
     Ok(resolved)
 }

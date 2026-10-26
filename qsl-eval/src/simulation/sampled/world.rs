@@ -444,6 +444,7 @@ pub(crate) fn link() -> Model {
         body: format!(
             "{}{}random Msg::send_a(lost) ~ {{ true: 1, false: 9 }};\n\
              random Msg::send_b(lost) ~ {{ true: 1, false: 4 }};\n\
+             terminal Stop using v on M when {{ self.delivered or self.attempts = 2 }};\n\
              workload Even on M {{ weight Msg::send_a = 1; weight Msg::send_b = 1; }}\n",
             contract("send_a"),
             contract("send_b")

@@ -19,11 +19,13 @@ use qsl_forms::{ExpressionForm, StateClauseKind};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, NodeKey, ValueType};
 
 use super::ir::{CheckedBody, CheckedNode};
+use super::node_key::{BindingValue, BodyTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag};
 use super::refusal::{CheckCause, CheckRefusal};
 use super::state_clause::{check_clause, ClauseDeclarations, ClauseView, PopulationDomain};
+use super::CheckedGraph;
 use crate::family::CheckContext;
 
 /// One `terminal` declaration the assembler resolved (FR-124 "Inputs"): its
@@ -186,4 +188,73 @@ pub(crate) fn check_terminal<'a>(
         }),
         typed.nodes_used,
     ))
+}
+
+/// The mode of a `temporal`/`terminal` node (QSpec FR-476).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerminalMode {
+    /// `when`: a terminal state is intended when the condition holds.
+    When,
+    /// `any`: every terminal state is intended.
+    Any,
+}
+
+/// One `temporal`/`terminal` node of a checked graph (FR-411), read from the
+/// graph's own semantic nodes: no emission is needed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerminalNode {
+    /// The node.
+    pub node: NodeKey,
+    /// The `model` node it is on.
+    pub model: NodeKey,
+    /// The node's mode.
+    pub mode: TerminalMode,
+}
+
+impl TerminalNode {
+    /// The node read from `body`, the aggregate `lowering` writes: `model`
+    /// and `mode` first. `None` for a body of another shape, which no
+    /// lowering writes under this tag and form.
+    fn of(node: NodeKey, body: &BodyTerm) -> Option<Self> {
+        let BodyTerm::Aggregate(aggregate) = body else {
+            return None;
+        };
+        let mut members = aggregate.members.iter().map(|member| match member {
+            MemberTerm::Binding(binding) => match &binding.value {
+                BindingValue::Leaf(leaf) => Some((binding.name.as_str(), leaf)),
+                _ => None,
+            },
+            _ => None,
+        });
+        let (("model", LeafTerm::Reference { target }), ("mode", LeafTerm::Literal { value, .. })) =
+            (members.next()??, members.next()??)
+        else {
+            return None;
+        };
+        let mode = match value {
+            LiteralValue::Text(mode) if mode == "when" => TerminalMode::When,
+            LiteralValue::Text(mode) if mode == "any" => TerminalMode::Any,
+            _ => return None,
+        };
+        Some(Self {
+            node,
+            model: target.0,
+            mode,
+        })
+    }
+}
+
+impl CheckedGraph {
+    /// FR-411: every `temporal`/`terminal` node of this graph, ascending by
+    /// key. The node, not the S3 value, says whether a model declares a
+    /// terminal and in which mode.
+    pub fn terminal_nodes(&self) -> Vec<TerminalNode> {
+        self.semantic_graph()
+            .nodes()
+            .filter(|node| {
+                node.node_tag() == NodeTag::Temporal && node.semantic_form() == "terminal"
+            })
+            .filter_map(|node| TerminalNode::of(node.key(), node.body()))
+            .collect()
+    }
 }

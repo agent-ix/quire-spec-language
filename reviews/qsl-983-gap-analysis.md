@@ -64,3 +64,12 @@ FR-128-AC-6. FR-411-AC-3 is asserted except for its "naming both package_ids" an
 terminal node" clauses (FND-003). FR-382-AC-6's emission half lost its only tagged test
 (FND-001). Every new code path traces to FR-411 or QSpec FR-476. The new code has no stub and
 no dead branch, apart from the unread I2 reader recorded in SR-1595001 FND-001.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_checked_terminal_declaration_is_held_by_the_package_as_its_node`, tagged `#[trace("TC-1059", "FR-382-AC-6")]`, asserts that a `when` unit and an `any` unit over a named model each check and emit their terminal node with that mode. |
+| FND-002 | fixed | The FR-411-AC-1 test now asserts that the condition is `quire.op.integer.eq` over a `record.project` of `versionNumber` and the literal. It also asserts that `self` is typed as a `composite_type`/`reference` to the node the `model` binding names. |
+| FND-003 | fixed | The `PackageIdMismatch` test now asserts `requested == case.package_id` and `recompiled == any_package_id`, and that the two differ. Through `resolve_terminals`, it also asserts that the `when` unit's package holds a `When` terminal node. |
+| FND-004 | still-open | The fix added the `RefinementNotEmitted` match to the wrong test: `a_checked_refinement_refuses_not_emitted_at_package_build` (line 1690). `only_the_refinement_beside_a_terminal_is_refused_not_emitted` (lines 1784-1804) still asserts only the code/cause pair, which `TimedNotChecked` shares. |
