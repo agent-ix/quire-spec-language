@@ -23,6 +23,7 @@ use super::search::scaled;
 use super::{Bound, Dbm, DbmError};
 
 /// One position of a symbolic path, with the members its delay obeys.
+#[derive(Clone)]
 pub(super) struct Stage {
     /// The time invariants applying before the position.
     pub invariants: Vec<PlaceConstraint>,
@@ -36,6 +37,23 @@ pub(super) struct Stage {
     /// What a claim automaton requires of its horizon clock at the
     /// position (FR-242).
     pub position: Vec<PlaceConstraint>,
+    /// The zone over clock places, in units of the concretisation's scale,
+    /// the valuation before the position's step, after its delay, lies in:
+    /// the cell of the liveness product's symbolic state the step leaves
+    /// (FR-240).
+    pub before: Option<Dbm>,
+    /// The zone over clock places, in units of the concretisation's scale,
+    /// the valuation after the position lies in: the cell of the symbolic
+    /// state a liveness product enters there (FR-240).
+    pub piece: Option<Dbm>,
+    /// Whether the stage is no position but an instant a delay passes
+    /// through, from one cell of a liveness product into the next: it has
+    /// no step, and its delay is part of the next step's.
+    pub silent: bool,
+    /// The delay before the position, when it is fixed: a lasso's loop
+    /// copies repeat the loop's solved delays (FR-241), in units of the
+    /// concretisation's scale.
+    pub fixed: Option<BigInt>,
 }
 
 /// Where the path's last valuation must lie.
@@ -97,6 +115,49 @@ impl Resets {
     }
 }
 
+impl Resets {
+    /// The bounds of `zone`, over clock places, on the valuation at step
+    /// `at`, where clock `k >= 1` reads `T_at - T_r + c`.
+    fn within(
+        &self,
+        times: &mut Dbm,
+        at: usize,
+        zone: &Dbm,
+        scale: &BigInt,
+    ) -> Result<(), NotConcretised> {
+        for i in 0..zone.dim() {
+            for j in (0..zone.dim()).filter(|&j| j != i) {
+                let Bound::Finite { value, strict } = zone.bound(i, j)? else {
+                    continue;
+                };
+                let op = if *strict {
+                    ClockOp::Less
+                } else {
+                    ClockOp::LessOrEqual
+                };
+                let read = |k: usize| -> Result<(usize, BigInt), NotConcretised> {
+                    if k == 0 {
+                        Ok((at, BigInt::from(0)))
+                    } else {
+                        let (since, value) = self.0.get(k - 1).ok_or(NotConcretised::Infeasible)?;
+                        Ok((*since, scaled(value, scale)))
+                    }
+                };
+                let ((since_i, c_i), (since_j, c_j)) = (read(i)?, read(j)?);
+                // (T_at - T_si + c_i) - (T_at - T_sj + c_j) = T_sj - T_si + c_i - c_j,
+                // with the reference clock read as `T_at - T_at`.
+                let (plus, minus) = match (i, j) {
+                    (0, _) => (since_j, at),
+                    (_, 0) => (at, since_i),
+                    _ => (since_j, since_i),
+                };
+                apply(times, plus, minus, op, value - c_i + c_j)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// `T_at - T_since op edge`.
 fn apply(
     times: &mut Dbm,
@@ -150,6 +211,9 @@ pub(super) fn concretise(
         for constraint in stage.invariants.iter().chain(part) {
             resets.constrain(&mut times, at, constraint, scale)?;
         }
+        if let Some(before) = &stage.before {
+            resets.within(&mut times, at, before, scale)?;
+        }
         if let Some((step, _)) = &stage.step {
             for (place, value) in step.resets() {
                 if let Some(slot) = resets.0.get_mut(*place) {
@@ -160,39 +224,16 @@ pub(super) fn concretise(
         for constraint in stage.target.iter().chain(&stage.position) {
             resets.constrain(&mut times, at, constraint, scale)?;
         }
+        if let Some(piece) = &stage.piece {
+            resets.within(&mut times, at, piece, scale)?;
+        }
+        if let Some(delay) = &stage.fixed {
+            times.constrain(at, at - 1, Bound::le(delay.clone()))?;
+            times.constrain(at - 1, at, Bound::le(-delay.clone()))?;
+        }
     }
     if let Target::Within(zone) = target {
-        let last = stages.len();
-        for i in 0..zone.dim() {
-            for j in (0..zone.dim()).filter(|&j| j != i) {
-                let Bound::Finite { value, strict } = zone.bound(i, j)? else {
-                    continue;
-                };
-                let op = if *strict {
-                    ClockOp::Less
-                } else {
-                    ClockOp::LessOrEqual
-                };
-                // `x_i - x_j` where clock `k >= 1` reads `T_n - T_r + c`.
-                let read = |k: usize| -> (usize, BigInt) {
-                    if k == 0 {
-                        (last, BigInt::from(0))
-                    } else {
-                        let (since, value) = &resets.0[k - 1];
-                        (*since, scaled(value, scale))
-                    }
-                };
-                let ((since_i, c_i), (since_j, c_j)) = (read(i), read(j));
-                // (T_n - T_si + c_i) - (T_n - T_sj + c_j) = T_sj - T_si + c_i - c_j,
-                // with the reference clock read as `T_n - T_n`.
-                let (plus, minus) = match (i, j) {
-                    (0, _) => (since_j, last),
-                    (_, 0) => (last, since_i),
-                    _ => (since_j, since_i),
-                };
-                apply(&mut times, plus, minus, op, value - c_i + c_j)?;
-            }
-        }
+        resets.within(&mut times, stages.len(), zone, scale)?;
     }
     if times.is_empty() {
         return Err(NotConcretised::Infeasible);
@@ -202,6 +243,8 @@ pub(super) fn concretise(
     let mut prefix = Vec::with_capacity(stages.len());
     let mut values = vec![zero.clone(); places];
     let mut last_reset = vec![0_usize; places];
+    // The delays of the silent stages since the last step.
+    let mut waited = zero.clone();
     for (index, stage) in stages.iter().enumerate() {
         let at = index + 1;
         let delay = loop {
@@ -244,8 +287,12 @@ pub(super) fn concretise(
                 .add(&resets_value(stages, place, since));
         }
         let Some((step, _)) = &stage.step else {
+            if stage.silent {
+                waited = waited.add(&delay);
+            }
             continue;
         };
+        let delay = std::mem::replace(&mut waited, zero.clone()).add(&delay);
         for (place, reset) in step.resets() {
             if let Some(slot) = values.get_mut(*place) {
                 slot.clone_from(reset);

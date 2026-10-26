@@ -386,6 +386,10 @@ impl Run<'_, '_, '_> {
             target: invariants,
             step: None,
             position: Vec::new(),
+            before: None,
+            piece: None,
+            silent: false,
+            fixed: None,
         });
         Ok(
             concretise(self.timed, self.dim() - 1, &stages, target, &self.scale)
