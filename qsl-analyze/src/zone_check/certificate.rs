@@ -19,8 +19,8 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_route::deadlock::ItemObligation;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::divergence::{EscapeTarget, EscapeWitness};
-use super::search::{Halt, Run};
+use super::divergence::{EscapeTarget, EscapeWitness, Move};
+use super::search::{Halt, Run, SymbolicEdge};
 use super::{Dbm, ZoneCheckRefusal};
 
 /// FR-244's certificate of a `Holds` outcome.
@@ -76,9 +76,10 @@ pub struct CertNode {
 pub struct CertEdge {
     /// The source node.
     pub from: usize,
-    /// The step's transition identity.
-    pub transition: ModelTransition,
-    /// The convex part of the step's guard taken.
+    /// The step's transition identity; `None` for an idle-tail stutter
+    /// position of a TT-2 clause's automaton (FR-242).
+    pub transition: Option<ModelTransition>,
+    /// The convex part of the step's guard taken; 0 for a stutter.
     pub part: usize,
     /// The node whose zone holds, or under the aLU simulation covers, the
     /// successor.
@@ -157,7 +158,7 @@ impl Run<'_, '_, '_> {
                 .map_err(|_| Halt::Refusal(ZoneCheckRefusal::Fault("state-key")))?;
             nodes.push(CertNode {
                 state_key,
-                automaton_state: 0,
+                automaton_state: node.q,
                 zone: node.zone.clone(),
                 locked: node.locked,
             });
@@ -169,19 +170,25 @@ impl Run<'_, '_, '_> {
         let mut edges = Vec::with_capacity(order.len());
         let mut steps = Vec::with_capacity(order.len());
         for edge in order {
-            let edge = self.edges[edge].clone();
-            let transition = self
-                .steps_of(edge.from)?
-                .get(edge.step)
-                .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
-                .transition()
-                .clone();
-            steps.push(edge.step);
+            let SymbolicEdge { from, to, step, .. } = self.edges[edge].clone();
+            let (transition, part) = match step {
+                Some((step, part)) => {
+                    let transition = self
+                        .steps_of(from)?
+                        .get(step)
+                        .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
+                        .transition()
+                        .clone();
+                    (Some(transition), part)
+                }
+                None => (None, 0),
+            };
+            steps.push(step);
             edges.push(CertEdge {
-                from: edge.from,
+                from,
                 transition,
-                part: edge.part,
-                to: edge.to,
+                part,
+                to,
             });
         }
         let admitted = admitted(&edges, &steps, root, witness)
@@ -206,35 +213,22 @@ impl Run<'_, '_, '_> {
 }
 
 /// TD-6's witness over the certificate's edges: `witness`'s moves followed
-/// from `root`, each model step taken by the certificate edge of the same
+/// from `root`, each model step taken by a certificate edge of the same
 /// step and part. A node that covers a successor under the aLU simulation
-/// enables every step and part the successor enables, so each move has its
-/// edge. A cycle is repeated until a certificate node recurs at its start,
-/// which closes it on the certificate's finitely many nodes; each
+/// enables every step and part the successor enables. Under a TT-2
+/// clause's automaton one step has an edge per piece of the horizon
+/// clock's axis, and the moves are followed through whichever pieces carry
+/// them on. A cycle is repeated until a certificate node recurs at its
+/// start, which closes it on the certificate's finitely many nodes; each
 /// repetition lets time advance, so the closed cycle does too.
 fn admitted(
     edges: &[CertEdge],
-    steps: &[usize],
+    steps: &[Option<(usize, usize)>],
     root: usize,
     witness: &EscapeWitness,
 ) -> Option<DivergenceWitness> {
-    let follow = |at: &mut usize, step: Option<(usize, usize)>, taken: &mut Vec<usize>| {
-        let Some((step, part)) = step else {
-            // Only time passes.
-            return Some(());
-        };
-        let edge = (0..edges.len()).find(|&edge| {
-            edges[edge].from == *at && steps[edge] == step && edges[edge].part == part
-        })?;
-        taken.push(edge);
-        *at = edges[edge].to;
-        Some(())
-    };
-    let mut at = root;
-    let mut path = Vec::new();
-    for &step in &witness.path {
-        follow(&mut at, step, &mut path)?;
-    }
+    let follow = |at: usize, moves: &[Move]| follow(edges, steps, at, moves);
+    let (mut at, mut path) = follow(root, &witness.path)?;
     let target = match &witness.target {
         EscapeTarget::Quiescent => DivergentTarget::Quiescent(at),
         EscapeTarget::Terminal => DivergentTarget::Terminal(at),
@@ -251,10 +245,8 @@ fn admitted(
                     break DivergentTarget::Cycle(cycle);
                 }
                 started.insert(at, rounds.len());
-                let mut round = Vec::new();
-                for &step in moves {
-                    follow(&mut at, step, &mut round)?;
-                }
+                let (end, round) = follow(at, moves)?;
+                at = end;
                 rounds.push(round);
             }
         }
@@ -264,4 +256,29 @@ fn admitted(
         path,
         target,
     })
+}
+
+/// The first sequence of certificate edges from `at` that takes `moves`'
+/// model steps in order, depth first over the edges each step has, with
+/// the node it ends at.
+fn follow(
+    edges: &[CertEdge],
+    steps: &[Option<(usize, usize)>],
+    at: usize,
+    moves: &[Move],
+) -> Option<(usize, Vec<usize>)> {
+    let Some((&first, rest)) = moves.split_first() else {
+        return Some((at, Vec::new()));
+    };
+    let Some(step) = first else {
+        // Only time passes.
+        return follow(edges, steps, at, rest);
+    };
+    (0..edges.len())
+        .filter(|&edge| edges[edge].from == at && steps[edge] == Some(step))
+        .find_map(|edge| {
+            let (end, mut taken) = follow(edges, steps, edges[edge].to, rest)?;
+            taken.insert(0, edge);
+            Some((end, taken))
+        })
 }

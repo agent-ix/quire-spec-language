@@ -5,18 +5,21 @@
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use qsl_analyze::zone_check::{
-    check_timed_model, Bound, CertEdge, Dbm, DivergentTarget, ZoneCertificate, ZoneCheckItem,
-    ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest,
-    ZoneStop, ZoneUndecided,
+    bounded_window_verdict, check_timed_model, Bound, CertEdge, Dbm, DivergentTarget,
+    ZoneCertificate, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
+    ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::simulation::model::{ModelSystem, PlaceConstraint, TimedSystem};
-use qsl_eval::temporal::UndefinedCause;
+use qsl_eval::temporal::{
+    evaluate_timed_at, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    TimedTrace, UndefinedCause,
+};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
-use qsl_semantics::check::ClockOp;
-use quire_exact::{Cancel, Integer, Origin, Rational, Role, Undefined};
+use qsl_semantics::check::{ClockOp, FormulaNode, FormulaNodeId};
+use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
@@ -91,7 +94,7 @@ fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
     check_timed_model(
         ZoneCheckRequest {
             subject: &timed,
-            item: ZoneCheckItem::Invariant {
+            item: ZoneCheckItem::Clause {
                 clause: node.clause(),
                 letters: &letters,
             },
@@ -615,7 +618,10 @@ fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
 
 /// The operation an edge's transition names.
 fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'static str {
-    let operation = certificate.edges[edge].transition.operation();
+    let Some(transition) = &certificate.edges[edge].transition else {
+        return "stutter";
+    };
+    let operation = transition.operation();
     [
         "send", "reply", "timeout", "reset", "go", "ping", "tock", "back", "tick", "work", "alpha",
     ]
@@ -678,7 +684,7 @@ fn assert_edges_cover(world: &World, certificate: &ZoneCertificate<&'static str>
         let steps = timed.guarded_steps(&state).expect("its steps");
         let step = steps
             .iter()
-            .find(|step| step.transition() == &edge.transition)
+            .find(|step| Some(step.transition()) == edge.transition.as_ref())
             .expect("the edge's transition is enabled");
         let mut zone = certificate.nodes[edge.from].zone.clone();
         constrain(&mut zone, &step.parts()[edge.part], scale);
@@ -990,7 +996,7 @@ fn a_request_obligation_must_be_its_items() {
     let refused = check_timed_model(
         ZoneCheckRequest {
             subject: &timed,
-            item: ZoneCheckItem::Invariant {
+            item: ZoneCheckItem::Clause {
                 clause: node.clause(),
                 letters: &letters,
             },
@@ -1016,4 +1022,325 @@ fn a_request_obligation_must_be_its_items() {
         &Cancel::new(),
     );
     assert_eq!(refused.unwrap_err(), ZoneCheckRefusal::ObligationMismatch);
+}
+
+/// `body` as the clause `W` under the timed profile, read over model time
+/// on origin, over a model with clocks `clocks` and `operations` whose
+/// constraints are `model`.
+fn windowed(clocks: &[&str], operations: &[(&str, &[&str])], model: &str, body: &str) -> World {
+    world(
+        &document(clocks, operations),
+        TIMED,
+        &format!(
+            "{DENSE}{model}\
+             temporal W using tt over (c: M::Call) clock \"model-time\" on origin {{ {body} }}\n"
+        ),
+    )
+}
+
+/// The first clause of `world` put to EN-6, refused or decided.
+fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("letters");
+    check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::Authored(claim_occurrence()),
+            },
+            limits: ZoneCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+}
+
+/// `go` sets `retried` at exactly `at` ms, after which nothing happens.
+fn retried_at(at: &str) -> World {
+    windowed(
+        &["x"],
+        &[("go", &["phase", "retried"])],
+        &format!(
+            "pre Go using v on M::Call::go {{ self.phase = 0 and self.x >= {at} }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 and self.retried }}\n\
+             time invariant Wait when {{ self.phase = 0 }} {{ self.x <= {at} }}\n"
+        ),
+        "eventually[2 ms, 2 ms] holds(c.retried)",
+    )
+}
+
+/// FR-242-AC-2: `eventually[2 ms, 2 ms] holds(q)` on origin translates
+/// with a horizon clock. Over a model where `q` first holds at exactly 2 ms
+/// EN-6 proves it, with automaton states counted; where `q` first holds at
+/// 5/2 ms it is violated, at the step that passes the window.
+#[trace("TC-697", "FR-242-AC-2")]
+#[test]
+fn a_punctual_window_is_decided_by_a_horizon_clock() {
+    match claim(
+        &retried_at("2 ms"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ) {
+        ZoneCheckOutcome::Holds { stats, .. } => assert!(stats.automaton_states > 0),
+        other => panic!("expected a proof, got {other:?}"),
+    }
+    let late = violated(claim(
+        &retried_at("rational(5, 2) ms"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    assert_eq!(late.kind, CounterexampleKind::Formula);
+    assert_eq!(operations(&late), ["go"]);
+    assert_eq!(delays(&late), [exact(5, 2)]);
+}
+
+/// FR-242-AC-3: `always holds(not c.late)` under the timed profile is
+/// TT-1: it builds no automaton and decides on discrete states, with zero
+/// automaton states counted.
+#[trace("TC-697", "FR-242-AC-3")]
+#[test]
+fn a_timed_invariant_builds_no_automaton() {
+    let timed = windowed(
+        &["x"],
+        &[
+            ("send", &["phase", "inflight", "late", "x"]),
+            ("reply", &["phase", "inflight"]),
+        ],
+        "pre SendIdle using v on M::Call::send { self.phase = 0 }\n\
+         post Send using v on M::Call::send { self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }\n\
+         pre Reply using v on M::Call::reply { self.inflight and self.x >= 1 ms }\n\
+         post Replied using v on M::Call::reply { not self.inflight and self.phase = 0 }\n\
+         time invariant ServerDeadline when { self.inflight } { self.x <= 3 ms }\n",
+        "always holds(not c.late)",
+    );
+    match claim(&timed, ZoneCheckLimits::default(), &Cancel::new()) {
+        ZoneCheckOutcome::Holds { stats, certificate } => {
+            assert_eq!(stats.automaton_states, 0);
+            assert!(certificate
+                .nodes
+                .iter()
+                .all(|node| node.automaton_state == 0));
+        }
+        other => panic!("expected a proof, got {other:?}"),
+    }
+}
+
+/// FR-242: an interval operator under another temporal operator needs a
+/// clock per activation, which one horizon clock does not give; EN-6
+/// refuses it rather than deciding it wrongly.
+#[trace("TC-697")]
+#[test]
+fn a_nested_window_is_refused() {
+    let nested = windowed(
+        &[],
+        &[("go", &["phase"])],
+        "",
+        "eventually[0 ms, 3 ms] always[0 ms, 1 ms] holds(c.late)",
+    );
+    assert_eq!(
+        request(&nested).unwrap_err(),
+        ZoneCheckRefusal::NestedWindow
+    );
+}
+
+/// A deterministic stream of pseudo-random numbers (xorshift64).
+struct Stream(u64);
+
+impl Stream {
+    fn below(&mut self, bound: u64) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0 % bound
+    }
+}
+
+/// A timed lasso unrolled past every window: each position's stamp, in
+/// quarters of a ms, and its `p` and `q`.
+struct Unrolled {
+    stamps: Vec<Rational>,
+    p: Vec<bool>,
+    q: Vec<bool>,
+}
+
+/// A random lasso of length at most 8 with stamps in steps of 1/4 ms,
+/// starting at 0 and with a loop of positive total delay, unrolled until
+/// its stamps pass `beyond` ms.
+fn lasso(stream: &mut Stream, beyond: u64) -> Unrolled {
+    let length = usize::try_from(stream.below(8) + 1).expect("small");
+    let entry = usize::try_from(stream.below(length as u64)).expect("small");
+    // `delay[i]`: quarters from position i - 1 to i; `delay[entry]` closes
+    // the loop on repetition.
+    let mut delay: Vec<u64> = (0..length).map(|_| stream.below(5)).collect();
+    let mut wrap = stream.below(5);
+    if wrap + delay[entry + 1..].iter().sum::<u64>() == 0 {
+        wrap = 1;
+    }
+    delay[0] = 0;
+    let p: Vec<bool> = (0..length).map(|_| stream.below(2) == 1).collect();
+    let q: Vec<bool> = (0..length).map(|_| stream.below(2) == 1).collect();
+    let mut unrolled = Unrolled {
+        stamps: Vec::new(),
+        p: Vec::new(),
+        q: Vec::new(),
+    };
+    let (mut at, mut quarters) = (0, 0_u64);
+    while quarters <= 4 * beyond + 4 {
+        unrolled
+            .stamps
+            .push(exact(i64::try_from(quarters).expect("small"), 4));
+        unrolled.p.push(p[at]);
+        unrolled.q.push(q[at]);
+        if at + 1 < length {
+            at += 1;
+            quarters += delay[at];
+        } else {
+            at = entry;
+            quarters += wrap;
+        }
+    }
+    unrolled
+}
+
+/// Reads `p` (the first `holds` atom of a two-atom formula) and `q` (the
+/// other, or the only one) at each position of an unrolled lasso.
+struct Lasso<'a> {
+    unrolled: &'a Unrolled,
+    p: Option<FormulaNodeId>,
+}
+
+impl Lasso<'_> {
+    fn reading(&self, atom: FormulaNodeId, at: usize) -> AtomReading {
+        let value = if Some(atom) == self.p {
+            self.unrolled.p[at]
+        } else {
+            self.unrolled.q[at]
+        };
+        if value {
+            AtomReading::True
+        } else {
+            AtomReading::False
+        }
+    }
+}
+
+impl TemporalLetters for Lasso<'_> {
+    fn atom(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        let at = usize::try_from(position.index()).expect("a small position");
+        Ok(self.reading(atom, at))
+    }
+
+    fn activation(
+        &mut self,
+        _position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        panic!("these clauses have no `when` condition");
+    }
+}
+
+/// Part of FR-242-AC-1 (TC-697): for `eventually[0 ms, 3 ms] holds(q)`,
+/// `eventually[0 ms, 3 ms) holds(q)` and `holds(p) until(1 ms, 2 ms]
+/// holds(q)`, on 1,000 random timed lassos each, with stamps in steps of
+/// 1/4 ms and length at most 8 (unrolled past every window), the TT-2
+/// automaton rejects the clause exactly on the lassos on which the
+/// reference evaluator returns `false`, and accepts it exactly where it
+/// returns `true`. Not covered: `always (holds(p) implies eventually[0 ms,
+/// 2 ms] holds(q))`, a TT-3 form translated by MightyL (QSL-583).
+#[trace("TC-697")]
+#[test]
+fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
+    let formulas = [
+        "eventually[0 ms, 3 ms] holds(c.retried)",
+        "eventually[0 ms, 3 ms) holds(c.retried)",
+        "holds(c.late) until(1 ms, 2 ms] holds(c.retried)",
+    ];
+    let mut stream = Stream(0x5eed_1234_abcd_ef01);
+    for formula in formulas {
+        let world = windowed(&[], &[("go", &["phase"])], "", formula);
+        let clause = world.package.graph().temporal_clauses()[0].clause();
+        let mut atoms: Vec<(usize, FormulaNodeId)> = clause
+            .formula()
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| match node {
+                FormulaNode::Holds { span } => Some((
+                    span.start,
+                    clause
+                        .formula()
+                        .node_id(index)
+                        .expect("a node of the formula"),
+                )),
+                _ => None,
+            })
+            .collect();
+        atoms.sort_by_key(|(start, _)| *start);
+        let p = (atoms.len() == 2).then(|| atoms[0].1);
+        let (mut held, mut failed) = (0, 0);
+        for _ in 0..1_000 {
+            let unrolled = lasso(&mut stream, 3);
+            let mut letters = Lasso {
+                unrolled: &unrolled,
+                p,
+            };
+            let verdict = bounded_window_verdict(clause, &unrolled.stamps, &mut |atom, at| {
+                letters.reading(atom, at)
+            })
+            .expect("the automaton reads the lasso");
+            let trace = TimedTrace::new(unrolled.stamps.clone()).expect("a timed trace");
+            let mut meter = Meter::new(world.system().meter_limits());
+            let reference = evaluate_timed_at(
+                clause,
+                &trace,
+                TemporalPosition::new(0),
+                &mut letters,
+                &mut meter,
+            )
+            .expect("the evaluator reads the lasso");
+            match (verdict, reference) {
+                (Some(true), TemporalOutcome::Holds) => held += 1,
+                (Some(false), TemporalOutcome::Violated { .. }) => failed += 1,
+                (verdict, reference) => panic!(
+                    "{formula} on {:?}, p {:?}, q {:?}: automaton {verdict:?}, evaluator \
+                     {reference:?}",
+                    unrolled.stamps, unrolled.p, unrolled.q
+                ),
+            }
+        }
+        // Both answers occur, so the comparison is not vacuous.
+        assert!(
+            held > 0 && failed > 0,
+            "{formula}: {held} held, {failed} failed"
+        );
+    }
+}
+
+/// FR-242 with FR-231's idle tail: where no step is ever enabled,
+/// `eventually[0 ms, 3 ms] holds(c.retried)` is violated only by staying,
+/// so the counterexample ends in the terminal stutter's loop.
+#[trace("TC-697")]
+#[test]
+fn an_idle_tail_passes_a_window() {
+    let idle = windowed(
+        &[],
+        &[("go", &["phase"])],
+        "pre Go using v on M::Call::go { self.phase = 1 }\n",
+        "eventually[0 ms, 3 ms] holds(c.retried)",
+    );
+    let counterexample = violated(claim(&idle, ZoneCheckLimits::default(), &Cancel::new()));
+    let lasso = counterexample.lasso.as_ref().expect("a lasso");
+    assert!(lasso.terminal_stutter);
+    assert_eq!(lasso.entry, counterexample.prefix.len());
 }
