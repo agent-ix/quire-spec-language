@@ -56,7 +56,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::fairness::{
-    Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
+    is_live, Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
 };
 use quire_exact::Cancel;
 
@@ -221,15 +221,6 @@ struct Level<'c> {
     removed: BTreeSet<Identity>,
     components: &'c [Component],
     fallback: ProductStateRef,
-}
-
-/// Whether `edge` is in a level's subgraph: it takes no identity in
-/// `removed`.
-fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
-    match edge.label {
-        EdgeLabel::Transition(identity) => !removed.contains(&identity),
-        EdgeLabel::Stutter => true,
-    }
 }
 
 /// The product graph holds no state. A closure the checker reached always
@@ -1225,7 +1216,7 @@ mod tests {
         product: &ProductGraph,
         analyses: &[qsl_eval::fairness::Analysis],
     ) -> Option<Vec<Component>> {
-        use qsl_eval::fairness::Outcome;
+        use qsl_eval::fairness::{Edge, Outcome};
         let removed = analyses
             .first()
             .map(|analysis| analysis.removed().clone())
