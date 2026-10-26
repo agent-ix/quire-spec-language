@@ -58,7 +58,7 @@
 //! A certificate numbers its automaton states in its own order; the
 //! checker binds each number to the state it recomputes, one to one.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::automaton::{Read, Stamp, WindowClaim};
@@ -218,6 +218,32 @@ pub enum CertificateItem<'o> {
     Other,
 }
 
+/// An item's identity, as FR-245's identity refusal names it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ItemIdentity {
+    /// An authored clause, by its `claim` occurrence.
+    Clause(OccurrenceKey),
+    /// A clause its package does not list, which has no occurrence.
+    UnlistedClause,
+    /// The derived deadlock-freedom item.
+    DeadlockFreedom,
+    /// The derived time-lock-freedom item.
+    TimeLockFreedom,
+    /// Any other item.
+    Other,
+}
+
+impl From<CertificateItem<'_>> for ItemIdentity {
+    fn from(item: CertificateItem<'_>) -> Self {
+        match item {
+            CertificateItem::Clause(occurrence) => Self::Clause(occurrence.clone()),
+            CertificateItem::DeadlockFreedom => Self::DeadlockFreedom,
+            CertificateItem::TimeLockFreedom => Self::TimeLockFreedom,
+            CertificateItem::Other => Self::Other,
+        }
+    }
+}
+
 /// What [`check_zone_certificate`] returns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZoneCertificateVerdict {
@@ -260,8 +286,14 @@ pub enum ZoneCertificateRefusal<O> {
         /// The item's.
         item: Box<O>,
     },
-    /// The request's clause is not a temporal clause of its package.
-    UnknownClause,
+    /// The item the certificate names is not the recompiled item:
+    /// `stale_dependency`/`content-mismatch`, naming both identities.
+    IdentityMismatch {
+        /// The identity the certificate's obligation names.
+        certificate: Box<ItemIdentity>,
+        /// The recompiled item's.
+        recompiled: Box<ItemIdentity>,
+    },
     /// FR-106's admission of the subject failed.
     Admission(Box<AdmissionFailure>),
     /// The model's timed reading does not build (FR-231).
@@ -281,7 +313,9 @@ impl<O> ZoneCertificateRefusal<O> {
     /// The refusal's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ObligationMismatch { .. } | Self::UnknownClause => Code::StaleDependency,
+            Self::ObligationMismatch { .. } | Self::IdentityMismatch { .. } => {
+                Code::StaleDependency
+            }
             Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
@@ -332,10 +366,6 @@ fn undecided<T, O, E>(_: E) -> Step<T, O> {
     Err(Halt::Refusal(ZoneCertificateRefusal::Undecided))
 }
 
-/// The most rounds the check of a divergence cycle's repetition takes
-/// before it gives up and rejects the witness.
-const CYCLE_ROUNDS: usize = 64;
-
 /// FR-245: check `certificate` for `request`'s item, whose obligation is
 /// `item` and names the item `item_of` reads from it, under `limits`,
 /// polling `cancel` throughout.
@@ -363,24 +393,26 @@ pub fn check_zone_certificate<O: Clone + Eq>(
     }
     // The recompiled item's identity (FR-245): a clause's `claim`
     // occurrence in the package, or the derived item's kind.
-    let named = item_of(&certificate.obligation);
+    let named = ItemIdentity::from(item_of(&certificate.obligation));
     let recompiled = match request.item {
-        ModelCheckItem::Clause { clause, .. } => {
-            let node = request
-                .simulation
-                .package
-                .graph()
-                .temporal_clauses()
-                .iter()
-                .find(|node| node.clause() == clause)
-                .ok_or(ZoneCertificateRefusal::UnknownClause)?;
-            matches!(named, CertificateItem::Clause(occurrence) if *occurrence == node_occurrence(node))
-        }
-        ModelCheckItem::DeadlockFreedom => named == CertificateItem::DeadlockFreedom,
-        ModelCheckItem::RaceFreedom => false,
+        ModelCheckItem::Clause { clause, .. } => request
+            .simulation
+            .package
+            .graph()
+            .temporal_clauses()
+            .iter()
+            .find(|node| node.clause() == clause)
+            .map_or(ItemIdentity::UnlistedClause, |node| {
+                ItemIdentity::Clause(node_occurrence(node))
+            }),
+        ModelCheckItem::DeadlockFreedom => ItemIdentity::DeadlockFreedom,
+        ModelCheckItem::RaceFreedom => ItemIdentity::Other,
     };
-    if !recompiled {
-        return Err(mismatch());
+    if named != recompiled || recompiled == ItemIdentity::Other {
+        return Err(ZoneCertificateRefusal::IdentityMismatch {
+            certificate: Box::new(named),
+            recompiled: Box::new(recompiled),
+        });
     }
     let system = ModelSystem::new(request.simulation)
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
@@ -448,6 +480,8 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         covers: vec![None; certificate.edges.len()],
         bound: BTreeMap::new(),
         binds: BTreeMap::new(),
+        read: Cell::new(0),
+        max_edges: limits.max_certificate_edges,
     };
     match checker.check(limits) {
         Ok(()) => Ok(ZoneCertificateVerdict::Accepted),
@@ -509,6 +543,11 @@ struct Checker<'c, 'a, O> {
     /// names, and back: a certificate numbers states in its own order.
     bound: BTreeMap<usize, usize>,
     binds: BTreeMap<usize, usize>,
+    /// The certificate edges the check has read, against
+    /// `max_certificate_edges`: each listed edge once, and each edge of a
+    /// divergence cycle again at each round of its repetition check.
+    read: Cell<u64>,
+    max_edges: u64,
 }
 
 impl<O> Checker<'_, '_, O> {
@@ -561,6 +600,7 @@ impl<O> Checker<'_, '_, O> {
             )))
         };
         let edges = u64::try_from(self.certificate.edges.len()).unwrap_or(u64::MAX);
+        self.read.set(edges);
         if edges > limits.max_certificate_edges {
             return stop(
                 ModelCheckLimit::CertificateMaxEdges,
@@ -1419,17 +1459,37 @@ impl<O> Checker<'_, '_, O> {
     }
 
     /// Whether `cycle` can be repeated forever from some valuation of
-    /// `zone`, the exact zone the path reaches at its start: the greatest
-    /// subset of `zone` each of whose valuations takes the cycle back into
-    /// the subset is not empty. The subset is computed by at most
-    /// [`CYCLE_ROUNDS`] rounds; a cycle that needs more is not accepted.
+    /// `zone`, the exact zone the path reaches at its start. The greatest
+    /// set of valuations at the start, within its invariants, each of which
+    /// takes the cycle back into the set, is computed from the whole
+    /// invariant zone down: each round keeps the valuations whose cycle
+    /// lands in the last round's set. Each round is one zone, and each of
+    /// its bounds only falls, so the rounds end, at a fixed point or the
+    /// empty set. A valuation of `zone` in the fixed point is reached and
+    /// repeats the cycle forever: a clock the cycle never resets may drift
+    /// at each repetition. Each round reads the cycle's edges again, charged
+    /// to `max_certificate_edges`.
     fn repeats(&self, cycle: &[usize], zone: &Zone) -> Step<bool, O> {
         if cycle.is_empty() {
             return Ok(false);
         }
-        let mut held = zone.clone();
-        for _ in 0..CYCLE_ROUNDS {
+        let start = self.state(self.certificate.edges[cycle[0]].from)?;
+        let invariants = self.invariants(start)?;
+        let mut held = Zone::universe(self.dim());
+        self.constrain(&mut held, &invariants)?;
+        let length = u64::try_from(cycle.len()).unwrap_or(u64::MAX);
+        loop {
             self.poll()?;
+            let read = self.read.get().saturating_add(length);
+            if read > self.max_edges {
+                return Err(Halt::Verdict(ZoneCertificateVerdict::Stopped(
+                    IncompleteCause::LimitReached {
+                        limit: ModelCheckLimit::CertificateMaxEdges,
+                        value: self.max_edges,
+                    },
+                )));
+            }
+            self.read.set(read);
             let mut back = held.clone();
             for &index in cycle.iter().rev() {
                 back = self.pre(index, &back)?;
@@ -1439,8 +1499,6 @@ impl<O> Checker<'_, '_, O> {
             }
             // The valuations at the start from which a delay reaches the
             // first step.
-            let start = self.state(self.certificate.edges[cycle[0]].from)?;
-            let invariants = self.invariants(start)?;
             self.constrain(&mut back, &invariants)?;
             if self.elapses(start)? && !back.is_empty() {
                 back.down();
@@ -1452,11 +1510,12 @@ impl<O> Checker<'_, '_, O> {
                 return Ok(false);
             }
             if next.includes(&held)? {
-                return Ok(true);
+                let mut met = next;
+                intersect(&mut met, zone)?;
+                return Ok(!met.is_empty());
             }
             held = next;
         }
-        Ok(false)
     }
 
     /// Whether `cycle` is a cycle of valid edges from and back to `at`

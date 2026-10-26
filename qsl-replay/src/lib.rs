@@ -120,8 +120,8 @@ pub use certificate::state_graph::{
 pub use certificate::zone::{LuBounds, Zone, ZoneError};
 pub use certificate::zone_certificate::{
     check_zone_certificate, CertEdge, CertNode, CertificateCheckLimits, CertificateItem,
-    CheckerFault, DivergenceWitness, DivergentTarget, ZoneCertificate, ZoneCertificateRefusal,
-    ZoneCertificateRequest, ZoneCertificateVerdict,
+    CheckerFault, DivergenceWitness, DivergentTarget, ItemIdentity, ZoneCertificate,
+    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};

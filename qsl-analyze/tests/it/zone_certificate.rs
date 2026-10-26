@@ -13,8 +13,9 @@ use qsl_analyze::zone_check::{
 use qsl_eval::simulation::model::TimedSystem;
 use qsl_replay::{
     CertificateCheckLimits, CertificateLocus, CertificateMember, CertificateRejection,
-    CertificateRule, DivergentTarget, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ProofBasis, TerminalValue, Zone, ZoneCertificateRefusal, ZoneCertificateVerdict,
+    CertificateRule, DivergentTarget, IncompleteCause, InconclusiveCause, ItemIdentity,
+    ModelCheckLimit, ProofBasis, TerminalValue, Zone, ZoneCertificateRefusal,
+    ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Cancel;
@@ -732,5 +733,101 @@ fn every_constant_is_exact_at_the_scale() {
             CertificateRule::Malformed,
             CertificateLocus::CertificateMember(CertificateMember::Scale)
         )
+    );
+}
+
+/// A model whose divergence cycle leaves a clock unreset: `loop`, guarded
+/// `y >= 1`, resets `y`, held to `y <= 2`, while `x` grows forever.
+fn drifting() -> World {
+    world(
+        &document(&["x", "y"], &[("loop", &["y"])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Loop using v on M::Call::loop {{ self.y >= 1 ms }}\n\
+             post Looped using v on M::Call::loop {{ self.y = 0 ms }}\n\
+             time invariant Busy when {{ self.phase = 0 }} {{ self.y <= 2 ms }}\n\
+             temporal Fine using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(not (c.phase = 2)) }}\n"
+        ),
+    )
+}
+
+/// SR-1637001 FND-012, SR-1637002 FND-005: an honest certificate whose
+/// `admitted` is a cycle that leaves `x` unreset, so that `x` drifts at
+/// each repetition, is accepted for the clause and for the deadlock item.
+/// The repetition check reads the cycle's edges again at each round,
+/// against `max_certificate_edges`: a budget of the listed edges alone
+/// stops it, naming the limit (SR-1637001 FND-013).
+#[trace("TC-700")]
+#[test]
+fn a_cycle_that_leaves_a_clock_unreset_is_accepted() {
+    let world = drifting();
+    let certificates = [
+        proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new())),
+        proved(deadlock(&world)),
+    ];
+    for certificate in &certificates {
+        let DivergentTarget::Cycle(cycle) = &certificate.admitted.target else {
+            panic!("a cycle witness, got {:?}", certificate.admitted);
+        };
+        assert!(!cycle.is_empty());
+        assert_eq!(
+            verdict(&world, certificate),
+            ZoneCertificateVerdict::Accepted
+        );
+        let listed = u64::try_from(certificate.edges.len()).expect("a small count");
+        assert_eq!(
+            check(
+                &world,
+                certificate,
+                CertificateCheckLimits {
+                    max_certificate_edges: listed,
+                    ..CertificateCheckLimits::default()
+                },
+            ),
+            Ok(ZoneCertificateVerdict::Stopped(
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxEdges,
+                    value: listed,
+                }
+            ))
+        );
+    }
+}
+
+/// FR-245: a certificate whose obligation is the request's own but names
+/// another item than the recompiled one refuses `stale_dependency`, naming
+/// both identities (SR-1637001 FND-014): a clause's proof read as the
+/// deadlock-freedom item.
+#[trace("TC-700")]
+#[test]
+fn an_identity_mismatch_names_both_identities() {
+    let (world, certificate) = no_late_reply();
+    let refusal = qsl_replay::check_zone_certificate(
+        qsl_replay::ZoneCertificateRequest {
+            simulation: world.request(),
+            model: "M",
+            item: qsl_replay::ModelCheckItem::DeadlockFreedom,
+        },
+        &certificate.obligation,
+        certificate_item,
+        &certificate,
+        CertificateCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("a clause's certificate");
+    assert_eq!(
+        refusal.code(),
+        qsl_foundation::diagnostic::Code::StaleDependency
+    );
+    assert_eq!(
+        refusal,
+        ZoneCertificateRefusal::IdentityMismatch {
+            certificate: Box::new(ItemIdentity::Clause(qsl_replay::node_occurrence(
+                &world.package.graph().temporal_clauses()[0],
+            ))),
+            recompiled: Box::new(ItemIdentity::DeadlockFreedom),
+        }
     );
 }

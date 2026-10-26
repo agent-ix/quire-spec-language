@@ -56,3 +56,18 @@ Judgement on each deferral:
 ## Verdict
 
 **Not mergeable** while SR-1637001 FND-001 to FND-005 stand. On coverage alone, the PR backs the parts of FR-245 it claims, and deferrals (b), (c) and (d) are sound. Deferral (a) is not forced: the TT-2 automaton can move into qsl-eval now, so this PR should either do it or record an explicit owner decision on QSL-583 (FND-001). FND-004 is the test half of the soundness fixes. FND-002 and FND-003 are bookkeeping and test-tightening.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-245-AC-1's tests have no certificate whose `admitted` is a cycle that leaves a clock unreset. The suite's cycle witnesses reset every clock. So the new cycle-repetition check rejects honest EN-6 certificates and no test notices (SR-1637001 FND-012). Add the drifting-clock model (`loop`: `y >= 1`, resets `y`, `y <= 2` in phase 0, `x` free) as an acceptance test for the clause and the deadlock-freedom item. | qsl-analyze/tests/it/zone_certificate.rs; qsl-analyze/tests/it/zone_search.rs |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `WindowClaim` moved into `qsl_eval::automaton::timed_window`, and `qsl-analyze/src/zone_check/window.rs` is gone. The checker rebuilds the window automaton and binds certificate automaton numbers to its own states one to one. The TT-2 punctual proof is accepted (`a_punctual_window_is_decided_by_a_horizon_clock`). Binding probes: a permutation is accepted; collapsed numbers, all-zero numbers, a dropped horizon, zeroed horizon `L`/`U` and transplants onto refuted worlds are all rejected. |
+| FND-002 | fixed | QSL-580's comment of 2026-10-26 21:10 records that FR-245-AC-3's source-edit half is pending 580d. |
+| FND-003 | fixed | `assert_edges_cover` now runs on the tick-source, `tt`-profile, `lock(false)`, deadlock and TT-2 proofs (16 sites). |
+| FND-004 | fixed | `a_successor_is_matched_by_its_post_state`, `a_deadlock_is_not_hidden_by_coverage`, `an_admitted_path_is_one_some_behaviour_takes`, `a_zeno_set_is_bounded_by_its_own_invariants` and `every_constant_is_exact_at_the_scale` carry the five probes. All pass. |

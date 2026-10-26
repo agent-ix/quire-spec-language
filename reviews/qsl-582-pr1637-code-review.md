@@ -69,3 +69,40 @@ Kani was not re-run, because this diff adds no harnesses. The probe source is ke
 ## Verdict
 
 **Not mergeable.** FND-001 to FND-005 each let the qualified core accept a zone certificate for a claim that is false, or vacuously true, in the model, and FR-235 would then settle it `Proved{ZoneCertified, Certified}`. That defeats the checker's purpose (ADR-026 CF-3 and CF-6). Each fix needs its probe as a regression test in `zone_certificate.rs`. FND-002 to FND-004 share a root cause: badness, divergence and vacuity are judged over node zones, which only aLU-cover the real valuations. Judge them over the recomputed exact zones, or over the model's own invariants, instead. FND-006 and FND-007 are medium and belong in the same round. FND-008 to FND-011 are low. The type move, the generic obligation, the dependency layering, the check order and the settlement wiring are all correct.
+
+## New findings (disposition pass 1)
+
+Round 1 was reviewed at head 982b0235a, with `git diff origin/qsl-581d-timed-replay...982b0235a`. I re-ran all five original probes; the regression tests that carry them reject each one. I then ran these new probes:
+- A diagonal vacuity forge: the node zone is inside its invariant, but its valuations cannot be reached. Rejected `WitnessFails`.
+- A clause certificate checked as the deadlock item, and the reverse. Both refuse `stale_dependency`.
+- Seven TT-2 tampers:
+  - automaton numbers permuted: accepted, which is legitimate;
+  - two numbers collapsed into one: `SuccessorMissing`;
+  - every number set to 0: `SuccessorMissing`;
+  - the horizon piece dropped: `SuccessorMissing`;
+  - the horizon `L`/`U` zeroed: `Malformed` at `bounds`;
+  - the 2 ms certificate moved onto the 5/2 ms and 3 ms worlds, which EN-6 refutes: `InitialMissing`, `SuccessorMissing` or `Malformed` at `scale`;
+  - every node marked `locked`: `BadState`.
+- Cycle targets, which turned up FND-012.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | high | `repeats` starts the greatest fixpoint from the exact zone the `admitted` path reaches. It then keeps only valuations from which the cycle returns *into that set*. A cycle that leaves any clock unreset moves the clock differences away from their first-visit values, so it can never return, and the fixpoint empties. As a result an honest EN-6 certificate is rejected. Probe: `loop` is guarded `y >= 1`, resets `y`, and phase 0 has `y <= 2`, while `x` runs free. EN-6 gives `Holds` with `admitted` = `Cycle([0])` for both the clause and the deadlock-freedom item, and the checker rejects both `WitnessFails` at node 0. Round 0 accepted these certificates. This is not unsound (it only rejects), but a true proof would settle `inconclusive`, `CertificateRejected`. Fix: compute the fixpoint from the start state's whole invariant zone, not from the path's zone, and accept when it meets the path's exact zone. Add the probe as a regression test. | qsl-replay/src/certificate/zone_certificate.rs:1426-1463 |
+| FND-013 | low | `CYCLE_ROUNDS = 64` is arbitrary. The cap can only reject, never accept: `repeats` returns `true` only when a round reaches a fixpoint, so its soundness holds. But a cap reached is reported as `WitnessFails`, which says the certificate is wrong. FR-245 says that reaching a limit returns `Stopped` naming the limit, its value and its setting. Either make it a `CertificateCheckLimits` budget that gives `Stopped(LimitReached)`, or derive the bound from the model's constants and the cycle's minimum duration. | qsl-replay/src/certificate/zone_certificate.rs:335-337,1426-1463 |
+| FND-014 | low | `ZoneCertificateRefusal::UnknownClause` is not a refusal FR-245 names. Its code (`stale_dependency`) fits FR-245's "stale package" refusal. But FR-245 has an identity mismatch refused "naming both identities", and this refusal names neither identity. Map a clause missing from the recompiled package to `ObligationMismatch` (the certificate's obligation against the request's clause), or record the extra refusal as a spec gap on STD-493. | qsl-replay/src/certificate/zone_certificate.rs:367-377 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `reach` matches transition, part, horizon, post digest, coverage and the bound automaton state. `node` requires every successor to be covered. `a_successor_is_matched_by_its_post_state` rejects the flip probe with `SuccessorMissing` at node 0. |
+| FND-002 | fixed | For the deadlock item, coverage uses `L = U = max(L, U)` (aM), in both the checker and EN-6, and the node zone is held to its invariants in `deadlocked`. `a_deadlock_is_not_hidden_by_coverage` rejects the capped zone with `InitialMissing`. |
+| FND-003 | fixed | `successors_of` holds the node zone to its state's invariants, and `admitted` is recomputed forward in exact zones. The probe and a new diagonal probe are both rejected `WitnessFails`. The new cycle check has a completeness bug (FND-012). |
+| FND-004 | fixed | `zeno` reads the clocks bounded by every member state's own invariants, or all members urgent. `a_zeno_set_is_bounded_by_its_own_invariants` gives `BadState` at the locked node. |
+| FND-005 | fixed | `computed_bounds` checks every constant, the window's included, and `scaled` gives `Malformed` at `scale` with no zero fallback. `every_constant_is_exact_at_the_scale` passes. |
+| FND-006 | fixed | `item_of` gives a `CertificateItem` that is compared with the recompiled clause occurrence or kind. Probes of a clause certificate checked as the deadlock item, and the reverse, refuse `stale_dependency`. The `UnknownClause` refusal is FND-014. |
+| FND-007 | fixed | `leaving` is indexed once, `node` reads `covers`, and `divergent` computes the SCCs once and propagates back. |
+| FND-008 | fixed | `components(&graph, &within, self.cancel)`, with the cancellation mapped to `Stopped(Cancelled)`. |
+| FND-009 | fixed | The stale `#[allow(dead_code)]` and its comment are gone from `lib.rs`. |
+| FND-010 | fixed | `Fault(CheckerFault)` is a typed enum. |
+| FND-011 | fixed | The `certificate_bytes` doc now says it bounds the in-memory reading because FR-418's encoding does not exist yet (STD-493). |
