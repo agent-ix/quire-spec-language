@@ -133,6 +133,15 @@ pub enum ModelTraceRefusal {
         /// The envelope's clause node.
         clause_node: WireNodeId,
     },
+    /// A step carries a `delay`, or the counterexample a `final_delay`, over
+    /// a subject this replay reads untimed: the delays are not checked here
+    /// (FR-237 replays a timed subject's), so they are refused rather than
+    /// ignored (FR-236).
+    #[error("invalid_runtime_input/invalid-value: the counterexample carries a delay at {step:?} over an untimed subject")]
+    UntimedDelay {
+        /// The step that carries it; `None` for the `final_delay`.
+        step: Option<usize>,
+    },
     /// `initial_state` is not an index of the subject's initial states.
     #[error("invalid_runtime_input/invalid-value: initial state {index} of {count}")]
     InitialState {
@@ -359,6 +368,7 @@ impl ModelTraceRefusal {
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
+            | Self::UntimedDelay { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -394,6 +404,7 @@ impl ModelTraceRefusal {
                 None => "invalid-value",
             },
             Self::InitialState { .. }
+            | Self::UntimedDelay { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -722,7 +733,14 @@ impl ProtocolReplay<'_> {
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
             (CounterexampleKind::Race(race), _) => {
-                if reproduces(&steps, race) {
+                if reproduces(
+                    &steps,
+                    race,
+                    system
+                        .memory()
+                        .models()
+                        .contains(&qsl_foundation::MemoryModelName::Tso),
+                ) {
                     ModelTraceSettlement::Reproduced {
                         value: ModelTraceValue::Truth(false),
                         trace_position: payload.trace_position(),
@@ -1141,6 +1159,14 @@ fn replay_prefix<S: SubjectSystem>(
     payload: &TemporalCounterexample<S::TransitionId>,
     rules: &StepRules<S::TransitionId>,
 ) -> Result<Option<Replayed<S>>, ReplayRefusal> {
+    if let Some(step) = payload.prefix.iter().position(|step| step.delay.is_some()) {
+        return Err(refused(ModelTraceRefusal::UntimedDelay {
+            step: Some(step),
+        }));
+    }
+    if payload.final_delay.is_some() {
+        return Err(refused(ModelTraceRefusal::UntimedDelay { step: None }));
+    }
     let initial = system.initial();
     let count = initial.len();
     let state = initial
@@ -1823,6 +1849,7 @@ fn deadlock<S: SubjectSystem>(
                     state_key: last.digest,
                     locus: UndefinedLocus::Terminal(model),
                     transition: None,
+                    time: None,
                 },
                 cause,
             }),
@@ -1906,6 +1933,7 @@ fn undefined<S: SubjectSystem>(
             state_key: position.digest,
             locus,
             transition,
+            time: None,
         };
         // An authored clause's letter is read first at a position, and the
         // state constraint only where the letter is defined (the engine's

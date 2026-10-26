@@ -46,6 +46,9 @@ use super::{ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
 use crate::temporal::UndefinedCause;
 
+mod over_time;
+pub use over_time::{DelayInterval, TimeLock, TimedTerminalClass};
+
 /// One clock of the subject: a clock field of one object of its universe.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockPlace {
@@ -86,6 +89,11 @@ impl ClockPlace {
 pub struct ClockValuation(Vec<Rational>);
 
 impl ClockValuation {
+    /// The valuation holding `values`, in [`TimedSystem::places`] order.
+    pub fn new(values: Vec<Rational>) -> Self {
+        Self(values)
+    }
+
     /// The value of the place at `index`.
     pub fn get(&self, index: usize) -> Option<&Rational> {
         self.0.get(index)
@@ -112,6 +120,11 @@ pub struct TimedState {
 }
 
 impl TimedState {
+    /// The timed state of `discrete` at `clocks`.
+    pub fn new(discrete: ModelSimState, clocks: ClockValuation) -> Self {
+        Self { discrete, clocks }
+    }
+
     /// The model state.
     pub fn discrete(&self) -> &ModelSimState {
         &self.discrete
@@ -767,6 +780,58 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             found.push((step, reached));
         }
         Ok(found)
+    }
+
+    /// FR-236's post-state digest of `state`: the canonical identity of its
+    /// model state (FR-181's `simulation-state`) together with its exact
+    /// clock valuation, each clock named by its object and field. A clock of
+    /// an object the state does not hold has no value and is left out
+    /// (STD-493's byte form).
+    ///
+    /// # Errors
+    ///
+    /// [`crate::simulation::EncodingRefusal`] when the state has no
+    /// canonical encoding within the identity limits.
+    pub fn state_digest(
+        &self,
+        state: &TimedState,
+    ) -> Result<qsl_foundation::digest::DigestRecord, crate::simulation::EncodingRefusal> {
+        let clocks = self
+            .places
+            .iter()
+            .zip(state.clocks.values())
+            .filter(|(place, _)| place.present(&state.discrete))
+            .map(|(place, value)| {
+                let field = self
+                    .model
+                    .clock(place.clock)
+                    .map_or(super::encode::Enc::Null, |field| {
+                        super::encode::declaration_enc(field.field())
+                    });
+                super::encode::Enc::tagged(
+                    "clock",
+                    vec![
+                        ("object", super::encode::reference_enc(&place.object)),
+                        ("field", field),
+                        (
+                            "value",
+                            super::encode::value_enc(&quire_exact::Value::Rational(value.clone())),
+                        ),
+                    ],
+                )
+            })
+            .collect();
+        let enc = super::encode::Enc::tagged(
+            "timed-state",
+            vec![
+                (
+                    "state",
+                    super::encode::model_key(&self.system.model, state.discrete.state()).0,
+                ),
+                ("clocks", super::encode::Enc::Array(clocks)),
+            ],
+        );
+        crate::simulation::key::state_key(&enc, super::identity_limits()).map(|(_, digest)| digest)
     }
 
     /// The time a step of `operation` advances a tick source's time stamp:

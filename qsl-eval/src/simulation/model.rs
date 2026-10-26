@@ -94,9 +94,9 @@ pub use state_predicate::PredicateReading;
 pub(crate) use symbolic::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
 pub use timed::{
-    BehaviourLetters, ClockPlace, ClockValuation, GuardedStep, MoveRefusal, PlaceConstraint,
-    TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop, TimedSubjectRefusal,
-    TimedSystem,
+    BehaviourLetters, ClockPlace, ClockValuation, DelayInterval, GuardedStep, MoveRefusal,
+    PlaceConstraint, TimeLock, TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop,
+    TimedSubjectRefusal, TimedSystem, TimedTerminalClass,
 };
 pub(crate) use walk::{Applied, Budget};
 
@@ -644,6 +644,11 @@ impl<'a> ModelSystem<'a> {
             identity_limits(),
         )?;
         Ok((key.as_bytes().to_vec(), digest))
+    }
+
+    /// The evaluation meter limits each reading of the system starts from.
+    pub fn meter_limits(&self) -> ScalarLimits {
+        self.meter
     }
 
     /// FR-101's canonical bytes of `transition`, which order successors.

@@ -320,6 +320,7 @@ impl Exploration<'_, '_, '_> {
             state_key: walk.graph.nodes[at].key,
             locus,
             transition,
+            time: None,
         };
         if let Some(contract) = undefined {
             return Ok(Ok(Some(DeadlockEvent::Violated(
@@ -399,6 +400,7 @@ impl Exploration<'_, '_, '_> {
                     lasso: None,
                     blocked: Vec::new(),
                     refinement: None,
+                    final_delay: None,
                 }),
                 stats,
             },
@@ -475,6 +477,7 @@ impl ExploredStateGraph {
             steps.push(ModelStep {
                 transition: edge.transition.clone(),
                 post_state: self.nodes[cursor].key,
+                delay: None,
             });
             cursor = edge.source.0;
         }

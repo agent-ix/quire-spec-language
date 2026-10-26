@@ -449,3 +449,62 @@ fn tc_693_operations_agree_with_the_grid_reference() {
     assert!(non_empty > 2_000, "{non_empty} non-empty zones");
     assert!(included > 100, "{included} inclusions");
 }
+
+/// FR-239 "Abstraction": `x = 7` is covered by `x = 6` under the aLU
+/// simulation when `x` is compared with nothing above 5, and not when `U`
+/// is 10; the empty zone is covered by any zone, and a zone of another
+/// dimension is refused.
+#[trace("TC-693")]
+#[test]
+fn alu_coverage_forgets_values_above_the_bounds() {
+    let at = |value: i64| {
+        let mut zone = Dbm::zero(2);
+        zone.up();
+        zone.constrain(X, 0, le(value)).expect("x is a clock");
+        zone.constrain(0, X, le(-value)).expect("x is a clock");
+        zone
+    };
+    let five = [Some(BigInt::from(5))];
+    let ten = [Some(BigInt::from(10))];
+    assert!(at(7)
+        .alu_covered_by(&at(6), &five, &five)
+        .expect("one shape"));
+    assert!(!at(7).alu_covered_by(&at(6), &ten, &ten).expect("one shape"));
+    assert!(at(6).alu_covered_by(&at(6), &ten, &ten).expect("one shape"));
+    let mut empty = at(1);
+    empty.constrain(X, 0, lt(1)).expect("x is a clock");
+    assert!(empty
+        .alu_covered_by(&at(6), &five, &five)
+        .expect("one shape"));
+    assert!(matches!(
+        at(1).alu_covered_by(&Dbm::zero(3), &five, &five),
+        Err(DbmError::DimensionMismatch { .. })
+    ));
+}
+
+/// `down` of `1 <= x <= 2` is `x <= 2`; `universe` holds every valuation
+/// and is canonical; `scale_by(2)` doubles every finite bound.
+#[trace("TC-693")]
+#[test]
+fn down_universe_and_scaling() {
+    let mut zone = Dbm::zero(2);
+    zone.up();
+    zone.constrain(X, 0, le(2)).expect("x is a clock");
+    zone.constrain(0, X, le(-1)).expect("x is a clock");
+    zone.down();
+    assert_eq!(zone.bound(0, X).expect("in range"), &le(0));
+    assert_eq!(zone.bound(X, 0).expect("in range"), &le(2));
+
+    let universe = Dbm::universe(3);
+    let mut closed = universe.clone();
+    closed.close();
+    assert_eq!(closed, universe);
+    assert!(universe
+        .includes(&x_equals_y_up_to_three())
+        .expect("one shape"));
+
+    let mut scaled = x_equals_y_up_to_three();
+    scaled.scale_by(&BigInt::from(2));
+    assert_eq!(scaled.bound(X, 0).expect("in range"), &le(6));
+    assert_eq!(scaled.bound(X, Y).expect("in range"), &le(0));
+}

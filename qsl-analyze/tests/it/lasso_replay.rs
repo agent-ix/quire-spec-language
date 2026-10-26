@@ -12,7 +12,9 @@
 //! since the payload carries neither member yet.
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_analyze::model_check::{check_model, ModelCheckRequest};
+use qsl_eval::model_subject::ModelLetters;
+use qsl_eval::simulation::model::{ExpansionLimits, ModelSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -167,6 +169,111 @@ fn a_lasso_reproduces_with_its_formula_false_on_the_unrolled_trace() {
     let payload = found(&fair, is_three);
     assert_eq!(payload.fairness.len(), 1);
     assert_eq!(reproduced(replay_with(&fair, payload, is_three)), Some(0));
+}
+
+/// FR-125-AC-18: the compiled on-each guard drives the infinite-trace run,
+/// and its finite counterexample prefix reproduces through production letters.
+#[trace("TC-520", "FR-125-AC-18")]
+#[test]
+fn a_guarded_on_each_prefix_replays_through_production_letters() {
+    use qsl_semantics::check::footprint::FootprintObject;
+
+    let document = document(false);
+    let clause = "temporal Reaches using t0 over (c: M::Counter) clock \"model-steps\" \
+                  on each (q: M::Counter) when (c.value >= 3) \
+                  { always holds(c.value <= 1) }\n";
+    let body = format!("{CONTRACT}{clause}");
+    let unit = unit_text(&document, &body).into_bytes();
+    let package = package_from_text(&document, std::str::from_utf8(&unit).expect("UTF-8 source"));
+    let clauses = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .map(|node| node.clause().clone())
+        .collect();
+    let mut documents = Documents::new(document.clone());
+    let initial = vec![documents.start("s0", &[("c", 0)])];
+    let fixture = Fixture {
+        package,
+        clauses,
+        documents,
+        initial,
+        keys: vec!["c"],
+        unit,
+    };
+
+    let model_subject = subject(
+        &fixture.package,
+        &fixture.documents,
+        fixture.initial.clone(),
+        &fixture.keys,
+        UNLIMITED,
+    );
+    let system = ModelSystem::new(model_subject.simulation).expect("the subject admits");
+    let node = &fixture.package.graph().temporal_clauses()[0];
+    let letters = system
+        .clause_letters(node)
+        .expect("the production letters build");
+    assert!(letters
+        .activation_reads()
+        .expect("the guard footprint is derived")
+        .iter()
+        .any(|read| matches!(
+            read,
+            qsl_semantics::check::footprint::SymbolicLocation::Field {
+                object: FootprintObject::Receiver,
+                ..
+            }
+        )));
+    let outcome = check_model(
+        ModelCheckRequest {
+            subject: subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the liveness run completes");
+    let payload = match outcome {
+        ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
+        other => panic!("the activation guard refutes the clause: {other:?}"),
+    };
+    assert_eq!(payload.prefix.len(), 3);
+    let package_id = package_id(&fixture);
+    let (node_id, occurrence) = clause_identity(&fixture);
+    let wire = request(
+        &fixture.documents.document,
+        fixture.documents.snapshot_bytes(),
+        &fixture.unit,
+        package_id,
+    );
+    let envelope = envelope_at(&fixture.unit, package_id, payload, node_id, occurrence);
+    let result = replay_model_trace(
+        wire,
+        &subject_of(&fixture),
+        &envelope,
+        &letters,
+        ReplayLimits::default(),
+    )
+    .expect("the lasso replays");
+    assert_eq!(
+        result.settlement,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: Some(3),
+        }
+    );
 }
 
 /// Verifies part of FR-128-AC-1: a finite prefix of a safety clause
@@ -666,6 +773,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         lasso: None,
         blocked: Vec::new(),
         refinement: None,
+        final_delay: None,
     };
     let (cause, code, tag) = refusal(replay_with(&holds, empty, |value| Some(value >= 0)));
     assert!(
@@ -831,4 +939,45 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
         "{:?}",
         result.settlement
     );
+}
+
+/// Part of FR-236-AC-4 (TC-691): a counterexample over the untimed
+/// `Counter` subject carries `delay: None` on every step and
+/// `final_delay: None`, reproduces as FR-126's does, and measures no bytes
+/// for the absent delays. The same payload with a delay on a step, or with a
+/// final delay, refuses rather than replaying with the delay unchecked. Not
+/// covered: byte equality with FR-126's counterexample, which has no byte
+/// encoding to compare.
+#[trace("TC-691")]
+#[test]
+fn an_untimed_counterexample_carries_no_delay() {
+    let safety = counter(document(false), "", "always holds(c.value < 2)");
+    let payload = found(&safety, below_two);
+    assert_eq!(payload.prefix.len(), 2);
+    assert!(payload.prefix.iter().all(|step| step.delay.is_none()));
+    assert_eq!(payload.final_delay, None);
+    assert_eq!(
+        reproduced(replay_with(&safety, payload.clone(), below_two)),
+        Some(2)
+    );
+
+    let zero = quire_exact::Rational::from_integer(quire_exact::Integer::zero());
+    let mut delayed = payload.clone();
+    delayed.prefix[1].delay = Some(zero.clone());
+    {
+        use qsl_replay::FamilyPayload;
+        let delay = std::mem::size_of::<Option<quire_exact::Rational>>();
+        assert_eq!(
+            delayed.measured_bytes(),
+            payload.measured_bytes() + delay,
+            "only a present delay is measured"
+        );
+    }
+    let (cause, code, tag) = refusal(replay_with(&safety, delayed, below_two));
+    assert_eq!(cause, ModelTraceRefusal::UntimedDelay { step: Some(1) });
+    assert_eq!((code, tag), (Code::InvalidRuntimeInput, "invalid-value"));
+    let mut final_delay = payload;
+    final_delay.final_delay = Some(zero);
+    let (cause, ..) = refusal(replay_with(&safety, final_delay, below_two));
+    assert_eq!(cause, ModelTraceRefusal::UntimedDelay { step: None });
 }

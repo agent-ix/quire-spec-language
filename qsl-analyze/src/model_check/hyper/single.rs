@@ -452,6 +452,7 @@ impl<'a> Run<'_, 'a> {
                 .map(|step| ModelStep {
                     transition: step.transition,
                     post_state: step.key,
+                    delay: None,
                 })
                 .collect();
             Candidate {
@@ -1177,6 +1178,7 @@ impl<'a> Decision<'_, '_, 'a> {
                 [ComponentStep::Model(transition)] => steps.push(ModelStep {
                     transition: transition.clone(),
                     post_state: self.model_digest(edge.target)?,
+                    delay: None,
                 }),
                 [ComponentStep::Stutter] => {}
                 _ => return Err(fault("a-single-trace-step-is-one-component-step")),
@@ -1213,6 +1215,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     state_key: self.model_digest(at)?,
                     locus: UndefinedLocus::Atom(*atom),
                     transition: None,
+                    time: None,
                 },
                 cause: cause.clone(),
             },

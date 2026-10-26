@@ -330,6 +330,11 @@ fn reexecute(
                 }
             }
             HyperStep::Model(step) => {
+                if step.delay.is_some() {
+                    return Err(refused(ModelTraceRefusal::UntimedDelay {
+                        step: Some(index),
+                    }));
+                }
                 let mut enabled = false;
                 let mut reached = None;
                 let mut digests = Vec::new();

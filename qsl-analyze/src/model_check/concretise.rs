@@ -201,6 +201,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
                     .reported(transition.clone(), target)
                     .map_err(LiftStop::Expansion)?,
                 post_state: self.digest,
+                delay: None,
             });
             return Ok(());
         };
@@ -233,6 +234,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         self.steps.push(ModelStep {
             transition: step,
             post_state: digest,
+            delay: None,
         });
         self.sigma = sigma;
         self.concrete = next;

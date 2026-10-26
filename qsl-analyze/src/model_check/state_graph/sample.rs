@@ -259,6 +259,7 @@ impl Phase<'_, '_> {
             .map(|step| ModelStep {
                 transition: step.transition,
                 post_state: step.key,
+                delay: None,
             })
             .collect();
         Ok(Ok(Walk {
