@@ -7,9 +7,7 @@
 //!
 //! Not covered: a counterexample of an authored clause (no recompiled
 //! package holds a temporal clause node until FR-337, so its replay
-//! refuses), one over a unit with a `terminal` declaration (S4 refuses the
-//! declaration as not emitted, so the recompile refuses), the
-//! `ReplaySource::ModelTrace` arm (the envelope carries a witness source
+//! refuses), the `ReplaySource::ModelTrace` arm (the envelope carries a witness source
 //! the model-trace replay does not read). A `Holds` outcome's settlement
 //! through the closure checker is `crate::closure_certificate`'s.
 
@@ -323,9 +321,7 @@ pub(crate) fn counterexample(case: &Case) -> TemporalCounterexample {
 /// the derived item's envelope, reproduces, the item's value `false`;
 /// truncated to end at value 2, where `inc` is enabled, it settles
 /// `inconclusive` by `Verdicts`. Replaying one envelope twice gives equal
-/// results (FR-128-AC-4's last clause). Not verified: the same payload
-/// under the `When`-declared unit settling `ReplayParity`, since S4 does not
-/// emit a `terminal` declaration and that unit does not recompile.
+/// results (FR-128-AC-4's last clause).
 #[trace("TC-523")]
 #[test]
 fn a_deadlock_counterexample_reproduces_and_a_truncated_one_disagrees() {
@@ -951,4 +947,105 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     assert_eq!(failed.value, TerminalValue::Failed);
     assert_eq!(failed.label, ResultLabel::Failed);
     assert_eq!(failed.value.category(), Category::InternalFailure);
+}
+
+const TERMINAL_WHEN: &str = "terminal Done using v on M when { 6 mod (3 - self.value) = 0 };\n";
+const TERMINAL_ANY: &str = "terminal Halt using v on M any;\n";
+
+fn with_terminal(terminal: &str) -> String {
+    format!("{CONTRACT}{terminal}")
+}
+
+/// FR-128-AC-6 (deadlock-freedom half) and FR-411-AC-3: under `terminal when
+/// 6 mod (3 - c.value) = 0`, the prefix to value 3 with `kind:
+/// UndefinedEvaluation{where: position 3, cause: division-by-zero}` at the
+/// terminal reproduces with `trace_position` 3, and the same prefix with
+/// `kind: Deadlock` settles the same witness value and the item `refuted`.
+#[trace("TC-539", "FR-128-AC-6", "FR-411-AC-3")]
+#[test]
+fn an_undefined_terminal_predicate_reproduces_and_a_deadlock_kind_settles_the_same_value() {
+    let case = case(&with_terminal(TERMINAL_WHEN), &[0]);
+    let payload = counterexample(&case);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &payload.kind else {
+        panic!("an undefined terminal predicate: {payload:?}");
+    };
+    assert_eq!(evaluation.site.position, 3);
+    assert_eq!(
+        evaluation.site.locus,
+        UndefinedLocus::Terminal("M".to_owned())
+    );
+    let witness = ModelTraceValue::Undefined(evaluation.clone());
+    assert_eq!(
+        replay(&case, payload.clone()).expect("replays").settlement,
+        ModelTraceSettlement::Reproduced {
+            value: witness.clone(),
+            trace_position: Some(3),
+        }
+    );
+
+    let mut deadlock = payload;
+    deadlock.kind = CounterexampleKind::Deadlock;
+    let ModelTraceSettlement::Reproduced { value, .. } =
+        replay(&case, deadlock.clone()).expect("replays").settlement
+    else {
+        panic!("the deadlock kind reproduces");
+    };
+    assert_eq!(value, witness);
+    let record = settle_model_check(
+        &ModelCheckOutcome::Violated {
+            counterexample: Box::new(deadlock),
+            stats: RunStats::default(),
+        },
+        &ModelCheckLimits::default(),
+        &case.package_id,
+        &case.request(),
+        &Cancel::new(),
+        |payload| replay(&case, payload.clone()),
+    );
+    assert_eq!(record.value, TerminalValue::Refuted);
+}
+
+/// FR-411-AC-3: the `when` unit's counterexample, in a request whose byte
+/// provision holds the unit with `terminal Halt using v on M any;` in its
+/// place, is refused `PackageIdMismatch` before any step is re-executed.
+#[trace("TC-1142", "FR-411-AC-3")]
+#[test]
+fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused() {
+    let case = case(&with_terminal(TERMINAL_WHEN), &[0]);
+    let payload = counterexample(&case);
+    let swapped = unit_text(&case.documents.document, &with_terminal(TERMINAL_ANY)).into_bytes();
+    let stale = replay_model_trace(
+        request(
+            &case.documents.document,
+            case.documents.snapshot_bytes(),
+            &swapped,
+            case.package_id,
+        ),
+        &trace_subject(&case),
+        &envelope(&swapped, case.package_id, payload),
+        &NO_ATOMS,
+        ReplayLimits::default(),
+    );
+    let (code, tag) = match &stale {
+        Err(error @ ReplayRefusal::PackageIdMismatch { .. }) => {
+            (error.code(), error.cause().expect("a cause"))
+        }
+        other => panic!("expected PackageIdMismatch, got {other:?}"),
+    };
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+}
+
+/// FR-411-AC-2: the deadlock-freedom item over the Counter subject with the
+/// `when` declaration and with none have different `package_id`s, so
+/// different obligation identities, with no other request member differing.
+#[trace("TC-1142", "FR-411-AC-2")]
+#[test]
+fn a_terminal_declaration_changes_the_deadlock_item_identity() {
+    let declared = case(&with_terminal(TERMINAL_WHEN), &[0]);
+    let none = case(CONTRACT, &[0]);
+    assert_ne!(declared.package_id, none.package_id);
+    assert_ne!(
+        deadlock_freedom_clause(&declared.package_id),
+        deadlock_freedom_clause(&none.package_id)
+    );
 }
