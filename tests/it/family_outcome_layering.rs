@@ -317,7 +317,13 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ("qsl-cst", &["qsl-foundation", "quire-exact"][..], &[][..]),
         (
             "qsl-forms",
-            &["qsl-cst", "qsl-foundation", "quire-exact", "quire-walk"][..],
+            &[
+                "ix-trace-rs",
+                "qsl-cst",
+                "qsl-foundation",
+                "quire-exact",
+                "quire-walk",
+            ][..],
             &[][..],
         ),
         (
@@ -361,8 +367,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             "{crate_name} lists no dependency"
         );
         if crate_name == "qsl-forms" {
-            // Layer 2's "Depends on" cell names no external crate, so its
-            // `[dependencies]` are exactly the four layer crates.
+            // Layer 2's "Depends on" cell names the four layer crates, so
+            // its `[dependencies]` are exactly those plus `ix-trace-rs`
+            // (ADR-012 section 9), which owns the `#[string_edge]` marker and
+            // is exempt from the layer order (FR-064): a zero-cost attribute
+            // `xtask string-edge` reads, not a semantic dependency.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
