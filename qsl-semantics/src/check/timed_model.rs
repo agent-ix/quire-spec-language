@@ -113,7 +113,17 @@ impl ClockOp {
             BinaryOperator::Equal => Self::Equal,
             BinaryOperator::GreaterOrEqual => Self::GreaterOrEqual,
             BinaryOperator::Greater => Self::Greater,
-            _ => return None,
+            BinaryOperator::Add
+            | BinaryOperator::Subtract
+            | BinaryOperator::Multiply
+            | BinaryOperator::Divide
+            | BinaryOperator::IntegerDiv
+            | BinaryOperator::IntegerRem
+            | BinaryOperator::IntegerMod
+            | BinaryOperator::NotEqual
+            | BinaryOperator::And
+            | BinaryOperator::Or
+            | BinaryOperator::Implies => return None,
         })
     }
 
@@ -487,12 +497,13 @@ pub(crate) struct Inputs<'a> {
     pub(crate) nodes: u64,
 }
 
-fn refusal(cause: TemporalCause) -> CheckRefusal {
+/// `cause`, located by the span it carries.
+fn refusal(cause: CheckCause) -> CheckRefusal {
     CheckRefusal {
         location: quire_semantic_value::location::Location::root(
             quire_semantic_value::location::Origin::Expression,
         ),
-        cause: CheckCause::Temporal(Box::new(cause)),
+        cause,
     }
 }
 
@@ -1120,20 +1131,18 @@ fn urgency(
 ///
 /// # Errors
 ///
-/// The located refusal of the first ill-formed timed member, in source
-/// order: clocks of a model that is not dense, clock reads outside an
-/// atomic clock constraint, clock writes other than a reset in the frame,
-/// and timed declarations with no timed model.
+/// The located refusal of the first ill-formed timed member: a clock of a
+/// model that is not dense, then, clause by clause, a clock read outside an
+/// atomic clock constraint or a clock write other than a reset of the
+/// frame, then a time invariant or `urgent` declaration with no timed
+/// model or an ill-formed bound, operation or predicate. A guard whose
+/// disjunctive form outgrows the node limit is refused as resource
+/// exhausted.
 pub(crate) fn prepare(
     inputs: &Inputs<'_>,
     state_clauses: &mut [StateClauseDeclaration],
 ) -> Result<TimedDrafts, CheckRefusal> {
-    prepare_models(inputs, state_clauses).map_err(|cause| CheckRefusal {
-        location: quire_semantic_value::location::Location::root(
-            quire_semantic_value::location::Origin::Expression,
-        ),
-        cause,
-    })
+    prepare_models(inputs, state_clauses).map_err(refusal)
 }
 
 fn prepare_models(
@@ -1332,10 +1341,10 @@ fn typed(
             .at(&refused.location.path())
             .or_else(|| form.spans.span(form.spans.root()))
             .unwrap_or(Span { start: 0, end: 0 });
-        refusal(TemporalCause::TimedPredicate {
+        refusal(timed(TemporalCause::TimedPredicate {
             cause: Box::new(refused.cause),
             span,
-        })
+        }))
     })?;
     Ok((
         CheckedTimedPredicate {
@@ -1474,8 +1483,8 @@ pub(crate) fn check(
 /// refused rather than compiled and silently missing from the package's
 /// identity.
 pub(crate) fn not_emitted(model: &TimedModel) -> CheckRefusal {
-    refusal(TemporalCause::TimedModelNotEmitted {
+    refusal(timed(TemporalCause::TimedModelNotEmitted {
         model: model.model.clone(),
         span: model.span,
-    })
+    }))
 }
