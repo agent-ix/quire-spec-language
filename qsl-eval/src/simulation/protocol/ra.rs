@@ -1601,6 +1601,14 @@ impl MemoryModel for Ra {
         }
     }
 
+    fn carried_race_key(
+        &self,
+        component: &RaComponent,
+        carried: &CarriedView,
+    ) -> Option<CarriedKey> {
+        (!component.races.is_empty()).then(|| CarriedKey(component.race_enc(&carried.0.race)))
+    }
+
     fn carried_key(&self, component: &RaComponent, carried: &CarriedView) -> CarriedKey {
         CarriedKey(component.view_enc(&carried.0))
     }

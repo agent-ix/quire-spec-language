@@ -955,6 +955,7 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
 
 /// FR-227: a race counterexample names a protocol subject's memory model; the
 /// replay over a model subject refuses it, `RaceOverModel`.
+/// It asserts no acceptance criterion; it backs a refusal no AC names.
 #[test]
 fn a_race_counterexample_over_a_model_subject_refuses_the_replay() {
     let case = case(CONTRACT, &[0]);

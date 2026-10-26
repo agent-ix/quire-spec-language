@@ -288,7 +288,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let channel = self.channel_of(node)?.name.clone();
         let text = self.program.text(node)?.to_owned();
         let instance = Self::instance(state, ordinal)?;
-        for (at, entry) in Self::deliverable(instance, message) {
+        for (at, entry) in self.deliverable(Some(&state.memory), instance, message)? {
             if !self.admits(
                 Reader {
                     instance,
@@ -350,13 +350,36 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
+    /// What makes `entry` one choice among a queue's entries: its bytes and,
+    /// under a model that carries a race summary, its carried race view.
+    fn choice(
+        &self,
+        memory: Option<&M::Component>,
+        entry: &Entry,
+    ) -> Result<Vec<u8>, ProtocolRefusal> {
+        let mut identity = entry.bytes.clone();
+        if let Some(race) = entry
+            .carried
+            .as_ref()
+            .zip(memory)
+            .and_then(|(carried, memory)| self.memory.carried_race_key(memory, carried))
+        {
+            identity.extend(jcs(&race.0)?);
+        }
+        Ok(identity)
+    }
+
     /// The distinct deliverable entries for `message` in `instance`, each
-    /// with its queue and position.
+    /// with its queue and position; `memory` tells entries of equal bytes
+    /// apart by their carried race views, and `None` only asks whether any
+    /// is deliverable.
     fn deliverable<'i>(
+        &self,
+        memory: Option<&M::Component>,
         instance: &'i Instance,
         message: &Message<'_>,
-    ) -> Vec<((QueueKey, usize), &'i Entry)> {
-        let mut found: Vec<((QueueKey, usize), &Entry)> = Vec::new();
+    ) -> Result<Vec<((QueueKey, usize), &'i Entry)>, ProtocolRefusal> {
+        let mut found: Vec<((QueueKey, usize), &Entry, Vec<u8>)> = Vec::new();
         for (key, queue) in &instance.queues {
             if key.channel != message.channel {
                 continue;
@@ -367,15 +390,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 queue.iter().enumerate().collect()
             };
             for (position, entry) in candidates {
+                let identity = self.choice(memory, entry)?;
                 let distinct = !found
                     .iter()
-                    .any(|((other, _), seen)| other == key && seen.bytes == entry.bytes);
+                    .any(|((other, _), _, seen)| other == key && *seen == identity);
                 if Some(entry.send) == message.from && distinct {
-                    found.push(((key.clone(), position), entry));
+                    found.push(((key.clone(), position), entry, identity));
                 }
             }
         }
-        found
+        Ok(found
+            .into_iter()
+            .map(|(at, entry, _)| (at, entry))
+            .collect())
     }
 
     /// PD-4 for a waiting `receive` of instance `ordinal`, over the steps
@@ -393,7 +420,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Result<WaitCause, ProtocolRefusal> {
         let message = self.message(node)?;
         let channel = self.channel_of(node)?.name.clone();
-        if !Self::deliverable(instance, message).is_empty() {
+        if !self.deliverable(None, instance, message)?.is_empty() {
             return Ok(WaitCause::Constraint);
         }
         let queued = instance
@@ -493,8 +520,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         variants.push((StepKind::Lose, lost));
                     }
                     for (kind, changed) in variants {
-                        let bytes: Vec<Vec<u8>> =
-                            changed.iter().map(|queued| queued.bytes.clone()).collect();
+                        let bytes: Vec<Vec<u8>> = changed
+                            .iter()
+                            .map(|queued| self.choice(Some(&state.memory), queued))
+                            .collect::<Result<_, _>>()?;
                         if results
                             .iter()
                             .any(|(seen, result)| *seen == kind && *result == bytes)
