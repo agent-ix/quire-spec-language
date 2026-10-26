@@ -384,9 +384,9 @@ pub use refusal::{
     DispatchSubtypeFailure, IdentityForm, IdentityNode, IdentityObserving,
     InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
-    ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
-    SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause,
-    TimeUnitCause, TimedConstruct,
+    ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
+    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
+    TemporalCause, TimeUnitCause, TimedConstruct,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -3505,8 +3505,17 @@ impl PackageDeclarations {
         }
         // FR-092: each checked protocol's node, before any function that
         // refers to it is lowered.
-        match lowering.protocol_nodes(&protocol_reference::inputs(&self.protocols)) {
-            Ok(unsupported) => refusals.extend(unsupported),
+        for (protocol, place) in self.protocols.iter().zip(&protocol_places) {
+            let Some(checked) = place.and_then(|place| checked_protocols.get(place)) else {
+                continue;
+            };
+            register_protocol_sites(protocol, checked, &mut type_spans, &mut site_spans);
+        }
+        match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols) {
+            Ok(inputs) => match lowering.protocol_nodes(&inputs) {
+                Ok(unsupported) => refusals.extend(unsupported),
+                Err(refusal) => refusals.push(refusal),
+            },
             Err(refusal) => refusals.push(refusal),
         }
         // FR-135: the clause a refinement's rows select, by its node.
@@ -5813,6 +5822,48 @@ impl CheckedGraph {
     /// -- the accessor the evaluator reads directly, alongside `scope`.
     pub fn dispatch_tables(&self) -> &[DispatchTable] {
         &self.dispatch_tables
+    }
+}
+
+/// FR-096: the sites a protocol's nodes are located at. Each `run` control
+/// and the `finish` node resolve to the span of their declared name, and the
+/// `finish` constraint's expression tree to its own spans.
+fn register_protocol_sites(
+    protocol: &qsl_forms::ProtocolDeclarationForm,
+    checked: &protocol_clause::CheckedProtocol,
+    type_spans: &mut BTreeMap<String, qsl_foundation::Span>,
+    site_spans: &mut BTreeMap<String, qsl_forms::ExpressionSpans>,
+) {
+    use lowering::{protocol_site, ProtocolSite};
+    let name = protocol.name.name.as_str();
+    for role in &protocol.roles {
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Role(&role.name.name)),
+            role.name.span,
+        );
+    }
+    for control in &checked.controls.controls {
+        if let Some(declaration) = protocol.declarations.get(control.node.0) {
+            type_spans.insert(
+                protocol_site(name, ProtocolSite::Control(&control.path)),
+                declaration.name.span,
+            );
+        }
+    }
+    let Some((finish, finish_name)) = &checked.finish else {
+        return;
+    };
+    if let Some(declaration) = protocol.declarations.get(finish.0) {
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Finish(finish_name)),
+            declaration.name.span,
+        );
+    }
+    if let Some(body) = protocol.bodies.iter().find(|body| body.owner == finish.0) {
+        site_spans.insert(
+            protocol_site(name, ProtocolSite::FinishBody(finish_name)),
+            body.expression.spans.clone(),
+        );
     }
 }
 

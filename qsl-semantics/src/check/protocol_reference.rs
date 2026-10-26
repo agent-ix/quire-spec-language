@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-218's unit-wide rules on protocol references and the protocols they
 //! name: a second reference to one target refuses, and each protocol is
-//! read for the root of its `run` tree, whose keyword is its node's
-//! `profile_operator`.
+//! paired with what S3 checked of it for lowering.
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ProtocolDeclarationForm, ProtocolNodeKind};
-use quire_semantic_value::location::Location;
+use qsl_forms::ProtocolDeclarationForm;
+use quire_semantic_value::location::{Location, Origin};
 
 use super::ir::{CheckedBody, NodeKind};
-use super::lowering::ProtocolInput;
-use super::refusal::{CheckCause, CheckRefusal, ProtocolReferenceCause};
+use super::lowering::{declaration_origin, ProtocolInput};
+use super::protocol_clause::CheckedProtocol;
+use super::refusal::{CheckCause, CheckRefusal, KeyFault, ProtocolReferenceCause};
 
 /// The refusal of every reference to a target already referred to earlier in
 /// the unit, at the later reference, naming the first. `bodies` are the
@@ -47,60 +47,31 @@ pub(super) fn repeated<'b>(bodies: impl IntoIterator<Item = &'b CheckedBody>) ->
     refusals
 }
 
-/// Each protocol of `protocols` as lowering reads it.
-pub(super) fn inputs(protocols: &[ProtocolDeclarationForm]) -> Vec<ProtocolInput> {
+/// Each protocol of `protocols` as lowering reads it, with what S3 checked
+/// of it. `places[i]` is the position of the `i`-th protocol among
+/// `checked`; a protocol S3 refused has none, and lowering reads none of
+/// them, so one is a fault.
+pub(super) fn inputs<'a>(
+    protocols: &'a [ProtocolDeclarationForm],
+    places: &[Option<usize>],
+    checked: &'a [CheckedProtocol],
+) -> Result<Vec<ProtocolInput<'a>>, CheckRefusal> {
     protocols
         .iter()
-        .map(|protocol| {
-            let root = run_root(protocol);
-            ProtocolInput {
-                name: protocol.name.name.clone(),
-                root: root.label(),
-                operator: operator(root),
-            }
+        .enumerate()
+        .map(|(index, form)| {
+            places
+                .get(index)
+                .copied()
+                .flatten()
+                .and_then(|place| checked.get(place))
+                .map(|checked| ProtocolInput { form, checked })
+                .ok_or_else(|| CheckRefusal {
+                    location: Location::root(Origin::TypeDeclaration {
+                        name: declaration_origin(&form.name.name),
+                    }),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UncheckedProtocolFact)),
+                })
         })
         .collect()
-}
-
-/// The kind of the `run` tree's root: the first top-level declaration that
-/// is neither the `finish` nor a `compensate` template. The grammar's
-/// `Control` is a structural control, an event node or a `commit`.
-fn run_root(protocol: &ProtocolDeclarationForm) -> ProtocolNodeKind {
-    protocol
-        .declarations
-        .iter()
-        .filter(|declaration| declaration.scope.is_none())
-        .map(|declaration| declaration.kind)
-        .find(|kind| {
-            !matches!(
-                kind,
-                ProtocolNodeKind::Finish | ProtocolNodeKind::CompensateTemplate
-            )
-        })
-        .unwrap_or(ProtocolNodeKind::Finish)
-}
-
-/// The `profile_operator` a root names: one of FR-052's bounded control
-/// constructs. An `await`, a `check`, an event node and a `commit` name
-/// none, and QSpec FR-322-AC-22 defines no other.
-fn operator(root: ProtocolNodeKind) -> Option<&'static str> {
-    match root {
-        ProtocolNodeKind::Sequence
-        | ProtocolNodeKind::Choice
-        | ProtocolNodeKind::Parallel
-        | ProtocolNodeKind::Repeat => Some(root.label()),
-        ProtocolNodeKind::Await
-        | ProtocolNodeKind::Check
-        | ProtocolNodeKind::Fence
-        | ProtocolNodeKind::Send
-        | ProtocolNodeKind::Receive
-        | ProtocolNodeKind::Attempt
-        | ProtocolNodeKind::Effect
-        | ProtocolNodeKind::Event
-        | ProtocolNodeKind::Commit
-        | ProtocolNodeKind::Finish
-        | ProtocolNodeKind::CompensateTemplate
-        | ProtocolNodeKind::Branch
-        | ProtocolNodeKind::Case => None,
-    }
 }

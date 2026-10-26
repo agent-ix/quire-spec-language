@@ -43,6 +43,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::check::Scope;
 use super::ir::{CheckedBody, NodeKind};
+use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
 use super::refusal::{
@@ -374,11 +375,34 @@ impl Checker<'_, '_> {
             SlotOwner::Node(_) | SlotOwner::Clause => None,
         };
         let mut nodes = self.nodes;
+        // The `finish` constraint is lowered into the protocol's `finish`
+        // node, so its tree is rooted at that node's own site (FR-096); every
+        // other slot keeps the clause location.
+        let finish_location = match slot.owner {
+            SlotOwner::Node(node) => self
+                .protocol
+                .declarations
+                .get(node)
+                .filter(|declaration| declaration.kind == ProtocolNodeKind::Finish)
+                .map(|declaration| {
+                    protocol_location(
+                        &self.protocol.name.name,
+                        ProtocolSite::FinishBody(&declaration.name.name),
+                    )
+                }),
+            SlotOwner::Clause | SlotOwner::Role(_) => None,
+        };
+        let declarations = ClauseDeclarations {
+            location: finish_location
+                .as_ref()
+                .unwrap_or(self.declarations.location),
+            ..*self.declarations
+        };
         let typed = type_body(
             slot.form,
             role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
-            self.declarations,
+            &declarations,
             &mut nodes,
             cx,
         );
