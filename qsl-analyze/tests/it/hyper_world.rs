@@ -610,7 +610,6 @@ impl World {
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
         let base = unit_text(&document, other, vault, reset, "");
         let graph = declarations(&documents, &base)
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);

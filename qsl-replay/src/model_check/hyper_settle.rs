@@ -9,6 +9,10 @@
 //! fault, and carries no counterexample. Every other row is built by FR-127's
 //! own row builders, so the two maps settle each shared row alike.
 //!
+//! [`settle_hyper_smt`] settles an EN-3 [`HyperSmtOutcome`]. Only the
+//! `Inductive` and `InductionNotClosed` results are built; a non-empty `μ_U`
+//! settles `VacuousMatch` until FR-183's match witness is built.
+//!
 //! A `Holds` or `HoldsReduced` outcome settles `proved` only after FR-163's product-closure
 //! certificate checker accepts its certificate. Neither the certificate nor
 //! the checker is built, so the map refuses them rather than settle a
@@ -17,13 +21,19 @@
 use crate::execute::ReplayRefusal;
 use crate::model_check::hyper_counterexample::HyperCounterexample;
 use crate::model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
+use crate::model_check::hyper_smt_outcome::{HyperSmtOutcome, HyperSmtResult};
+use crate::model_check::hyper_smt_query::{HyperProductIdentity, HyperQueryRequest};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::replay::ModelTraceSettlement;
-use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE};
+use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE, K_INDUCTION};
+use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::smt::SmtEncodingRefusal;
 use qsl_semantics::check::HyperForm;
 
 use crate::proof_result::{
-    IncompleteCause, InconclusiveCause, SettlementBasis, TerminalValue, UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// Whether a limit's value came from the request or from its published
@@ -60,7 +70,8 @@ pub struct HyperRecord {
     pub execution: Execution,
     /// The truth.
     pub truth: Truth,
-    /// The settlement method: [`EXPLICIT_STATE`].
+    /// The settlement method: [`EXPLICIT_STATE`] for an EN-1 run,
+    /// [`K_INDUCTION`] for an EN-3 induction run.
     pub method: &'static str,
     /// The search horizon a V-5 record states.
     pub depth: Option<u64>,
@@ -87,7 +98,7 @@ pub fn settle_hyper_form(form: &HyperForm) -> Option<TerminalValue> {
 }
 
 /// Why a hyper outcome settles no record.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum HyperSettleRefusal {
     /// A `Holds` outcome settles `proved` only after FR-163's product-closure
     /// certificate checker accepts its certificate, and the certificate and
@@ -103,6 +114,54 @@ pub enum HyperSettleRefusal {
     /// external `PropertyForm` type, so the refusal stands until then.
     #[error("a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold")]
     ReductionFormNotRepresentable,
+    /// An HP-2 SMT outcome whose product identity is not the item's is no
+    /// evidence for the item (FR-182).
+    #[error("the outcome answers another product: its {member} differs from the item's")]
+    ProductMismatch {
+        /// The first member that differs.
+        member: ProductMember,
+    },
+    /// The item's own identity was refused (FR-315 "Refusals and their
+    /// order").
+    #[error("the item has no product identity: {0}")]
+    ItemIdentity(SmtEncodingRefusal),
+}
+
+/// A member of an HP-2 product identity (FR-315 "Product identity").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProductMember {
+    /// The clause.
+    Clause,
+    /// The ordered subjects.
+    Subjects,
+    /// The object-parameter instance.
+    Instance,
+}
+
+impl std::fmt::Display for ProductMember {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Clause => "clause",
+            Self::Subjects => "subjects",
+            Self::Instance => "instance",
+        })
+    }
+}
+
+impl ProductMember {
+    /// The first member, in the order clause, subjects, instance, in which
+    /// the two identities differ.
+    fn first_difference(a: &HyperProductIdentity, b: &HyperProductIdentity) -> Option<Self> {
+        if a.clause() != b.clause() {
+            Some(Self::Clause)
+        } else if a.subjects() != b.subjects() {
+            Some(Self::Subjects)
+        } else if a.instance() != b.instance() {
+            Some(Self::Instance)
+        } else {
+            None
+        }
+    }
 }
 
 /// FR-182: settle `outcome`, a run under `limits`, as one terminal record.
@@ -222,4 +281,84 @@ fn used(limits: &ModelCheckLimits, requested: &[ModelCheckLimit]) -> [UsedLimit;
         value,
         origin: origin(limit),
     })
+}
+
+/// FR-182: settle `outcome`, an EN-3 k-induction run over the HP-2 `item`, as
+/// one terminal record with method `k-induction`.
+///
+/// The outcome must carry the item's own product identity. An
+/// `Inductive{depth}` outcome settles V-3, `proved`, `decisive-witness`,
+/// `Uncertified`, when every subject has an initial state and the clause's
+/// `μ_U` is empty; no match witness is built yet, so a non-empty `μ_U`
+/// settles `VacuousMatch`. An `InductionNotClosed{depth}` outcome settles
+/// `inconclusive`.
+///
+/// # Errors
+///
+/// [`HyperSettleRefusal::ItemIdentity`] when the item has no identity, and
+/// [`HyperSettleRefusal::ProductMismatch`] when the outcome answers another
+/// product, or carries no identity. An internal fault in computing the
+/// item's identity settles `failed`.
+pub fn settle_hyper_smt(
+    item: &HyperQueryRequest<'_>,
+    outcome: &HyperSmtOutcome,
+    limits: &ModelCheckLimits,
+    requested: &[ModelCheckLimit],
+) -> Result<HyperRecord, HyperSettleRefusal> {
+    let row = match HyperProductIdentity::of(item) {
+        Err(SmtEncodingRefusal::Fault(_)) => Row::failed(),
+        Err(refusal) => return Err(HyperSettleRefusal::ItemIdentity(refusal)),
+        Ok(identity) => {
+            let Ok(named) = &outcome.product else {
+                return Err(HyperSettleRefusal::ProductMismatch {
+                    member: ProductMember::Clause,
+                });
+            };
+            if let Some(member) = ProductMember::first_difference(&identity, named) {
+                return Err(HyperSettleRefusal::ProductMismatch { member });
+            }
+            match outcome.result {
+                HyperSmtResult::InductionNotClosed { depth } => {
+                    Row::inconclusive(InconclusiveCause::InductionNotClosed { depth })
+                }
+                HyperSmtResult::Inductive { depth } => inductive_row(item, depth),
+            }
+        }
+    };
+    Ok(HyperRecord {
+        value: row.value,
+        label: row.label,
+        basis: row.basis,
+        execution: row.execution,
+        truth: row.truth,
+        method: K_INDUCTION,
+        depth: None,
+        covers: None,
+        limits: used(limits, requested),
+        limit_reached: row.limit_reached,
+        count: None,
+        counterexample: None,
+    })
+}
+
+/// V-3 and its guards for an `Inductive{depth}` outcome, in FR-182's order. A
+/// subject whose `ModelSystem::new` fails settles `failed`.
+fn inductive_row(item: &HyperQueryRequest<'_>, depth: u64) -> Row {
+    for subject in item.subjects {
+        match ModelSystem::new(subject.simulation.clone()) {
+            Ok(system) if system.initial().is_empty() => {
+                return Row::inconclusive(InconclusiveCause::NoInitialState)
+            }
+            Ok(_) => {}
+            Err(_) => return Row::failed(),
+        }
+    }
+    if !item.clause.mu_universal().is_empty() {
+        return Row::inconclusive(InconclusiveCause::VacuousMatch);
+    }
+    Row::proof(
+        ProofBasis::Inductive { depth },
+        Certification::Uncertified,
+        SettlementBasis::DecisiveWitness,
+    )
 }

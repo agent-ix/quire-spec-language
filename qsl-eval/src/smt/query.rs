@@ -19,9 +19,10 @@
 use std::collections::HashSet;
 use std::ops::Not;
 
+use qsl_package::PackageTerminalDeclaration;
 use qsl_semantics::check::{
     Activation, CheckedNode, CheckedTemporalClause, FormulaNodeId, TemporalClauseNode,
-    TemporalProfile, TerminalDeclaration,
+    TemporalProfile,
 };
 use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::Integer;
@@ -405,6 +406,8 @@ pub fn encode_smt_query(
     };
     // Row 15 `candidates`, then row 16 `out-of-fragment` of the reading.
     let first = first?;
+    let terminals = qsl_package::resolve_terminals(symbolic.package)
+        .map_err(|_| fault("the package's terminal nodes did not resolve"))?;
     Query {
         kind,
         layout: &layout,
@@ -421,6 +424,7 @@ pub fn encode_smt_query(
         infinite,
         first,
         limits,
+        terminals,
     }
     .script()
     .map(Script::render)
@@ -440,6 +444,9 @@ struct Query<'q, 'a> {
     /// The facts of copy 0, read before the instances were checked.
     first: CopyFacts,
     limits: &'q SmtEncodingLimits,
+    /// FR-411: the package's `terminal` declarations, read from its emitted
+    /// `temporal`/`terminal` nodes.
+    terminals: Vec<qsl_package::PackageTerminal<'a>>,
 }
 
 impl Query<'_, '_> {
@@ -743,11 +750,10 @@ impl Query<'_, '_> {
         let views = Views::of(StateRef::Copy(StateCopy::at(position)));
         let mut value = Vec::new();
         let mut failure = Vec::new();
-        for terminal in self.subject.package.graph().terminals() {
-            let (holds, defined) = match terminal.declaration() {
-                TerminalDeclaration::None => continue,
-                TerminalDeclaration::Any => (Term::truth(true), Term::truth(true)),
-                TerminalDeclaration::When(predicate) => {
+        for terminal in &self.terminals {
+            let (holds, defined) = match terminal.declaration {
+                PackageTerminalDeclaration::Any => (Term::truth(true), Term::truth(true)),
+                PackageTerminalDeclaration::When(predicate) => {
                     let Some((_, quire_exact::ValueType::Reference(context))) =
                         predicate.parameters().first()
                     else {
@@ -763,7 +769,7 @@ impl Query<'_, '_> {
                         let (value, definition) = Reader::new(
                             layout,
                             self.subject,
-                            terminal.name().unwrap_or("terminal"),
+                            terminal.name,
                             Observation::Current,
                             Vec::new(),
                             &views,

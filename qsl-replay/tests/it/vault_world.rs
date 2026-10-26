@@ -462,7 +462,6 @@ impl World {
             .next()
             .map(|checked| checked.expect("the temporal clause checks"));
         let graph = assembled
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
@@ -514,6 +513,12 @@ impl World {
             other_universe: other_universe.map(keys),
             alias_n,
         }
+    }
+
+    /// The world with an empty initial list.
+    pub fn without_initial_states(mut self) -> Self {
+        self.initial.clear();
+        self
     }
 
     /// The clause as the world's package assembled it.
