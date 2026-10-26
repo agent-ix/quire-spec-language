@@ -252,7 +252,7 @@ impl TimedSystem<'_, '_> {
     /// # Errors
     ///
     /// As [`Self::guarded_steps`], [`Self::admissible_delays`] and
-    /// [`ModelSystem::terminal_class`].
+    /// [`ModelSystem::terminal_class`](crate::simulation::model::ModelSystem::terminal_class).
     pub fn terminal_class(&self, state: &TimedState) -> Result<TimedTerminalClass, TimedStop> {
         let admissible = self.admissible_delays(state)?;
         for step in self.guarded_steps(&state.discrete)? {
