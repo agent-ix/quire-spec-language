@@ -1107,6 +1107,110 @@ pub enum TemporalCause {
         /// The urgency declaration's span.
         span: Span,
     },
+    /// FR-230: a `time invariant` has no timed model to bind its
+    /// predicate and bounds.
+    TimeInvariantWithoutTimeSource {
+        /// The time invariant's span.
+        span: Span,
+    },
+    /// FR-230: a time invariant or `urgent` declaration of a unit with
+    /// several time sources, which names none of them.
+    AmbiguousTimedDeclaration {
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230: the timed model's populations range over no object type, or
+    /// over several, so a time invariant or `urgent when` has no `self`.
+    /// Located at the declaration.
+    TimedStateObject {
+        /// Whether several object types were found rather than none.
+        ambiguous: bool,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230 "Clocks and resets": a model holds a `Clock` field but its
+    /// time source is not `dense`. Located at the time declaration, or at
+    /// the model alias of a model with no time declaration.
+    ClockWithoutDenseTime {
+        /// The clock field's member name.
+        field: String,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230 "Clock constraints and guards": a clock read anywhere but as
+    /// the clock operand of an atomic clock constraint. Located at the
+    /// read.
+    ClockReadOutsideConstraint {
+        /// The read's span.
+        span: Span,
+    },
+    /// FR-230: an atomic constraint compares a clock with another clock.
+    /// Located at the comparison.
+    ClockComparison {
+        /// The comparison's span.
+        span: Span,
+    },
+    /// FR-230: a clock constraint's constant, or a reset value, is
+    /// negative. Located at the constant.
+    NegativeClockConstant {
+        /// The constant's span.
+        span: Span,
+    },
+    /// FR-230: a clock constraint's bound, or a reset's value, is not an
+    /// exact time quantity literal. Located at the bound.
+    ClockBoundNotConstant {
+        /// The bound's span.
+        span: Span,
+    },
+    /// FR-230 "Clocks and resets": a write to a clock that is not a reset
+    /// of a clock of the operation's frame to a constant. Located at the
+    /// write.
+    ClockWrite {
+        /// The write's span.
+        span: Span,
+    },
+    /// FR-230: a time invariant bound's operand names no clock of the
+    /// state object. Located at the operand.
+    UnknownClock {
+        /// The operand's span.
+        span: Span,
+    },
+    /// FR-230 "Time invariants and urgency": `urgent O` names no operation
+    /// of the timed model, or several. Located at the name.
+    UrgentOperation {
+        /// The operation as written.
+        name: String,
+        /// Whether several operations were found rather than none.
+        ambiguous: bool,
+        /// The name's span.
+        span: Span,
+    },
+    /// FR-230: `urgent O` names an operation whose guard reads a clock.
+    /// Located at the declaration.
+    UrgentGuardReadsClock {
+        /// The clock the guard reads.
+        clock: String,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230: the `when` predicate of a time invariant or `urgent`
+    /// declaration, or a guard's data part, refused as the clause checker
+    /// refuses an invariant body. Located at the node the refusal names.
+    TimedPredicate {
+        /// The clause checker's refusal.
+        cause: Box<CheckCause>,
+        /// The span of the node it names.
+        span: Span,
+    },
+    /// FR-230: a timed model with clocks, time invariants or urgency that
+    /// no S4 emission writes yet: refused rather than compiled and silently
+    /// missing from the package's identity.
+    TimedModelNotEmitted {
+        /// The model alias.
+        model: String,
+        /// The model's `time` declaration span.
+        span: Span,
+    },
     /// FR-230: a tick source's period is zero or negative.
     InvalidTickPeriod {
         /// The period quantity's span.
@@ -1552,6 +1656,20 @@ impl TemporalCause {
             | Self::MissingTimedModel { span, .. }
             | Self::AmbiguousTimedModel { span, .. }
             | Self::UrgencyWithoutTimeSource { span }
+            | Self::TimeInvariantWithoutTimeSource { span }
+            | Self::AmbiguousTimedDeclaration { span }
+            | Self::TimedStateObject { span, .. }
+            | Self::ClockWithoutDenseTime { span, .. }
+            | Self::ClockReadOutsideConstraint { span }
+            | Self::ClockComparison { span }
+            | Self::NegativeClockConstant { span }
+            | Self::ClockBoundNotConstant { span }
+            | Self::ClockWrite { span }
+            | Self::UnknownClock { span }
+            | Self::UrgentOperation { span, .. }
+            | Self::UrgentGuardReadsClock { span, .. }
+            | Self::TimedPredicate { span, .. }
+            | Self::TimedModelNotEmitted { span, .. }
             | Self::InvalidTickPeriod { span }
             | Self::MalformedTimeUnit { span, .. }
             | Self::MissingTickOperation { span, .. }
@@ -1610,7 +1728,26 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
-            Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
+            Self::UrgencyWithoutTimeSource { .. }
+            | Self::TimeInvariantWithoutTimeSource { .. }
+            | Self::UnknownClock { .. } => Code::MissingDeclaration,
+            Self::AmbiguousTimedDeclaration { .. } => Code::AmbiguousDeclaration,
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
+                if *ambiguous {
+                    Code::AmbiguousDeclaration
+                } else {
+                    Code::MissingDeclaration
+                }
+            }
+            Self::ClockWithoutDenseTime { .. }
+            | Self::ClockReadOutsideConstraint { .. }
+            | Self::ClockComparison { .. }
+            | Self::NegativeClockConstant { .. }
+            | Self::ClockBoundNotConstant { .. }
+            | Self::ClockWrite { .. }
+            | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
+            Self::TimedPredicate { cause, .. } => cause.code(),
+            Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
             }
@@ -1667,7 +1804,26 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
             Self::AmbiguousTimedModel { .. } => "ambiguous-name",
-            Self::UrgencyWithoutTimeSource { .. } => "missing-name",
+            Self::UrgencyWithoutTimeSource { .. }
+            | Self::TimeInvariantWithoutTimeSource { .. }
+            | Self::UnknownClock { .. } => "missing-name",
+            Self::AmbiguousTimedDeclaration { .. } => "ambiguous-name",
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
+                if *ambiguous {
+                    "ambiguous-name"
+                } else {
+                    "missing-name"
+                }
+            }
+            Self::ClockWithoutDenseTime { .. } => "clock-without-dense-time",
+            Self::ClockReadOutsideConstraint { .. } => "clock-read-outside-constraint",
+            Self::ClockComparison { .. } => "clock-comparison",
+            Self::NegativeClockConstant { .. } => "negative-clock-constant",
+            Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
+            Self::ClockWrite { .. } => "clock-write",
+            Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
+            Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
+            Self::TimedModelNotEmitted { .. } => "not-yet-implemented",
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 "malformed-declaration"
             }
