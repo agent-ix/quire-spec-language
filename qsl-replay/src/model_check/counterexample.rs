@@ -21,7 +21,7 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Origin, Role};
+use quire_exact::{Origin, Rational, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -71,6 +71,10 @@ pub struct ModelStep<T = ModelTransition> {
     pub transition: T,
     /// The post-state's state-key digest.
     pub post_state: DigestRecord,
+    /// QSpec FR-181's `delay` (FR-236): over a timed subject the exact time
+    /// that elapses before the step, 0 under a tick source; `None` over an
+    /// untimed subject.
+    pub delay: Option<Rational>,
 }
 
 /// The expression an undefined evaluation names (QSpec FR-364 `where.locus`).
@@ -216,6 +220,10 @@ pub struct TemporalCounterexample<T: SubjectTransition = ModelTransition> {
     /// The failure of a refinement item (ADR-020 RC-1); `None` for every
     /// other item.
     pub refinement: Option<RefinementFailure>,
+    /// QSpec FR-417's `final_delay` of a time-lock counterexample (FR-236):
+    /// the delay after the last step that reaches the time-locked state;
+    /// `None` on every other kind.
+    pub final_delay: Option<Rational>,
 }
 
 /// ADR-018 UE-6 and ADR-027 TS-4: the first finding of an expansion that

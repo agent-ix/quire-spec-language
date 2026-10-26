@@ -304,6 +304,7 @@ impl SampledWitness {
                 TransitionId::Operation(transition) => Some(ModelStep {
                     transition: transition.clone(),
                     post_state: step.post_digest,
+                    delay: None,
                 }),
                 TransitionId::Stutter => None,
             })
@@ -325,6 +326,7 @@ impl SampledWitness {
             lasso: None,
             blocked: Vec::new(),
             refinement: None,
+            final_delay: None,
         })
     }
 }

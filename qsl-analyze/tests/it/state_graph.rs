@@ -166,6 +166,7 @@ fn edge_names(run: &StateGraphRun, node: NodeIndex) -> Vec<String> {
             operation(&ModelStep {
                 transition: edge.transition.clone(),
                 post_state: run.graph.nodes[edge.target.index()].key,
+                delay: None,
             })
         })
         .collect()
@@ -287,6 +288,7 @@ fn expected_steps(
                 let step = ModelStep {
                     transition: transition.clone(),
                     post_state: system.state_key(&current).expect("encodes").1,
+                    delay: None,
                 };
                 operation(&step) == *name && receiver(&step) == *key
             })
@@ -294,6 +296,7 @@ fn expected_steps(
         steps.push(ModelStep {
             transition,
             post_state: system.state_key(&next).expect("encodes").1,
+            delay: None,
         });
         current = next;
     }

@@ -94,9 +94,9 @@ pub use state_predicate::PredicateReading;
 pub(crate) use symbolic::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
 pub use timed::{
-    BehaviourLetters, ClockPlace, ClockValuation, GuardedStep, MoveRefusal, PlaceConstraint,
-    TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop, TimedSubjectRefusal,
-    TimedSystem,
+    BehaviourLetters, ClockPlace, ClockValuation, DelayInterval, GuardedStep, MoveRefusal,
+    PlaceConstraint, TimeLock, TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop,
+    TimedSubjectRefusal, TimedSystem, TimedTerminalClass,
 };
 pub(crate) use walk::{Applied, Budget};
 

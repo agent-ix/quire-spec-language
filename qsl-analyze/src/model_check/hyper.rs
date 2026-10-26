@@ -2310,6 +2310,7 @@ fn component_step(step: &ComponentStep, post: DigestRecord) -> Option<HyperStep>
         ComponentStep::Model(taken) => Some(HyperStep::Model(ModelStep {
             transition: taken.clone(),
             post_state: post,
+            delay: None,
         })),
         ComponentStep::Stutter => Some(HyperStep::TerminalStutter),
         ComponentStep::Stay => None,

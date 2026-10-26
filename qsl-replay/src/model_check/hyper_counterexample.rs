@@ -19,6 +19,10 @@ use crate::witness::FamilyPayload;
 /// One step of a hyper trace: a model step, or the stutter marker of a
 /// terminal component (QSpec FR-400 `HyperStep`).
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "almost every step of a hyper trace is a model step; boxing it would allocate per step"
+)]
 pub enum HyperStep {
     /// An FR-120 transition identity with its post-state's digest.
     Model(ModelStep),

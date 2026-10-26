@@ -314,6 +314,7 @@ impl<'w> Oracle<'w> {
                     next_steps.push(qsl_replay::ModelStep {
                         transition,
                         post_state: post.key,
+                        delay: None,
                     });
                     let mut next_nodes: Vec<Node> = nodes
                         .iter()

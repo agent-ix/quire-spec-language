@@ -313,6 +313,7 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
         prefix: vec![ModelStep {
             transition,
             post_state: digest,
+            delay: None,
         }],
         over_binding: None,
         fairness: Vec::new(),
@@ -320,6 +321,7 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
         lasso: None,
         refinement: Some(recorded),
         blocked: Vec::new(),
+        final_delay: None,
     };
     let settlement =
         replay_refinement_trace(world.refinement(), &systems, &payload).expect("the trace replays");

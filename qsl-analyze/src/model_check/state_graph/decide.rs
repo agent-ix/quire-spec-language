@@ -208,6 +208,7 @@ impl<'g> Reader<'g> {
         ModelStep {
             transition: edge.transition.clone(),
             post_state: self.graph.nodes[edge.target.0].key,
+            delay: None,
         }
     }
 
