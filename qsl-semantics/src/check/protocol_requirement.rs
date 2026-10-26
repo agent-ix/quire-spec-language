@@ -247,7 +247,9 @@ fn referenced_protocols(
                 .iter()
                 .filter_map(|node| match node {
                     TemporalNodeForm::Holds { condition, .. } => Some(condition),
-                    TemporalNodeForm::Constant { .. } | TemporalNodeForm::Operator(_) => None,
+                    TemporalNodeForm::Constant { .. }
+                    | TemporalNodeForm::AggregateAtom(_)
+                    | TemporalNodeForm::Operator(_) => None,
                 }),
         );
     expressions

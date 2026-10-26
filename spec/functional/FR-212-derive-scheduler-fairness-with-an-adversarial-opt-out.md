@@ -3,6 +3,8 @@ id: FR-212
 title: "Derive scheduler fairness over protocol threads, with the scheduling adversarial opt-out"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-228
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/US-024
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-027
@@ -58,8 +60,9 @@ know whether the claim survives a scheduler that starves a thread, they add
 ## Outputs
 
 - The clause's fairness set: authored constraints, each with an `authored`
-  origin, and, unless the protocol is adversarial, the scheduler
-  constraints with a `scheduler` origin.
+  origin, unless the protocol is adversarial the scheduler constraints with
+  a `scheduler` origin, and the memory constraints with a `memory` origin
+  (FR-228).
 - The class of each constraint over protocol transition identities, read by
   FR-126's fairness filter.
 
@@ -97,7 +100,8 @@ know whether the claim survives a scheduler that starves a thread, they add
 - The scheduler constraints SHALL be part of the clause's fairness set, its
   obligation identity, every counterexample and replay (FR-217).
 - With `scheduling adversarial`, the fairness set SHALL be the authored
-  constraints alone.
+  constraints and the memory constraints FR-228 derives (QSpec FR-430): the
+  member removes the scheduler constraints only.
 - The scheduler constraints SHALL change liveness verdicts only: a safety
   item's verdict SHALL be the same with and without them.
 
@@ -106,7 +110,7 @@ know whether the claim survives a scheduler that starves a thread, they add
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-212-AC-1 | The `Chatter` protocol: model `Cell` with `flag: Int[0, 1]`, operation `set` (precondition true, postcondition `self.flag = 1`), universe `{k}`, `flag = 0`; a channel `ch` of capacity 2 with delivery `unknown`; `terminal any`; `run parallel Both { branch s sequence { send Tx on ch; attempt Done on set }; branch r receive Rx of Tx; } join all [s, r]`. `eventually holds(k.flag = 1)` under infinite-trace settles `proved`; its fairness set holds three `scheduler` constraints, over `s`, `r` and the root. | Test (TC-657) |
-| FR-212-AC-2 | `Chatter` with `scheduling adversarial` checks to a different package and obligation identity. The same claim settles `refuted` with a lasso whose stem is `fork(Both)`, `send(Tx)` and whose loop is `duplicate(ch, Tx)`, `lose(ch, Tx)`, with `s` resting at `Done` throughout; its fairness set is empty. | Test (TC-657) |
+| FR-212-AC-2 | `Chatter` with `scheduling adversarial` checks to a different package and obligation identity. The same claim settles `refuted` with a lasso whose stem is `fork(Both)`, `send(Tx)` and whose loop is `duplicate(ch, Tx)`, `lose(ch, Tx)`, with `s` resting at `Done` throughout; its fairness set is empty, since `Chatter` has no weak `parallel` and so no memory constraint (FR-228-AC-1 shows a `tso` set under `scheduling adversarial`). | Test (TC-657) |
 | FR-212-AC-3 | Over `Chatter`, `fair weak whole Chatter::Both::s` names the branch and `fair weak each Chatter::Done` the attempt node (QSpec FR-430's spelling); `fair weak Missing` refuses `missing_declaration`/`missing-name`; a second `scheduling` member refuses `ambiguous_declaration`/`ambiguous-name` naming the first. In ADR-027 §7, the root's `whole` class holds `fork(Both)`, `join(Both)` and `finish`, and `left`'s holds `attempt(A)`. | Test (TC-657) |
 | FR-212-AC-4 | The TP-1 claim `always holds(k.flag <= 1)` over `Chatter` settles `proved` with and without `scheduling adversarial`, over the same reachable states. | Test (TC-657) |
 

@@ -147,11 +147,11 @@ pub enum TimeMember {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TaskSetRefusal {
     /// The task set declares no task.
-    #[error("invalid_model_binding/malformed-declaration: the task set declares no task")]
+    #[error("invalid_timed_model/invalid-task-set: the task set declares no task")]
     Empty,
     /// A period, minimum inter-arrival time, deadline or WCET is not
     /// positive.
-    #[error("invalid_model_binding/malformed-declaration: task {} states a non-positive {member:?}", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: task {} states a non-positive {member:?}", .task.as_str())]
     NotPositive {
         /// The task.
         task: Identifier,
@@ -159,7 +159,7 @@ pub enum TaskSetRefusal {
         member: TimeMember,
     },
     /// A jitter or blocking term is negative.
-    #[error("invalid_model_binding/malformed-declaration: task {} states a negative {member:?}", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: task {} states a negative {member:?}", .task.as_str())]
     Negative {
         /// The task.
         task: Identifier,
@@ -167,13 +167,13 @@ pub enum TaskSetRefusal {
         member: TimeMember,
     },
     /// A `HI` task's `C(LO)` exceeds its `C(HI)`.
-    #[error("invalid_model_binding/malformed-declaration: task {} has C(LO) above C(HI)", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: task {} has C(LO) above C(HI)", .task.as_str())]
     BudgetOrder {
         /// The task.
         task: Identifier,
     },
     /// A `LO` task states dual budgets.
-    #[error("invalid_model_binding/malformed-declaration: LO task {} states dual budgets", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: LO task {} states dual budgets", .task.as_str())]
     LoDualBudgets {
         /// The task.
         task: Identifier,
@@ -185,13 +185,13 @@ pub enum TaskSetRefusal {
         task: Identifier,
     },
     /// A fixed-priority or AMC claim over a task with no priority.
-    #[error("invalid_model_binding/malformed-declaration: task {} states no priority", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: task {} states no priority", .task.as_str())]
     MissingPriority {
         /// The task.
         task: Identifier,
     },
     /// A fixed-priority or AMC claim over two tasks of one priority.
-    #[error("invalid_model_binding/malformed-declaration: tasks {} and {} share priority {priority}", .first.as_str(), .second.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: tasks {} and {} share priority {priority}", .first.as_str(), .second.as_str())]
     PriorityClash {
         /// The earlier task.
         first: Identifier,
@@ -209,7 +209,7 @@ pub enum TaskSetRefusal {
     /// An `edf` claim over a task that states jitter or blocking, which the
     /// processor-demand test does not account for: it would settle a
     /// schedule that fixed priority refutes.
-    #[error("invalid_model_binding/malformed-declaration: an edf claim ignores {member:?}, task {} states one", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: an edf claim ignores {member:?}, task {} states one", .task.as_str())]
     EdfIgnoresTerm {
         /// The task.
         task: Identifier,
@@ -218,7 +218,7 @@ pub enum TaskSetRefusal {
     },
     /// An AMC claim over a task whose deadline exceeds its period, which
     /// AMC-rtb does not cover.
-    #[error("invalid_model_binding/malformed-declaration: AMC-rtb covers no deadline beyond the period, task {} states one", .task.as_str())]
+    #[error("invalid_timed_model/invalid-task-set: AMC-rtb covers no deadline beyond the period, task {} states one", .task.as_str())]
     AmcDeadlineBeyondPeriod {
         /// The task.
         task: Identifier,
@@ -239,7 +239,7 @@ impl TaskSetRefusal {
             | Self::MissingPriority { .. }
             | Self::PriorityClash { .. }
             | Self::EdfIgnoresTerm { .. }
-            | Self::AmcDeadlineBeyondPeriod { .. } => Code::InvalidModelBinding,
+            | Self::AmcDeadlineBeyondPeriod { .. } => Code::InvalidTimedModel,
         }
     }
 
@@ -256,7 +256,7 @@ impl TaskSetRefusal {
             | Self::MissingPriority { .. }
             | Self::PriorityClash { .. }
             | Self::EdfIgnoresTerm { .. }
-            | Self::AmcDeadlineBeyondPeriod { .. } => "malformed-declaration",
+            | Self::AmcDeadlineBeyondPeriod { .. } => "invalid-task-set",
         }
     }
 }

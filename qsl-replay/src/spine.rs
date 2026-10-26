@@ -1209,6 +1209,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::OpenInterval { .. } => {
                     format!("{message}: this profile admits no `[a,*]` interval")
                 }
+                TemporalCause::Multiple { causes } => format!(
+                    "{message}: multiple temporal faults in source order ({})",
+                    causes.len()
+                ),
                 TemporalCause::InvertedInterval { lower, upper, .. } => {
                     format!("{message}: the interval [{lower},{upper}] has a > b")
                 }
@@ -1234,6 +1238,21 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")
+                }
+                TemporalCause::AggregateModelSubject { .. } => {
+                    format!("{message}: aggregate terms require a trace subject")
+                }
+                TemporalCause::InvalidAggregateValue { .. } => {
+                    format!("{message}: an aggregate literal is outside its admitted range")
+                }
+                TemporalCause::InvalidAggregateWindow { .. } => {
+                    format!("{message}: the aggregate window has a > b")
+                }
+                TemporalCause::AggregateWindowKindMismatch { .. } => {
+                    format!("{message}: the aggregate window bound has the wrong kind for this profile")
+                }
+                TemporalCause::AggregateProfileUnsupported { .. } => {
+                    format!("{message}: this temporal profile admits no aggregate window")
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
@@ -1313,6 +1332,26 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::AmbiguousTickOperation { name, .. } => {
                     format!("{message}: the tick operation `{name}` resolves more than once")
                 }
+                TemporalCause::InvalidTaskSet { task_set, .. } => {
+                    format!("{message}: task set `{task_set}` breaks a rule of the task model")
+                }
+                TemporalCause::DuplicateTask { task_set, task, .. } => format!(
+                    "{message}: task set `{task_set}` already declares a task `{task}`"
+                ),
+                TemporalCause::DuplicateTaskSet { name, .. } => {
+                    format!("{message}: the unit already declares a task set `{name}`")
+                }
+                TemporalCause::MissingTaskSet { claim, name, .. } => {
+                    format!("{message}: claim `{claim}` names no task set `{name}`")
+                }
+                TemporalCause::UnknownResponseTask {
+                    claim,
+                    task_set,
+                    task,
+                    ..
+                } => format!(
+                    "{message}: claim `{claim}` names no task `{task}` of task set `{task_set}`"
+                ),
             };
         }
         _ => {}

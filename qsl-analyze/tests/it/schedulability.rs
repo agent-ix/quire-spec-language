@@ -173,12 +173,12 @@ fn a_task_set_or_claim_that_breaks_a_rule_is_refused_with_its_code() {
 
     let zero_period = refusal(vec![task("a", 1, 0, 1)]);
     assert!(matches!(zero_period, TaskSetRefusal::NotPositive { .. }));
-    assert_eq!(zero_period.code(), Code::InvalidModelBinding);
-    assert_eq!(zero_period.cause(), "malformed-declaration");
+    assert_eq!(zero_period.code(), Code::InvalidTimedModel);
+    assert_eq!(zero_period.cause(), "invalid-task-set");
 
     let inverted = refusal(vec![hi_task("h", 3, 2, 10, 1)]);
     assert!(matches!(inverted, TaskSetRefusal::BudgetOrder { .. }));
-    assert_eq!(inverted.code(), Code::InvalidModelBinding);
+    assert_eq!(inverted.code(), Code::InvalidTimedModel);
 
     let duplicate = refusal(vec![task("a", 1, 4, 1), task("a", 1, 5, 2)]);
     assert_eq!(duplicate, TaskSetRefusal::DuplicateTask { task: id("a") });
@@ -209,7 +209,7 @@ fn a_task_set_or_claim_that_breaks_a_rule_is_refused_with_its_code() {
             priority: 1,
         }
     );
-    assert_eq!(clashed.code(), Code::InvalidModelBinding);
+    assert_eq!(clashed.code(), Code::InvalidTimedModel);
     ScheduleSubject::new(clash, ScheduleClaim::Schedulable(SchedulingPolicy::Edf))
         .expect("an edf claim ignores priorities");
 
@@ -608,7 +608,7 @@ fn an_edf_claim_refuses_jitter_and_blocking() {
                 member,
             }
         );
-        assert_eq!(refused.code(), Code::InvalidModelBinding);
+        assert_eq!(refused.code(), Code::InvalidTimedModel);
         let fixed = schedulable(with(jitter, blocking), SchedulingPolicy::FixedPriority);
         assert!(matches!(run(&fixed), ClosedFormOutcome::Miss(_)));
     }
