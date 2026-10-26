@@ -121,6 +121,17 @@ every order in which the states are materialized.
 This requirement carries an `AutomatonStateKey` as the bytes of its
 canonical encoding.
 
+For TP-4, the engine may address a materialized state by `StateId`, which is
+local to the `PropertyAutomaton` that issued it (ADR-018 §12). The checker and
+the engine SHALL resolve that handle only through that same automaton. The
+product state's `automaton_state` SHALL be the `AutomatonStateKey` obtained by
+encoding the state facts under that item's `context` and the TP-4 alternatives
+below; it SHALL NOT contain or derive from the numeric `StateId` or discovery
+order. Reaching the same structural TP-4 state under the same context SHALL
+produce identical key octets, regardless of which transition first
+materialized it. The checker SHALL admit a carried key against the request's
+translation context before using it for certificate membership.
+
 FR-163 additionally owns the labelled-transition-tuple and missing-member
 loci of its hyper checker; those failures are not all product-state failures.
 
@@ -984,6 +995,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-16 | Over FR-339-AC-5's fixture (the clause `eventually holds(c.versionNumber = 2)` `on each` with the condition `c.versionNumber = 1`, activation `"each-when"`), binding `a`'s waiting state at `(0,0)` has body `["guarded-buchi","waiting",[[],[],[],[]]]` and its active state at `(1,0)` has body `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`. Each of these is refused `ShapeMismatch` at `ProductState`: that active key rewritten as `["buchi",[[[[],"negative"]],[],[],[]]]`; that waiting key with `branch` `[[[[],"negative"]],[],[],[]]` under phase `"waiting"`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. With the condition undefined at version 0, the empty certificate is rejected `BadState` at `ProductState` with the initial model state `(0,0)` and binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`, the waiting configuration before position 0's letter is read (binding `a`, the first in canonical instance order); and FR-339-AC-5's accepted certificate under that condition is rejected `BadState` at binding `a`'s waiting state at `(0,0)`, the least certificate state carrying that model state. | Test (TC-525) |
 | FR-338-AC-21 | Memory bounds. Over FR-225-AC-2's `tso` program with `always holds(x.v <= 1)`, the run with `max_store_buffer` 3 settles V-1 with a certificate; the request carrying `max_store_buffer` 3 is accepted, and the same certificate under a request carrying 2 is rejected `SuccessorMissing` at the shallowest bound-limited product state, the one whose storing branch has buffered its stores to `x` and `y` while the loading branch has taken no step, with no refusal. The same program under `ra`, run with `max_messages` unset, settles V-1, and its certificate is accepted under a request with `max_messages` unset (4) and rejected `SuccessorMissing` at the initial product state under a request with 1, where the first store would add a second message. | Test (TC-1230) |
 | FR-338-AC-22 | Instance bound. Over FR-209-AC-2's protocol with guard `{false}`, which has no `activate` step, the run settles V-1 with a certificate, and the certificate is accepted under a request with `max_live_instances` unset (3) and under one with 1. Over FR-209-AC-1's protocol (guard `{true}`), a certificate holding every product state the run with `max_live_instances` 2 explored, offered for `always holds(k.v <= 1)` under a request carrying 2, is rejected `SuccessorMissing` at the shallowest instance-limited product state, the one after two `activate(Tick)` steps with both instances at their start and `k.v` 0, with no refusal. | Test (TC-1230) |
+| FR-338-AC-23 | TP-4 state identity. For an infinite-trace TP-4 clause, `PropertyAutomaton`'s run-local `StateId` is resolved through the automaton that issued it; its product state carries the context-bound FR-338 key of the structural TP-4 state. Reaching one structural state through different first-discovery orders yields equal key octets even when the `StateId` values differ. A closure checker accepts the complete reachable TP-4 product-state set and rejects a certificate missing a successor at the canonical `ProductStateRef`; a key from another item context is rejected `ShapeMismatch` before membership is checked. | Test |
 
 ## Dependencies
 

@@ -13,7 +13,8 @@ use qsl_foundation::bound::ProofBound;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    check_hyper_clauses, CheckedHyper, CheckedHyperClause, PackageDeclarations,
+    check_clauses, check_hyper_clauses, CheckedHyper, CheckedHyperClause, CheckedTemporalClause,
+    PackageDeclarations,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -380,6 +381,7 @@ fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &st
 /// A checked vault world with one hyper clause.
 pub struct World {
     package: CheckedPackage,
+    temporal_clause: Option<CheckedTemporalClause>,
     /// The same clause as S3 checked it, before any package assembled it.
     pub unassembled: CheckedHyperClause,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
@@ -454,7 +456,12 @@ impl World {
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
         let text = unit_text(&document, other, build, &format!("{declaration}\n"));
-        let graph = declarations(&documents, &text)
+        let assembled = declarations(&documents, &text);
+        let temporal_clause = check_clauses(&assembled)
+            .into_iter()
+            .next()
+            .map(|checked| checked.expect("the temporal clause checks"));
+        let graph = assembled
             .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
@@ -497,6 +504,7 @@ impl World {
         let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
         Self {
             package,
+            temporal_clause,
             unassembled,
             packages: package_input(documents.iter().copied()),
             snapshots,
@@ -592,4 +600,158 @@ impl World {
     pub fn subject(&self) -> ModelSubject<'_> {
         self.subject_over(&self.package, Vec::new())
     }
+}
+
+/// FR-338-AC-23: TP-4 replay resolves each run-local automaton state to its
+/// context key, checks the reachable product closure, and refuses a key from
+/// another clause context before membership.
+#[ix_trace_rs::trace("TC-525", "FR-338-AC-23")]
+#[test]
+fn tp4_closure_replay_uses_context_bound_state_keys() {
+    use std::collections::BTreeSet;
+
+    use qsl_eval::automaton::{BuchiState, BuchiStates, Configuration, StateContext, SubjectKind};
+    use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
+    use qsl_eval::simulation::model::ModelSimState;
+    use qsl_eval::temporal::AtomReading;
+    use qsl_foundation::digest::WireNodeId;
+    use qsl_foundation::source::provenance::OccurrenceKey;
+    use qsl_replay::{
+        check_closure, CertificateLocus, CertificateRequest, CertificateRule, ClosureCertificate,
+        ModelCheckItem, ModelCheckLimits, TemporalCertificateCheck,
+    };
+    use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
+    use qsl_semantics::check::FormulaNodeId;
+    use quire_exact::{Cancel, Meter, Origin, Role};
+
+    struct FalseLetters;
+
+    impl ModelLetters for FalseLetters {
+        fn atom(
+            &self,
+            _atom: FormulaNodeId,
+            _instance: &ModelInstance,
+            _state: &ModelSimState,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, AtomStop> {
+            Ok(AtomReading::False)
+        }
+
+        fn activation(
+            &self,
+            _instance: &ModelInstance,
+            _state: &ModelSimState,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, AtomStop> {
+            Ok(AtomReading::False)
+        }
+
+        fn activation_reads(&self) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+            Ok(BTreeSet::new())
+        }
+
+        fn reads(
+            &self,
+            _atom: FormulaNodeId,
+        ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+            Ok(BTreeSet::new())
+        }
+    }
+
+    let temporal = "temporal Live using inf over (v: V::Vault) clock \"model-steps\" on origin { eventually holds(v.l = 0) }";
+    let world = World::new(&["v"], false, &format!("{FORALL_EXISTS}\n{temporal}"));
+    let package = world.package();
+    let clause = world
+        .temporal_clause
+        .as_ref()
+        .expect("the checked package contains the TP-4 clause");
+    let subject = world.subject();
+    let item = ModelCheckItem::Clause {
+        clause,
+        letters: &FalseLetters,
+    };
+    let package_id = qsl_package::emit_checked(package)
+        .expect("the checked package emits")
+        .package()
+        .package_id();
+    let request = CertificateRequest {
+        subject,
+        item,
+        smt_encoding: Default::default(),
+    };
+    let limits = ModelCheckLimits::default();
+    let cancel = Cancel::new();
+    let mut certificate = ClosureCertificate {
+        package_id,
+        states: Vec::new(),
+    };
+
+    // Let the checker expose each canonical missing product state, then
+    // replay the complete set it independently recomputes.
+    let accepted = (0..128).find_map(|_| {
+        match check_closure(&request, &certificate, &limits, &cancel).expect("the request admits") {
+            TemporalCertificateCheck::Rejected(rejection)
+                if matches!(
+                    rejection.rule,
+                    CertificateRule::InitialMissing | CertificateRule::SuccessorMissing
+                ) =>
+            {
+                let CertificateLocus::ProductState(state) = rejection.at else {
+                    panic!("TP-4 closure failures name product states");
+                };
+                assert!(!certificate.states.contains(&state));
+                certificate.states.push(state);
+                certificate.states.sort();
+                None
+            }
+            TemporalCertificateCheck::Accepted => Some(()),
+            other => panic!("unexpected TP-4 closure result: {other:?}"),
+        }
+    });
+    assert!(
+        accepted.is_some(),
+        "the reachable product closure is finite"
+    );
+    assert!(!certificate.states.is_empty());
+
+    let mut successor_missing = false;
+    for index in 0..certificate.states.len() {
+        let removed = certificate.states.remove(index);
+        let outcome = check_closure(&request, &certificate, &limits, &cancel)
+            .expect("the incomplete certificate still has a valid request");
+        let found = matches!(
+            outcome,
+            TemporalCertificateCheck::Rejected(rejection)
+                if rejection.rule == CertificateRule::SuccessorMissing
+                    && rejection.at == CertificateLocus::ProductState(removed.clone())
+        );
+        certificate.states.insert(index, removed);
+        if found {
+            successor_missing = true;
+            break;
+        }
+    }
+    assert!(
+        successor_missing,
+        "omitting a reachable TP-4 successor rejects at its canonical product state"
+    );
+
+    let identity = OccurrenceKey::new(
+        WireNodeId::from_digest([0x53; 32]),
+        Origin::new(Role::new("temporal"), 1),
+    );
+    let foreign_context = StateContext::clause(clause, identity, Vec::new());
+    let foreign_keys = BuchiStates::clause(clause, &foreign_context, SubjectKind::Ordinary)
+        .expect("the foreign TP-4 key context builds");
+    let foreign_key = foreign_keys
+        .key(&BuchiState::Elementary(Configuration::default()))
+        .expect("the foreign key is well formed");
+    let mut foreign = certificate.clone();
+    foreign.states[0].automaton_state = foreign_key;
+    assert!(matches!(
+        check_closure(&request, &foreign, &limits, &cancel),
+        Ok(TemporalCertificateCheck::Rejected(rejection))
+            if rejection.rule == CertificateRule::ShapeMismatch
+                && matches!(rejection.at, CertificateLocus::ProductState(_))
+    ));
 }

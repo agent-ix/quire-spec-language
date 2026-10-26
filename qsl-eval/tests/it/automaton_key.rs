@@ -17,13 +17,14 @@
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
     BoundedTranslation, BuchiPhase, BuchiState, BuchiStates, Configuration, ContextActivation,
-    DistanceBucket, HistoryOperand, KeyRefusal, Obligation, Occurrence, PastMemory, PastOperator,
-    Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext, SubjectKind,
-    TranslationRefusal, Window,
+    DistanceBucket, HistoryOperand, KeyRefusal, Letter, Obligation, Occurrence, PastMemory,
+    PastOperator, Polarity, SafetyState, SafetyStates, SafetyTranslation, StateContext,
+    SubjectKind, TranslationRefusal, Window,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Origin, Role};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::temporal_trace::{fixture, EVENT, INFINITE};
 
@@ -1315,6 +1316,112 @@ fn buchi_key(activation: &str, body: &str) -> String {
 
 fn text_of(key: &qsl_eval::automaton::AutomatonStateKey) -> String {
     String::from_utf8(key.as_bytes().to_vec()).expect("a key is UTF-8")
+}
+
+/// FR-338 TP-4: each reached PropertyAutomaton StateId resolves to a
+/// context-admitted structural key, including past history for both subject
+/// key algebras.
+#[trace("TC-525", "FR-338-AC-23")]
+#[test]
+fn reached_tp4_engine_states_resolve_to_fr338_keys() {
+    let mut different_ids_for_same_key = false;
+    for body in [
+        "always eventually (holds(p) and once[1,1] holds(q))",
+        "eventually (always[0,2] eventually[0,1] holds(p))",
+        "eventually (holds(p) and eventually holds(q))",
+        "eventually holds(p) and eventually holds(q)",
+    ] {
+        let fixture = fixture(INFINITE, "c: Counter", "on origin", body);
+        let context = StateContext::clause(&fixture.clause, occurrence(0), Vec::new());
+        for subject in [SubjectKind::Ordinary, SubjectKind::Protocol] {
+            let keys = BuchiStates::clause(&fixture.clause, &context, subject)
+                .expect("the TP-4 key context translates");
+            let mut automaton = match subject {
+                SubjectKind::Ordinary => qsl_eval::automaton::translate(&fixture.clause, 256),
+                SubjectKind::Protocol => {
+                    qsl_eval::automaton::translate_counted(&fixture.clause, 256)
+                }
+            }
+            .expect("the clause translates");
+            let initial = automaton.initial().expect("initial state fits");
+            let mut reached = BTreeSet::new();
+            let mut by_key = BTreeMap::new();
+            let mut pending = vec![initial];
+            while let Some(from) = pending.pop() {
+                if !reached.insert(from) {
+                    continue;
+                }
+                let structural = automaton
+                    .buchi_state(from, keys.max_key_bytes())
+                    .expect("the run-local state resolves structurally");
+                let key = keys.key(&structural).unwrap_or_else(|error| {
+                    panic!("{body} ({subject:?}) state {structural:?}: {error}")
+                });
+                let octets = key.as_bytes().to_vec();
+                assert_eq!(keys.admit(key.as_bytes()), Ok((key, structural)));
+                by_key.insert(octets, from);
+                for bits in 0..4 {
+                    let mut letter = Letter::from_bits(bits);
+                    if subject == SubjectKind::Protocol {
+                        if let Some(uncounted) = automaton.uncounted() {
+                            letter = letter.with(uncounted);
+                        }
+                    }
+                    pending.extend(
+                        automaton
+                            .successors(from, letter)
+                            .expect("successors materialize"),
+                    );
+                }
+            }
+            assert!(!reached.is_empty(), "the test must reach a TP-4 state");
+
+            let mut reversed = match subject {
+                SubjectKind::Ordinary => qsl_eval::automaton::translate(&fixture.clause, 256),
+                SubjectKind::Protocol => {
+                    qsl_eval::automaton::translate_counted(&fixture.clause, 256)
+                }
+            }
+            .expect("the clause translates");
+            let initial = reversed.initial().expect("initial state fits");
+            let mut reached = BTreeSet::new();
+            let mut reversed_by_key = BTreeMap::new();
+            let mut pending = vec![initial];
+            while let Some(from) = pending.pop() {
+                if !reached.insert(from) {
+                    continue;
+                }
+                let structural = reversed
+                    .buchi_state(from, keys.max_key_bytes())
+                    .expect("the run-local state resolves structurally");
+                let key = keys
+                    .key(&structural)
+                    .unwrap_or_else(|error| panic!("{body} ({subject:?}): {error}"));
+                reversed_by_key.insert(key.as_bytes().to_vec(), from);
+                for bits in (0..4).rev() {
+                    let mut letter = Letter::from_bits(bits);
+                    if subject == SubjectKind::Protocol {
+                        if let Some(uncounted) = reversed.uncounted() {
+                            letter = letter.with(uncounted);
+                        }
+                    }
+                    pending.extend(
+                        reversed
+                            .successors(from, letter)
+                            .expect("successors materialize"),
+                    );
+                }
+            }
+            assert_eq!(
+                by_key.keys().collect::<BTreeSet<_>>(),
+                reversed_by_key.keys().collect()
+            );
+            different_ids_for_same_key |= by_key
+                .iter()
+                .any(|(key, state)| reversed_by_key.get(key).is_some_and(|other| other != state));
+        }
+    }
+    assert!(different_ids_for_same_key);
 }
 
 /// FR-338's TP-4 vector: for `eventually holds(p)` the elementary

@@ -1591,6 +1591,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             AutomatonError::AtomOutOfRange { .. }
             | AutomatonError::UnknownState { .. }
             | AutomatonError::NotSafetyAutomaton { .. }
+            | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
             | AutomatonError::ProfileNotTranslated { .. }

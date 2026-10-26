@@ -9,7 +9,7 @@
 //! operator, so every walk here runs over the arena in index order and none
 //! recurses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::TemporalUpper;
 use qsl_semantics::check::{
@@ -17,6 +17,7 @@ use qsl_semantics::check::{
 };
 
 use crate::automaton::error::AutomatonError;
+use crate::automaton::key_state::{Occurrence, PastOperator, Polarity};
 use crate::automaton::letter::Atom;
 
 /// One node of the arena, by index. Operands have smaller indexes than their
@@ -498,6 +499,17 @@ pub(super) struct Lowered {
     /// The formula, and its negation in negation normal form.
     pub(super) positive: NodeId,
     pub(super) negative: NodeId,
+    /// Source-occurrence paths for the selected NNF node identities. A node
+    /// can have several source occurrences when the checked formula shares a
+    /// node at distinct operand paths.
+    pub(super) positive_occurrences: BTreeMap<NodeId, Vec<Occurrence>>,
+    pub(super) negative_occurrences: BTreeMap<NodeId, Vec<Occurrence>>,
+    /// Source past occurrence paths for the NNF recurrence nodes.
+    pub(super) positive_past_occurrences: BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
+    pub(super) negative_past_occurrences: BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
+    /// Finite future occurrences whose operand contains another interval.
+    pub(super) positive_nested_intervals: BTreeSet<NodeId>,
+    pub(super) negative_nested_intervals: BTreeSet<NodeId>,
 }
 
 /// Lower `formula`: every `holds` atom becomes a letter atom, `implies`
@@ -618,12 +630,209 @@ pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, A
         .copied()
         .flatten()
         .ok_or_else(|| invariant("root-has-pair"))?;
+    let (positive_occurrences, positive_past_occurrences) =
+        occurrence_nodes(formula, &pairs, &ir, false)?;
+    let (negative_occurrences, negative_past_occurrences) =
+        occurrence_nodes(formula, &pairs, &ir, true)?;
+    let positive_nested_intervals = nested_intervals(formula, &pairs, &ir, false)?;
+    let negative_nested_intervals = nested_intervals(formula, &pairs, &ir, true)?;
     Ok(Lowered {
         ir,
         atoms,
         positive,
         negative,
+        positive_occurrences,
+        negative_occurrences,
+        positive_past_occurrences,
+        negative_past_occurrences,
+        positive_nested_intervals,
+        negative_nested_intervals,
     })
+}
+
+/// The lower-bound-zero NNF cores of finite future occurrences whose
+/// source operand subtree contains another interval.
+fn nested_intervals(
+    formula: &CheckedFormula,
+    pairs: &[Option<(NodeId, NodeId)>],
+    ir: &Ir,
+    root_negative: bool,
+) -> Result<BTreeSet<NodeId>, AutomatonError> {
+    let mut contains_interval = vec![false; formula.nodes().len()];
+    let mut nested = vec![false; formula.nodes().len()];
+    for (index, source) in formula.nodes().iter().enumerate().rev() {
+        let child_has_interval = source.operands().any(|child| {
+            contains_interval
+                .get(child.index())
+                .copied()
+                .unwrap_or(false)
+        });
+        let own_interval = matches!(
+            source,
+            FormulaNode::Unary {
+                interval: Some(_),
+                ..
+            } | FormulaNode::Binary {
+                interval: Some(_),
+                ..
+            }
+        );
+        if let Some(slot) = nested.get_mut(index) {
+            *slot = child_has_interval;
+        }
+        if let Some(slot) = contains_interval.get_mut(index) {
+            *slot = child_has_interval || own_interval;
+        }
+    }
+    let mut cores = BTreeSet::new();
+    for (index, source) in formula.nodes().iter().enumerate() {
+        let finite_future = matches!(
+            source,
+            FormulaNode::Unary {
+                operator: UnaryTemporal::Eventually | UnaryTemporal::Always,
+                interval: Some(_),
+                ..
+            } | FormulaNode::Binary {
+                operator: BinaryTemporal::Until | BinaryTemporal::Release,
+                interval: Some(_),
+                ..
+            }
+        );
+        if !finite_future || !nested.get(index).copied().unwrap_or(false) {
+            continue;
+        }
+        let (positive, negative) = pairs
+            .get(index)
+            .copied()
+            .flatten()
+            .ok_or_else(|| invariant("nested-interval-has-pair"))?;
+        let selected = if root_negative { negative } else { positive };
+        cores.insert(ir.core(selected));
+    }
+    Ok(cores)
+}
+
+/// Resolve each occurrence path in the checked formula to the node its
+/// polarity selects in the NNF arena. The path, not the arena's materialized
+/// node index, is the stable identity used by FR-338.
+fn occurrence_nodes(
+    formula: &CheckedFormula,
+    pairs: &[Option<(NodeId, NodeId)>],
+    ir: &Ir,
+    root_negative: bool,
+) -> Result<
+    (
+        BTreeMap<NodeId, Vec<Occurrence>>,
+        BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
+    ),
+    AutomatonError,
+> {
+    struct Entry {
+        path: Vec<u64>,
+        node: usize,
+        negative: bool,
+    }
+
+    let mut pending = vec![Entry {
+        path: Vec::new(),
+        node: formula.root().index(),
+        negative: root_negative,
+    }];
+    let mut origins: BTreeMap<NodeId, Vec<Occurrence>> = BTreeMap::new();
+    let mut past_origins: BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>> = BTreeMap::new();
+    let mut next = 0;
+    while next < pending.len() {
+        let entry = pending
+            .get(next)
+            .ok_or_else(|| invariant("formula-occurrence-entry"))?;
+        let source = formula
+            .nodes()
+            .get(entry.node)
+            .ok_or_else(|| invariant("formula-occurrence-node"))?;
+        let path = entry.path.clone();
+        let source_index = entry.node;
+        let is_negative = entry.negative;
+        let (positive, negative_node) = pairs
+            .get(source_index)
+            .copied()
+            .flatten()
+            .ok_or_else(|| invariant("formula-occurrence-pair"))?;
+        let selected = if is_negative { negative_node } else { positive };
+        let occurrence = Occurrence::new(
+            path.clone(),
+            if is_negative {
+                Polarity::Negative
+            } else {
+                Polarity::Positive
+            },
+        );
+        origins
+            .entry(selected)
+            .or_default()
+            .push(occurrence.clone());
+        let core = ir.core(selected);
+        if core != selected {
+            origins.entry(core).or_default().push(occurrence);
+        }
+
+        let source_operator = match source {
+            FormulaNode::Unary { operator, .. } => match operator {
+                UnaryTemporal::Once => Some(PastOperator::Once),
+                UnaryTemporal::Historically => Some(PastOperator::Historically),
+                UnaryTemporal::Eventually | UnaryTemporal::Always => None,
+            },
+            FormulaNode::Binary { operator, .. } => match operator {
+                BinaryTemporal::Since => Some(PastOperator::Since),
+                BinaryTemporal::Triggered => Some(PastOperator::Triggered),
+                BinaryTemporal::Until | BinaryTemporal::Release => None,
+            },
+            _ => None,
+        };
+        if let Some(operator) = source_operator {
+            let mut recurrence = selected;
+            loop {
+                match ir.node(recurrence)? {
+                    Node::Not(child) => recurrence = child,
+                    Node::Past { .. } => break,
+                    _ => return Err(invariant("past-occurrence-has-recurrence")),
+                }
+            }
+            past_origins
+                .entry(recurrence)
+                .or_default()
+                .push((path.clone(), operator));
+        }
+
+        for (position, child) in source.operands().enumerate() {
+            let flips = matches!(source, FormulaNode::Not(_))
+                || (position == 0 && matches!(source, FormulaNode::Implies(..)));
+            let mut child_path = path.clone();
+            child_path.push(u64::try_from(position).map_err(|_| invariant("operand-position"))?);
+            pending.push(Entry {
+                path: child_path,
+                node: child.index(),
+                negative: is_negative ^ flips,
+            });
+        }
+        next += 1;
+    }
+    for values in origins.values_mut() {
+        values.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| match (left.polarity, right.polarity) {
+                    (Polarity::Positive, Polarity::Negative) => std::cmp::Ordering::Less,
+                    (Polarity::Negative, Polarity::Positive) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                })
+        });
+        values.dedup();
+    }
+    for values in past_origins.values_mut() {
+        values.sort_by(|left, right| left.0.cmp(&right.0));
+        values.dedup();
+    }
+    Ok((origins, past_origins))
 }
 
 impl Ir {

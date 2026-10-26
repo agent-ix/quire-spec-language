@@ -38,6 +38,13 @@ pub enum AutomatonError {
         /// The limit that was reached.
         limit: u64,
     },
+    /// A structural history key cannot fit under its canonical input-byte
+    /// ceiling and must be refused before expanding its offset set.
+    #[error("the automaton state key exceeds its {limit}-byte encoding limit")]
+    KeyEncodingLimit {
+        /// The key's byte ceiling.
+        limit: u64,
+    },
     /// An interval's lower bound exceeds its upper bound.
     #[error("interval lower bound {lower} exceeds upper bound {upper}")]
     InvertedInterval {
