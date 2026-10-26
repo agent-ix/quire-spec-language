@@ -60,6 +60,12 @@ fn call_operation(name: &str, modifies: &[&str]) -> Value {
 /// `waiting`, `inflight`, `late` and `x`), `reply`, `timeout` and `bump`
 /// (writing `n` and `x`), over the population `calls`.
 fn rpc_document(clocks: &[&str]) -> Vec<u8> {
+    rpc_document_with(clocks, false)
+}
+
+/// [`rpc_document`], with a record value type `Probe` holding a Boolean
+/// `x` when `probe` holds.
+fn rpc_document_with(clocks: &[&str], probe: bool) -> Vec<u8> {
     let (number_construct, number_type, number) = version_number_value_type();
     let boolean = "ix://quire/native/Boolean";
     let mut fields = vec![
@@ -75,7 +81,7 @@ fn rpc_document(clocks: &[&str]) -> Vec<u8> {
             .map(|clock| field(clock, "ix://quire/native/Clock")),
     );
     let call_type = format!("ix://{PACKAGE}/Call");
-    let types = json!([
+    let mut types = json!([
         number_type,
         wire_type(
             &call_type,
@@ -93,6 +99,15 @@ fn rpc_document(clocks: &[&str]) -> Vec<u8> {
             }),
         ),
     ]);
+    if probe {
+        let probe_type = format!("ix://{PACKAGE}/Probe");
+        let x = format!("{probe_type}/x");
+        types.as_array_mut().expect("types").push(wire_type(
+            &probe_type,
+            "value_record",
+            json!({"fields": [wire_field(&x, "x", boolean, "required", 1)]}),
+        ));
+    }
     let population = format!("ix://{PACKAGE}/calls");
     let populations = json!([{
         "identity": population.clone(),
@@ -108,11 +123,21 @@ fn rpc_document(clocks: &[&str]) -> Vec<u8> {
             }
         },
     }]);
-    let constructs = json!([
+    let mut constructs = json!([
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
         number_construct,
     ]);
+    if probe {
+        constructs
+            .as_array_mut()
+            .expect("constructs")
+            .push(wire_construct(
+                "value_record",
+                meaning::RECORD_VALUE_TYPE,
+                json!({}),
+            ));
+    }
     wire_envelope(constructs, types, populations)
         .to_string()
         .into_bytes()
@@ -388,6 +413,31 @@ fn ill_formed_clock_uses_refuse_at_their_span() {
             "{clause}"
         );
     }
+}
+
+/// FR-230: a clock read through a binder over `allInstances<Call>` is
+/// found on `Call` itself, though another type, the record `Probe`,
+/// declares a Boolean field of the same name `x`.
+#[trace("TC-685")]
+#[test]
+fn a_clock_read_is_found_on_its_operands_type() {
+    let document = rpc_document_with(&["x"], true);
+    let (cause, text) = refused(
+        &document,
+        &format!(
+            "{UNITS}time Config dense unit ms;\n\
+             pre P using v on Config::Call::bump {{ \
+             forall(o in allInstances<Config::Call>(Config::calls) : o.x <= 1 ms) }}\n"
+        ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::InvalidTimedModel,
+            "clock-read-outside-constraint",
+            "o.x"
+        )
+    );
 }
 
 /// Part of FR-230-AC-2 (TC-685): a clock field under a tick source refuses
