@@ -18,8 +18,10 @@
 //! members in the grammar's order, so that reordering the tasks leaves the unit
 //! and every converted value unchanged. Every time value of the task set, and
 //! the bound of every `response` claim over it, converts exactly into that
-//! unit (QSpec FR-142). A task set with no time quantity has no unit; a
-//! `response` claim over it keeps its bound in the bound's own unit.
+//! unit (QSpec FR-142). A task set with no time quantity (one that declares no
+//! task, which is refused) has no unit; a `response` claim over it converts
+//! its bound to the time dimension's root unit, and the claim is never
+//! observable because the set is refused.
 
 use std::collections::BTreeMap;
 
@@ -500,15 +502,24 @@ fn analyse<'f>(
     (SetInfo { form, tasks, unit }, findings)
 }
 
-/// The checked task set, when every task's values converted.
-fn built(info: &SetInfo<'_>) -> TaskSet {
+/// The checked task set, when every task's values converted. A task whose
+/// value did not convert has a refusal among the set's findings, and the set
+/// is then not built: a task is never dropped from a set that is.
+fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
     let tasks = info
         .tasks
         .iter()
-        .filter_map(|task| {
+        .map(|task| {
             let values = &task.values;
             let interval = values.interval.clone()?;
             let wcet = values.wcet.clone()?;
+            // A member that is written but did not convert is not defaulted.
+            if (task.form.wcet_hi.is_some() && values.wcet_hi.is_none())
+                || (task.form.jitter.is_some() && values.jitter.is_none())
+                || (task.form.blocking.is_some() && values.blocking.is_none())
+            {
+                return None;
+            }
             let (criticality, wcet) = match task.form.criticality {
                 CriticalityForm::Lo => (Criticality::Lo, Wcet::Single(wcet)),
                 CriticalityForm::Hi => (
@@ -535,8 +546,8 @@ fn built(info: &SetInfo<'_>) -> TaskSet {
                 blocking: values.blocking.clone().unwrap_or_else(zero),
             })
         })
-        .collect();
-    TaskSet {
+        .collect::<Option<Vec<_>>>()?;
+    Some(TaskSet {
         name: info.form.name.name.clone(),
         unit: info.unit.as_ref().map(|(name, scale)| TaskSetUnit {
             name: name.clone(),
@@ -545,7 +556,7 @@ fn built(info: &SetInfo<'_>) -> TaskSet {
         }),
         tasks,
         span: info.form.span,
-    }
+    })
 }
 
 /// One claim over `info`: its checked form, when its bound converts, and its
@@ -729,7 +740,7 @@ pub(super) fn check(
             first_of.insert(form.name.name.as_str(), form.name.span);
         }
         findings.append(&mut own);
-        model.task_sets.push(built(&info));
+        model.task_sets.extend(built(&info));
         if duplicate.is_some() {
             // Its claims resolve to the first task set of the name.
             continue;

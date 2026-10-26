@@ -95,3 +95,53 @@ fn the_task_set_words_stay_identifiers_elsewhere() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert!(texts(&parsed, &text, Production::TasksetDeclaration).is_empty());
 }
+
+/// Every word the task-set family adds is contextual: it is an ordinary
+/// identifier as a parameter, a function name or the name of a task, and a
+/// leading `response` or `schedulable` is a declaration only in leading
+/// position.
+#[trace("TC-701")]
+#[test]
+fn every_added_word_is_an_identifier_outside_its_position() {
+    for word in [
+        "taskset",
+        "task",
+        "schedulable",
+        "response",
+        "periodic",
+        "sporadic",
+        "deadline",
+        "wcet",
+        "wcet_hi",
+        "priority",
+        "jitter",
+        "blocking",
+        "lo",
+        "hi",
+        "under",
+        "fixed_priority",
+        "edf",
+        "amc",
+    ] {
+        let text = source(&format!(
+            "function {word} using Complete ({word}: Integer): Integer pure {{ {word} }}"
+        ));
+        let parsed = parse(&text);
+        assert!(parsed.is_admissible(), "{word}: {:?}", parsed.diagnostics());
+        assert!(texts(&parsed, &text, Production::TasksetDeclaration).is_empty());
+        assert!(texts(&parsed, &text, Production::ResponseDeclaration).is_empty());
+        assert!(texts(&parsed, &text, Production::SchedulableDeclaration).is_empty());
+    }
+    // Tasks named by the member words.
+    let tasks = [
+        "task lo periodic 4 ms deadline 4 ms wcet 1 ms lo;",
+        "task hi sporadic 4 ms deadline 4 ms wcet 1 ms hi wcet_hi 2 ms;",
+        "task wcet_hi periodic 4 ms deadline 4 ms wcet 1 ms lo;",
+        "task periodic periodic 4 ms deadline 4 ms wcet 1 ms lo;",
+        "task deadline periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;",
+    ];
+    let text = source(&format!("taskset Ctl {{ {} }}", tasks.join(" ")));
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(texts(&parsed, &text, Production::Task), tasks);
+}

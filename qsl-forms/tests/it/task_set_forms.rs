@@ -140,3 +140,44 @@ fn s2_keeps_what_s3_refuses() {
     assert_eq!(task.criticality, CriticalityForm::Lo);
     assert!(task.wcet_hi.is_some());
 }
+
+/// The member words are contextual (QSpec FR-419), so a task may be named by
+/// one and S2 still reads each member by its position.
+#[trace("TC-701")]
+#[test]
+fn a_task_named_by_a_member_word_keeps_its_members() {
+    let (_, unit) = build(
+        "taskset Ctl {\n\
+         task lo periodic 4 ms deadline 5 ms wcet 1 ms lo;\n\
+         task hi sporadic 6 ms deadline 6 ms wcet 2 ms hi wcet_hi 3 ms;\n\
+         task wcet_hi periodic 8 ms deadline 8 ms wcet 1 ms priority 3 lo;\n\
+         task periodic periodic 9 ms deadline 9 ms wcet 1 ms lo;\n\
+         }",
+    );
+    let forms: Vec<_> = unit.forms().iter().map(|form| form.form()).collect();
+    let [DeclarationForm::Taskset(set)] = forms[..] else {
+        panic!("one task set: {forms:?}");
+    };
+    let names: Vec<_> = set
+        .tasks
+        .iter()
+        .map(|task| task.name.name.as_str())
+        .collect();
+    assert_eq!(names, ["lo", "hi", "wcet_hi", "periodic"]);
+    let [lo, hi, wcet_hi, periodic] = &set.tasks[..] else {
+        panic!("four tasks");
+    };
+    assert_eq!(lo.criticality, CriticalityForm::Lo);
+    assert_eq!(quantity(&lo.deadline), (false, 5, "ms"));
+    assert_eq!(hi.criticality, CriticalityForm::Hi);
+    assert_eq!(
+        quantity(hi.wcet_hi.as_ref().expect("wcet_hi")),
+        (false, 3, "ms")
+    );
+    assert_eq!(
+        wcet_hi.priority.as_ref().map(|p| p.value.clone()),
+        Some(Integer::from(3_i64))
+    );
+    assert_eq!(periodic.arrival, ArrivalForm::Periodic);
+    assert_eq!(quantity(&periodic.interval), (false, 9, "ms"));
+}

@@ -8,16 +8,16 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckedGraph, ScheduleClaim, SchedulingPolicy, TaskSetDefect, TaskTimeMember,
-    TemporalCause, Wcet,
+    CheckCause, CheckedGraph, ScheduleClaim, SchedulingPolicy, TaskSetDefect, TemporalCause,
+    TimedConstruct, Wcet,
 };
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
 use crate::model_operations::{
-    admit_and_assemble_with_profiles, attempt_update_modifies_version_number,
-    config_unit_with_profiles, config_version_document,
+    admit_and_assemble_with_body, admit_and_assemble_with_profiles,
+    attempt_update_modifies_version_number, config_unit_with_profiles, config_version_document,
 };
 
 const PROFILES: &str = "profile t = \"quire.temporal.complete/v1\";\n";
@@ -386,5 +386,144 @@ fn every_defect_is_reported_in_the_stated_order() {
             }
         ]
     );
-    let _ = (TaskSetDefect::NoTask, TaskTimeMember::Period);
+}
+
+/// The temporal causes S3 refuses `declarations` with.
+fn causes(declarations: &str) -> Vec<TemporalCause> {
+    check(declarations)
+        .expect_err("S3 refuses")
+        .into_iter()
+        .map(|refusal| match refusal.cause {
+            CheckCause::Temporal(cause) => *cause,
+            other => panic!("a temporal refusal: {other:?}"),
+        })
+        .collect()
+}
+
+fn ratio(numerator: i64, denominator: i64) -> Rational {
+    Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a denominator")
+}
+
+/// The three declarations are timed: without `quire.temporal.complete/v1`
+/// each is refused as `unsupported_construct`, at the declaration's name.
+#[trace("TC-701")]
+#[test]
+fn each_task_set_declaration_needs_the_temporal_complete_layer() {
+    for (body, construct, at) in [
+        (
+            "taskset S { task a periodic 4 ms deadline 4 ms wcet 1 ms lo; }\n",
+            TimedConstruct::Taskset,
+            "S",
+        ),
+        (
+            "schedulable C on S under edf;\n",
+            TimedConstruct::Schedulable,
+            "C",
+        ),
+        (
+            "response R on S.a <= 4 ms under fixed_priority;\n",
+            TimedConstruct::Response,
+            "R",
+        ),
+    ] {
+        let refusals = admit_and_assemble_with_body(&document(), &unit_text(body))
+            .expect("S2 retains the declaration")
+            .check(CheckingLimits::default())
+            .expect_err("S3 requires the temporal facet");
+        let [error] = refusals.as_slice() else {
+            panic!("{body}: one error expected: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &error.cause else {
+            panic!("{body}: {error:?}");
+        };
+        assert!(
+            matches!(&**cause, TemporalCause::TimedFacetRequired { construct: found, owner, .. }
+                if *found == construct && owner == at),
+            "{body}: {cause:?}"
+        );
+        assert_eq!(cause.code(), Code::UnsupportedConstruct, "{body}");
+    }
+}
+
+/// A claim on a task set the unit does not declare, and a second task set of
+/// one name, are refused (an extension of FR-246's list, which is silent).
+#[trace("TC-701")]
+#[test]
+fn a_claim_on_an_unknown_set_and_a_repeated_set_name_are_refused() {
+    let set = "taskset S { task a periodic 4 ms deadline 4 ms wcet 1 ms lo; }\n";
+    let unknown = causes("schedulable C on Nope under edf;\n");
+    let [missing] = &unknown[..] else {
+        panic!("one refusal: {unknown:?}");
+    };
+    assert_eq!(missing.code(), Code::MissingDeclaration);
+    assert_eq!(missing.tag(), "missing-name");
+    assert!(matches!(
+        missing,
+        TemporalCause::MissingTaskSet { claim, name, .. } if claim == "C" && name == "Nope"
+    ));
+    let text = format!("{set}{set}schedulable C on S under edf;\n");
+    let found = causes(&text);
+    let [repeated] = &found[..] else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(repeated.code(), Code::ConflictingDeclaration);
+    assert_eq!(repeated.tag(), "duplicate-declaration");
+    assert!(matches!(
+        repeated,
+        TemporalCause::DuplicateTaskSet { name, first, span } if name == "S" && first.start < span.start
+    ));
+}
+
+/// A priority past the largest natural number S3 holds is refused once, at
+/// the priority, naming its task.
+#[trace("TC-701")]
+#[test]
+fn a_priority_past_the_largest_natural_number_is_refused() {
+    let found = causes(
+        "taskset S {\n\
+         task a periodic 4 ms deadline 4 ms wcet 1 ms priority 99999999999999999999999 lo;\n\
+         }\n",
+    );
+    let [TemporalCause::InvalidTaskSet {
+        task_set,
+        tasks,
+        defect,
+        ..
+    }] = &found[..]
+    else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(task_set, "S");
+    assert_eq!(tasks, &["a".to_owned()]);
+    assert_eq!(*defect, TaskSetDefect::PriorityOutOfRange);
+    assert_eq!(found[0].code(), Code::InvalidTimedModel);
+}
+
+/// Exact conversion over fractions and decimals (QSpec FR-142), and a zero
+/// denominator.
+#[trace("TC-701")]
+#[test]
+fn fractional_and_decimal_values_convert_exactly() {
+    let graph = checked(
+        "taskset S {\n\
+         task a periodic 1 ms deadline rational(3, 2) us wcet 0.5 ms lo;\n\
+         task b periodic 2500 us deadline 1.25 ms wcet rational(1, 3) ms jitter rational(1, 2000) s lo;\n\
+         }\n",
+    );
+    let set = &graph.task_sets().task_sets()[0];
+    assert_eq!(set.unit.as_ref().map(|unit| unit.name.as_str()), Some("ms"));
+    let [a, b] = &set.tasks[..] else {
+        panic!("two tasks");
+    };
+    assert_eq!(a.deadline, ratio(3, 2000));
+    assert_eq!(a.wcet, Wcet::Single(ratio(1, 2)));
+    assert_eq!(b.deadline, ratio(5, 4));
+    assert_eq!(b.wcet, Wcet::Single(ratio(1, 3)));
+    assert_eq!(b.jitter, ratio(1, 2));
+    let found =
+        causes("taskset S { task a periodic 4 ms deadline 4 ms wcet rational(1, 0) ms lo; }\n");
+    assert!(
+        matches!(&found[..], [TemporalCause::ZeroDenominator { .. }]),
+        "{found:?}"
+    );
 }
