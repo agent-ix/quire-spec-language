@@ -3,6 +3,8 @@ id: FR-212
 title: "Derive scheduler fairness over protocol threads, with the scheduling adversarial opt-out"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-228
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/US-024
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-027

@@ -52,3 +52,14 @@ No hash, digest, pin or tracking record is introduced. TC scopes and AC ids are 
 | FND-002 | low | The new FR-228 statement "EN-1's safety path (TP-1, TP-2, TP-3) SHALL read no fairness constraint" has no verifying AC. FR-221-AC-1 and FR-222-AC-1, which it cites, check the §10 verdicts, not that property. State it as a consequence of ADR-025 MF-3 rather than a new SHALL, or mark it verified by Inspection. | spec/functional/FR-228-derive-memory-fairness-constraints.md:97-99 |
 | FND-003 | low | FR-228-AC-2 does not give `c.r`'s initial value. AC-7's component layout and its `proved` verdict depend on it: an initial 1 settles the claim at position 0 with no accepting product state. State the initial value, for example 0. | spec/functional/FR-228-derive-memory-fairness-constraints.md:115; spec/functional/FR-339-check-an-en-1-component-certificate.md:207 |
 | FND-004 | low | FR-339 "Protocol subjects" says a store cut only by a memory bound reads as enabled. In an accepted certificate this rule never applies: FR-338 rejects any bound-limited reached state with `SuccessorMissing` before component work runs. Delete it, or say it applies only to the run's enabled sets (FR-126), not to the checker. | spec/functional/FR-339-check-an-en-1-component-certificate.md:106-110; spec/functional/FR-338-check-an-en-1-closure-certificate.md:932-936 |
+
+## Dispositions
+
+Round 1, against fix commit ff760ddb5 (`git diff c0f9ec111..ff760ddb5`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-339 "Protocol subjects" now resolves each `flush(b)` member to exactly one constraint, reached or not (QSpec FR-436), and AC-7 says `r`'s resolves although `r` never stores. The `r`-flush `WitnessFails` vector now has an index. |
+| FND-002 | fixed | The "safety path SHALL read no fairness constraint" SHALL is gone. FR-228 now states it as a consequence of ADR-025 MF-3. |
+| FND-003 | fixed | FR-228-AC-2 now says "with `x` and `c.r` initially 0". |
+| FND-004 | fixed | The bound-limited "reads as enabled" rule is replaced by the observation that an accepted certificate has no bound-limited state (FR-338 "Memory bounds"). |

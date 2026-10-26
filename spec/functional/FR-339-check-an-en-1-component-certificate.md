@@ -84,15 +84,18 @@ pub fn check_components(
     certificate: &ComponentCertificate,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
-) -> TemporalCertificateCheck; // FR-338; existing stop causes only
+) -> Result<TemporalCertificateCheck, ClosureRefusal>; // FR-338; existing stop causes only
 
 pub fn check_protocol_components(
     request: &ProtocolCertificateRequest<'_>,   // FR-338
     certificate: &ComponentCertificate,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
-) -> TemporalCertificateCheck; // FR-338; existing stop causes only
+) -> Result<TemporalCertificateCheck, ClosureRefusal>; // FR-338; existing stop causes only
 ```
+
+Both entry points return FR-338's `ClosureRefusal` exactly when their
+closure check returns one, and component work adds no refusal.
 
 A `ComponentCertificate` names its `package_id` once, as its closure's
 `package_id` (FR-338); its components carry none.
