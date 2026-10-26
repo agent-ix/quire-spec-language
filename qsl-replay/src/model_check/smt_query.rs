@@ -29,6 +29,7 @@ pub fn encode_smt_query(
     let item = match item {
         ModelCheckItem::Clause { clause, .. } => SmtItem::Clause(clause),
         ModelCheckItem::DeadlockFreedom => SmtItem::DeadlockFreedom,
+        ModelCheckItem::RaceFreedom => SmtItem::RaceFreedom,
     };
     qsl_eval::smt::encode_smt_query(subject, item, kind, limits)
 }

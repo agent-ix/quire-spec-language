@@ -280,6 +280,48 @@ impl Case {
         )
     }
 
+    /// FR-127's record of `outcome` over the race-freedom item (FR-224), its
+    /// counterexample replayed by FR-217.
+    pub(crate) fn settle_race(
+        &self,
+        selection: &[MemorySelection],
+        outcome: &ModelCheckOutcome<ProtocolTransition>,
+    ) -> ModelCheckRecord<ProtocolTransition> {
+        settle_protocol_check(
+            outcome,
+            &ModelCheckLimits::default(),
+            &self.package_id(),
+            &ProtocolCertificateRequest {
+                subject: self.subject(selection),
+                item: ModelCheckItem::RaceFreedom,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+            },
+            &Cancel::new(),
+            |payload| self.replay_race(selection, payload.clone()),
+        )
+    }
+
+    /// FR-217's replay of `payload`, a counterexample to the race-freedom
+    /// item, under `selection`'s resolved models.
+    pub(crate) fn replay_race(
+        &self,
+        selection: &[MemorySelection],
+        payload: TemporalCounterexample<ProtocolTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+        let unit = unit_text(&self.body).into_bytes();
+        let id = self.package_id();
+        let (node, occurrence) = qsl_replay::race_freedom_clause(&id);
+        replay_protocol_trace(
+            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            &self.trace_subject(selection),
+            &envelope_at(&unit, id, payload, node, occurrence),
+            self.letters,
+            ReplayLimits::default(),
+        )
+    }
+
     /// FR-098's `package_id` of the unit.
     pub(crate) fn package_id(&self) -> DigestRecord {
         compile_package(

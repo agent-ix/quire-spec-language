@@ -47,6 +47,9 @@ pub enum SmtItem<'a> {
     Clause(&'a CheckedTemporalClause),
     /// FR-124's deadlock-freedom item.
     DeadlockFreedom,
+    /// FR-224's race-freedom item, whose accesses are steps of a memory
+    /// model that this encoding has no form for.
+    RaceFreedom,
 }
 
 /// How an item's property is read at a position.
@@ -202,6 +205,12 @@ pub fn encode_smt_query(
     let clause = match item {
         SmtItem::Clause(clause) => Some(clause),
         SmtItem::DeadlockFreedom => None,
+        SmtItem::RaceFreedom => {
+            return Err(Refusal::ItemForm {
+                form: "the race-freedom item, which reads a weak memory model's race summary",
+            }
+            .into())
+        }
     };
     let mut bounded = None;
     let mut monitor = None;

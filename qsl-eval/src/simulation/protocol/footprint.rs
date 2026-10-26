@@ -148,6 +148,9 @@ pub enum ProtocolLocation {
     /// `view(b)`: thread `b`'s three views in the memory component
     /// (ADR-025 MR-1, `ra`).
     View(ThreadPath),
+    /// `race(ℓ)`: the race summary of shared location `ℓ` in the memory
+    /// component (ADR-025 DR-3).
+    Race(Box<Location>),
     /// `S`: the global `seq_cst` fence view (ADR-025 RA-1).
     ScView,
     /// The SC event graph (ADR-025 PSC-1).
@@ -232,6 +235,7 @@ impl ProtocolLocation {
             | (Self::Binder { .. }, Self::Binder { .. })
             | (Self::Buffer(_), Self::Buffer(_))
             | (Self::Messages(_), Self::Messages(_))
+            | (Self::Race(_), Self::Race(_))
             | (Self::View(_), Self::View(_))
             | (Self::ScView, Self::ScView)
             | (Self::ScGraph, Self::ScGraph)
@@ -248,6 +252,7 @@ impl ProtocolLocation {
                 | Self::Binder { .. }
                 | Self::Buffer(_)
                 | Self::Messages(_)
+                | Self::Race(_)
                 | Self::View(_)
                 | Self::ScView
                 | Self::ScGraph
