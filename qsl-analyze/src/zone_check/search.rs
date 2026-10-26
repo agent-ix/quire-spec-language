@@ -372,6 +372,9 @@ struct Run<'r, 's, 'a> {
     zone_bytes: u64,
     /// The guarded steps of each expanded node's model state.
     steps: BTreeMap<usize, Vec<GuardedStep>>,
+    /// Nodes a closure exploration created, which the search has still to
+    /// judge.
+    pending: Vec<usize>,
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
@@ -399,6 +402,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             passed: BTreeMap::new(),
             zone_bytes: 0,
             steps: BTreeMap::new(),
+            pending: Vec::new(),
         }
     }
 
@@ -511,6 +515,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         while let Some(node) = queue.pop_front() {
             self.poll()?;
             for created in self.expand(node)? {
+                queue.push_back(created);
+                delayed_deadlock |= self.judge(created)?;
+            }
+            // Nodes a closure created lie where the judged node's closure
+            // does, and are judged, and expanded, like any other.
+            while let Some(created) = self.pending.pop() {
                 queue.push_back(created);
                 delayed_deadlock |= self.judge(created)?;
             }
@@ -855,7 +865,8 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let mut frontier = vec![node];
         while let Some(at) = frontier.pop() {
             self.poll()?;
-            self.expand(at)?;
+            let created = self.expand(at)?;
+            self.pending.extend(created);
             seen.resize(self.nodes.len(), false);
             for &edge in &self.out[at] {
                 let (_, to) = self.edges[edge].ends();
