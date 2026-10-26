@@ -34,7 +34,7 @@ use qsl_replay::{
 use qsl_semantics::check::{CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile};
 use quire_exact::{Cancel, Meter, Rational};
 
-use super::certificate::ZoneCertificate;
+use super::certificate::{Proof, ZoneCertificate};
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
 use super::{scale_constants, Bound, Dbm, DbmError};
@@ -131,11 +131,6 @@ pub enum ZoneUndecided {
     /// delay, which no position of a counterexample names: FR-236 and QSpec
     /// FR-417 give `final_delay` to time-locks only (spec gap STD-493).
     DeadlockAfterDelay,
-    /// The divergence test admits a time-divergent behaviour, but no path
-    /// of retained edges reaches a quiescent node or a cycle of positive
-    /// total delay, so FR-244's `admitted` part has no witness (spec gap
-    /// STD-493).
-    NoDivergenceWitness,
 }
 
 /// The run's counts.
@@ -164,38 +159,26 @@ pub(super) struct SymbolicNode {
     pub locked: bool,
 }
 
-/// A retained edge.
+/// A retained edge: a successor by a step's convex guard part, in
+/// canonical order.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum SymbolicEdge {
-    /// A successor by a step's convex guard part, in canonical order.
-    Step {
-        /// The source node.
-        from: usize,
-        /// The target node.
-        to: usize,
-        /// The step's index among the source's guarded steps.
-        step: usize,
-        /// The convex part's index among the step's parts.
-        part: usize,
-    },
-    /// A covered successor, to the node whose aLU abstraction covers it.
-    Covering {
-        /// The source node.
-        from: usize,
-        /// The covering node.
-        to: usize,
-        /// The step's index among the source's guarded steps.
-        step: usize,
-        /// The convex part's index.
-        part: usize,
-    },
+pub(super) struct SymbolicEdge {
+    /// The source node.
+    pub from: usize,
+    /// The target node: the successor itself, or the node whose aLU
+    /// abstraction covers it.
+    pub to: usize,
+    /// Whether `to` covers the successor rather than holding it.
+    pub covering: bool,
+    /// The step's index among the source's guarded steps.
+    pub step: usize,
+    /// The convex part's index among the step's parts.
+    pub part: usize,
 }
 
 impl SymbolicEdge {
     pub(super) fn ends(&self) -> (usize, usize) {
-        match self {
-            Self::Step { from, to, .. } | Self::Covering { from, to, .. } => (*from, *to),
-        }
+        (self.from, self.to)
     }
 }
 
@@ -247,6 +230,10 @@ pub enum ZoneCheckRefusal {
     /// An atom's evaluation could not give a reading.
     #[error("the atom's evaluation stopped: {0}")]
     Atom(String),
+    /// The request's obligation is not its item's: an authored claim's
+    /// occurrence for a clause, `deadlock-freedom` for that item.
+    #[error("the request's obligation is not its item's")]
+    ObligationMismatch,
     /// An invariant of the engine broke.
     #[error("the zone engine broke an invariant: {0}")]
     Fault(&'static str),
@@ -271,7 +258,7 @@ enum Badness {
 
 /// A halt of the search.
 pub(super) enum Halt {
-    Outcome(Box<ZoneCheckOutcome<()>>),
+    Outcome(Box<Searched>),
     Refusal(ZoneCheckRefusal),
 }
 
@@ -298,6 +285,19 @@ pub fn check_timed_model<S: Clone>(
     request: ZoneCheckRequest<'_, '_, '_, S>,
     cancel: &Cancel,
 ) -> Result<ZoneCheckOutcome<S>, ZoneCheckRefusal> {
+    // The certificate names the request's obligation, which must be the
+    // item's: an authored claim's occurrence, or `deadlock-freedom`.
+    let matches = match request.item {
+        ZoneCheckItem::Invariant { .. } => {
+            matches!(request.obligation.kind, ObligationKind::Authored(_))
+        }
+        ZoneCheckItem::DeadlockFreedom => {
+            request.obligation.kind == ObligationKind::DeadlockFreedom
+        }
+    };
+    if !matches {
+        return Err(ZoneCheckRefusal::ObligationMismatch);
+    }
     let claim = match request.item {
         ZoneCheckItem::Invariant { clause, letters } => {
             let atom = qsl_eval::automaton::invariant_atom(clause)
@@ -323,33 +323,46 @@ pub fn check_timed_model<S: Clone>(
         ZoneCheckItem::DeadlockFreedom => None,
     };
     let mut run = Run::new(request.subject, claim, request.limits, cancel);
-    let outcome = match run.search() {
-        Ok(outcome) => outcome,
-        Err(Halt::Outcome(outcome)) => *outcome,
+    let searched = match run.search() {
+        Ok(searched) => searched,
+        Err(Halt::Outcome(searched)) => *searched,
         Err(Halt::Refusal(refusal)) => return Err(refusal),
     };
-    Ok(outcome.proving(request.obligation))
+    Ok(match searched {
+        Searched::Holds { proof, stats } => ZoneCheckOutcome::Holds {
+            certificate: Box::new(proof.proving(request.obligation)),
+            stats,
+        },
+        Searched::Violated {
+            counterexample,
+            stats,
+        } => ZoneCheckOutcome::Violated {
+            counterexample,
+            stats,
+        },
+        Searched::Undecided { cause, stats } => ZoneCheckOutcome::Undecided { cause, stats },
+        Searched::Stopped { cause, stats } => ZoneCheckOutcome::Stopped { cause, stats },
+    })
 }
 
-impl ZoneCheckOutcome<()> {
-    /// This outcome with its certificate naming `obligation`.
-    fn proving<S>(self, obligation: ItemObligation<S>) -> ZoneCheckOutcome<S> {
-        match self {
-            Self::Holds { certificate, stats } => ZoneCheckOutcome::Holds {
-                certificate: Box::new(certificate.proving(obligation)),
-                stats,
-            },
-            Self::Violated {
-                counterexample,
-                stats,
-            } => ZoneCheckOutcome::Violated {
-                counterexample,
-                stats,
-            },
-            Self::Undecided { cause, stats } => ZoneCheckOutcome::Undecided { cause, stats },
-            Self::Stopped { cause, stats } => ZoneCheckOutcome::Stopped { cause, stats },
-        }
-    }
+/// A run's outcome before its certificate names the item's obligation.
+pub(super) enum Searched {
+    Holds {
+        proof: Box<Proof>,
+        stats: ZoneStats,
+    },
+    Violated {
+        counterexample: Box<TemporalCounterexample>,
+        stats: ZoneStats,
+    },
+    Undecided {
+        cause: ZoneUndecided,
+        stats: ZoneStats,
+    },
+    Stopped {
+        cause: ZoneStop,
+        stats: ZoneStats,
+    },
 }
 
 struct Claim<'r> {
@@ -427,14 +440,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     pub(super) fn stop(&self, cause: ZoneStop) -> Halt {
-        Halt::Outcome(Box::new(ZoneCheckOutcome::Stopped {
+        Halt::Outcome(Box::new(Searched::Stopped {
             cause,
             stats: self.stats(),
         }))
     }
 
     pub(super) fn undecided(&self, cause: ZoneUndecided) -> Halt {
-        Halt::Outcome(Box::new(ZoneCheckOutcome::Undecided {
+        Halt::Outcome(Box::new(Searched::Undecided {
             cause,
             stats: self.stats(),
         }))
@@ -533,7 +546,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         Ok(found)
     }
 
-    fn search(&mut self) -> Result<ZoneCheckOutcome<()>, Halt> {
+    fn search(&mut self) -> Result<Searched, Halt> {
         let initial = self.timed.initial();
         if initial.is_empty() {
             return Err(self.undecided(ZoneUndecided::NoInitialState));
@@ -574,35 +587,28 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         }
         // Vacuity (ADR-026 TD-6): an initial state with a time-divergent
         // behaviour.
-        let mut admitted = false;
+        let mut admitted = None;
         for &root in &roots {
-            if self.node_escape(root)?.diverges {
-                admitted = true;
+            let escape = self.node_escape(root)?;
+            if escape.diverges {
+                admitted = Some((root, escape.witness));
                 break;
             }
         }
         match admitted {
-            false => Err(self.undecided(ZoneUndecided::NoAdmittedBehaviour)),
+            None => Err(self.undecided(ZoneUndecided::NoAdmittedBehaviour)),
             // STD-493: a deadlock reached only by waiting at a quiescent
             // state has no counterexample form (FR-236 gives `final_delay`
             // to time-locks only), so it is neither proved away nor refuted.
-            true if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
-            true => match self.certificate(
-                ItemObligation {
-                    subject: (),
-                    kind: ObligationKind::DeadlockFreedom,
-                },
-                &roots,
-            )? {
-                Some(certificate) => Ok(ZoneCheckOutcome::Holds {
-                    certificate: Box::new(certificate),
+            Some(_) if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
+            Some((root, witness)) => {
+                let witness = witness.ok_or(ZoneCheckRefusal::Fault("divergence-witness"))?;
+                let proof = self.certificate(&roots, root, &witness)?;
+                Ok(Searched::Holds {
+                    proof: Box::new(proof),
                     stats: self.stats(),
-                }),
-                // STD-493: the divergence test admits a behaviour that no
-                // path of retained edges witnesses, so FR-244's `admitted`
-                // part cannot be written.
-                None => Err(self.undecided(ZoneUndecided::NoDivergenceWitness)),
-            },
+                })
+            }
         }
     }
 
@@ -624,9 +630,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             for &candidate in stored {
                 if zone.alu_covered_by(&self.nodes[candidate].zone, &self.lower, &self.upper)? {
                     if let Some((from, step, part)) = edge {
-                        self.retain(SymbolicEdge::Covering {
+                        self.retain(SymbolicEdge {
                             from,
                             to: candidate,
+                            covering: true,
                             step,
                             part,
                         })?;
@@ -649,9 +656,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         self.passed.entry(key).or_default().push(index);
         let parent = match edge {
             Some((from, step, part)) => {
-                self.retain(SymbolicEdge::Step {
+                self.retain(SymbolicEdge {
                     from,
                     to: index,
+                    covering: false,
                     step,
                     part,
                 })?;
@@ -784,7 +792,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             return Ok(false);
         }
         let counterexample = self.counterexample(node, badness, escape)?;
-        Err(Halt::Outcome(Box::new(ZoneCheckOutcome::Violated {
+        Err(Halt::Outcome(Box::new(Searched::Violated {
             counterexample: Box::new(counterexample),
             stats: self.stats(),
         })))
@@ -906,8 +914,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let invariants = self.timed(self.timed.invariants(&state))?;
         let mut zone = match self.parent[node].map(|edge| self.edges[edge].clone()) {
             None => Dbm::zero(dim),
-            Some(SymbolicEdge::Step {
-                from, step, part, ..
+            Some(SymbolicEdge {
+                from,
+                covering: false,
+                step,
+                part,
+                ..
             }) => {
                 let steps = self.steps_of(from)?;
                 let step = steps
@@ -925,9 +937,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 }
                 zone
             }
-            Some(SymbolicEdge::Covering { .. }) => {
-                return Err(ZoneCheckRefusal::Fault("covering-parent").into())
-            }
+            Some(_) => return Err(ZoneCheckRefusal::Fault("covering-parent").into()),
         };
         self.constrain(&mut zone, &invariants)?;
         Ok(zone)
@@ -1006,8 +1016,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let mut path = Vec::new();
         let mut at = node;
         while let Some(edge) = self.parent[at] {
-            let SymbolicEdge::Step {
-                from, step, part, ..
+            let SymbolicEdge {
+                from,
+                covering: false,
+                step,
+                part,
+                ..
             } = self.edges[edge].clone()
             else {
                 return Err(ZoneCheckRefusal::Fault("covering-parent").into());

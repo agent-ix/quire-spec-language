@@ -18,7 +18,7 @@
 //! terminal state, whose stutter step counts as a tick. The test asks for a
 //! reachable component with a tick step, or a reachable terminal node.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use num_bigint::BigInt;
 use qsl_eval::simulation::model::ModelSimState;
@@ -37,6 +37,38 @@ struct Edge {
     to: usize,
     /// Whether the edge counts towards divergence: a `z` reset, or a tick.
     accepting: bool,
+    /// The model step and part it takes; `None` for a `z` reset or a
+    /// terminal stutter.
+    step: Option<(usize, usize)>,
+}
+
+/// One move of a divergence witness: a model step's index and part's
+/// index, or `None` where only time passes (a `z` reset, or a terminal
+/// state's stutter under a tick source).
+pub(super) type Move = Option<(usize, usize)>;
+
+/// The evidence the test accepted: the moves from the symbolic state to a
+/// divergent target.
+#[derive(Clone, Debug)]
+pub(super) struct EscapeWitness {
+    /// The moves from the symbolic state to the target.
+    pub path: Vec<Move>,
+    /// The target.
+    pub target: EscapeTarget,
+}
+
+/// The divergent target a witness reaches.
+#[derive(Clone, Debug)]
+pub(super) enum EscapeTarget {
+    /// Under a dense source, a quiescent state.
+    Quiescent,
+    /// Under a tick source, a terminal state, whose stutter step counts as
+    /// a tick (FR-231 "Digital time").
+    Terminal,
+    /// A cycle back to the path's end through an accepting edge of its
+    /// strongly connected component: a `z` reset under a dense source, a
+    /// tick under a tick source, so each repetition lets time advance.
+    Cycle(Vec<Move>),
 }
 
 /// What the test finds.
@@ -50,6 +82,8 @@ pub(super) struct Escape {
     /// tail.
     #[allow(clippy::type_complexity, reason = "paths of (state, step, part)")]
     pub to_quiescent: Vec<Vec<(ModelSimState, usize, usize)>>,
+    /// The evidence of `diverges`; `None` when the test found none.
+    pub witness: Option<EscapeWitness>,
 }
 
 impl Run<'_, '_, '_> {
@@ -155,7 +189,11 @@ impl Run<'_, '_, '_> {
                 };
                 self.charge_edge()?;
                 self.escape_edge();
-                out[at].push(Edge { to, accepting });
+                out[at].push(Edge {
+                    to,
+                    accepting,
+                    step,
+                });
             }
         }
         let adjacency: Vec<Vec<usize>> = out
@@ -168,11 +206,58 @@ impl Run<'_, '_, '_> {
                 component_of[member] = index;
             }
         }
-        let diverges = out.iter().enumerate().any(|(from, edges)| {
+        let accepting = out.iter().enumerate().find_map(|(from, edges)| {
             edges
                 .iter()
-                .any(|edge| edge.accepting && component_of[from] == component_of[edge.to])
+                .find(|edge| edge.accepting && component_of[from] == component_of[edge.to])
+                .map(|edge| (from, edge))
         });
+        let diverges = accepting.is_some();
+        let moves_to = |mut at: usize| -> Vec<Move> {
+            let mut path = Vec::new();
+            while let Some((from, step)) = parent[at] {
+                path.push(step);
+                at = from;
+            }
+            path.reverse();
+            path
+        };
+        // The target: a quiescent state under a dense source, a terminal one
+        // under a tick source, each first in breadth-first order; or else
+        // the first accepting edge's cycle.
+        let terminal = (!dense)
+            .then(|| {
+                (0..nodes.len()).find(|&at| {
+                    out[at]
+                        .iter()
+                        .all(|edge| edge.step.is_none() && edge.to == at)
+                        && !out[at].is_empty()
+                })
+            })
+            .flatten();
+        let witness = if let Some(&at) = quiescent.first() {
+            Some(EscapeWitness {
+                path: moves_to(at),
+                target: EscapeTarget::Quiescent,
+            })
+        } else if let Some(at) = terminal {
+            Some(EscapeWitness {
+                path: moves_to(at),
+                target: EscapeTarget::Terminal,
+            })
+        } else if let Some((from, edge)) = accepting {
+            let component = component_of[from];
+            let back = moves_within(&out, &component_of, component, edge.to, from);
+            back.map(|mut cycle| {
+                cycle.push(edge.step);
+                EscapeWitness {
+                    path: moves_to(from),
+                    target: EscapeTarget::Cycle(cycle),
+                }
+            })
+        } else {
+            None
+        };
         let to_quiescent = quiescent
             .into_iter()
             .map(|mut at| {
@@ -191,8 +276,42 @@ impl Run<'_, '_, '_> {
         Ok(Escape {
             diverges,
             to_quiescent,
+            witness,
         })
     }
+}
+
+/// The moves of a shortest path from `start` to `end` inside `component`.
+fn moves_within(
+    out: &[Vec<Edge>],
+    component_of: &[usize],
+    component: usize,
+    start: usize,
+    end: usize,
+) -> Option<Vec<Move>> {
+    let mut first: BTreeMap<usize, (usize, Move)> = BTreeMap::new();
+    let mut queue = VecDeque::from([start]);
+    let mut seen = BTreeSet::from([start]);
+    while let Some(at) = queue.pop_front() {
+        if at == end {
+            let mut moves = Vec::new();
+            let mut back = at;
+            while back != start {
+                let (from, step) = *first.get(&back)?;
+                moves.push(step);
+                back = from;
+            }
+            moves.reverse();
+            return Some(moves);
+        }
+        for edge in &out[at] {
+            if component_of[edge.to] == component && seen.insert(edge.to) {
+                first.insert(edge.to, (at, edge.step));
+                queue.push_back(edge.to);
+            }
+        }
+    }
+    None
 }
 
 /// The strongly connected components of the graph `out` (node `i`'s edges

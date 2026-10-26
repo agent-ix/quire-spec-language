@@ -15,8 +15,7 @@ mod scale;
 mod search;
 
 pub use certificate::{
-    CertComponent, CertEdge, CertNode, DivergenceWitness, DivergentTarget, LuBounds,
-    ZoneCertificate,
+    CertEdge, CertNode, DivergenceWitness, DivergentTarget, LuBounds, ZoneCertificate,
 };
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
