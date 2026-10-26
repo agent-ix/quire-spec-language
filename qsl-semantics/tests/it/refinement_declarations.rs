@@ -1903,6 +1903,63 @@ fn a_refinement_subject_needs_exactly_one_state_machine_per_side() {
     );
 }
 
+/// The cause of the named refinement refusal `refusal` is.
+fn subject_cause(refusal: &CheckRefusal) -> &RefinementCause {
+    let CheckCause::Refinement(refusal) = &refusal.cause else {
+        panic!("a named refinement refusal: {refusal:?}");
+    };
+    &refusal.cause
+}
+
+/// FR-136-AC-12: the concrete side's several machines are ambiguous, a count
+/// above two is reported as counted, and when both sides are bad the abstract
+/// side is the one reported.
+#[trace("TC-541", "FR-136-AC-12")]
+#[test]
+fn the_subject_refusal_names_the_concrete_side_the_count_and_the_abstract_side_first() {
+    use qsl_semantics::check::SubjectSide;
+    let (spec, cas) = counters();
+    let spec1 = with_machine(&spec, SPEC, "SpecMachine");
+    let cas2 = with_machine(
+        &with_machine(&cas, CAS, "ImplMachine"),
+        CAS,
+        "ImplMachineToo",
+    );
+    let refusal = emission_refusal(&[("Spec", SPEC, &spec1[..]), ("Impl", CAS, &cas2[..])]);
+    assert_eq!(
+        subject_cause(&refusal),
+        &RefinementCause::AmbiguousStateMachineSubject {
+            side: SubjectSide::Concrete,
+            alias: "Impl".to_owned(),
+            count: 2,
+        }
+    );
+    let spec3 = with_machine(
+        &with_machine(&spec1, SPEC, "SpecMachineToo"),
+        SPEC,
+        "SpecMachineThree",
+    );
+    let refusal = emission_refusal(&[("Spec", SPEC, &spec3[..]), ("Impl", CAS, &cas[..])]);
+    assert_eq!(
+        subject_cause(&refusal),
+        &RefinementCause::AmbiguousStateMachineSubject {
+            side: SubjectSide::Abstract,
+            alias: "Spec".to_owned(),
+            count: 3,
+        },
+        "both sides are bad (the concrete has none): the abstract is reported first"
+    );
+}
+
+/// FR-136-AC-12: a build that keeps unwritten refinements (analysis, replay)
+/// raises no subject refusal for an object-type refinement.
+#[trace("TC-541", "FR-136-AC-12")]
+#[test]
+fn a_build_keeping_unwritten_refinements_raises_no_subject_refusal() {
+    let graph = checked_counter(&cas_refines_counter());
+    assert_eq!(graph.refinements().len(), 1);
+}
+
 /// A unit holding a `terminal` declaration and a refinement refuses only the
 /// refinement: the `terminal` declaration is emitted.
 #[trace("TC-540")]

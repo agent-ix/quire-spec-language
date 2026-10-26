@@ -4753,25 +4753,37 @@ impl PackageDeclarations {
         if !self.emit_unwritten_refinements {
             unwritten.extend(self.refinements.iter().map(|declaration| {
                 // FR-136-AC-12: a subject without exactly one state machine is
-                // refused by name before the generic not-emitted refusal.
-                refinements
+                // refused by name before the generic not-emitted refusal. S3
+                // checked every declaration (an unchecked one refused above
+                // and returned), so a declaration with no checked refinement
+                // is a broken invariant, never a silent not-emitted.
+                let Some(checked) = refinements
                     .iter()
                     .find(|checked| checked.name() == declaration.form.name.name)
-                    .and_then(|checked| {
-                        refinement::subject_refusal(checked, declaration.form.span, |alias| {
-                            models
-                                .iter()
-                                .filter(|model| model.alias() == Some(alias))
-                                .map(AdmittedModel::state_machine_count)
-                                .sum()
-                        })
-                    })
-                    .unwrap_or_else(|| {
-                        refinement::not_emitted(
-                            declaration.form.name.name.clone(),
-                            declaration.form.span,
-                        )
-                    })
+                else {
+                    return CheckRefusal {
+                        location: Location::root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S3",
+                                "refinement-declaration-checked",
+                            ),
+                        ))),
+                    };
+                };
+                refinement::subject_refusal(checked, declaration.form.span, |alias| {
+                    models
+                        .iter()
+                        .filter(|model| model.alias() == Some(alias))
+                        .map(AdmittedModel::state_machine_count)
+                        .sum()
+                })
+                .unwrap_or_else(|| {
+                    refinement::not_emitted(
+                        declaration.form.name.name.clone(),
+                        declaration.form.span,
+                    )
+                })
             }));
         }
         if !self.emit_unwritten_timed_members {

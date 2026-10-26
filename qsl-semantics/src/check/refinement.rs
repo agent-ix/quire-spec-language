@@ -255,8 +255,10 @@ pub enum RefinementCause {
         /// The selected profile identity.
         profile: String,
     },
-    /// A refinement's subject package declares no `state_machine`, so S3 has
-    /// no state-machine record to select as the refinement's subject: its
+    /// A refinement's subject package declares no `state_machine`, so the
+    /// emission gate of the check has no state-machine record to select as
+    /// the refinement's subject (analysis consumers that keep unwritten
+    /// refinements never reach it): its
     /// node (QSpec FR-375) is keyed over a state-machine node and anchors
     /// its step operations on it, which an object-type model has none of
     /// (FR-136-AC-12): `unsupported_construct`/`declaration-form`.
@@ -267,7 +269,7 @@ pub enum RefinementCause {
         alias: String,
     },
     /// A refinement's subject package declares several `state_machine`
-    /// records, so S3 cannot tell which one the refinement is over
+    /// records, so the emission gate of the check cannot tell which one the refinement is over
     /// (FR-136-AC-12): `ambiguous_declaration`/`ambiguous-name`.
     AmbiguousStateMachineSubject {
         /// Which side of the refinement.
