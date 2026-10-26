@@ -30,8 +30,8 @@ use quire_semantic_value::catalog::Category;
 
 use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_search::{
-    claim, delays, exact, lock, operations, rpc, rpc_variant, ticker, violated, windowed, Outcome,
-    INFINITE, TIMED,
+    claim, delays, exact, lock, operations, retried_at, rpc, rpc_variant, short_of_data_claim,
+    ticker, violated, windowed, Outcome, INFINITE, TIMED,
 };
 
 /// Replay `payload` over `world`'s timed subject: as its first clause's
@@ -736,6 +736,21 @@ fn an_undefined_timed_evaluation_settles_refuted() {
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoAdmittedBehaviour)
+    );
+}
+
+/// Part of FR-235-AC-5 (TC-710): an `Undecided(InsufficientData)` outcome,
+/// a window read short of data, settles `inconclusive`,
+/// `InsufficientData`, never `proved`. Not covered: an authored aggregate
+/// atom, which no TT-2 clause has yet.
+#[trace("TC-710")]
+#[test]
+fn a_window_short_of_data_settles_inconclusive() {
+    let outcome = short_of_data_claim(&retried_at("rational(5, 2) ms"));
+    let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::InsufficientData)
     );
 }
 

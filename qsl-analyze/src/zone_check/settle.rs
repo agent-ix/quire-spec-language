@@ -196,6 +196,7 @@ pub fn settle_zone_check<S>(
             ZoneUndecided::NoAdmittedBehaviour => InconclusiveCause::NoAdmittedBehaviour,
             ZoneUndecided::LassoNotConcretized => InconclusiveCause::LassoNotConcretized,
             ZoneUndecided::DeadlockAfterDelay => InconclusiveCause::DeadlockAfterDelay,
+            ZoneUndecided::InsufficientData(_) => InconclusiveCause::InsufficientData,
         }),
         ZoneCheckOutcome::Stopped { cause, .. } => match cause {
             ZoneStop::LimitReached(limit) => {

@@ -1236,11 +1236,22 @@ fn a_window_short_of_data_is_insufficient_data_not_holds() {
         "{reference:?}"
     );
 
+    match short_of_data_claim(&world) {
+        ZoneCheckOutcome::Undecided {
+            cause: ZoneUndecided::InsufficientData(_),
+            ..
+        } => {}
+        other => panic!("expected InsufficientData, got {other:?}"),
+    }
+}
+
+/// The first clause of `world` put to EN-6 over [`ShortOfData`] letters.
+pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("letters");
-    let outcome = check_timed_model(
+    check_timed_model(
         ZoneCheckRequest {
             subject: &timed,
             item: ZoneCheckItem::Clause {
@@ -1255,14 +1266,7 @@ fn a_window_short_of_data_is_insufficient_data_not_holds() {
         },
         &Cancel::new(),
     )
-    .expect("EN-6 takes the claim");
-    match outcome {
-        ZoneCheckOutcome::Undecided {
-            cause: ZoneUndecided::InsufficientData(_),
-            ..
-        } => {}
-        other => panic!("expected InsufficientData, got {other:?}"),
-    }
+    .expect("EN-6 takes the claim")
 }
 
 /// FR-242-AC-3: over ADR-026 §11's `Rpc` (TC-697's fixture), `always
