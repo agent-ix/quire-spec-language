@@ -1142,3 +1142,61 @@ fn tc_774_a_transitive_dependency_replays() {
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
 }
+
+/// FR-290-AC-1, the two clauses `main` can assert: a process provider's
+/// `proved` entry for a routed non-hybrid item reads through the FR-331
+/// readers (`certification` first, then `basis`) and settles `proved` with
+/// the provider's `BackendId` and certification `trusted`, and the
+/// `bounded-solver` basis is refused on that non-hybrid path; a Kani
+/// `proved` record built as C-09 carries `certified`.
+///
+/// Not asserted here, so no `FR-290-AC-1` tag: FR-281-AC-1's `certified`
+/// record naming the EN-5 checker (EN-5 has no certificate checker or
+/// `analyze` item adapter until QSL-574 and QSL-575) and FR-281-AC-4's
+/// `uncertified` record from a test engine with no checker (no such engine
+/// exists, and `analyze` accepts no engine-supplied proof). The tag moves to
+/// a test that asserts all four.
+#[trace("TC-774")]
+#[test]
+fn tc_774_plugin_proof_settles_trusted_and_kani_proof_certified() {
+    let entry = json!({
+        "certification": "trusted",
+        "basis": {"type": "inductive-solver", "method": "inductive-enclosure"},
+    });
+    read_plugin_certification(entry.get("certification")).unwrap();
+    let basis = read_plugin_basis(&entry["basis"]).unwrap();
+    let record =
+        TerminalRecord::from_plugin_proof(RequestIndex::new(3), plugin(), basis.clone()).unwrap();
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Proved {
+            basis,
+            certification: Certification::Trusted,
+        }
+    );
+    assert_eq!(record.backend(), Some(&plugin()));
+    assert_eq!(record.request_index(), RequestIndex::new(3));
+
+    let solver = read_plugin_basis(&json!({
+        "type": "bounded-solver", "exhaustive": [], "jumps": 0, "method": "unclassified",
+        "horizon": {"denominator": "1", "numerator": "10"},
+    }))
+    .unwrap();
+    assert_eq!(
+        TerminalRecord::from_plugin_proof(RequestIndex::new(3), plugin(), solver),
+        Err(PluginResultRefusal::Malformed {
+            pointer: "/basis/type".to_owned(),
+            cause: ValueFault::InvalidValue,
+        })
+    );
+
+    let kani = TerminalRecord::proved(RequestIndex::new(4), BackendId::new("kani-backend-1"), 3);
+    assert_eq!(
+        kani.value(),
+        &TerminalValue::Proved {
+            basis: ProofBasis::Checks { success_checks: 3 },
+            certification: Certification::Certified,
+        }
+    );
+    assert_eq!(kani.backend(), Some(&BackendId::new("kani-backend-1")));
+}
