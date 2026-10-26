@@ -204,6 +204,12 @@ fn terminal_any_on_a_model_with_no_object_type_is_refused_at_the_declaration() {
         .as_array_mut()
         .expect("types")
         .retain(|node| node["kind"]["name"] != "object_type");
+    envelope["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .retain(|construct| {
+            construct["kind"]["name"] != "object_type" && construct["kind"]["name"] != "population"
+        });
     let bare = serde_json::to_vec(&envelope).expect("JSON");
     let declarations = admit_and_assemble_with_body(&bare, ANY).expect("the unit assembles");
     let regions = declarations.regions();

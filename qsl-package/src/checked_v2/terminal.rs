@@ -208,6 +208,16 @@ pub fn resolve_terminals(
 ) -> Result<Vec<PackageTerminal<'_>>, TerminalResolveRefusal> {
     use qsl_semantics::check::TerminalDeclaration;
 
+    // A package that declares no `terminal` has no node to read, and need not
+    // be emittable for its terminal states to be none.
+    if package
+        .graph()
+        .terminals()
+        .iter()
+        .all(|terminal| matches!(terminal.declaration(), TerminalDeclaration::None))
+    {
+        return Ok(Vec::new());
+    }
     let emission = crate::emit::emit_checked(package)
         .map_err(|refusal| TerminalResolveRefusal::Emit(refusal.to_string()))?;
     let wire: serde_json::Value = serde_json::from_slice(emission.package().bytes())
