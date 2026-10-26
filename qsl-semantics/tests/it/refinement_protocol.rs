@@ -131,7 +131,8 @@ fn check_over(
     }
     let declarations = declarations
         .with_refinement_support(support)
-        .with_unwritten_refinements();
+        .with_unwritten_refinements()
+        .with_unwritten_protocols();
     let regions = declarations.regions();
     declarations
         .check(CheckingLimits::default())

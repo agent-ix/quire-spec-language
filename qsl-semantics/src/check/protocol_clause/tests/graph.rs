@@ -933,10 +933,9 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
 }
 
 /// FR-218-AC-18: a sibling branch's record before its join, an optional
-/// choice branch's record, an `await` match read after the `await`, and a
-/// record bound inside a `repeat` body read by that `repeat`'s own `visible`
-/// entry or guard each refuse `missing_declaration`/`missing-name` at every
-/// original use, retaining `name`.
+/// choice branch's record and an `await` match read after the `await` refuse
+/// `missing_declaration`/`missing-name` at every original use, retaining
+/// `name`.
 #[trace("TC-1056", "FR-218-AC-18")]
 #[test]
 fn a_record_outside_its_scope_is_an_unresolved_name() {
@@ -978,13 +977,6 @@ fn a_record_outside_its_scope_is_an_unresolved_name() {
                 reader("early")
             ),
         ),
-        (
-            "repeat",
-            format!(
-                "repeat Loop by R visible (early.ready) while {{ early.ready }} {}",
-                event("Early", "early")
-            ),
-        ),
     ];
     for (case, run) in cases {
         let found = located_causes(&flow("", &run));
@@ -1005,8 +997,7 @@ fn a_record_outside_its_scope_is_an_unresolved_name() {
                 other => panic!("{case}: a slot refusal, got {other:?}"),
             })
             .collect();
-        let expected = if case == "repeat" { 2 } else { 3 };
-        assert_eq!(reads, vec![("early", "early"); expected], "{case}");
+        assert_eq!(reads, vec![("early", "early"); 3], "{case}");
     }
     // The same reads where the record is readable check: after an
     // all-branch join, and on the `await`'s `then` path.
@@ -1018,6 +1009,66 @@ fn a_record_outside_its_scope_is_an_unresolved_name() {
             event("Early", "early"),
             reader("early")
         ),
+    ));
+}
+
+/// FR-218-AC-33: a repeat's own visible clause and guard read the body
+/// binder from the most recently completed iteration; its guard makes it a
+/// post-test repeat. A guard that reads no body binder remains pre-test.
+#[trace("TC-1268", "FR-218-AC-33")]
+#[test]
+fn repeat_decisions_read_the_latest_body_output_and_classify_the_guard() {
+    let source = flow(
+        "",
+        "repeat Loop by R visible (early.ready) while { early.ready } \
+         parallel Body { branch a sequence A { \
+         event Early by R as (early: Plain) { true }; } \
+         branch b sequence B { } } join all [a, b];",
+    );
+    let graph = checks(&source);
+    let checked = graph.protocol("Flow").expect("checked protocol");
+    let repeat = checked.slots.repeats.first().expect("checked repeat");
+    assert!(repeat.post_test);
+    let readers = checked
+        .slots
+        .readers
+        .iter()
+        .find(|readers| readers.binder == "early")
+        .expect("the repeat binder readers");
+    assert_eq!(readers.readers, [repeat.node]);
+
+    let pre_test = flow(
+        "",
+        &format!(
+            "repeat Loop by R visible () max 1 while {{ true }} {} exhausted sequence Done {{ }}",
+            attempt("Work")
+        ),
+    );
+    let graph = checks(&pre_test);
+    assert!(
+        !graph
+            .protocol("Flow")
+            .expect("checked protocol")
+            .slots
+            .repeats[0]
+            .post_test
+    );
+
+    let max_zero = flow(
+        "",
+        &format!(
+            "repeat Loop by R visible () max 0 while {{ work }} {} exhausted sequence Done {{ }}",
+            attempt("Work")
+        ),
+    );
+    let (_, refusal, cause) = only(&max_zero);
+    assert_eq!(
+        catalog(&refusal),
+        ("invalid_package", Some("invalid-value"))
+    );
+    assert!(matches!(
+        cause,
+        ProtocolAnchorCause::RepeatMaxConflict { .. }
     ));
 }
 

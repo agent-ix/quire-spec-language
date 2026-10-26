@@ -43,6 +43,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::check::Scope;
 use super::ir::{CheckedBody, NodeKind};
+use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
 use super::refusal::{
@@ -98,6 +99,9 @@ pub struct CheckedRepeat {
     pub visible: Vec<CheckedBody>,
     /// The iteration maximum, when one is written.
     pub max: Option<u64>,
+    /// Whether the guard reads a binder declared in this repeat's body.
+    /// Such a repeat is post-test and executes its body before the first guard.
+    pub post_test: bool,
     /// The loop proof, when one is written.
     pub loop_proof: Option<CheckedLoopProof>,
     /// The checked `while` guard.
@@ -374,11 +378,34 @@ impl Checker<'_, '_> {
             SlotOwner::Node(_) | SlotOwner::Clause => None,
         };
         let mut nodes = self.nodes;
+        // The `finish` constraint is lowered into the protocol's `finish`
+        // node, so its tree is rooted at that node's own site (FR-096); every
+        // other slot keeps the clause location.
+        let finish_location = match slot.owner {
+            SlotOwner::Node(node) => self
+                .protocol
+                .declarations
+                .get(node)
+                .filter(|declaration| declaration.kind == ProtocolNodeKind::Finish)
+                .map(|declaration| {
+                    protocol_location(
+                        &self.protocol.name.name,
+                        ProtocolSite::FinishBody(&declaration.name.name),
+                    )
+                }),
+            SlotOwner::Clause | SlotOwner::Role(_) => None,
+        };
+        let declarations = ClauseDeclarations {
+            location: finish_location
+                .as_ref()
+                .unwrap_or(self.declarations.location),
+            ..*self.declarations
+        };
         let typed = type_body(
             slot.form,
             role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
-            self.declarations,
+            &declarations,
             &mut nodes,
             cx,
         );
@@ -1136,7 +1163,13 @@ pub(crate) fn check(
 
     for repeat in &protocol.repeats {
         let node = repeat.declaration;
-        let readable = flow.input(node);
+        let mut readable = flow.input(node);
+        let body_binders = checked
+            .controls
+            .control(ProtocolNodeId(node))
+            .and_then(|control| control.children.first())
+            .map_or_else(BTreeSet::new, |body| flow.output(body.0));
+        readable.extend(body_binders.iter().copied());
         let before = checker.refusals.len();
         let mut decision = |checker: &mut Checker<'_, '_>,
                             form: &ExpressionForm,
@@ -1167,6 +1200,17 @@ pub(crate) fn check(
             Goal::Boolean,
             true,
         );
+        let post_test = guard.as_ref().is_some_and(|guard| {
+            guard.root().descendants().into_iter().any(|node| {
+                matches!(node.kind(), NodeKind::Local(local) if body_binders.contains(local))
+            })
+        });
+        if post_test && repeat.max.as_ref().is_some_and(|max| max.value == 0) {
+            checker.refuse(ProtocolAnchorCause::RepeatMaxConflict {
+                repeat: repeat.name.name.clone(),
+                span: repeat.name.span,
+            });
+        }
         let loop_proof = repeat.loop_proof.as_ref().map(|proof| {
             (
                 decision(
@@ -1212,6 +1256,7 @@ pub(crate) fn check(
             owner,
             visible,
             max: repeat.max.as_ref().map(|max| max.value),
+            post_test,
             loop_proof,
             guard,
         });
@@ -1755,12 +1800,17 @@ mod tests;
 /// The binders readable at each control's entry, and after the root.
 struct Flow {
     inputs: BTreeMap<usize, BTreeSet<usize>>,
+    outputs: BTreeMap<usize, BTreeSet<usize>>,
     root_out: BTreeSet<usize>,
 }
 
 impl Flow {
     fn input(&self, node: usize) -> BTreeSet<usize> {
         self.inputs.get(&node).cloned().unwrap_or_default()
+    }
+
+    fn output(&self, node: usize) -> BTreeSet<usize> {
+        self.outputs.get(&node).cloned().unwrap_or_default()
     }
 
     /// QSpec FR-466 "Binder scope" over `checked`'s control tree, from the
@@ -1777,6 +1827,7 @@ impl Flow {
         let Some(root) = tree.root() else {
             return Self {
                 inputs,
+                outputs: outs,
                 root_out: roots,
             };
         };
@@ -1875,7 +1926,11 @@ impl Flow {
             outs.insert(node, out);
         }
         let root_out = outs.get(&root.node.0).cloned().unwrap_or_default();
-        Self { inputs, root_out }
+        Self {
+            inputs,
+            outputs: outs,
+            root_out,
+        }
     }
 }
 

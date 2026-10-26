@@ -62,6 +62,7 @@ pub(super) struct Loop<'a> {
     pub(super) body: ProtocolNodeId,
     pub(super) exhausted: Option<ProtocolNodeId>,
     pub(super) max: Option<u64>,
+    pub(super) post_test: bool,
     pub(super) guard: &'a CheckedBody,
 }
 
@@ -662,6 +663,7 @@ impl<'a> Program<'a> {
                     body,
                     exhausted,
                     max: repeat.max,
+                    post_test: repeat.post_test,
                     guard: &repeat.guard,
                 },
             );

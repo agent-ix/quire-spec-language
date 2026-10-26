@@ -17,10 +17,13 @@ use std::collections::BTreeMap;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{
-    emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_state_graph_root,
-    AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal, V2ReadLimits,
+    emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_hyper_root,
+    resolve_state_graph_root, AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal,
+    V2ReadLimits,
 };
-use qsl_semantics::check::{CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode};
+use qsl_semantics::check::{
+    CheckedHyperClause, CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode,
+};
 use qsl_semantics::library::{LibraryName, PackageId};
 use quire_exact::{Cancel, CancelCause};
 
@@ -168,6 +171,58 @@ impl StateGraphIdentity {
             occurrence: root.occurrence().clone(),
             over: root.over(),
         })
+    }
+}
+
+/// An HP-5 clause's identity in its package, resolved through FR-488's I2
+/// hyper-root lookup. A replay request cannot supply this identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HyperIdentity {
+    occurrence: OccurrenceKey,
+}
+
+impl HyperIdentity {
+    /// The checked `claim` occurrence of the hyper clause.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// Resolve the assembled hyper clause through the emitted package's I2
+    /// reader and FR-488's hyper-root lookup.
+    ///
+    /// # Errors
+    ///
+    /// [`ClauseRootRefusal`] when the package does not assemble and read back
+    /// the clause's claim root, or when `cancel` stops emission.
+    pub fn resolve(
+        package: &CheckedPackage,
+        domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        clause: &CheckedHyperClause,
+        cancel: &Cancel,
+    ) -> Result<Self, ClauseRootRefusal> {
+        let assembled = package
+            .graph()
+            .hyper_clauses()
+            .iter()
+            .find(|candidate| {
+                candidate.name() == clause.name() && candidate.occurrence() == clause.occurrence()
+            })
+            .ok_or_else(|| ClauseRootRefusal::Undeclared {
+                name: clause.name().to_owned(),
+            })?;
+        let occurrence = assembled.occurrence().clone();
+        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
+        let read = admitted
+            .package(&package_id)
+            .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
+        let root = resolve_hyper_root(read, &occurrence)
+            .map_err(|fault| ClauseRootRefusal::Package(format!("{fault:?}")))?;
+        if root.occurrence() != &occurrence {
+            return Err(ClauseRootRefusal::Package(
+                "the I2 hyper root changed the checked occurrence".to_owned(),
+            ));
+        }
+        Ok(Self { occurrence })
     }
 }
 

@@ -261,6 +261,18 @@ subject until the checked clause is available meets the same rule.
   otherwise, and the row SHALL record `binds_result: true`. Otherwise it
   SHALL record `false`.
 
+### The state-machine subject
+
+- A refinement's node is keyed over a state-machine node and its steps
+  anchor their operations on it (QSpec FR-375), so S4 SHALL select, for each
+  side of a refinement, the one `state_machine` record of that side's
+  admitted package as the side's subject. A side whose package declares no
+  `state_machine` record (the ADR-020 object-type models) SHALL refuse
+  `unsupported_construct`/`declaration-form` naming the side and its alias,
+  and a side whose package declares several SHALL refuse
+  `ambiguous_declaration`/`ambiguous-name` naming the side, its alias and the
+  count. Neither is `not-yet-implemented`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -276,6 +288,7 @@ subject until the checked clause is available meets the same rule.
 | FR-136-AC-9 | With rows naming `P`, `Q` and `R` in that order, `P` is selected and two `conflicting-binding` refusals are reported, at `Q`'s first row and at `R`'s, each naming that row and `P`'s first row. A protocol clause declared in a package other than the declaring one is not a clause for the rows and refuses `missing_declaration`/`missing-name` at its segment. | Test (TC-541) |
 | FR-136-AC-10 | Over FR-136-AC-7's protocol, the source-resolved memory model of its outermost `parallel` is `tso`, so a `memory flush` row is required and a `memory nope` row refuses `missing_declaration`/`missing-name` at `nope`. With a protocol whose `parallel` is under `sc` and a `memory flush` row, S3 refuses at `flush`. A check request that selects `tso` for the `sc` protocol, with no `flush` row, is refused when admitted with `missing_declaration`/`missing-name` naming `flush`; a request that selects `sc` for the `tso` protocol admits and leaves the `flush` row unused. With two outermost `parallel` nodes, one `sc` and one `tso`, one `memory flush` row covers the kind for both. | Test (TC-541) |
 | FR-136-AC-11 | In a build whose support set holds `protocol-abstract-side`, a unit declaring, in this source order, an invariant over a concrete object type whose body is a non-Boolean field read, `CasTwice` (FR-147) with its `population` row written twice, and FR-136-AC-6's refinement over `Run` with a further row naming a second protocol clause `Other` and no `fork`, `join` or `finish` row, is refused with exactly, in order: the invariant's `ill_typed`/`non-boolean-root`; `CasTwice`'s `invalid_model_binding`/`conflicting-binding` naming both `population` rows (FR-135-AC-2); and the `Run` refinement's `invalid_model_binding`/`conflicting-binding` at `Other`'s first row. No refusal names `Twice`'s header or a coverage class, and no `CheckedRefinement` is produced. With the invariant and the `Other` row removed, `CasTwice`'s refusal does not stop the unit, and the unit reports `CasTwice`'s `conflicting-binding` and FR-136-AC-4's `missing-name` naming the `fork` node. | Test (TC-541) |
+| FR-136-AC-12 | A refinement that checks over two object-type models with no `state_machine` record (`CasRefinesCounter`), emitted, refuses `unsupported_construct`/`declaration-form` naming the abstract side and its alias, and is not refused `not-yet-implemented`; with the abstract package declaring two `state_machine` records it refuses `ambiguous_declaration`/`ambiguous-name` with count 2; with exactly one on each side the subject refusal is absent. | Test (TC-541) |
 
 ## Dependencies
 

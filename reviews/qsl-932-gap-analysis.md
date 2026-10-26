@@ -52,3 +52,20 @@ By the ticket's scope, the following stay open for the follow-up work: FR-224-AC
 ## Verdict
 
 Every criterion in scope is covered, and the trace bindings are correct. The untested branches are where SR-1483003's high and medium replay defects live. When those defects are fixed, each fix should land with a test of its branch (a fence-based message passing forged race, and a lossy-channel forged race).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The nested `fork`/`join` test only shows a real race replaying. No forged race is refused through an inner `join`, so a `Clocks::join` that dropped clocks would still pass. | qsl-analyze/tests/it/race_freedom.rs:425-456 |
+| FND-005 | medium | The byte-matching receive, lose and displace rule has no test that fails on the old rule. `a_forged_race_through_a_lossy_channel_is_refused` queues one entry, where both rules agree. A `repeat` that sends one payload twice, loses or displaces the first entry and receives the second is needed. | qsl-analyze/tests/it/race_freedom.rs:485-513 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | b0015317e adds replay tests for the fence, release-RMW, nested fork/join and send/receive/duplicate branches. The fence test fails on the old rule. Remaining gaps are FND-004 and FND-005. |
+| FND-002 | fixed | b0015317e adds `a_store_after_the_send_races_with_the_receivers_load`. Without `carried_after`, the queued view keeps `write:true` from entry, the receive syncs, and the expected race is not found, so the test exercises the carrier clear and the receive join. |
+| FND-003 | fixed | b0015317e adds tests for `RaceOverModel` in EN-1, replay and SMT, and for the closure `BadState` rejection. |
+| FND-004 | still-open | Round 2 adds no forged-race refusal through a nested `join`; `a_race_replays_through_a_nested_fork_and_join` (race_freedom.rs:427) is still positive only. |
+| FND-005 | fixed | 762190d8f adds `a_forged_race_after_a_displaced_send_is_refused` (`repeat`, capacity 1, `loss head`). The original send-node rule fails it, because it matches the receive to the displaced first entry. Also `a_duplicate_leaves_the_original_in_place_and_adds_one_copy_after_it`, which the round-1 rule fails. |

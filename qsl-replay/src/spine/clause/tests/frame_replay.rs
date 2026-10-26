@@ -388,6 +388,9 @@ pub(super) fn packet<P: FamilyPayload>(
             ReplaySource::ObservedTemporal(_) => {
                 panic!("a counterexample envelope cannot recursively carry an observed source")
             }
+            ReplaySource::ModelGraph(_) => {
+                panic!("a counterexample envelope cannot recursively carry a graph source")
+            }
         }),
         family_payload: Some(payload),
     }
@@ -483,6 +486,7 @@ fn witness_arm(result: &FrameReplayResult) -> &crate::WitnessArmResult {
         ReplayResult::Witness(arm) => arm,
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ModelGraph(arm) => panic!("expected the witness arm, got {arm:?}"),
     }
 }
 

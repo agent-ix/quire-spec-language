@@ -516,6 +516,11 @@ pub struct PackageDeclarations {
     /// Test-only: check a package that holds a `refinement` declaration
     /// without refusing it as not emitted (FR-135).
     pub emit_unwritten_refinements: bool,
+    /// Test-only: check a package whose protocol names a construct S4 does
+    /// not write yet ([`ProtocolConstruct`](super::ProtocolConstruct))
+    /// without refusing it as not emitted, so the S3 facts and the
+    /// refinement rules over it stay testable until S4 writes it (FR-383).
+    pub emit_unwritten_protocols: bool,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -551,6 +556,15 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_refinements(mut self) -> Self {
         self.emit_unwritten_refinements = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a protocol that
+    /// names a construct S4 does not write yet as not emitted (FR-383).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_protocols(mut self) -> Self {
+        self.emit_unwritten_protocols = true;
         self
     }
 
@@ -657,6 +671,7 @@ impl PackageDeclarations {
             refinement_internals: None,
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
+            emit_unwritten_protocols: false,
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,
