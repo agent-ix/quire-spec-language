@@ -780,12 +780,10 @@ fn a_race_freedom_certificate_is_refused_over_a_tso_parallel() {
 /// replays. It asserts no acceptance criterion.
 #[test]
 fn a_second_receiver_of_an_older_equal_entry_races_with_the_store() {
-    let sender = format!(
-        "sequence S {{ repeat Loop by w visible () max 2 while {{ true }} \
-         sequence Body {{ send Tx via ch as (tx: Boolean) {{ tx }}; \
-         receive Ak via ch2 of w::W::Acks::Ack as (ak: Boolean) {{ true }}; }} \
-         exhausted sequence Out {{ }} }}"
-    );
+    let sender = "sequence S { repeat Loop by w visible () max 2 while { true } \
+         sequence Body { send Tx via ch as (tx: Boolean) { tx }; \
+         receive Ak via ch2 of w::W::Acks::Ack as (ak: Boolean) { true }; } \
+         exhausted sequence Out { } }";
     let writer = format!(
         "sequence W {{ {} repeat Acks by w visible () max 2 while {{ true }} \
          send Ack via ch2 as (ack: Boolean) {{ ack }}; exhausted sequence OutW {{ }} }}",

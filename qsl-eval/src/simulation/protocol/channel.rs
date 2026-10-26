@@ -53,6 +53,12 @@ fn insert_sorted(queue: &mut Vec<Entry>, entry: Entry) {
     queue.insert(at, entry);
 }
 
+/// A deliverable entry with its choice identity.
+type Deliverable<'i> = (Delivery<'i>, Vec<u8>);
+
+/// A deliverable entry's queue and position, and the entry.
+type Delivery<'i> = ((QueueKey, usize), &'i Entry);
+
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The `send` or `receive` `node`.
     fn message(&self, node: ProtocolNodeId) -> Result<&Message<'_>, ProtocolRefusal> {
@@ -378,8 +384,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         memory: Option<&M::Component>,
         instance: &'i Instance,
         message: &Message<'_>,
-    ) -> Result<Vec<((QueueKey, usize), &'i Entry)>, ProtocolRefusal> {
-        let mut found: Vec<((QueueKey, usize), &Entry, Vec<u8>)> = Vec::new();
+    ) -> Result<Vec<Delivery<'i>>, ProtocolRefusal> {
+        let mut found: Vec<Deliverable<'i>> = Vec::new();
         for (key, queue) in &instance.queues {
             if key.channel != message.channel {
                 continue;
@@ -393,16 +399,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 let identity = self.choice(memory, entry)?;
                 let distinct = !found
                     .iter()
-                    .any(|((other, _), _, seen)| other == key && *seen == identity);
+                    .any(|(((other, _), _), seen)| other == key && *seen == identity);
                 if Some(entry.send) == message.from && distinct {
-                    found.push(((key.clone(), position), entry, identity));
+                    found.push((((key.clone(), position), entry), identity));
                 }
             }
         }
-        Ok(found
-            .into_iter()
-            .map(|(at, entry, _)| (at, entry))
-            .collect())
+        Ok(found.into_iter().map(|(delivery, _)| delivery).collect())
     }
 
     /// PD-4 for a waiting `receive` of instance `ordinal`, over the steps
