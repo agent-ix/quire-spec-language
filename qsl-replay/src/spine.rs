@@ -1233,6 +1233,28 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: the capture `{name}` repeats the name of the `over` parameter, \
                      the `on each` parameter or an earlier capture"
                 ),
+                TemporalCause::UnknownReleaseTaskSet {
+                    name, operation, ..
+                } => format!(
+                    "{message}: the release on `{operation}` names no task set `{name}`"
+                ),
+                TemporalCause::UnknownReleaseTask { task_set, task, .. } => format!(
+                    "{message}: the release names no task `{task}` of task set `{task_set}`"
+                ),
+                TemporalCause::UnresolvedReleaseOperation { name, .. } => {
+                    format!("{message}: the release operation `{name}` names no model operation")
+                }
+                TemporalCause::AmbiguousReleaseOperation { name, .. } => format!(
+                    "{message}: the release operation `{name}` names operations of several types"
+                ),
+                TemporalCause::DuplicateRelease {
+                    task_set,
+                    task,
+                    operation,
+                    ..
+                } => format!(
+                    "{message}: `{operation}` already releases task `{task}` of task set `{task_set}`"
+                ),
                 TemporalCause::UnresolvedFairnessOperation { name, .. } => {
                     format!("{message}: the fairness operation `{name}` names no model operation")
                 }

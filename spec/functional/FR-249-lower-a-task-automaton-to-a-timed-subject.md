@@ -18,8 +18,8 @@ relationships:
 
 ## Description
 
-A timed model whose operations release tasks of a task set is a task
-automaton. For the decidable class, S3 SHALL lower the model and its
+A timed model whose operations release tasks of a task set, each by a
+`release S.τ on M::o;` declaration, is a task automaton. For the decidable class, S3 SHALL lower the model and its
 scheduling policy to a timed subject by the task-automaton encoding, and
 EN-6 SHALL check "no task misses its deadline" as a timed invariant
 (ADR-026 RT-8). A model in the undecidable class, interval execution times
@@ -36,8 +36,9 @@ handles.
 
 ## Inputs
 
-- A checked timed model whose operations carry `releases τ` members naming
-  tasks of a checked task set (FR-246), and a scheduling policy.
+- A checked timed model, `release S.τ on M::o;` declarations naming a task
+  `τ` of a checked task set `S` (FR-246) and an operation `o` of the model,
+  and a scheduling policy.
 
 ## Outputs
 
@@ -47,8 +48,19 @@ handles.
 
 ## Behavior
 
-- `releases τ` SHALL name a task of the task set the model references,
-  refusing `missing_declaration`/`missing-name` otherwise.
+- `release S.τ on M::o;` is the model-level declaration of QSpec's shared
+  grammar, not a member of an operation. The checker SHALL resolve `S` to a
+  task set of the unit, `τ` to a task of `S` and `M::o` to an operation of a
+  model, refusing `missing_declaration`/`missing-name` for each name that
+  does not resolve and `ambiguous_declaration`/`ambiguous-name` when `M::o`
+  names operations of several declaring types.
+- An operation MAY release several tasks, and an operation that releases
+  none releases no job. The checker SHALL refuse a second declaration of one
+  task on one operation `conflicting_declaration`/`duplicate-declaration` at
+  the second declaration.
+- The checker SHALL record each checked `release` on the unit's checked task
+  sets (`CheckedGraph::task_sets()`) as the task set, the task and the
+  operation, the record the lowering reads.
 - The checker SHALL classify the model as undecidable when its task set has
   interval execution times, its model reads task completion, and its
   policy is preemptive; the item SHALL then be disposed
@@ -66,8 +78,9 @@ handles.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-249-AC-1 | A model with one operation `sample` (guard `x = 4 ms`, reset `x = 0`, `releases a`) and one `command` (guard `y = 6 ms`, reset `y = 0`, `releases b`) over `Ctl`'s first two tasks under fixed priority returns `Holds`. With `a`'s WCET raised to 4 it returns `Violated` with a counterexample that replays. | Test (TC-704) |
+| FR-249-AC-1 | A model with one operation `sample` (guard `x = 4 ms`, reset `x = 0`, `release Ctl.a on M::sample;`) and one `command` (guard `y = 6 ms`, reset `y = 0`, `release Ctl.b on M::command;`) over `Ctl`'s first two tasks under fixed priority returns `Holds`. With `a`'s WCET raised to 4 it returns `Violated` with a counterexample that replays. | Test (TC-704) |
 | FR-249-AC-2 | The same model with `a`'s WCET an interval `[1 ms, 2 ms]`, a `when done(a)` guard on `command`, and the fixed-priority preemptive policy is disposed `Unsupported(StopwatchRequired)`; with the WCET a single value it is lowered and checked. | Test (TC-704) |
+| FR-249-AC-3 | Over task set `Ctl` (tasks `a`, `b`) and a model whose operations are `sample` and `command`: `release Ctl.a on M::sample;` and `release Ctl.b on M::sample;` check and `sample` records both tasks, in source order, while `command` records none; a second `release Ctl.a on M::sample;` refuses `conflicting_declaration`/`duplicate-declaration` at the second declaration; `release Nope.a on M::sample;`, `release Ctl.z on M::sample;` and `release Ctl.a on M::nope;` each refuse `missing_declaration`/`missing-name` at the unresolved name; a unit with no `release` records none. `release` as a temporal operator is unaffected. | Test (TC-704) |
 
 ## Dependencies
 
@@ -78,7 +91,7 @@ handles.
 
 ## References
 
-- QSpec half: QSpec FR-419 (Linear STD-139) owns the `releases` grammar
-  (ADR-026 OV-10).
+- QSpec half: QSpec FR-419 (Linear STD-139) owns the `release S.τ on M::o;`
+  grammar (`release-decl` of the shared grammar; ADR-026 OV-10).
 - E. Fersman, P. Krcal, P. Pettersson and W. Yi, 2007 (ADR-026
   References).

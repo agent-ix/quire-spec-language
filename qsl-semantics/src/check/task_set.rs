@@ -26,8 +26,8 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ArrivalForm, CriticalityForm, PolicyForm, ResponseForm, SchedulableForm, SignedQuantityForm,
-    TaskForm, TasksetForm,
+    ArrivalForm, CriticalityForm, PolicyForm, ReleaseForm, ResponseForm, SchedulableForm,
+    SignedQuantityForm, TaskForm, TasksetForm,
 };
 use qsl_foundation::Span;
 use quire_exact::{Integer, NodeKey, Rational};
@@ -35,6 +35,10 @@ use quire_exact::{Integer, NodeKey, Rational};
 use super::probabilistic::{exact_value, ExactFault};
 use super::refusal::{TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause};
 use super::time_units::{TimeScale, TimeUnits};
+
+mod release;
+pub(super) use release::check_releases;
+pub use release::Release;
 
 /// One source declaration of the task-set family, kept in source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,6 +49,8 @@ pub enum TaskSetDeclaration {
     Schedulable(Box<SchedulableForm>),
     /// `response N on S.t <= d under fixed_priority;`.
     Response(Box<ResponseForm>),
+    /// `release S.t on M::o;` (QSL FR-249).
+    Release(Box<ReleaseForm>),
 }
 
 impl TaskSetDeclaration {
@@ -55,6 +61,7 @@ impl TaskSetDeclaration {
             Self::Taskset(_) => TimedConstruct::Taskset,
             Self::Schedulable(_) => TimedConstruct::Schedulable,
             Self::Response(_) => TimedConstruct::Response,
+            Self::Release(_) => TimedConstruct::Release,
         }
     }
 
@@ -64,6 +71,7 @@ impl TaskSetDeclaration {
             Self::Taskset(form) => form.span,
             Self::Schedulable(form) => form.span,
             Self::Response(form) => form.span,
+            Self::Release(form) => form.span,
         }
     }
 
@@ -73,6 +81,7 @@ impl TaskSetDeclaration {
             Self::Taskset(form) => form.name.name.clone(),
             Self::Schedulable(form) => form.name.name.clone(),
             Self::Response(form) => form.name.name.clone(),
+            Self::Release(form) => form.operation.name.clone(),
         }
     }
 }
@@ -226,6 +235,7 @@ impl CheckedScheduleClaim {
 pub struct CheckedTaskSets {
     task_sets: Vec<TaskSet>,
     claims: Vec<CheckedScheduleClaim>,
+    releases: Vec<Release>,
 }
 
 impl CheckedTaskSets {
@@ -237,6 +247,22 @@ impl CheckedTaskSets {
     /// Every checked claim, in source order.
     pub fn claims(&self) -> &[CheckedScheduleClaim] {
         &self.claims
+    }
+
+    /// Every checked `release` declaration, in source order (QSL FR-249).
+    pub fn releases(&self) -> &[Release] {
+        &self.releases
+    }
+
+    /// The tasks the operation `operation` releases, in source order: empty
+    /// for an operation that releases none (QSL FR-249).
+    pub fn released_by<'s>(
+        &'s self,
+        operation: &'s quire_checked::key::DeclarationKey,
+    ) -> impl Iterator<Item = &'s Release> + 's {
+        self.releases
+            .iter()
+            .filter(move |release| release.operation().key() == operation)
     }
 
     /// The task set a claim is over.
@@ -755,7 +781,8 @@ pub(super) fn check(
                 }
                 TaskSetDeclaration::Taskset(_)
                 | TaskSetDeclaration::Schedulable(_)
-                | TaskSetDeclaration::Response(_) => continue,
+                | TaskSetDeclaration::Response(_)
+                | TaskSetDeclaration::Release(_) => continue,
             };
             let (checked, mut defects) = check_claim(claim, &info, units, rational_bits);
             findings.append(&mut defects);
@@ -767,7 +794,7 @@ pub(super) fn check(
         let (claim, set) = match declaration {
             TaskSetDeclaration::Schedulable(claim) => (&claim.name.name, &claim.task_set),
             TaskSetDeclaration::Response(claim) => (&claim.name.name, &claim.task_set),
-            TaskSetDeclaration::Taskset(_) => continue,
+            TaskSetDeclaration::Taskset(_) | TaskSetDeclaration::Release(_) => continue,
         };
         if !first_of.contains_key(set.name.as_str()) {
             findings.push(Finding::Cause(TemporalCause::MissingTaskSet {

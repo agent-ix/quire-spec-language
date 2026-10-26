@@ -64,6 +64,9 @@ ties at a deadline, so that every sampled run is a behaviour of the model.
   distribution repeats a delay, has a negative delay or has a weight that
   is not positive, then the checker SHALL refuse `invalid_model_binding`/
   `malformed-declaration` at its span.
+- If an operation has a second `delay` declaration, then the checker SHALL
+  refuse `invalid_model_binding`/`malformed-declaration` at the second
+  declaration (QSpec FR-405: an operation declares at most one).
 - The checker SHALL record an operation with no `delay` declaration as a free
   delay (`None`), with no distribution.
 - **Windows.** At `(s, v)`, the layer-5 race SHALL compute each scheduled

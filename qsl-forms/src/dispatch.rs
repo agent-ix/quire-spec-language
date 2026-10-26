@@ -216,6 +216,10 @@ pub enum LeadingTokenKind {
     /// `response`: a response-time claim over a task (QSpec FR-419), a
     /// declaration-head spelling only.
     Response,
+    /// `release`: a task release on an operation (QSpec FR-419). The word is
+    /// the reserved temporal operator, which is infix, so at a declaration
+    /// head it leads this form only.
+    Release,
     /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
     /// over a finite trace domain (FR-171).
     Hyper,
@@ -451,6 +455,7 @@ fn dispatch(
         LeadingTokenKind::Taskset => task_set::taskset_declaration(construct),
         LeadingTokenKind::Schedulable => task_set::schedulable_declaration(construct),
         LeadingTokenKind::Response => task_set::response_declaration(construct),
+        LeadingTokenKind::Release => task_set::release_declaration(construct),
         LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
         LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         LeadingTokenKind::Random => probabilistic::random_declaration(construct),
@@ -507,6 +512,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"taskset" => Some(LeadingTokenKind::Taskset),
         b"schedulable" => Some(LeadingTokenKind::Schedulable),
         b"response" => Some(LeadingTokenKind::Response),
+        b"release" => Some(LeadingTokenKind::Release),
         b"hyper" => Some(LeadingTokenKind::Hyper),
         b"relation" => Some(LeadingTokenKind::Relation),
         b"random" => Some(LeadingTokenKind::Random),
