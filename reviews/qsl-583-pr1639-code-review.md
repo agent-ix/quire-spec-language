@@ -81,3 +81,17 @@ Examined:
 - STD-493 comments f4765723 and 10cc4a44.
 
 Gap analysis is SR-1639002.
+
+## Dispositions
+
+Round 1. I checked each fix against the code in a fresh detached worktree and target. Head af99b38b4 is restacked on #1637's 982b0235a, and the fix commit is af99b38b4. `git range-diff` shows the two original commits unchanged except for the base's new aM coverage of the deadlock item.
+
+At af99b38b4:
+- `zone_` tests: 63/63 passed.
+- clippy `-p qsl-analyze --all-targets --all-features -D warnings`: exit 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `first_time_lock` takes the node's first trapped piece. If it does not concretise, the run faults with `Fault("time-lock-concretisation")`. If `point_diverges` calls its point divergent, it faults with `Fault("time-lock-confirmation")`. Neither case can end in `Holds` any more. |
+| FND-002 | fixed | Every zone a federation gains goes through `hold`, which calls `charge_bytes` against `max_zone_bytes` and stops with V-7. `the_trap_search_is_charged_to_the_zone_budget` shows that a budget one byte short stops the run. The case against a warm start is right. The ν sets decrease, so each round's μ set is a subset of the previous one: an upper bound, not a start from below. A least fixpoint must be iterated from below. |
+| FND-003 | fixed | `Divergence { keys, held }` and `LockPath { initial, concrete }` replace the tuples, and the `type_complexity` allow is gone. |

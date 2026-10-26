@@ -51,3 +51,12 @@ Ticket: QSL-583. Head: 390f7abb0. Method: a manual check of each AC against its 
 | `an_undefined_atom_refutes_only_where_time_diverges` | FR-239-AC-5 | correct |
 | `a_non_local_time_lock_reproduces_by_fresh_exploration` | TC-692 | correct (partial AC-4, untagged) |
 | `a_timed_refutation_settles_through_its_replay` | FR-235-AC-3 | correct |
+
+## Dispositions
+
+Round 1, head af99b38b4. `zone_` tests: 63/63 passed.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `trapped_valuations_of_every_shape_are_found` covers a diagonal trap reached by a step, an open boundary (least delay 1), a Zeno reset loop and the tick-source branch. Each lock goes through `reproduced_time_lock`, which asserts that FR-237's replay gives `Reproduced`. |
+| FND-002 | fixed | `a_local_lock_comes_first_at_a_node_and_the_first_node_first` covers both ordering rules. At one node, the local lock at `x = 2` is reported, after delay 2, ahead of the trap from `x = 1`. On the time-locked `Ticker`, the initial node's trap comes before the later node's local lock. |
