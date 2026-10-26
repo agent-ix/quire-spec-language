@@ -24,6 +24,10 @@
 //!   a `duplicate` copies a queued entry with its clock, and a `lose`, or a
 //!   `send` that displaces one at capacity, drops it.
 //!
+//! Under `tso` there are no messages: a store waits in its thread's buffer
+//! with the clock it was given, `flush` moves it to memory, and a load joins
+//! the clock of the newest buffered store of its thread, else of memory.
+//!
 //! A message or slot is found by the depth its step names, counted from the
 //! mo-last message, which garbage collection (RA-7) never changes.
 
@@ -119,6 +123,12 @@ struct Replay {
     /// Each location's messages in modification order, oldest first: the
     /// clock their writers gave them. The initial message holds none.
     messages: BTreeMap<Location, Vec<Clock>>,
+    /// Each `tso` thread's store buffer, oldest first: the location and the
+    /// clock the store was given.
+    buffers: BTreeMap<ThreadPath, Vec<(Location, Clock)>>,
+    /// Each location's memory value under `tso`: the clock of the store that
+    /// wrote it. The initial value holds none.
+    memory: BTreeMap<Location, Clock>,
     /// The global `seq_cst` fence clock.
     fences: Clock,
     /// Each channel's queued entries, oldest first: the entry's canonical
@@ -196,6 +206,16 @@ impl Replay {
             }
             _ => {}
         }
+        if let Some(flush) = step.memory_step() {
+            // TSO-4: `flush(b)` writes the oldest buffered store to memory.
+            let buffer = self.buffers.get_mut(&flush.thread)?;
+            if buffer.is_empty() {
+                return None;
+            }
+            let (location, clock) = buffer.remove(0);
+            self.memory.insert(location, clock);
+            return None;
+        }
         let thread = step.thread()?;
         match step.kind() {
             StepKind::Attempt => self.attempt(step, thread),
@@ -234,6 +254,8 @@ impl Replay {
                     // An outermost `join`: the next `parallel` starts from
                     // one initial message per location (RA-1, RA-7).
                     self.messages.clear();
+                    self.memory.clear();
+                    self.buffers.clear();
                     self.live.clear();
                 }
                 None
@@ -317,7 +339,9 @@ impl Replay {
     /// RA-2 to RA-4, DR-2: an attempt's shared access.
     fn attempt(&mut self, step: &ProtocolTransition, thread: &ThreadPath) -> Option<Event> {
         let access = step.access()?;
-        let choice = step.memory_choice()?;
+        let Some(choice) = step.memory_choice() else {
+            return self.buffered_attempt(access, thread);
+        };
         let (acquires, releases) = strength(access);
         let location = &access.location;
         let messages = self
@@ -374,6 +398,69 @@ impl Replay {
                 return None;
             }
             messages.insert(slot, given);
+        }
+        Some(event)
+    }
+}
+
+impl Replay {
+    /// An access under `tso`, which names no message (TSO-2, TSO-3, TSO-5):
+    /// a load reads its thread's newest buffered store of the location, else
+    /// memory; a store joins the buffer and a locked access (a
+    /// read-modify-write, or a `seq_cst` store) writes memory. The clock a
+    /// store is given follows RA-3, and a read joins as in RA-2.
+    fn buffered_attempt(&mut self, access: &AccessRecord, thread: &ThreadPath) -> Option<Event> {
+        let (acquires, releases) = strength(access);
+        let location = &access.location;
+        let rmw = access.reads && access.writes;
+        let locked = rmw || (access.writes && access.ordering == Some(AccessOrdering::SeqCst));
+        let source = if access.reads {
+            let buffered = if rmw {
+                None
+            } else {
+                self.buffers
+                    .get(thread)
+                    .and_then(|buffer| buffer.iter().rev().find(|(held, _)| held == location))
+                    .map(|(_, clock)| clock.clone())
+            };
+            Some(buffered.unwrap_or_else(|| self.memory.get(location).cloned().unwrap_or_default()))
+        } else {
+            None
+        };
+        let clocks = self.threads.entry(thread.clone()).or_default();
+        let time = clocks.tick(thread);
+        if let Some(carried) = &source {
+            join(&mut clocks.acq, carried);
+            if acquires {
+                join(&mut clocks.cur, carried);
+            }
+        }
+        let event = Event {
+            thread: thread.clone(),
+            location: location.clone(),
+            writes: access.writes,
+            atomic: access.atomic(),
+            time,
+            clock: clocks.cur.clone(),
+        };
+        if access.writes {
+            let mut given = if releases {
+                clocks.rel.insert(location.clone(), clocks.cur.clone());
+                clocks.cur.clone()
+            } else {
+                clocks.released(location)
+            };
+            if let (true, Some(carried)) = (rmw, &source) {
+                join(&mut given, carried);
+            }
+            if locked {
+                self.memory.insert(location.clone(), given);
+            } else {
+                self.buffers
+                    .entry(thread.clone())
+                    .or_default()
+                    .push((location.clone(), given));
+            }
         }
         Some(event)
     }

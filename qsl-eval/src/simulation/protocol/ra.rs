@@ -179,6 +179,27 @@ struct ScEvent {
 #[derive(Clone, Debug)]
 pub struct CarriedView(View);
 
+impl CarriedView {
+    /// A view that carries only the race Booleans `race`, as a model with no
+    /// message views sends (ADR-025 DR-3).
+    pub(super) fn of_race(race: RaceMap) -> Self {
+        Self(View {
+            race,
+            ..View::default()
+        })
+    }
+
+    /// The race Booleans the view carries.
+    pub(super) fn race(&self) -> &RaceMap {
+        &self.0.race
+    }
+
+    /// The race Booleans the view carries, to update.
+    pub(super) fn race_mut(&mut self) -> &mut RaceMap {
+        &mut self.0.race
+    }
+}
+
 /// `Ra`'s component (RA-1, PSC-1).
 #[derive(Clone, Debug, Default)]
 pub struct RaComponent {
@@ -242,7 +263,7 @@ fn depth(len: usize, position: usize) -> u64 {
 }
 
 /// Whether the access loads with acquire strength (RA-2).
-fn acquires(ordering: Option<AccessOrdering>) -> bool {
+pub(super) fn acquires(ordering: Option<AccessOrdering>) -> bool {
     matches!(
         ordering,
         Some(AccessOrdering::Acquire | AccessOrdering::AcqRel | AccessOrdering::SeqCst)
@@ -250,7 +271,7 @@ fn acquires(ordering: Option<AccessOrdering>) -> bool {
 }
 
 /// Whether the access stores with release strength (RA-3).
-fn releases(ordering: Option<AccessOrdering>) -> bool {
+pub(super) fn releases(ordering: Option<AccessOrdering>) -> bool {
     matches!(
         ordering,
         Some(AccessOrdering::Release | AccessOrdering::AcqRel | AccessOrdering::SeqCst)

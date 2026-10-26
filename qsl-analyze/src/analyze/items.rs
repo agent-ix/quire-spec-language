@@ -192,7 +192,6 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         | ModelCheckRefusal::FormNotDecided { .. }
         | ModelCheckRefusal::CaptureRead { .. }
         | ModelCheckRefusal::WeakLiveness
-        | ModelCheckRefusal::TsoRace
         | ModelCheckRefusal::InstanceLiveness
         | ModelCheckRefusal::ReducedLiveness
         | ModelCheckRefusal::ProtocolAbstractSide

@@ -148,11 +148,6 @@ pub enum ModelCheckRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
-    /// The race-freedom item (FR-224) over a protocol subject with a `tso`
-    /// `parallel`, whose race summary is not built yet
-    /// (`unsupported_construct`/`not-yet-implemented`).
-    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide the race-freedom item over a `tso` `parallel` yet")]
-    TsoRace,
     /// The race-freedom item (FR-224) over a model subject, which has no
     /// memory model and so no data race.
     #[error("the race-freedom item is decided over a protocol subject only")]
@@ -661,18 +656,6 @@ pub fn check_protocol(
         if clause.property_form() == Some(PropertyForm::Liveness) {
             return check_protocol_liveness(request, cancel);
         }
-    }
-    if matches!(request.item, ModelCheckItem::RaceFreedom)
-        && matches!(
-            SubjectMemory::of(
-                &request.subject.memory,
-                request.max_store_buffer,
-                request.max_messages
-            ),
-            SubjectMemory::Tso(_)
-        )
-    {
-        return Err(ModelCheckRefusal::TsoRace);
     }
     let max_automaton_states = request.limits.max_automaton_states;
     let (mut item, automaton, certified) =
