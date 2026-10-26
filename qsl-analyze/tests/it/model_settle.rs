@@ -952,3 +952,33 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     assert_eq!(failed.label, ResultLabel::Failed);
     assert_eq!(failed.value.category(), Category::InternalFailure);
 }
+
+/// FR-227: a race counterexample names a protocol subject's memory model; the
+/// replay over a model subject refuses it, `RaceOverModel`.
+#[test]
+fn a_race_counterexample_over_a_model_subject_refuses_the_replay() {
+    let case = case(CONTRACT, &[0]);
+    let mut payload = counterexample(&case);
+    payload.kind = CounterexampleKind::Race(qsl_replay::Race {
+        location: qsl_eval::simulation::Location::AnyField {
+            field: crate::litmus::key("v"),
+        },
+        earlier: 1,
+        later: 1,
+    });
+    let (node, occurrence) = qsl_replay::race_freedom_clause(&case.package_id);
+    let result = replay_model_trace(
+        request(
+            &case.documents.document,
+            case.documents.snapshot_bytes(),
+            &case.unit,
+            case.package_id,
+        ),
+        &trace_subject(&case),
+        &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+        &NO_ATOMS,
+        ReplayLimits::default(),
+    );
+    let (refused, _, _) = refusal(result);
+    assert_eq!(refused, ModelTraceRefusal::RaceOverModel);
+}

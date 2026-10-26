@@ -458,6 +458,25 @@ impl WeakAccesses {
     pub fn cell(&self, location: &Location) -> Option<&Cell> {
         self.cells.get(location)
     }
+
+    /// The shared locations some attempt of a weak `parallel` loads or
+    /// stores with no `ordering`, a non-atomic access (ADR-025 MA-2): the
+    /// locations that carry a race summary (DR-3). A subject with none has
+    /// no race-freedom item (DR-4).
+    pub fn non_atomic(&self) -> BTreeSet<Location> {
+        self.attempts
+            .values()
+            .filter(|attempt| attempt.ordering.is_none())
+            .flat_map(|attempt| &attempt.instances)
+            .filter_map(|instance| match &instance.access {
+                InstanceAccess::Access {
+                    class: AccessClass::Load | AccessClass::Store,
+                    location: Some(location),
+                } => Some(location.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 fn multi_location(

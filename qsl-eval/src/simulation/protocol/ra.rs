@@ -26,6 +26,16 @@
 //!   `join` the component is empty: each location's model-state cell holds
 //!   its mo-last message's value throughout, so atoms read the model state.
 //!
+//! For each shared location some attempt accesses non-atomically the
+//! component also holds a race summary and every view its race Booleans
+//! (ADR-025 DR-3; QSpec FR-438, FR-224). An access decides the data race it
+//! completes from its pre-state over its thread's current view, records
+//! itself in the summary and updates the Booleans of every carrier, and only
+//! then applies RA-2 to RA-4; the view a queued `send` carries is updated
+//! alike ([`MemoryModel::carried_after`]). The race goes to the step as
+//! [`Chosen::race`]; [`super::race`] holds the parts another model with
+//! happens-before carriers shares.
+//!
 //! Messages and events carry ids that only this module reads; the state key
 //! names them by depth and rank, so equal futures share one key.
 //!
@@ -56,6 +66,10 @@ use super::identity::ThreadPath;
 use super::memory::{
     Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,
     MemoryStep, Read, ReadChoice, SharedCell, Written,
+};
+use super::race::{
+    clear_read, clear_write, join_maps, set_read, set_write, AccessRecord, DataRace, RaceMap,
+    RaceSummary,
 };
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
@@ -105,11 +119,13 @@ struct Message {
 
 /// A view (RA-1): one message per shared location, with PSC-2's frontier:
 /// for each thread, the latest SC event of that thread that happens before
-/// the view.
+/// the view, and its `race` member, the Booleans of the race summary
+/// (ADR-025 DR-3).
 #[derive(Clone, Debug, Default)]
 struct View {
     at: BTreeMap<Location, Id>,
     frontier: BTreeMap<ThreadPath, Id>,
+    race: RaceMap,
 }
 
 /// A thread's three views (RA-1).
@@ -167,6 +183,8 @@ pub struct CarriedView(View);
 #[derive(Clone, Debug, Default)]
 pub struct RaComponent {
     shared: BTreeMap<Location, Shared>,
+    /// The race summary of each location with a non-atomic access (DR-3).
+    races: BTreeMap<Location, RaceSummary>,
     threads: BTreeMap<ThreadPath, Views>,
     /// `S`, the global `seq_cst` fence view.
     sc: View,
@@ -195,6 +213,8 @@ impl Eq for RaComponent {}
 /// `{"type":"messages","location":<location>}` to its sequence, each
 /// `{"type":"views","thread":<path>}` to its three views, `{"type":
 /// "sc-view"}` to `S` and `{"type":"sc-graph"}` to the SC event graph.
+/// QSpec FR-438 adds each `{"type":"race-summary","location":<location>}`
+/// to the location's race summary, and a `race` member to every view.
 impl Encode for RaComponent {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
         self.enc().encode_into(writer)
@@ -247,7 +267,8 @@ fn position(shared: &BTreeMap<Location, Shared>, location: &Location, id: Id) ->
 }
 
 /// `into` joined with `from`: for each location the later message, for each
-/// thread the later SC event. A message no longer live is skipped.
+/// thread the later SC event, and the race Booleans or-ed (DR-3). A message
+/// no longer live is skipped.
 fn join(shared: &BTreeMap<Location, Shared>, into: &mut View, from: &View) {
     for (location, id) in &from.at {
         let Some(theirs) = position(shared, location, *id) else {
@@ -268,6 +289,7 @@ fn join(shared: &BTreeMap<Location, Shared>, into: &mut View, from: &View) {
             *latest = *id;
         }
     }
+    join_maps(&mut into.race, &from.race);
 }
 
 impl Views {
@@ -394,6 +416,7 @@ impl RaComponent {
                 })
                 .collect(),
             frontier: BTreeMap::new(),
+            race: RaceMap::new(),
         }
     }
 
@@ -403,12 +426,87 @@ impl RaComponent {
         id
     }
 
+    /// DR-3: `f` over the race Booleans of every happens-before carrier the
+    /// component holds: each thread's three views, each message's view and
+    /// `S`.
+    fn each_race_map(&mut self, mut f: impl FnMut(&mut RaceMap)) {
+        for views in self.threads.values_mut() {
+            f(&mut views.cur.race);
+            f(&mut views.acq.race);
+            for view in views.rel.values_mut() {
+                f(&mut view.race);
+            }
+        }
+        for shared in self.shared.values_mut() {
+            for message in &mut shared.messages {
+                f(&mut message.view.race);
+            }
+        }
+        f(&mut self.sc.race);
+    }
+
+    /// DR-3 and ADR-025 DR-4: the data race `access` completes at this
+    /// component, decided from its pre-state over the accessing thread's
+    /// `cur` view, joined with `read`, the race Booleans of the message an
+    /// acquire read-modify-write reads: what happens before the store it
+    /// reads happens before its write. `None` for a location with no race
+    /// summary.
+    fn race_of(&self, access: &AccessRecord, read: Option<&RaceMap>) -> Option<DataRace> {
+        let summary = self.races.get(&access.location)?;
+        let mut carrier = self
+            .threads
+            .get(&access.thread)
+            .and_then(|views| views.cur.race.get(&access.location))
+            .cloned()
+            .unwrap_or_default();
+        if let Some(bools) = read.and_then(|map| map.get(&access.location)) {
+            carrier.join(bools);
+        }
+        let earlier = summary.conflicts(access, &carrier);
+        (!earlier.is_empty()).then(|| DataRace {
+            location: access.location.clone(),
+            earlier,
+        })
+    }
+
+    /// DR-3: the summary and every carrier after `access`: a write sets the
+    /// location's write Boolean true in the writer's `cur` and `acq` views and
+    /// false in every other carrier, and a read its thread's read Boolean
+    /// likewise. This runs before the access rule of RA-2 to RA-4.
+    fn note(&mut self, access: &AccessRecord) {
+        let Some(summary) = self.races.get_mut(&access.location) else {
+            return;
+        };
+        summary.record(access);
+        let (location, thread) = (&access.location, &access.thread);
+        if access.writes {
+            self.each_race_map(|map| clear_write(map, location));
+        }
+        if access.reads {
+            self.each_race_map(|map| clear_read(map, location, thread));
+        }
+        if let Some(views) = self.threads.get_mut(thread) {
+            for view in [&mut views.cur, &mut views.acq] {
+                if access.writes {
+                    set_write(&mut view.race, location);
+                }
+                if access.reads {
+                    set_read(&mut view.race, location, thread);
+                }
+            }
+        }
+    }
+
     /// RA-1: entering an outermost `ra` `parallel`, each location holds one
     /// message, its current value, with every view pointing at it.
     fn enter(&mut self, parent: &ThreadPath, cells: &[SharedCell<'_>], state: &ModelSimState) {
         for cell in cells {
             if self.shared.contains_key(cell.location) {
                 continue;
+            }
+            if cell.non_atomic {
+                self.races
+                    .insert(cell.location.clone(), RaceSummary::default());
             }
             let id = self.fresh();
             let value = state.cell(cell.cell).cloned();
@@ -426,7 +524,12 @@ impl RaComponent {
                 },
             );
         }
-        let tip = self.tip();
+        let mut tip = self.tip();
+        // QSpec FR-438: entering the `parallel`, no location has been written,
+        // so its last write, none, happens before every carrier.
+        for location in self.races.keys() {
+            set_write(&mut tip.race, location);
+        }
         for shared in self.shared.values_mut() {
             for message in &mut shared.messages {
                 if message.view.at.is_empty() {
@@ -564,6 +667,7 @@ impl RaComponent {
             let written = View {
                 at: BTreeMap::from([(location.clone(), id)]),
                 frontier: BTreeMap::new(),
+                race: RaceMap::new(),
             };
             join(&self.shared, &mut view, &written);
             view
@@ -932,9 +1036,24 @@ impl RaComponent {
                 (covered > 0).then(|| (thread.enc(), Enc::text(covered.to_string())))
             })
             .collect();
-        Enc::tagged(
-            "view",
-            vec![("at", map_enc(at)), ("frontier", map_enc(frontier))],
+        let mut members = vec![("at", map_enc(at)), ("frontier", map_enc(frontier))];
+        if !self.races.is_empty() {
+            members.push(("race", self.race_enc(&view.race)));
+        }
+        Enc::tagged("view", members)
+    }
+
+    /// A carrier's Booleans for every location with a race summary
+    /// (QSpec FR-438).
+    fn race_enc(&self, race: &RaceMap) -> Enc {
+        map_enc(
+            self.races
+                .iter()
+                .map(|(location, summary)| {
+                    let bools = race.get(location).cloned().unwrap_or_default();
+                    (self.location_enc(location), bools.enc(summary))
+                })
+                .collect(),
         )
     }
 
@@ -1041,6 +1160,15 @@ impl RaComponent {
                 ),
             ));
         }
+        for (location, summary) in &self.races {
+            entries.push((
+                Enc::tagged(
+                    "race-summary",
+                    vec![("location", self.location_enc(location))],
+                ),
+                summary.enc(),
+            ));
+        }
         for (thread, views) in &self.threads {
             entries.push((
                 Enc::tagged("views", vec![("thread", thread.enc())]),
@@ -1085,6 +1213,19 @@ struct Delta<'a> {
     post: &'a ModelSimState,
 }
 
+impl Delta<'_> {
+    /// The access this delta is: a read, a write or both (a read-modify-write).
+    fn access(&self, reads: bool, writes: bool) -> AccessRecord {
+        AccessRecord {
+            thread: self.thread.clone(),
+            location: self.shared.location.clone(),
+            reads,
+            writes,
+            ordering: self.ordering,
+        }
+    }
+}
+
 impl Ra {
     /// Whether `location` holds more live messages than the bound allows
     /// once `component` has collected (MB-2, MB-3).
@@ -1122,7 +1263,10 @@ impl Ra {
         else {
             return Vec::new();
         };
+        let access = delta.access(true, false);
+        let race = component.race_of(&access, None);
         let mut next = component.clone();
+        next.note(&access);
         next.read_from(thread, location, id, acquires(*ordering));
         if *ordering == Some(AccessOrdering::SeqCst)
             && !next.sc_event(thread, EventKind::Read, Some(location), Some(id), None)
@@ -1139,6 +1283,7 @@ impl Ra {
                 component.restored(pre, ModelSimState::clone(post), None),
                 next,
             ),
+            race,
         }]
     }
 
@@ -1166,6 +1311,8 @@ impl Ra {
             .and_then(|id| component.position(location, *id))
             .map_or(0, |at| at + 1);
         let value = post.cell(shared.cell).cloned();
+        let access = delta.access(false, true);
+        let race = component.race_of(&access, None);
         let mut chosen = Vec::new();
         let mut cut = false;
         for slot in first..=len {
@@ -1177,6 +1324,7 @@ impl Ra {
                 continue;
             }
             let mut next = component.clone();
+            next.note(&access);
             let id = next.insert(location, slot, value.clone(), false);
             if *ordering == Some(AccessOrdering::SeqCst)
                 && !next.sc_event(thread, EventKind::Write, Some(location), None, Some(id))
@@ -1199,12 +1347,14 @@ impl Ra {
                     component.restored(pre, ModelSimState::clone(post), kept),
                     next,
                 ),
+                race: race.clone(),
             });
         }
         if cut {
             chosen.push(Chosen {
                 choice: None,
                 written: Written::Cut,
+                race: None,
             });
         }
         chosen
@@ -1243,8 +1393,23 @@ impl Ra {
         let Some(read_message) = held.messages.get(at) else {
             return Vec::new();
         };
-        let (id, read_view) = (read_message.id, read_message.view.clone());
+        let id = read_message.id;
+        let access = delta.access(true, true);
+        let race = if acquires(*ordering) {
+            component.race_of(&access, Some(&read_message.view.race))
+        } else {
+            component.race_of(&access, None)
+        };
         let mut next = component.clone();
+        next.note(&access);
+        // The message's view after the access's update, since a write to the
+        // location makes the write Boolean of every other carrier false.
+        let read_view = next
+            .shared
+            .get(location)
+            .and_then(|held| held.messages.get(at))
+            .map(|message| message.view.clone())
+            .unwrap_or_default();
         next.read_from(thread, location, id, acquires(*ordering));
         let slot = at + 1;
         let written = next.insert(location, slot, post.cell(shared.cell).cloned(), true);
@@ -1280,6 +1445,7 @@ impl Ra {
                 component.restored(pre, ModelSimState::clone(post), kept),
                 next,
             ),
+            race,
         }]
     }
 }
@@ -1425,6 +1591,16 @@ impl MemoryModel for Ra {
         next
     }
 
+    /// DR-3: a view a queued `send` carries is a happens-before carrier too.
+    fn carried_after(&self, carried: &mut CarriedView, access: &AccessRecord) {
+        if access.writes {
+            clear_write(&mut carried.0.race, &access.location);
+        }
+        if access.reads {
+            clear_read(&mut carried.0.race, &access.location, &access.thread);
+        }
+    }
+
     fn carried_key(&self, component: &RaComponent, carried: &CarriedView) -> CarriedKey {
         CarriedKey(component.view_enc(&carried.0))
     }
@@ -1529,6 +1705,15 @@ impl MemoryModel for Ra {
     ///
     /// - a load of `ℓ` reads `msgs(ℓ)` and reads and writes `view(b)`; a
     ///   store or RMW reads and writes both;
+    /// - an access to a location with a race summary reads and writes
+    ///   `race(ℓ)`, whose Booleans every write to `ℓ` clears in every other
+    ///   carrier (DR-3). MR-1 has every access, fence, send and receive of the
+    ///   `parallel` touch `race(ℓ)`; only the accesses to `ℓ` do here, which
+    ///   is sound because every other step changes a carrier's Booleans of `ℓ`
+    ///   by a copy or an or, and a write's clear (to false, except in its own
+    ///   thread's `cur` and `acq`) commutes with both: clearing then copying
+    ///   or or-ing gives what or-ing then clearing gives, and the steps that
+    ///   move a view already meet `view(b)`;
     /// - a fence reads and writes `view(b)`, and a `seq_cst` fence also `S`;
     /// - every `seq_cst` access and fence reads and writes the SC event
     ///   graph, and while an SC event is live so does every step that moves
@@ -1576,6 +1761,14 @@ impl MemoryModel for Ra {
                 if viewed {
                     if let Some(location) = location {
                         touch(footprint, view);
+                        if component.races.contains_key(location) {
+                            touch(
+                                footprint,
+                                Location::Protocol(ProtocolLocation::Race(Box::new(
+                                    location.clone(),
+                                ))),
+                            );
+                        }
                         match class {
                             AccessClass::Store | AccessClass::Rmw => {
                                 touch(footprint, messages(location));
