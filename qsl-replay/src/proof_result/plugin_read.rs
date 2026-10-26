@@ -660,6 +660,9 @@ pub fn read_plugin_inconclusive_cause(
 
 #[ix_trace_rs::string_edge]
 fn read_form(value: &Value, pointer: String) -> Result<PropertyForm, PluginResultRefusal> {
+    if let Value::Object(members) = value {
+        return read_refinement_form(members, &pointer);
+    }
     let form = text_of(value, pointer.clone())?;
     match form {
         "reachable-invariant" => Ok(PropertyForm::ReachableInvariant),
@@ -670,6 +673,32 @@ fn read_form(value: &Value, pointer: String) -> Result<PropertyForm, PluginResul
             pointer,
             feature: other.to_owned(),
         }),
+    }
+}
+
+/// The canonical spelling of `PropertyForm::Refinement` (quire-semantic-value
+/// FR-121): `{"refinement":{"liveness":<bool>}}` and nothing else.
+fn read_refinement_form(
+    members: &Map<String, Value>,
+    pointer: &str,
+) -> Result<PropertyForm, PluginResultRefusal> {
+    if let Some(name) = first_undefined(members, &["refinement"]) {
+        return Err(unknown_member(child(pointer, name)));
+    }
+    let body_pointer = child(pointer, "refinement");
+    let body = member(members, "refinement", pointer)?;
+    let Value::Object(body_members) = body else {
+        return Err(wrong_kind(body_pointer));
+    };
+    if let Some(name) = first_undefined(body_members, &["liveness"]) {
+        return Err(unknown_member(child(&body_pointer, name)));
+    }
+    let liveness_pointer = child(&body_pointer, "liveness");
+    match member(body_members, "liveness", &body_pointer)? {
+        Value::Bool(liveness) => Ok(PropertyForm::Refinement {
+            liveness: *liveness,
+        }),
+        _ => Err(wrong_kind(liveness_pointer)),
     }
 }
 

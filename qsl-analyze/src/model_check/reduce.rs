@@ -112,6 +112,8 @@ impl TableForm {
             PropertyForm::BoundedMltl => Self::BoundedMltl,
             PropertyForm::Safety => Self::Safety { interval },
             PropertyForm::Liveness => Self::Liveness { interval },
+            PropertyForm::Refinement { liveness: false } => Self::RefinementSafety,
+            PropertyForm::Refinement { liveness: true } => Self::RefinementLiveness,
         })
     }
 }
