@@ -1349,7 +1349,12 @@ fn prepare_models(
     let declarations: Vec<&TimedDeclaration> = inputs
         .timed_forms
         .iter()
-        .filter(|form| !matches!(form, TimedDeclaration::TimeSource(_)))
+        .filter(|form| {
+            matches!(
+                form,
+                TimedDeclaration::TimeInvariant(_) | TimedDeclaration::Urgent(_)
+            )
+        })
         .collect();
     if let Some(form) = declarations.first() {
         match (inputs.time_sources, form) {
@@ -1368,7 +1373,7 @@ fn prepare_models(
                 let span = match form {
                     TimedDeclaration::TimeInvariant(form) => form.span,
                     TimedDeclaration::Urgent(form) => form.span,
-                    TimedDeclaration::TimeSource(form) => form.span,
+                    TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => form.span(),
                 };
                 return Err(timed(TemporalCause::AmbiguousTimedDeclaration { span }));
             }
@@ -1425,7 +1430,7 @@ fn prepare_models(
             let span = match form {
                 TimedDeclaration::TimeInvariant(form) => form.span,
                 TimedDeclaration::Urgent(form) => form.span,
-                TimedDeclaration::TimeSource(_) => continue,
+                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => continue,
             };
             let state = || state_object(model, inputs.models, inputs.types, span);
             match form {
@@ -1438,7 +1443,7 @@ fn prepare_models(
                     urgency_drafts
                         .push(urgency(form, model, &clocks, state, &guarded).map_err(timed)?);
                 }
-                TimedDeclaration::TimeSource(_) => {}
+                TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
             }
         }
         models.push(ModelDraft {

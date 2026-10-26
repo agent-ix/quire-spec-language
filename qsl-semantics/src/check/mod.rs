@@ -288,7 +288,7 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
-    TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
+    ClockTypePosition, TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
@@ -1275,26 +1275,29 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
+                        // A `Clock` the unit's own source writes in a type
+                        // position has no checked form yet (FR-230
+                        // "Clock-typed positions").
+                        if let TimedDeclaration::ClockType(position) = form {
+                            return Some(CheckRefusal {
+                                location: root(Origin::Expression),
+                                cause: CheckCause::TimedNotChecked {
+                                    construct: TimedConstruct::Clock,
+                                    span: position.span,
+                                },
+                            });
+                        }
                         // A time invariant and an `urgent` declaration are
                         // checked with the clauses they read (`timed_model`).
                         return None;
                     }
-                    let cause = {
-                        let owner = match form {
-                            TimedDeclaration::TimeSource(source) => source.model.name.clone(),
-                            TimedDeclaration::TimeInvariant(invariant) => {
-                                invariant.name.name.clone()
-                            }
-                            TimedDeclaration::Urgent(urgent) => urgent.name.name.clone(),
-                        };
-                        CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
-                            construct: form.construct(),
-                            owner,
-                            selected: selected.clone(),
-                            required,
-                            span: form.span(),
-                        }))
-                    };
+                    let cause = CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
+                        construct: form.construct(),
+                        owner: form.owner().to_owned(),
+                        selected: selected.clone(),
+                        required,
+                        span: form.span(),
+                    }));
                     Some(CheckRefusal {
                         location: root(Origin::Expression),
                         cause,
