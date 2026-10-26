@@ -11,15 +11,11 @@
 //! ADR-021 §7.4 is over `ProtocolSystem`, which `qsl-analyze` does not build
 //! yet, and ADR-018's and ADR-019's worked examples are checked unreduced by
 //! their own tests; neither is in this corpus. A liveness `Holds` that the
-//! unreduced engine reaches is refused only for want of FR-339's component
-//! certificate, after it has explored the whole product, so that refusal is
-//! the unreduced run's `Holds` here. A pair in which either run ends at its
+//! unreduced engine reaches carries FR-339's component certificate. A pair in which either run ends at its
 //! horizon or at a limit is not compared; none of these runs sets either.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    LivenessRefusal, ModelCheckRefusal, Reductions, SymmetryDeclaration,
-};
+use qsl_analyze::model_check::{ModelCheckRefusal, Reductions, SymmetryDeclaration};
 use qsl_replay::{
     CounterexampleKind, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
     TemporalCounterexample,
@@ -43,10 +39,9 @@ enum Verdict {
 /// not compare.
 fn verdict(outcome: &Outcome) -> Option<Verdict> {
     match outcome {
-        Ok(ModelCheckOutcome::Holds { .. } | ModelCheckOutcome::HoldsReduced { .. })
-        | Err(ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt {
-            ..
-        })) => Some(Verdict::Holds),
+        Ok(ModelCheckOutcome::Holds { .. } | ModelCheckOutcome::HoldsReduced { .. }) => {
+            Some(Verdict::Holds)
+        }
         Ok(ModelCheckOutcome::Violated { .. }) => Some(Verdict::Violated),
         _ => None,
     }

@@ -12,8 +12,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    retain_reduced, Ample, Atoms, Choice, LivenessRefusal, ModelCheckRefusal, Por, Reductions,
-    SymmetryDeclaration,
+    retain_reduced, Ample, Atoms, Choice, ModelCheckRefusal, Por, Reductions, SymmetryDeclaration,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
@@ -25,7 +24,8 @@ use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ProofBasis,
-    Proviso, ReachedLimit, ReductionCause, ResultLabel, SettlementBasis, TerminalValue,
+    ProofCertificate, Proviso, ReachedLimit, ReductionCause, ResultLabel, SettlementBasis,
+    TerminalValue,
 };
 use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
 use quire_exact::Cancel;
@@ -220,7 +220,7 @@ fn bumped(source: &ModelSimState, target: &ModelSimState, _: &ModelTransition) -
 /// where the unreduced search stores 27. The run, which checks the three
 /// instances, stores 6 product states for each of the three negations and
 /// proves the claim under no certificate; the unreduced run stores 18 each
-/// and is refused only for want of FR-339's component certificate.
+/// and holds with FR-339's component certificate.
 #[trace("TC-576", "FR-156-AC-1")]
 #[test]
 fn ample_sets_reduce_independent_bumps_to_one_interleaving() {
@@ -302,11 +302,13 @@ fn ample_sets_reduce_independent_bumps_to_one_interleaving() {
             None,
             ModelCheckLimits::default(),
         )
-        .expect_err("a liveness proof is refused without FR-339's certificate");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        unreduced
+        .expect("checked");
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Component(_),
+        stats,
+    } = unreduced
     else {
-        panic!("expected the missing component certificate, got {unreduced:?}");
+        panic!("expected a component certificate, got {unreduced:?}");
     };
     assert_eq!(stats.product_states, 3 * 18);
 }

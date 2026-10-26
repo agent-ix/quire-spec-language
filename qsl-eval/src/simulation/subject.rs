@@ -9,16 +9,17 @@ use std::borrow::Cow;
 
 use qsl_foundation::digest::DigestRecord;
 
-use crate::fairness::{Constraint, Identity};
+use crate::fairness::{Constraint, Identity, Strength};
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::protocol::{
-    AccessRecord, BlockedThread, DataRace, ProtocolFairness, ProtocolTransition,
+    AccessRecord, BlockedThread, DataRace, ProtocolFairness, ProtocolFairnessError,
+    ProtocolTransition,
 };
-use quire_semantic_value::fairness::FairnessConstraint;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// What a method bound left of a state unexpanded: a store the memory bound
@@ -71,6 +72,24 @@ impl SubjectTransition for ProtocolTransition {
     fn race(&self) -> Option<&DataRace> {
         ProtocolTransition::race(self)
     }
+}
+
+/// Why a clause's fairness set could not be resolved to the kernels'
+/// constraints over a graph's transitions (FR-339).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ConstraintError {
+    /// A fairness constraint names an operation the subject does not declare.
+    #[error("the fairness constraint on `{name}` names an operation the subject does not declare")]
+    UnknownOperation {
+        /// The operation's resolved name.
+        name: String,
+    },
+    /// The protocol subject's fairness set did not build.
+    #[error(transparent)]
+    Protocol(#[from] ProtocolFairnessError),
+    /// A transition the graph holds has no identity number.
+    #[error("a transition of the graph has no identity number")]
+    Unnumbered,
 }
 
 /// A subject's transition system as EN-1 and replay read it.
@@ -134,6 +153,27 @@ pub trait SubjectSystem:
     ) -> Result<Vec<Constraint>, ZeroProgressError> {
         Ok(Vec::new())
     }
+
+    /// FR-339: the kernels' resolved constraints of a TP-4 clause's
+    /// `authored` fairness over `transitions`, the transitions of the checked
+    /// graph (its edge labels and every state's enabled set), ascending by
+    /// their FR-101 canonical bytes and numbered by `identity`. A model
+    /// subject resolves FR-123's constraints in the clause's order (a `whole`
+    /// constraint covers every transition of its operation, an `each`
+    /// constraint is one constraint per such transition, in `transitions`'
+    /// order). A protocol subject resolves its fairness set (FR-212).
+    ///
+    /// # Errors
+    ///
+    /// [`ConstraintError`] when a constraint names an operation the subject
+    /// does not declare, the protocol's fairness set does not build, or
+    /// `identity` numbers a transition not in `transitions`.
+    fn clause_constraints(
+        &self,
+        authored: &[FairnessConstraint],
+        transitions: &[Self::TransitionId],
+        identity: &dyn Fn(&Self::TransitionId) -> Option<Identity>,
+    ) -> Result<Vec<Constraint>, ConstraintError>;
 
     /// The model state a temporal atom reads at `state` (ADR-027 PB-2, SE-1
     /// g): the state itself for a model subject.
@@ -200,6 +240,43 @@ impl SubjectSystem for ModelSystem<'_> {
         _cut: Cut,
     ) -> Result<TerminalClass, ExpansionStop> {
         ModelSystem::terminal_class(self, state, !expansion.successors.is_empty())
+    }
+
+    fn clause_constraints(
+        &self,
+        authored: &[FairnessConstraint],
+        transitions: &[ModelTransition],
+        identity: &dyn Fn(&ModelTransition) -> Option<Identity>,
+    ) -> Result<Vec<Constraint>, ConstraintError> {
+        let mut constraints = Vec::new();
+        for constraint in authored {
+            let strength = Strength::from(constraint.kind());
+            let operation = constraint.operation();
+            let text = self
+                .operation_text(operation.declaring_type(), operation.name())
+                .ok_or_else(|| ConstraintError::UnknownOperation {
+                    name: operation.name().to_owned(),
+                })?;
+            let covered = transitions
+                .iter()
+                .filter(|transition| transition.operation() == text);
+            match constraint.granularity() {
+                FairnessGranularity::Whole => {
+                    let members = covered
+                        .map(identity)
+                        .collect::<Option<Vec<_>>>()
+                        .ok_or(ConstraintError::Unnumbered)?;
+                    constraints.push(Constraint::new(strength, members));
+                }
+                FairnessGranularity::Each => {
+                    for transition in covered {
+                        let number = identity(transition).ok_or(ConstraintError::Unnumbered)?;
+                        constraints.push(Constraint::new(strength, [number]));
+                    }
+                }
+            }
+        }
+        Ok(constraints)
     }
 
     fn atom_state<'s>(&self, state: &'s ModelSimState) -> Cow<'s, ModelSimState> {

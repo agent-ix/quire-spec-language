@@ -5,19 +5,17 @@
 //! is the ranged `setTo`, `release` is `inc`) and its `Handoff` variant.
 //!
 //! Not covered: FR-130-AC-4 and FR-130-AC-5's certificates and the
-//! `Holds{Exhaustive}` they ride on. A TP-4 proof still settles only with
-//! FR-339's component certificate, which EN-1 does not build for weak
-//! fairness either, so a proof under strong fairness is the run's
-//! `ComponentCertificateNotBuilt` refusal carrying its statistics. The
-//! tests below assert the proof's content through those statistics: that
-//! the refinement found no fair accepting component, over the product
-//! states the claim names.
+//! `Holds{Exhaustive}` they ride on. A TP-4 proof settles with FR-339's
+//! component certificate, which the core's checker accepts. The tests below
+//! assert the proof's content through the run's statistics: that the
+//! refinement found no fair accepting component, over the product states the
+//! claim names.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{LivenessRefusal, ModelCheckRefusal};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::{
     settle_model_check, CertificateRequest, DisagreementCause, IncompleteCause, InconclusiveCause,
@@ -42,15 +40,10 @@ fn decided(fixture: &Fixture, atom: fn(i64) -> Option<bool>) -> ModelCheckOutcom
     fixture.decide(atom).expect("checked")
 }
 
-/// The states the proof of `fixture`'s claim examined: the run's statistics
-/// in the certificate refusal that stands for a proof.
+/// The states the proof of `fixture`'s claim examined: the run's statistics,
+/// its component certificate accepted by the core's checker.
 fn proof_stats(fixture: &Fixture, atom: fn(i64) -> Option<bool>) -> RunStats {
-    match fixture.decide(atom) {
-        Err(ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt {
-            stats,
-        })) => stats,
-        other => panic!("expected a proof awaiting its certificate, got {other:?}"),
-    }
+    fixture.certified(atom).1
 }
 
 /// Process 1 holds the lock, or process 2 does.
@@ -221,7 +214,10 @@ fn cancellation_mixed_kinds_and_determinism() {
         UNLIMITED,
         &counting,
     );
-    assert!(uncancelled.is_err());
+    assert!(
+        matches!(uncancelled, Ok(ModelCheckOutcome::Holds { .. })),
+        "{uncancelled:?}"
+    );
     let total = charges.load(Ordering::Relaxed);
 
     let stopped = |at| match cancelled_at(&mutex, at) {
@@ -272,8 +268,7 @@ fn cancellation_mixed_kinds_and_determinism() {
 /// FR-130 "The filter" (the engine half of FR-130-AC-5) over its three-process mutex under `strong
 /// each` on `acquire`: two strong constraints, `acq(1)` and `acq(2)`, fail on
 /// the one SCC `{(0, q1), (3, q1)}` and one refinement removes the states
-/// enabling either, so the claim holds. The certificate that proof carries
-/// (AC-4, AC-5) is not built.
+/// enabling either, so the claim holds.
 #[trace("TC-531")]
 #[test]
 fn two_strong_constraints_failing_on_one_component_refine_together() {

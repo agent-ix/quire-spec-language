@@ -6,8 +6,9 @@
 //! SM-7) that reproduced it against the package the run checked: the
 //! caller's `replay` (in production [`replay_model_trace`]) supplies the
 //! result, and the map checks its `package_id`. A `Holds` outcome settles
-//! only through the core's own closure checker, [`check_closure`], which the
-//! map runs itself on the outcome's certificate (ADR-018 PC-3, PC-5):
+//! only through the core's own checker of its certificate, [`check_closure`]
+//! or, for a liveness item, [`check_components`], which the map runs itself
+//! on the outcome's certificate (ADR-018 PC-3, PC-4, PC-5):
 //! accepted is `Proved{Exhaustive, Certified}`, rejected is
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
@@ -21,8 +22,9 @@ use quire_semantic_value::catalog::Category;
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{
-    check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
-    ClosureRefusal, ProtocolCertificateRequest, TemporalCertificateCheck,
+    check_closure, check_components, check_protocol_closure, check_protocol_components,
+    CertificateRejection, CertificateRequest, ClosureRefusal, ProtocolCertificateRequest,
+    TemporalCertificateCheck,
 };
 use crate::certificate::scc::ProofCertificate;
 use crate::execute::ReplayRefusal;
@@ -241,6 +243,9 @@ pub fn settle_model_check(
             ProofCertificate::Closure(closure) => {
                 check_closure(certificate, closure, limits, cancel)
             }
+            ProofCertificate::Component(components) => {
+                check_components(certificate, components, limits, cancel)
+            }
         },
         replay,
     )
@@ -272,6 +277,9 @@ pub fn settle_protocol_check(
         |proof| match proof {
             ProofCertificate::Closure(closure) => {
                 check_protocol_closure(certificate, closure, limits, cancel)
+            }
+            ProofCertificate::Component(components) => {
+                check_protocol_components(certificate, components, limits, cancel)
             }
         },
         replay,

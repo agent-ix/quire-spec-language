@@ -36,8 +36,8 @@ versions 0, the subject's `max_candidates` 1,000,000.
   division-by-zero at position 2, the prefix `(0,0) -upd(a)-> (1,0) -upd(a)->
   (2,0)`; no product state is reported for the dead positions.
 - Step 2: `Stopped{ResourceExhausted, {MaxStates, 1}}`.
-- Step 3: `Holds{Exhaustive}` with an accepted certificate; without one,
-  `ComponentCertificateNotBuilt` with the run's statistics, not `Holds`.
+- Step 3: `Holds{Exhaustive}` with a component certificate that FR-339's
+  checker accepts.
 - Step 4: `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` at
   position 1.
 - Step 5: `Stopped{ResourceExhausted, {MaxStates, 6}}`; the step 4 finding for

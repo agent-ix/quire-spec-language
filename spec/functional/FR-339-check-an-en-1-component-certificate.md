@@ -109,7 +109,10 @@ exactly when its key's phase is `"active"`.
 
 `UnfairWeak`'s index is into the clause's resolved constraints: one per
 `whole` constraint, and one per transition identity of an `each`
-constraint, in FR-123's order.
+constraint, in FR-123's order of the clause's constraints; the transition
+identities of one `each` constraint are taken over the union of every
+binding's transitions, in ascending order of their FR-101 canonical
+transition key bytes, by the producer and the checker alike.
 
 ### Protocol subjects
 
