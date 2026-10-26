@@ -89,7 +89,7 @@ requirements that S4 derives from these nodes.
 
 One node for each row below, for every checked protocol. Every node has
 `node_tag` `protocol` and the Boolean scalar type node as `semantic_type`.
-Under the pending Option A cycle proposal below, a node outside a cyclic
+Under the approved Option A cycle decision below, a node outside a cyclic
 reference component has `recursion` `null`; every node in a cyclic component
 uses FR-322's existing recursion-group encoding. Every body is one
 `quire.op.protocol.control`
@@ -136,9 +136,9 @@ the protocol's qualified name.
 
 ## Behavior
 
-### Pending cycle ruling: Option A (unconfirmed)
+### Cyclic reference components
 
-This proposal is **unconfirmed pending Peter's ruling**. A protocol node that
+A protocol node that
 belongs to a cyclic strongly connected component of checked-node references
 uses the same `recursion_group`, `{size, ordinal}` preimage coordinates and
 in-group `group_reference` terms that FR-092 and QSpec FR-322 define for other
@@ -147,6 +147,19 @@ of its `node_tag`. A protocol node outside a cyclic component keeps
 `recursion_group` absent and `recursion` `null`. Acyclic node keys and bodies
 are unchanged. This option admits a predicate-join function that refers back
 to its own protocol when those references form a cycle.
+
+Finding cyclic components SHALL use an iterative graph algorithm with an
+explicit work stack and SHALL NOT use native call-stack recursion. Component
+discovery and membership assignment SHALL take O(V + E) time in the checked
+reference graph, where V is its nodes and E its edges. The emitter SHALL NOT
+merge components by repeatedly scanning or copying existing groups, and SHALL
+compute each group's identity hash once after its canonical membership and
+coordinates are established. This work SHALL be charged to the caller's
+existing shared `s3.work_units` budget (ADR-030); the emitter SHALL add no
+fixed depth, group-size, node-count, or group-count limit. When that budget is
+exhausted, the existing typed limit refusal SHALL name `s3.work_units`. The
+emit path SHALL NOT use a global lock or serialize independent package
+emissions.
 
 ### Nodes and keys
 
@@ -318,7 +331,8 @@ FR-105).
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
 | FR-383-AC-22 | **W** with `Shipments` joined `predicate(both) [west, east]` over `function both using v(x: Boolean, y: Boolean): Boolean pure { x and y }` emits a `parallel` node whose join Group holds `policy` `predicate` and a `predicate` reference to `both`'s `function` node, which the package holds, and `joined` `east`, `west`; the same unit written `[east, west]` emits the same bytes and the same `package_id`; a second `parallel` joined on `both` references the same node; the read-back of each `parallel` node gives `Predicate{function}` with `both`'s key. Renaming `both` to `either` keeps the `parallel` node's reference equal to the renamed function's node key. | Test (TC-1061) |
 | FR-383-AC-23 | ADR-027 §7's `Fill` with `role w on M` emits a `role` node whose `model` argument is the text `identity` of `M`'s `model_selections` row, with an empty `replication` Group and no `model` dependency, and QSL's I2 reader admits it (QSpec FR-465-AC-9); a clause with `role w on M` and `role u on N` emits two role nodes whose texts are the two selections' identities, with different keys, and a role on the whole model and `role v on M::Cell` have different keys. | Test (TC-1061) |
-| FR-383-AC-24 | Under pending Option A, a protocol whose predicate-join function refers to that protocol emits the full cyclic reference component with one shared `recursion_group`, `{size, ordinal}` coordinates and `group_reference` edges; the I2 reader admits it. An acyclic protocol in the same package has no `recursion_group` and `recursion` `null`, and its key inputs are unchanged. | Test (TC-1062) |
+| FR-383-AC-24 | Under Option A, a protocol whose predicate-join function refers to that protocol emits the full cyclic reference component with one shared `recursion_group`, `{size, ordinal}` coordinates and `group_reference` edges; the I2 reader admits it. An acyclic protocol in the same package has no `recursion_group` and `recursion` `null`, and its key inputs are unchanged. | Test (TC-1062) |
+| FR-383-AC-25 | SCC discovery is iterative and O(V + E), does not merge groups quadratically, hashes each completed group once, and uses no global lock on the emit path. There is no fixed recursion depth, group size, node count or group count cap: the only applicable work bound is the caller's shared `s3.work_units` budget, and exhaustion produces the existing typed limit refusal naming `s3.work_units`. A 100,000-node cycle group emits and reads back within the supplied budget without native stack overflow; the budget refuses at zero and one unit short and succeeds at the exact measured work; permuting authored node order leaves group identity unchanged. | Test (TC-1062) |
 
 ## Dependencies
 
