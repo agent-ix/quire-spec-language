@@ -102,6 +102,10 @@ struct Event {
     clock: Clock,
 }
 
+/// A queue: its channel, its instance and its FIFO key, `None` for an
+/// `unordered` channel (ADR-027 PS-7).
+type QueueName = (String, u64, Option<Vec<u8>>);
+
 /// A queued entry: its canonical bytes and the clock its sender carried.
 type Queued = (Vec<u8>, Clock);
 
@@ -119,7 +123,7 @@ struct Replay {
     fences: Clock,
     /// Each channel's queued entries, oldest first: the entry's canonical
     /// bytes and the clock the sender carried.
-    queues: BTreeMap<(String, u64), Vec<Queued>>,
+    queues: BTreeMap<QueueName, Vec<Queued>>,
 }
 
 /// Whether the access loads or stores with acquire or release strength
@@ -136,6 +140,27 @@ fn strength(access: &AccessRecord) -> (bool, bool) {
     (acquires, releases)
 }
 
+/// The position of the `before`-th entry of `queue` with the bytes `entry`.
+fn nth_equal(queue: &[Queued], entry: &[u8], before: usize) -> Option<usize> {
+    queue
+        .iter()
+        .enumerate()
+        .filter(|(_, (held, _))| held == entry)
+        .nth(before)
+        .map(|(at, _)| at)
+}
+
+/// Add `entry` to `queue` as the engine does: at the end of a `fifo` queue,
+/// after the entries of no greater bytes in an `unordered` one.
+fn insert(queue: &mut Vec<Queued>, entry: Queued, fifo: bool) {
+    let at = if fifo {
+        queue.len()
+    } else {
+        queue.partition_point(|(held, _)| *held <= entry.0)
+    };
+    queue.insert(at, entry);
+}
+
 impl Replay {
     fn thread(&mut self, path: &ThreadPath) -> &mut Clocks {
         self.threads.entry(path.clone()).or_default()
@@ -143,14 +168,9 @@ impl Replay {
 
     /// The `before`-th queued entry of `queue` with the canonical bytes
     /// `entry`; entries of equal bytes are taken in queue order.
-    fn take(&mut self, queue: &(String, u64), entry: &[u8], before: usize) -> Option<Clock> {
+    fn take(&mut self, queue: &QueueName, entry: &[u8], before: usize) -> Option<Clock> {
         let queued = self.queues.get_mut(queue)?;
-        let at = queued
-            .iter()
-            .enumerate()
-            .filter(|(_, (held, _))| held == entry)
-            .nth(before)?
-            .0;
+        let at = nth_equal(queued, entry, before)?;
         Some(queued.remove(at).1)
     }
 
@@ -159,13 +179,18 @@ impl Replay {
         match step.kind() {
             StepKind::Duplicate | StepKind::Lose => {
                 let (channel, instance) = step.channel_queue()?;
-                let queue = (channel.to_owned(), instance);
-                let entry = &step.queue_flow()?.entry;
-                let clock = self.take(&queue, entry, 0)?;
-                if step.kind() == StepKind::Duplicate {
-                    let queued = self.queues.entry(queue).or_default();
-                    queued.push((entry.clone(), clock.clone()));
-                    queued.push((entry.clone(), clock));
+                let flow = step.queue_flow()?;
+                let queue = (channel.to_owned(), instance, flow.key.clone());
+                let queued = self.queues.get_mut(&queue)?;
+                let at = nth_equal(queued, &flow.entry, flow.before)?;
+                if step.kind() == StepKind::Lose {
+                    queued.remove(at);
+                } else {
+                    // The engine keeps the original and adds one copy: at the
+                    // end of a `fifo` queue, after the equal entries of an
+                    // `unordered` one.
+                    let copy = (flow.entry.clone(), queued[at].1.clone());
+                    insert(queued, copy, flow.key.is_some());
                 }
                 return None;
             }
@@ -216,7 +241,12 @@ impl Replay {
             StepKind::Send => {
                 let record = step.send_record()?;
                 let flow = step.queue_flow()?;
-                let queue = (record.channel().to_owned(), thread.instance);
+                let queue = (
+                    record.channel().to_owned(),
+                    thread.instance,
+                    flow.key.clone(),
+                );
+                let displacing = flow.displaced.is_some();
                 if let Some((displaced, before)) = &flow.displaced {
                     self.take(&queue, displaced, *before);
                 }
@@ -226,18 +256,24 @@ impl Replay {
                 let clocks = self.thread(thread);
                 clocks.tick(thread);
                 let carried = clocks.cur.clone();
-                self.queues
-                    .entry(queue)
-                    .or_default()
-                    .push((flow.entry.clone(), carried));
+                let queued = self.queues.entry(queue).or_default();
+                let entry = (flow.entry.clone(), carried);
+                if displacing {
+                    // A send that displaces an entry is appended whatever the
+                    // channel's order.
+                    queued.push(entry);
+                } else {
+                    insert(queued, entry, flow.key.is_some());
+                }
                 None
             }
             StepKind::Receive => {
                 let (channel, instance, _) = step.received()?;
+                let flow = step.queue_flow()?;
                 let carried = self.take(
-                    &(channel.to_owned(), instance),
-                    &step.queue_flow()?.entry,
-                    0,
+                    &(channel.to_owned(), instance, flow.key.clone()),
+                    &flow.entry,
+                    flow.before,
                 )?;
                 let clocks = self.thread(thread);
                 clocks.tick(thread);
