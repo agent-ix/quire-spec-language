@@ -1176,6 +1176,10 @@ pub enum LiteralValue {
     Integer(Integer),
     /// `rational`: `"n/d"`, reduced, positive denominator.
     Rational(Rational),
+    /// `float32_bits`: the eight lowercase hexadecimal binary32 bits.
+    Float32Bits(u32),
+    /// `float64_bits`: the sixteen lowercase hexadecimal binary64 bits.
+    Float64Bits(u64),
     /// `quantity`: the exact magnitude, spelled as the decimal integer when
     /// the denominator is 1 and otherwise `"n/d"` in lowest terms (QSpec
     /// FR-322 "Scalar literal values").
@@ -1212,6 +1216,13 @@ impl LiteralValue {
                 } else {
                     format!("{}/{}", value.numerator(), value.denominator())
                 }),
+            ),
+            Self::Float32Bits(value) => {
+                ("float32_bits", LiteralJson::Spelled(format!("{value:08x}")))
+            }
+            Self::Float64Bits(value) => (
+                "float64_bits",
+                LiteralJson::Spelled(format!("{value:016x}")),
             ),
             Self::Quantity(value) => (
                 "quantity",
