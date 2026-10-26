@@ -127,6 +127,12 @@ formula is false on it.
   `inconclusive`, `ReplayParity`, retaining the typed undefined value and its
   actual position, locus and cause, including when only the locus or only the
   cause differs at the same position.
+- An observed temporal `UndefinedEvaluation` packet names a `holds` atom as its
+  locus (QSpec FR-364). If replay of a guarded `on each` clause is undefined
+  while evaluating its activation guard, that result names the activation
+  (FR-125), not a `holds` atom. Such a packet SHALL settle `inconclusive`,
+  `ReplayParity`, retaining the typed undefined evaluation. The packet cannot
+  claim that the guard's undefined value was reproduced by an atom.
 - Replay SHALL need no backend and no solver.
 
 ## Acceptance Criteria
@@ -141,6 +147,7 @@ formula is false on it.
 | FR-331-AC-6 | An observed temporal replay request for AC-1 carries `over` `{"reference":{"population":"Counters","key":"c1"}}`; decoding and re-encoding preserves both values, and the replay resolves that object in the first observed document before evaluation. A request that carries `over` for a function or frame target refuses `invalid_runtime_input`/`unknown-member` at `/replay/over`. | Test (TC-841) |
 | FR-331-AC-7 | An observed request whose `clause_node` resolves to a different clause from its state-clause target refuses `stale_dependency`/`content-mismatch`, naming `clause_node`, before any observed document is admitted. | Test (TC-847) |
 | FR-331-AC-8 | An undefined-evaluation packet whose replayed `Undefined` has the same position but a different source locus or catalogued cause settles `inconclusive`, `ReplayParity`, and preserves the actual typed undefined value. A packet whose replayed outcome is `InsufficientData` or `Incomplete` likewise settles `inconclusive`, `ReplayParity`, preserving the complete outcome fields or charge point. | Test (TC-847) |
+| FR-331-AC-9 | Replay an observed temporal `UndefinedEvaluation` packet for FR-125-AC-18's Counter clause `always holds(true) on each (q: M::Counter) when (6 mod (2 - c.value) = 0)` over its prefix `0 -inc-> 1 -inc-> 2`, with `trace_position` 2 and `locus` naming the clause's `holds(true)` atom. The checked activation guard is undefined at position 2 with cause `division-by-zero`, so replay settles `inconclusive`, `ReplayParity`, retaining the typed `Undefined` at position 2; the atom locus does not identify the activation guard. | Test (TC-847) |
 
 ## Dependencies
 

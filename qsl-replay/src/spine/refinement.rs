@@ -297,6 +297,11 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::Unsupported { .. }
             | RefinementCause::UnsupportedRowForm { .. }
             | RefinementCause::AbstractRelationships { .. }
+            // Unreachable by design: both are raised only at the emission
+            // gate, which replay's checks (unwritten refinements kept) skip;
+            // `None` is the defined value, no limit having been reached.
+            | RefinementCause::NoStateMachineSubject { .. }
+            | RefinementCause::AmbiguousStateMachineSubject { .. }
             | RefinementCause::PopulationBound { .. }
             | RefinementCause::NodeArgumentCount { .. }
             | RefinementCause::NodeArgumentType { .. } => None,

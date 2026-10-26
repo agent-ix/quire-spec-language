@@ -32,8 +32,10 @@ relationships:
 
 QSL SHALL replay state-graph evidence through `qsl-replay`'s replay facade
 (FR-098, ADR-029 CB-2) at ADR-011 E9: `qsl_replay::replay_model_graph` takes FR-098's
-request with the subject's inputs and a `WitnessEnvelope<GraphEvidence>`
-whose source is `ReplaySource::ModelGraph` (ADR-022 GX-1). It re-executes
+request with the subject's inputs and a `GraphEvidenceEnvelope` carried by
+`ReplaySource::ModelGraph` (ADR-022 GX-1). The envelope's checked claim
+occurrence and obligation identity select the claim; the request has no
+generic replay target for this source arm. It re-executes
 each recorded path through FR-120's `ModelSystem` with FR-101 `replay` and
 evaluates the claim's predicates on the replayed states (ADR-022 GX-2 to
 GX-4). For a trap it explores the trap's forward closure again, so it trusts
@@ -54,8 +56,10 @@ evaluator, does not count.
 - FR-098's request: package reference, byte provision (the subject's
   initial snapshots by `sha256-jcs` digest) and limits, with the subject's
   universes.
-- A `WitnessEnvelope<GraphEvidence>` (FR-070) whose obligation identity
-  binds the subject, the claim and its instance:
+- A `GraphEvidenceEnvelope` whose obligation identity binds the subject,
+  the claim and its instance, and whose checked claim occurrence selects the
+  declaration after recompilation. It has no generic replay target or nested
+  backend/input transcript source:
 
 ```rust
 pub struct ModelPath {
@@ -66,6 +70,12 @@ pub struct ModelPath {
 pub struct ModelLasso {
     pub path: ModelPath,                // stem and loop, FR-128's step shape
     pub loop_entry: u32,                // index of the loop's first state in `path`
+}
+
+pub enum WitnessSource {
+    Sampled(SampleProvenance),          // FR-166 phase 0
+    Explored,                           // FR-168 canonical graph search
+    Unrolled { depth: u64 },             // FR-181 bounded product exploration
 }
 
 pub enum WitnessPath {
@@ -88,7 +98,8 @@ pub enum GraphEvidence {
 }
 ```
 
-- `GraphEvidence` implements `FamilyPayload` (FR-070-AC-5).
+- `GraphEvidenceEnvelope` carries the package and proving-run metadata with
+  its typed `GraphEvidence` payload.
 
 ## Outputs
 
@@ -104,8 +115,13 @@ pub enum GraphEvidence {
 
 ### Common
 
-- The executor SHALL recompile and check the package, resolve the claim by
-  its `clause_node` and `occurrence_key`, and build the subject's
+- A `ModelGraph` request SHALL carry no generic replay target, function
+  arguments, request occurrence key or observed `over` member. The executor
+  SHALL resolve the state-graph or single-existential claim by the envelope's
+  claim node and occurrence key.
+- The executor SHALL recompile and check the package, verify the envelope's
+  package and obligation identities against the request, resolve the claim
+  by its `claim_node` and `occurrence_key`, and build the subject's
   `ModelSystem` by FR-128's rules and in FR-128's order, with FR-128's
   refusals.
 - The executor SHALL re-execute each `ModelPath` from its indexed initial
@@ -121,7 +137,9 @@ pub enum GraphEvidence {
   the subject, then the executor SHALL refuse
   `invalid_runtime_input`/`invalid-value`.
 - The executor SHALL replay each path from its recorded steps whatever its
-  source; a `Sampled` path SHALL replay without running the sampler.
+  source; a `Sampled` path SHALL replay without running the sampler, and an
+  `Unrolled` lasso SHALL replay by its recorded steps without re-running the
+  bounded product exploration.
 - A `WitnessPath::Lasso` SHALL replay by FR-128's step, loop and fairness
   rules, as FR-181 states, so an unfair lasso refuses
   `invalid_runtime_input`/`invalid-value` and FR-169 settles it V-6
@@ -207,7 +225,7 @@ pub enum GraphEvidence {
 | FR-170-AC-1 | ADR-022 §7.1's `ReachesTwo` witnesses replay to `reproduced-with-evaluated-witness`, for a `Sampled` witness and an `Explored` one alike, with no sampler in the replay request. | Test (TC-595) |
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
-| FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
+| FR-170-AC-4 | A `ModelGraph` request has no generic replay target and resolves the claim from its envelope identity. Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
 | FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.locus` naming another expression, with the same cause. Over the same subject, `always possible PDiv using v over (c: Config::ConfigVersion) from (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`, a claim with two predicates, returns `Undefined` evidence with the same stem whose `where.predicate` names the body; it replays to `reproduced-with-evaluated-witness`, and the same evidence with `where.predicate` naming the `from` predicate `c.versionNumber >= 1`, same cause, settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 | FR-170-AC-7 | FR-168-AC-11's guard evidence, FR-168-AC-12's terminal-predicate evidence and FR-168-AC-13's state-constraint evidence each replay to `reproduced-with-evaluated-witness`, and FR-168-AC-13's evidence does so through a request that selects `Half` and through one that selects no constraint, since the replay reads `Half` from `where.locus`; the guard evidence with `where.transition` naming another transition, or with its stem's last step removed, settles `inconclusive`, `Verdicts`. FR-168-AC-13's evidence with its stem's last step removed, which ends at `va = 1` where `Half` is defined, and with its cause changed to another reason, each settle `inconclusive`, `Verdicts`; the same evidence in an envelope over the unit where `Half` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-612) |

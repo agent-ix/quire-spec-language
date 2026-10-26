@@ -176,9 +176,12 @@ pub fn replay_state_clause(
     replay_limits: ReplayLimits,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let Some(target) = request.replay_target().as_state_clause() else {
+    let Some(replay_target) = request.replay_target() else {
+        return Err(ReplayRefusal::WrongModelGraphEntry);
+    };
+    let Some(target) = replay_target.as_state_clause() else {
         return Err(wrong_target(
-            request.replay_target(),
+            replay_target,
             ReplayEntry::ReplayStateClause,
             TargetMember::StateClause,
         ));
