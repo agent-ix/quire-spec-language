@@ -820,6 +820,10 @@ pub struct Scope {
     /// refuse `unsupported_construct`/`expression-form` where no refinement
     /// reads them (FR-139).
     pub(crate) known_populations: Vec<String>,
+    /// The names of the unit's clock-reading declarations (FR-230): a call
+    /// of one that reaches the value checker is outside every place that
+    /// admits it.
+    clock_reading: BTreeSet<String>,
     /// The names of the history fields the unit's refinements declare
     /// (FR-138). A field of that name is the refinement's own, so a state
     /// clause that reads it refuses `missing-name`.
@@ -1033,6 +1037,7 @@ impl Scope {
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
+            clock_reading: BTreeSet::new(),
             history_names: Vec::new(),
             complete_model: false,
             model_selections: BTreeMap::new(),
@@ -1126,6 +1131,17 @@ impl Scope {
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
         self
+    }
+
+    pub(crate) fn with_clock_reading(mut self, names: BTreeSet<String>) -> Self {
+        self.clock_reading = names;
+        self
+    }
+
+    /// Whether `name` names a clock-reading declaration of the unit
+    /// (FR-230), which has no function node.
+    pub(crate) fn is_clock_reading(&self, name: &str) -> bool {
+        self.clock_reading.contains(name)
     }
 
     pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {

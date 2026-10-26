@@ -714,7 +714,8 @@ fn facet_refusals(
 /// `profile t = "quire.temporal.complete/v1";` reaches S3 with its `time`
 /// member, `time invariant`, `urgent` declaration and each `Clock` in a type
 /// position, and S3 refuses none of them `unsupported_construct`/
-/// `declaration-form`: the facet gate passes them all. E3's resolution of
+/// `declaration-form` or otherwise: the facet gate passes them all and each
+/// checks. E3's resolution of
 /// the selection to the temporal layer is FR-110-AC-13's
 /// `qsl-replay` test, and every AC-1 to AC-5 test checks a unit selecting
 /// the layer. The same unit without the selection is AC-7's.
@@ -727,31 +728,10 @@ fn a_unit_selecting_the_timed_facet_passes_the_gate() {
         SELECTED_TIMED,
     )
     .expect("S2 retains every grammar-valid timed form");
-    let refusals = declarations
+    declarations
         .with_unwritten_timed_members()
         .check(quire_semantic_value::checking::CheckingLimits::default())
-        .err()
-        .unwrap_or_default();
-    let gated: Vec<_> = refusals
-        .iter()
-        .filter(|refusal| {
-            refusal.cause.catalog_code().map(|code| code.to_string())
-                == Some("unsupported_construct/declaration-form".to_owned())
-        })
-        .collect();
-    assert!(gated.is_empty(), "{gated:?}");
-    // Past the gate, only the source `Clock` positions, which S3 does not
-    // check yet, are refused.
-    assert!(
-        refusals.iter().all(|refusal| matches!(
-            refusal.cause,
-            CheckCause::TimedNotChecked {
-                construct: TimedConstruct::Clock,
-                ..
-            }
-        )),
-        "{refusals:?}"
-    );
+        .unwrap_or_else(|refusals| panic!("the facet admits every timed member: {refusals:?}"));
 }
 
 /// AC-8's unit: AC-7's timed members over the clock `x`, and the `Clock`
@@ -860,40 +840,58 @@ fn clock_offsets(text: &str) -> Vec<usize> {
         .collect()
 }
 
-/// FR-230 "Clock-typed positions": under the timed facet a `Clock` written
-/// inside an expression, here the target of `convert`, has no checked form,
-/// so S3 refuses it at the `Clock` and checks no other construct of its
-/// clause; a `Clock` in a declared type position is admitted.
+/// FR-230 "Records, tuples and unions": under the timed facet a
+/// clock-bearing value read whole refuses `clock-read-outside-constraint`
+/// at its type, here as the target of `convert`, as the type of
+/// `allInstances` and as an accumulation's type, and a literal of a
+/// clock-bearing record outside a reset refuses `clock-write` at the
+/// literal; S3 checks no other construct of their declarations, and a
+/// `Clock` in a declared type position is admitted.
 #[trace("TC-685")]
 #[test]
-fn a_clock_inside_an_expression_is_not_checked() {
+fn a_clock_bearing_value_inside_an_expression_refuses_by_its_use() {
     let body = "invariant B using v on Config::ConfigVersion at current { \
                 convert<Clock>(self) = convert<Clock>(self) }\n\
-                record R { x: Clock; n: Integer; }\n";
+                record R { x: Clock; n: Integer; }\n\
+                invariant C using v on Config::ConfigVersion at current { \
+                count<R>(r in allInstances<R>(Config::config_history): true) = 0 }\n\
+                function mk using v(): Integer pure { let r = R { x: 0 ms, n: 1 } in r.n }\n";
     let refusals = admit_and_assemble_with_profiles(
         &document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
-        body,
+        &format!("dimension Time;\nunit ms : Time = rational(1, 1);\n{body}"),
     )
-    .expect("the assembler retains each Clock for S3")
+    .expect("the assembler retains each clock-bearing use for S3")
     .check(quire_semantic_value::checking::CheckingLimits::default())
-    .expect_err("a Clock inside an expression has no checked form");
-    let spans: Vec<usize> = refusals
+    .expect_err("no clock rule admits these uses");
+    let found: Vec<(&str, usize)> = refusals
         .iter()
         .map(|refusal| match &refusal.cause {
-            CheckCause::TimedNotChecked {
-                construct: TimedConstruct::Clock,
-                span,
-            } => span.start,
-            other => panic!("not-checked expected: {other:?}"),
+            CheckCause::Temporal(cause) => match **cause {
+                TemporalCause::ClockReadOutsideConstraint { span } => ("read", span.start),
+                TemporalCause::ClockWrite { span } => ("write", span.start),
+                ref other => panic!("a clock refusal expected: {other:?}"),
+            },
+            other => panic!("a clock refusal expected: {other:?}"),
         })
         .collect();
     let (text, _) = config_unit_with_profiles(
         &document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
-        body,
+        &format!("dimension Time;\nunit ms : Time = rational(1, 1);\n{body}"),
     );
-    assert_eq!(spans, clock_offsets(&text)[..2]);
+    let clocks = clock_offsets(&text);
+    let at = |needle: &str| text.find(needle).expect("in the unit");
+    assert_eq!(
+        found,
+        [
+            ("read", clocks[0]),
+            ("read", clocks[1]),
+            ("read", at("R>(r in")),
+            ("read", at("R>(Config::")),
+            ("write", at("R { x: 0 ms")),
+        ]
+    );
 }
 
 const SECONDS_AND_MILLISECONDS: &str =

@@ -1774,6 +1774,68 @@ impl Expression {
         Some(Self { nodes })
     }
 
+    /// The tree under `root`, each node `grafts` names replaced, with its
+    /// descendants, by the whole tree it maps to. Nodes keep their relative
+    /// order and each grafted tree its own, so the copy is numbered children
+    /// first as every tree is. `None` when `root` is no node of this arena or
+    /// a grafted tree is malformed.
+    pub fn graft(&self, root: ExprId, grafts: &BTreeMap<ExprId, &Expression>) -> Option<Self> {
+        /// One source node to copy, and whether its children are copied.
+        struct Pending<'a> {
+            tree: &'a Expression,
+            id: ExprId,
+            expanded: bool,
+        }
+        let mut nodes: Vec<ExprNode> = Vec::new();
+        // The new id of each copied node whose parent is not yet copied, in
+        // copy order: a node's children are the last of them when it is
+        // copied.
+        let mut done: Vec<ExprId> = Vec::new();
+        let mut pending = vec![Pending {
+            tree: self,
+            id: root,
+            expanded: false,
+        }];
+        while let Some(Pending { tree, id, expanded }) = pending.pop() {
+            let (tree, id) = match grafts.get(&id) {
+                Some(grafted) if !expanded && std::ptr::eq(tree, self) => {
+                    (*grafted, grafted.root_id())
+                }
+                _ => (tree, id),
+            };
+            let node = tree.nodes.get(id.0)?;
+            let children = node.children();
+            if !expanded {
+                pending.push(Pending {
+                    tree,
+                    id,
+                    expanded: true,
+                });
+                for child in children.into_iter().rev() {
+                    pending.push(Pending {
+                        tree,
+                        id: child,
+                        expanded: false,
+                    });
+                }
+                continue;
+            }
+            let first = done.len().checked_sub(children.len())?;
+            let renumbered: BTreeMap<ExprId, ExprId> =
+                children.into_iter().zip(done.drain(first..)).collect();
+            let mut copy = node.clone();
+            copy.shift_children(|child| {
+                renumbered
+                    .get(&child)
+                    .copied()
+                    .unwrap_or(ExprId(usize::MAX))
+            });
+            done.push(ExprId(nodes.len()));
+            nodes.push(copy);
+        }
+        Some(Self { nodes })
+    }
+
     /// Every node with its id, each after its children, the root last.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = ExprRef<'_>> + '_ {
         self.nodes.iter().enumerate().map(|(index, node)| ExprRef {

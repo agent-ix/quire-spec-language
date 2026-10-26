@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp, NodeKind, StatePredicate,
-    TemporalCause, TimeSourceKind, TimedModel,
+    TemporalCause, TimeSourceKind, TimedConstruct, TimedModel,
 };
 use qsl_semantics::model::intake::meaning;
 use quire_exact::{Integer, Rational};
@@ -556,14 +556,15 @@ fn parts(model: &TimedModel, guard: usize) -> Vec<(Vec<String>, Vec<Bound>)> {
 
 const WITHIN: &str = "predicate near using v(c: Clock, b: Quantity<ms>): Boolean { c <= b }\n";
 
-/// FR-230-AC-9 (TC-685 step 11): the clock-reading predicate `near(c:
-/// Clock, b: Quantity<ms>)` expands where a precondition calls it:
+/// Part of FR-230-AC-9 (TC-685 step 11): the clock-reading predicate
+/// `near(c: Clock, b: Quantity<ms>)` expands where a precondition calls it:
 /// `near(self.x, 3 ms)` is the one constraint `x <= 3` on `Call.x`, and
 /// `near(self.x, 3 ms) and near(self.y, 1 ms)` two constraints; the
 /// checked package holds no node for `near`. Not covered: the time
 /// invariant body `near(self.x, 3 ms)`, which the time invariant grammar
-/// (a list of clock bounds) does not admit (STD-493).
-#[trace("TC-685", "FR-230-AC-9")]
+/// (a list of clock bounds) does not admit, and AC-9's name `within`, a
+/// reserved word (STD-493).
+#[trace("TC-685")]
 #[test]
 fn a_clock_reading_predicate_expands_in_a_precondition() {
     let body = format!(
@@ -597,7 +598,7 @@ fn a_clock_reading_predicate_expands_in_a_precondition() {
     );
 }
 
-/// FR-230-AC-9's refusals (TC-685 step 11), each at its span:
+/// Part of FR-230-AC-9's refusals (TC-685 step 11), each at its span:
 /// `near(self.x, self.n)` refuses `clock-bound-not-constant` at the
 /// argument; `near(5, 3 ms)` `ill_typed`/`type-mismatch` at `5`; a body
 /// `self.n = c` for a clock parameter `c` and `n: Int`
@@ -605,7 +606,7 @@ fn a_clock_reading_predicate_expands_in_a_precondition() {
 /// in an `invariant` clause `clock-read-outside-constraint` at the call. Not
 /// covered: a body that resets `c`, which a predicate body cannot write
 /// (STD-493).
-#[trace("TC-685", "FR-230-AC-9")]
+#[trace("TC-685")]
 #[test]
 fn clock_reading_misuses_refuse_at_their_span() {
     let document = rpc_document(&["x", "y"]);
@@ -651,8 +652,8 @@ fn clock_reading_misuses_refuse_at_their_span() {
 /// `x >= 1` with the data predicate `self.ready` and `y >= 1` with
 /// `not self.ready`; `function g(): Clock { 0 }` refuses `ill_typed`/
 /// `type-mismatch` at the body. Not covered: `peer_clock(o: Call): Clock {
-/// o.peer.x }`, a place reached through a reference, whose constraint reads
-/// another object's clock.
+/// o.peer.x }`, a place reached through a reference, which the clock-place
+/// slice builds with FR-230-AC-24.
 #[trace("TC-685")]
 #[test]
 fn a_clock_result_function_selects_its_place_by_data() {
@@ -664,16 +665,15 @@ fn a_clock_result_function_selects_its_place_by_data() {
          pre Picked using v on Config::Call::bump {{ pick(self.x, self.y, self.ready) >= 1 ms }}\n"
     );
     let graph = check(&document, &body).expect("the place expression expands");
-    let ready = vec!["ready".to_owned()];
     assert_eq!(
-        parts(timed(&graph), 0),
+        shown_parts(timed(&graph), 0),
         [
             (
-                ready.clone(),
+                Some("ready".to_owned()),
                 vec![("x".to_owned(), ClockOp::GreaterOrEqual, exact(1, 1))]
             ),
             (
-                ready,
+                Some("not ready".to_owned()),
                 vec![("y".to_owned(), ClockOp::GreaterOrEqual, exact(1, 1))]
             ),
         ]
@@ -729,5 +729,236 @@ fn clock_typed_declarations_raise_no_refusal_of_their_own() {
         timer["body"]["members"].as_array().map(Vec::len),
         Some(1),
         "Timer lists its data field n only: {timer}"
+    );
+}
+
+/// `node`, a data predicate, written out: each attribute by name, each
+/// connective, comparison and arithmetic operator by its variant.
+fn shown(node: CheckedNode<'_>) -> String {
+    let children = node.children();
+    let child = |index: usize| children.get(index).copied().map_or_else(String::new, shown);
+    match node.kind() {
+        NodeKind::Not(_) => format!("not {}", child(0)),
+        NodeKind::Connective(connective, ..) => {
+            format!("({} {connective:?} {})", child(0), child(1))
+        }
+        NodeKind::Order(operator, ..) => format!("({} {operator:?} {})", child(0), child(1)),
+        NodeKind::Arithmetic(operator, ..) => {
+            format!("({} {operator:?} {})", child(0), child(1))
+        }
+        NodeKind::Attribute { field, .. } => field.name.clone(),
+        NodeKind::Coerce(..) => child(0),
+        NodeKind::Literal(literal) => format!("{literal:?}")
+            .chars()
+            .filter(char::is_ascii_digit)
+            .collect(),
+        other => format!("{other:?}")
+            .chars()
+            .take_while(|c| c.is_alphanumeric())
+            .collect(),
+    }
+}
+
+/// Each convex part of `guard` with its data predicate written out.
+fn shown_parts(model: &TimedModel, guard: usize) -> Vec<(Option<String>, Vec<Bound>)> {
+    model.guards()[guard]
+        .parts()
+        .iter()
+        .map(|part| {
+            (
+                part.data().map(|data| shown(data.body())),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| {
+                        (
+                            model
+                                .clock(constraint.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            constraint.op(),
+                            constraint.bound().clone(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// FR-230 "Clock-reading declarations" and "Parameters" (TC-685): a
+/// clock-reading body expands at its call with each data predicate read at
+/// the call site, its parameters replaced by their arguments: `n > 0` of
+/// `p(self.x, self.n)` is `self.n > 0` beside `x <= 3`; a nested call's data
+/// argument `n + 1` is `self.n + 1`, and `self.ready` in a body is the
+/// caller's; an `if` over a data comparison selects `x` under `self.n > 2`
+/// and `y` under its negation; and the place path `o.y` of an object
+/// parameter `o` called with `self` is the receiver's clock `y`.
+#[trace("TC-685")]
+#[test]
+fn clock_reading_bodies_read_their_data_at_the_call() {
+    let body = format!(
+        "{UNITS}time Config dense unit ms;\n\
+         predicate p using v(c: Clock, n: Integer): Boolean {{ n > 0 and c <= 3 ms }}\n\
+         predicate q using v(c: Clock, n: Integer): Boolean {{ p(c, n + 1) or self.ready }}\n\
+         function sel using v(a: Clock, b: Clock, n: Integer): Clock pure {{ \
+             if n > 2 then a else b }}\n\
+         function own using v(o: Config::Call): Clock pure {{ o.y }}\n\
+         pre P using v on Config::Call::bump {{ p(self.x, self.n) }}\n\
+         pre Q using v on Config::Call::send {{ q(self.x, self.n) }}\n\
+         pre S using v on Config::Call::reply {{ sel(self.x, self.y, self.n) >= 1 ms }}\n\
+         pre O using v on Config::Call::timeout {{ own(self) < 2 ms }}\n"
+    );
+    let graph = check(&rpc_document(&["x", "y"]), &body).expect("the calls expand");
+    let model = timed(&graph);
+    let bound = |clock: &str, op, value| vec![(clock.to_owned(), op, exact(value, 1))];
+    assert_eq!(
+        shown_parts(model, 0),
+        [(
+            Some("(n Greater 0)".to_owned()),
+            bound("x", ClockOp::LessOrEqual, 3)
+        )]
+    );
+    assert_eq!(
+        shown_parts(model, 1),
+        [
+            (
+                Some("((n Add 1) Greater 0)".to_owned()),
+                bound("x", ClockOp::LessOrEqual, 3)
+            ),
+            (Some("ready".to_owned()), Vec::new()),
+        ]
+    );
+    assert_eq!(
+        shown_parts(model, 2),
+        [
+            (
+                Some("(n Greater 2)".to_owned()),
+                bound("x", ClockOp::GreaterOrEqual, 1)
+            ),
+            (
+                Some("not (n Greater 2)".to_owned()),
+                bound("y", ClockOp::GreaterOrEqual, 1)
+            ),
+        ]
+    );
+    assert_eq!(
+        shown_parts(model, 3),
+        [(None, bound("y", ClockOp::Less, 2))]
+    );
+}
+
+/// FR-230 "Clock-reading declarations" (TC-685): a call of a clock-reading
+/// declaration outside an operation precondition, a time invariant body or
+/// another clock-reading body refuses `invalid_timed_model`/
+/// `clock-read-outside-constraint`: in a value function, a temporal clause,
+/// an operation body and a state clause of a model with no `time` member.
+#[trace("TC-685")]
+#[test]
+fn a_clock_reading_call_elsewhere_reads_a_clock_outside_a_constraint() {
+    let g = "function g using v(): Clock pure { self.x }\n";
+    let timed = format!("{UNITS}time Config dense unit ms;\n{g}");
+    let profiles = format!("{TEMPORAL}profile tt = \"quire.temporal.timed/v1\";\n");
+    for (document, body) in [
+        (
+            rpc_document(&["x"]),
+            format!("{timed}function f using v(n: Integer): Boolean pure {{ g() >= 1 ms }}\n"),
+        ),
+        (
+            rpc_document(&["x"]),
+            format!(
+                "{timed}temporal T using tt over (c: Config::Call) clock \"model-time\" \
+                 on origin {{ always holds(g() >= 1 ms) }}\n"
+            ),
+        ),
+        (
+            rpc_document(&["x"]),
+            format!("{timed}body B using v on Config::Call::bump() {{ g() >= 1 ms }}\n"),
+        ),
+        (
+            crate::model_operations::config_version_document(
+                crate::model_operations::attempt_update_modifies_version_number(),
+                Vec::new(),
+                Vec::new(),
+                json!([]),
+            ),
+            format!(
+                "{UNITS}predicate p using v(c: Clock): Boolean {{ c <= 3 ms }}\n\
+                 invariant I using v on Config::ConfigVersion at current {{ \
+                 p(self.versionNumber) }}\n"
+            ),
+        ),
+    ] {
+        let refusals = admit_and_assemble_with_profiles(&document, &profiles, &body)
+            .expect("S2 builds every form")
+            .with_unwritten_timed_members()
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect_err("the call is refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal expected: {refusals:?}");
+        };
+        assert_eq!(
+            (
+                refusal.cause.code(),
+                refusal.cause.cause().map(|cause| cause.to_string())
+            ),
+            (
+                Code::InvalidTimedModel,
+                Some("clock-read-outside-constraint".to_owned())
+            ),
+            "{body}"
+        );
+    }
+}
+
+/// FR-230 "Parameters" (TC-685): an `if` whose condition reads a clock is no
+/// data condition, so a place it selects refuses `clock-read-outside-
+/// constraint` at the condition; a clock-reading declaration whose
+/// expansion reaches its own call, which FR-230 gives no expansion
+/// (STD-493), is not checked.
+#[trace("TC-685")]
+#[test]
+fn a_place_selected_by_a_clock_or_a_recursive_expansion_refuses() {
+    let document = rpc_document(&["x", "y"]);
+    let dense = format!(
+        "{UNITS}time Config dense unit ms;\n\
+         predicate near using v(c: Clock): Boolean {{ c <= 3 ms }}\n"
+    );
+    let (cause, text) = refused(
+        &document,
+        &format!(
+            "{dense}function sel using v(a: Clock, b: Clock): Clock pure {{ \
+                 if near(a) then a else b }}\n\
+             pre S using v on Config::Call::reply {{ sel(self.x, self.y) >= 1 ms }}\n"
+        ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::InvalidTimedModel,
+            "clock-read-outside-constraint",
+            "near(a)"
+        )
+    );
+    let refusals = check(
+        &document,
+        &format!(
+            "{dense}predicate loop using v(c: Clock): Boolean {{ loop(c) }}\n\
+             pre L using v on Config::Call::reply {{ loop(self.x) }}\n"
+        ),
+    )
+    .expect_err("the expansion does not end");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::TimedNotChecked {
+                    construct: TimedConstruct::RecursiveClockReading,
+                    ..
+                },
+                ..
+            }]
+        ),
+        "{refusals:?}"
     );
 }

@@ -12,46 +12,54 @@
 //!
 //! [`Expansion`] expands a call where a precondition reads it. The
 //! arguments are read at the call site: a clock argument as the places it
-//! can denote, each with the data condition that selects it, and a data
-//! argument as the call-site node it is. The body is then read with its
-//! parameters bound to those arguments, into the disjunctive form the
-//! precondition's guard takes: each data literal is a call-site node, so
-//! the recorded guard holds atomic clock constraints over the receiver's
-//! clocks only.
+//! can denote, each with the data condition that selects it; `self` for an
+//! object parameter as the receiver; and a data argument as the call-site
+//! term it is. The body is then read with its parameters bound to those
+//! arguments, into the disjunctive form the precondition's guard takes:
+//! each data predicate of the body is read at the call, its parameters
+//! replaced by their arguments, so the recorded guard holds atomic clock
+//! constraints over the receiver's clocks only.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
-use qsl_forms::{BinaryOperator, ExprId, ExprNode, Expression, NameForm};
+use qsl_forms::{
+    BinaryOperator, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans, NameForm,
+    TypeFormHead,
+};
 use qsl_foundation::Span;
-use quire_exact::Rational;
+use quire_exact::{EffectiveId, Rational};
 
-use super::{timed, ClockConstraint, ClockId, ClockOp, Clocks, Dnf, Located, PartBudget};
+use super::{
+    timed, ClockConstraint, ClockId, ClockOp, Clocks, DataLiteral, Dnf, Located, PartBudget,
+};
 use crate::check::assemble::{ClockReadingDeclaration, ClockSlot};
+use crate::check::lowering::AdmittedModel;
 use crate::check::refusal::{CheckCause, TemporalCause, TimedConstruct};
 
-/// The places a place expression can denote, each with the call-site data
-/// literals that select it.
-pub(super) type Places = Vec<(Vec<(ExprId, bool)>, ClockId)>;
+/// The places a place expression can denote, each with the data literals
+/// that select it.
+pub(super) type Places = Vec<(Vec<(DataLiteral, bool)>, ClockId)>;
 
 /// The unit's clock-reading declarations, by name.
 pub(crate) struct Declarations<'r> {
     by_name: BTreeMap<&'r str, &'r ClockReadingDeclaration>,
-    /// The name of every clock field of an admitted object type, which a
-    /// body reads as `self.x`.
-    clock_fields: BTreeSet<String>,
+    /// The admitted models, whose object types hold the clock fields a body
+    /// reads as `self.x` or `o.x`.
+    models: &'r [AdmittedModel],
 }
 
 impl<'r> Declarations<'r> {
     pub(crate) fn new(
         declarations: &'r [ClockReadingDeclaration],
-        clock_fields: impl IntoIterator<Item = String>,
+        models: &'r [AdmittedModel],
     ) -> Self {
         Self {
             by_name: declarations
                 .iter()
                 .map(|declaration| (declaration.function.name.as_str(), declaration))
                 .collect(),
-            clock_fields: clock_fields.into_iter().collect(),
+            models,
         }
     }
 
@@ -69,44 +77,69 @@ impl<'r> Declarations<'r> {
     pub(super) fn is_call(&self, expression: &Expression, id: ExprId) -> bool {
         matches!(
             expression.get(id).map(|node| node.node()),
-            Some(ExprNode::Call { name, .. }) if self.named(name).is_some()
+            Some(ExprNode::Call { name, arguments: _ }) if self.named(name).is_some()
         )
+    }
+
+    /// Whether some object type of a model holds a clock field `field`:
+    /// `self.field` reads a clock.
+    fn names_clock(&self, field: &str) -> bool {
+        self.models.iter().any(|model| {
+            model
+                .clock_fields()
+                .iter()
+                .any(|(_, _, name)| *name == field)
+        })
+    }
+
+    /// The object type a parameter's written type names, with its model,
+    /// when it names one.
+    fn object_type(
+        &self,
+        written: &qsl_forms::TypeForm,
+    ) -> Option<(&'r AdmittedModel, EffectiveId)> {
+        let TypeFormHead::Name(name) = &written.head else {
+            return None;
+        };
+        self.models
+            .iter()
+            .find_map(|model| Some((model, model.object_type_named(name)?)))
     }
 }
 
-/// The comparison a binary operator spells, when it is one.
-fn comparison(operator: BinaryOperator) -> Option<ClockOp> {
-    ClockOp::of(operator)
-}
-
-/// The slot of `parameter` in `declaration`, when it names one.
-fn parameter_slot(declaration: &ClockReadingDeclaration, name: &str) -> Option<ClockSlot> {
-    declaration
-        .function
-        .parameters
-        .iter()
-        .position(|(parameter, _)| parameter == name)
-        .and_then(|index| declaration.parameters.get(index).copied())
+/// A declaration's parameter: its name, how it is read, and the object
+/// type it is typed by, when it is one.
+struct Parameter<'d> {
+    name: &'d str,
+    slot: ClockSlot,
+    object: Option<EffectiveId>,
 }
 
 /// The parameter a body node names, when it is a bare name of one.
 fn parameter<'d>(
+    declarations: &Declarations<'_>,
     declaration: &'d ClockReadingDeclaration,
     node: &ExprNode,
-) -> Option<(&'d str, ClockSlot)> {
+) -> Option<Parameter<'d>> {
     let ExprNode::Name(name) = node else {
         return None;
     };
     if name.segments.len() > 1 {
         return None;
     }
-    let slot = parameter_slot(declaration, &name.name)?;
-    let (written, _) = declaration
+    let index = declaration
         .function
         .parameters
         .iter()
-        .find(|(parameter, _)| *parameter == name.name)?;
-    Some((written.as_str(), slot))
+        .position(|(parameter, _)| *parameter == name.name)?;
+    let (written, type_form) = declaration.function.parameters.get(index)?;
+    Some(Parameter {
+        name: written.as_str(),
+        slot: declaration.parameters.get(index).copied()?,
+        object: declarations
+            .object_type(type_form)
+            .map(|(_, object)| object),
+    })
 }
 
 /// One declaration's body and the span of each of its nodes.
@@ -146,21 +179,42 @@ impl<'d> Body<'d> {
             .unwrap_or(Span { start: 0, end: 0 })
     }
 
+    /// The parameter body node `id` names, when it is a bare name of one.
+    fn parameter(&self, declarations: &Declarations<'_>, id: ExprId) -> Option<Parameter<'d>> {
+        parameter(declarations, self.declaration, self.node(id)?)
+    }
+
+    /// Whether node `id` reads a clock field directly: `self.x`, or `o.x`
+    /// for an object parameter `o` whose type holds a clock field `x`.
+    fn is_clock_field(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
+        let Some(ExprNode::Field { operand, field }) = self.node(id) else {
+            return false;
+        };
+        match self.node(*operand) {
+            Some(ExprNode::SelfRef) => declarations.names_clock(field),
+            Some(ExprNode::Name(_)) => self
+                .parameter(declarations, *operand)
+                .and_then(|parameter| parameter.object)
+                .is_some_and(|object| {
+                    declarations
+                        .models
+                        .iter()
+                        .any(|model| model.clock_field(object, field).is_some())
+                }),
+            _ => false,
+        }
+    }
+
     /// Whether node `id` is a place expression of this body: a clock
-    /// parameter, a clock field of `self`, an `if` whose branches are place
-    /// expressions, or a call of a declaration whose result is `Clock`.
+    /// parameter, a clock field of `self` or of an object parameter, an `if`
+    /// whose branches are place expressions, or a call of a declaration
+    /// whose result is `Clock`.
     fn is_place(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
         match self.node(id) {
-            Some(node @ ExprNode::Name(_)) => {
-                matches!(
-                    parameter(self.declaration, node),
-                    Some((_, ClockSlot::Clock))
-                )
-            }
-            Some(ExprNode::Field { operand, field }) => {
-                matches!(self.node(*operand), Some(ExprNode::SelfRef))
-                    && declarations.clock_fields.contains(field)
-            }
+            Some(ExprNode::Name(_)) => self
+                .parameter(declarations, id)
+                .is_some_and(|parameter| parameter.slot == ClockSlot::Clock),
+            Some(ExprNode::Field { .. }) => self.is_clock_field(id, declarations),
             Some(ExprNode::If {
                 then, otherwise, ..
             }) => self.is_place(*then, declarations) && self.is_place(*otherwise, declarations),
@@ -173,21 +227,105 @@ impl<'d> Body<'d> {
 
     /// Whether node `id` is shaped as a bound: a time quantity literal, a
     /// negated one, or a data parameter.
-    fn is_bound(&self, id: ExprId) -> bool {
+    fn is_bound(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
         match self.node(id) {
             Some(ExprNode::Quantity(_)) => true,
             Some(ExprNode::Negate(operand)) => {
                 matches!(self.node(*operand), Some(ExprNode::Quantity(_)))
             }
-            Some(node @ ExprNode::Name(_)) => {
-                matches!(
-                    parameter(self.declaration, node),
-                    Some((_, ClockSlot::Data))
-                )
-            }
+            Some(ExprNode::Name(_)) => self
+                .parameter(declarations, id)
+                .is_some_and(|parameter| parameter.slot == ClockSlot::Data),
             _ => false,
         }
     }
+
+    /// The first node under `id` that reads a clock: a clock or
+    /// clock-bearing parameter, a clock field, or a call of a clock-reading
+    /// declaration. `None` when the subtree is data.
+    fn first_clock_read(&self, id: ExprId, declarations: &Declarations<'_>) -> Option<ExprId> {
+        let mut pending = vec![id];
+        let mut found: Option<ExprId> = None;
+        while let Some(id) = pending.pop() {
+            let Some(node) = self.node(id) else {
+                continue;
+            };
+            let reads = match node {
+                ExprNode::Name(_) => self
+                    .parameter(declarations, id)
+                    .is_some_and(|parameter| parameter.slot != ClockSlot::Data),
+                ExprNode::Field { .. } => self.is_clock_field(id, declarations),
+                ExprNode::Call { name, .. } => declarations.named(name).is_some(),
+                _ => false,
+            };
+            if reads {
+                let earlier =
+                    found.is_none_or(|first| self.span(id).start < self.span(first).start);
+                if earlier {
+                    found = Some(id);
+                }
+                continue;
+            }
+            pending.extend(node.children());
+        }
+        found
+    }
+}
+
+/// The bare-name nodes under `root` that name one of `names` free of every
+/// binder above them in the subtree: the occurrences of a parameter.
+fn free_occurrences<'n>(
+    expression: &Expression,
+    root: ExprId,
+    names: &BTreeSet<&'n str>,
+) -> Vec<(ExprId, &'n str)> {
+    let mut found = Vec::new();
+    let mut pending: Vec<(ExprId, BTreeSet<&str>)> = vec![(root, BTreeSet::new())];
+    while let Some((id, shadowed)) = pending.pop() {
+        let Some(node) = expression.get(id).map(|node| node.node()) else {
+            continue;
+        };
+        if let ExprNode::Name(name) = node {
+            if name.segments.len() == 1 {
+                if let Some(parameter) = names.get(name.name.as_str()) {
+                    if !shadowed.contains(*parameter) {
+                        found.push((id, *parameter));
+                    }
+                }
+            }
+            continue;
+        }
+        // The children outside each binder's scope: a `let` value, a
+        // query's or accumulation's source, an accumulation's identity, a
+        // sequence's bounds and a case's scrutinee.
+        let outside: Vec<ExprId> = match node {
+            ExprNode::Let { value, .. } => vec![*value],
+            ExprNode::Query { source, .. }
+            | ExprNode::Count { source, .. }
+            | ExprNode::Sum { source, .. } => vec![*source],
+            ExprNode::Accumulate {
+                source, identity, ..
+            } => std::iter::once(*source).chain(*identity).collect(),
+            ExprNode::Seq { low, high, .. } => vec![*low, *high],
+            ExprNode::Case(case) => vec![case.scrutinee],
+            _ => Vec::new(),
+        };
+        let mut inner = shadowed.clone();
+        for binder in node.binders() {
+            if let Some(parameter) = names.get(binder) {
+                inner.insert(*parameter);
+            }
+        }
+        for child in node.children() {
+            let scope = if outside.contains(&child) {
+                shadowed.clone()
+            } else {
+                inner.clone()
+            };
+            pending.push((child, scope));
+        }
+    }
+    found
 }
 
 /// Where a body node is read.
@@ -207,8 +345,8 @@ enum Position {
 /// expression; `clock-comparison` at a comparison of two clocks;
 /// `negative-clock-constant` or `clock-bound-not-constant` at a bound that
 /// is not a time quantity literal or a quantity parameter;
-/// `clock-read-outside-constraint` at any other read of a clock parameter,
-/// including an equation that sets a data value from one.
+/// `clock-read-outside-constraint` at any other read of a clock parameter
+/// or clock field, including an equation that sets a data value from one.
 pub(crate) fn check_declaration(
     declaration: &ClockReadingDeclaration,
     declarations: &Declarations<'_>,
@@ -232,21 +370,20 @@ pub(crate) fn check_declaration(
         };
         match node {
             ExprNode::Name(_) => {
-                if let Some((_, ClockSlot::Clock | ClockSlot::Bearing)) =
-                    parameter(declaration, node)
-                {
-                    if position != Position::Place {
-                        return Err(TemporalCause::ClockReadOutsideConstraint {
-                            span: body.span(id),
-                        });
-                    }
+                let clock = body
+                    .parameter(declarations, id)
+                    .is_some_and(|parameter| parameter.slot != ClockSlot::Data);
+                if clock && position != Position::Place {
+                    return Err(TemporalCause::ClockReadOutsideConstraint {
+                        span: body.span(id),
+                    });
                 }
             }
             ExprNode::Binary {
                 operator,
                 left,
                 right,
-            } if comparison(*operator).is_some()
+            } if ClockOp::of(*operator).is_some()
                 && (body.is_place(*left, declarations) || body.is_place(*right, declarations)) =>
             {
                 let (place, bound) = if body.is_place(*left, declarations) {
@@ -259,7 +396,7 @@ pub(crate) fn check_declaration(
                         span: body.span(id),
                     });
                 }
-                if !body.is_bound(bound) {
+                if !body.is_bound(bound, declarations) {
                     // An equation that sets a data value from a clock reads
                     // the clock outside a constraint; an order comparison
                     // with a non-constant bound has no constant.
@@ -290,10 +427,8 @@ pub(crate) fn check_declaration(
                 pending.push((*then, Position::Place));
                 pending.push((*otherwise, Position::Place));
             }
-            ExprNode::Field { operand, field }
-                if position != Position::Place
-                    && matches!(body.node(*operand), Some(ExprNode::SelfRef))
-                    && declarations.clock_fields.contains(field) =>
+            ExprNode::Field { .. }
+                if position != Position::Place && body.is_clock_field(id, declarations) =>
             {
                 return Err(TemporalCause::ClockReadOutsideConstraint {
                     span: body.span(id),
@@ -340,10 +475,13 @@ pub(crate) fn check_declaration(
 enum Argument {
     /// The places a clock argument can denote.
     Places(Places),
-    /// A data argument: the call-site node it is, when it is one, and its
-    /// value as a constant time quantity, or why it is none.
+    /// `self` for an object parameter: a clock field of the parameter is a
+    /// clock of the receiver.
+    Receiver,
+    /// A data argument: the call-site term it is, and its value as a
+    /// constant time quantity, or why it is none.
     Value {
-        node: Option<ExprId>,
+        term: DataLiteral,
         constant: Result<Rational, TemporalCause>,
     },
 }
@@ -354,20 +492,25 @@ pub(super) struct Expansion<'e, 'f, 'c> {
     pub(super) clocks: &'e Clocks<'c>,
     pub(super) declarations: &'e Declarations<'e>,
     /// The object type `self` ranges over at the call site.
-    pub(super) context: quire_exact::EffectiveId,
+    pub(super) context: EffectiveId,
 }
 
-/// The not-yet-checked refusal of a clock-reading construct this build
-/// does not expand, at `span`.
-fn unexpanded(span: Span) -> CheckCause {
-    CheckCause::TimedNotChecked {
-        construct: TimedConstruct::Clock,
-        span,
-    }
+/// The not-yet-checked refusal of `construct`, which this build does not
+/// expand, at `span`.
+fn not_checked(construct: TimedConstruct, span: Span) -> CheckCause {
+    CheckCause::TimedNotChecked { construct, span }
 }
 
 /// The bodies being expanded, outermost first, to refuse recursion.
 type Stack = Vec<String>;
+
+/// A body reading in progress: the body, its parameters' arguments, and
+/// the call-site node the outermost call is.
+struct Frame<'b, 'd> {
+    body: &'b Body<'d>,
+    environment: &'b BTreeMap<String, Argument>,
+    site: ExprId,
+}
 
 impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
     /// The places call-site node `id` can denote when it is a place
@@ -397,8 +540,8 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 ) else {
                     return Ok(None);
                 };
-                let mut places = guarded(then, (*condition, true));
-                places.extend(guarded(otherwise, (*condition, false)));
+                let mut places = guarded(then, (DataLiteral::Site(*condition), true));
+                places.extend(guarded(otherwise, (DataLiteral::Site(*condition), false)));
                 budget.charge(places.len())?;
                 Ok(Some(places))
             }
@@ -409,18 +552,16 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 if declaration.result != ClockSlot::Clock {
                     return Ok(None);
                 }
-                let arguments = self.site_arguments(declaration, arguments, budget)?;
+                let environment = self.site_arguments(declaration, arguments, budget)?;
                 let body = Body::of(declaration);
-                let mut stack = Vec::new();
-                self.places(
-                    &body,
-                    &arguments,
-                    body.expression().root_id(),
-                    id,
-                    &mut stack,
-                    budget,
-                )
-                .map(Some)
+                let frame = Frame {
+                    body: &body,
+                    environment: &environment,
+                    site: id,
+                };
+                let mut stack = vec![declaration.function.name.clone()];
+                self.places(&frame, body.expression().root_id(), &mut stack, budget)
+                    .map(Some)
             }
             _ => Ok(None),
         }
@@ -443,18 +584,16 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             // A place expression: the comparison that reads it expands it.
             return Ok(None);
         }
-        let arguments = self.site_arguments(declaration, arguments, budget)?;
+        let environment = self.site_arguments(declaration, arguments, budget)?;
         let body = Body::of(declaration);
-        let mut stack = Vec::new();
-        self.boolean(
-            &body,
-            &arguments,
-            body.expression().root_id(),
-            id,
-            &mut stack,
-            budget,
-        )
-        .map(Some)
+        let frame = Frame {
+            body: &body,
+            environment: &environment,
+            site: id,
+        };
+        let mut stack = vec![declaration.function.name.clone()];
+        self.boolean(&frame, body.expression().root_id(), &mut stack, budget)
+            .map(Some)
     }
 
     /// The arguments of a call at the call site, by parameter name.
@@ -465,7 +604,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         budget: &mut PartBudget,
     ) -> Result<BTreeMap<String, Argument>, CheckCause> {
         let mut bound = BTreeMap::new();
-        for ((name, _), (slot, argument)) in declaration.function.parameters.iter().zip(
+        for ((name, type_form), (slot, argument)) in declaration.function.parameters.iter().zip(
             declaration
                 .parameters
                 .iter()
@@ -480,14 +619,22 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                         return Err(timed(TemporalCause::NotAPlaceExpression { span }));
                     }
                 },
-                ClockSlot::Bearing => return Err(unexpanded(span)),
+                ClockSlot::Bearing => {
+                    return Err(not_checked(TimedConstruct::ClockBearingArgument, span))
+                }
                 ClockSlot::Data => {
                     if self.located.reads_clock(argument) {
                         return Err(timed(self.located.outside(argument)));
                     }
-                    Argument::Value {
-                        node: Some(argument),
-                        constant: self.located.constant(argument, self.clocks),
+                    let receiver = matches!(self.located.node(argument), Some(ExprNode::SelfRef))
+                        && self.declarations.object_type(type_form).is_some();
+                    if receiver {
+                        Argument::Receiver
+                    } else {
+                        Argument::Value {
+                            term: DataLiteral::Site(argument),
+                            constant: self.located.constant(argument, self.clocks),
+                        }
                     }
                 }
             };
@@ -496,21 +643,19 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         Ok(bound)
     }
 
-    /// The arguments of a call written in `body`, by parameter name of the
+    /// The arguments of a call written in a body, by parameter name of the
     /// called declaration.
-    #[allow(clippy::too_many_arguments)] // one call site's whole reading state
-    fn body_arguments<'d>(
+    fn body_arguments(
         &self,
-        body: &Body<'d>,
-        environment: &BTreeMap<String, Argument>,
+        frame: &Frame<'_, '_>,
         called: &ClockReadingDeclaration,
         arguments: &[ExprId],
-        site: ExprId,
         stack: &mut Stack,
         budget: &mut PartBudget,
     ) -> Result<BTreeMap<String, Argument>, CheckCause> {
+        let body = frame.body;
         let mut bound = BTreeMap::new();
-        for ((name, _), (slot, argument)) in called.function.parameters.iter().zip(
+        for ((name, type_form), (slot, argument)) in called.function.parameters.iter().zip(
             called
                 .parameters
                 .iter()
@@ -518,55 +663,158 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 .zip(arguments.iter().copied()),
         ) {
             let read = match slot {
-                ClockSlot::Clock => Argument::Places(self.places(
-                    body,
-                    environment,
-                    argument,
-                    site,
-                    stack,
-                    budget,
-                )?),
-                ClockSlot::Bearing => return Err(unexpanded(self.located.span(site))),
-                ClockSlot::Data => match body.node(argument) {
-                    Some(node @ ExprNode::Name(_)) => match parameter(body.declaration, node)
-                        .and_then(|(name, _)| environment.get(name))
+                ClockSlot::Clock => Argument::Places(self.places(frame, argument, stack, budget)?),
+                ClockSlot::Bearing => {
+                    return Err(not_checked(
+                        TimedConstruct::ClockBearingArgument,
+                        body.span(argument),
+                    ))
+                }
+                ClockSlot::Data => {
+                    if let Some(passed) = body
+                        .parameter(self.declarations, argument)
+                        .and_then(|parameter| frame.environment.get(parameter.name))
                     {
-                        Some(passed) => passed.clone(),
-                        None => return Err(unexpanded(self.located.span(site))),
-                    },
-                    Some(ExprNode::Quantity(quantity)) => Argument::Value {
-                        node: None,
-                        constant: self.clocks.quantity(quantity),
-                    },
-                    _ => return Err(unexpanded(self.located.span(site))),
-                },
+                        passed.clone()
+                    } else if matches!(body.node(argument), Some(ExprNode::SelfRef))
+                        && self.declarations.object_type(type_form).is_some()
+                    {
+                        Argument::Receiver
+                    } else {
+                        let constant = match body.node(argument) {
+                            Some(ExprNode::Quantity(quantity)) => self.clocks.quantity(quantity),
+                            Some(ExprNode::Negate(operand))
+                                if matches!(body.node(*operand), Some(ExprNode::Quantity(_))) =>
+                            {
+                                Err(TemporalCause::NegativeClockConstant {
+                                    span: body.span(argument),
+                                })
+                            }
+                            _ => Err(TemporalCause::ClockBoundNotConstant {
+                                span: body.span(argument),
+                            }),
+                        };
+                        Argument::Value {
+                            term: self.formed(frame, argument)?,
+                            constant,
+                        }
+                    }
+                }
             };
             bound.insert(name.clone(), read);
         }
         Ok(bound)
     }
 
-    /// The places body node `id` denotes under `environment`.
-    fn places<'d>(
+    /// Body node `id`, a data term, read at the call site: its parameters
+    /// replaced by their arguments, located at the outermost call.
+    ///
+    /// # Errors
+    ///
+    /// `clock-read-outside-constraint` at the first clock read under `id`.
+    fn formed(&self, frame: &Frame<'_, '_>, id: ExprId) -> Result<DataLiteral, CheckCause> {
+        let body = frame.body;
+        if let Some(read) = body.first_clock_read(id, self.declarations) {
+            return Err(timed(TemporalCause::ClockReadOutsideConstraint {
+                span: body.span(read),
+            }));
+        }
+        // A bare data parameter is its argument.
+        if let Some(Argument::Value { term, .. }) = body
+            .parameter(self.declarations, id)
+            .and_then(|parameter| frame.environment.get(parameter.name))
+        {
+            return Ok(term.clone());
+        }
+        let site_span = self.located.span(frame.site);
+        let names: BTreeSet<&str> = frame.environment.keys().map(String::as_str).collect();
+        let self_tree = Expression::self_ref();
+        let mut trees: Vec<(ExprId, Expression)> = Vec::new();
+        let mut receivers: Vec<ExprId> = Vec::new();
+        for (occurrence, name) in free_occurrences(body.expression(), id, &names) {
+            match frame.environment.get(name) {
+                Some(Argument::Value { term, .. }) => trees.push((occurrence, self.term(term)?)),
+                Some(Argument::Receiver) => receivers.push(occurrence),
+                // A clock parameter read as data was refused above.
+                Some(Argument::Places(_)) | None => {
+                    return Err(timed(TemporalCause::ClockReadOutsideConstraint {
+                        span: body.span(occurrence),
+                    }))
+                }
+            }
+        }
+        let grafts: BTreeMap<ExprId, &Expression> = trees
+            .iter()
+            .map(|(occurrence, tree)| (*occurrence, tree))
+            .chain(receivers.iter().map(|occurrence| (*occurrence, &self_tree)))
+            .collect();
+        let expression = body
+            .expression()
+            .graft(id, &grafts)
+            .ok_or_else(|| timed(self.located.outside(frame.site)))?;
+        let spans = ExpressionSpans::at_point(&expression, site_span.start)
+            .map_err(|_| timed(self.located.outside(frame.site)))?;
+        Ok(DataLiteral::Formed(Rc::new(ExpressionForm {
+            expression,
+            spans,
+        })))
+    }
+
+    /// The expression a data term denotes.
+    fn term(&self, term: &DataLiteral) -> Result<Expression, CheckCause> {
+        match term {
+            DataLiteral::Site(id) => self
+                .located
+                .form
+                .cut(*id, &BTreeMap::new())
+                .map(|form| form.expression)
+                .ok_or_else(|| timed(self.located.outside(*id))),
+            DataLiteral::Formed(form) => Ok(form.expression.clone()),
+        }
+    }
+
+    /// The places body node `id` denotes.
+    fn places(
         &self,
-        body: &Body<'d>,
-        environment: &BTreeMap<String, Argument>,
+        frame: &Frame<'_, '_>,
         id: ExprId,
-        site: ExprId,
         stack: &mut Stack,
         budget: &mut PartBudget,
     ) -> Result<Places, CheckCause> {
-        let site_span = self.located.span(site);
+        let body = frame.body;
+        let not_a_place = || {
+            timed(TemporalCause::NotAPlaceExpression {
+                span: body.span(id),
+            })
+        };
         match body.node(id) {
-            Some(node @ ExprNode::Name(_)) => match parameter(body.declaration, node)
-                .and_then(|(name, _)| environment.get(name))
+            Some(ExprNode::Name(_)) => match body
+                .parameter(self.declarations, id)
+                .and_then(|parameter| frame.environment.get(parameter.name))
             {
                 Some(Argument::Places(places)) => Ok(places.clone()),
-                _ => Err(unexpanded(site_span)),
+                _ => Err(not_a_place()),
             },
-            Some(ExprNode::Field { operand, field })
-                if matches!(body.node(*operand), Some(ExprNode::SelfRef)) =>
-            {
+            Some(ExprNode::Field { operand, field }) => {
+                let receiver = match body.node(*operand) {
+                    Some(ExprNode::SelfRef) => true,
+                    Some(ExprNode::Name(_)) => match body
+                        .parameter(self.declarations, *operand)
+                        .and_then(|parameter| frame.environment.get(parameter.name))
+                    {
+                        Some(Argument::Receiver) => true,
+                        // A clock of another object: a place through a
+                        // reference (FR-230-AC-10's `peer_clock`).
+                        Some(Argument::Value { .. }) => {
+                            return Err(not_checked(TimedConstruct::ReferencedClock, body.span(id)))
+                        }
+                        Some(Argument::Places(_)) | None => false,
+                    },
+                    _ => false,
+                };
+                if !receiver {
+                    return Err(not_a_place());
+                }
                 let clock = self
                     .clocks
                     .model
@@ -578,9 +826,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                             .position(|clock| &clock.field == key)
                     })
                     .map(ClockId)
-                    .ok_or(timed(TemporalCause::NotAPlaceExpression {
-                        span: site_span,
-                    }))?;
+                    .ok_or_else(not_a_place)?;
                 Ok(vec![(Vec::new(), clock)])
             }
             Some(ExprNode::If {
@@ -588,21 +834,25 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 then,
                 otherwise,
             }) => {
-                let (selected, rejected) =
-                    self.boolean(body, environment, *condition, site, stack, budget)?;
-                let then = self.places(body, environment, *then, site, stack, budget)?;
-                let otherwise = self.places(body, environment, *otherwise, site, stack, budget)?;
+                // The condition is data: a clock read there selects no place.
+                let (selected, rejected) = self.boolean(frame, *condition, stack, budget)?;
+                if selected
+                    .iter()
+                    .chain(&rejected)
+                    .any(|(_, clocks)| !clocks.is_empty())
+                {
+                    return Err(timed(TemporalCause::ClockReadOutsideConstraint {
+                        span: body.span(*condition),
+                    }));
+                }
+                let then = self.places(frame, *then, stack, budget)?;
+                let otherwise = self.places(frame, *otherwise, stack, budget)?;
                 let mut places = Vec::new();
                 for (condition, branch) in [(selected, then), (rejected, otherwise)] {
-                    for (literals, clocks) in condition {
-                        if !clocks.is_empty() {
-                            // A place selected by a clock constraint has no
-                            // data condition.
-                            return Err(unexpanded(site_span));
-                        }
+                    for (literals, _) in condition {
                         for (selecting, clock) in &branch {
                             places.push((
-                                literals.iter().chain(selecting).copied().collect(),
+                                literals.iter().chain(selecting).cloned().collect(),
                                 *clock,
                             ));
                         }
@@ -616,86 +866,96 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     .declarations
                     .named(name)
                     .filter(|called| called.result == ClockSlot::Clock)
-                    .ok_or(unexpanded(site_span))?;
-                let inner = self.enter(called, stack, site_span)?;
-                let arguments =
-                    self.body_arguments(body, environment, called, arguments, site, stack, budget)?;
-                let called_body = Body::of(called);
-                let places = self.places(
-                    &called_body,
-                    &arguments,
-                    called_body.expression().root_id(),
-                    site,
+                    .ok_or_else(not_a_place)?;
+                self.call(
+                    frame,
+                    id,
+                    called,
+                    arguments,
                     stack,
                     budget,
-                );
-                stack.truncate(inner);
-                places
+                    |inner, root, stack, budget| self.places(inner, root, stack, budget),
+                )
             }
-            _ => Err(timed(TemporalCause::NotAPlaceExpression {
-                span: site_span,
-            })),
+            _ => Err(not_a_place()),
         }
     }
 
-    /// Push `called` on the expansion stack, refusing recursion; returns
-    /// the stack's length before the push.
-    fn enter(
+    /// Read the call at body node `id` of `called`, with `read` over the
+    /// called body, refusing recursion.
+    #[allow(clippy::too_many_arguments)] // one call's whole reading state
+    fn call<T>(
         &self,
+        frame: &Frame<'_, '_>,
+        id: ExprId,
         called: &ClockReadingDeclaration,
+        arguments: &[ExprId],
         stack: &mut Stack,
-        span: Span,
-    ) -> Result<usize, CheckCause> {
+        budget: &mut PartBudget,
+        read: impl FnOnce(&Frame<'_, '_>, ExprId, &mut Stack, &mut PartBudget) -> Result<T, CheckCause>,
+    ) -> Result<T, CheckCause> {
         let name = &called.function.name;
         if stack.contains(name) {
-            return Err(unexpanded(span));
+            // FR-230 does not say what a recursive clock-reading
+            // declaration expands to (STD-493).
+            return Err(not_checked(
+                TimedConstruct::RecursiveClockReading,
+                frame.body.span(id),
+            ));
         }
-        let depth = stack.len();
+        let environment = self.body_arguments(frame, called, arguments, stack, budget)?;
+        let called_body = Body::of(called);
+        let inner = Frame {
+            body: &called_body,
+            environment: &environment,
+            site: frame.site,
+        };
         stack.push(name.clone());
-        Ok(depth)
+        let result = read(&inner, called_body.expression().root_id(), stack, budget);
+        stack.pop();
+        result
     }
 
     /// The constant body node `id` denotes as a bound.
-    fn bound(
-        &self,
-        body: &Body<'_>,
-        environment: &BTreeMap<String, Argument>,
-        id: ExprId,
-        site: ExprId,
-    ) -> Result<Rational, CheckCause> {
+    fn bound(&self, frame: &Frame<'_, '_>, id: ExprId) -> Result<Rational, CheckCause> {
+        let body = frame.body;
         match body.node(id) {
             Some(ExprNode::Quantity(quantity)) => self.clocks.quantity(quantity).map_err(timed),
-            Some(node @ ExprNode::Name(_)) => match parameter(body.declaration, node)
-                .and_then(|(name, _)| environment.get(name))
+            Some(ExprNode::Name(_)) => match body
+                .parameter(self.declarations, id)
+                .and_then(|parameter| frame.environment.get(parameter.name))
             {
                 Some(Argument::Value { constant, .. }) => constant.clone().map_err(timed),
-                _ => Err(unexpanded(self.located.span(site))),
+                _ => Err(timed(TemporalCause::ClockBoundNotConstant {
+                    span: body.span(id),
+                })),
             },
+            Some(ExprNode::Negate(_)) => Err(timed(TemporalCause::NegativeClockConstant {
+                span: body.span(id),
+            })),
             _ => Err(timed(TemporalCause::ClockBoundNotConstant {
-                span: self.located.span(site),
+                span: body.span(id),
             })),
         }
     }
 
-    /// The disjunctive forms of Boolean body node `id` under `environment`,
-    /// read positively and negated.
-    fn boolean<'d>(
+    /// The disjunctive forms of Boolean body node `id`, read positively and
+    /// negated: a Boolean combination of atomic clock constraints, calls of
+    /// clock-reading predicates and data predicates.
+    fn boolean(
         &self,
-        body: &Body<'d>,
-        environment: &BTreeMap<String, Argument>,
+        frame: &Frame<'_, '_>,
         id: ExprId,
-        site: ExprId,
         stack: &mut Stack,
         budget: &mut PartBudget,
     ) -> Result<(Dnf, Dnf), CheckCause> {
-        let site_span = self.located.span(site);
+        let body = frame.body;
         let truth = || vec![(Vec::new(), Vec::new())];
         match body.node(id) {
             Some(ExprNode::Boolean(true)) => Ok((truth(), Vec::new())),
             Some(ExprNode::Boolean(false)) => Ok((Vec::new(), truth())),
             Some(ExprNode::Not(operand)) => {
-                let (positive, negative) =
-                    self.boolean(body, environment, *operand, site, stack, budget)?;
+                let (positive, negative) = self.boolean(frame, *operand, stack, budget)?;
                 Ok((negative, positive))
             }
             Some(ExprNode::Binary {
@@ -703,9 +963,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     operator @ (BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies),
                 left,
                 right,
-            }) => {
-                let (lp, ln) = self.boolean(body, environment, *left, site, stack, budget)?;
-                let (rp, rn) = self.boolean(body, environment, *right, site, stack, budget)?;
+            }) if body.first_clock_read(id, self.declarations).is_some() => {
+                let (lp, ln) = self.boolean(frame, *left, stack, budget)?;
+                let (rp, rn) = self.boolean(frame, *right, stack, budget)?;
                 Ok(match operator {
                     BinaryOperator::And => (budget.product(&lp, &rp)?, [ln, rn].concat()),
                     BinaryOperator::Or => ([lp, rp].concat(), budget.product(&ln, &rn)?),
@@ -716,65 +976,65 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 operator,
                 left,
                 right,
-            }) if comparison(*operator).is_some() => {
-                let Some(op) = comparison(*operator) else {
-                    return Err(unexpanded(site_span));
+            }) if body.is_place(*left, self.declarations)
+                || body.is_place(*right, self.declarations) =>
+            {
+                let Some(op) = ClockOp::of(*operator) else {
+                    return Err(timed(TemporalCause::ClockReadOutsideConstraint {
+                        span: body.span(id),
+                    }));
                 };
                 let (place, bound, op) = if body.is_place(*left, self.declarations) {
                     (*left, *right, op)
-                } else if body.is_place(*right, self.declarations) {
-                    (*right, *left, op.mirrored())
                 } else {
-                    return Err(unexpanded(site_span));
+                    (*right, *left, op.mirrored())
                 };
-                let places = self.places(body, environment, place, site, stack, budget)?;
-                let bound = self.bound(body, environment, bound, site)?;
-                Ok(constraints(places, op, &bound, site_span))
+                let places = self.places(frame, place, stack, budget)?;
+                let bound = self.bound(frame, bound)?;
+                Ok(constraints(
+                    places,
+                    op,
+                    &bound,
+                    self.located.span(frame.site),
+                ))
             }
-            Some(node @ ExprNode::Name(_)) => match parameter(body.declaration, node)
-                .and_then(|(name, _)| environment.get(name))
-            {
-                Some(Argument::Value {
-                    node: Some(argument),
-                    ..
-                }) => Ok((
-                    vec![(vec![(*argument, true)], Vec::new())],
-                    vec![(vec![(*argument, false)], Vec::new())],
-                )),
-                _ => Err(unexpanded(site_span)),
-            },
-            Some(ExprNode::Call { name, arguments }) => {
-                let called = self
+            Some(ExprNode::Call { name, arguments })
+                if self
                     .declarations
                     .named(name)
-                    .filter(|called| called.result != ClockSlot::Clock)
-                    .ok_or(unexpanded(site_span))?;
-                let inner = self.enter(called, stack, site_span)?;
-                let arguments =
-                    self.body_arguments(body, environment, called, arguments, site, stack, budget)?;
-                let called_body = Body::of(called);
-                let read = self.boolean(
-                    &called_body,
-                    &arguments,
-                    called_body.expression().root_id(),
-                    site,
+                    .is_some_and(|called| called.result != ClockSlot::Clock) =>
+            {
+                let Some(called) = self.declarations.named(name) else {
+                    return Err(timed(self.located.outside(frame.site)));
+                };
+                self.call(
+                    frame,
+                    id,
+                    called,
+                    arguments,
                     stack,
                     budget,
-                );
-                stack.truncate(inner);
-                read
+                    |inner, root, stack, budget| self.boolean(inner, root, stack, budget),
+                )
             }
-            _ => Err(unexpanded(site_span)),
+            // A data predicate: read at the call site.
+            _ => {
+                let literal = self.formed(frame, id)?;
+                Ok((
+                    vec![(vec![(literal.clone(), true)], Vec::new())],
+                    vec![(vec![(literal, false)], Vec::new())],
+                ))
+            }
         }
     }
 }
 
 /// `places`, each selected also by `literal`.
-fn guarded(places: Places, literal: (ExprId, bool)) -> Places {
+fn guarded(places: Places, literal: (DataLiteral, bool)) -> Places {
     places
         .into_iter()
         .map(|(mut literals, clock)| {
-            literals.insert(0, literal);
+            literals.insert(0, literal.clone());
             (literals, clock)
         })
         .collect()
@@ -807,18 +1067,16 @@ pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: S
 }
 
 /// The span of the first call of a clock-reading declaration in
-/// `function`'s body, which no clock rule admits there.
+/// `expression`, which no clock rule admits there.
 pub(super) fn first_call(
     declarations: &Declarations<'_>,
-    function: &qsl_forms::FunctionDeclaration,
+    expression: &Expression,
+    spans: &ExpressionSpans,
 ) -> Option<Span> {
-    let spans = function
-        .spans()
-        .and_then(|spans| spans.body.of_nodes(&function.body))?;
-    function
-        .body
+    let spans = spans.of_nodes(expression)?;
+    expression
         .iter()
-        .filter(|node| declarations.is_call(&function.body, node.id()))
+        .filter(|node| declarations.is_call(expression, node.id()))
         .filter_map(|node| spans.get(node.id().index()).copied())
         .min_by_key(|span| span.start)
 }

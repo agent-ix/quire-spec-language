@@ -699,7 +699,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         );
     }
     match &first.cause {
-        CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
+        CheckCause::MissingName(name)
+        | CheckCause::AmbiguousName { name, .. }
+        | CheckCause::ClockReadingCall(name) => {
             message = format!("{message}: `{name}`");
         }
         // FR-104-AC-2: name the clause kind and, when the clause names one,

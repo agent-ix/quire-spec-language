@@ -1001,6 +1001,12 @@ impl<'a> Application<'a> {
                 location,
                 IllTypedCause::OperatorIneligible,
             )),
+            // FR-230 "Clock-reading declarations": a call the timed-model
+            // check did not expand is outside every place that admits it.
+            None if typer.scope().is_clock_reading(name) => Err(CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::ClockReadingCall(name.to_owned()),
+            }),
             None => Err(CheckRefusal {
                 location: location.clone(),
                 cause: CheckCause::MissingName(name.to_owned()),

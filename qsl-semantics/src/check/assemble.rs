@@ -698,7 +698,7 @@ enum Declared {
 
 mod clock_forms;
 
-pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition};
+pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse};
 
 /// A timed declaration with the complete S2 form and source span that S3
 /// needs to check it (FR-230).

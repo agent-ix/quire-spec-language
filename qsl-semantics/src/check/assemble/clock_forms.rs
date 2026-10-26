@@ -25,7 +25,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_forms::{BuiltinType, DeclarationForm, FunctionDeclaration, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 
-use super::{body_type_forms, expression_type_forms, signature_type_forms};
+use qsl_forms::{ExprNode, Expression, ExpressionSpans};
+
+use super::signature_type_forms;
 
 /// Where a `Clock` type form is written (FR-230 "Timed facet gate").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,9 +36,27 @@ pub enum ClockSite {
     /// tuple element, a union payload, an alias target, or the argument of
     /// `Option` or a collection type in one of them.
     Declaration,
-    /// A type form inside an expression (`convert<T>`, `allInstances<T>` and
-    /// the named types of an accumulation), which no clock rule admits.
-    Expression,
+    /// A clock-bearing type or literal inside an expression, which no clock
+    /// rule admits there.
+    Expression(ClockUse),
+}
+
+/// How an expression uses a clock-bearing type (FR-230 "Records, tuples and
+/// unions").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClockUse {
+    /// `convert<T>(e)` with a clock-bearing `T`: a clock-bearing value read
+    /// whole as a conversion, `clock-read-outside-constraint`.
+    Conversion,
+    /// `allInstances<T>` with a clock-bearing `T`, read as a clock-bearing
+    /// value read whole (STD-493 item 18).
+    Instances,
+    /// The named type of `fold`, `reduce`, `count` or `sum`: an accumulation
+    /// whose value reads a clock, `clock-read-outside-constraint`.
+    Accumulation,
+    /// A record, tuple or union literal of a clock-bearing type outside a
+    /// reset, `clock-write`.
+    Literal,
 }
 
 /// A `Clock` the unit's own source writes in a type position, with the
@@ -154,8 +174,60 @@ struct Written<'f> {
     /// The type name it declares: an alias, record, tuple or union.
     declares: Option<&'f str>,
     signature: Vec<&'f TypeForm>,
-    expressions: Vec<TypeForm>,
+    expressions: Vec<(TypeForm, ClockUse)>,
+    /// Each record literal's written type name and span.
+    literals: Vec<(String, Span)>,
     kind: Kind<'f>,
+}
+
+/// What the expressions of one declaration write: each type form with how
+/// it is used, and each record literal's type name with its span.
+type ExpressionUses = (Vec<(TypeForm, ClockUse)>, Vec<(String, Span)>);
+
+/// The type forms written inside `roots` with how each is used, and each
+/// record literal's type name with its span, in node order.
+fn expression_uses<'e>(
+    roots: impl IntoIterator<Item = (&'e Expression, Option<&'e ExpressionSpans>)>,
+) -> ExpressionUses {
+    let mut forms = Vec::new();
+    let mut literals = Vec::new();
+    for (root, spans) in roots {
+        let spans = spans.and_then(|spans| spans.of_nodes(root));
+        for node in root.iter() {
+            match node.node() {
+                ExprNode::Convert { target, .. } => {
+                    forms.push((target.clone(), ClockUse::Conversion))
+                }
+                ExprNode::AllInstances { target, .. } => {
+                    forms.push((target.clone(), ClockUse::Instances))
+                }
+                ExprNode::Accumulate {
+                    accumulator_type: name,
+                    accumulator_type_span: span,
+                    ..
+                }
+                | ExprNode::Count {
+                    result_type: name,
+                    result_type_span: span,
+                    ..
+                }
+                | ExprNode::Sum {
+                    result_type: name,
+                    result_type_span: span,
+                    ..
+                } => forms.push((TypeForm::name(name.clone(), *span), ClockUse::Accumulation)),
+                ExprNode::Record { name, .. } => {
+                    let span = spans
+                        .as_ref()
+                        .and_then(|spans| spans.get(node.id().index()).copied())
+                        .unwrap_or(name.span);
+                    literals.push((name.name.clone(), span));
+                }
+                _ => {}
+            }
+        }
+    }
+    (forms, literals)
 }
 
 enum Kind<'f> {
@@ -167,18 +239,34 @@ enum Kind<'f> {
 
 fn written(form: &DeclarationForm) -> Option<Written<'_>> {
     Some(match form {
-        DeclarationForm::Function(function) => Written {
-            owner: function.name.clone(),
-            declares: None,
-            signature: signature_type_forms(function),
-            expressions: body_type_forms(function),
-            kind: Kind::Function,
-        },
+        DeclarationForm::Function(function) => {
+            let spans = function.spans();
+            let (expressions, literals) = expression_uses(
+                [
+                    function
+                        .measure
+                        .as_ref()
+                        .map(|measure| (measure, spans.and_then(|spans| spans.measure.as_ref()))),
+                    Some((&function.body, spans.map(|spans| &spans.body))),
+                ]
+                .into_iter()
+                .flatten(),
+            );
+            Written {
+                owner: function.name.clone(),
+                declares: None,
+                signature: signature_type_forms(function),
+                expressions,
+                literals,
+                kind: Kind::Function,
+            }
+        }
         DeclarationForm::Alias(alias) => Written {
             owner: alias.name.name.clone(),
             declares: Some(alias.name.name.as_str()),
             signature: vec![&alias.target],
             expressions: Vec::new(),
+            literals: Vec::new(),
             kind: Kind::Alias(&alias.target),
         },
         DeclarationForm::Record(record) => Written {
@@ -186,6 +274,7 @@ fn written(form: &DeclarationForm) -> Option<Written<'_>> {
             declares: Some(record.name.name.as_str()),
             signature: record.fields.iter().map(|field| &field.type_form).collect(),
             expressions: Vec::new(),
+            literals: Vec::new(),
             kind: Kind::Composite,
         },
         DeclarationForm::Tuple(tuple) => Written {
@@ -193,6 +282,7 @@ fn written(form: &DeclarationForm) -> Option<Written<'_>> {
             declares: Some(tuple.name.name.as_str()),
             signature: tuple.elements.iter().collect(),
             expressions: Vec::new(),
+            literals: Vec::new(),
             kind: Kind::Composite,
         },
         DeclarationForm::Union(union) => Written {
@@ -204,22 +294,32 @@ fn written(form: &DeclarationForm) -> Option<Written<'_>> {
                 .flat_map(|member| &member.payload)
                 .collect(),
             expressions: Vec::new(),
+            literals: Vec::new(),
             kind: Kind::Composite,
         },
-        DeclarationForm::StateClause(clause) => Written {
-            owner: clause.name.name.clone(),
-            declares: None,
-            signature: Vec::new(),
-            expressions: expression_type_forms([&clause.body]),
-            kind: Kind::Clause,
-        },
-        DeclarationForm::OperationBody(body) => Written {
-            owner: body.label.name.clone(),
-            declares: None,
-            signature: Vec::new(),
-            expressions: expression_type_forms([&body.body]),
-            kind: Kind::Clause,
-        },
+        DeclarationForm::StateClause(clause) => {
+            let (expressions, literals) =
+                expression_uses([(&clause.body, Some(&clause.spans.body))]);
+            Written {
+                owner: clause.name.name.clone(),
+                declares: None,
+                signature: Vec::new(),
+                expressions,
+                literals,
+                kind: Kind::Clause,
+            }
+        }
+        DeclarationForm::OperationBody(body) => {
+            let (expressions, literals) = expression_uses([(&body.body, Some(&body.spans.body))]);
+            Written {
+                owner: body.label.name.clone(),
+                declares: None,
+                signature: Vec::new(),
+                expressions,
+                literals,
+                kind: Kind::Clause,
+            }
+        }
         _ => return None,
     })
 }
@@ -292,19 +392,27 @@ pub(super) fn classify(forms: &[qsl_forms::ParsedForm]) -> ClockForms {
         let declared = clocks(entry.signature.iter().copied());
         // An expression's clock-bearing type form is located at each
         // `Clock` it writes, or at the form itself when it names a
-        // clock-bearing declaration.
-        let inside: Vec<Span> = entry
+        // clock-bearing declaration; a literal of a clock-bearing type, at
+        // the literal.
+        let inside: Vec<(Span, ClockUse)> = entry
             .expressions
             .iter()
-            .filter(|form| classified.is_bearing(form))
-            .flat_map(|form| {
+            .filter(|(form, _)| classified.is_bearing(form))
+            .flat_map(|(form, used)| {
                 let written = clocks([form]);
                 if written.is_empty() {
-                    vec![form.span]
+                    vec![(form.span, *used)]
                 } else {
-                    written
+                    written.into_iter().map(|span| (span, *used)).collect()
                 }
             })
+            .chain(
+                entry
+                    .literals
+                    .iter()
+                    .filter(|(name, _)| classified.bearing_types.contains(name))
+                    .map(|(_, span)| (*span, ClockUse::Literal)),
+            )
             .collect();
         let held = !inside.is_empty();
         let bearing = entry
@@ -328,9 +436,9 @@ pub(super) fn classify(forms: &[qsl_forms::ParsedForm]) -> ClockForms {
                 site: ClockSite::Declaration,
                 span,
             })
-            .chain(inside.into_iter().map(|span| ClockTypePosition {
+            .chain(inside.into_iter().map(|(span, used)| ClockTypePosition {
                 owner: entry.owner.clone(),
-                site: ClockSite::Expression,
+                site: ClockSite::Expression(used),
                 span,
             }))
             .collect();

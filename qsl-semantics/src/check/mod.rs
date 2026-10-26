@@ -288,7 +288,7 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
-    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, TimedDeclaration,
+    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse, TimedDeclaration,
     TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
@@ -1303,12 +1303,24 @@ impl PackageDeclarations {
                         if let TimedDeclaration::ClockType(position) = form {
                             return match position.site {
                                 ClockSite::Declaration => None,
-                                ClockSite::Expression => Some(CheckRefusal {
+                                // FR-230 "Records, tuples and unions": a
+                                // clock-bearing value read whole, or a
+                                // literal with a clock component outside a
+                                // reset.
+                                ClockSite::Expression(used) => Some(CheckRefusal {
                                     location: root(Origin::Expression),
-                                    cause: CheckCause::TimedNotChecked {
-                                        construct: TimedConstruct::Clock,
-                                        span: position.span,
-                                    },
+                                    cause: CheckCause::Temporal(Box::new(match used {
+                                        ClockUse::Literal => TemporalCause::ClockWrite {
+                                            span: position.span,
+                                        },
+                                        ClockUse::Conversion
+                                        | ClockUse::Instances
+                                        | ClockUse::Accumulation => {
+                                            TemporalCause::ClockReadOutsideConstraint {
+                                                span: position.span,
+                                            }
+                                        }
+                                    })),
                                 }),
                             };
                         }
@@ -1349,7 +1361,7 @@ impl PackageDeclarations {
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
                     clock_reading: &self.clock_reading,
-                    functions: &self.functions,
+                    operation_bodies: &self.operation_bodies,
                     units: &units,
                     rational_bits: limits.rational_bits(),
                     nodes: limits.nodes(),
@@ -1507,6 +1519,12 @@ impl PackageDeclarations {
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
         .with_known_populations(refinement::population_names(&self.models))
+        .with_clock_reading(
+            self.clock_reading
+                .iter()
+                .map(|declaration| declaration.function.name.clone())
+                .collect(),
+        )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
         .with_model_selections(

@@ -898,6 +898,15 @@ pub enum TimedConstruct {
     Response,
     /// A `release` declaration (QSpec FR-419, QSL FR-249).
     Release,
+    /// An argument for a clock-bearing parameter other than `Clock`: a
+    /// record, tuple, union, optional or collection place (FR-230).
+    ClockBearingArgument,
+    /// A clock-reading declaration whose expansion reaches its own call
+    /// (FR-230 "Clock-reading declarations").
+    RecursiveClockReading,
+    /// A clock of an object other than the receiver, reached through a
+    /// reference (FR-230 "Parameters").
+    ReferencedClock,
 }
 
 impl TimedConstruct {
@@ -913,6 +922,9 @@ impl TimedConstruct {
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
             Self::Release => "a `release` declaration",
+            Self::ClockBearingArgument => "a clock-bearing argument other than a clock",
+            Self::RecursiveClockReading => "a recursive clock-reading declaration",
+            Self::ReferencedClock => "a clock of another object",
         }
     }
 }
@@ -2353,6 +2365,11 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// `invalid_timed_model` / `clock-read-outside-constraint`: a call of the
+    /// named clock-reading declaration outside an operation precondition, a
+    /// time invariant body or another clock-reading declaration (FR-230
+    /// "Clock-reading declarations"), located at the call.
+    ClockReadingCall(String),
     /// `missing_declaration` / `missing-name` for a qualified source name.
     MissingQualifiedName(qsl_forms::NameForm),
     /// `missing_declaration` / `missing-name` for the population segment of
@@ -2885,6 +2902,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
+            Self::ClockReadingCall(_) => Code::InvalidTimedModel,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2959,6 +2977,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
+            Self::ClockReadingCall(_) => Some("clock-read-outside-constraint"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
