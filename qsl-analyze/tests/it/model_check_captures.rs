@@ -9,17 +9,22 @@
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
-use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::model::{ExpansionLimits, ModelSystem};
 use qsl_eval::temporal::{CaptureReading, UndefinedCause};
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    check_closure, CertificateRequest, CertificateRule, CounterexampleKind, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, SmtEncodingLimits, TemporalCertificateCheck,
-    UndefinedLocus,
+    check_closure, compile_package, replay_model_trace, CertificateRequest, CertificateRule,
+    CounterexampleKind, DependencyInput, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, SmtEncodingLimits,
+    TemporalCertificateCheck, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    WireNodeId,
 };
 use quire_exact::{Cancel, Meter};
 use serde_json::json;
 
 use crate::counter::{CONTRACT, UNLIMITED};
+use crate::model_settle::{envelope_at, request};
 use crate::model_world::{self, Clause, World, BOUNDED, INFINITE};
 
 fn world(profile: &str, activation: &str, formula: &str) -> World {
@@ -397,4 +402,94 @@ fn the_closure_checker_reads_the_captures_and_rejects_an_undefined_one() {
         panic!("a state with an undefined capture is a bad state");
     };
     assert_eq!(rejection.rule, CertificateRule::BadState);
+}
+
+/// FR-337-AC-13: FR-128 replays AC-11's undefined-capture counterexample
+/// through the production letters. The recompiled clause reads the capture
+/// `z` at position 2, where `6 mod (2 - c.value)` divides by zero, and the
+/// replay reproduces `UndefinedEvaluation` at position 2 located at `z`; the
+/// same payload located at the activation or at position 1 settles
+/// `inconclusive`. FR-339's component checker is not built, so its rejection
+/// of the certificate is not asserted.
+#[trace("TC-1267", "FR-337-AC-13")]
+#[test]
+fn replay_reproduces_an_undefined_capture_located_at_it() {
+    let formula = "capture z: Boolean = (6 mod (2 - c.value) = 0); always holds(true)";
+    let world = world(INFINITE, &each("true"), formula);
+    let outcome = run(&world, ModelCheckLimits::default()).expect("checked");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    let CounterexampleKind::UndefinedEvaluation(claimed) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    let claimed = claimed.clone();
+
+    let document = world.domain.document.as_slice();
+    let package_id = compile_package(
+        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter.native",
+        &world.unit,
+        [document],
+        &DependencyInput::default(),
+        qsl_replay::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles")
+    .package_id();
+    let node = &world.package.graph().temporal_clauses()[0];
+    let identity = WireNodeId::from_digest(*node.identity().as_bytes());
+    let occurrence = OccurrenceKey::new(identity, node.claim().clone());
+    let system =
+        ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");
+    let letters = system.clause_letters(node).expect("the clause has letters");
+    let subject = ModelTraceSubject {
+        initial: world.initial.clone(),
+        universes: crate::counter::universe(&["c"]),
+        expansion: ExpansionLimits {
+            max_candidates: 1_000_000,
+        },
+    };
+    let replay = |payload: TemporalCounterexample| {
+        replay_model_trace(
+            request(document, world.snapshot_bytes(), &world.unit, package_id),
+            &subject,
+            &envelope_at(
+                &world.unit,
+                package_id,
+                payload,
+                identity,
+                occurrence.clone(),
+            ),
+            &letters,
+            ReplayLimits::default(),
+        )
+        .expect("replays")
+        .settlement
+    };
+
+    let reproduced = replay(counterexample.as_ref().clone());
+    assert_eq!(
+        reproduced,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(claimed.clone()),
+            trace_position: counterexample.trace_position(),
+        }
+    );
+    for edit in [
+        (|evaluation: &mut UndefinedEvaluation| evaluation.site.locus = UndefinedLocus::Activation)
+            as fn(&mut UndefinedEvaluation),
+        |evaluation| evaluation.site.locus = UndefinedLocus::Capture("other".to_owned()),
+        |evaluation| evaluation.site.position = 1,
+    ] {
+        let mut payload = counterexample.as_ref().clone();
+        let CounterexampleKind::UndefinedEvaluation(evaluation) = &mut payload.kind else {
+            panic!("an undefined evaluation");
+        };
+        edit(evaluation);
+        assert!(
+            matches!(replay(payload), ModelTraceSettlement::Inconclusive(_)),
+            "a payload that misplaces the undefined capture is inconclusive"
+        );
+    }
 }

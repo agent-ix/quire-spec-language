@@ -56,7 +56,7 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::{
     evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
-    TemporalPosition, TemporalTrace,
+    TemporalPosition, TemporalTrace, UndefinedCause,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
@@ -195,10 +195,6 @@ pub enum ModelTraceRefusal {
         /// The positions the prefix holds.
         positions: usize,
     },
-    /// An undefined-evaluation counterexample of an authored clause, whose
-    /// replay (FR-128-AC-5) is not built.
-    #[error("unsupported_construct/not-yet-implemented: replay of an authored clause's undefined evaluation")]
-    AuthoredUndefined,
     /// A refinement counterexample that names no refinement failure.
     #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
     NoRefinementFailure,
@@ -353,7 +349,7 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
-            Self::AuthoredUndefined | Self::HyperProjected => Code::UnsupportedConstruct,
+            Self::HyperProjected => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
@@ -384,7 +380,7 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
-            Self::AuthoredUndefined | Self::HyperProjected => "not-yet-implemented",
+            Self::HyperProjected => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -717,8 +713,22 @@ impl ProtocolReplay<'_> {
         }
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
-            (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
-                undefined(system, &NoConstraints, payload, &positions, claimed)?
+            (CounterexampleKind::UndefinedEvaluation(claimed), clause) => {
+                let reads = match clause {
+                    Some(clause) => {
+                        let formula = FormulaReplay {
+                            clause,
+                            letters: self.letters,
+                            meter: self.meter,
+                        };
+                        match undefined_letter(system, payload, &positions, &formula)? {
+                            LetterRead::NoValue => return Ok(no_value()),
+                            LetterRead::Read(first) => ItemReads::Authored(first),
+                        }
+                    }
+                    None => ItemReads::Deadlock,
+                };
+                undefined(system, &NoConstraints, payload, &positions, claimed, &reads)?
             }
             (CounterexampleKind::Formula, Some(clause)) => {
                 let formula = FormulaReplay {
@@ -865,10 +875,6 @@ fn resolve_item<'p, T: SubjectTransition>(
     }
     let clause = found.clause();
     check_fairness(clause)?;
-    let payload = envelope.family_payload();
-    if matches!(payload.kind, CounterexampleKind::UndefinedEvaluation(_)) {
-        return Err(refused(ModelTraceRefusal::AuthoredUndefined));
-    }
     Ok(Some(clause))
 }
 
@@ -1017,8 +1023,15 @@ fn settle(
         (CounterexampleKind::Deadlock, _) => {
             deadlock(system, payload, &positions, &steps).map(|settlement| (settlement, Vec::new()))
         }
-        (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
-            undefined(system, system, payload, &positions, claimed)
+        (CounterexampleKind::UndefinedEvaluation(claimed), formula) => {
+            let reads = match formula {
+                Some(formula) => match undefined_letter(system, payload, &positions, &formula)? {
+                    LetterRead::NoValue => return Ok((no_value(), Vec::new())),
+                    LetterRead::Read(first) => ItemReads::Authored(first),
+                },
+                None => ItemReads::Deadlock,
+            };
+            undefined(system, system, payload, &positions, claimed, &reads)
                 .map(|settlement| (settlement, Vec::new()))
         }
         (CounterexampleKind::Formula, Some(formula)) => {
@@ -1213,9 +1226,19 @@ struct ReplayedLetters<'a, S: SubjectSystem> {
     /// of the prefix, which returns to the loop entry, or the terminal
     /// stutter step, which counts.
     loop_edge_counts: bool,
+    /// The first undefined reading of a letter, by position and locus.
+    undefined: Option<(u64, UndefinedLocus)>,
 }
 
 impl<S: SubjectSystem> ReplayedLetters<'_, S> {
+    /// Keep the first undefined reading, which the evaluator reports
+    /// without its locus.
+    fn note(&mut self, position: TemporalPosition, locus: impl FnOnce() -> UndefinedLocus) {
+        if self.undefined.is_none() {
+            self.undefined = Some((position.index(), locus()));
+        }
+    }
+
     /// The replayed state at the represented `position`.
     fn state_at(&self, position: TemporalPosition) -> Result<&Position<S::State>, LetterStop> {
         usize::try_from(position.index())
@@ -1250,12 +1273,17 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         let state = self.state_at(position)?;
-        Ok(self.letters.atom(
+        let reading = self.letters.atom(
             atom,
             self.instance,
             &self.system.atom_state(&state.state),
             meter,
-        )?)
+        )?;
+        if matches!(&reading, AtomReading::Undefined(cause) if !matches!(cause, UndefinedCause::InsufficientData(_)))
+        {
+            self.note(position, || UndefinedLocus::Atom(atom));
+        }
+        Ok(reading)
     }
 
     fn activation(
@@ -1264,9 +1292,13 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         let state = self.state_at(position)?;
-        Ok(self
-            .letters
-            .activation(self.instance, &self.system.atom_state(&state.state), meter)?)
+        let reading =
+            self.letters
+                .activation(self.instance, &self.system.atom_state(&state.state), meter)?;
+        if matches!(reading, AtomReading::Undefined(_)) {
+            self.note(position, || UndefinedLocus::Activation);
+        }
+        Ok(reading)
     }
 
     fn captures(
@@ -1275,9 +1307,13 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
         meter: &mut Meter,
     ) -> Result<CaptureReading, LetterStop> {
         let state = self.state_at(position)?;
-        Ok(self
-            .letters
-            .captures(self.instance, &self.system.atom_state(&state.state), meter)?)
+        let reading =
+            self.letters
+                .captures(self.instance, &self.system.atom_state(&state.state), meter)?;
+        if let CaptureReading::Undefined { capture, .. } = &reading {
+            self.note(position, || UndefinedLocus::Capture(capture.clone()));
+        }
+        Ok(reading)
     }
 }
 
@@ -1303,24 +1339,7 @@ fn check_formula<S: SubjectSystem>(
         ReplayRefusal,
     >,
 ) -> Result<(ModelTraceSettlement, Vec<LoopState<S::TransitionId>>), ReplayRefusal> {
-    let instance = payload
-        .over_binding
-        .as_ref()
-        .ok_or_else(|| refused(ModelTraceRefusal::OverBinding))?;
-    let mut letters = ReplayedLetters {
-        system,
-        letters: formula.letters,
-        instance,
-        positions,
-        prefix: &payload.prefix,
-        loop_edge_counts: match payload.lasso {
-            Some(lasso) if !lasso.terminal_stutter => payload
-                .prefix
-                .last()
-                .is_none_or(|step| system.counts_step(&step.transition)),
-            Some(_) | None => true,
-        },
-    };
+    let mut letters = replayed_letters(system, payload, positions, formula.letters)?;
     let mut meter = Meter::new(formula.meter);
     let mut loop_states = Vec::new();
     let trace = match payload.lasso {
@@ -1329,15 +1348,7 @@ fn check_formula<S: SubjectSystem>(
                 Ok(states) => loop_states = states,
                 Err(settlement) => return Ok((settlement, Vec::new())),
             }
-            let steps = positions.len() - 1;
-            TemporalTrace::Lasso {
-                prefix: position_of(lasso.entry),
-                loop_len: if lasso.terminal_stutter {
-                    1
-                } else {
-                    position_of(steps - lasso.entry)
-                },
-            }
+            trace_of(lasso, positions.len())
         }
         None => TemporalTrace::Finite {
             len: position_of(positions.len()),
@@ -1394,6 +1405,106 @@ fn check_formula<S: SubjectSystem>(
         }
         Err(_) => (no_value(), Vec::new()),
     })
+}
+
+/// The letters of a counterexample's replayed positions, for the instance
+/// its `over` binding names.
+fn replayed_letters<'a, S: SubjectSystem>(
+    system: &'a S,
+    payload: &'a TemporalCounterexample<S::TransitionId>,
+    positions: &'a [Position<S::State>],
+    letters: &'a dyn ModelLetters,
+) -> Result<ReplayedLetters<'a, S>, ReplayRefusal> {
+    let instance = payload
+        .over_binding
+        .as_ref()
+        .ok_or_else(|| refused(ModelTraceRefusal::OverBinding))?;
+    Ok(ReplayedLetters {
+        system,
+        letters,
+        instance,
+        positions,
+        prefix: &payload.prefix,
+        loop_edge_counts: match payload.lasso {
+            Some(lasso) if !lasso.terminal_stutter => payload
+                .prefix
+                .last()
+                .is_none_or(|step| system.counts_step(&step.transition)),
+            Some(_) | None => true,
+        },
+        undefined: None,
+    })
+}
+
+/// The lasso `lasso` over a prefix of `positions` positions, as the
+/// evaluator reads it.
+fn trace_of(lasso: Lasso, positions: usize) -> TemporalTrace {
+    let steps = positions.saturating_sub(1);
+    TemporalTrace::Lasso {
+        prefix: position_of(lasso.entry),
+        loop_len: if lasso.terminal_stutter {
+            1
+        } else {
+            position_of(steps.saturating_sub(lasso.entry))
+        },
+    }
+}
+
+/// FR-128 for `kind: UndefinedEvaluation` of an authored clause: read the
+/// clause's letters over the replayed trace as FR-125 reads them (no
+/// fairness is checked, ADR-018 UE-3, UE-5) and keep the first undefined
+/// reading with the expression it names: the guarded activation's `when`
+/// condition, a capture's initializer, or an atom. The evaluator reports
+/// the position and cause; the letters record the locus.
+fn undefined_letter<S: SubjectSystem>(
+    system: &S,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    positions: &[Position<S::State>],
+    formula: &FormulaReplay<'_>,
+) -> Result<LetterRead, ReplayRefusal> {
+    let mut letters = replayed_letters(system, payload, positions, formula.letters)?;
+    let mut meter = Meter::new(formula.meter);
+    let trace = match payload.lasso {
+        Some(lasso) => trace_of(lasso, positions.len()),
+        None => TemporalTrace::Finite {
+            len: position_of(positions.len()),
+        },
+    };
+    let open = payload.lasso.is_none()
+        && formula.clause.profile().is_bounded()
+        && !ends_terminal(system, positions)?;
+    let outcome = if open {
+        evaluate_open_prefix(
+            formula.clause,
+            position_of(positions.len()),
+            &mut letters,
+            &mut meter,
+        )
+    } else {
+        evaluate_with_enabledness(formula.clause, trace, &mut letters, &mut meter)
+    };
+    match outcome {
+        Ok(TemporalOutcome::Undefined(undefined)) => {
+            let Some((position, locus)) = letters.undefined.take() else {
+                return Err(fault("an-undefined-letter-names-its-locus"));
+            };
+            if position != undefined.at.index() {
+                return Err(fault("the-first-undefined-letter-is-the-evaluators"));
+            }
+            let position = usize::try_from(position)
+                .map_err(|_| fault("an-undefined-position-is-a-position"))?;
+            Ok(LetterRead::Read(Some(UndefinedLetter {
+                position,
+                locus,
+                cause: undefined.cause,
+            })))
+        }
+        Err(qsl_eval::temporal::TemporalRefusal::Fault(_)) => Err(fault("temporal-evaluation")),
+        Ok(TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_)) | Err(_) => {
+            Ok(LetterRead::NoValue)
+        }
+        Ok(_) => Ok(LetterRead::Read(None)),
+    }
 }
 
 /// Whether the last replayed state is terminal: no transition identity is
@@ -1695,16 +1806,50 @@ fn position_of(index: usize) -> u64 {
     u64::try_from(index).unwrap_or(u64::MAX)
 }
 
-/// ADR-018 UE-5 and UE-6 for the deadlock-freedom item: the first replayed
-/// position at which a contract conjunction of the expansion, or the
-/// `terminal when` predicate at a terminal state, is undefined must be the
-/// payload's `where`, at its locus, with its cause.
+/// What an item reads at a replayed position beside the state's constraint
+/// and the contract conjunctions of its expansion (FR-128 "the order the
+/// engine reads them").
+enum ItemReads {
+    /// The deadlock-freedom item: the `terminal when` predicate at a
+    /// terminal state.
+    Deadlock,
+    /// An authored clause: its letter, read first at each position, and the
+    /// first undefined reading of it, when it has one.
+    Authored(Option<UndefinedLetter>),
+}
+
+/// The first undefined reading of an authored clause's letters over the
+/// replayed positions (FR-337 "Capture observation": the `when` condition,
+/// the captures, then the atoms in clause-node order).
+struct UndefinedLetter {
+    position: usize,
+    locus: UndefinedLocus,
+    cause: UndefinedCause,
+}
+
+/// The result of reading an authored clause's letters over the replayed
+/// positions.
+enum LetterRead {
+    /// The letters were read: the first undefined reading, if any.
+    Read(Option<UndefinedLetter>),
+    /// The read completed no value (the meter ran out or the evaluator
+    /// refused).
+    NoValue,
+}
+
+/// ADR-018 UE-5 and UE-6: the first replayed position at which an
+/// expression of the item is undefined must be the payload's `where`, at its
+/// locus, with its cause. At one position an authored clause's letter is
+/// read before the contract conjunctions of the expansion; the
+/// deadlock-freedom item reads the contract conjunctions, then the
+/// `terminal when` predicate at a terminal state.
 fn undefined<S: SubjectSystem>(
     system: &S,
     constraints: &dyn Constraints<S::State>,
     payload: &TemporalCounterexample<S::TransitionId>,
     positions: &[Position<S::State>],
     claimed: &UndefinedEvaluation,
+    reads: &ItemReads,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     // ADR-021 SC-2, EI-7: a counterexample of an undefined state constraint
     // names it, and replay re-evaluates it at each position, where the
@@ -1751,24 +1896,39 @@ fn undefined<S: SubjectSystem>(
                 Err(_) => return Ok(no_value()),
             }
         }
-        let (expansion, cut) = match expand_bounded(system, &position.state)? {
-            Ok(bounded) => bounded,
-            Err(_) => return Ok(no_value()),
+        let letter = match reads {
+            ItemReads::Authored(Some(letter)) if letter.position == index => Some(letter),
+            ItemReads::Authored(_) | ItemReads::Deadlock => None,
         };
-        let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
+        let found = if let Some(letter) = letter {
             Some(UndefinedEvaluation {
-                site: site(locus, guard_of),
-                cause,
+                site: site(letter.locus.clone(), None),
+                cause: letter.cause.clone(),
             })
         } else {
-            match SubjectSystem::terminal_class(system, &position.state, &expansion, cut) {
-                Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
-                    site: site(UndefinedLocus::Terminal(model), None),
-                    cause,
-                }),
-                Ok(_) => None,
-                Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
+            let (expansion, cut) = match expand_bounded(system, &position.state)? {
+                Ok(bounded) => bounded,
                 Err(_) => return Ok(no_value()),
+            };
+            if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
+                Some(UndefinedEvaluation {
+                    site: site(locus, guard_of),
+                    cause,
+                })
+            } else if matches!(reads, ItemReads::Deadlock) {
+                match SubjectSystem::terminal_class(system, &position.state, &expansion, cut) {
+                    Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
+                        site: site(UndefinedLocus::Terminal(model), None),
+                        cause,
+                    }),
+                    Ok(_) => None,
+                    Err(stop) if stop.is_internal_failure() => {
+                        return Err(fault("terminal-predicate"))
+                    }
+                    Err(_) => return Ok(no_value()),
+                }
+            } else {
+                None
             }
         };
         if let Some(found) = found {

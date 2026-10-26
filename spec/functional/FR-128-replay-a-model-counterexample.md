@@ -175,7 +175,9 @@ member of its own.
   undefined evaluation at that state (ADR-018 UE-6).
   - At one replayed position the executor SHALL read the expressions in
     the order the engine reads them (FR-126, ADR-018 UE-4): for a formula
-    item, the letter, its atoms in clause-node order (UE-2), then the
+    item, the letter (a guarded activation's `when` condition, then the
+    clause's captures at an activation, FR-337 "Capture observation", then
+    its atoms in clause-node order, UE-2), then the
     contract conjunctions of the position's expansion in the order the
     expansion records them; for the deadlock-freedom item, the contract
     conjunctions, then `P` at a terminal state, since only the expansion
