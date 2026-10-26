@@ -530,15 +530,6 @@ pub(super) fn assemble(
             span,
         )
     };
-    for (index, form) in dimensions.iter().enumerate() {
-        if !form.terms.is_empty() && maps[index].is_empty() {
-            errors.push(topology(
-                TopologyFault::EmptyDerivedDimension,
-                vec![dimension_names[index]],
-                dimension_spans[index],
-            ));
-        }
-    }
     let one = Rational::from_integer(Integer::one());
     let mut roots: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (index, form) in units.iter().enumerate() {

@@ -165,8 +165,6 @@ impl Default for AssemblyLimits {
 /// declarations").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TopologyFault {
-    /// A derived dimension whose normalized terms are empty.
-    EmptyDerivedDimension,
     /// A unit whose scale is zero.
     ZeroScale,
     /// A targetless unit whose scale is not one or whose offset is not

@@ -2280,11 +2280,6 @@ fn each_unit_graph_topology_error_refuses_alone() {
     use super::TopologyFault as Fault;
     for (source, fault, declarations) in [
         (
-            "dimension L; dimension N = L / L;",
-            Fault::EmptyDerivedDimension,
-            vec!["N"],
-        ),
-        (
             "dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;",
             Fault::ZeroScale,
             vec!["z"],
@@ -2318,6 +2313,45 @@ fn each_unit_graph_topology_error_refuses_alone() {
             },
             "{source}"
         );
+    }
+}
+
+/// FR-091-AC-45 (TC-483): the base-dimension rule refuses `L`, unitless
+/// and carried by `m2`'s dimension, at `L`, naming `L` and `m2`; a unit of
+/// `L` anchors it; a unitless base dimension no unit carries, a derived
+/// dimension without a unit, and the dimensionless `N = L / L` with its
+/// own unit all assemble.
+#[trace("FR-091-AC-45", "TC-483")]
+#[test]
+fn the_base_dimension_rule_refuses_an_unanchored_base_dimension() {
+    let area = "dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);";
+    let (text, found) = errors(area);
+    let [error] = found.as_slice() else {
+        panic!("one error, not {found:?}")
+    };
+    assert_eq!(
+        (
+            &error.cause,
+            error.cause.catalog_code().to_string(),
+            &text[error.span.start..error.span.end]
+        ),
+        (
+            &AssemblyCause::UnanchoredBaseDimension {
+                dimension: "L".to_owned(),
+                unit: "m2".to_owned(),
+            },
+            "missing_declaration/missing-name".to_owned(),
+            "L"
+        )
+    );
+    for source in [
+        "dimension L; unit m : L = rational(1, 1); dimension A = L ^ 2; \
+         unit m2 : A = rational(1, 1);",
+        "dimension L; dimension A = L ^ 2;",
+        "dimension L; dimension N = L / L; unit one : N = rational(1, 1);",
+    ] {
+        let (_, assembled) = assemble(source);
+        assert!(assembled.is_ok(), "{source}: {:?}", assembled.err());
     }
 }
 
