@@ -5,6 +5,8 @@
 //! AC-18, FR-218-AC-8 and AC-9). Every emitted package is read back through
 //! IR's v2 reader.
 
+use std::collections::BTreeMap;
+
 use ix_trace_rs::trace;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, LawRole, ProtocolConstruct, ProtocolReferenceCause,
@@ -498,7 +500,7 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
 /// FR-464 "Sets": the order of `roles` follows the node digests, not the
 /// source order, so swapping two roles' order in the source leaves the
 /// clause's `roles` argument unchanged.
-#[trace("FR-464-AC-1", "TC-1021")]
+#[trace("FR-464-AC-3", "TC-1021")]
 #[test]
 fn the_roles_set_does_not_follow_source_order() {
     let source = |first: &str, second: &str| {
@@ -563,6 +565,92 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
         causes(&flow("terminal any;", "on origin")),
         [not_emitted(ProtocolConstruct::Terminal)]
     );
+}
+
+/// FR-464 "Term shapes": a `sequence`'s `children` are an ordered list whose
+/// order is the execution order, so it is the source order, not the name or
+/// the digest order: three children in two source orders each come back in
+/// the order written.
+#[trace("TC-1021")]
+#[test]
+fn a_sequences_children_follow_the_source_order() {
+    let children_of = |order: [&str; 3]| -> Vec<String> {
+        let body: String = order
+            .iter()
+            .map(|name| format!("sequence {name} {{ }} "))
+            .collect();
+        let text = selecting(&format!(
+            "protocol Flow using v over (input: Boolean) on origin {{\n\
+             role R on M::Gadget;\n\
+             run sequence Main {{ {body} }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n\
+             }}\n"
+        ));
+        let (_, wire, _, read) = emit_model_unit(&text, None);
+        assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+        let clause = node_of(&wire, "protocol", "protocol_clause");
+        let run = node_by_id(
+            &wire,
+            clause_argument(clause, "run")["target"]
+                .as_object()
+                .map(|_| &clause_argument(clause, "run")["target"])
+                .unwrap(),
+        );
+        run["body"]["arguments"][0]["value"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|child| {
+                let node = node_by_id(&wire, &child["target"]);
+                node["declaration"]["qualified_name"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    };
+    assert_eq!(
+        children_of(["Zeta", "Alpha", "Mid"]),
+        ["Zeta", "Alpha", "Mid"]
+    );
+    assert_eq!(
+        children_of(["Mid", "Alpha", "Zeta"]),
+        ["Mid", "Alpha", "Zeta"]
+    );
+}
+
+/// FR-464-AC-3: a protocol's `protocol_clause` key follows its own content
+/// and nothing else: two distinct protocols have distinct keys, and
+/// declaring them in the other order leaves each key unchanged.
+#[trace("FR-464-AC-3", "TC-1021")]
+#[test]
+fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() {
+    let keys_of = |declarations: &str| -> BTreeMap<String, String> {
+        let (_, wire, _, read) = emit_model_unit(&selecting(declarations), None);
+        assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+        nodes(&wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "protocol_clause")
+            .map(|node| {
+                (
+                    node["declaration"]["qualified_name"][0]
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
+                    node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    };
+    let (fill, drain) = (protocol("Fill"), protocol("Drain"));
+    let forward = keys_of(&format!("{fill}{drain}"));
+    assert_eq!(forward.len(), 2);
+    assert_ne!(forward["Fill"], forward["Drain"]);
+    assert_eq!(forward, keys_of(&format!("{drain}{fill}")));
 }
 
 /// FR-092-AC-17 (TC-1021 step 6): the reference's key is the digest of its

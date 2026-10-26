@@ -1506,11 +1506,12 @@ fn refinements_keep_ordered_s3_refusals_before_protocol_coverage() {
     );
 }
 
-/// Two refinements of one unit, over two protocols, record the two clauses'
-/// own nodes.
+/// Two refinements of one unit, over two protocols that hold constructs S4
+/// writes no node for yet, each select their own clause and record no node;
+/// the key behaviour over a written protocol is `qsl-analyze`'s.
 #[trace("TC-541", "FR-136-AC-6")]
 #[test]
-fn each_refinement_records_the_node_of_its_own_clause() {
+fn each_refinement_selects_its_own_unwritten_clause_and_records_no_node() {
     let other = fill("").replace("protocol Fill", "protocol Other");
     let other_rows = ROWS.replace("M::Fill", "M::Other");
     let text = header(true)
