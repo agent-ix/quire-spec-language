@@ -91,7 +91,7 @@ const ATTEMPT_ROOT: &str = "attempt Update by R on Config::ConfigVersion::attemp
 
 /// The refusal of a protocol that names `construct`, whose node is not
 /// written yet.
-fn not_emitted(construct: ProtocolConstruct) -> CheckCause {
+pub(super) fn not_emitted(construct: ProtocolConstruct) -> CheckCause {
     CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
 }
 
@@ -122,9 +122,7 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
     assert_eq!(attempt.code(), qsl_foundation::Code::UnsupportedConstruct);
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
-        (ProtocolConstruct::ReplicatedRoles, "QSL-1125"),
-        (ProtocolConstruct::Channels, "QSL-1125"),
-        (ProtocolConstruct::Relationships, "QSL-1125"),
+        (ProtocolConstruct::WholeModelRole, "IR-874"),
         (ProtocolConstruct::Control("attempt"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),
@@ -150,7 +148,7 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
     assert_ne!(referred[0].location, referred[1].location);
 }
 
-fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
+pub(super) fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
     let matching: Vec<&Value> = nodes(wire)
         .iter()
         .filter(|node| node["node_tag"] == tag && node["semantic_form"] == form)
@@ -162,7 +160,7 @@ fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
 }
 
 /// The node `digest` names.
-fn node_by_id<'w>(wire: &'w Value, id: &Value) -> &'w Value {
+pub(super) fn node_by_id<'w>(wire: &'w Value, id: &Value) -> &'w Value {
     nodes(wire)
         .iter()
         .find(|node| &node["node_id"] == id)
@@ -171,7 +169,7 @@ fn node_by_id<'w>(wire: &'w Value, id: &Value) -> &'w Value {
 
 /// The value of the clause argument `name`, after checking that the clause
 /// holds its thirteen arguments in FR-464's order.
-fn clause_argument<'w>(clause: &'w Value, name: &str) -> &'w Value {
+pub(super) fn clause_argument<'w>(clause: &'w Value, name: &str) -> &'w Value {
     let arguments = clause["body"]["arguments"].as_array().unwrap();
     let names: Vec<&str> = arguments
         .iter()
@@ -310,6 +308,20 @@ fn reference_key(text: &str) -> (String, Value) {
 }
 
 const REFERS_TO_FILL: &str = "function refers using v(): Boolean pure { protocol Fill }\n";
+
+/// The spine-model unit whose protocol `Flow` has two roles and a channel
+/// between them, so a queue is generated (FR-465).
+pub(super) fn channel_unit() -> String {
+    selecting(
+        "protocol Flow using v over (input: Boolean) on origin {\n\
+         role R on M::Gadget;\nrole S on M::Gadget;\n\
+         channel C from R to S carries Boolean ordering unordered \
+         delivery at-least-once capacity 4 overflow block;\n\
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n",
+    )
+}
 
 /// The unit TC-1021 step 3 emits: `Fill`, and a function that refers to it.
 pub(super) fn reference_unit() -> String {

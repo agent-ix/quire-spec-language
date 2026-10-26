@@ -31,6 +31,7 @@ use quire_exact::ValueType;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::ir::CheckedBody;
+use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_obligation::{
     model_state_reads, span_of, type_body, wraps, CheckedBinder, Goal,
 };
@@ -155,7 +156,13 @@ pub(super) fn check(
 
     let mut checked = Vec::with_capacity(protocol.channels.len());
     for channel in &protocol.channels {
-        if let Some(channel) = check_channel(channel, &roles, &mut keys, &mut refusals) {
+        if let Some(channel) = check_channel(
+            &protocol.name.name,
+            channel,
+            &roles,
+            &mut keys,
+            &mut refusals,
+        ) {
             checked.push(channel);
         }
     }
@@ -179,6 +186,7 @@ pub(super) fn check(
 /// One channel's roles and payload type. `None` when any part refuses; the
 /// refusals are pushed to `refusals`, the `from` role first.
 fn check_channel(
+    protocol: &str,
     channel: &ChannelForm,
     roles: &BTreeSet<&str>,
     keys: &mut Keys<'_, '_, '_>,
@@ -235,9 +243,15 @@ fn check_channel(
     };
     let ordering = match &channel.ordering.value {
         ChannelOrdering::Unordered => Some(CheckedOrdering::Unordered),
-        ChannelOrdering::Fifo { binder, key } => {
-            check_fifo(channel, binder, key, carries.as_ref(), keys, refusals)
-        }
+        ChannelOrdering::Fifo { binder, key } => check_fifo(
+            protocol,
+            channel,
+            binder,
+            key,
+            carries.as_ref(),
+            keys,
+            refusals,
+        ),
     };
     if refusals.len() != before {
         return None;
@@ -261,6 +275,7 @@ fn check_channel(
 /// constants only, reads no model state, and is of a type over which the
 /// clause checker admits `=`.
 fn check_fifo(
+    protocol: &str,
     channel: &ChannelForm,
     binder: &ParameterForm,
     key: &ExpressionForm,
@@ -298,7 +313,10 @@ fn check_fifo(
         }
     }
     let bound = [(binder.name.name.clone(), binder_type.clone())];
-    let body = match keys.type_key(key, &bound, Goal::Infer) {
+    // The key is lowered into the channel's node, so its tree is rooted at
+    // that channel's own key site (FR-096).
+    let site = protocol_location(protocol, ProtocolSite::ChannelKey(name));
+    let body = match keys.type_key(key, &bound, Goal::Infer, &site) {
         Ok(body) => body,
         Err(CheckRefusal { location, cause }) => {
             let span = span_of(key, &location);
@@ -344,7 +362,10 @@ fn check_fifo(
         ("left".to_owned(), key_type.clone()),
         ("right".to_owned(), key_type.clone()),
     ];
-    if keys.type_key(&equal, &operands, Goal::Boolean).is_err() {
+    if keys
+        .type_key(&equal, &operands, Goal::Boolean, &site)
+        .is_err()
+    {
         let span = span_of(key, &Location::root(Origin::Expression));
         refusals.push((
             span,
@@ -372,9 +393,14 @@ impl Keys<'_, '_, '_> {
         form: &ExpressionForm,
         bound: &[(String, ValueType)],
         goal: Goal<'_>,
+        location: &Location,
     ) -> Result<CheckedBody, CheckRefusal> {
         let mut nodes = self.nodes;
-        let typed = type_body(form, bound, goal, self.declarations, &mut nodes, self.cx);
+        let declarations = ClauseDeclarations {
+            location,
+            ..*self.declarations
+        };
+        let typed = type_body(form, bound, goal, &declarations, &mut nodes, self.cx);
         self.nodes = nodes;
         typed
     }

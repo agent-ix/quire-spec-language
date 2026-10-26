@@ -25,8 +25,11 @@
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ActivationForm, ProtocolDeclarationForm, ProtocolNodeKind};
-use quire_exact::{Identifier, NodeKey, ValueType};
+use qsl_forms::{
+    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
+    ProtocolDeclarationForm, ProtocolNodeKind,
+};
+use quire_exact::{EffectiveId, Identifier, Integer, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
@@ -37,8 +40,11 @@ use crate::check::node_key::{
     NodeTag, Operation, OperationLaw, Operator, TupleTerm,
 };
 use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
+use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
 use crate::check::protocol_obligation::CheckedActivation;
-use crate::check::protocol_slots::{CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember};
+use crate::check::protocol_slots::{
+    CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
+};
 use crate::check::refusal::{
     CheckCause, CheckRefusal, KeyFault, ProtocolConstruct, ProtocolReferenceCause,
 };
@@ -73,6 +79,13 @@ pub(crate) enum ProtocolSite<'a> {
     FinishBody(&'a str),
     /// The role of this name: its `declaration` occurrence.
     Role(&'a str),
+    /// The `until` term of the replicated role of this name.
+    RoleUntil(&'a str),
+    /// The channel of this name: its `declaration` occurrence and its
+    /// queue's `generated` occurrence.
+    Channel(&'a str),
+    /// The FIFO key of the channel of this name.
+    ChannelKey(&'a str),
     /// The control at this path from the `run` root, the root's name first:
     /// its `declaration` occurrence.
     Control(&'a [String]),
@@ -85,6 +98,9 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::Declaration => declaration_origin(protocol),
         ProtocolSite::Finish(name) => format!("protocol {protocol} finish {name}"),
         ProtocolSite::Role(role) => format!("protocol {protocol} role {role}"),
+        ProtocolSite::RoleUntil(role) => format!("protocol {protocol} role {role} until"),
+        ProtocolSite::Channel(channel) => format!("protocol {protocol} channel {channel}"),
+        ProtocolSite::ChannelKey(channel) => format!("protocol {protocol} channel {channel} key"),
         ProtocolSite::FinishBody(name) => format!("protocol {protocol} finish {name} body"),
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
     }
@@ -118,9 +134,6 @@ impl ProtocolInput<'_> {
         let form = self.form;
         let slots = &self.checked.slots;
         let mut unemitted = Vec::new();
-        if form.roles.iter().any(|role| role.replicated.is_some()) {
-            unemitted.push(ProtocolConstruct::ReplicatedRoles);
-        }
         if self
             .checked
             .roles
@@ -128,12 +141,6 @@ impl ProtocolInput<'_> {
             .any(|role| !role.replicated && role.context.is_none())
         {
             unemitted.push(ProtocolConstruct::WholeModelRole);
-        }
-        if !form.channels.is_empty() {
-            unemitted.push(ProtocolConstruct::Channels);
-        }
-        if !form.relationships.is_empty() {
-            unemitted.push(ProtocolConstruct::Relationships);
         }
         if !form.requirements.is_empty() {
             unemitted.push(ProtocolConstruct::Requirements);
@@ -199,6 +206,39 @@ fn reads_declaration(body: CheckedNode<'_>) -> bool {
     })
 }
 
+/// The operations of a protocol's `channel` and `queue` nodes.
+struct ChannelOperations {
+    channel: Operation,
+    queue: Operation,
+}
+
+/// `keys` in ascending node-id digest order, each once (FR-464 "Sets").
+fn sorted(keys: impl IntoIterator<Item = NodeKey>) -> Vec<NodeKey> {
+    let mut keys: Vec<NodeKey> = keys.into_iter().collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+/// A channel's `delivery` text (FR-465 "Channel").
+const fn delivery_text(delivery: ChannelDelivery) -> &'static str {
+    match delivery {
+        ChannelDelivery::Unknown => "unknown",
+        ChannelDelivery::AtMostOnce => "at-most-once",
+        ChannelDelivery::AtLeastOnce => "at-least-once",
+        ChannelDelivery::ExactlyOncePremise => "exactly-once-premise",
+    }
+}
+
+/// A queue's `loss` text (FR-465 "Queue").
+const fn loss_text(selector: LossSelector) -> &'static str {
+    match selector {
+        LossSelector::Head => "head",
+        LossSelector::Tail => "tail",
+        LossSelector::New => "new",
+    }
+}
+
 /// `text` as an identifier, or the refusal that it is empty.
 fn identifier(text: &str, location: &Location) -> Result<Identifier, CheckRefusal> {
     Identifier::new(text.to_owned()).map_err(|_| {
@@ -259,7 +299,15 @@ impl Lowering<'_> {
                 }
                 Err(other) => return Err(other),
             };
-            let unemitted = protocol.unemitted();
+            let mut unemitted = protocol.unemitted();
+            if protocol
+                .checked
+                .channels
+                .iter()
+                .any(|channel| !self.carries_admitted(&channel.carries))
+            {
+                unemitted.push(ProtocolConstruct::ChannelCarries);
+            }
             if let Some(first) = unemitted.first() {
                 refusals.extend(
                     unemitted
@@ -274,6 +322,35 @@ impl Lowering<'_> {
         }
         self.protocol_keys = keys;
         Ok(refusals)
+    }
+
+    /// Whether the node of `carries` is one IR's reader admits as a
+    /// channel's `carries`: a `scalar_type`, a `composite_type` or a model
+    /// variant. A bounded scalar or collection is a `bounded_domain`, a
+    /// quantity is neither, and a nominal enum is a `value` node.
+    fn carries_admitted(&self, carries: &ValueType) -> bool {
+        match carries {
+            ValueType::Boolean
+            | ValueType::Integer
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Reference(_)
+            | ValueType::Composite(_)
+            | ValueType::Option(_) => true,
+            ValueType::Collection(collection) => collection.bound().is_none(),
+            ValueType::Enum(shape) => {
+                self.scope.enum_binding_of(shape).is_none()
+                    && self.scope.variant_type_of(shape).is_some()
+            }
+            ValueType::Int(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Text(_)
+            | ValueType::Quantity(_)
+            | ValueType::Population(_) => false,
+        }
     }
 
     /// The `value`/`parameter` node of `binder`, at `level`, and the scope
@@ -359,7 +436,19 @@ impl Lowering<'_> {
         };
         let readable: Vec<Binder> = [Some(over), trigger].into_iter().flatten().collect();
 
-        let roles = self.role_nodes(protocol, &operation("role")?, boolean)?;
+        let roles = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
+        let relationships = self.relationship_nodes_of(protocol)?;
+        let (channels, queues) = self.channel_nodes(
+            protocol,
+            &ChannelOperations {
+                channel: operation("channel")?,
+                queue: operation("queue")?,
+            },
+            &roles,
+            &readable,
+            boolean,
+        )?;
+        let roles: Vec<NodeKey> = sorted(roles.into_iter().map(|(_, key)| key));
         let finish = self.finish_node(protocol, &operation("finish")?, &readable, boolean)?;
         let run = self.run_nodes(protocol, &operation("sequence")?, boolean)?;
 
@@ -395,9 +484,18 @@ impl Lowering<'_> {
                         BindingValue::Tuple(TupleTerm::new(Vec::new())),
                     ),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
-                    MemberTerm::binding("relationships", empty_group()),
-                    MemberTerm::binding("channels", empty_group()),
-                    MemberTerm::binding("queues", empty_group()),
+                    MemberTerm::binding(
+                        "relationships",
+                        BindingValue::Group(GroupTerm::references(relationships)),
+                    ),
+                    MemberTerm::binding(
+                        "channels",
+                        BindingValue::Group(GroupTerm::references(channels)),
+                    ),
+                    MemberTerm::binding(
+                        "queues",
+                        BindingValue::Group(GroupTerm::references(queues)),
+                    ),
                     MemberTerm::binding("requirements", empty_group()),
                     MemberTerm::binding("compensations", empty_group()),
                     MemberTerm::binding("terminal", empty_group()),
@@ -409,30 +507,37 @@ impl Lowering<'_> {
         )
     }
 
-    /// The static `role` nodes of `protocol` (FR-465 "Role"), ascending by
-    /// node digest (FR-464 "Sets"). A role on a model type refers to that
-    /// type's model node. Its `replication` Group is empty. A role on a whole
-    /// model is refused before this ([`ProtocolConstruct::WholeModelRole`]).
+    /// The `role` nodes of `protocol` (FR-465 "Role") with each role's name,
+    /// in source order. A role on a model type refers to that type's model
+    /// node. A static role's `replication` Group is empty; a replicated role's
+    /// holds its population, `max`, binder, lifetime and, for `until`, the
+    /// term. A role on a whole model is refused before this
+    /// ([`ProtocolConstruct::WholeModelRole`]).
     fn role_nodes(
         &mut self,
         protocol: &ProtocolInput<'_>,
         operation: &Operation,
+        readable: &[Binder],
         boolean: NodeKey,
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+    ) -> Result<Vec<(String, NodeKey)>, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
-        let mut keys = Vec::with_capacity(protocol.checked.roles.len());
-        for role in &protocol.checked.roles {
+        let mut roles = Vec::with_capacity(protocol.checked.roles.len());
+        for (index, role) in protocol.checked.roles.iter().enumerate() {
             let location = protocol_location(name, ProtocolSite::Role(&role.name));
-            let context = role
-                .context
-                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
+            let context = role.context.ok_or_else(unchecked)?;
             let model = LeafTerm::reference(self.object_node(context, &location)?);
+            let replication = if role.replicated {
+                self.replication(protocol, index, context, readable, &location)?
+            } else {
+                empty_group()
+            };
             let declaration = vec![
                 identifier(name, &location)?,
                 identifier("role", &location)?,
                 identifier(&role.name, &location)?,
             ];
-            keys.push(self.protocol_member(
+            let key = self.protocol_member(
                 &location,
                 "role",
                 boolean,
@@ -443,13 +548,257 @@ impl Lowering<'_> {
                     boolean,
                     vec![
                         MemberTerm::bound("model", model),
-                        MemberTerm::binding("replication", empty_group()),
+                        MemberTerm::binding("replication", replication),
                     ],
                 ),
-            )?);
+            )?;
+            roles.push((role.name.clone(), key));
         }
-        keys.sort();
-        Ok(keys)
+        Ok(roles)
+    }
+
+    /// The `replication` Group of the replicated role at `index` of
+    /// `protocol`, over the object type `context` (FR-465 "Role"): its
+    /// binder, named by the role, is at the level the `readable` binders'
+    /// count fixes, and an `until` term is read over them and that binder.
+    fn replication(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        index: usize,
+        context: EffectiveId,
+        readable: &[Binder],
+        location: &Location,
+    ) -> Result<BindingValue, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let role = protocol.checked.roles.get(index).ok_or_else(unchecked)?;
+        let replicated = protocol
+            .form
+            .roles
+            .get(index)
+            .and_then(|role| role.replicated.as_ref())
+            .ok_or_else(unchecked)?;
+        let checked = protocol
+            .checked
+            .slots
+            .roles
+            .iter()
+            .find(|checked| checked.role == index)
+            .ok_or_else(unchecked)?;
+        let semantic_type = self.binder_type(&ValueType::Reference(context), None, location)?;
+        let parameter = self.parameter(&role.name, readable.len(), semantic_type, location)?;
+        let mut members = vec![
+            member(
+                "population",
+                self.text_literal(&replicated.population.name, location)?,
+            ),
+            member(
+                "max",
+                self.integer_literal(Integer::from(checked.max), location)?,
+            ),
+            member("binder", LeafTerm::reference(parameter)),
+        ];
+        match &checked.lifetime {
+            CheckedLifetime::Workflow => {
+                members.push(member("lifetime", self.text_literal("workflow", location)?));
+            }
+            CheckedLifetime::Scope(_) => {
+                members.push(member("lifetime", self.text_literal("scope", location)?));
+            }
+            CheckedLifetime::Until(body) => {
+                members.push(member("lifetime", self.text_literal("until", location)?));
+                let mut slot_names: Vec<String> = protocol
+                    .checked
+                    .slots
+                    .binders
+                    .iter()
+                    .take(readable.len())
+                    .map(|binder| binder.name.clone())
+                    .collect();
+                slot_names.push(role.name.clone());
+                let mut scope = readable.to_vec();
+                scope.push(Binder {
+                    slot: readable.len(),
+                    parameter,
+                    semantic_type,
+                });
+                let mut binders = Binders::new(&slot_names, &scope);
+                members.push(member("until", self.expression(body.root(), &mut binders)?));
+            }
+        }
+        Ok(BindingValue::Group(GroupTerm::new(members)))
+    }
+
+    /// The model relationship node of each `relationship` member of
+    /// `protocol` (FR-464 "Clause body": a relationship declaration has no
+    /// node of its own), ascending by digest, one entry for two members that
+    /// bind one model relationship (FR-383 "Order, sets and collapse").
+    fn relationship_nodes_of(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        let location = protocol.location();
+        let mut keys = Vec::with_capacity(protocol.checked.relationships.len());
+        for relationship in &protocol.checked.relationships {
+            keys.push(self.model_node(&relationship.key, &location)?);
+        }
+        Ok(sorted(keys))
+    }
+
+    /// The `channel` nodes of `protocol` (FR-465 "Channel") and the one
+    /// `queue` node of each (FR-465 "Queue"), each set ascending by digest.
+    /// A queue is declared by its channel's `capacity` and `overflow`, so it
+    /// has no declaration and one `generated` occurrence at the channel's
+    /// region.
+    fn channel_nodes(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        operations: &ChannelOperations,
+        roles: &[(String, NodeKey)],
+        readable: &[Binder],
+        boolean: NodeKey,
+    ) -> Result<(Vec<NodeKey>, Vec<NodeKey>), CheckRefusal> {
+        let name = protocol.form.name.name.as_str();
+        let mut channels = Vec::with_capacity(protocol.checked.channels.len());
+        let mut queues = Vec::with_capacity(protocol.checked.channels.len());
+        for channel in &protocol.checked.channels {
+            let location = protocol_location(name, ProtocolSite::Channel(&channel.name));
+            let end = |role: &str| {
+                roles
+                    .iter()
+                    .find(|(declared, _)| declared == role)
+                    .map(|(_, key)| LeafTerm::reference(*key))
+                    .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))
+            };
+            let from = end(&channel.from)?;
+            let to = end(&channel.to)?;
+            let carries = self.type_node(&channel.carries, &location)?;
+            let ordering = self.ordering(channel, carries, readable, &location)?;
+            let delivery = self.text_literal(delivery_text(channel.delivery), &location)?;
+            let declaration = vec![
+                identifier(name, &location)?,
+                identifier("channel", &location)?,
+                identifier(&channel.name, &location)?,
+            ];
+            let key = self.protocol_member(
+                &location,
+                "channel",
+                boolean,
+                declaration,
+                BodyTerm::application(
+                    Operator::ProtocolControl,
+                    operations.channel.clone(),
+                    boolean,
+                    vec![
+                        MemberTerm::bound("from", from),
+                        MemberTerm::bound("to", to),
+                        MemberTerm::bound("carries", LeafTerm::reference(carries)),
+                        MemberTerm::binding("ordering", ordering),
+                        MemberTerm::bound("delivery", delivery),
+                    ],
+                ),
+            )?;
+            channels.push(key);
+            queues.push(self.queue_node(operations, channel, key, boolean, &location)?);
+        }
+        Ok((sorted(channels), sorted(queues)))
+    }
+
+    /// The `ordering` Group of `channel`: `unordered`, or `fifo` with the
+    /// message binder, at the level the `readable` binders' count fixes, and
+    /// the key read over that binder alone.
+    fn ordering(
+        &mut self,
+        channel: &CheckedChannel,
+        carries: NodeKey,
+        readable: &[Binder],
+        location: &Location,
+    ) -> Result<BindingValue, CheckRefusal> {
+        let kind = |this: &mut Self, text: &str| -> Result<GroupMember, CheckRefusal> {
+            Ok(member("kind", this.text_literal(text, location)?))
+        };
+        match &channel.ordering {
+            CheckedOrdering::Unordered => Ok(BindingValue::Group(GroupTerm::new(vec![kind(
+                self,
+                "unordered",
+            )?]))),
+            CheckedOrdering::Fifo { binder, key } => {
+                let parameter = self.parameter(&binder.name, readable.len(), carries, location)?;
+                let slot_names = [binder.name.clone()];
+                let mut binders = Binders::new(
+                    &slot_names,
+                    &[Binder {
+                        slot: 0,
+                        parameter,
+                        semantic_type: carries,
+                    }],
+                );
+                let key = self.expression(key.root(), &mut binders)?;
+                Ok(BindingValue::Group(GroupTerm::new(vec![
+                    kind(self, "fifo")?,
+                    member("binder", LeafTerm::reference(parameter)),
+                    member("key", key),
+                ])))
+            }
+        }
+    }
+
+    /// The `queue` node of `channel`, whose node is `key`.
+    fn queue_node(
+        &mut self,
+        operations: &ChannelOperations,
+        channel: &CheckedChannel,
+        key: NodeKey,
+        boolean: NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let capacity = match &channel.capacity {
+            ChannelCapacity::Literal(value) => GroupTerm::new(vec![
+                member("kind", self.text_literal("literal", location)?),
+                member(
+                    "value",
+                    self.integer_literal(Integer::from(*value), location)?,
+                ),
+            ]),
+            ChannelCapacity::Symbolic(name) => GroupTerm::new(vec![
+                member("kind", self.text_literal("symbolic", location)?),
+                member("name", self.text_literal(name, location)?),
+            ]),
+        };
+        let (overflow, loss) = match channel.overflow {
+            ChannelOverflow::Reject => ("reject", None),
+            ChannelOverflow::Block => ("block", None),
+            ChannelOverflow::Loss(selector) => ("loss", Some(loss_text(selector))),
+        };
+        let loss = match loss {
+            None => empty_group(),
+            Some(selector) => BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(
+                self.text_literal(selector, location)?,
+            )])),
+        };
+        let overflow = self.text_literal(overflow, location)?;
+        let queue = self.insert_node(
+            location,
+            NodeContent {
+                node_tag: NodeTag::Protocol,
+                semantic_form: "queue",
+                semantic_type: Some(boolean),
+                declaration: None,
+                owner: None,
+                body: BodyTerm::application(
+                    Operator::ProtocolControl,
+                    operations.queue.clone(),
+                    boolean,
+                    vec![
+                        MemberTerm::bound("channel", LeafTerm::reference(key)),
+                        MemberTerm::binding("capacity", BindingValue::Group(capacity)),
+                        MemberTerm::bound("overflow", overflow),
+                        MemberTerm::binding("loss", loss),
+                    ],
+                ),
+            },
+        )?;
+        self.record(queue, OccurrenceRole::Generated, location.clone());
+        Ok(queue)
     }
 
     /// The `finish` obligation node of `protocol` (FR-465 "Finish"): its

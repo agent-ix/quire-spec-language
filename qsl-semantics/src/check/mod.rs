@@ -5888,6 +5888,30 @@ fn register_protocol_sites(
             role.name.span,
         );
     }
+    for role in &protocol.roles {
+        if let Some(qsl_forms::RoleLifetime::Until(until)) = role
+            .replicated
+            .as_ref()
+            .map(|replicated| &replicated.lifetime)
+        {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::RoleUntil(&role.name.name)),
+                until.spans.clone(),
+            );
+        }
+    }
+    for channel in &protocol.channels {
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Channel(&channel.name.name)),
+            channel.span,
+        );
+        if let qsl_forms::ChannelOrdering::Fifo { key, .. } = &channel.ordering.value {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::ChannelKey(&channel.name.name)),
+                key.spans.clone(),
+            );
+        }
+    }
     for control in &checked.controls.controls {
         if let Some(declaration) = protocol.declarations.get(control.node.0) {
             type_spans.insert(

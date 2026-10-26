@@ -131,6 +131,12 @@ pub(super) fn lower(clauses: &str) -> Lowered {
 
 /// [`lower`] over the domain package `document`.
 pub(super) fn lower_over(document: Vec<u8>, clauses: &str) -> Lowered {
+    lower_with(document, "", clauses)
+}
+
+/// [`lower_over`] with `profiles` (whole `profile` statements) after the
+/// header's `v` profile.
+pub(super) fn lower_with(document: Vec<u8>, profiles: &str, clauses: &str) -> Lowered {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -138,7 +144,7 @@ pub(super) fn lower_over(document: Vec<u8>, clauses: &str) -> Lowered {
     let digest = qsl_semantics::model::key::hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.model.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n{profiles}\
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          {clauses}\n"
     );
