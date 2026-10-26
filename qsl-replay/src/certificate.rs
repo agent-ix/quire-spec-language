@@ -164,6 +164,7 @@ impl Serialize for CertificateLocus {
 mod check;
 pub mod closed_form;
 pub mod closure;
+mod recording;
 pub mod scc;
 pub mod simulation;
 pub mod state_graph;

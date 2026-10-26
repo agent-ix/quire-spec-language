@@ -12,13 +12,11 @@
 //!
 //! ADR-018 §6's ConfigVersion units and FR-126-AC-4's `Health` unit are
 //! `example_units`. Not covered here: the `holds` atoms are read through the
-//! test's own [`Letters`]; FR-339's component certificate for a proof is not
-//! built (`proof_waits_for_the_component_certificate`), and the lasso's
-//! replay is FR-128's.
+//! test's own [`Letters`]; the lasso's replay is FR-128's.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest, Product, ProductTransition,
+    check_model, ModelCheckRefusal, ModelCheckRequest, Product, ProductTransition,
     PropertyComponent,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
@@ -30,8 +28,10 @@ use qsl_eval::temporal::{
 };
 use qsl_package::CheckedPackage;
 use qsl_replay::{
+    check_components, CertificateRequest, ComponentCertificate, ComponentWitness,
     CounterexampleKind, IncompleteCause, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndefinedLocus,
+    ModelCheckOutcome, ProofCertificate, ReachedLimit, SmtEncodingLimits, TemporalCertificateCheck,
+    TemporalCounterexample, UndefinedLocus,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use qsl_semantics::check::FormulaNodeId;
@@ -87,7 +87,7 @@ pub(crate) fn counter(document: Vec<u8>, fairness: &str, formula: &str) -> Fixtu
 }
 
 impl Fixture {
-    fn letters(&self, atom: fn(i64) -> Option<bool>) -> Letters {
+    pub(crate) fn letters(&self, atom: fn(i64) -> Option<bool>) -> Letters {
         Letters { atom }
     }
 
@@ -132,6 +132,54 @@ impl Fixture {
             UNLIMITED,
             &Cancel::new(),
         )
+    }
+
+    /// The request FR-339's checker reads this fixture's clause under.
+    pub(crate) fn certificate_request<'a>(
+        &'a self,
+        letters: &'a Letters,
+        meter: ScalarLimits,
+    ) -> CertificateRequest<'a> {
+        CertificateRequest {
+            subject: subject(
+                &self.package,
+                &self.documents,
+                self.initial.clone(),
+                &self.keys,
+                meter,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: &self.clauses[0],
+                letters,
+            },
+            smt_encoding: SmtEncodingLimits::default(),
+        }
+    }
+
+    /// The component certificate of a proved run, accepted by the core's
+    /// checker, and the run's counts.
+    pub(crate) fn certified(
+        &self,
+        atom: fn(i64) -> Option<bool>,
+    ) -> (ComponentCertificate, qsl_replay::RunStats) {
+        let outcome = self.decide(atom).expect("the clause is decided");
+        let ModelCheckOutcome::Holds {
+            certificate: ProofCertificate::Component(certificate),
+            stats,
+        } = outcome
+        else {
+            panic!("expected a component certificate: {outcome:?}");
+        };
+        let letters = self.letters(atom);
+        let checked = check_components(
+            &self.certificate_request(&letters, UNLIMITED),
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the request is checked");
+        assert_eq!(checked, TemporalCertificateCheck::Accepted);
+        (certificate, stats)
     }
 
     fn system(&self) -> ModelSystem<'_> {
@@ -273,7 +321,7 @@ fn assert_weakly_fair(
     }
 }
 
-fn is_three(value: i64) -> Option<bool> {
+pub(crate) fn is_three(value: i64) -> Option<bool> {
     Some(value == 3)
 }
 
@@ -318,30 +366,35 @@ fn a_behaviour_that_ends_is_the_lasso_whose_loop_is_the_terminal_stutter_step() 
 /// FR-126 "Second phase": the first phase's states are the product's: a
 /// terminal state's stutter edge is a product edge, so the single behaviour
 /// `0, 1, 2, 3, 3, ...` is a path of the product. `always eventually
-/// holds(c.value = 3)` holds on it, so no component passes. A proof needs
-/// FR-339's component certificate, which is not built: the run is refused
-/// naming it, and says it explored the product. The negation `eventually
-/// always not p` is a two-state automaton whose second state reads `not p`,
-/// so the product holds 3 + 3 states at values 0 to 2 and, at value 3 where
-/// `p` holds, the first automaton state alone: 7. The second state has no
-/// move at value 3, but that model state is also a product state, so the
-/// model-only pass finds nothing left to read.
-///
-/// This asserts an interim behaviour that FR-126 and TC-521 contradict
-/// (they expect `Holds{Exhaustive}`), so it carries no AC tag; PR 2 replaces
-/// it with the `Holds` test.
+/// holds(c.value = 3)` holds on it, so no component passes and the run holds
+/// with FR-339's component certificate, which the core's checker accepts.
+/// The negation `eventually always not p` is a two-state automaton whose
+/// second state reads `not p`, so the product holds 3 + 3 states at values 0
+/// to 2 and, at value 3 where `p` holds, the first automaton state alone: 7.
+/// The second state has no move at value 3, but that model state is also a
+/// product state, so the model-only pass finds nothing left to read.
 #[test]
-fn proof_waits_for_the_component_certificate() {
+fn a_run_with_no_fair_accepting_component_holds_with_a_component_certificate() {
     let fixture = counter(document(false), "", "always eventually holds(c.value = 3)");
-    let refusal = fixture.decide(is_three).expect_err("no certificate yet");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
-    else {
-        panic!("expected the missing certificate: {refusal:?}");
-    };
+    let (certificate, stats) = fixture.certified(is_three);
     assert_eq!(stats.product_states, 7);
     assert_eq!(stats.automaton_states, 2);
     assert_eq!(stats.depth, 3);
+    assert_eq!(certificate.closure.states.len(), 7);
+    // Six states are components of their own; the terminal stutter cycle at
+    // value 3 holds no state of the accepting set, so it is the last.
+    let witnesses: Vec<_> = certificate
+        .components
+        .iter()
+        .map(|component| (component.states.len(), &component.witness))
+        .collect();
+    assert_eq!(
+        witnesses,
+        [(1, &ComponentWitness::Trivial); 6]
+            .into_iter()
+            .chain([(1, &ComponentWitness::MissingAcceptance { set: 0 })])
+            .collect::<Vec<_>>()
+    );
 }
 
 /// ADR-018 UE-1: a model state reached only where the negation automaton
@@ -351,7 +404,7 @@ fn proof_waits_for_the_component_certificate() {
 /// counts one state and no edge. The model-only pass reads the rest: with
 /// the atom undefined at value 2 the claim is refuted at position 2 by the
 /// prefix `0 -inc-> 1 -inc-> 2`, and with it defined everywhere the run is
-/// the interim certificate refusal over the same one product state.
+/// the run holds over the same one product state.
 #[test]
 fn positions_past_a_dead_automaton_are_still_read() {
     let fixture = counter(document(false), "", "eventually holds(c.value = 1)");
@@ -405,16 +458,10 @@ fn positions_past_a_dead_automaton_are_still_read() {
         )
     );
 
-    let refusal = fixture
-        .decide(|v| Some(v == 1))
-        .expect_err("no certificate yet");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
-    else {
-        panic!("expected the missing certificate: {refusal:?}");
-    };
+    let (certificate, stats) = fixture.certified(|v| Some(v == 1));
     // The one edge leads to a model state with no product state.
     assert_eq!((stats.product_states, stats.product_edges), (1, 0));
+    assert_eq!(certificate.closure.states.len(), 1);
 }
 
 /// FR-126 "Explicit-state limits": `max_states` and `max_transitions` are the
@@ -430,7 +477,7 @@ fn the_state_budget_is_shared_by_every_instance() {
     let formula = "always eventually holds(c.value = 3)";
     let always = |_: i64| Some(true);
     let one = fixture(document(false), CONTRACT, "", formula, &[("a", 0)]);
-    let alone = unwrap_refusal(one.decide(always).expect_err("no certificate yet"));
+    let alone = one.certified(always).1;
     let both = fixture(
         document(false),
         CONTRACT,
@@ -438,7 +485,7 @@ fn the_state_budget_is_shared_by_every_instance() {
         formula,
         &[("a", 0), ("b", 0)],
     );
-    let together = unwrap_refusal(both.decide(always).expect_err("no certificate yet"));
+    let together = both.certified(always).1;
     assert!(together.product_states > 20, "{together:?}");
     assert_eq!(together.automaton_states, alone.automaton_states);
 
@@ -458,16 +505,6 @@ fn the_state_budget_is_shared_by_every_instance() {
         })
     );
     assert!(stats.product_states <= 20, "{stats:?}");
-}
-
-/// The counts of a run refused for want of the component certificate.
-fn unwrap_refusal(refusal: ModelCheckRefusal) -> qsl_replay::RunStats {
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
-    else {
-        panic!("expected the missing certificate: {refusal:?}");
-    };
-    stats
 }
 
 /// FR-126 "Fairness filter" and "Counterexamples" over the Counter with

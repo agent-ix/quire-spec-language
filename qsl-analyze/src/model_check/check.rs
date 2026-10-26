@@ -162,7 +162,8 @@ pub enum ModelCheckRefusal {
     #[error("a refinement over a concrete protocol is not checked yet")]
     ProtocolRefinement,
     /// The clause's property form is not one this engine decides yet: a
-    /// liveness clause (TP-4), or a clause with no property form.
+    /// liveness clause (TP-4), a refinement-form clause (ADR-020 decides a
+    /// refinement as its own item), or a clause with no property form.
     #[error("EN-1 does not decide the property form {form:?} yet")]
     FormNotDecided {
         /// The clause's property form.
@@ -1391,7 +1392,7 @@ fn prepare(
     let bounded = match form {
         Some(PropertyForm::ReachableInvariant | PropertyForm::Safety) => false,
         Some(PropertyForm::BoundedMltl) => true,
-        Some(PropertyForm::Liveness) | None => {
+        Some(PropertyForm::Liveness | PropertyForm::Refinement { .. }) | None => {
             return Err(ModelCheckRefusal::FormNotDecided { form })
         }
     };
@@ -1550,7 +1551,7 @@ struct Run<'r, S: SubjectSystem> {
     instance_limited: BTreeSet<DigestRecord>,
 }
 
-fn certificate_package_id(
+pub(super) fn certificate_package_id(
     package: &qsl_package::CheckedPackage,
 ) -> Result<qsl_semantics::library::PackageId, ModelCheckRefusal> {
     package

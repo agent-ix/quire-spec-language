@@ -78,6 +78,15 @@ pub struct LivenessTranslation {
     pub(crate) keys: BuchiStates,
 }
 
+impl LivenessTranslation {
+    /// The key context of the instance's automaton states: it gives the
+    /// canonical key of the structural state (`PropertyAutomaton::buchi_state`)
+    /// of any automaton over the same clause.
+    pub const fn keys(&self) -> &BuchiStates {
+        &self.keys
+    }
+}
+
 impl Translation {
     /// Whether `octets` are a key of this translation's context, admitted
     /// before the key is used for membership.
@@ -155,8 +164,15 @@ impl ModelCheckItem<'_> {
     }
 
     /// Instances whose TP-4 liveness clauses carry a subject-specific key
-    /// algebra, for the closure checker.
-    pub(crate) fn instances_for(
+    /// algebra of `subject_kind` and an automaton of at most
+    /// `max_automaton_states` states: the closure checker's, and the key
+    /// contexts EN-1 writes a component certificate's product states in
+    /// (FR-339).
+    ///
+    /// # Errors
+    ///
+    /// [`ItemRefusal`] as [`Self::instances`] returns it.
+    pub fn instances_for(
         &self,
         subject: &ModelSubject<'_>,
         system: &ModelSystem<'_>,

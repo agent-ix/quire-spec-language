@@ -6,9 +6,9 @@
 //! The example unit is the shipped unit of `examples/config-version` with
 //! the post clause `Cycles` in place of `VersionUnchanged`, universe `{a,
 //! b}`, both versions 0. The `holds` atoms are read through the test's own
-//! letters. FR-126-AC-1's `Holds` row and AC-4's `Holds` row wait on FR-339's
-//! component certificate, so AC-1 and AC-4 are not tagged; their `Violated`
-//! rows are verified here.
+//! letters. FR-126-AC-1's `Holds` row and AC-4's `Holds` row are
+//! FR-339's component certificate, checked by `component_certificate`; their
+//! `Violated` rows are verified here.
 //!
 //! Both instances give a lasso of length 3 under AC-1's no-granularity claim,
 //! and a tie goes to the earlier binding, so the counterexample is bound to
@@ -16,9 +16,7 @@
 //! verified here with letters that can read an atom undefined.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest,
-};
+use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
@@ -36,19 +34,19 @@ use crate::units::{clause, config_object, health, shipped_unit_text, unit, Atoms
 
 pub(crate) const FORMULA: &str = "always eventually holds(c.versionNumber = 2)";
 pub(crate) const WHOLE: &str = "fair weak Config::ConfigVersion::attemptUpdate;";
-const EACH: &str = "fair weak each Config::ConfigVersion::attemptUpdate;";
-const OVER: &str = "c: Config::ConfigVersion";
+pub(crate) const EACH: &str = "fair weak each Config::ConfigVersion::attemptUpdate;";
+pub(crate) const OVER: &str = "c: Config::ConfigVersion";
 
 /// The example unit's post clause: the version advances modulo 3 (the unit
 /// reaches versions 0 to 2 only, so the wrap is spelled out).
-const CYCLES: &str = "post Cycles using v on Config::ConfigVersion::attemptUpdate { \
+pub(crate) const CYCLES: &str = "post Cycles using v on Config::ConfigVersion::attemptUpdate { \
      (pre(self.versionNumber) < 2 and self.versionNumber = pre(self.versionNumber) + 1) \
      or (pre(self.versionNumber) = 2 and self.versionNumber = 0) }\n";
 
 /// The ConfigVersion world: the example unit when `shipped` is false, the
 /// shipped unit of `examples/config-version` when true, with `fairness`,
 /// universe `{a, b}`.
-fn config(shipped: bool, fairness: &str) -> World {
+pub(crate) fn config(shipped: bool, fairness: &str) -> World {
     config_over(shipped, fairness, FORMULA, (0, 0))
 }
 
@@ -84,7 +82,7 @@ pub(crate) fn config_over(
     )
 }
 
-fn reaches_two(world: &World) -> Atoms<'_> {
+pub(crate) fn reaches_two(world: &World) -> Atoms<'_> {
     Atoms::new(
         world,
         vec![Box::new(move |state, object| {
@@ -170,23 +168,22 @@ pub(crate) fn receiver(step: &qsl_replay::ModelStep) -> char {
     }
 }
 
-/// The counts of a run refused for want of the component certificate.
+/// The counts of a run that held with a component certificate.
 fn explored(outcome: &Outcome) -> qsl_replay::RunStats {
     match outcome {
-        Err(ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt {
+        Ok(ModelCheckOutcome::Holds {
+            certificate: qsl_replay::ProofCertificate::Component(_),
             stats,
-        })) => *stats,
-        other => panic!("expected the missing certificate: {other:?}"),
+        }) => *stats,
+        other => panic!("expected a component certificate: {other:?}"),
     }
 }
 
 /// ADR-018 §6 "Product": for `c = b` over the example unit the reachable
 /// product has 15 states, 9 with the waiting automaton state and 6 with the
 /// accepting one (`vb` in `{0, 1}`). `fair weak each` leaves no fair
-/// accepting cycle, so the run is refused for want of the component
-/// certificate (FR-339, not built) after exploring that product; both
-/// instances together explore it twice. This asserts the interim refusal, so
-/// it carries no AC tag.
+/// accepting cycle, so the run holds with a component certificate (FR-339)
+/// after exploring that product; both instances together explore it twice.
 #[test]
 fn the_example_unit_has_a_fifteen_state_product_per_instance() {
     let world = config(false, EACH);
@@ -356,7 +353,7 @@ fn the_example_requests_give_the_same_answer_twice() {
 /// spec's base variant, and in the `Restless` variant, where `fail` has no
 /// precondition and can repeat, it is violated by a lasso on which `healthy`
 /// never holds at three consecutive positions. Only the `Restless` row is
-/// verified, since a `Holds` waits on FR-339's component certificate.
+/// verified here; the base variant's `Holds` is `component_certificate`'s.
 #[trace("TC-521")]
 #[test]
 fn a_restless_system_has_a_lasso_that_never_recovers_for_three_positions() {
