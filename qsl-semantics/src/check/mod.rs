@@ -1323,6 +1323,7 @@ impl PackageDeclarations {
                     units: &units,
                     rational_bits: limits.rational_bits(),
                     nodes: limits.nodes(),
+                    model_spans: &self.declared_type_spans,
                 },
                 &mut self.state_clauses,
             )
