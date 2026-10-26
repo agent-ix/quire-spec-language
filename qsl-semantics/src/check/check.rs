@@ -1490,6 +1490,7 @@ impl Scope {
     pub(crate) fn select_declared_ieee_profile(
         &mut self,
         signatures: &[Signature],
+        has_ieee_literal: bool,
     ) -> Result<(), CheckRefusal> {
         let mut declared: Vec<&ValueType> = self.index.types.values().flatten().collect();
         for signature in signatures {
@@ -1513,27 +1514,28 @@ impl Scope {
                 .iter()
                 .map(FieldDeclaration::value_type)
         }));
-        let has_float = declared.into_iter().any(|mut ty| loop {
-            match ty {
-                ValueType::Float(_) => return true,
-                ValueType::Option(payload) => ty = payload,
-                ValueType::Collection(collection) => ty = collection.element(),
-                ValueType::Boolean
-                | ValueType::Integer
-                | ValueType::Int(_)
-                | ValueType::Rational(_)
-                | ValueType::Decimal(_)
-                | ValueType::Quantity(_)
-                | ValueType::Text(_)
-                | ValueType::String
-                | ValueType::Uuid
-                | ValueType::Timestamp
-                | ValueType::Enum(_)
-                | ValueType::Composite(_)
-                | ValueType::Reference(_)
-                | ValueType::Population(_) => return false,
-            }
-        });
+        let has_float = has_ieee_literal
+            || declared.into_iter().any(|mut ty| loop {
+                match ty {
+                    ValueType::Float(_) => return true,
+                    ValueType::Option(payload) => ty = payload,
+                    ValueType::Collection(collection) => ty = collection.element(),
+                    ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::Int(_)
+                    | ValueType::Rational(_)
+                    | ValueType::Decimal(_)
+                    | ValueType::Quantity(_)
+                    | ValueType::Text(_)
+                    | ValueType::String
+                    | ValueType::Uuid
+                    | ValueType::Timestamp
+                    | ValueType::Enum(_)
+                    | ValueType::Composite(_)
+                    | ValueType::Reference(_)
+                    | ValueType::Population(_) => return false,
+                }
+            });
         self.ieee_operation = has_float;
         if has_float && self.ieee_profile.is_none() {
             let lock = DefinitionLock::pinned();
@@ -2741,6 +2743,27 @@ impl<'a> Typer<'a> {
             || self.scope.reaches_event(&right.node.value_type)
         {
             return Err(ineligible(location));
+        }
+        if let (ValueType::Float(left_type), ValueType::Float(right_type)) =
+            (&left.node.value_type, &right.node.value_type)
+        {
+            if left_type != right_type {
+                return Err(mismatch(location));
+            }
+            let equal = node(
+                NodeKind::IeeeNumericEquality(self.push(left.node), self.push(right.node)),
+                ValueType::Boolean,
+                location,
+            );
+            return Ok(if operator == EqualityOperator::Equal {
+                equal
+            } else {
+                node(
+                    NodeKind::Not(self.push(equal)),
+                    ValueType::Boolean,
+                    location,
+                )
+            });
         }
         let check = |left: &EqualityOperand, right: &EqualityOperand| {
             self.scope
