@@ -345,11 +345,8 @@ fn ticker(locked: bool) -> World {
 /// cause `division-by-zero` at position 2, time stamp 2 and `x = 0`, keyed
 /// by the model state alone. With the unconditional invariant that state is
 /// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`. Not
-/// covered: the AC's atom `2 / (2 - t.n) >= 1`, which S3 refuses here as
-/// `ill_typed` `AmbiguousLiteral` over this fixture, with or without
-/// `quire.value.complete/v1`; `6 mod (2 - n)` is undefined with the same
-/// cause. Nor is the time-lock-freedom item
-/// refuted over the time-locked variant.
+/// covered: the time-lock-freedom item refuted over the time-locked
+/// variant, which FR-240's search decides (QSL-583).
 #[trace("TC-710")]
 #[test]
 fn an_undefined_atom_refutes_only_where_time_diverges() {
