@@ -856,69 +856,6 @@ fn run_clause_evaluates_a_clause_selection() {
 }
 
 #[test]
-fn run_clause_reports_each_implication_consequent_at_its_source_region() {
-    let (mut request, _) = no_cycle_request(&[("a", None)]);
-    let unit = {
-        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
-        String::from_utf8(bytes.clone())
-            .expect("fixture source is UTF-8")
-            .replace(
-                "not reaches(self, self, next)",
-                "(true implies true) and (false implies (true implies false))",
-            )
-    };
-    let ClauseRunSource::Program { bytes, .. } = &mut request.source;
-    *bytes = unit.clone().into_bytes();
-
-    let report = run_clause(request).expect("a well-formed request reports");
-    assert_eq!(report.disposition.truth(), Some(true));
-    assert_eq!(report.consequent_source_events.len(), 3);
-    assert_eq!(
-        report
-            .consequent_source_events
-            .iter()
-            .map(|event| event.state)
-            .collect::<Vec<_>>(),
-        vec![
-            super::ConsequentState::Entered,
-            super::ConsequentState::Skipped,
-            super::ConsequentState::NotReached,
-        ]
-    );
-    let source_ref = report.consequent_source_events[0].implication.source();
-    assert!(report
-        .consequent_source_events
-        .iter()
-        .all(|event| event.implication.source() == source_ref
-            && event.consequent.source() == source_ref));
-    let mut implication_text = Vec::new();
-    let mut consequent_text = Vec::new();
-    for event in &report.consequent_source_events {
-        let implication_start = usize::try_from(event.implication.start()).unwrap();
-        let implication_end = usize::try_from(event.implication.end()).unwrap();
-        implication_text.push(
-            unit.get(implication_start..implication_end)
-                .expect("implication source region is in bounds"),
-        );
-        let consequent_start = usize::try_from(event.consequent.start()).unwrap();
-        let consequent_end = usize::try_from(event.consequent.end()).unwrap();
-        consequent_text.push(
-            unit.get(consequent_start..consequent_end)
-                .expect("consequent source region is in bounds"),
-        );
-    }
-    assert_eq!(
-        implication_text,
-        [
-            "true implies true",
-            "false implies (true implies false)",
-            "true implies false",
-        ]
-    );
-    assert_eq!(consequent_text, ["true", "true implies false", "false"]);
-}
-
-#[test]
 #[trace("TC-792", "FR-100-AC-16")]
 fn tc_792_native_argument_refusal_preserves_typed_fields() {
     let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
@@ -5254,6 +5191,7 @@ mod call_site;
 mod call_site_owners;
 mod clause_paths;
 mod clause_set;
+mod consequent_events;
 mod frame;
 mod frame_occurrence_region;
 mod frame_replay;

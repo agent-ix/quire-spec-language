@@ -88,6 +88,11 @@ selection, admission or evaluation result is a report.
   `FrameWitness` as `frame_witness`, with no `outcome` member; for `evaluate` `internal-failure`, the `InternalFault`'s stage
   and invariant, as FR-100's internal-failure section gives them;
 - `package_id`: the compiled package's identity, when compile completed;
+- `consequent_source_events`: `Unavailable` for every run that completes no
+  Boolean truth and for a `Function` or `Frame` selection; for a `Clause`
+  run that completes a Boolean, `Produced(events)` or a typed `Refused`; for
+  a completed `Temporal` verdict, `Refused(temporal-clause)`. See "Consequent
+  source events" below;
 - usage: the admission work and the evaluation meter charges, separately.
 
 The report's `package_id` identifies the compiled QSL package. The report
@@ -177,6 +182,36 @@ binding receipt when CG consumes the serialized result.
   generated-source, source-map and producer-execution authentication required
   by [FR-267](FR-267-write-run-results-as-native-run-result-2.md).
 
+### Consequent source events
+
+A `Clause` run that completes a Boolean reports one event per `implies` node
+of the checked clause body, in pre-order of that body (an implication inside
+`and`, `or`, `not`, `if` or another implication is reported like any other).
+Each `ConsequentSourceEvent` carries its zero-based `index` (equal to its
+position in the list and independent of the evaluated values), the
+`package_id` of the checked package that owns the clause, the
+`implication` and `consequent` `SourceRegion`s of the checked package's
+source map for those nodes, and a `state`:
+
+- `Entered`: native evaluation reached the implication and its antecedent was
+  true;
+- `Skipped`: it reached the implication and its antecedent was false;
+- `NotReached`: the implication sits in an operand that an enclosing
+  `and`, `or`, `if` or `implies`'s own recorded decision provably skipped.
+
+The evaluator records decisions only on the claim's own level, so an event
+is never guessed. The report carries `Refused(refusal)` instead of the list,
+and the run's truth is unchanged, when a reachable implication is under a
+`forall`/`exists`/comprehension/fold/sequence binder
+(`consequent-events-under-binder`), the body calls or dispatches to a
+function whose body is not enumerated (`consequent-events-called-function`),
+a reachable implication has no recorded decision
+(`consequent-events-decision-not-recorded`), the clause is temporal
+(`consequent-events-temporal-clause`), or the source map has no region for an
+implication or consequent (`consequent-events-source-region-unavailable`).
+A clause with no implication reports `Produced` with an empty list. Per-element
+decisions inside binders and called functions are out of scope here.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -191,6 +226,9 @@ binding receipt when CG consumes the serialized result.
 | FR-109-AC-8 | Given a successful clause run with the expected compiled `package_id`, CG consumption of its serialized result still refuses campaign binding when its external receipt is missing or its generated-source or source-map association is mismatched, as FR-267-AC-4 and FR-267-AC-6 require; the QSL report retains its original success disposition and package identity. | Test |
 | FR-109-AC-9 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added reports stage `compile`, `ill_typed`, exit 20, no `package_id` and no `truth`, and admits and evaluates nothing: the checker refuses integer `/` that has no `Rational` expected type, so no linked clause divides by zero at run time. | Test |
 | FR-109-AC-10 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
+| FR-109-AC-11 | For a `Clause` run completing a Boolean over nested implication, conjunction, disjunction and negation (`(false implies (true implies false))` under `and`, an implication under `or` and under `not`), `consequent_source_events` is `Produced` with one event per `implies` node in pre-order, `index` equal to position, the report's `package_id`, `implication` and `consequent` regions equal to the checked package source map's regions of those nodes, and the `Entered`, `Skipped` or `NotReached` state native evaluation gave each, for both a true and a false verdict; a clause with no implication reports `Produced` with no events. | Test |
+| FR-109-AC-12 | For a clause whose implication is under a `forall` or `exists` binder, or whose body calls a function, `consequent_source_events` is `Refused` with `consequent-events-under-binder` or `consequent-events-called-function`, never `NotReached`, and the report's disposition and `truth` equal those of the same run without the events. | Test |
+| FR-109-AC-13 | A run that completes no Boolean truth (such as an exhausted work budget) and a `Function` selection report `Unavailable`; a completed `Temporal` verdict reports `Refused` with `consequent-events-temporal-clause`; a pending temporal verdict reports `Unavailable`. | Test |
 
 ## Dependencies
 

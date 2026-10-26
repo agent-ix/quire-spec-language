@@ -22,8 +22,9 @@ use quire_exact::{Meter, ValueType};
 
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
-    CompiledRun, RunRefusal, TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause,
-    TemporalVerdict, TemporalWindowRefusal,
+    CompiledRun, ConsequentEventRefusal, ConsequentSourceEvents, RunRefusal,
+    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
+    TemporalWindowRefusal,
 };
 use crate::proof_result::SettlementBasis;
 
@@ -98,13 +99,19 @@ pub(super) fn run_temporal(
 ) -> ClauseRunReport {
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
-    let report = |disposition, usage: ClauseRunUsage| ClauseRunReport {
+    let report = |disposition: ClauseDisposition, usage: ClauseRunUsage| ClauseRunReport {
         basis: SettlementBasis::Unavailable,
         witness: None,
         package_id: Some(run.package_id),
+        // A completed temporal verdict names no consequent events: it
+        // refuses typed rather than reporting an empty list.
+        consequent_source_events: if disposition.truth().is_some() {
+            ConsequentSourceEvents::Refused(ConsequentEventRefusal::Temporal)
+        } else {
+            ConsequentSourceEvents::Unavailable
+        },
         disposition,
         usage,
-        consequent_source_events: Vec::new(),
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default());
 
