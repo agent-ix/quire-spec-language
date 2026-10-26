@@ -66,16 +66,19 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Meter, ScalarLimits};
+use quire_exact::{Meter, Rational, ScalarLimits};
 use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
+mod timed;
+
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, undefined_finding, CounterexampleKind, Lasso,
-    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
+    CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::model_check::limits::ReachedLimit;
@@ -95,6 +98,10 @@ pub struct ModelTraceSubject {
     pub universes: Vec<PopulationUniverse>,
     /// The subject's expansion limits.
     pub expansion: ExpansionLimits,
+    /// FR-237: the bounds of a timed replay's fresh exploration of a finite
+    /// violation's endpoint or a non-local time-lock (FR-101's
+    /// `max_states` and `max_transitions`).
+    pub exploration: qsl_eval::simulation::Limits,
 }
 
 /// FR-217's subject members beside FR-098's: the model subject's, the
@@ -142,6 +149,48 @@ pub enum ModelTraceRefusal {
         /// The step that carries it; `None` for the `final_delay`.
         step: Option<usize>,
     },
+    /// Over a timed subject, a step carries no `delay`, or a time-lock
+    /// counterexample no `final_delay` (FR-236).
+    #[error("invalid_runtime_input/invalid-value: the counterexample carries no delay at {step:?} over a timed subject")]
+    MissingDelay {
+        /// The step that carries none; `None` for the `final_delay`.
+        step: Option<usize>,
+    },
+    /// A delay that is not admissible at the timed state it starts from: a
+    /// time invariant fails during it, or the state is urgent, or the
+    /// source counts ticks (FR-231 "Delay"; FR-237).
+    #[error("invalid_runtime_input/invalid-value: the delay {delay} before {step:?} is not admissible ({bar})")]
+    DelayNotAdmissible {
+        /// The step it precedes; `None` for the `final_delay`.
+        step: Option<usize>,
+        /// The delay.
+        delay: Rational,
+        /// What forbids it: `urgent`, `tick-source`, or `time-invariant`.
+        bar: &'static str,
+    },
+    /// A step's target time invariants fail after its resets (FR-237).
+    #[error("invalid_runtime_input/invalid-value: step {step} reaches a state its time invariants forbid")]
+    TargetInvariant {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+    },
+    /// A timed lasso whose loop takes no positive total delay, so it is no
+    /// time-divergent behaviour (ADR-026 CT-2; FR-237 "Lasso").
+    #[error("invalid_runtime_input/invalid-value: the loop entered at position {entry} takes no positive total delay")]
+    LoopZeroDelay {
+        /// The loop's entry position.
+        entry: usize,
+    },
+    /// A time-lock counterexample over an untimed subject, which has no
+    /// time to lock (FR-232).
+    #[error(
+        "invalid_runtime_input/invalid-value: a time-lock counterexample names an untimed subject"
+    )]
+    TimeLockUntimed,
+    /// The recompiled package's timed model does not build a timed subject
+    /// (FR-231).
+    #[error("invalid_runtime_input/invalid-value: the timed subject does not build: {0}")]
+    TimedSubject(String),
     /// `initial_state` is not an index of the subject's initial states.
     #[error("invalid_runtime_input/invalid-value: initial state {index} of {count}")]
     InitialState {
@@ -369,6 +418,12 @@ impl ModelTraceRefusal {
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
+            | Self::MissingDelay { .. }
+            | Self::DelayNotAdmissible { .. }
+            | Self::TargetInvariant { .. }
+            | Self::LoopZeroDelay { .. }
+            | Self::TimeLockUntimed
+            | Self::TimedSubject(_)
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -405,6 +460,12 @@ impl ModelTraceRefusal {
             },
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
+            | Self::MissingDelay { .. }
+            | Self::DelayNotAdmissible { .. }
+            | Self::TargetInvariant { .. }
+            | Self::LoopZeroDelay { .. }
+            | Self::TimeLockUntimed
+            | Self::TimedSubject(_)
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -582,9 +643,47 @@ pub fn replay_model_trace(
                 letters,
                 meter,
             });
-            settle(&system, envelope.family_payload(), formula)
+            match timed::timed_subject(&system, package.0)? {
+                Some(timed) => timed::settle(
+                    &timed,
+                    envelope.family_payload(),
+                    formula,
+                    &subject.exploration,
+                ),
+                None => settle(&system, envelope.family_payload(), formula),
+            }
         },
     )
+}
+
+/// FR-237: the replay of a counterexample over the timed subject `timed`,
+/// once [`replay_model_trace`] has recompiled the package, resolved the
+/// item (`clause`, `None` for a derived item) and re-admitted the subject:
+/// each delay, guard, post-state digest and time invariant is checked in
+/// exact arithmetic, a lasso's closure, total delay and fairness over time,
+/// the formula over the timed lasso, a finite violation's admitted
+/// endpoint and a time-lock's arm, the last two by a fresh exploration
+/// under `exploration`. `letters` reads the clause's atoms and `meter`
+/// bounds each evaluation.
+///
+/// # Errors
+///
+/// [`ReplayRefusal`] as [`replay_model_trace`] refuses a timed
+/// counterexample.
+pub fn replay_timed_counterexample(
+    timed: &qsl_eval::simulation::model::TimedSystem<'_, '_>,
+    payload: &TemporalCounterexample,
+    clause: Option<&CheckedTemporalClause>,
+    letters: &dyn ModelLetters,
+    meter: ScalarLimits,
+    exploration: &qsl_eval::simulation::Limits,
+) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    let formula = clause.map(|clause| FormulaReplay {
+        clause,
+        letters,
+        meter,
+    });
+    timed::settle(timed, payload, formula, exploration).map(|(settlement, _)| settlement)
 }
 
 /// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
@@ -732,6 +831,9 @@ impl ProtocolReplay<'_> {
         }
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
+            (CounterexampleKind::TimeLock, _) => {
+                return Err(refused(ModelTraceRefusal::TimeLockUntimed))
+            }
             (CounterexampleKind::Race(race), _) => {
                 if reproduces(
                     &steps,
@@ -876,13 +978,16 @@ fn resolve_item<'p, T: SubjectTransition>(
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
     let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
     let (race_node, race_key) = race_freedom_clause(package_id);
+    let (lock_node, lock_key) = time_lock_freedom_clause(package_id);
     let names = |node: WireNodeId, key: &OccurrenceKey| {
         envelope.clause_node() == node && envelope.occurrence_key() == key
     };
     let on_deadlock = names(deadlock_node, &deadlock_key);
     let on_race = names(race_node, &race_key);
+    let on_lock = names(lock_node, &lock_key);
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
-    if (on_deadlock && for_deadlock) || (on_race && for_race) {
+    let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
+    if (on_deadlock && for_deadlock) || (on_race && for_race) || (on_lock && for_lock) {
         return Ok(None);
     }
     let identity_mismatch = |expected_node, expected_key| {
@@ -899,7 +1004,10 @@ fn resolve_item<'p, T: SubjectTransition>(
     if for_race {
         return Err(identity_mismatch(race_node, race_key));
     }
-    if on_deadlock || on_race {
+    if for_lock {
+        return Err(identity_mismatch(lock_node, lock_key));
+    }
+    if on_deadlock || on_race || on_lock {
         return Err(identity_mismatch(
             envelope.clause_node(),
             envelope.occurrence_key().clone(),
@@ -935,7 +1043,7 @@ fn derived_items<T: SubjectTransition>(payload: &TemporalCounterexample<T>) -> (
                 && !matches!(evaluation.site.locus, UndefinedLocus::Atom(_));
             (derived, derived)
         }
-        CounterexampleKind::Formula => (false, false),
+        CounterexampleKind::Formula | CounterexampleKind::TimeLock => (false, false),
     }
 }
 
@@ -1069,6 +1177,7 @@ fn settle(
     }
     match (&payload.kind, formula) {
         (CounterexampleKind::Race(_), _) => Err(refused(ModelTraceRefusal::RaceOverModel)),
+        (CounterexampleKind::TimeLock, _) => Err(refused(ModelTraceRefusal::TimeLockUntimed)),
         (CounterexampleKind::Deadlock, _) => {
             deadlock(system, payload, &positions, &steps).map(|settlement| (settlement, Vec::new()))
         }

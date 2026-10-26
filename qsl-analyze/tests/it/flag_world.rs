@@ -473,6 +473,7 @@ impl World {
                 snapshots: &self.snapshots,
             },
             &ModelTraceSubject {
+                exploration: qsl_eval::simulation::Limits::default(),
                 initial: self.initial.clone(),
                 universes: self.universes(),
                 expansion: ExpansionLimits {

@@ -127,6 +127,17 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
+    /// EN-6's `max_symbolic_states` (FR-239); setting
+    /// `zone_check.max_symbolic_states`.
+    ZoneMaxSymbolicStates,
+    /// EN-6's `max_symbolic_transitions`; setting
+    /// `zone_check.max_symbolic_transitions`.
+    ZoneMaxSymbolicTransitions,
+    /// EN-6's `max_automaton_states`; setting
+    /// `zone_check.max_automaton_states`.
+    ZoneMaxAutomatonStates,
+    /// EN-6's `max_zone_bytes`; setting `zone_check.max_zone_bytes`.
+    ZoneMaxZoneBytes,
 }
 
 impl ModelCheckLimit {
@@ -160,6 +171,10 @@ impl ModelCheckLimit {
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.as_str(),
+            Self::ZoneMaxSymbolicStates => "max_symbolic_states",
+            Self::ZoneMaxSymbolicTransitions => "max_symbolic_transitions",
+            Self::ZoneMaxAutomatonStates => "max_automaton_states",
+            Self::ZoneMaxZoneBytes => "max_zone_bytes",
         }
     }
 
@@ -186,6 +201,10 @@ impl ModelCheckLimit {
             Self::MaxWitnessSet => "model_check.max_witness_set",
             Self::MaxRelationTuples => "model_check.max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
+            Self::ZoneMaxSymbolicStates => "zone_check.max_symbolic_states",
+            Self::ZoneMaxSymbolicTransitions => "zone_check.max_symbolic_transitions",
+            Self::ZoneMaxAutomatonStates => "zone_check.max_automaton_states",
+            Self::ZoneMaxZoneBytes => "zone_check.max_zone_bytes",
         }
     }
 }
@@ -321,6 +340,17 @@ mod tests {
                     ("max_cycle_steps", "statistical.max_cycle_steps")
                 }
             },
+            ModelCheckLimit::ZoneMaxSymbolicStates => {
+                ("max_symbolic_states", "zone_check.max_symbolic_states")
+            }
+            ModelCheckLimit::ZoneMaxSymbolicTransitions => (
+                "max_symbolic_transitions",
+                "zone_check.max_symbolic_transitions",
+            ),
+            ModelCheckLimit::ZoneMaxAutomatonStates => {
+                ("max_automaton_states", "zone_check.max_automaton_states")
+            }
+            ModelCheckLimit::ZoneMaxZoneBytes => ("max_zone_bytes", "zone_check.max_zone_bytes"),
         }
     }
 
@@ -342,6 +372,10 @@ mod tests {
             ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxCycleSteps),
+            ModelCheckLimit::ZoneMaxSymbolicStates,
+            ModelCheckLimit::ZoneMaxSymbolicTransitions,
+            ModelCheckLimit::ZoneMaxAutomatonStates,
+            ModelCheckLimit::ZoneMaxZoneBytes,
         ];
         all.extend(
             [

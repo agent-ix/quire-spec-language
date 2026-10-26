@@ -205,6 +205,7 @@ impl Chatter {
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
+                    exploration: qsl_eval::simulation::Limits::default(),
                     initial: self.initial.clone(),
                     universes: universe(&["c"]),
                     expansion: ExpansionLimits {

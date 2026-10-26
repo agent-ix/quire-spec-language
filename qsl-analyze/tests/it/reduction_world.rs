@@ -624,6 +624,7 @@ impl World {
 
     fn trace_subject(&self) -> ModelTraceSubject {
         ModelTraceSubject {
+            exploration: qsl_eval::simulation::Limits::default(),
             initial: self.initial.clone(),
             universes: self
                 .keys

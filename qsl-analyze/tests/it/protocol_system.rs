@@ -143,6 +143,7 @@ impl Case {
             ),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
+                    exploration: qsl_eval::simulation::Limits::default(),
                     initial: self.initial.clone(),
                     universes: universe(&["c"]),
                     expansion: ExpansionLimits {

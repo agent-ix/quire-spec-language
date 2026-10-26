@@ -445,6 +445,7 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
         ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");
     let letters = system.clause_letters(node).expect("the clause has letters");
     let subject = ModelTraceSubject {
+        exploration: qsl_eval::simulation::Limits::default(),
         initial: world.initial.clone(),
         universes: crate::counter::universe(&["c"]),
         expansion: ExpansionLimits {

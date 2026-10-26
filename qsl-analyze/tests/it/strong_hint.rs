@@ -68,6 +68,7 @@ fn settled(
                 id,
             ),
             &ModelTraceSubject {
+                exploration: qsl_eval::simulation::Limits::default(),
                 initial: world.initial.clone(),
                 universes: world.unlimited().simulation.universes,
                 expansion: world.unlimited().simulation.expansion,

@@ -284,6 +284,7 @@ pub(crate) fn envelope_at<T: SubjectTransition>(
 
 fn trace_subject(case: &Case) -> ModelTraceSubject {
     ModelTraceSubject {
+        exploration: qsl_eval::simulation::Limits::default(),
         initial: case.initial.clone(),
         universes: universe(&["c"]),
         expansion: ExpansionLimits {
