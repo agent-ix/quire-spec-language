@@ -276,7 +276,6 @@ impl World {
             .expect("the division profile admits"),
         );
         let graph = declarations
-            .with_unwritten_state_graph_claims()
             .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));

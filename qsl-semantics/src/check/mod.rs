@@ -3238,6 +3238,11 @@ impl PackageDeclarations {
                 units.append(table);
             }
         }
+        for claim in &mut checked_state_graph_claims {
+            for table in claim.take_formed_units() {
+                units.append(table);
+            }
+        }
         let mut lowering = lowering::Lowering::new(
             &scope,
             &owner,
@@ -3770,6 +3775,15 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-410: each checked state-graph claim, after every function its
+        // predicates may call.
+        let mut lowered_state_graph = Vec::with_capacity(checked_state_graph_claims.len());
+        for (index, claim) in checked_state_graph_claims.iter().enumerate() {
+            match lowering.state_graph_claim(&lowering::StateGraphClaimInput { index, claim }) {
+                Ok(lowered) => lowered_state_graph.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-447, QSpec FR-481: each checked hybrid model, then each claim
         // over one, after every function their terms may call.
         let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
@@ -4063,6 +4077,9 @@ impl PackageDeclarations {
         if lowered_hyper.len() != checked_hyper.len() {
             return Err(unlowered());
         }
+        if lowered_state_graph.len() != checked_state_graph_claims.len() {
+            return Err(unlowered());
+        }
         // FR-488 "Outputs": each hyper clause carries its `claim`
         // occurrence, the `clause` of FR-315's `HyperProductIdentity`.
         // The sites no declared form spans (slots, conjunct slots, skipped
@@ -4114,6 +4131,50 @@ impl PackageDeclarations {
                 Ok(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)))
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-410 "Outputs": each state-graph claim carries its `claim`
+        // occurrence; FR-165 "Requirement record": its
+        // `temporal-satisfaction` record, keyed by that occurrence.
+        let mut state_graph_nodes = Vec::with_capacity(checked_state_graph_claims.len());
+        for (index, (checked, lowered)) in checked_state_graph_claims
+            .into_iter()
+            .zip(&lowered_state_graph)
+            .enumerate()
+        {
+            let location =
+                state_graph_claim::state_graph_location(index, state_graph_claim::Site::Claim);
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let claim = occurrences
+                .iter_role(family::OccurrenceRole::Claim)
+                .find(|(node, _, at)| *node == lowered.key && **at == location)
+                .map(|(_, origin, _)| origin)
+                .ok_or_else(unkeyable)?;
+            let (from, target) = checked.node_predicates();
+            let objects: std::collections::BTreeSet<_> = from
+                .into_iter()
+                .chain([target])
+                .filter_map(state_graph_claim::CheckedStatePredicate::body)
+                .flat_map(references::body_objects)
+                .collect();
+            let record = claims::RequirementRecord::unguarded(
+                checked.claim().requirements(claims::wire(lowered.key)),
+                ValueType::Boolean,
+                claims::wire(lowered.boolean),
+                references::ModelReferences::new(objects, [], None),
+            );
+            match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(record);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+            }
+            state_graph_nodes
+                .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
+        }
         let named_scope = NamedScope::of(&models, &scope);
         let temporal_clauses = checked_temporal
             .into_iter()
@@ -4437,13 +4498,6 @@ impl PackageDeclarations {
         if !unwritten.is_empty() {
             return Err(unwritten);
         }
-        // FR-165: likewise, no S4 emission writes a state-graph claim yet.
-        if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
-            return Err(checked_state_graph_claims
-                .iter()
-                .map(state_graph_claim::not_emitted)
-                .collect());
-        }
         let mut graph = CheckedGraph {
             source,
             scope,
@@ -4474,7 +4528,7 @@ impl PackageDeclarations {
             protocols: checked_protocols,
             temporal_clauses,
             hyper_nodes,
-            state_graph_claims: checked_state_graph_claims,
+            state_graph_claims: state_graph_nodes,
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
             probabilistic: probabilistic_model,
