@@ -622,8 +622,9 @@ mod tp4 {
     use qsl_foundation::source::provenance::OccurrenceKey;
     use qsl_replay::ClauseIdentity;
     use qsl_replay::{
-        check_closure, CertificateLocus, CertificateRequest, CertificateRule, ClosureCertificate,
-        ModelCheckItem, ModelCheckLimits, TemporalCertificateCheck,
+        check_components, CertificateLocus, CertificateRequest, CertificateRule,
+        ClosureCertificate, ComponentCertificate, ModelCheckItem, ModelCheckLimits,
+        TemporalCertificateCheck,
     };
     use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
     use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -711,20 +712,31 @@ mod tp4 {
             }
         }
 
+        /// Check `certificate` as the closure of a component certificate: a
+        /// TP-4 clause is proved only by a component certificate (FR-339), and
+        /// a plain closure for it is refused `LivenessNeedsComponents`. The
+        /// closure is checked first (FR-338), so a certificate with no
+        /// components is rejected at the closure's own rules while the closure
+        /// is incomplete, and `NotPartition` once the closure is accepted.
         pub fn check(
             &self,
             certificate: &ClosureCertificate,
         ) -> Result<TemporalCertificateCheck, qsl_replay::ClosureRefusal> {
-            check_closure(
+            check_components(
                 &self.request(),
-                certificate,
+                &ComponentCertificate {
+                    closure: certificate.clone(),
+                    components: Vec::new(),
+                },
                 &ModelCheckLimits::default(),
                 &Cancel::new(),
             )
         }
 
-        /// The accepted certificate, grown from the checker's named product
-        /// states, each key of which must be one the engine replay reached.
+        /// The closure the checker accepts, grown from the checker's named
+        /// product states, each key of which must be one the engine replay
+        /// reached. The closure is accepted when only the (absent) component
+        /// partition remains to reject (`NotPartition`).
         pub fn certificate(&self) -> ClosureCertificate {
             let keys = self.expected_keys();
             let mut certificate = ClosureCertificate {
@@ -737,7 +749,11 @@ mod tp4 {
             // the independent replay, and the key set is pinned by the tests.
             for _ in 0..512 {
                 match self.check(&certificate).expect("the request admits") {
-                    TemporalCertificateCheck::Accepted => return certificate,
+                    TemporalCertificateCheck::Rejected(rejection)
+                        if rejection.rule == CertificateRule::NotPartition =>
+                    {
+                        return certificate;
+                    }
                     TemporalCertificateCheck::Rejected(rejection) => {
                         let CertificateLocus::ProductState(state) = rejection.at else {
                             panic!("TP-4 closure failures name product states");
@@ -879,9 +895,22 @@ mod tp4 {
             .map(|state| state.automaton_state.as_bytes().to_vec())
             .collect();
         assert_eq!(carried, expected.keys().cloned().collect::<BTreeSet<_>>());
+        // The closure is accepted: the only rule left to reject is the
+        // component partition this fixture does not carry.
         assert!(matches!(
             case.check(&certificate),
-            Ok(TemporalCertificateCheck::Accepted)
+            Ok(TemporalCertificateCheck::Rejected(rejection))
+                if rejection.rule == CertificateRule::NotPartition
+        ));
+        // A plain closure for the TP-4 clause is refused outright (FR-339).
+        assert!(matches!(
+            qsl_replay::check_closure(
+                &case.request(),
+                &certificate,
+                &ModelCheckLimits::default(),
+                &Cancel::new(),
+            ),
+            Err(qsl_replay::ClosureRefusal::LivenessNeedsComponents)
         ));
     }
 

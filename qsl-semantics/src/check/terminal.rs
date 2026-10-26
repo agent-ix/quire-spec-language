@@ -15,6 +15,7 @@
 //! exactly when it holds for every object of that population, as an
 //! invariant's does.
 
+use ix_trace_rs::string_edge;
 use qsl_forms::{ExpressionForm, StateClauseKind};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -26,6 +27,7 @@ use super::node_key::{BindingValue, BodyTerm, LeafTerm, LiteralValue, MemberTerm
 use super::refusal::{CheckCause, CheckRefusal};
 use super::state_clause::{check_clause, ClauseDeclarations, ClauseView, PopulationDomain};
 use super::CheckedGraph;
+use super::SemanticNode;
 use crate::family::CheckContext;
 
 /// One `terminal` declaration the assembler resolved (FR-124 "Inputs"): its
@@ -199,6 +201,32 @@ pub enum TerminalMode {
     Any,
 }
 
+impl TerminalMode {
+    /// The mode's spelling in the node's `mode` literal (QSpec FR-476).
+    pub(crate) const fn wire(self) -> &'static str {
+        match self {
+            Self::When => "when",
+            Self::Any => "any",
+        }
+    }
+
+    /// The mode a node's `mode` literal spells. `#[string_edge]`: the one
+    /// place the written text is read (FR-064).
+    #[string_edge]
+    fn from_wire(text: &str) -> Option<Self> {
+        [Self::When, Self::Any]
+            .into_iter()
+            .find(|mode| mode.wire() == text)
+    }
+}
+
+/// Whether `node` is a `temporal`/`terminal` node. `#[string_edge]`: the node
+/// form is read by its spelling (FR-064).
+#[string_edge]
+fn is_terminal_node(node: &SemanticNode) -> bool {
+    node.node_tag() == NodeTag::Temporal && node.semantic_form() == "terminal"
+}
+
 /// One `temporal`/`terminal` node of a checked graph (FR-411), read from the
 /// graph's own semantic nodes: no emission is needed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -231,11 +259,10 @@ impl TerminalNode {
         else {
             return None;
         };
-        let mode = match value {
-            LiteralValue::Text(mode) if mode == "when" => TerminalMode::When,
-            LiteralValue::Text(mode) if mode == "any" => TerminalMode::Any,
-            _ => return None,
+        let LiteralValue::Text(mode) = value else {
+            return None;
         };
+        let mode = TerminalMode::from_wire(mode)?;
         Some(Self {
             node,
             model: target.0,
@@ -251,9 +278,7 @@ impl CheckedGraph {
     pub fn terminal_nodes(&self) -> Vec<TerminalNode> {
         self.semantic_graph()
             .nodes()
-            .filter(|node| {
-                node.node_tag() == NodeTag::Temporal && node.semantic_form() == "terminal"
-            })
+            .filter(|node| is_terminal_node(node))
             .filter_map(|node| TerminalNode::of(node.key(), node.body()))
             .collect()
     }
