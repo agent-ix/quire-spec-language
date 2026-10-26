@@ -9,7 +9,7 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`ExprNode::children`] lists the children.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
@@ -1743,17 +1743,50 @@ impl Expression {
     /// first as every tree is. `None` when `root` or a leaf is no node of
     /// this arena, or a replacement has children.
     pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        self.cut_removing(root, leaves, &BTreeSet::new())
+    }
+
+    /// [`Self::cut`], with each node of `removed` dropped together with its
+    /// descendants: a removed node must be the value of a record literal's
+    /// field initializer, and that initializer is dropped from the literal.
+    /// `None` as for [`Self::cut`], or when a removed node is no such value.
+    pub fn cut_removing(
+        &self,
+        root: ExprId,
+        leaves: &BTreeMap<ExprId, ExprNode>,
+        removed: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
         if leaves.values().any(|leaf| !leaf.children().is_empty()) {
             return None;
         }
         let mut kept = Vec::new();
+        let mut dropped = 0;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
             let node = self.nodes.get(id.0)?;
             kept.push(id);
-            if !leaves.contains_key(&id) {
-                pending.extend(node.children());
+            if leaves.contains_key(&id) {
+                continue;
             }
+            for child in node.children() {
+                if !removed.contains(&child) {
+                    pending.push(child);
+                    continue;
+                }
+                let ExprNode::Record { fields, .. } = node else {
+                    return None;
+                };
+                if !fields
+                    .iter()
+                    .any(|(_, value)| *value == FieldInitializer::Value(child))
+                {
+                    return None;
+                }
+                dropped += 1;
+            }
+        }
+        if dropped != removed.len() {
+            return None;
         }
         kept.sort_unstable();
         let mut renumbered = vec![None; self.nodes.len()];
@@ -1766,6 +1799,12 @@ impl Expression {
                 Some(leaf) => leaf.clone(),
                 None => {
                     let mut copy = self.nodes[id.0].clone();
+                    if let ExprNode::Record { fields, .. } = &mut copy {
+                        fields.retain(|(_, value)| match value {
+                            FieldInitializer::Value(child) => !removed.contains(child),
+                            FieldInitializer::Null => true,
+                        });
+                    }
                     copy.shift_children(|child| renumbered[child.0].unwrap_or(ExprId(usize::MAX)));
                     copy
                 }
@@ -3497,10 +3536,23 @@ impl ExpressionForm {
     /// span. `None` when the spans do not fit the expression, a node is
     /// not of this tree, or a replacement has children.
     pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        self.cut_removing(root, leaves, &BTreeSet::new())
+    }
+
+    /// [`Self::cut`], with each record-literal field value of `removed`
+    /// dropped from its literal ([`Expression::cut_removing`]).
+    pub fn cut_removing(
+        &self,
+        root: ExprId,
+        leaves: &BTreeMap<ExprId, ExprNode>,
+        removed: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
         let replaced = leaves.keys().copied().collect();
         Some(Self {
-            expression: self.expression.cut(root, leaves)?,
-            spans: self.spans.cut(&self.expression, root, &replaced)?,
+            expression: self.expression.cut_removing(root, leaves, removed)?,
+            spans: self
+                .spans
+                .cut_removing(&self.expression, root, &replaced, removed)?,
         })
     }
 

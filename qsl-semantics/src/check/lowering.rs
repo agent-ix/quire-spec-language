@@ -108,7 +108,7 @@ pub(crate) use model::{
     bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
     RecordKeyError,
 };
-pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
+pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause, PlaceStep};
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
     ProtocolSite,

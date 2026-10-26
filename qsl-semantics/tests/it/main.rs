@@ -12,6 +12,8 @@
 #[cfg(feature = "test-support")]
 mod business_meanings;
 mod child_composite;
+#[cfg(feature = "test-support")]
+mod clock_places;
 mod complete_value_lock;
 #[cfg(feature = "test-support")]
 mod dimension_equivalence;

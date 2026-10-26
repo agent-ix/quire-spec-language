@@ -20,18 +20,18 @@ use crate::model_operations::{
     version_number_value_type, wire_construct, wire_envelope, wire_field, wire_type,
 };
 
-const PACKAGE: &str = "example/config-version";
-const TEMPORAL: &str = "profile t = \"quire.temporal.complete/v1\";\n";
-const UNITS: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
+pub(super) const PACKAGE: &str = "example/config-version";
+pub(super) const TEMPORAL: &str = "profile t = \"quire.temporal.complete/v1\";\n";
+pub(super) const UNITS: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
                      unit ms : Time = rational(1, 1000) * s;\n";
 
-fn call(member: &str) -> String {
+pub(super) fn call(member: &str) -> String {
     format!("ix://{PACKAGE}/Call/{member}")
 }
 
 /// A field of `Call`; a clock is typed `Clock` and, as FCD admits it,
 /// non-unique.
-fn field(name: &str, type_ref: &str) -> Value {
+pub(super) fn field(name: &str, type_ref: &str) -> Value {
     let mut field = wire_field(&call(name), name, type_ref, "required", 1);
     if type_ref == "ix://quire/native/Clock" {
         field["multiplicity"]["unique"] = json!(false);
@@ -40,7 +40,7 @@ fn field(name: &str, type_ref: &str) -> Value {
 }
 
 /// An operation of `Call` writing `modifies`.
-fn call_operation(name: &str, modifies: &[&str]) -> Value {
+pub(super) fn call_operation(name: &str, modifies: &[&str]) -> Value {
     let mut operation = operation(
         name,
         json!([]),
@@ -59,13 +59,13 @@ fn call_operation(name: &str, modifies: &[&str]) -> Value {
 /// integer `n`, the clocks `clocks`, and the operations `send` (writing
 /// `waiting`, `inflight`, `late` and `x`), `reply`, `timeout` and `bump`
 /// (writing `n` and `x`), over the population `calls`.
-fn rpc_document(clocks: &[&str]) -> Vec<u8> {
+pub(super) fn rpc_document(clocks: &[&str]) -> Vec<u8> {
     rpc_document_with(clocks, false)
 }
 
 /// [`rpc_document`], with a record value type `Probe` holding a Boolean
 /// `x` when `probe` holds.
-fn rpc_document_with(clocks: &[&str], probe: bool) -> Vec<u8> {
+pub(super) fn rpc_document_with(clocks: &[&str], probe: bool) -> Vec<u8> {
     let (number_construct, number_type, number) = version_number_value_type();
     let boolean = "ix://quire/native/Boolean";
     let mut fields = vec![
@@ -157,24 +157,24 @@ fn rpc(time: &str) -> String {
     )
 }
 
-fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+pub(super) fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     admit_and_assemble_with_profiles(document, TEMPORAL, body)
         .expect("S2 builds every timed form")
         .with_unwritten_timed_members()
         .check(quire_semantic_value::checking::CheckingLimits::default())
 }
 
-fn timed(graph: &CheckedGraph) -> &TimedModel {
+pub(super) fn timed(graph: &CheckedGraph) -> &TimedModel {
     graph.timed_model("Config").expect("a timed model")
 }
 
-fn exact(numerator: i64, denominator: i64) -> Rational {
+pub(super) fn exact(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a rational")
 }
 
 /// The one timed refusal of `body` over `document`, with the text it is
 /// located at.
-fn refused(document: &[u8], body: &str) -> (TemporalCause, String) {
+pub(super) fn refused(document: &[u8], body: &str) -> (TemporalCause, String) {
     let refusals = check(document, body).expect_err("the timed member is refused");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal expected: {refusals:?}");
@@ -501,7 +501,7 @@ fn an_unread_clock_of_an_untimed_model_refuses_at_the_model() {
 }
 
 /// The declared names of the checked package's semantic nodes.
-fn declared_names(graph: &CheckedGraph) -> Vec<String> {
+pub(super) fn declared_names(graph: &CheckedGraph) -> Vec<String> {
     graph
         .semantic_graph()
         .nodes()
@@ -522,7 +522,7 @@ fn declared_names(graph: &CheckedGraph) -> Vec<String> {
 }
 
 /// One constraint of a convex part: its clock's name, comparison and bound.
-type Bound = (String, ClockOp, Rational);
+pub(super) type Bound = (String, ClockOp, Rational);
 
 /// Each convex part of `guard` as its data literals' model attributes, each
 /// constraint as its clock's name, comparison and bound.
@@ -734,7 +734,7 @@ fn clock_typed_declarations_raise_no_refusal_of_their_own() {
 
 /// `node`, a data predicate, written out: each attribute by name, each
 /// connective, comparison and arithmetic operator by its variant.
-fn shown(node: CheckedNode<'_>) -> String {
+pub(super) fn shown(node: CheckedNode<'_>) -> String {
     let children = node.children();
     let child = |index: usize| children.get(index).copied().map_or_else(String::new, shown);
     match node.kind() {
@@ -747,6 +747,7 @@ fn shown(node: CheckedNode<'_>) -> String {
             format!("({} {operator:?} {})", child(0), child(1))
         }
         NodeKind::Attribute { field, .. } => field.name.clone(),
+        NodeKind::Field { field, .. } => format!("{}.{}", child(0), field.name()),
         NodeKind::Coerce(..) => child(0),
         NodeKind::Literal(literal) => format!("{literal:?}")
             .chars()
@@ -760,7 +761,7 @@ fn shown(node: CheckedNode<'_>) -> String {
 }
 
 /// Each convex part of `guard` with its data predicate written out.
-fn shown_parts(model: &TimedModel, guard: usize) -> Vec<(Option<String>, Vec<Bound>)> {
+pub(super) fn shown_parts(model: &TimedModel, guard: usize) -> Vec<(Option<String>, Vec<Bound>)> {
     model.guards()[guard]
         .parts()
         .iter()

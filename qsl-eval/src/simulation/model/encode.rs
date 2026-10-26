@@ -247,42 +247,56 @@ pub(crate) fn typed_value_enc(
                 ),
             ],
         ),
-        Value::Composite(composite) => {
-            let name = Enc::text(hex(composite.declaration().as_bytes()));
-            match types
-                .composite(composite.declaration())
-                .map(CompositeDeclaration::shape)
-            {
-                Some(CompositeShape::Record(fields)) => {
-                    let entries = fields
-                        .iter()
-                        .zip(composite.slots())
-                        .map(|(field, slot)| {
-                            Enc::Object(vec![
-                                ("name", Enc::text(field.name())),
-                                ("value", slot_enc(slot)),
-                            ])
-                        })
-                        .collect();
-                    Enc::tagged(
-                        "record",
-                        vec![("name", name), ("fields", Enc::Array(entries))],
-                    )
-                }
-                Some(CompositeShape::Tuple(_)) => Enc::tagged(
-                    "tuple",
-                    vec![
-                        ("name", name),
-                        (
-                            "components",
-                            Enc::Array(composite.slots().iter().map(slot_enc).collect()),
-                        ),
-                    ],
-                ),
-                Some(CompositeShape::Union(_)) | None => Enc::Unencodable("an undeclared record"),
-            }
-        }
+        Value::Composite(composite) => composite_enc(composite, types, &slot_enc),
         other => value_enc(other),
+    }
+}
+
+/// FR-181's `record` or `tuple` form of `composite`, its declaration read
+/// from `types`: `{"type":"record","name":…,"fields":[{name, value}…]}`
+/// with `name` the declaration's checked node id, one entry per declared
+/// field in declaration order and an absent field `null`, or
+/// `{"type":"tuple","name":…,"components":[…]}` in declaration order; each
+/// slot written by `slot_enc`.
+fn composite_enc(
+    composite: &quire_exact::CompositeValue,
+    types: &TypeEnvironment,
+    slot_enc: &dyn Fn(&FieldValue) -> Enc,
+) -> Enc {
+    let name = Enc::text(hex(composite.declaration().as_bytes()));
+    match types
+        .composite(composite.declaration())
+        .map(CompositeDeclaration::shape)
+    {
+        Some(CompositeShape::Record(fields)) if fields.len() == composite.slots().len() => {
+            let entries = fields
+                .iter()
+                .zip(composite.slots())
+                .map(|(field, slot)| {
+                    Enc::Object(vec![
+                        ("name", Enc::text(field.name())),
+                        ("value", slot_enc(slot)),
+                    ])
+                })
+                .collect();
+            Enc::tagged(
+                "record",
+                vec![("name", name), ("fields", Enc::Array(entries))],
+            )
+        }
+        Some(CompositeShape::Tuple(_)) => Enc::tagged(
+            "tuple",
+            vec![
+                ("name", name),
+                (
+                    "components",
+                    Enc::Array(composite.slots().iter().map(slot_enc).collect()),
+                ),
+            ],
+        ),
+        Some(CompositeShape::Record(_) | CompositeShape::Union(_)) | None => {
+            Enc::Unencodable("an undeclared record")
+        }
     }
 }
 
@@ -293,6 +307,18 @@ pub(super) type Placeholder<'p> = dyn Fn(&ObjectReference) -> Option<Enc> + 'p;
 /// FR-181's typed canonical form of `value`, with each reference
 /// `placeholder` replaces written as its replacement.
 pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> Enc {
+    value_enc_in(value, None, placeholder)
+}
+
+/// FR-181's typed canonical form of `value`, as [`value_enc_with`]; with
+/// `types`, a record or tuple value is written in its `record` or `tuple`
+/// form and a union value in its `union` form, recursively through nested
+/// options, collections, records, tuples and unions.
+fn value_enc_in(
+    value: &Value,
+    types: Option<&TypeEnvironment>,
+    placeholder: &Placeholder<'_>,
+) -> Enc {
     match value {
         Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
         Value::Integer(integer) => {
@@ -335,9 +361,9 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
             "option",
             vec![(
                 "value",
-                option
-                    .payload()
-                    .map_or(Enc::Null, |payload| value_enc_with(payload, placeholder)),
+                option.payload().map_or(Enc::Null, |payload| {
+                    value_enc_in(payload, types, placeholder)
+                }),
             )],
         ),
         Value::Collection(collection) => {
@@ -350,7 +376,7 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
             let mut elements: Vec<Enc> = collection
                 .elements()
                 .iter()
-                .map(|element| value_enc_with(element, placeholder))
+                .map(|element| value_enc_in(element, types, placeholder))
                 .collect();
             if matches!(
                 collection.collection_type().kind(),
@@ -375,8 +401,33 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
         ),
         Value::Enum(_) => Enc::Unencodable("an enum value"),
         Value::Population(_) => Enc::Unencodable("a population value"),
-        Value::Composite(_) => Enc::Unencodable("a record or tuple value"),
-        Value::Union(_) => Enc::Unencodable("a union value"),
+        Value::Composite(composite) => match types {
+            Some(types) => composite_enc(composite, types, &|slot| match slot {
+                FieldValue::Present(inner) => value_enc_in(inner, Some(types), placeholder),
+                FieldValue::Absent | FieldValue::Null => Enc::Null,
+            }),
+            None => Enc::Unencodable("a record or tuple value"),
+        },
+        Value::Union(union) => match types {
+            Some(_) => Enc::tagged(
+                "union",
+                vec![
+                    ("name", Enc::text(hex(union.declaration().as_bytes()))),
+                    ("member", Enc::text(union.member().identifier().as_str())),
+                    (
+                        "components",
+                        Enc::Array(
+                            union
+                                .payload()
+                                .iter()
+                                .map(|inner| value_enc_in(inner, types, placeholder))
+                                .collect(),
+                        ),
+                    ),
+                ],
+            ),
+            None => Enc::Unencodable("a union value"),
+        },
     }
 }
 
@@ -454,12 +505,12 @@ pub(super) fn object_enc(
         .iter()
         .map(|field| {
             // QSpec FR-181: a field declared `Option<T>` holds an option
-            // value (encoded by `value_enc`); an absent presence-optional
-            // field is a plain `null` entry.
-            let value = object
-                .fields
-                .get(&field.key)
-                .map_or(Enc::Null, |value| value_enc_with(value, placeholder));
+            // value; an absent presence-optional field is a plain `null`
+            // entry; a record, tuple or union value takes its declared form
+            // from the package's types.
+            let value = object.fields.get(&field.key).map_or(Enc::Null, |value| {
+                value_enc_in(value, Some(model.types()), placeholder)
+            });
             Enc::Object(vec![
                 ("name", Enc::text(field.name.clone())),
                 ("value", value),

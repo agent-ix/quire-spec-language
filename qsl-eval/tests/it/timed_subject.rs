@@ -221,6 +221,12 @@ fn world_with(profiles: &str, unit_body: &str) -> World {
 
 /// [`world_with`] over `document`.
 fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
+    world_holding(document, profiles, unit_body, json!({}))
+}
+
+/// [`world_over`] whose initial `Call` also holds the field values
+/// `fields`.
+fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Json) -> World {
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -269,8 +275,7 @@ fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("calls"), "complete": true, "objects": [{
             "key": "c", "type": ident("Call"),
-            "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
-                "late": {"boolean": false}},
+            "fields": initial_fields(fields),
         }]}],
     });
     let bytes = document.to_string().into_bytes();
@@ -290,6 +295,17 @@ fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
             digest: snapshot_digest,
         },
     }
+}
+
+/// The initial `Call`'s field values: `phase` 0, `inflight` and `late`
+/// false, and `extra`.
+fn initial_fields(extra: Json) -> Json {
+    let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
+        "late": {"boolean": false}});
+    for (name, value) in extra.as_object().expect("field values") {
+        fields[name] = value.clone();
+    }
+    fields
 }
 
 const METER: ScalarLimits = ScalarLimits {
@@ -1085,4 +1101,106 @@ fn a_huge_guard_constant_decides_fairness_as_a_small_one_does() {
     assert!(!fair(">=", &huge));
     assert!(fair("<=", &huge));
     assert!(started.elapsed() < std::time::Duration::from_secs(30));
+}
+
+/// [`rpc_document`] with the package record `Timer { x: Clock; y: Clock;
+/// n: Phase }` held by the `Call` field `t`.
+fn timer_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    let timer = ident("Timer");
+    let member = |name: &str, type_ref: &str| {
+        let mut member = wire_field(name, type_ref);
+        let identity = format!("{timer}/{name}");
+        member["identity"] = json!(identity);
+        member["origin"] = origin(&identity);
+        member
+    };
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &timer,
+        "value_record",
+        json!({"fields": [
+            member("x", "ix://quire/native/Clock"),
+            member("y", "ix://quire/native/Clock"),
+            member("n", &ident("Phase")),
+        ]}),
+    ));
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("t", &timer));
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({
+        "kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
+        "manifestDigest": PLACEHOLDER,
+        "construct": {"identity": "none", "shape": "record", "members": {},
+            "meaning": meaning::RECORD_VALUE_TYPE}}));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-11 (TC-685): with the record `Timer { x: Clock; y:
+/// Clock; n }` held by `Call.t` over a universe of three objects, every
+/// object holds its own clock of each place, `t.x`, `t.y` and `x`: nine
+/// clocks. The digest of a state holding the record value is defined: an
+/// equal state has an equal digest, and it changes with a clock value and
+/// with the record's data field (FR-181's `record` form).
+#[trace("TC-685")]
+#[test]
+fn every_object_holds_its_own_clock_of_every_record_place() {
+    let holding = |n: &str| {
+        world_holding(
+            timer_document(),
+            "",
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n\
+             pre Near using v on M::Call::work { self.t.x <= 3 ms }\n",
+            json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}}}),
+        )
+    };
+    let world = holding("0");
+    let system = system_over(&world, &["c", "d", "e"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let names: Vec<&str> = timed
+        .model()
+        .clocks()
+        .iter()
+        .map(|clock| clock.name())
+        .collect();
+    assert_eq!(names, ["t.x", "t.y", "x"]);
+    assert_eq!(timed.places().len(), 9);
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    // The initial state holds `c` alone, with its three clocks at 0.
+    let held = timed
+        .places()
+        .iter()
+        .filter(|place| place.present(initial.discrete()))
+        .count();
+    assert_eq!(held, 3);
+    let digest = timed
+        .state_digest(initial)
+        .expect("a record state has a digest");
+    assert_eq!(
+        timed.state_digest(&initial.clone()).expect("a digest"),
+        digest
+    );
+    let shifted = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(1, 2)),
+    );
+    assert_ne!(timed.state_digest(&shifted).expect("a digest"), digest);
+    let other = holding("1");
+    let other_system = system_over(&other, &["c", "d", "e"]);
+    let other_timed = TimedSystem::new(&other_system, "M").expect("a timed subject");
+    let [other_initial] = &other_timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    assert_ne!(
+        other_timed.state_digest(other_initial).expect("a digest"),
+        digest,
+        "the record's data field is in the state key"
+    );
 }

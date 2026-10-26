@@ -836,8 +836,8 @@ struct Unit {
 }
 
 impl Unit {
-    fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
-        let mut clock_forms = clock_forms::classify(&forms);
+    fn new(forms: Vec<qsl_forms::ParsedForm>, package_bearing: BTreeSet<String>) -> Self {
+        let mut clock_forms = clock_forms::classify(&forms, package_bearing);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
@@ -1408,6 +1408,9 @@ fn model_object_types(
             })
             .collect();
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
+        // A record's clock fields are places, not data (FR-230 "Records,
+        // tuples and unions"): its declaration lists the data fields only.
+        effective_fields.retain(|field| !matches!(field.value_type, ValueTypeRef::Clock));
         for field in effective_fields {
             match model_field(
                 field,
@@ -2715,15 +2718,30 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let mut unit = Unit::new(forms);
+        // The models and the one meter their admission counted on; checking
+        // continues that meter into the conformance stage.
+        let (models, model_meter) = models.into().into_parts();
+        // FR-230 "Clock-typed positions": a package record type that holds a
+        // clock is clock-bearing where the unit's own source writes it.
+        let package_bearing: BTreeSet<String> = selections
+            .models
+            .iter()
+            .filter_map(|selection| {
+                let model = models.iter().find(|model| model.alias == selection.alias)?;
+                Some(
+                    AdmittedModel::from_view(&model.view)
+                        .with_alias(&selection.alias)
+                        .clock_bearing_record_names(),
+                )
+            })
+            .flatten()
+            .collect();
+        let mut unit = Unit::new(forms, package_bearing);
         // FR-393: retain the parsed timed forms through S2. FR-230 checks
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
         let quantity_owners = OwnerSelection::new([owner.node_owner()]);
-        // The models and the one meter their admission counted on; checking
-        // continues that meter into the conformance stage.
-        let (models, model_meter) = models.into().into_parts();
         // The selected packages' dimensions, which a source dimension's
         // terms may name.
         let imported = units::Imported::new(
