@@ -1671,9 +1671,10 @@ fn a_strong_row_checks_as_strong() {
     assert_eq!(retry.granularity(), FairnessGranularity::Whole);
 }
 
-/// A checked `refinement` declaration refuses `not_emitted` at package build
-/// until S4 writes it, so a package is never built with an identity equal to
-/// the same package without it.
+/// A checked `refinement` declaration is refused at package build until S4
+/// writes it, so a package is never built with an identity equal to the same
+/// package without it; over object-type models the refusal names the missing
+/// state-machine subject (FR-136-AC-12).
 #[trace("TC-540")]
 #[test]
 fn a_checked_refinement_refuses_not_emitted_at_package_build() {
@@ -1692,7 +1693,7 @@ fn a_checked_refinement_refuses_not_emitted_at_package_build() {
             .iter()
             .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
             .collect::<Vec<_>>(),
-        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
+        [(Code::UnsupportedConstruct, Some("declaration-form"))]
     );
 }
 
@@ -1779,11 +1780,134 @@ fn an_integer_range_must_lie_inside_the_range_it_defines() {
     assert_eq!(range.at, "self.value");
 }
 
+/// `package` document `bytes` with a one-state `state_machine` named `name`
+/// added beside its types.
+fn with_machine(bytes: &[u8], package: &str, name: &str) -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(bytes).expect("a document");
+    let idle = node(package, &format!("{name}/Idle"));
+    let tick = node(package, &format!("{name}/tick"));
+    let transition = node(package, &format!("{name}/tick_transition"));
+    let machine = declaration(
+        package,
+        name,
+        "state_machine",
+        json!({
+            "supertypes": [], "fields": [], "clauses": [],
+            "operations": [{
+                "identity": tick, "name": "tick", "params": [], "pre": [], "post": [],
+                "frame": {"modifies": [], "creates": [], "deletes": []},
+                "origin": origin(package, &format!("{name}/tick")),
+            }],
+            "states": [{"identity": idle, "name": "Idle", "origin": origin(package, &format!("{name}/Idle"))}],
+            "transitions": [{
+                "identity": transition, "from": idle, "to": idle, "trigger": tick,
+                "emits": [], "origin": origin(package, &format!("{name}/tick_transition")),
+            }],
+        }),
+    );
+    let object = document.as_object_mut().expect("an object");
+    let constructs = object["constructs"].as_array_mut().expect("constructs");
+    if !constructs
+        .iter()
+        .any(|existing| existing["construct"]["meaning"] == meaning::STATE_MACHINE)
+    {
+        let mut construct = construct(package, "state_machine", meaning::STATE_MACHINE);
+        construct["construct"]["members"] =
+            json!({"states": "required", "transitions": "required"});
+        constructs.push(construct);
+    }
+    object["types"].as_array_mut().expect("types").push(machine);
+    document.to_string().into_bytes()
+}
+
+/// The first refusal of emitting `CasRefinesCounter` over the models given.
+fn emission_refusal(models: &[(&str, &str, &[u8])]) -> CheckRefusal {
+    let (_, declarations) = assemble("", models, &cas_refines_counter());
+    let mut refusals = declarations
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("the refinement is not emitted");
+    refusals.remove(0)
+}
+
+/// FR-136-AC-12: a refinement over object-type models, which declare no
+/// `state_machine`, is refused by name at its abstract side, not as
+/// `not-yet-implemented`; the `terminal` beside it is emitted.
+#[trace("TC-541", "FR-136-AC-12")]
+#[test]
+fn a_refinement_over_object_type_models_is_refused_for_its_missing_state_machine() {
+    let (spec, cas) = counters();
+    let models = [("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])];
+    let refusal = emission_refusal(&models);
+    let CheckCause::Refinement(refusal) = &refusal.cause else {
+        panic!("a named refinement refusal: {refusal:?}");
+    };
+    assert_eq!(refusal.refinement, "CasRefinesCounter");
+    assert_eq!(
+        refusal.cause,
+        RefinementCause::NoStateMachineSubject {
+            side: qsl_semantics::check::SubjectSide::Abstract,
+            alias: "Spec".to_owned(),
+        }
+    );
+    assert_eq!(
+        (refusal.cause.code(), refusal.cause.cause()),
+        (Code::UnsupportedConstruct, Some("declaration-form"))
+    );
+    // The concrete side is named once the abstract side has its machine.
+    let spec = with_machine(&spec, SPEC, "SpecMachine");
+    let refusal = emission_refusal(&[("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])]);
+    let CheckCause::Refinement(refusal) = &refusal.cause else {
+        panic!("a named refinement refusal: {refusal:?}");
+    };
+    assert_eq!(
+        refusal.cause,
+        RefinementCause::NoStateMachineSubject {
+            side: qsl_semantics::check::SubjectSide::Concrete,
+            alias: "Impl".to_owned(),
+        }
+    );
+}
+
+/// FR-136-AC-12: two `state_machine` records on one side are ambiguous, and
+/// exactly one on each side leaves only the generic not-emitted refusal.
+#[trace("TC-541", "FR-136-AC-12")]
+#[test]
+fn a_refinement_subject_needs_exactly_one_state_machine_per_side() {
+    let (spec, cas) = counters();
+    let (spec, cas) = (
+        with_machine(&spec, SPEC, "SpecMachine"),
+        with_machine(&cas, CAS, "ImplMachine"),
+    );
+    let refusal = emission_refusal(&[("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])]);
+    assert!(
+        matches!(refusal.cause, CheckCause::RefinementNotEmitted { .. }),
+        "{refusal:?}"
+    );
+    let twice = with_machine(&spec, SPEC, "SpecMachineToo");
+    let refusal = emission_refusal(&[("Spec", SPEC, &twice[..]), ("Impl", CAS, &cas[..])]);
+    let CheckCause::Refinement(refusal) = &refusal.cause else {
+        panic!("a named refinement refusal: {refusal:?}");
+    };
+    assert_eq!(
+        refusal.cause,
+        RefinementCause::AmbiguousStateMachineSubject {
+            side: qsl_semantics::check::SubjectSide::Abstract,
+            alias: "Spec".to_owned(),
+            count: 2,
+        }
+    );
+    assert_eq!(
+        (refusal.cause.code(), refusal.cause.cause()),
+        (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+    );
+}
+
 /// A unit holding a `terminal` declaration and a refinement refuses only the
-/// refinement as not emitted: the `terminal` declaration is emitted.
+/// refinement: the `terminal` declaration is emitted.
 #[trace("TC-540")]
 #[test]
-fn only_the_refinement_beside_a_terminal_is_refused_not_emitted() {
+fn only_the_refinement_beside_a_terminal_is_refused() {
     let (spec, cas) = counters();
     let body = format!(
         "terminal Halt using v on Spec any;\n{}",
@@ -1795,16 +1919,10 @@ fn only_the_refinement_beside_a_terminal_is_refused_not_emitted() {
         .check(CheckingLimits::default())
         .expect_err("the refinement is not emitted yet");
     assert!(
-        matches!(refusals[0].cause, CheckCause::RefinementNotEmitted { .. }),
+        matches!(refusals[0].cause, CheckCause::Refinement(_)),
         "{refusals:?}"
     );
-    assert_eq!(
-        refusals
-            .iter()
-            .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
-            .collect::<Vec<_>>(),
-        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
-    );
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
 }
 
 const DIAMOND: &str = "example/diamond-counter";

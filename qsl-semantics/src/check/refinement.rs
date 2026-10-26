@@ -255,6 +255,28 @@ pub enum RefinementCause {
         /// The selected profile identity.
         profile: String,
     },
+    /// A refinement's subject package declares no `state_machine`, so S3 has
+    /// no state-machine record to select as the refinement's subject: its
+    /// node (QSpec FR-375) is keyed over a state-machine node and anchors
+    /// its step operations on it, which an object-type model has none of
+    /// (FR-136-AC-12): `unsupported_construct`/`declaration-form`.
+    NoStateMachineSubject {
+        /// Which side of the refinement.
+        side: SubjectSide,
+        /// The side's model alias.
+        alias: String,
+    },
+    /// A refinement's subject package declares several `state_machine`
+    /// records, so S3 cannot tell which one the refinement is over
+    /// (FR-136-AC-12): `ambiguous_declaration`/`ambiguous-name`.
+    AmbiguousStateMachineSubject {
+        /// Which side of the refinement.
+        side: SubjectSide,
+        /// The side's model alias.
+        alias: String,
+        /// How many state machines the package declares.
+        count: usize,
+    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -306,6 +328,15 @@ pub enum RefinementCause {
     Check(CheckCause),
 }
 
+/// Which side of a refinement a subject refusal is about.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SubjectSide {
+    /// The abstract model.
+    Abstract,
+    /// The concrete model.
+    Concrete,
+}
+
 /// A refusal of a refinement declaration, at the span of the row or name it
 /// is about.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -336,7 +367,9 @@ impl RefinementCause {
             },
             Self::Unsupported { .. }
             | Self::UnsupportedRowForm { .. }
+            | Self::NoStateMachineSubject { .. }
             | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
+            Self::AmbiguousStateMachineSubject { .. } => Code::AmbiguousDeclaration,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -361,7 +394,10 @@ impl RefinementCause {
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
             Self::UnsupportedRowForm { .. } => Some("expression-form"),
-            Self::AbstractRelationships { .. } => Some("declaration-form"),
+            Self::AbstractRelationships { .. } | Self::NoStateMachineSubject { .. } => {
+                Some("declaration-form")
+            }
+            Self::AmbiguousStateMachineSubject { .. } => Some("ambiguous-name"),
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -3017,6 +3053,41 @@ fn relaxed_conforms(types: &TypeEnvironment, actual: &ValueType, required: &Valu
         }
         _ => conforms(types, actual, required),
     }
+}
+
+/// The refusal for a checked refinement whose subject package has not
+/// exactly one state machine to select (FR-136-AC-12), `None` when it has one.
+pub(crate) fn subject_refusal(
+    refinement: &CheckedRefinement,
+    span: Span,
+    state_machines: impl Fn(&str) -> usize,
+) -> Option<CheckRefusal> {
+    let sides = [
+        (SubjectSide::Abstract, refinement.abstract_model.as_str()),
+        (SubjectSide::Concrete, refinement.concrete_model.as_str()),
+    ];
+    sides.into_iter().find_map(|(side, alias)| {
+        let cause = match state_machines(alias) {
+            1 => return None,
+            0 => RefinementCause::NoStateMachineSubject {
+                side,
+                alias: alias.to_owned(),
+            },
+            count => RefinementCause::AmbiguousStateMachineSubject {
+                side,
+                alias: alias.to_owned(),
+                count,
+            },
+        };
+        Some(CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::Refinement(Box::new(RefinementRefusal {
+                refinement: refinement.name.clone(),
+                span,
+                cause,
+            })),
+        })
+    })
 }
 
 /// The refusal for a `refinement` declaration that checks but that no S4
