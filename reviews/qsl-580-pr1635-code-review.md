@@ -46,3 +46,16 @@ is dropped silently. Low findings otherwise.
 | --- | --- | --- | --- |
 | FND-001 | medium | `Scope::unit` returns `Some(None)` for a package unit of a derived package dimension, or one whose target chain fixes no scale. `steps_three_to_five` then hits `let unit = unit.as_ref()?;` and returns `None` without pushing an error. The declaration is neither admitted nor refused, and the unit assembles with no error. Example: with `acme/rpc` declaring `Area = Length ^ 2` and its unit `m2`, `dimension R::Time ~ F::Time by 1 R::m2 = 1 F::s;` assembles cleanly. FR-142 step 4 refuses it `invalid_package`/`incompatible-definition` (`m2` is not a unit of `R::Time`). The fn doc ("nothing to decide past step 4") does not match: the early return happens before step 4. | qsl-semantics/src/check/assemble/equivalence.rs:220-245, 531-560 |
 | FND-002 | low | Two smaller issues. `AssemblyCause::DimensionEquivalence.retained` keeps the retained declarations, units and nodes as display strings, so neither a caller nor a test can read which node or value a step kept. `over_classes` drops a failed `ratio.pow(exponent)` silently (`if let Some(power)`), which would leave a wrong `size` rather than an error. With positive ratios it cannot fail today. | qsl-semantics/src/check/assemble.rs:305-312; qsl-semantics/src/check/assemble/equivalence.rs:450-460 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | Commit d51c07dee admits the dimensionless `dimension N = L / L;`, which FR-142 and FR-091-AC-35 require. Its normalized terms are empty, so its `quire.dimension-node/v1` preimage (`owner`, `qualified_declaration`, `terms: []`) has the same shape as a base dimension's. A checked-package reader therefore cannot tell a dimensionless derived dimension from a base dimension of the same name and owner. The base-dimension rule and an equivalence's base/derived phase both depend on that difference. This is a QSpec schema gap (the preimage has no base/derived marker) rather than a QSL code defect; it should be filed on STD-493. | qsl-semantics/src/check/assemble/units.rs (keys); quire-specification proposals/checked-package-v2/schema.json `DimensionPreimage` |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit 4c478e006: intake keeps package dimension `terms`, so a unit of a derived package dimension now has that dimension's key, and step 4 (`unit.dimension != dimension.id`) refuses it `incompatible-definition`. A package unit whose chain fixes no scale refuses `incompatible-definition` (`None if unit.package`) instead of returning silently. That last branch has no test of its own. |
+| FND-002 | fixed | `AssemblyCause::DimensionEquivalence.retained` is `Vec<EquivalenceRetained>` (Declaration, Dimension{name,key}, Unit, Value). `over_classes` now propagates a failed `ratio.pow(exponent)` with `?`, which refuses at step 6. |
