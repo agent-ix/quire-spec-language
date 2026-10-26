@@ -429,8 +429,6 @@ impl ItemCause {
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::NoAdmittedBehaviour
                 | InconclusiveCause::LassoNotConcretized
-                | InconclusiveCause::DeadlockAfterDelay
-                | InconclusiveCause::InsufficientData
                 | InconclusiveCause::SolverInconclusive { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {

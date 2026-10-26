@@ -98,10 +98,45 @@ pub struct ModelTraceSubject {
     pub universes: Vec<PopulationUniverse>,
     /// The subject's expansion limits.
     pub expansion: ExpansionLimits,
-    /// FR-237: the bounds of a timed replay's fresh exploration of a finite
-    /// violation's endpoint or a non-local time-lock (FR-101's
-    /// `max_states` and `max_transitions`).
+    /// FR-237: the timed reading the counterexample was found under; `None`
+    /// for an untimed subject, whose replay refuses every delay.
+    pub timed: Option<TimedReplay>,
+}
+
+/// FR-237: the timed reading of a model subject a replay re-executes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimedReplay {
+    /// The alias of the model whose time source and timed model the
+    /// subject is read under (FR-230), as `TimedSystem::new` names it.
+    pub model: String,
+    /// The bounds of the fresh exploration of a finite violation's endpoint
+    /// or a non-local time-lock (FR-101's `max_states` and
+    /// `max_transitions`).
     pub exploration: qsl_eval::simulation::Limits,
+}
+
+/// What forbids a delay in a timed counterexample (FR-231 "Delay").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DelayBar {
+    /// The delay is negative.
+    Negative,
+    /// The source counts ticks, so only a delay of 0 is admissible.
+    TickSource,
+    /// The state is urgent.
+    Urgent,
+    /// The named time invariant fails at the delay's end.
+    TimeInvariant(String),
+}
+
+impl std::fmt::Display for DelayBar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Negative => f.write_str("negative"),
+            Self::TickSource => f.write_str("tick-source"),
+            Self::Urgent => f.write_str("urgent"),
+            Self::TimeInvariant(name) => write!(f, "time invariant `{name}`"),
+        }
+    }
 }
 
 /// FR-217's subject members beside FR-098's: the model subject's, the
@@ -165,15 +200,37 @@ pub enum ModelTraceRefusal {
         step: Option<usize>,
         /// The delay.
         delay: Rational,
-        /// What forbids it: `urgent`, `tick-source`, or `time-invariant`.
-        bar: &'static str,
+        /// What forbids it.
+        bar: DelayBar,
     },
-    /// A step's target time invariants fail after its resets (FR-237).
-    #[error("invalid_runtime_input/invalid-value: step {step} reaches a state its time invariants forbid")]
+    /// A step's target time invariant fails after its resets (FR-237).
+    #[error("invalid_runtime_input/invalid-value: step {step} reaches a state its time invariant `{invariant}` forbids")]
     TargetInvariant {
         /// The step's zero-based index in the prefix.
         step: usize,
+        /// The time invariant that fails.
+        invariant: String,
     },
+    /// Over a timed subject, a step's transition identity is enabled by its
+    /// data precondition, but no convex part of its clock guard holds after
+    /// the delay (FR-237).
+    #[error("invalid_runtime_input/invalid-value: step {step}'s clock guard {guards:?} does not hold after its delay")]
+    GuardFails {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// Its transition identity.
+        transition: Box<ModelTransition>,
+        /// The precondition clauses whose clock guards apply.
+        guards: Vec<String>,
+    },
+    /// A counterexample that is not a time-lock carries a `final_delay`,
+    /// which FR-236 leaves `None` on every other kind.
+    #[error("invalid_runtime_input/invalid-value: a counterexample that is not a time-lock carries a final_delay")]
+    StrayFinalDelay,
+    /// A time-lock counterexample carries a lasso: a time-lock is a finite
+    /// prefix and its `final_delay` (FR-236).
+    #[error("invalid_runtime_input/invalid-value: a time-lock counterexample carries a lasso")]
+    TimeLockLasso,
     /// A timed lasso whose loop takes no positive total delay, so it is no
     /// time-divergent behaviour (ADR-026 CT-2; FR-237 "Lasso").
     #[error("invalid_runtime_input/invalid-value: the loop entered at position {entry} takes no positive total delay")]
@@ -190,7 +247,7 @@ pub enum ModelTraceRefusal {
     /// The recompiled package's timed model does not build a timed subject
     /// (FR-231).
     #[error("invalid_runtime_input/invalid-value: the timed subject does not build: {0}")]
-    TimedSubject(String),
+    TimedSubject(qsl_eval::simulation::model::TimedSubjectRefusal),
     /// `initial_state` is not an index of the subject's initial states.
     #[error("invalid_runtime_input/invalid-value: initial state {index} of {count}")]
     InitialState {
@@ -421,6 +478,9 @@ impl ModelTraceRefusal {
             | Self::MissingDelay { .. }
             | Self::DelayNotAdmissible { .. }
             | Self::TargetInvariant { .. }
+            | Self::GuardFails { .. }
+            | Self::StrayFinalDelay
+            | Self::TimeLockLasso
             | Self::LoopZeroDelay { .. }
             | Self::TimeLockUntimed
             | Self::TimedSubject(_)
@@ -463,6 +523,9 @@ impl ModelTraceRefusal {
             | Self::MissingDelay { .. }
             | Self::DelayNotAdmissible { .. }
             | Self::TargetInvariant { .. }
+            | Self::GuardFails { .. }
+            | Self::StrayFinalDelay
+            | Self::TimeLockLasso
             | Self::LoopZeroDelay { .. }
             | Self::TimeLockUntimed
             | Self::TimedSubject(_)
@@ -643,12 +706,12 @@ pub fn replay_model_trace(
                 letters,
                 meter,
             });
-            match timed::timed_subject(&system, package.0)? {
-                Some(timed) => timed::settle(
-                    &timed,
+            match &subject.timed {
+                Some(reading) => timed::settle(
+                    &timed::timed_subject(&system, &reading.model)?,
                     envelope.family_payload(),
                     formula,
-                    &subject.exploration,
+                    &reading.exploration,
                 ),
                 None => settle(&system, envelope.family_payload(), formula),
             }
@@ -664,12 +727,19 @@ pub fn replay_model_trace(
 /// the formula over the timed lasso, a finite violation's admitted
 /// endpoint and a time-lock's arm, the last two by a fresh exploration
 /// under `exploration`. `letters` reads the clause's atoms and `meter`
-/// bounds each evaluation.
+/// bounds each evaluation. A reproduced lasso comes with its FR-133
+/// hints.
+///
+/// It skips FR-128's recompile, identity, fairness-set and admission
+/// checks and binds no `package_id`, so it is test support only: the
+/// production path is [`replay_model_trace`].
 ///
 /// # Errors
 ///
 /// [`ReplayRefusal`] as [`replay_model_trace`] refuses a timed
 /// counterexample.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
 pub fn replay_timed_counterexample(
     timed: &qsl_eval::simulation::model::TimedSystem<'_, '_>,
     payload: &TemporalCounterexample,
@@ -677,13 +747,13 @@ pub fn replay_timed_counterexample(
     letters: &dyn ModelLetters,
     meter: ScalarLimits,
     exploration: &qsl_eval::simulation::Limits,
-) -> Result<ModelTraceSettlement, ReplayRefusal> {
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
     let formula = clause.map(|clause| FormulaReplay {
         clause,
         letters,
         meter,
     });
-    timed::settle(timed, payload, formula, exploration).map(|(settlement, _)| settlement)
+    timed::settle(timed, payload, formula, exploration)
 }
 
 /// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
@@ -1860,11 +1930,36 @@ fn unfair_member(
 /// order, that is enabled at a loop state and taken by no loop step is named
 /// `Each`. A terminal stutter loop, where nothing is enabled, gets none.
 fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
+    let states: Vec<HintState<'_>> = states
+        .iter()
+        .map(|state| HintState {
+            position: state.position,
+            enabled: &state.enabled,
+            taken: Some(&state.taken),
+        })
+        .collect();
+    hints_of(system, &states)
+}
+
+/// One loop position as FR-133 reads it: the identities enabled there (or,
+/// over time, during the delay that leaves it) and the one taken, `None`
+/// for an idle tail's stutter.
+pub(super) struct HintState<'s> {
+    pub(super) position: usize,
+    pub(super) enabled: &'s [ModelTransition],
+    pub(super) taken: Option<&'s ModelTransition>,
+}
+
+/// [`strong_hints`] over `states`.
+pub(super) fn hints_of(
+    system: &ModelSystem<'_>,
+    states: &[HintState<'_>],
+) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {
         let of_operation = |transition: &ModelTransition| transition.operation() == text;
         let taken =
-            |identity: &ModelTransition| states.iter().any(|state| state.taken == *identity);
+            |identity: &ModelTransition| states.iter().any(|state| state.taken == Some(identity));
         let first_enabled = |wanted: &dyn Fn(&ModelTransition) -> bool| {
             states
                 .iter()
@@ -1876,14 +1971,17 @@ fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFai
         let named = |granularity| {
             FairnessConstraint::new(FairnessKind::Strong, operation.clone(), granularity)
         };
-        let whole = first_enabled(&of_operation)
-            .filter(|_| !states.iter().any(|state| of_operation(&state.taken)));
+        let whole = first_enabled(&of_operation).filter(|_| {
+            !states
+                .iter()
+                .any(|state| state.taken.is_some_and(of_operation))
+        });
         let (suggested, identity, position) = if let Some(position) = whole {
             (named(FairnessGranularity::Whole), None, position)
         } else {
             let never_taken = states
                 .iter()
-                .flat_map(|state| &state.enabled)
+                .flat_map(|state| state.enabled)
                 .filter(|transition| of_operation(transition) && !taken(transition))
                 .min();
             let Some(identity) = never_taken else {

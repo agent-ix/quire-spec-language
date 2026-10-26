@@ -28,49 +28,43 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 
 use super::{
-    check_formula, digest_of, disagreement, disagrees, fault, no_value, position_of, refused,
-    replayed_letters, undefined, undefined_letter, FormulaReplay, ItemReads, LetterRead,
-    ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position, StrongFairnessHint,
-    UndefinedLetter,
+    check_formula, digest_of, disagreement, disagrees, fault, hints_of, no_value, position_of,
+    refused, replayed_letters, undefined, undefined_letter, DelayBar, FormulaReplay, HintState,
+    ItemReads, LetterRead, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position,
+    StrongFairnessHint, UndefinedLetter,
 };
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{
     CounterexampleKind, Lasso, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
 };
 use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
-use crate::timed::explore::{explore, Closure};
+use crate::timed::explore::{explore, widen, Closure};
 
-/// The timed subject a recompiled package's system is over: the timed
-/// model of its time source, or `None` for an untimed subject.
+/// The timed subject of the recompiled system under the timed model of
+/// `model`, the alias the subject names.
 ///
 /// # Errors
 ///
-/// [`ModelTraceRefusal::TimedSubject`] when the timed model does not build
-/// a timed subject.
+/// [`ModelTraceRefusal::TimedSubject`] when the package has no such timed
+/// model or it does not build a timed subject.
 pub(super) fn timed_subject<'s, 'a>(
     system: &'s ModelSystem<'a>,
-    package: &'a qsl_package::CheckedPackage,
-) -> Result<Option<TimedSystem<'s, 'a>>, ReplayRefusal> {
-    let graph = package.graph();
-    let Some(source) = graph
-        .time_sources()
-        .iter()
-        .find(|source| graph.timed_model(&source.model).is_some())
-    else {
-        return Ok(None);
-    };
-    TimedSystem::new(system, &source.model)
-        .map(Some)
-        .map_err(|refusal| refused(ModelTraceRefusal::TimedSubject(refusal.to_string())))
+    model: &str,
+) -> Result<TimedSystem<'s, 'a>, ReplayRefusal> {
+    TimedSystem::new(system, model)
+        .map_err(|refusal| refused(ModelTraceRefusal::TimedSubject(refusal)))
 }
 
-/// One replayed timed position: the timed state, its time stamp and its
-/// model state's position.
+/// One replayed timed position: the timed state, its time stamp, its
+/// FR-236 digest and the step that reached it.
 struct TimedPosition {
     state: TimedState,
     stamp: Rational,
     /// The timed state's FR-236 digest, clocks included.
     digest: qsl_foundation::digest::DigestRecord,
+    /// The step that reached it, the one whose post-state digest is the
+    /// recorded one; `None` at position 0.
+    step: Option<GuardedStep>,
 }
 
 fn zero() -> Rational {
@@ -86,6 +80,15 @@ pub(super) fn settle(
     formula: Option<FormulaReplay<'_>>,
     exploration: &Limits,
 ) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    // FR-236: `final_delay` belongs to a time-lock alone, and a time-lock is
+    // a finite prefix.
+    match (&payload.kind, &payload.final_delay, payload.lasso) {
+        (CounterexampleKind::TimeLock, _, Some(_)) => {
+            return Err(refused(ModelTraceRefusal::TimeLockLasso))
+        }
+        (CounterexampleKind::TimeLock, _, None) | (_, None, _) => {}
+        (_, Some(_), _) => return Err(refused(ModelTraceRefusal::StrayFinalDelay)),
+    }
     let Some(replayed) = replay_prefix(timed, payload)? else {
         return Ok((no_value(), Vec::new()));
     };
@@ -96,10 +99,14 @@ pub(super) fn settle(
         let digest = digest_of(system, &state)?;
         positions.push(Position { state, digest });
     }
+    let mut behaviour = None;
     if let Some(lasso) = payload.lasso {
-        close_loop(timed, &replayed, lasso)?;
+        close_loop(timed, &replayed, &positions, lasso)?;
+        let Some(built) = behaviour_of(timed, &replayed) else {
+            return Ok((no_value(), Vec::new()));
+        };
         if let Some(formula) = &formula {
-            match unfair(timed, payload, lasso, formula.clause.fairness())? {
+            match unfair(timed, &built, lasso, formula.clause.fairness())? {
                 Fairness::Fair => {}
                 Fairness::Unfair(constraint) => {
                     return Err(ReplayRefusal::UnfairLasso { constraint })
@@ -107,6 +114,7 @@ pub(super) fn settle(
                 Fairness::NoValue => return Ok((no_value(), Vec::new())),
             }
         }
+        behaviour = Some((built, lasso));
     }
     let last = replayed.last().ok_or_else(|| fault("a-position-exists"))?;
     let settlement = match (&payload.kind, formula) {
@@ -168,7 +176,79 @@ pub(super) fn settle(
             Vec::new(),
         ));
     }
-    Ok((settlement, Vec::new()))
+    // FR-133: a reproduced liveness lasso's strong-fairness hints, read
+    // over time.
+    let hints = match (&payload.kind, &settlement, behaviour) {
+        (
+            CounterexampleKind::Formula,
+            ModelTraceSettlement::Reproduced { .. },
+            Some((behaviour, lasso)),
+        ) => timed_hints(timed, &behaviour, lasso).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    Ok((settlement, hints))
+}
+
+/// The replayed positions as a timed behaviour, each step the recorded one;
+/// `None` when the subject cannot decide a step.
+fn behaviour_of(timed: &TimedSystem<'_, '_>, replayed: &[TimedPosition]) -> Option<TimedBehaviour> {
+    let mut behaviour = TimedBehaviour::new(replayed.first()?.state.clone());
+    for pair in replayed.windows(2) {
+        let (before, after) = (&pair[0], &pair[1]);
+        let step = after.step.as_ref()?;
+        let delay = after
+            .stamp
+            .sub(&before.stamp)
+            .sub(&timed.tick_of(step.operation()));
+        behaviour
+            .advance_where(timed, &delay, |candidate, state| {
+                candidate.transition() == step.transition()
+                    && timed
+                        .state_digest(state)
+                        .is_ok_and(|digest| digest == after.digest)
+            })
+            .ok()?;
+    }
+    Some(behaviour)
+}
+
+/// FR-133 over a timed loop: the identities enabled at some instant of
+/// each window of the repetition every later one reads alike, against the
+/// step that ends it. `None` when the subject cannot decide one.
+fn timed_hints(
+    timed: &TimedSystem<'_, '_>,
+    behaviour: &TimedBehaviour,
+    lasso: Lasso,
+) -> Option<Vec<StrongFairnessHint>> {
+    let stutter_delay = stutter_delay(timed);
+    let enabled: Vec<Vec<quire_semantic_value::model_transition::ModelTransition>> = timed
+        .loop_enabled(behaviour, lasso.entry, &stutter_delay)
+        .ok()?
+        .into_iter()
+        .map(|steps| steps.iter().map(|step| step.transition().clone()).collect())
+        .collect();
+    let positions = behaviour.positions();
+    let states: Vec<HintState<'_>> = enabled
+        .iter()
+        .enumerate()
+        .map(|(position, enabled)| HintState {
+            position,
+            enabled,
+            taken: positions
+                .get(lasso.entry + position + 1)
+                .and_then(|next| next.step())
+                .map(GuardedStep::transition),
+        })
+        .collect();
+    Some(hints_of(timed.system(), &states))
+}
+
+/// The delay of one idle-tail stutter: one unit, or the tick period.
+fn stutter_delay(timed: &TimedSystem<'_, '_>) -> Rational {
+    timed
+        .tick_period()
+        .cloned()
+        .unwrap_or_else(|| Rational::from_integer(Integer::one()))
 }
 
 /// Re-execute the prefix from its initial timed state, every clock at 0.
@@ -193,6 +273,7 @@ fn replay_prefix(
         state,
         stamp: zero(),
         digest,
+        step: None,
     }];
     for (index, step) in payload.prefix.iter().enumerate() {
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
@@ -206,6 +287,7 @@ fn replay_prefix(
         let Ok(guarded) = timed.guarded_steps(delayed.discrete()) else {
             return Ok(None);
         };
+        let mut named = Vec::new();
         let mut enabled = false;
         let mut reached = None;
         let mut digests = Vec::new();
@@ -213,6 +295,7 @@ fn replay_prefix(
             .iter()
             .filter(|candidate| candidate.transition() == &step.transition)
         {
+            named.push(candidate);
             if !candidate
                 .parts()
                 .iter()
@@ -230,9 +313,18 @@ fn replay_prefix(
             digests.push(digest);
         }
         if !enabled {
-            return Err(refused(ModelTraceRefusal::NotEnabled {
-                step: index,
-                transition: Box::new(step.transition.clone()),
+            // Enabled by no data precondition, or by one whose clock guard
+            // fails after the delay.
+            return Err(refused(match named.first() {
+                None => ModelTraceRefusal::NotEnabled {
+                    step: index,
+                    transition: Box::new(step.transition.clone()),
+                },
+                Some(candidate) => ModelTraceRefusal::GuardFails {
+                    step: index,
+                    transition: Box::new(step.transition.clone()),
+                    guards: candidate.guards().to_vec(),
+                },
             }));
         }
         let (candidate, next, digest) = reached.ok_or_else(|| {
@@ -242,11 +334,15 @@ fn replay_prefix(
                 reached: digests,
             })
         })?;
-        let Ok(invariants) = timed.invariants(next.discrete()) else {
-            return Ok(None);
-        };
-        if !invariants.iter().all(|bound| bound.holds(next.clocks())) {
-            return Err(refused(ModelTraceRefusal::TargetInvariant { step: index }));
+        match timed.broken_invariant(&next) {
+            Ok(None) => {}
+            Ok(Some(invariant)) => {
+                return Err(refused(ModelTraceRefusal::TargetInvariant {
+                    step: index,
+                    invariant,
+                }))
+            }
+            Err(_) => return Ok(None),
         }
         let stamp = current
             .stamp
@@ -256,6 +352,7 @@ fn replay_prefix(
             state: next,
             stamp,
             digest,
+            step: Some(candidate.clone()),
         });
     }
     Ok(Some(positions))
@@ -282,13 +379,27 @@ fn delay_by(
         Ok(Some(delayed)) => Ok(Some(delayed)),
         Ok(None) => {
             let bar = if delay < &zero() {
-                "negative"
+                DelayBar::Negative
             } else if timed.tick_period().is_some() {
-                "tick-source"
-            } else if timed.is_urgent(state.discrete()).unwrap_or(false) {
-                "urgent"
+                DelayBar::TickSource
             } else {
-                "time-invariant"
+                match timed.is_urgent(state.discrete()) {
+                    Ok(true) => DelayBar::Urgent,
+                    Ok(false) => {
+                        // Invariants are upper bounds: the delay's end
+                        // breaks one.
+                        let end = TimedState::new(
+                            state.discrete().clone(),
+                            state.clocks().delayed(delay),
+                        );
+                        match timed.broken_invariant(&end) {
+                            Ok(Some(invariant)) => DelayBar::TimeInvariant(invariant),
+                            Ok(None) => return Err(fault("an-inadmissible-delay-has-a-bar")),
+                            Err(_) => return Ok(None),
+                        }
+                    }
+                    Err(_) => return Ok(None),
+                }
             };
             Err(refused(ModelTraceRefusal::DelayNotAdmissible {
                 step,
@@ -300,13 +411,17 @@ fn delay_by(
     }
 }
 
-/// FR-237 "Lasso": a loop of steps ends at its entry's timed state, clocks
-/// included, after a positive total delay; a terminal-stutter loop stands
-/// where the idle tail lets time diverge (FR-231): a quiescent state, or
-/// under a tick source a terminal one.
+/// FR-237 "Lasso" over FR-236's timed lasso: a loop of steps ends at its
+/// entry's discrete state after a positive total delay, each clock the
+/// loop resets at its entry value and each clock it never resets above
+/// every constant of the model at entry, so it runs free; a
+/// terminal-stutter loop stands where the idle tail lets time diverge
+/// (FR-231): a quiescent state, or under a tick source a terminal one.
+/// `discrete` holds each position's discrete digest.
 fn close_loop(
     timed: &TimedSystem<'_, '_>,
     positions: &[TimedPosition],
+    discrete: &[Position],
     lasso: Lasso,
 ) -> Result<(), ReplayRefusal> {
     let steps = positions.len() - 1;
@@ -335,13 +450,37 @@ fn close_loop(
         };
     }
     let entry = positions.get(lasso.entry).ok_or_else(open)?;
-    if lasso.entry >= steps || entry.digest != last.digest {
+    let same_discrete = discrete
+        .get(lasso.entry)
+        .zip(discrete.last())
+        .is_some_and(|(entry, last)| entry.digest == last.digest);
+    if lasso.entry >= steps || !same_discrete {
         return Err(open());
     }
     if last.stamp <= entry.stamp {
         return Err(refused(ModelTraceRefusal::LoopZeroDelay {
             entry: lasso.entry,
         }));
+    }
+    let ceiling = timed.max_constant();
+    let looped = &positions[lasso.entry + 1..];
+    let entry_clocks = entry.state.clocks().values();
+    let last_clocks = last.state.clocks().values();
+    for (place, (at_entry, at_end)) in entry_clocks.iter().zip(last_clocks).enumerate() {
+        let reset = looped.iter().any(|position| {
+            position
+                .step
+                .as_ref()
+                .is_some_and(|step| step.resets().iter().any(|(reset, _)| *reset == place))
+        });
+        let closes = if reset {
+            at_entry == at_end
+        } else {
+            at_entry > &ceiling
+        };
+        if !closes {
+            return Err(open());
+        }
     }
     Ok(())
 }
@@ -354,39 +493,26 @@ enum Fairness {
 }
 
 /// FR-232 "Fairness over time": the first constraint of `fairness` the
-/// lasso's loop is unfair under. A weak constraint fails when, from some
+/// lasso's loop is unfair under, read over the replayed behaviour (each step
+/// the recorded successor). A weak constraint fails when, from some
 /// repetition on, it stays enabled at every instant of the loop while the
 /// loop takes none of its steps; a strong one, when it is enabled at some
-/// instant of the loop while the loop takes none of its steps. An `each`
-/// constraint is one per transition identity of its operation.
+/// instant of infinitely many repetitions while the loop takes none of its
+/// steps. An `each` constraint is one per transition identity of its
+/// operation.
 fn unfair(
     timed: &TimedSystem<'_, '_>,
-    payload: &TemporalCounterexample,
+    behaviour: &TimedBehaviour,
     lasso: Lasso,
     fairness: &[FairnessConstraint],
 ) -> Result<Fairness, ReplayRefusal> {
     if fairness.is_empty() {
         return Ok(Fairness::Fair);
     }
-    let Some(initial) = timed.initial().into_iter().nth(payload.initial_state) else {
-        return Err(fault("a-replayed-initial-state"));
-    };
-    let mut behaviour = TimedBehaviour::new(initial);
-    for step in &payload.prefix {
-        let delay = step.delay.clone().unwrap_or_else(zero);
-        if behaviour.advance(timed, &delay, &step.transition).is_err() {
-            return Ok(Fairness::NoValue);
-        }
-    }
     let system = timed.system();
-    let stutter_delay = timed
-        .tick_period()
-        .cloned()
-        .unwrap_or_else(|| Rational::from_integer(Integer::one()));
+    let stutter_delay = stutter_delay(timed);
     let positions = behaviour.positions();
-    // The loop's taken steps and its enabled guarded steps.
     let looped = &positions[lasso.entry.min(positions.len() - 1)..];
-    let taken: Vec<&GuardedStep> = looped.iter().skip(1).filter_map(|p| p.step()).collect();
     for constraint in fairness {
         let operation = constraint.operation();
         let text = system
@@ -415,66 +541,22 @@ fn unfair(
                 step.operation() == text
                     && identity.as_ref().is_none_or(|id| step.transition() == id)
             };
-            if taken.iter().any(|step| constrained(step)) {
-                continue;
-            }
-            let fails = match constraint.kind() {
+            let fair = match constraint.kind() {
                 FairnessKind::Weak => {
-                    match timed.weakly_fair(&behaviour, lasso.entry, &stutter_delay, constrained) {
-                        Ok(fair) => !fair,
-                        Err(_) => return Ok(Fairness::NoValue),
-                    }
+                    timed.weakly_fair(behaviour, lasso.entry, &stutter_delay, constrained)
                 }
                 FairnessKind::Strong => {
-                    match enabled_somewhere(timed, looped, lasso, &stutter_delay, &constrained) {
-                        Some(enabled) => enabled,
-                        None => return Ok(Fairness::NoValue),
-                    }
+                    timed.strongly_fair(behaviour, lasso.entry, &stutter_delay, constrained)
                 }
             };
-            if fails {
-                return Ok(Fairness::Unfair(constraint.clone()));
+            match fair {
+                Ok(true) => {}
+                Ok(false) => return Ok(Fairness::Unfair(constraint.clone())),
+                Err(_) => return Ok(Fairness::NoValue),
             }
         }
     }
     Ok(Fairness::Fair)
-}
-
-/// Whether a step `constrained` accepts is enabled at some instant of the
-/// loop: at a loop position, or during the delay before the next one;
-/// `None` when the subject cannot decide it.
-fn enabled_somewhere(
-    timed: &TimedSystem<'_, '_>,
-    looped: &[qsl_eval::simulation::model::TimedPosition],
-    lasso: Lasso,
-    stutter_delay: &Rational,
-    constrained: &dyn Fn(&GuardedStep) -> bool,
-) -> Option<bool> {
-    let states: &[qsl_eval::simulation::model::TimedPosition] = if lasso.terminal_stutter {
-        looped
-    } else {
-        // The loop's last position is its entry again.
-        &looped[..looped.len().saturating_sub(1)]
-    };
-    for (index, position) in states.iter().enumerate() {
-        let delay = match looped.get(index + 1) {
-            Some(next) if !lasso.terminal_stutter => next.stamp().sub(position.stamp()),
-            _ => stutter_delay.clone(),
-        };
-        for step in timed.guarded_steps(position.state().discrete()).ok()? {
-            if !constrained(&step) {
-                continue;
-            }
-            let intervals = timed.enabled_delays(position.state(), &step).ok()?;
-            if intervals.iter().any(|interval| {
-                let (lower, _) = interval.lower();
-                lower <= &delay
-            }) {
-                return Some(true);
-            }
-        }
-    }
-    Some(false)
 }
 
 /// The timed trace of the replayed positions: a lasso's loop re-enters its
@@ -491,10 +573,7 @@ fn trace_of(
     match payload.lasso {
         None => Ok((TimedTrace::new(stamps(replayed))?, replayed.len())),
         Some(lasso) if lasso.terminal_stutter => {
-            let delay = timed
-                .tick_period()
-                .cloned()
-                .unwrap_or_else(|| Rational::from_integer(Integer::one()));
+            let delay = stutter_delay(timed);
             let last = position_of(replayed.len() - 1);
             Ok((
                 TimedTrace::lasso(stamps(replayed), last, delay)?,
@@ -720,7 +799,6 @@ fn admitted(
 }
 
 fn stopped(exploration: &Limits, states: bool, count: u64) -> ModelTraceSettlement {
-    let widen = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
     ModelTraceSettlement::Stopped {
         reached: if states {
             ReachedLimit {

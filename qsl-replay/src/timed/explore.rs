@@ -146,7 +146,7 @@ impl<K: Ord> Graph<K> {
     }
 }
 
-fn widen(value: usize) -> u64 {
+pub(crate) fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
@@ -171,11 +171,11 @@ fn explore_ticks(
             .map_err(|_| ExploreStop::StateKey)
     };
     let mut graph = Graph::new();
-    let mut queue = vec![start.clone()];
+    let mut stack = vec![start.clone()];
     if let Err(stopped) = graph.node(identity(start)?, limits) {
         return Ok(stopped);
     }
-    while let Some(state) = queue.pop() {
+    while let Some(state) = stack.pop() {
         let (from, _) = match graph.node(identity(&state)?, limits) {
             Ok(found) => found,
             Err(stopped) => return Ok(stopped),
@@ -195,7 +195,7 @@ fn explore_ticks(
                 return Ok(stopped);
             }
             if new {
-                queue.push(next);
+                stack.push(next);
             }
         }
     }

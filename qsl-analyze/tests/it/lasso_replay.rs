@@ -68,7 +68,7 @@ pub(crate) fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) 
 
 pub(crate) fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
     ModelTraceSubject {
-        exploration: qsl_eval::simulation::Limits::default(),
+        timed: None,
         initial: fixture.initial.clone(),
         universes: universe(&fixture.keys),
         expansion: ExpansionLimits {

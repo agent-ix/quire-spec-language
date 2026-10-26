@@ -343,7 +343,7 @@ impl Case {
         let subject = self.subject(selection);
         ProtocolTraceSubject {
             model: ModelTraceSubject {
-                exploration: qsl_eval::simulation::Limits::default(),
+                timed: None,
                 initial: vec![self.documents.initial.clone()],
                 universes: self.documents.universes(),
                 expansion: subject.model.simulation.expansion,

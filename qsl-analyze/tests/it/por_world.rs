@@ -571,7 +571,7 @@ impl Fixture {
                 snapshots: &self.snapshots,
             },
             &ModelTraceSubject {
-                exploration: qsl_eval::simulation::Limits::default(),
+                timed: None,
                 initial: self.initial.clone(),
                 universes: self.universes(),
                 expansion: ExpansionLimits {

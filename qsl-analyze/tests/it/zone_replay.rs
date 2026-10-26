@@ -19,14 +19,16 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
-    CertificateLocus, CertificateRule, ClosedFormAnalysis, CounterexampleKind, DisagreementCause,
-    IncompleteCause, InconclusiveCause, Lasso, ModelCheckLimit, ModelStep, ModelTraceRefusal,
-    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceValue, ProofBasis, ReplayRefusal,
-    ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue,
+    CertificateLocus, CertificateRule, ClosedFormAnalysis, CounterexampleKind, DelayBar,
+    DisagreementCause, IncompleteCause, InconclusiveCause, Lasso, ModelCheckLimit, ModelStep,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceValue, ProofBasis,
+    ReplayRefusal, ResultLabel, SettlementBasis, StrongFairnessHint, TemporalCounterexample,
+    TerminalValue, UnavailabilityCause,
 };
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::{Cancel, Rational, Undefined};
 use quire_semantic_value::catalog::Category;
+use quire_semantic_value::fairness::FairnessKind;
 
 use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_search::{
@@ -42,6 +44,16 @@ fn replay_on(
     derived: bool,
     exploration: &Limits,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    replay_with_hints(world, payload, derived, exploration).map(|(settlement, _)| settlement)
+}
+
+/// [`replay_on`] with the FR-133 hints of a reproduced lasso.
+fn replay_with_hints(
+    world: &World,
+    payload: &TemporalCounterexample,
+    derived: bool,
+    exploration: &Limits,
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -163,7 +175,8 @@ fn a_late_reply_replays_with_its_delays() {
 }
 
 /// FR-237-AC-2: refusals settle no result. The `timeout` delay 5/2 leaves
-/// its guard `x >= 3` false; 7/2 passes `x <= 3`; an altered post-state
+/// its guard `x >= 3` false, named by its clause `Timeout`; 7/2 passes
+/// `x <= 3`, named by the invariant `ServerDeadline`; an altered post-state
 /// digest selects no successor (`stale_dependency`); a lasso whose loop
 /// takes no time, and one whose loop does not return to its entry's clock
 /// values, are refused.
@@ -176,7 +189,10 @@ fn a_counterexample_that_breaks_time_is_refused() {
     early.prefix[1].delay = Some(exact(5, 2));
     let (cause, code) = refusal(replay(&three, &early));
     assert!(
-        matches!(cause, ModelTraceRefusal::NotEnabled { step: 1, .. }),
+        matches!(
+            &cause,
+            ModelTraceRefusal::GuardFails { step: 1, guards, .. } if guards == &["Timeout"]
+        ),
         "{cause:?}"
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
@@ -188,7 +204,7 @@ fn a_counterexample_that_breaks_time_is_refused() {
         ModelTraceRefusal::DelayNotAdmissible {
             step: Some(1),
             delay: exact(7, 2),
-            bar: "time-invariant",
+            bar: DelayBar::TimeInvariant("ServerDeadline".to_owned()),
         }
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
@@ -675,6 +691,10 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         |_| Err(fault()),
     );
     assert_eq!(record.label, ResultLabel::Unsupported);
+    assert_eq!(
+        record.value,
+        TerminalValue::Unsupported(UnavailabilityCause::PunctualInterval { span })
+    );
     assert_eq!(record.value.category(), Category::Unsupported);
 
     let tight = ZoneCheckLimits {
@@ -739,18 +759,19 @@ fn an_undefined_timed_evaluation_settles_refuted() {
     );
 }
 
-/// Part of FR-235-AC-5 (TC-710): an `Undecided(InsufficientData)` outcome,
-/// a window read short of data, settles `inconclusive`,
-/// `InsufficientData`, never `proved`. Not covered: an authored aggregate
-/// atom, which no TT-2 clause has yet.
-#[trace("TC-710")]
+/// Part of FR-235-AC-1 (TC-690): an `Undecided(InsufficientData)` outcome,
+/// a window read short of data, settles `inconclusive`, never `proved`,
+/// under FR-127's `UndecidedSuccessor` until the spec names a cause (spec
+/// gap STD-493). Not covered: an authored aggregate atom, which no TT-2
+/// clause has yet.
+#[trace("TC-690")]
 #[test]
 fn a_window_short_of_data_settles_inconclusive() {
     let outcome = short_of_data_claim(&retried_at("rational(5, 2) ms"));
     let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
     assert_eq!(
         record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::InsufficientData)
+        TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor)
     );
 }
 
@@ -770,4 +791,431 @@ fn a_bounded_window_counterexample_replays_over_its_timed_trace() {
         let settlement = replay(&world, &counterexample).expect("replays");
         assert!(reproduced(&settlement), "{settlement:?}");
     }
+}
+
+/// A model over `operations` whose one clause is `eventually
+/// holds(c.retried)` under infinite-trace, with the fairness set
+/// `fairness` and the constraints `model`.
+fn retrying(clocks: &[&str], operations: &[(&str, &[&str])], model: &str, fairness: &str) -> World {
+    world(
+        &document(clocks, operations),
+        INFINITE,
+        &format!(
+            "{DENSE}{model}\
+             temporal Retries using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ {fairness} eventually holds(c.retried) }}\n"
+        ),
+    )
+}
+
+/// `retry`, guarded by `x >= 5 ms`, sets `retried`; nothing else happens,
+/// so the initial state at `x = 0` is quiescent and `retry` opens only
+/// after a delay of 5.
+fn late_retry(fairness: &str) -> World {
+    retrying(
+        &["x"],
+        &[("retry", &["retried"])],
+        "pre Retry using v on M::Call::retry { not self.retried and self.x >= 5 ms }\n\
+         post Retried using v on M::Call::retry { self.retried }\n",
+        fairness,
+    )
+}
+
+/// The idle-tail counterexample at `world`'s initial state.
+fn idle_tail(world: &World) -> TemporalCounterexample {
+    payload(
+        world,
+        Vec::new(),
+        CounterexampleKind::Formula,
+        Some(Lasso {
+            entry: 0,
+            terminal_stutter: true,
+        }),
+    )
+}
+
+/// SR-1634001 FND-001 and FND-010: on the idle tail at `x = 0`, `retry`
+/// (`x >= 5 ms`) opens at delay 5 and stays enabled, never taken. With no
+/// fairness the counterexample to `eventually holds(c.retried)` reproduces
+/// with the strong hint for `retry` at loop position 0; under `fair weak
+/// retry` and under `fair strong retry` alike it is an unfair lasso, the
+/// strong case read over the whole tail, not its first stutter window.
+#[trace("TC-692")]
+#[test]
+fn strong_fairness_reads_the_whole_idle_tail() {
+    let free = late_retry("");
+    let (settlement, hints) =
+        replay_with_hints(&free, &idle_tail(&free), false, &Limits::default()).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
+    let [hint] = hints.as_slice() else {
+        panic!("one hint: {hints:?}");
+    };
+    assert_eq!(hint.suggested.kind(), FairnessKind::Strong);
+    assert_eq!(hint.suggested.operation().name(), "retry");
+    assert_eq!(hint.first_enabled_position, 0);
+    for fairness in ["fair weak M::Call::retry;", "fair strong M::Call::retry;"] {
+        let world = late_retry(fairness);
+        let result = replay(&world, &idle_tail(&world));
+        assert!(
+            matches!(result, Err(ReplayRefusal::UnfairLasso { .. })),
+            "{fairness}: {result:?}"
+        );
+    }
+}
+
+/// SR-1634001 FND-002: `go` posts `phase = 1` or `phase = 2`, two
+/// successors under one transition identity, and `retry` is enabled at
+/// phase 2 alone. Under `fair weak retry` the idle tail after the phase-1
+/// successor reproduces, and the one after the phase-2 successor, whose
+/// `retry` stays enabled and untaken, is an unfair lasso: fairness is read
+/// on the recorded successor, not the first one with the identity.
+#[trace("TC-692")]
+#[test]
+fn fairness_is_judged_on_the_recorded_successor() {
+    let world = retrying(
+        &["x"],
+        &[("go", &["phase"]), ("retry", &["retried"])],
+        "pre Go using v on M::Call::go { self.phase = 0 }\n\
+         post Gone using v on M::Call::go { self.phase = 1 or self.phase = 2 }\n\
+         pre Retry using v on M::Call::retry { self.phase = 2 and not self.retried }\n\
+         post Retried using v on M::Call::retry { self.retried }\n",
+        "fair weak M::Call::retry;",
+    );
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let start = timed.initial().remove(0);
+    let successors: Vec<_> = timed
+        .steps(&start)
+        .expect("decided")
+        .into_iter()
+        .filter(|(step, _)| step.operation().contains("Call/go\""))
+        .collect();
+    assert_eq!(successors.len(), 2, "two successors of `go`");
+    let mut outcomes = Vec::new();
+    for (step, next) in &successors {
+        let retries = timed
+            .guarded_steps(next.discrete())
+            .expect("decided")
+            .iter()
+            .any(|guarded| guarded.operation().contains("Call/retry\""));
+        let counterexample = payload(
+            &world,
+            vec![ModelStep {
+                transition: step.transition().clone(),
+                post_state: timed.state_digest(next).expect("a digest"),
+                delay: Some(whole(0)),
+            }],
+            CounterexampleKind::Formula,
+            Some(Lasso {
+                entry: 1,
+                terminal_stutter: true,
+            }),
+        );
+        outcomes.push((retries, replay(&world, &counterexample)));
+    }
+    for (retries, result) in outcomes {
+        if retries {
+            assert!(
+                matches!(result, Err(ReplayRefusal::UnfairLasso { .. })),
+                "{result:?}"
+            );
+        } else {
+            assert!(
+                matches!(&result, Ok(settlement) if reproduced(settlement)),
+                "{result:?}"
+            );
+        }
+    }
+}
+
+/// SR-1634002 FND-001: fairness over a loop of steps. `ping` (`x >= 1 ms`)
+/// resets `x`, and `retry` is guarded by `x >= 1 ms` too, so on the loop
+/// of `ping` after 1 it is enabled at the one instant before each `ping`.
+/// Under `fair weak retry` it is not enabled throughout, so the lasso is
+/// fair and reproduces; under `fair strong retry` it is enabled infinitely
+/// often and never taken, an unfair lasso.
+#[trace("TC-692")]
+#[test]
+fn a_timed_loop_is_weakly_fair_and_strongly_unfair() {
+    let looping = |fairness: &str| {
+        retrying(
+            &["x"],
+            &[("ping", &["x"]), ("retry", &["retried"])],
+            "pre Ping using v on M::Call::ping { self.x >= 1 ms }\n\
+             post Pinged using v on M::Call::ping { self.x = 0 ms }\n\
+             pre Retry using v on M::Call::retry { not self.retried and self.x >= 1 ms }\n\
+             post Retried using v on M::Call::retry { self.retried }\n",
+            fairness,
+        )
+    };
+    let lasso = |world: &World| {
+        payload(
+            world,
+            walk(world, &[("ping", whole(1))]),
+            CounterexampleKind::Formula,
+            Some(Lasso {
+                entry: 0,
+                terminal_stutter: false,
+            }),
+        )
+    };
+    let weak = looping("fair weak M::Call::retry;");
+    let settlement = replay(&weak, &lasso(&weak)).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
+    let strong = looping("fair strong M::Call::retry;");
+    let result = replay(&strong, &lasso(&strong));
+    assert!(
+        matches!(result, Err(ReplayRefusal::UnfairLasso { .. })),
+        "{result:?}"
+    );
+}
+
+/// SR-1634001 FND-003 (FR-236 "Timed lasso"): `ping` (`x >= 1 ms`) resets
+/// `x` and never `y`, which no constraint reads, so the model's largest
+/// constant is 1. The loop of one `ping` after 1 entered at `y = 2` closes:
+/// `x` returns to 0 and `y` runs free above 1. Entered at `y = 1` it does
+/// not, since `y` is not above the constant there.
+#[trace("TC-692")]
+#[test]
+fn a_loop_closes_with_a_free_running_clock() {
+    let world = retrying(
+        &["x", "y"],
+        &[("ping", &["x"])],
+        "pre Ping using v on M::Call::ping { self.x >= 1 ms }\n\
+         post Pinged using v on M::Call::ping { self.x = 0 ms }\n",
+        "",
+    );
+    let lasso = |pings: usize, entry: usize| {
+        payload(
+            &world,
+            walk(&world, &vec![("ping", whole(1)); pings]),
+            CounterexampleKind::Formula,
+            Some(Lasso {
+                entry,
+                terminal_stutter: false,
+            }),
+        )
+    };
+    let settlement = replay(&world, &lasso(3, 2)).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
+    let (cause, _) = refusal(replay(&world, &lasso(2, 1)));
+    assert_eq!(cause, ModelTraceRefusal::LoopOpen { entry: 1, steps: 2 });
+}
+
+/// SR-1634001 FND-009 and SR-1634002 FND-005: a `final_delay` on a formula
+/// counterexample, and a lasso on a time-lock, are refused, as are a
+/// missing step delay and a time-lock with no `final_delay`; `go` after
+/// delay 2 into `Lock`'s B breaks its time invariant `Locked` (`x <= 1`).
+#[trace("TC-692")]
+#[test]
+fn malformed_timed_counterexamples_are_refused() {
+    let three = rpc(3);
+    let counterexample = violated(claim(&three, ZoneCheckLimits::default(), &Cancel::new()));
+    let stray = TemporalCounterexample {
+        final_delay: Some(whole(1)),
+        ..counterexample.clone()
+    };
+    let (cause, code) = refusal(replay(&three, &stray));
+    assert_eq!(cause, ModelTraceRefusal::StrayFinalDelay);
+    assert_eq!(code, Code::InvalidRuntimeInput);
+    let mut undelayed = counterexample;
+    undelayed.prefix[0].delay = None;
+    let (cause, _) = refusal(replay(&three, &undelayed));
+    assert_eq!(cause, ModelTraceRefusal::MissingDelay { step: Some(0) });
+
+    let locked = strict("> 3");
+    let looped = TemporalCounterexample {
+        lasso: Some(Lasso {
+            entry: 1,
+            terminal_stutter: true,
+        }),
+        ..time_lock(&locked)
+    };
+    let (cause, _) = refusal(replay_on(&locked, &looped, true, &Limits::default()));
+    assert_eq!(cause, ModelTraceRefusal::TimeLockLasso);
+    let undelayed = TemporalCounterexample {
+        final_delay: None,
+        ..time_lock(&locked)
+    };
+    let (cause, _) = refusal(replay_on(&locked, &undelayed, true, &Limits::default()));
+    assert_eq!(cause, ModelTraceRefusal::MissingDelay { step: None });
+
+    // `go` after 2 records the state it reaches, which `Locked` forbids.
+    let world = lock();
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let delayed = timed
+        .delay(&timed.initial().remove(0), &whole(2))
+        .expect("decided")
+        .expect("A admits the delay");
+    let go = timed
+        .guarded_steps(delayed.discrete())
+        .expect("decided")
+        .into_iter()
+        .find(|step| step.operation().contains("Call/go\""))
+        .expect("`go` is enabled");
+    let reached = TimedState::new(go.post().clone(), go.reset(delayed.clocks()));
+    let late = payload(
+        &world,
+        vec![ModelStep {
+            transition: go.transition().clone(),
+            post_state: timed.state_digest(&reached).expect("a digest"),
+            delay: Some(whole(2)),
+        }],
+        CounterexampleKind::Formula,
+        None,
+    );
+    let (cause, _) = refusal(replay(&world, &late));
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::TargetInvariant {
+            step: 0,
+            invariant: "Locked".to_owned(),
+        }
+    );
+}
+
+/// SR-1634002 FND-002: under a tick source of period 5 ms, `go` moves
+/// phase 0 to 1 and `tick` is always enabled. `go` after delay 0 violates
+/// `always holds(c.phase = 0)` and reproduces, since its endpoint ticks
+/// forever; after delay 1 it is refused, a tick source admitting no
+/// positive delay.
+#[trace("TC-692")]
+#[test]
+fn a_tick_source_replays_by_its_ticks() {
+    let world = world(
+        &document(&[], &[("go", &["phase"]), ("tick", &[])]),
+        INFINITE,
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         time M tick M::Call::tick period 5 ms unit ms;\n\
+         pre Go using v on M::Call::go { self.phase = 0 }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(c.phase = 0) }\n",
+    );
+    let at = |delay: Rational| {
+        let mut counterexample = payload(
+            &world,
+            walk(&world, &[("go", whole(0))]),
+            CounterexampleKind::Formula,
+            None,
+        );
+        counterexample.prefix[0].delay = Some(delay);
+        counterexample
+    };
+    let settlement = replay(&world, &at(whole(0))).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
+    let (cause, _) = refusal(replay(&world, &at(whole(1))));
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::DelayNotAdmissible {
+            step: Some(0),
+            delay: whole(1),
+            bar: DelayBar::TickSource,
+        }
+    );
+}
+
+/// SR-1634002 FND-003 (FR-235-AC-1's remaining rows): `Undecided(
+/// LassoNotConcretized)` settles `inconclusive`, `unsettled`; a violation
+/// whose replay a limit stops settles V-7, FR-360 `failed`, execution
+/// `resource-incomplete`, basis `unavailable`; a reproduced `Deadlock`
+/// counterexample settles `refuted`, `decisive-counterexample`; and a
+/// deadlock found only after a delay settles as `LassoNotConcretized`
+/// (spec gap STD-493).
+#[trace("TC-690", "FR-235-AC-1")]
+#[test]
+fn the_remaining_timed_rows_settle_as_stated() {
+    for cause in [
+        qsl_analyze::zone_check::ZoneUndecided::LassoNotConcretized,
+        qsl_analyze::zone_check::ZoneUndecided::DeadlockAfterDelay,
+    ] {
+        let outcome: Outcome = ZoneCheckOutcome::Undecided {
+            cause,
+            stats: ZoneStats::default(),
+        };
+        let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::LassoNotConcretized)
+        );
+        assert_eq!(
+            (record.label, record.basis, record.value.category()),
+            (
+                ResultLabel::Inconclusive,
+                SettlementBasis::Unsettled,
+                Category::Inconclusive
+            )
+        );
+    }
+
+    let three = rpc(3);
+    let refuted = claim(&three, ZoneCheckLimits::default(), &Cancel::new());
+    let reached = qsl_replay::ReachedLimit {
+        limit: ModelCheckLimit::MaxStates,
+        value: 1,
+    };
+    let record = settle(
+        &refuted,
+        ZoneCertificateCheck::Accepted,
+        Ok(ModelTraceSettlement::Stopped {
+            reached,
+            count: Some(1),
+        }),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 1,
+        })
+    );
+    assert_eq!(
+        (
+            record.label,
+            record.execution,
+            record.basis,
+            record.value.category()
+        ),
+        (
+            ResultLabel::Failed,
+            qsl_replay::Execution::ResourceIncomplete,
+            SettlementBasis::Unavailable,
+            Category::Incomplete
+        )
+    );
+
+    let ZoneCheckOutcome::Violated {
+        counterexample,
+        stats,
+    } = &refuted
+    else {
+        panic!("a violation");
+    };
+    let deadlock: Outcome = ZoneCheckOutcome::Violated {
+        counterexample: Box::new(TemporalCounterexample {
+            kind: CounterexampleKind::Deadlock,
+            over_binding: None,
+            ..counterexample.as_ref().clone()
+        }),
+        stats: *stats,
+    };
+    let record = settle(
+        &deadlock,
+        ZoneCertificateCheck::Accepted,
+        Ok(ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: None,
+        }),
+    );
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(
+        (record.label, record.basis, record.value.category()),
+        (
+            ResultLabel::Refuted,
+            SettlementBasis::DecisiveCounterexample,
+            Category::Violation
+        )
+    );
 }

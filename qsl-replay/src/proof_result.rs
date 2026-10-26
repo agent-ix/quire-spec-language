@@ -666,13 +666,6 @@ pub enum InconclusiveCause {
     /// FR-235 (ADR-026 CT-2): EN-6 found a violating symbolic lasso, but no
     /// concrete timed lasso through it was found.
     LassoNotConcretized,
-    /// EN-6 found a quiescent state whose valuations deadlock only after a
-    /// delay, which no counterexample position names (spec gap STD-493).
-    DeadlockAfterDelay,
-    /// EN-6 found no violation, but an admitted behaviour read a window
-    /// aggregate short of data, which the evaluator reports
-    /// `InsufficientData` (ADR-024 WA-4), so nothing is proved.
-    InsufficientData,
     /// AMC-rtb's high-mode criterion failed; the test is sufficient and
     /// not necessary, so it decides nothing (ADR-026 RT-6).
     SufficientTestFailed,
@@ -836,8 +829,6 @@ impl InconclusiveCause {
             Self::SufficientTestFailed => "sufficient-test-failed",
             Self::NoAdmittedBehaviour => "no-admitted-behaviour",
             Self::LassoNotConcretized => "lasso-not-concretized",
-            Self::DeadlockAfterDelay => "deadlock-after-delay",
-            Self::InsufficientData => "insufficient-data",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
@@ -863,8 +854,6 @@ impl InconclusiveCause {
             | Self::SufficientTestFailed
             | Self::NoAdmittedBehaviour
             | Self::LassoNotConcretized
-            | Self::DeadlockAfterDelay
-            | Self::InsufficientData
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }

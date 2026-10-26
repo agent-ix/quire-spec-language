@@ -217,7 +217,7 @@ impl Unit {
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
-                    exploration: qsl_eval::simulation::Limits::default(),
+                    timed: None,
                     initial: vec![self.documents.initial.clone()],
                     universes: self.documents.universes(),
                     expansion: subject.model.simulation.expansion,

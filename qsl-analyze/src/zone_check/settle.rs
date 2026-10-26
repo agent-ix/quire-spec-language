@@ -143,7 +143,10 @@ impl ZoneCheckRecord {
 /// - V-1: `Holds` whose certificate `check` accepts is
 ///   `Proved{ZoneCertified, Certified}`, `closed-scope`;
 /// - V-6: a rejected certificate is `Inconclusive(CertificateRejected)`;
-///   `Undecided` is `Inconclusive` with its cause; a replay that settles
+///   `Undecided` is `Inconclusive` with the cause FR-127 or FR-235 names
+///   (a deadlock only after a delay as `LassoNotConcretized`, a window
+///   short of data as `UndecidedSuccessor`, both spec gap STD-493); a
+///   replay that settles
 ///   `inconclusive` is `ReplayParity`, and one that refuses is
 ///   `ReplayRefused` (a fault is `Failed`);
 /// - V-4: `Violated` whose replay reproduces is `Refuted`,
@@ -191,12 +194,18 @@ pub fn settle_zone_check<S>(
             ZoneCertificateCheck::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
         },
         ZoneCheckOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
+            // FR-127's V-6 rows, which FR-235 extends.
             ZoneUndecided::NoInitialState => InconclusiveCause::NoInitialState,
             ZoneUndecided::UndecidedSuccessor(_) => InconclusiveCause::UndecidedSuccessor,
+            // FR-235's V-6 rows.
             ZoneUndecided::NoAdmittedBehaviour => InconclusiveCause::NoAdmittedBehaviour,
             ZoneUndecided::LassoNotConcretized => InconclusiveCause::LassoNotConcretized,
-            ZoneUndecided::DeadlockAfterDelay => InconclusiveCause::DeadlockAfterDelay,
-            ZoneUndecided::InsufficientData(_) => InconclusiveCause::InsufficientData,
+            // Spec gap STD-493: a violation found with no counterexample
+            // form, as FR-241's lasso that does not concretise.
+            ZoneUndecided::DeadlockAfterDelay => InconclusiveCause::LassoNotConcretized,
+            // Spec gap STD-493: a reading with no value (ADR-024 WA-4), as
+            // FR-127's undecided successor reading.
+            ZoneUndecided::InsufficientData(_) => InconclusiveCause::UndecidedSuccessor,
         }),
         ZoneCheckOutcome::Stopped { cause, .. } => match cause {
             ZoneStop::LimitReached(limit) => {

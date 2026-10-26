@@ -203,10 +203,13 @@ pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTrac
 pub use model_check::refinement_settle::{
     settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
 };
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use model_check::replay::replay_timed_counterexample;
 pub use model_check::replay::{
-    replay_model_trace, replay_protocol_trace, replay_timed_counterexample, ModelTraceRefusal,
-    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
-    ProtocolTraceSubject, StrongFairnessHint,
+    replay_model_trace, replay_protocol_trace, DelayBar, ModelTraceRefusal, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
+    StrongFairnessHint, TimedReplay,
 };
 pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,

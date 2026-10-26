@@ -134,6 +134,25 @@ impl Dbm {
         (0..self.size).any(|i| self.get(i, i).below_zero())
     }
 
+    /// Whether every valuation of `other` is one of `self`'s: cell-wise
+    /// `<=` on canonical forms, an empty `other` included in every DBM.
+    #[allow(
+        dead_code,
+        reason = "FR-245's certificate checker (QSL-582) is its caller"
+    )]
+    pub(crate) fn includes(&self, other: &Self) -> bool {
+        if other.is_empty() {
+            return true;
+        }
+        self.size == other.size
+            && !self.is_empty()
+            && self
+                .cells
+                .iter()
+                .zip(&other.cells)
+                .all(|(mine, theirs)| theirs <= mine)
+    }
+
     /// Intersect with `x_i - x_j` bounded by `bound`, keeping the DBM
     /// canonical. An empty result keeps a negative diagonal.
     pub(crate) fn constrain(&mut self, i: usize, j: usize, bound: Bound) {
@@ -268,6 +287,72 @@ mod tests {
         empty.constrain(0, 2, Bound::lt(n(-3)));
         assert!(empty.is_empty());
         assert!(!zone.is_empty());
+    }
+
+    /// A strict bound meeting its non-strict complement empties the zone:
+    /// `x >= 3` and `x < 3` leave nothing, `x >= 3` and `x <= 3` the point.
+    #[test]
+    fn a_strict_bound_against_its_complement_is_empty() {
+        let mut zone = Dbm::point(&[n(0)]);
+        zone.up();
+        zone.constrain(0, 1, Bound::le(n(-3)));
+        let mut closed = zone.clone();
+        closed.constrain(1, 0, Bound::le(n(3)));
+        assert!(!closed.is_empty());
+        assert_eq!(closed, Dbm::point(&[n(3)]));
+        zone.constrain(1, 0, Bound::lt(n(3)));
+        assert!(zone.is_empty());
+    }
+
+    /// A reset to a non-zero value fixes the clock there and keeps its
+    /// difference to the others: after `up`, `x := 2` gives `x = 2` and
+    /// `x - y <= 2`, `y` unbounded.
+    #[test]
+    fn a_reset_to_a_constant_keeps_the_differences() {
+        let mut zone = Dbm::point(&[n(0), n(0)]);
+        zone.up();
+        zone.reset(1, &n(2));
+        assert_eq!(zone.get(1, 0), &Bound::le(n(2)));
+        assert_eq!(zone.get(0, 1), &Bound::le(n(-2)));
+        assert_eq!(zone.get(1, 2), &Bound::le(n(2)));
+        assert_eq!(zone.get(2, 1), &Bound::Infinite);
+        assert_eq!(zone.get(2, 0), &Bound::Infinite);
+    }
+
+    /// `Extra_M`'s lower-bound branch on two clocks: at `x = 5, y = 1` with
+    /// both constants 2, `y - x` becomes `< -2` and `x`'s upper bound and
+    /// `x - y` are dropped; `y` keeps its value, so the closure tightens
+    /// `x`'s lower bound, weakened to `x > 2`, back through `y` to `x > 3`.
+    #[test]
+    fn extrapolation_weakens_lower_bounds_past_the_constant() {
+        let mut zone = Dbm::point(&[n(5), n(1)]);
+        zone.extrapolate(&[Some(n(2)), Some(n(2))]);
+        assert_eq!(zone.get(0, 1), &Bound::lt(n(-3)));
+        assert_eq!(zone.get(2, 1), &Bound::lt(n(-2)));
+        assert_eq!(zone.get(1, 0), &Bound::Infinite);
+        assert_eq!(zone.get(1, 2), &Bound::Infinite);
+        assert_eq!(zone.get(2, 0), &Bound::le(n(1)));
+        assert_eq!(zone.get(0, 2), &Bound::le(n(-1)));
+    }
+
+    /// Inclusion is cell-wise on canonical forms: `x` in `[0, 3]` holds the
+    /// point 1 and its own strict part, not the point 4; an empty zone is in
+    /// every zone and holds only empty ones.
+    #[test]
+    fn inclusion_compares_canonical_cells() {
+        let mut zone = Dbm::point(&[n(0)]);
+        zone.up();
+        zone.constrain(1, 0, Bound::le(n(3)));
+        assert!(zone.includes(&Dbm::point(&[n(1)])));
+        assert!(!zone.includes(&Dbm::point(&[n(4)])));
+        let mut strict = zone.clone();
+        strict.constrain(1, 0, Bound::lt(n(3)));
+        assert!(zone.includes(&strict));
+        assert!(!strict.includes(&zone));
+        let mut empty = zone.clone();
+        empty.constrain(0, 1, Bound::lt(n(-3)));
+        assert!(zone.includes(&empty));
+        assert!(!empty.includes(&zone));
     }
 
     /// `Extra_M` drops what only separates values above a clock's constant,
