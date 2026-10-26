@@ -256,6 +256,11 @@ pub enum ClosureRefusal {
     /// (`unsupported_construct/not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: a refinement over an abstract protocol subject is not decided yet")]
     ProtocolAbstractSide,
+    /// The race-freedom item over a `tso` `parallel`, whose race summary is
+    /// not built yet, so no step carries a race
+    /// (`unsupported_construct/not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: the race-freedom item over a `tso` `parallel` is not checked yet")]
+    TsoRace,
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -480,6 +485,9 @@ fn check_protocol(
             )
         }
         SubjectMemory::Tso(tso) => {
+            if matches!(item, ModelCheckItem::RaceFreedom) {
+                return Err(ClosureRefusal::TsoRace);
+            }
             let bound = MemoryBound {
                 member: MemoryBoundMember::MaxStoreBuffer,
                 value: tso.max_store_buffer(),

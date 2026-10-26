@@ -29,7 +29,8 @@ that it maps to violation with cause `UndefinedEvaluation`; that a bounded
 undefined value at its position.
 
 Scope: FR-327-AC-5, FR-327-AC-7, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5,
-FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-7, FR-331-AC-8, FR-071-AC-8,
+FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-7, FR-331-AC-8,
+FR-331-AC-9, FR-071-AC-8,
 FR-072-AC-6, FR-098-AC-28.
 
 A window aggregate short of data is the separate `InsufficientData`
@@ -66,6 +67,10 @@ refusal.
 6. Evaluate each clause of FR-327-AC-7, in its order, over the closed trace, and the two
    clauses over the one-position trace with `c.value` 2.
 7. Run FR-330-AC-8's request from source.
+8. Compile FR-125-AC-18's guarded Counter clause whose `when` expression is
+   `6 mod (2 - c.value) = 0`, evaluate it over the prefix 0, 1, 2, and replay
+   an observed temporal `UndefinedEvaluation` packet at position 2 whose locus
+   names that clause's `holds(true)` atom.
 
 Tag the tests `#[trace("TC-847", "<AC id>")]`.
 
@@ -119,3 +124,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   the one-position trace, `UndefinedEvaluation` at 0 for both orders.
 - Step 7: stage `evaluate`, `undefined`, exit 10, position 2, `count` 0,
   `min_count` 1, no `truth`, no counterexample.
+- Step 8: replay retains `Undefined` at position 2 with cause
+  `division-by-zero` and settles `inconclusive`, `ReplayParity`, because the
+  undefined expression is the activation guard and the packet's locus names a
+  `holds` atom. Tag the test `#[trace("TC-847", "FR-331-AC-9")]`.

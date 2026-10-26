@@ -149,10 +149,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         })?)
                     }
                     ControlStep::Repeat => {
-                        if self.program.repeat(node)?.max.is_some() {
-                            instance.counters.insert((node, path.clone()), 0);
+                        let repeat = self.program.repeat(node)?;
+                        if repeat.max.is_some() {
+                            instance
+                                .counters
+                                .insert((node, path.clone()), u64::from(repeat.post_test));
                         }
-                        Cursor::Guard(node)
+                        if repeat.post_test {
+                            Cursor::Enter(repeat.body)
+                        } else {
+                            Cursor::Guard(node)
+                        }
                     }
                     ControlStep::Unstepped(_) => {
                         return Err(ProtocolRefusal::fault("a-stepped-construct-is-admitted").into())

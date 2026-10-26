@@ -60,7 +60,14 @@ fn protocol(name: &str, members: &str) -> String {
 }
 
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
-    let text = format!("{HEADER}{declarations}");
+    // A leading `profile` line is a header selection, written before the
+    // model.
+    let (profile, declarations) = match declarations.split_once('\n') {
+        Some((first, rest)) if first.starts_with("profile ") => (format!("{first}\n"), rest),
+        _ => (String::new(), declarations),
+    };
+    let header = HEADER.replacen("model M", &format!("{profile}model M"), 1);
+    let text = format!("{header}{declarations}");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -285,4 +292,38 @@ fn a_requirement_whose_clause_reaches_its_protocol_is_a_cycle() {
     );
     let (_, found) = protocol_refusals(&drain);
     assert!(found.is_empty(), "{found:?}");
+}
+
+/// FR-092-AC-18, FR-383: a protocol that requires a temporal clause is never
+/// checked to a package without its `requirements` set: with a protocol
+/// profile selected it refuses `NotEmitted`, naming the requirement and
+/// QSL-1127.
+#[trace("FR-092-AC-18", "FR-383-AC-1")]
+#[test]
+fn a_requirement_refuses_the_protocol_naming_its_ticket() {
+    use crate::check::refusal::{ProtocolConstruct, ProtocolReferenceCause};
+    let unit = format!(
+        "profile pp = \"quire.protocol.finite-global/v1\";\n{}{}",
+        temporal("Due", "true"),
+        protocol("Fill", "requires temporal Due;")
+    );
+    let (_, assembled) = assemble(&unit);
+    let causes: Vec<_> = assembled
+        .check(CheckingLimits::default())
+        .map(|_| ())
+        .expect_err("the protocol refuses")
+        .into_iter()
+        .map(|refusal| refusal.cause)
+        .collect();
+    let not_emitted = |construct| {
+        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
+    };
+    assert_eq!(
+        causes,
+        [
+            not_emitted(ProtocolConstruct::Requirements),
+            not_emitted(ProtocolConstruct::Control("attempt"))
+        ]
+    );
+    assert_eq!(ProtocolConstruct::Requirements.tracking(), "QSL-1127");
 }

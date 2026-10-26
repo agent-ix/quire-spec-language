@@ -55,6 +55,13 @@ pub struct GraphReplayResult {
     pub settlement: GraphReplaySettlement,
     /// The recompiled `package_id`.
     pub package_id: PackageId,
+    /// Each claim predicate replay evaluated and its Boolean value, in
+    /// evidence evaluation order.
+    pub evaluated_predicates: Vec<(qsl_semantics::check::PredicateRole, bool)>,
+    /// The number of states in a replayed trap closure.
+    pub closure_nodes: Option<u64>,
+    /// The first target state's key in a replayed trap closure.
+    pub first_target: Option<DigestRecord>,
 }
 
 /// The method parameters of the run that decided the outcome: what every

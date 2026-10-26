@@ -956,6 +956,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: replicated role `{role}` allows at most {actual} live instances; \
                      at least 1 is required"
                 ),
+                ProtocolAnchorCause::RepeatMaxConflict { repeat, .. } => format!(
+                    "{message}: post-test repeat `{repeat}` must allow its unconditional first iteration"
+                ),
                 ProtocolAnchorCause::MissingRolePopulation {
                     role, population, ..
                 } => format!(

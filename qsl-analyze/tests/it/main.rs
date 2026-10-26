@@ -64,6 +64,7 @@ mod refinement_reads;
 mod refinement_replay;
 mod refinement_safety;
 mod release_acquire;
+mod repeat_guard;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;

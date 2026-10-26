@@ -137,7 +137,8 @@ impl<'g> Reader<'g> {
                 Some((
                     node,
                     GraphUndefined {
-                        predicate: label.role,
+                        predicate: Some(label.role),
+                        transition: None,
                         state_key: self.graph.nodes[node].key,
                         locus: location.clone(),
                         cause: cause.clone(),

@@ -629,6 +629,9 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::WrongReplayTarget { .. }
             | ReplayRefusal::WrongObservedTemporalTarget { .. }
             | ReplayRefusal::WrongObservedTemporalSource
+            | ReplayRefusal::WrongModelGraphEntry
+            | ReplayRefusal::ModelGraphMismatch { .. }
+            | ReplayRefusal::WrongModelGraphSource
             | ReplayRefusal::TargetMismatch { .. }
             | ReplayRefusal::MalformedOperationTarget { .. }
             | ReplayRefusal::AmbiguousOperation { .. }

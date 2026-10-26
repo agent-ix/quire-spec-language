@@ -24,6 +24,7 @@ use crate::identity::{
     DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
     TracePosition,
 };
+use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
 use qsl_foundation::digest::{
@@ -414,6 +415,9 @@ pub enum ReplaySource {
     /// An observed temporal counterexample, whose envelope carries its
     /// counterexample payload and checked-item identity (FR-331).
     ObservedTemporal(Box<ObservedTemporalEnvelope>),
+    /// State-graph evidence replayed by FR-170. Its claim identity is carried
+    /// by the graph envelope, so it has no generic replay target.
+    ModelGraph(Box<GraphEvidenceEnvelope>),
 }
 
 impl ReplaySource {
@@ -426,6 +430,7 @@ impl ReplaySource {
             Self::Witness(witness) => witness.transcript().len(),
             Self::Input(assignments) => measured_assignments(assignments),
             Self::ObservedTemporal(envelope) => envelope.measured_bytes(),
+            Self::ModelGraph(envelope) => envelope.measured_bytes(),
         }
     }
 }
@@ -525,6 +530,10 @@ impl fmt::Debug for ReplaySource {
             Self::Input(assignments) => fmt_input_source(assignments, f),
             Self::ObservedTemporal(envelope) => f
                 .debug_struct("ObservedTemporal")
+                .field("envelope", envelope)
+                .finish(),
+            Self::ModelGraph(envelope) => f
+                .debug_struct("ModelGraph")
                 .field("envelope", envelope)
                 .finish(),
         }
