@@ -408,22 +408,36 @@ fn each_temporal_clause_refusal_has_its_class() {
 #[trace("TC-861", "FR-341-AC-6")]
 #[test]
 fn a_prohibited_form_is_prohibited() {
-    let refusal = check(vec![
-        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::UnsupportedRoot {
-            root: "attempt",
-        })),
-        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::Repeated {
-            first: location(),
-        })),
-    ]);
+    let refusal = check(vec![CheckCause::ProtocolReference(Box::new(
+        ProtocolReferenceCause::Repeated { first: location() },
+    ))]);
     let classified = classify_refusal(&refusal);
     assert_eq!(classified.class, RefinementClass::Prohibited);
     assert_eq!(
         classified.causes,
-        [
-            cause(Code::UnsupportedConstruct, Some("declaration-form")),
-            cause(Code::UnsupportedConstruct, Some("expression-form")),
-        ]
+        [cause(Code::UnsupportedConstruct, Some("expression-form"))]
+    );
+}
+
+/// FR-341-AC-6: a protocol that names a construct whose node is not written
+/// yet is `unsupported`, not `prohibited`: the form is admitted, the node is
+/// pending.
+#[trace("TC-861", "FR-341-AC-6")]
+#[test]
+fn a_construct_without_a_node_yet_is_unsupported() {
+    let refusal = check(vec![CheckCause::ProtocolReference(Box::new(
+        ProtocolReferenceCause::NotEmitted {
+            construct: qsl_semantics::check::ProtocolConstruct::ReplicatedRoles,
+        },
+    ))]);
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Unsupported);
+    assert_eq!(
+        classified.causes,
+        [cause(
+            Code::UnsupportedConstruct,
+            Some("not-yet-implemented")
+        )]
     );
 }
 
