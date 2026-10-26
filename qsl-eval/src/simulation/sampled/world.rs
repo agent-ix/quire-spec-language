@@ -263,7 +263,6 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"));
 

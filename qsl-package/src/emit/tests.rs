@@ -53,6 +53,7 @@ mod reachability;
 mod receiver_frames;
 mod state_graph_claim;
 mod temporal_clause;
+mod terminal;
 mod timed_source;
 mod union_nodes;
 mod variant_types;

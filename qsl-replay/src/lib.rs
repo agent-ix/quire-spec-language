@@ -55,7 +55,7 @@ mod compile;
 // and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
-    reason = "the zone certificate checker and the FR-339 component certificate check are its first callers and have not landed yet"
+    reason = "the zone certificate checker is its first caller and has not landed yet"
 )]
 mod certificate;
 mod composite;
@@ -109,11 +109,11 @@ pub use certificate::closed_form::task_set::{
     TaskSetRefusal, TimeMember, Wcet,
 };
 pub use certificate::closure::{
-    check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
-    ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
-    TemporalCertificateCheck,
+    check_closure, check_components, check_protocol_closure, check_protocol_components,
+    CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal, ProductStateRef,
+    ProtocolCertificateRequest, TemporalCertificateCheck,
 };
-pub use certificate::scc::{Component, ComponentWitness, ProofCertificate};
+pub use certificate::scc::{Component, ComponentCertificate, ComponentWitness, ProofCertificate};
 pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
     IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
@@ -175,15 +175,19 @@ pub use model_check::hyper_counterexample::{
 pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
-    settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+    settle_hyper_check, settle_hyper_form, settle_hyper_smt, HyperRecord, HyperSettleRefusal,
+    LimitOrigin, ProductMember, UsedLimit,
 };
+pub use model_check::hyper_smt_outcome::{HyperSmtOutcome, HyperSmtResult};
 pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
 pub use model_check::identity::{
     node_occurrence, ClauseIdentity, ClauseRootRefusal, StateGraphIdentity,
 };
-pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
+pub use model_check::item::{
+    Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,
+};
 pub use model_check::limits::{
     meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
@@ -203,7 +207,7 @@ pub use model_check::replay::{
 };
 pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,
-    ResultLabel, Truth, EXPLICIT_STATE,
+    ResultLabel, Truth, EXPLICIT_STATE, K_INDUCTION,
 };
 pub use model_check::smt_query::{
     encode_smt_query, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind,

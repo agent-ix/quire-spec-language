@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::ProtocolCheckRequest;
-use qsl_analyze::model_check::{check_protocol, LivenessRefusal, ModelCheckRefusal};
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState};
 use qsl_eval::simulation::protocol::{
@@ -31,8 +31,8 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     replay_protocol_trace, settle_protocol_check, ModelCheckItem, ModelCheckLimits,
     ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal, ModelTraceReplayResult,
-    ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
-    ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
+    ModelTraceSettlement, ModelTraceSubject, ProofCertificate, ProtocolCertificateRequest,
+    ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
 };
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedProtocolTarget, PackageDeclarations, ProtocolAnchorCause,
@@ -275,9 +275,8 @@ fn shape(steps: &[qsl_replay::ModelStep<ProtocolTransition>]) -> Vec<(StepKind, 
 /// liveness claim holds exactly three `fair weak whole` constraints with
 /// origin `scheduler`, over `s`, `r` and the root, and EN-1 finds no fair
 /// accepting cycle: the lasso that starves `s` at `Done` is not fair under
-/// `s`'s scheduler constraint. Not covered: `proved` itself, which waits on
-/// FR-339's component certificate, so EN-1 refuses the run as
-/// `ComponentCertificateNotBuilt` after exploring the whole product.
+/// `s`'s scheduler constraint, so the run holds with a component certificate
+/// after exploring the whole product.
 #[trace("TC-657")]
 #[test]
 fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
@@ -302,11 +301,13 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
         targets,
         chatter_schedulers().into_iter().collect::<BTreeSet<_>>()
     );
-    let refusal = chatter.check().expect_err("the proof waits on FR-339");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
+    let outcome = chatter.check().expect("the subject checks");
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Component(_),
+        stats,
+    } = outcome
     else {
-        panic!("{refusal:?}");
+        panic!("{outcome:?}");
     };
     assert!(stats.product_states > 0, "{stats:?}");
 }

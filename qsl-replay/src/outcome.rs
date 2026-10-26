@@ -243,7 +243,7 @@ pub struct ItemCause {
     #[serde(skip_serializing_if = "Option::is_none")]
     reduction: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    form: Option<&'static str>,
+    form: Option<WireForm>,
     #[serde(skip_serializing_if = "Option::is_none")]
     population: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -310,13 +310,31 @@ fn raw_json<S: Serializer>(text: &Option<String>, serializer: S) -> Result<S::Ok
     }
 }
 
-/// A property form's spelling on the outcome wire.
-fn form_str(form: PropertyForm) -> &'static str {
+/// A property form on the outcome wire, spelled as quire-semantic-value
+/// FR-121 spells it: a string for the four fieldless forms and
+/// `{"refinement":{"liveness":<bool>}}` for a refinement, which keeps its own
+/// identity and its liveness flag.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+enum WireForm {
+    Named(&'static str),
+    Refinement { refinement: RefinementForm },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RefinementForm {
+    liveness: bool,
+}
+
+fn wire_form(form: PropertyForm) -> WireForm {
     match form {
-        PropertyForm::ReachableInvariant => "reachable-invariant",
-        PropertyForm::BoundedMltl => "bounded-mltl",
-        PropertyForm::Safety => "safety",
-        PropertyForm::Liveness => "liveness",
+        PropertyForm::ReachableInvariant => WireForm::Named("reachable-invariant"),
+        PropertyForm::BoundedMltl => WireForm::Named("bounded-mltl"),
+        PropertyForm::Safety => WireForm::Named("safety"),
+        PropertyForm::Liveness => WireForm::Named("liveness"),
+        PropertyForm::Refinement { liveness } => WireForm::Refinement {
+            refinement: RefinementForm { liveness },
+        },
     }
 }
 
@@ -416,7 +434,7 @@ impl ItemCause {
                 form,
             }) => {
                 item.reduction = Some(reduction.as_str());
-                item.form = Some(form_str(*form));
+                item.form = Some(wire_form(*form));
             }
             ReportedInconclusiveCause::Cause(InconclusiveCause::SymmetryBroken {
                 population,
@@ -1663,6 +1681,22 @@ mod tests {
                 },
                 json!({"kind": "reduction-not-preserving", "reduction": "partial-order",
                     "form": "bounded-mltl"}),
+            ),
+            (
+                InconclusiveCause::ReductionNotPreserving {
+                    reduction: ReductionKind::PartialOrder,
+                    form: PropertyForm::Refinement { liveness: false },
+                },
+                json!({"kind": "reduction-not-preserving", "reduction": "partial-order",
+                    "form": {"refinement": {"liveness": false}}}),
+            ),
+            (
+                InconclusiveCause::ReductionNotPreserving {
+                    reduction: ReductionKind::PartialOrder,
+                    form: PropertyForm::Refinement { liveness: true },
+                },
+                json!({"kind": "reduction-not-preserving", "reduction": "partial-order",
+                    "form": {"refinement": {"liveness": true}}}),
             ),
             (
                 InconclusiveCause::SymmetryBroken {

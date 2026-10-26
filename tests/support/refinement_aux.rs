@@ -559,7 +559,6 @@ impl Unit {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .with_unwritten_terminals()
         .with_unwritten_refinements();
         let regions = declarations.regions();
         declarations

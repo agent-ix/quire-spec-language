@@ -8,7 +8,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, ClockOp, TemporalCause, TimeSourceKind, TimedModel,
+    CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp, NodeKind, StatePredicate,
+    TemporalCause, TimeSourceKind, TimedModel,
 };
 use qsl_semantics::model::intake::meaning;
 use quire_exact::{Integer, Rational};
@@ -161,11 +162,30 @@ fn refused(document: &[u8], body: &str) -> (TemporalCause, String) {
     ((**cause).clone(), text[span.start..span.end].to_owned())
 }
 
-/// FR-230-AC-1, FR-230-AC-8: `Rpc` under `time dense unit ms` checks to a
-/// dense source, the one clock `Call.x`, the two time invariants bounding
+/// The model attributes `node` reads, by name, in ascending order.
+fn attributes(node: CheckedNode<'_>) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        if let NodeKind::Attribute { field, .. } = node.kind() {
+            names.push(field.name.clone());
+        }
+        pending.extend(node.children());
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Part of FR-230-AC-1 and of FR-230-AC-8 (TC-685): `Rpc` under `time dense
+/// unit ms` checks, from a unit whose header selects the temporal layer, to
+/// a dense source, the one clock `Call.x`, the two time invariants bounding
 /// `x` by 3, `send`'s reset of `x` to 0 and `reply`'s guard with its one
-/// convex part `x >= 1` beside the data predicate `self.inflight`.
-#[trace("FR-230-AC-1", "FR-230-AC-8")]
+/// convex part `x >= 1` beside the data predicate `self.inflight`, which no
+/// longer reads the clock. Not covered: AC-1's S2 forms and the `s` unit's
+/// package identity (S4); AC-8's E3 resolution and AC-7's refusals for the
+/// unit with no header.
+#[trace("TC-685")]
 #[test]
 fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     let graph = check(&rpc_document(&["x"]), &rpc("time Config dense unit ms;"))
@@ -223,7 +243,10 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     let [part] = model.guards()[0].parts() else {
         panic!("reply's guard has one convex part");
     };
-    assert!(part.data().is_some(), "the part keeps `self.inflight`");
+    assert_eq!(
+        attributes(part.data().expect("the part keeps `self.inflight`").body()),
+        ["inflight"]
+    );
     let [constraint] = part.clocks() else {
         panic!("one clock constraint");
     };
@@ -231,13 +254,17 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
         (constraint.op(), constraint.bound()),
         (ClockOp::GreaterOrEqual, &exact(1, 1))
     );
-    // The data reading of each clause no longer reads the clock.
-    assert!(graph.state_clause("Reply").is_some());
+    // The data reading of the clause no longer reads the clock.
+    assert_eq!(
+        attributes(graph.state_clause("Reply").expect("Reply checks").body()),
+        ["inflight"]
+    );
 }
 
-/// FR-230-AC-1: under `time dense unit s`, `reply`'s bound `1 ms` converts
-/// to `1/1000`.
-#[trace("FR-230-AC-1")]
+/// Part of FR-230-AC-1 (TC-685): under `time dense unit s`, `reply`'s bound
+/// `1 ms` converts to `1/1000`. Not covered: the `s` unit's package identity
+/// differing from `ms`'s, which S4 emits.
+#[trace("TC-685")]
 #[test]
 fn a_bound_converts_exactly_to_the_model_unit() {
     let graph = check(&rpc_document(&["x"]), &rpc("time Config dense unit s;"))
@@ -250,9 +277,11 @@ fn a_bound_converts_exactly_to_the_model_unit() {
     assert_eq!(model.resets()[0].resets()[0].value(), &exact(0, 1));
 }
 
-/// FR-230-AC-4: `(x < 1 or x > 2) and self.ready` is two convex parts,
-/// `x < 1` and `x > 2`, each with the data predicate `self.ready`.
-#[trace("FR-230-AC-4")]
+/// Part of FR-230-AC-4 (TC-685): `(x < 1 or x > 2) and self.ready` is two
+/// convex parts, `x < 1` and `x > 2`, each with the data predicate
+/// `self.ready`. Not covered here: the S2 forms, and the 6,400 clock places
+/// of the subject (FR-231's `TimedSystem`).
+#[trace("TC-685")]
 #[test]
 fn a_disjunctive_guard_splits_into_convex_parts() {
     let body = format!(
@@ -272,7 +301,7 @@ fn a_disjunctive_guard_splits_into_convex_parts() {
                 panic!("one constraint per part");
             };
             (
-                part.data().is_some(),
+                attributes(part.data().expect("a data predicate").body()),
                 constraint.op(),
                 constraint.bound().clone(),
             )
@@ -281,15 +310,16 @@ fn a_disjunctive_guard_splits_into_convex_parts() {
     assert_eq!(
         parts,
         [
-            (true, ClockOp::Less, exact(1, 1)),
-            (true, ClockOp::Greater, exact(2, 1)),
+            (vec!["ready".to_owned()], ClockOp::Less, exact(1, 1)),
+            (vec!["ready".to_owned()], ClockOp::Greater, exact(2, 1)),
         ]
     );
 }
 
-/// FR-230-AC-4: 64 package clock fields are 64 clocks of `Call`, and a
-/// `10^40 ms` constant checks exactly.
-#[trace("FR-230-AC-4")]
+/// Part of FR-230-AC-4 (TC-685): 64 package clock fields are 64 clocks of
+/// `Call`, and a `10^40 ms` constant checks exactly. Not covered: the 6,400
+/// clock places over 100 objects, which the subject (FR-231) lists.
+#[trace("TC-685")]
 #[test]
 fn many_clocks_and_a_huge_constant_check() {
     let names: Vec<String> = (0..64).map(|index| format!("c{index:02}")).collect();
@@ -308,8 +338,12 @@ fn many_clocks_and_a_huge_constant_check() {
     assert_eq!(bound.numerator().to_string(), expected);
 }
 
-/// FR-230-AC-2: each ill-formed clock use refuses at its span.
-#[trace("FR-230-AC-2")]
+/// Part of FR-230-AC-2 (TC-685): each ill-formed clock use refuses at its
+/// span, a clock read through a path other than `self` and a clock write
+/// nested under `implies` among them. Not covered: the duplicate-source,
+/// `unit m` and untimed-`urgent when` vectors (other TC-685 tests), and the
+/// `time-invariant-shape` vector the grammar does not admit (STD-493).
+#[trace("TC-685")]
 #[test]
 fn ill_formed_clock_uses_refuse_at_their_span() {
     let document = rpc_document(&["x", "y"]);
@@ -335,6 +369,17 @@ fn ill_formed_clock_uses_refuse_at_their_span() {
             "clock-write",
             "self.x = self.x + 1 ms",
         ),
+        (
+            "post P using v on Config::Call::bump { self.ready implies self.x = 0 ms }",
+            "clock-write",
+            "self.x = 0 ms",
+        ),
+        (
+            "pre P using v on Config::Call::bump { \
+             forall(o in allInstances<Config::Call>(Config::calls) : o.x <= 1 ms) }",
+            "clock-read-outside-constraint",
+            "o.x",
+        ),
     ] {
         let (cause, text) = refused(&document, &format!("{dense}{clause}\n"));
         assert_eq!(
@@ -345,9 +390,10 @@ fn ill_formed_clock_uses_refuse_at_their_span() {
     }
 }
 
-/// FR-230-AC-2: a clock field under a tick source refuses
-/// `clock-without-dense-time` at the time declaration.
-#[trace("FR-230-AC-2")]
+/// Part of FR-230-AC-2 (TC-685): a clock field under a tick source refuses
+/// `clock-without-dense-time` at the time declaration. Not covered: the
+/// field's own span, which a package field does not have (STD-493).
+#[trace("TC-685")]
 #[test]
 fn a_clock_under_tick_time_refuses() {
     let body = format!("{UNITS}time Config tick Config::Call::bump period 1 ms unit ms;\n");
@@ -362,10 +408,10 @@ fn a_clock_under_tick_time_refuses() {
     );
 }
 
-/// FR-230-AC-2: `urgent` on an operation whose guard reads a clock refuses
-/// `urgent-guard-reads-clock` at the declaration; on one whose guard reads
-/// none it checks.
-#[trace("FR-230-AC-2")]
+/// Part of FR-230-AC-2 (TC-685): `urgent` on an operation whose guard reads
+/// a clock refuses `urgent-guard-reads-clock` at the declaration; on one
+/// whose guard reads none it checks.
+#[trace("TC-685")]
 #[test]
 fn urgency_on_a_clock_guarded_operation_refuses() {
     let document = rpc_document(&["x"]);
@@ -387,4 +433,18 @@ fn urgency_on_a_clock_guarded_operation_refuses() {
     )
     .expect("urgency on an unguarded operation and on a predicate checks");
     assert_eq!(timed(&graph).urgency().len(), 2);
+}
+
+/// FR-230 "Clocks and resets": a package clock field of a model with no
+/// `time` member that no clause reads refuses `clock-without-dense-time` at
+/// the model's declaration, rather than dropping out of the package.
+#[trace("TC-685")]
+#[test]
+fn an_unread_clock_of_an_untimed_model_refuses_at_the_model() {
+    let (cause, text) = refused(&rpc_document(&["x"]), UNITS);
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::InvalidTimedModel, "clock-without-dense-time")
+    );
+    assert!(text.starts_with("model Config"), "{text}");
 }

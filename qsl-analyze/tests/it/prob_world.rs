@@ -375,7 +375,6 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())?;
 
         let header = json!({"identity": model.package, "version": "1.0.0",
