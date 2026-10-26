@@ -27,8 +27,9 @@ fn predicate(value: bool) -> StateGraphPredicateForm {
     }
 }
 
-fn claim(name: &str, kind: StateGraphClaimKind) -> StateGraphDeclaration {
+fn claim(index: usize, name: &str, kind: StateGraphClaimKind) -> StateGraphDeclaration {
     StateGraphDeclaration {
+        index,
         form: StateGraphClaimForm {
             name: qsl_forms::DeclaredName {
                 name: name.to_owned(),
@@ -58,12 +59,14 @@ fn state_graph_package() -> CheckedPackage {
     let declarations = PackageDeclarations {
         state_graph_claims: vec![
             claim(
+                0,
                 "PossibleClaim",
                 StateGraphClaimKind::Possible {
                     target: predicate(true),
                 },
             ),
             claim(
+                1,
                 "AlwaysClaim",
                 StateGraphClaimKind::AlwaysPossible {
                     from: None,
@@ -71,6 +74,7 @@ fn state_graph_package() -> CheckedPackage {
                 },
             ),
             claim(
+                2,
                 "UniqueClaim",
                 StateGraphClaimKind::UniquePath {
                     from: predicate(true),
