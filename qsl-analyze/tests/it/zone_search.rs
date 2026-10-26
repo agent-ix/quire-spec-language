@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    bounded_window_verdict, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
@@ -15,7 +15,6 @@ use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
     check_zone_certificate, CertEdge, CertificateCheckLimits, CounterexampleKind, DivergentTarget,
@@ -25,7 +24,7 @@ use qsl_replay::{
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{FormulaNode, FormulaNodeId};
-use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
+use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
@@ -106,12 +105,9 @@ pub(crate) const SUBJECT: &str = "c";
 /// An outcome over [`SUBJECT`].
 pub(crate) type Outcome = ZoneCheckOutcome<&'static str>;
 
-/// The occurrence of the claim each world's first clause is.
-fn claim_occurrence() -> OccurrenceKey {
-    OccurrenceKey::new(
-        WireNodeId::from_digest([1; 32]),
-        Origin::new(Role::new("temporal"), 0),
-    )
+/// The `claim` occurrence of `world`'s first clause.
+fn claim_occurrence(world: &World) -> OccurrenceKey {
+    qsl_replay::node_occurrence(&world.package.graph().temporal_clauses()[0])
 }
 
 /// The first clause of `world`, decided by EN-6 under `limits`.
@@ -129,7 +125,7 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits,
         },
@@ -216,6 +212,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
         u64::try_from(certificate.nodes.len()).unwrap()
     );
     assert!(certificate.nodes.iter().all(|node| !node.locked));
+    assert_edges_cover(&four, &certificate);
 
     let three = rpc(3);
     let counterexample = violated(claim(&three, ZoneCheckLimits::default(), &Cancel::new()));
@@ -230,7 +227,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     assert!(counterexample.over_binding.is_some());
 
     for world in [&four, &three] {
-        assert!(matches!(deadlock(world), ZoneCheckOutcome::Holds { .. }));
+        assert_edges_cover(world, &proved(deadlock(world)));
     }
 }
 
@@ -512,6 +509,7 @@ fn a_violation_on_time_locked_states_holds_vacuously() {
         certificate.nodes.iter().filter(|node| node.locked).count(),
         1
     );
+    assert_edges_cover(&lock(false), &certificate);
 
     let counterexample = violated(claim(
         &lock(true),
@@ -549,10 +547,11 @@ fn a_tick_source_admits_only_behaviours_that_tick() {
         }
         other => panic!("expected no admitted behaviour, got {other:?}"),
     }
-    assert!(matches!(
-        claim(&ticks(true), ZoneCheckLimits::default(), &Cancel::new()),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+    let ticking = ticks(true);
+    assert_edges_cover(
+        &ticking,
+        &proved(claim(&ticking, ZoneCheckLimits::default(), &Cancel::new())),
+    );
 }
 
 /// FR-241: a counterexample ends at a valuation with a time-divergent
@@ -692,6 +691,7 @@ pub(crate) fn check(
             item,
         },
         &certificate.obligation,
+        certificate_item,
         certificate,
         limits,
         &Cancel::new(),
@@ -722,7 +722,7 @@ fn a_safety_proof_carries_a_reachability_certificate() {
     assert_eq!(certificate.obligation.subject, SUBJECT);
     assert_eq!(
         certificate.obligation.kind,
-        ObligationKind::Authored(claim_occurrence())
+        ObligationKind::Authored(claim_occurrence(&four))
     );
     assert_eq!(certificate.initial, [0]);
     assert_eq!(certificate.lu_bounds.lower.len(), 1);
@@ -965,6 +965,7 @@ fn a_tick_source_admits_by_a_tick() {
         proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new())),
         proved(deadlock(&world)),
     ] {
+        assert_edges_cover(&world, &certificate);
         let admitted = &certificate.admitted;
         assert!(
             !matches!(admitted.target, DivergentTarget::Quiescent(_)),
@@ -1011,7 +1012,7 @@ fn a_request_obligation_must_be_its_items() {
             item: ZoneCheckItem::DeadlockFreedom,
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(&world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1065,7 +1066,7 @@ fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1099,12 +1100,14 @@ fn retried_at_with(at: &str, body: &str) -> World {
 #[trace("TC-697", "FR-242-AC-2")]
 #[test]
 fn a_punctual_window_is_decided_by_a_horizon_clock() {
-    match claim(
-        &retried_at("2 ms"),
-        ZoneCheckLimits::default(),
-        &Cancel::new(),
-    ) {
-        ZoneCheckOutcome::Holds { stats, .. } => assert!(stats.automaton_states > 0),
+    let punctual = retried_at("2 ms");
+    match claim(&punctual, ZoneCheckLimits::default(), &Cancel::new()) {
+        ZoneCheckOutcome::Holds { stats, certificate } => {
+            assert!(stats.automaton_states > 0);
+            // The core rebuilds the window automaton and accepts the proof
+            // (FR-245).
+            assert_edges_cover(&punctual, &certificate);
+        }
         other => panic!("expected a proof, got {other:?}"),
     }
     let late = violated(claim(
@@ -1219,7 +1222,7 @@ pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1248,6 +1251,7 @@ fn a_timed_invariant_builds_no_automaton() {
                     .nodes
                     .iter()
                     .all(|node| node.automaton_state == 0));
+                assert_edges_cover(&timed, &certificate);
                 stats
             }
             ZoneCheckOutcome::Violated { stats, .. } => stats,
@@ -1457,9 +1461,11 @@ fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
                 unrolled: &unrolled,
                 p,
             };
-            let verdict = bounded_window_verdict(clause, &unrolled.stamps, &mut |atom, at| {
-                letters.reading(atom, at)
-            })
+            let verdict = qsl_eval::automaton::bounded_window_verdict(
+                clause,
+                &unrolled.stamps,
+                &mut |atom, at| letters.reading(atom, at),
+            )
             .expect("the automaton reads the lasso");
             let trace = TimedTrace::new(unrolled.stamps.clone()).expect("a timed trace");
             let mut meter = Meter::new(world.system().meter_limits());
@@ -1525,10 +1531,10 @@ fn a_window_over_a_tick_source_is_read_at_each_tick() {
 #[test]
 fn an_open_and_a_closed_end_are_read_on_their_own_pieces() {
     let open = retried_at_with("2 ms", "always[0 ms, 2 ms) holds(not c.retried)");
-    assert!(matches!(
-        claim(&open, ZoneCheckLimits::default(), &Cancel::new()),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+    assert_edges_cover(
+        &open,
+        &proved(claim(&open, ZoneCheckLimits::default(), &Cancel::new())),
+    );
     let closed = retried_at_with("2 ms", "always[0 ms, 2 ms] holds(not c.retried)");
     let counterexample = violated(claim(&closed, ZoneCheckLimits::default(), &Cancel::new()));
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
@@ -1616,12 +1622,9 @@ fn a_lower_bounded_window_is_decided_by_the_idle_tail() {
     }
     // A window that position 0 already decides needs no stutter:
     // `eventually[0 ms, 3 ms] holds(not c.retried)` is proved.
-    assert!(matches!(
-        claim(
-            &idle("eventually[0 ms, 3 ms] holds(not c.retried)"),
-            ZoneCheckLimits::default(),
-            &Cancel::new()
-        ),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+    let decided = idle("eventually[0 ms, 3 ms] holds(not c.retried)");
+    assert_edges_cover(
+        &decided,
+        &proved(claim(&decided, ZoneCheckLimits::default(), &Cancel::new())),
+    );
 }

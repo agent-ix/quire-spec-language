@@ -16,14 +16,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
 use qsl_replay::{
-    CertEdge, CertNode, DivergenceWitness, DivergentTarget, LuBounds, Zone, ZoneCertificate,
+    CertEdge, CertNode, CertificateItem, DivergenceWitness, DivergentTarget, LuBounds, Zone,
+    ZoneCertificate,
 };
-use qsl_route::deadlock::ItemObligation;
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Integer;
 
 use super::divergence::{EscapeTarget, EscapeWitness, Move};
 use super::search::{Halt, Run, SymbolicEdge};
 use super::{Bound, Dbm, ZoneCheckRefusal};
+
+/// The item `obligation` names, as FR-245's checker compares it with the
+/// recompiled item: its argument `item_of` for an EN-6 certificate.
+pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_> {
+    match &obligation.kind {
+        ObligationKind::Authored(occurrence) => CertificateItem::Clause(occurrence),
+        ObligationKind::DeadlockFreedom => CertificateItem::DeadlockFreedom,
+        ObligationKind::TimeLockFreedom => CertificateItem::TimeLockFreedom,
+        ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
+    }
+}
 
 /// A certificate before it names the obligation it proves.
 #[derive(Clone, Debug)]

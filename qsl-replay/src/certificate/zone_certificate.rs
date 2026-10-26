@@ -9,7 +9,8 @@
 //! recomputes every successor of every node it reaches from the initial
 //! states:
 //!
-//! 1. the `Malformed` members: the scale, the LU bounds (each at least the
+//! 1. the `Malformed` members: the scale (every constant of the model and
+//!    the claim exact at it), the LU bounds (each at least the
 //!    bound the checker computes from the model), the nodes and the edges;
 //! 2. the initial coverage: each initial symbolic state is covered by a
 //!    named initial node of its discrete state (`InitialMissing`, at the
@@ -27,25 +28,42 @@
 //! The first failure is the rejection. A node no edge reaches from an
 //! initial node is read nowhere and checked for nothing.
 //!
-//! Time divergence is checked by sufficient conditions the checker proves
-//! itself, never by the search's evidence: a cycle lets time advance when,
-//! under a tick source, it takes a tick, and under a dense source, some
-//! clock it resets to `r` is guarded on it by `x >= c` (or `x > c`) with
-//! `c > r` before its next reset, so each repetition takes at least
-//! `c - r`. A strongly connected set of nodes lets no time diverge when
-//! some clock that no edge inside it resets is bounded above at every
-//! node of it. A certificate whose divergence needs more than these is
-//! rejected, never accepted on trust.
+//! Coverage is read under the aLU simulation with the certificate's
+//! bounds; for the deadlock-freedom item under the aM bisimulation
+//! (`L = U = max(L, U)`), since the simulation does not preserve deadlocks.
+//! A successor matches an edge by its transition identity, guard part,
+//! horizon piece, post-state and automaton state, never by its transition
+//! alone, and every successor is recomputed from the node's zone held to
+//! its state's own invariants.
 //!
-//! Supported items are a TT-1 invariant (`always holds(p)`) and the
-//! deadlock-freedom item. A TT-2 window claim's certificate needs its claim
-//! automaton in the core, and the liveness and time-lock-freedom forms
-//! need their component and divergence parts (QSL-583): each is refused
-//! [`ZoneCertificateRefusal::UnsupportedItem`].
+//! Time divergence is checked by sufficient conditions the checker proves
+//! itself, never by the search's evidence. The `admitted` path is
+//! recomputed in exact zones from the initial state. Its cycle target lets
+//! time advance when, under a tick source, it takes a tick, and under a
+//! dense source, some clock it resets to `r` is guarded on it by `x >= c`
+//! (or `x > c`) with `c > r` before its next reset, so each repetition
+//! takes at least `c - r`; and it repeats forever: the greatest set of the
+//! exact valuations at its start each of which takes the cycle back into
+//! the set is not empty. A strongly connected set of nodes lets no time
+//! diverge when every member is urgent, or some clock that no edge inside
+//! it resets is bounded above by every member state's own time invariants.
+//! A certificate whose divergence needs more than these is rejected, never
+//! accepted on trust.
+//!
+//! Supported items are a TT-1 invariant (`always holds(p)`), a TT-2 window
+//! claim, whose automaton the checker rebuilds with qsl-eval's own
+//! translation (FR-242), and the deadlock-freedom item. The liveness and
+//! time-lock-freedom forms need their component and divergence parts
+//! (QSL-583): each is refused [`ZoneCertificateRefusal::UnsupportedItem`].
+//! A certificate numbers its automaton states in its own order; the
+//! checker binds each number to the state it recomputes, one to one.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_eval::fairness::{components, EdgeLabel, Graph, Identity};
+use qsl_eval::automaton::{Read, Stamp, WindowClaim};
+use qsl_eval::fairness::{components, EdgeLabel, FairnessError, Graph, Identity};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
     GuardedStep, ModelSimState, ModelSimulationRequest, ModelSystem, PlaceConstraint,
     TerminalClass, TimedSubjectRefusal, TimedSystem,
@@ -53,7 +71,8 @@ use qsl_eval::simulation::model::{
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
-use qsl_semantics::check::{ClockOp, TemporalProfile};
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::check::{ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Integer, Meter, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -61,6 +80,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use super::closure::CertificateRejection;
 use super::zone::{LuBounds, Zone, ZoneError};
 use super::{CertificateLocus, CertificateMember, CertificateRule};
+use crate::model_check::identity::node_occurrence;
 use crate::model_check::item::ModelCheckItem;
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::IncompleteCause;
@@ -183,6 +203,21 @@ pub struct ZoneCertificateRequest<'a> {
     pub item: ModelCheckItem<'a>,
 }
 
+/// The item an obligation names, as the checker compares it with the
+/// recompiled item (FR-245): an authored clause by its `claim` occurrence,
+/// or a derived item by its kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CertificateItem<'o> {
+    /// An authored clause.
+    Clause(&'o OccurrenceKey),
+    /// The derived deadlock-freedom item.
+    DeadlockFreedom,
+    /// The derived time-lock-freedom item.
+    TimeLockFreedom,
+    /// Any other item, which no zone certificate proves.
+    Other,
+}
+
 /// What [`check_zone_certificate`] returns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZoneCertificateVerdict {
@@ -196,18 +231,37 @@ pub enum ZoneCertificateVerdict {
     Stopped(IncompleteCause),
 }
 
+/// An invariant of the checker's own that a check broke.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckerFault {
+    /// A zone operation met a zone of the wrong shape.
+    ZoneShape,
+    /// The fairness kernels refused the graph the checker built.
+    Graph,
+    /// A node read as reached has no model state.
+    UnreachedNode,
+    /// A valid edge has no successor it covers.
+    EdgeWithoutSuccessor,
+    /// A polled cancellation has no cause.
+    CancellationWithoutCause,
+    /// The claim automaton broke an invariant of its own.
+    Automaton,
+}
+
 /// Why [`check_zone_certificate`] checked nothing: the request, not the
 /// certificate, is at fault. A refusal is never an acceptance.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZoneCertificateRefusal<O> {
-    /// The certificate proves another item:
-    /// `stale_dependency`/`content-mismatch`, naming both.
+    /// The certificate proves another item than `item`, or than the
+    /// recompiled item: `stale_dependency`/`content-mismatch`, naming both.
     ObligationMismatch {
         /// The certificate's obligation.
         certificate: Box<O>,
         /// The item's.
         item: Box<O>,
     },
+    /// The request's clause is not a temporal clause of its package.
+    UnknownClause,
     /// FR-106's admission of the subject failed.
     Admission(Box<AdmissionFailure>),
     /// The model's timed reading does not build (FR-231).
@@ -220,14 +274,14 @@ pub enum ZoneCertificateRefusal<O> {
     /// expansion or atom.
     Undecided,
     /// The checker broke an invariant of its own.
-    Fault(&'static str),
+    Fault(CheckerFault),
 }
 
 impl<O> ZoneCertificateRefusal<O> {
     /// The refusal's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ObligationMismatch { .. } => Code::StaleDependency,
+            Self::ObligationMismatch { .. } | Self::UnknownClause => Code::StaleDependency,
             Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
@@ -245,11 +299,15 @@ enum Halt<O> {
 
 impl<O> From<ZoneError> for Halt<O> {
     fn from(_: ZoneError) -> Self {
-        Self::Refusal(ZoneCertificateRefusal::Fault("zone-shape"))
+        fault(CheckerFault::ZoneShape)
     }
 }
 
 type Step<T, O> = Result<T, Halt<O>>;
+
+fn fault<O>(fault: CheckerFault) -> Halt<O> {
+    Halt::Refusal(ZoneCertificateRefusal::Fault(fault))
+}
 
 fn reject<T, O>(rule: CertificateRule, at: CertificateLocus) -> Step<T, O> {
     Err(Halt::Verdict(ZoneCertificateVerdict::Rejected(
@@ -274,36 +332,62 @@ fn undecided<T, O, E>(_: E) -> Step<T, O> {
     Err(Halt::Refusal(ZoneCertificateRefusal::Undecided))
 }
 
+/// The most rounds the check of a divergence cycle's repetition takes
+/// before it gives up and rejects the witness.
+const CYCLE_ROUNDS: usize = 64;
+
 /// FR-245: check `certificate` for `request`'s item, whose obligation is
-/// `item`, under `limits`, polling `cancel` at every node.
+/// `item` and names the item `item_of` reads from it, under `limits`,
+/// polling `cancel` throughout.
 ///
 /// # Errors
 ///
-/// [`ZoneCertificateRefusal`] when the certificate names another item, the
-/// subject does not admit, its timed reading does not build, the item is
-/// not supported, or a reading has no value.
+/// [`ZoneCertificateRefusal`] when the certificate names another item than
+/// `item` or the recompiled one, the subject does not admit, its timed
+/// reading does not build, the item is not supported, or a reading has no
+/// value.
 pub fn check_zone_certificate<O: Clone + Eq>(
     request: ZoneCertificateRequest<'_>,
     item: &O,
+    item_of: impl Fn(&O) -> CertificateItem<'_>,
     certificate: &ZoneCertificate<O>,
     limits: CertificateCheckLimits,
     cancel: &Cancel,
 ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<O>> {
+    let mismatch = || ZoneCertificateRefusal::ObligationMismatch {
+        certificate: Box::new(certificate.obligation.clone()),
+        item: Box::new(item.clone()),
+    };
     if certificate.obligation != *item {
-        return Err(ZoneCertificateRefusal::ObligationMismatch {
-            certificate: Box::new(certificate.obligation.clone()),
-            item: Box::new(item.clone()),
-        });
+        return Err(mismatch());
+    }
+    // The recompiled item's identity (FR-245): a clause's `claim`
+    // occurrence in the package, or the derived item's kind.
+    let named = item_of(&certificate.obligation);
+    let recompiled = match request.item {
+        ModelCheckItem::Clause { clause, .. } => {
+            let node = request
+                .simulation
+                .package
+                .graph()
+                .temporal_clauses()
+                .iter()
+                .find(|node| node.clause() == clause)
+                .ok_or(ZoneCertificateRefusal::UnknownClause)?;
+            matches!(named, CertificateItem::Clause(occurrence) if *occurrence == node_occurrence(node))
+        }
+        ModelCheckItem::DeadlockFreedom => named == CertificateItem::DeadlockFreedom,
+        ModelCheckItem::RaceFreedom => false,
+    };
+    if !recompiled {
+        return Err(mismatch());
     }
     let system = ModelSystem::new(request.simulation)
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
     let timed = TimedSystem::new(&system, request.model)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
-    let claim = match request.item {
+    let (claim, window) = match request.item {
         ModelCheckItem::Clause { clause, letters } => {
-            let Some(atom) = qsl_eval::automaton::invariant_atom(clause) else {
-                return Err(ZoneCertificateRefusal::UnsupportedItem);
-            };
             if !matches!(
                 clause.profile(),
                 TemporalProfile::InfiniteTrace | TemporalProfile::Timed
@@ -313,23 +397,57 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             let instances = system
                 .instances(&clause.over().1)
                 .map_err(|_| ZoneCertificateRefusal::Unbounded)?;
-            Some(Claim {
-                atom,
-                letters,
-                instances,
-            })
+            let atom = qsl_eval::automaton::invariant_atom(clause);
+            let window = if atom.is_some() {
+                None
+            } else if matches!(
+                clause.timed_form(),
+                Some(TimedPropertyForm::BoundedWindow { .. })
+            ) {
+                let claim = WindowClaim::new(
+                    clause.formula(),
+                    instances.len(),
+                    timed.tick_period().cloned(),
+                    u64::MAX,
+                )
+                .map_err(|_| ZoneCertificateRefusal::UnsupportedItem)?;
+                let pieces = match timed.tick_period() {
+                    None => claim.pieces(timed.places().len()),
+                    Some(_) => vec![(Vec::new(), Rational::from_integer(Integer::zero()))],
+                };
+                Some(Window {
+                    claim: RefCell::new(claim),
+                    pieces,
+                })
+            } else {
+                return Err(ZoneCertificateRefusal::UnsupportedItem);
+            };
+            (
+                Some(Claim {
+                    atom,
+                    letters,
+                    instances,
+                }),
+                window,
+            )
         }
-        ModelCheckItem::DeadlockFreedom => None,
+        ModelCheckItem::DeadlockFreedom => (None, None),
         ModelCheckItem::RaceFreedom => return Err(ZoneCertificateRefusal::UnsupportedItem),
     };
+    let count = certificate.nodes.len();
     let mut checker = Checker {
         timed: &timed,
         claim,
+        window,
         certificate,
         cancel,
-        states: vec![None; certificate.nodes.len()],
-        successors: BTreeMap::new(),
-        valid: BTreeSet::new(),
+        cover: certificate.lu_bounds.clone(),
+        leaving: vec![Vec::new(); count],
+        states: vec![None; count],
+        successors: (0..count).map(|_| None).collect(),
+        covers: vec![None; certificate.edges.len()],
+        bound: BTreeMap::new(),
+        binds: BTreeMap::new(),
     };
     match checker.check(limits) {
         Ok(()) => Ok(ZoneCertificateVerdict::Accepted),
@@ -338,32 +456,59 @@ pub fn check_zone_certificate<O: Clone + Eq>(
     }
 }
 
-/// A TT-1 claim: its atom, read through `letters` for each instance.
+/// A clause: its TT-1 atom, or `None` for a TT-2 clause its automaton
+/// reads; each atom read through `letters` for each instance.
 struct Claim<'a> {
-    atom: qsl_semantics::check::FormulaNodeId,
-    letters: &'a dyn qsl_eval::model_subject::ModelLetters,
-    instances: Vec<qsl_eval::model_subject::ModelInstance>,
+    atom: Option<FormulaNodeId>,
+    letters: &'a dyn ModelLetters,
+    instances: Vec<ModelInstance>,
+}
+
+/// A TT-2 clause's automaton, qsl-eval's own (FR-242), and the pieces of
+/// the horizon axis its positions are read on.
+struct Window {
+    claim: RefCell<WindowClaim>,
+    pieces: Vec<(Vec<PlaceConstraint>, Rational)>,
 }
 
 /// One recomputed symbolic successor of a node.
 struct Successor {
-    step: GuardedStep,
-    part: usize,
+    /// The step; `None` for an idle-tail stutter position.
+    step: Option<GuardedStep>,
+    part: Option<usize>,
+    /// The horizon piece a dense TT-2 position lies in.
+    horizon: Option<Vec<PlaceConstraint>>,
+    /// Whether the successor frees the horizon clock: past the point where
+    /// the claim is decided.
+    frees: bool,
     digest: DigestRecord,
+    /// The checker's automaton state.
+    q: usize,
     zone: Zone,
 }
 
 struct Checker<'c, 'a, O> {
     timed: &'c TimedSystem<'c, 'a>,
     claim: Option<Claim<'c>>,
+    window: Option<Window>,
     certificate: &'c ZoneCertificate<O>,
     cancel: &'c Cancel,
+    /// The bounds coverage is read under: the certificate's, or for the
+    /// deadlock-freedom item `L = U = max(L, U)` per clock, the aM
+    /// bisimulation, since the aLU simulation does not preserve deadlocks.
+    cover: LuBounds,
+    /// The edges leaving each node, by index, in edge order.
+    leaving: Vec<Vec<usize>>,
     /// The model state of each node an edge reaches from an initial node.
     states: Vec<Option<ModelSimState>>,
     /// Each reached node's recomputed successors.
-    successors: BTreeMap<usize, Vec<Successor>>,
-    /// The edges whose successor is real and covered by their target.
-    valid: BTreeSet<usize>,
+    successors: Vec<Option<Vec<Successor>>>,
+    /// For each valid edge, the successor of its source it covers.
+    covers: Vec<Option<usize>>,
+    /// The checker's automaton state each certificate automaton state
+    /// names, and back: a certificate numbers states in its own order.
+    bound: BTreeMap<usize, usize>,
+    binds: BTreeMap<usize, usize>,
 }
 
 impl<O> Checker<'_, '_, O> {
@@ -371,12 +516,25 @@ impl<O> Checker<'_, '_, O> {
         self.poll()?;
         self.budgets(limits)?;
         self.members()?;
+        if self.claim.is_none() {
+            // FR-232's deadlocks are not preserved by the aLU simulation:
+            // coverage is read under the aM bisimulation.
+            for (lower, upper) in self.cover.lower.iter_mut().zip(self.cover.upper.iter_mut()) {
+                let most = lower.clone().max(upper.clone());
+                lower.clone_from(&most);
+                *upper = most;
+            }
+        }
+        for (index, edge) in self.certificate.edges.iter().enumerate() {
+            self.leaving[edge.from].push(index);
+        }
         self.initial()?;
         self.reach()?;
+        let divergent = self.divergent()?;
         for node in 0..self.certificate.nodes.len() {
             self.poll()?;
             if self.states[node].is_some() {
-                self.node(node)?;
+                self.node(node, &divergent)?;
             }
         }
         self.admitted()
@@ -385,9 +543,7 @@ impl<O> Checker<'_, '_, O> {
     fn poll(&self) -> Step<(), O> {
         if self.cancel.poll() {
             let Some(source) = self.cancel.cause() else {
-                return Err(Halt::Refusal(ZoneCertificateRefusal::Fault(
-                    "a-polled-cancellation-has-a-cause",
-                )));
+                return Err(fault(CheckerFault::CancellationWithoutCause));
             };
             return Err(Halt::Verdict(ZoneCertificateVerdict::Stopped(
                 IncompleteCause::Cancelled { source },
@@ -420,8 +576,14 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
-    /// The zone dimension: the reference clock and the clock places.
+    /// The zone dimension: the reference clock, the clock places and, for
+    /// a TT-2 claim, the horizon clock.
     fn dim(&self) -> usize {
+        self.timed.places().len() + 1 + usize::from(self.window.is_some())
+    }
+
+    /// The horizon clock's index in a zone.
+    fn horizon_clock(&self) -> usize {
         self.timed.places().len() + 1
     }
 
@@ -431,7 +593,13 @@ impl<O> Checker<'_, '_, O> {
         if certificate.scale <= Integer::zero() {
             return malformed(CertificateMember::Scale);
         }
-        let Some((lower, upper)) = computed_bounds(self.timed, &certificate.scale) else {
+        let constants = self
+            .window
+            .as_ref()
+            .map(|window| window.claim.borrow().constants().to_vec());
+        let Some((lower, upper)) =
+            computed_bounds(self.timed, constants.as_deref(), &certificate.scale)
+        else {
             return malformed(CertificateMember::Scale);
         };
         let at_least = |listed: &[Option<Integer>], computed: &[Option<Integer>]| {
@@ -451,7 +619,10 @@ impl<O> Checker<'_, '_, O> {
             return malformed(CertificateMember::Bounds);
         }
         let nodes = certificate.nodes.len();
-        let node_ok = |node: &CertNode| node.zone.dim() == self.dim() && node.automaton_state == 0;
+        let windowed = self.window.is_some();
+        let node_ok = |node: &CertNode| {
+            node.zone.dim() == self.dim() && (windowed || node.automaton_state == 0)
+        };
         if !certificate.nodes.iter().all(node_ok)
             || certificate.initial.iter().any(|&node| node >= nodes)
             || certificate.admitted.start >= nodes
@@ -459,12 +630,17 @@ impl<O> Checker<'_, '_, O> {
             return malformed(CertificateMember::Nodes);
         }
         let edges = certificate.edges.len();
+        let dense = self.timed.tick_period().is_none();
         let edge_ok = |edge: &CertEdge| {
+            let shaped = match (&edge.transition, edge.part) {
+                (Some(_), Some(_)) => true,
+                (None, None) => windowed,
+                _ => false,
+            };
             edge.from < nodes
                 && edge.to < nodes
-                && edge.transition.is_some()
-                && edge.part.is_some()
-                && edge.horizon.is_none()
+                && shaped
+                && (edge.horizon.is_none() || (windowed && dense))
         };
         let target_ok = match &certificate.admitted.target {
             DivergentTarget::Quiescent(node) | DivergentTarget::Terminal(node) => *node < nodes,
@@ -479,16 +655,19 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
-    /// The scaled integer of `value`, which the certificate's scale makes
-    /// exact once its bounds are checked.
-    fn scaled(&self, value: &Rational) -> Integer {
-        scaled(value, &self.certificate.scale).unwrap_or_else(Integer::zero)
+    /// The scaled integer of `value`; every constant of the model and the
+    /// claim was checked integral under the scale in [`Self::members`].
+    fn scaled(&self, value: &Rational) -> Step<Integer, O> {
+        match scaled(value, &self.certificate.scale) {
+            Some(value) => Ok(value),
+            None => malformed(CertificateMember::Scale),
+        }
     }
 
     fn constrain(&self, zone: &mut Zone, constraints: &[PlaceConstraint]) -> Step<(), O> {
         for constraint in constraints {
             let clock = constraint.place() + 1;
-            let bound = self.scaled(constraint.bound());
+            let bound = self.scaled(constraint.bound())?;
             let below = bound.neg();
             match constraint.op() {
                 ClockOp::Less => zone.constrain(clock, 0, &bound, true)?,
@@ -504,6 +683,10 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
+    fn invariants(&self, state: &ModelSimState) -> Step<Vec<PlaceConstraint>, O> {
+        self.timed.invariants(state).or_else(undecided)
+    }
+
     /// Whether time may elapse at `state`.
     fn elapses(&self, state: &ModelSimState) -> Step<bool, O> {
         Ok(
@@ -515,7 +698,7 @@ impl<O> Checker<'_, '_, O> {
     /// `zone` within `state`'s invariants, time let elapse unless it is
     /// urgent, and within them again.
     fn settle(&self, state: &ModelSimState, zone: &mut Zone) -> Step<(), O> {
-        let invariants = self.timed.invariants(state).or_else(undecided)?;
+        let invariants = self.invariants(state)?;
         self.constrain(zone, &invariants)?;
         if !zone.is_empty() && self.elapses(state)? {
             zone.up();
@@ -532,14 +715,68 @@ impl<O> Checker<'_, '_, O> {
             .or_else(undecided)
     }
 
+    /// The automaton state a position at `state` reads: position 0 when
+    /// `from` is `None`.
+    fn read(
+        &self,
+        from: Option<usize>,
+        state: &ModelSimState,
+        stamp: Stamp<'_>,
+        stutter: bool,
+    ) -> Step<usize, O> {
+        let (Some(window), Some(claim)) = (&self.window, &self.claim) else {
+            return Ok(0);
+        };
+        let limits = self.timed.system().meter_limits();
+        let mut atoms = |instance: usize, atom| {
+            let instance = claim
+                .instances
+                .get(instance)
+                .ok_or_else(|| "window-instance".to_owned())?;
+            claim
+                .letters
+                .atom(atom, instance, state, &mut Meter::new(limits))
+                .map_err(|stop| format!("{stop:?}"))
+        };
+        let mut automaton = window.claim.borrow_mut();
+        let read = match from {
+            None => automaton.initial(&mut atoms),
+            Some(q) => automaton.step(q, stamp, stutter, &mut atoms),
+        };
+        match read {
+            Read::State(q) => Ok(q),
+            Read::Atom(_) => Err(Halt::Refusal(ZoneCertificateRefusal::Undecided)),
+            Read::Fault(_) | Read::AutomatonStates => Err(fault(CheckerFault::Automaton)),
+        }
+    }
+
+    /// Whether the certificate's automaton state `listed` names the
+    /// checker's `q`, binding the two when neither is bound yet.
+    fn binds(&mut self, listed: usize, q: usize) -> bool {
+        if self.window.is_none() {
+            return listed == 0 && q == 0;
+        }
+        match (self.bound.get(&listed), self.binds.get(&q)) {
+            (Some(&known), _) => known == q,
+            (None, Some(_)) => false,
+            (None, None) => {
+                self.bound.insert(listed, q);
+                self.binds.insert(q, listed);
+                true
+            }
+        }
+    }
+
     /// Each initial symbolic state is covered by a named initial node of
-    /// its discrete state.
+    /// its discrete state and claim-automaton state.
     fn initial(&mut self) -> Step<(), O> {
         let certificate = self.certificate;
         for start in self.timed.initial() {
             self.poll()?;
             let state = start.discrete().clone();
             let digest = self.digest(&state)?;
+            let zero = Rational::from_integer(Integer::zero());
+            let q = self.read(None, &state, Stamp::At(&zero), false)?;
             let mut zone = Zone::zero(self.dim());
             self.settle(&state, &mut zone)?;
             if zone.is_empty() {
@@ -549,7 +786,8 @@ impl<O> Checker<'_, '_, O> {
             for &node in &certificate.initial {
                 let listed = &certificate.nodes[node];
                 if listed.state_key == digest
-                    && zone.alu_covered_by(&listed.zone, &certificate.lu_bounds)?
+                    && zone.alu_covered_by(&listed.zone, &self.cover)?
+                    && self.binds(listed.automaton_state, q)
                 {
                     covered = Some(node);
                     break;
@@ -567,13 +805,11 @@ impl<O> Checker<'_, '_, O> {
     }
 
     /// The model state of every node an edge reaches from an initial node,
-    /// each reached node's successors, and the edges that hold.
+    /// each reached node's successors, and for each edge the successor it
+    /// covers: of its transition identity, guard part and horizon piece,
+    /// whose post-state, automaton state and zone its target holds.
     fn reach(&mut self) -> Step<(), O> {
         let certificate = self.certificate;
-        let mut leaving: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for (index, edge) in certificate.edges.iter().enumerate() {
-            leaving.entry(edge.from).or_default().push(index);
-        }
         let mut queue: Vec<usize> = (0..self.states.len())
             .filter(|&node| self.states[node].is_some())
             .collect();
@@ -584,95 +820,206 @@ impl<O> Checker<'_, '_, O> {
             let Some(state) = self.states[node].clone() else {
                 continue;
             };
-            let successors = self.successors_of(&state, &certificate.nodes[node].zone)?;
-            for &index in leaving.get(&node).map_or(&[][..], Vec::as_slice) {
+            let listed = &certificate.nodes[node];
+            let q = self
+                .bound
+                .get(&listed.automaton_state)
+                .copied()
+                .unwrap_or_default();
+            let successors = self.successors_of(&state, q, &listed.zone)?;
+            for index in self.leaving[node].clone() {
                 let edge = &certificate.edges[index];
                 let target = &certificate.nodes[edge.to];
-                let mut holds = false;
-                for successor in &successors {
-                    if Some(successor.step.transition()) == edge.transition.as_ref()
-                        && Some(successor.part) == edge.part
+                for (position, successor) in successors.iter().enumerate() {
+                    let same = successor.step.as_ref().map(GuardedStep::transition)
+                        == edge.transition.as_ref()
+                        && successor.part == edge.part
+                        && successor.horizon == edge.horizon
                         && successor.digest == target.state_key
-                        && successor
-                            .zone
-                            .alu_covered_by(&target.zone, &certificate.lu_bounds)?
-                    {
-                        holds = true;
+                        && successor.zone.alu_covered_by(&target.zone, &self.cover)?;
+                    if same && self.binds(target.automaton_state, successor.q) {
+                        self.covers[index] = Some(position);
                         if self.states[edge.to].is_none() {
-                            self.states[edge.to] = Some(successor.step.post().clone());
+                            let post = successor
+                                .step
+                                .as_ref()
+                                .map_or_else(|| state.clone(), |step| step.post().clone());
+                            self.states[edge.to] = Some(post);
                             queue.push(edge.to);
                         }
                         break;
                     }
                 }
-                if holds {
-                    self.valid.insert(index);
-                }
             }
-            self.successors.insert(node, successors);
+            self.successors[node] = Some(successors);
         }
         Ok(())
     }
 
-    /// The symbolic successors of `(state, zone)`: one per enabled step and
-    /// guard part whose zone is not empty.
-    fn successors_of(&self, state: &ModelSimState, zone: &Zone) -> Step<Vec<Successor>, O> {
+    /// The symbolic successors of `(state, q, zone)`, the zone first held
+    /// to the state's own invariants: one per enabled step, guard part and,
+    /// for a TT-2 claim, horizon piece, and the claim's idle-tail stutter
+    /// positions, as FR-239's search reads them.
+    fn successors_of(
+        &self,
+        state: &ModelSimState,
+        q: usize,
+        zone: &Zone,
+    ) -> Step<Vec<Successor>, O> {
+        let mut zone = zone.clone();
+        let invariants = self.invariants(state)?;
+        self.constrain(&mut zone, &invariants)?;
         let mut found = Vec::new();
-        for step in self.timed.guarded_steps(state).or_else(undecided)? {
-            let target = self.timed.invariants(step.post()).or_else(undecided)?;
-            for (part, constraints) in step.parts().iter().enumerate() {
-                let mut next = zone.clone();
-                self.constrain(&mut next, constraints)?;
-                if next.is_empty() {
-                    continue;
-                }
-                for (place, value) in step.resets() {
-                    next.reset(place + 1, &self.scaled(value))?;
-                }
-                self.constrain(&mut next, &target)?;
-                if next.is_empty() {
-                    continue;
-                }
-                self.settle(step.post(), &mut next)?;
-                if next.is_empty() {
-                    continue;
-                }
+        if zone.is_empty() {
+            return Ok(found);
+        }
+        let decided = self
+            .window
+            .as_ref()
+            .is_none_or(|window| window.claim.borrow().decided(q));
+        let tail = self.window.as_ref().is_some_and(|window| {
+            window
+                .claim
+                .borrow()
+                .state(q)
+                .is_some_and(|state| state.tail)
+        });
+        let period = self.timed.tick_period().cloned();
+        let mut positions = 0_usize;
+        if !tail || decided {
+            for step in self.timed.guarded_steps(state).or_else(undecided)? {
+                let target = self.invariants(step.post())?;
                 let digest = self.digest(step.post())?;
+                let tick =
+                    self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero());
+                for (part, constraints) in step.parts().iter().enumerate() {
+                    let mut next = zone.clone();
+                    self.constrain(&mut next, constraints)?;
+                    if next.is_empty() {
+                        continue;
+                    }
+                    for (place, value) in step.resets() {
+                        next.reset(place + 1, &self.scaled(value)?)?;
+                    }
+                    self.constrain(&mut next, &target)?;
+                    if next.is_empty() {
+                        continue;
+                    }
+                    positions += 1;
+                    if decided {
+                        if self.window.is_some() {
+                            next.free(self.horizon_clock())?;
+                        }
+                        self.settle(step.post(), &mut next)?;
+                        if !next.is_empty() {
+                            found.push(Successor {
+                                step: Some(step.clone()),
+                                part: Some(part),
+                                horizon: None,
+                                frees: self.window.is_some(),
+                                digest,
+                                q,
+                                zone: next,
+                            });
+                        }
+                        continue;
+                    }
+                    let advance = match (&period, tick) {
+                        (Some(period), true) => period.clone(),
+                        _ => Rational::from_integer(Integer::zero()),
+                    };
+                    for (constraints, stamp) in self.pieces() {
+                        let mut at = next.clone();
+                        self.constrain(&mut at, &constraints)?;
+                        if at.is_empty() {
+                            continue;
+                        }
+                        let stamp_of = match period {
+                            Some(_) => Stamp::After(&advance),
+                            None => Stamp::At(&stamp),
+                        };
+                        let read = self.read(Some(q), step.post(), stamp_of, false)?;
+                        self.settle(step.post(), &mut at)?;
+                        if at.is_empty() {
+                            continue;
+                        }
+                        found.push(Successor {
+                            step: Some(step.clone()),
+                            part: Some(part),
+                            horizon: period.is_none().then_some(constraints),
+                            frees: false,
+                            digest,
+                            q: read,
+                            zone: at,
+                        });
+                    }
+                }
+            }
+        }
+        if decided {
+            return Ok(found);
+        }
+        // An idle-tail stutter position: under a dense source at a
+        // quiescent state, under a tick source at a terminal one (FR-231).
+        let idles = match &period {
+            Some(_) => tail || positions == 0,
+            None => self.timed.is_quiescent(state).or_else(undecided)? && self.elapses(state)?,
+        };
+        if idles {
+            let digest = self.digest(state)?;
+            for (constraints, stamp) in self.pieces() {
+                let mut at = zone.clone();
+                self.constrain(&mut at, &constraints)?;
+                if at.is_empty() {
+                    continue;
+                }
+                let stamp_of = match &period {
+                    Some(period) => Stamp::After(period),
+                    None => Stamp::At(&stamp),
+                };
+                let read = self.read(Some(q), state, stamp_of, true)?;
+                self.settle(state, &mut at)?;
+                if at.is_empty() {
+                    continue;
+                }
                 found.push(Successor {
-                    step: step.clone(),
-                    part,
+                    step: None,
+                    part: None,
+                    horizon: period.is_none().then_some(constraints),
+                    frees: false,
                     digest,
-                    zone: next,
+                    q: read,
+                    zone: at,
                 });
             }
         }
         Ok(found)
     }
 
-    /// Node `node`'s successors are all covered, and it is bad only when
-    /// it is `locked` and no time diverges after it.
-    fn node(&self, node: usize) -> Step<(), O> {
-        let leaving: BTreeSet<usize> = self
-            .certificate
-            .edges
-            .iter()
-            .enumerate()
-            .filter(|(index, edge)| edge.from == node && self.valid.contains(index))
-            .map(|(index, _)| index)
-            .collect();
-        for successor in self.successors.get(&node).map_or(&[][..], Vec::as_slice) {
-            let covered = leaving.iter().any(|&index| {
-                let edge = &self.certificate.edges[index];
-                Some(successor.step.transition()) == edge.transition.as_ref()
-                    && Some(successor.part) == edge.part
-            });
-            if !covered {
-                return reject(CertificateRule::SuccessorMissing, at_node(node));
+    /// The pieces of a TT-2 claim's horizon axis.
+    fn pieces(&self) -> Vec<(Vec<PlaceConstraint>, Rational)> {
+        self.window
+            .as_ref()
+            .map(|window| window.pieces.clone())
+            .unwrap_or_default()
+    }
+
+    /// Node `node`'s successors are each covered by an edge, and it is bad
+    /// only when it is `locked` and no time diverges after it.
+    fn node(&self, node: usize, divergent: &[bool]) -> Step<(), O> {
+        let count = self.successors[node].as_ref().map_or(0, Vec::len);
+        let mut covered = vec![false; count];
+        for &index in &self.leaving[node] {
+            if let Some(position) = self.covers[index] {
+                covered[position] = true;
             }
+        }
+        if covered.iter().any(|&covered| !covered) {
+            return reject(CertificateRule::SuccessorMissing, at_node(node));
         }
         let listed = &self.certificate.nodes[node];
         if listed.locked {
-            if self.diverges_after(node)? {
+            if divergent[node] {
                 return reject(CertificateRule::BadState, at_node(node));
             }
         } else if self.bad(node)? {
@@ -684,9 +1031,7 @@ impl<O> Checker<'_, '_, O> {
     fn state(&self, node: usize) -> Step<&ModelSimState, O> {
         self.states[node]
             .as_ref()
-            .ok_or(Halt::Refusal(ZoneCertificateRefusal::Fault(
-                "a-reached-node",
-            )))
+            .ok_or(fault(CheckerFault::UnreachedNode))
     }
 
     /// Whether `node` violates the item at some valuation of its zone.
@@ -695,11 +1040,24 @@ impl<O> Checker<'_, '_, O> {
         let Some(claim) = &self.claim else {
             return self.deadlocked(node);
         };
+        if let Some(window) = &self.window {
+            let listed = self.certificate.nodes[node].automaton_state;
+            let q = self
+                .bound
+                .get(&listed)
+                .copied()
+                .ok_or(fault(CheckerFault::UnreachedNode))?;
+            let automaton = window.claim.borrow();
+            return Ok(automaton.undefined(q).is_some()
+                || automaton.violated(q).is_some()
+                || automaton.insufficient(q).is_some());
+        }
+        let atom = claim.atom.ok_or(fault(CheckerFault::Automaton))?;
         for instance in &claim.instances {
             let mut meter = Meter::new(self.timed.system().meter_limits());
             match claim
                 .letters
-                .atom(claim.atom, instance, state, &mut meter)
+                .atom(atom, instance, state, &mut meter)
                 .or_else(undecided)?
             {
                 AtomReading::True => {}
@@ -709,8 +1067,10 @@ impl<O> Checker<'_, '_, O> {
         Ok(false)
     }
 
-    /// FR-232 over the zone: a quiescent node some of whose valuations
-    /// enable no step after any delay, as the search reads it.
+    /// FR-232 over the zone held to its state's invariants: a quiescent
+    /// node some of whose valuations enable no step after any delay. Read
+    /// under the aM coverage, a deadlocked real valuation has a bisimilar
+    /// deadlocked one in some node.
     fn deadlocked(&self, node: usize) -> Step<bool, O> {
         let state = self.state(node)?;
         if !self.timed.is_quiescent(state).or_else(undecided)? {
@@ -718,7 +1078,7 @@ impl<O> Checker<'_, '_, O> {
         }
         let mut enabling = Vec::new();
         for step in self.timed.guarded_steps(state).or_else(undecided)? {
-            let target = self.timed.invariants(step.post()).or_else(undecided)?;
+            let target = self.invariants(step.post())?;
             // A reset clock's bound is constant over delays; a false one
             // disables the step.
             let reset_breaks = target.iter().any(|bound| {
@@ -752,7 +1112,9 @@ impl<O> Checker<'_, '_, O> {
                 Ok(TerminalClass::Deadlocked)
             ));
         }
-        let mut uncovered = vec![self.certificate.nodes[node].zone.clone()];
+        let mut zone = self.certificate.nodes[node].zone.clone();
+        self.constrain(&mut zone, &self.invariants(state)?)?;
+        let mut uncovered = vec![zone];
         for cover in &enabling {
             let mut rest = Vec::new();
             for piece in &uncovered {
@@ -766,71 +1128,87 @@ impl<O> Checker<'_, '_, O> {
         Ok(true)
     }
 
-    /// Whether time can diverge after `node`: over valid edges it reaches a
-    /// quiescent node (a terminal one under a tick source), or a strongly
-    /// connected set whose divergence the checker cannot rule out.
-    fn diverges_after(&self, node: usize) -> Step<bool, O> {
-        let mut reached = vec![node];
-        let mut seen: BTreeSet<usize> = BTreeSet::from([node]);
-        let mut at = 0;
-        while let Some(&from) = reached.get(at) {
-            at += 1;
-            for (index, edge) in self.certificate.edges.iter().enumerate() {
-                if edge.from == from && self.valid.contains(&index) && seen.insert(edge.to) {
-                    reached.push(edge.to);
-                }
-            }
-        }
-        for &node in &reached {
-            if self.idles(node)? {
-                return Ok(true);
-            }
-        }
+    /// The step a valid edge takes, `None` for a stutter, and the
+    /// successor it covers.
+    fn covered(&self, index: usize) -> Step<&Successor, O> {
+        let edge = &self.certificate.edges[index];
+        self.covers[index]
+            .and_then(|position| {
+                self.successors[edge.from]
+                    .as_ref()
+                    .and_then(|successors| successors.get(position))
+            })
+            .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))
+    }
+
+    /// For each node, whether over valid edges it reaches a node where a
+    /// behaviour may idle forever, or a strongly connected set whose
+    /// divergence the checker cannot rule out. The components are computed
+    /// once, under the caller's `cancel`, and divergence is propagated back
+    /// along the valid edges.
+    fn divergent(&self) -> Step<Vec<bool>, O> {
+        let count = self.certificate.nodes.len();
         let mut graph = Graph::new();
-        let vertices: Vec<_> = reached
-            .iter()
+        let vertices: Vec<_> = (0..count)
             .map(|_| graph.add_vertex(std::iter::empty::<Identity>()))
             .collect();
-        let position: BTreeMap<usize, usize> = reached
-            .iter()
-            .enumerate()
-            .map(|(position, &node)| (node, position))
-            .collect();
-        let mut inside = Vec::new();
+        let mut into: Vec<Vec<usize>> = vec![Vec::new(); count];
         for (index, edge) in self.certificate.edges.iter().enumerate() {
-            if let (true, Some(&from), Some(&to)) = (
-                self.valid.contains(&index),
-                position.get(&edge.from),
-                position.get(&edge.to),
-            ) {
+            if self.covers[index].is_some() {
                 graph
-                    .add_edge(vertices[from], vertices[to], EdgeLabel::Stutter)
-                    .map_err(|_| Halt::Refusal(ZoneCertificateRefusal::Fault("graph")))?;
-                inside.push(index);
+                    .add_edge(vertices[edge.from], vertices[edge.to], EdgeLabel::Stutter)
+                    .map_err(|_| fault(CheckerFault::Graph))?;
+                into[edge.to].push(edge.from);
             }
         }
-        let within: BTreeSet<_> = vertices.iter().copied().collect();
-        let found = components(&graph, &within, &Cancel::new())
-            .map_err(|_| Halt::Refusal(ZoneCertificateRefusal::Fault("components")))?;
+        let within: BTreeSet<_> = (0..count)
+            .filter(|&node| self.states[node].is_some())
+            .map(|node| vertices[node])
+            .collect();
+        let found = components(&graph, &within, self.cancel).map_err(|error| match error {
+            FairnessError::Cancelled => match self.cancel.cause() {
+                Some(source) => Halt::Verdict(ZoneCertificateVerdict::Stopped(
+                    IncompleteCause::Cancelled { source },
+                )),
+                None => fault(CheckerFault::CancellationWithoutCause),
+            },
+            _ => fault(CheckerFault::Graph),
+        })?;
+        let mut divergent = vec![false; count];
+        for (node, divergent) in divergent.iter_mut().enumerate() {
+            *divergent = self.states[node].is_some() && self.idles(node)?;
+        }
         for component in found.iter().filter(|component| component.has_edge()) {
+            self.poll()?;
             let members: BTreeSet<usize> = component
                 .vertices()
                 .iter()
-                .map(|vertex| reached[vertex.index()])
+                .map(|vertex| vertex.index())
                 .collect();
-            let edges: Vec<usize> = inside
+            let inside: Vec<usize> = members
                 .iter()
-                .copied()
+                .flat_map(|&node| self.leaving[node].iter().copied())
                 .filter(|&index| {
-                    let edge = &self.certificate.edges[index];
-                    members.contains(&edge.from) && members.contains(&edge.to)
+                    self.covers[index].is_some()
+                        && members.contains(&self.certificate.edges[index].to)
                 })
                 .collect();
-            if !self.zeno(&members, &edges)? {
-                return Ok(true);
+            if !self.zeno(&members, &inside)? {
+                for &member in &members {
+                    divergent[member] = true;
+                }
             }
         }
-        Ok(false)
+        let mut queue: Vec<usize> = (0..count).filter(|&node| divergent[node]).collect();
+        while let Some(node) = queue.pop() {
+            for &from in &into[node] {
+                if !divergent[from] {
+                    divergent[from] = true;
+                    queue.push(from);
+                }
+            }
+        }
+        Ok(divergent)
     }
 
     /// Whether a behaviour may idle at `node` forever: under a dense source
@@ -839,78 +1217,76 @@ impl<O> Checker<'_, '_, O> {
     fn idles(&self, node: usize) -> Step<bool, O> {
         let state = self.state(node)?;
         Ok(match self.timed.tick_period() {
-            Some(_) => self
-                .successors
-                .get(&node)
-                .is_none_or(|successors| successors.is_empty()),
+            Some(_) => self.successors[node].as_ref().is_none_or(|successors| {
+                successors.iter().all(|successor| successor.step.is_none())
+            }),
             None => self.timed.is_quiescent(state).or_else(undecided)? && self.elapses(state)?,
         })
     }
 
-    /// The step an edge takes, from its source's successors.
-    fn step_of(&self, index: usize) -> Step<&GuardedStep, O> {
-        let edge = &self.certificate.edges[index];
-        self.successors
-            .get(&edge.from)
-            .and_then(|successors| {
-                successors.iter().find(|successor| {
-                    Some(successor.step.transition()) == edge.transition.as_ref()
-                        && Some(successor.part) == edge.part
-                })
-            })
-            .map(|successor| &successor.step)
-            .ok_or(Halt::Refusal(ZoneCertificateRefusal::Fault(
-                "a-valid-edge-has-a-step",
-            )))
+    /// Whether an edge lets time advance under a tick source: a tick step,
+    /// or a terminal state's stutter, which counts as a tick (FR-231).
+    fn ticks(&self, index: usize) -> Step<bool, O> {
+        Ok(match &self.covered(index)?.step {
+            Some(step) => {
+                self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero())
+            }
+            None => true,
+        })
     }
 
     /// Whether no time diverges inside the strongly connected `members`
-    /// with the `edges` among them: under a dense source, some clock that
-    /// none of `edges` resets is bounded above at every member; under a
-    /// tick source, none of `edges` ticks.
+    /// with the `edges` among them. Under a dense source: every member is
+    /// urgent, or some clock that none of `edges` resets is bounded above
+    /// by the time invariants of every member's own state, which every
+    /// real valuation there satisfies. Under a tick source: none of
+    /// `edges` ticks.
     fn zeno(&self, members: &BTreeSet<usize>, edges: &[usize]) -> Step<bool, O> {
         if self.timed.tick_period().is_some() {
             for &index in edges {
-                let step = self.step_of(index)?;
-                if self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero()) {
+                if self.ticks(index)? {
                     return Ok(false);
                 }
             }
             return Ok(true);
         }
+        let mut urgent = true;
+        let mut bounded: Option<BTreeSet<usize>> = None;
+        for &member in members {
+            let state = self.state(member)?;
+            urgent &= !self.elapses(state)?;
+            let here: BTreeSet<usize> = self
+                .invariants(state)?
+                .iter()
+                .filter(|bound| {
+                    matches!(
+                        bound.op(),
+                        ClockOp::Less | ClockOp::LessOrEqual | ClockOp::Equal
+                    )
+                })
+                .map(PlaceConstraint::place)
+                .collect();
+            bounded = Some(match bounded {
+                None => here,
+                Some(earlier) => earlier.intersection(&here).copied().collect(),
+            });
+        }
+        if urgent {
+            return Ok(true);
+        }
         let mut reset = BTreeSet::new();
         for &index in edges {
-            reset.extend(
-                self.step_of(index)?
-                    .resets()
-                    .iter()
-                    .map(|(place, _)| *place),
-            );
-        }
-        for place in 0..self.timed.places().len() {
-            if reset.contains(&place) {
-                continue;
-            }
-            let mut bounded = true;
-            for &member in members {
-                if self.certificate.nodes[member]
-                    .zone
-                    .bound(place + 1, 0)?
-                    .is_none()
-                {
-                    bounded = false;
-                    break;
-                }
-            }
-            if bounded {
-                return Ok(true);
+            if let Some(step) = &self.covered(index)?.step {
+                reset.extend(step.resets().iter().map(|(place, _)| *place));
             }
         }
-        Ok(false)
+        Ok(bounded.is_some_and(|bounded| bounded.iter().any(|place| !reset.contains(place))))
     }
 
     /// `admitted`: a path of valid edges from an initial node to a
-    /// divergent target.
+    /// divergent target, recomputed in exact zones from the initial state,
+    /// each held to its state's own invariants, so the path is one some
+    /// behaviour takes.
     fn admitted(&self) -> Step<(), O> {
         let witness = &self.certificate.admitted;
         let mut at = witness.start;
@@ -918,12 +1294,19 @@ impl<O> Checker<'_, '_, O> {
         if !self.certificate.initial.contains(&at) || self.states[at].is_none() {
             return fails(at);
         }
+        let Some(mut zone) = self.initial_zone(at)? else {
+            return fails(at);
+        };
         for &index in &witness.path {
             let edge = &self.certificate.edges[index];
-            if edge.from != at || !self.valid.contains(&index) {
+            if edge.from != at || self.covers[index].is_none() {
                 return fails(at);
             }
+            zone = self.post(index, &zone)?;
             at = edge.to;
+            if zone.is_empty() {
+                return fails(at);
+            }
         }
         let holds = match &witness.target {
             DivergentTarget::Quiescent(node) => {
@@ -932,13 +1315,148 @@ impl<O> Checker<'_, '_, O> {
             DivergentTarget::Terminal(node) => {
                 *node == at && self.timed.tick_period().is_some() && self.idles(at)?
             }
-            DivergentTarget::Cycle(cycle) => self.advancing_cycle(at, cycle)?,
+            DivergentTarget::Cycle(cycle) => {
+                self.advancing_cycle(at, cycle)? && self.repeats(cycle, &zone)?
+            }
         };
         if holds {
             Ok(())
         } else {
             fails(at)
         }
+    }
+
+    /// The exact zone of an initial state the initial node `node` holds.
+    fn initial_zone(&self, node: usize) -> Step<Option<Zone>, O> {
+        let listed = &self.certificate.nodes[node];
+        for start in self.timed.initial() {
+            let state = start.discrete();
+            if self.digest(state)? != listed.state_key {
+                continue;
+            }
+            let zero = Rational::from_integer(Integer::zero());
+            let q = self.read(None, state, Stamp::At(&zero), false)?;
+            if self.bound.get(&listed.automaton_state) != Some(&q) && self.window.is_some() {
+                continue;
+            }
+            let mut zone = Zone::zero(self.dim());
+            self.settle(state, &mut zone)?;
+            if !zone.is_empty() {
+                return Ok(Some(zone));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The exact successor of `zone`, at a valid edge's source, along the
+    /// edge.
+    fn post(&self, index: usize, zone: &Zone) -> Step<Zone, O> {
+        let edge = &self.certificate.edges[index];
+        let source = self.state(edge.from)?;
+        let successor = self.covered(index)?;
+        let mut next = zone.clone();
+        let post = match &successor.step {
+            Some(step) => {
+                let part = successor
+                    .part
+                    .and_then(|part| step.parts().get(part))
+                    .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))?;
+                self.constrain(&mut next, part)?;
+                for (place, value) in step.resets() {
+                    next.reset(place + 1, &self.scaled(value)?)?;
+                }
+                self.constrain(&mut next, &self.invariants(step.post())?)?;
+                step.post()
+            }
+            None => source,
+        };
+        if let Some(horizon) = &successor.horizon {
+            self.constrain(&mut next, horizon)?;
+        }
+        if successor.frees {
+            next.free(self.horizon_clock())?;
+        }
+        self.settle(post, &mut next)?;
+        Ok(next)
+    }
+
+    /// The valuations of `target`, at a valid edge's target, whose
+    /// predecessors along the edge lie at its source: the inverse of
+    /// [`Self::post`].
+    fn pre(&self, index: usize, target: &Zone) -> Step<Zone, O> {
+        let edge = &self.certificate.edges[index];
+        let source = self.state(edge.from)?;
+        let successor = self.covered(index)?;
+        let post = successor.step.as_ref().map_or(source, GuardedStep::post);
+        let invariants = self.invariants(post)?;
+        let mut zone = target.clone();
+        self.constrain(&mut zone, &invariants)?;
+        if self.elapses(post)? && !zone.is_empty() {
+            zone.down();
+            self.constrain(&mut zone, &invariants)?;
+        }
+        if let Some(horizon) = &successor.horizon {
+            self.constrain(&mut zone, horizon)?;
+        }
+        if successor.frees {
+            zone.free(self.horizon_clock())?;
+        }
+        if let Some(step) = &successor.step {
+            for (place, value) in step.resets().iter().rev() {
+                let value = self.scaled(value)?;
+                zone.constrain(place + 1, 0, &value, false)?;
+                zone.constrain(0, place + 1, &value.neg(), false)?;
+                zone.free(place + 1)?;
+            }
+            let part = successor
+                .part
+                .and_then(|part| step.parts().get(part))
+                .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))?;
+            self.constrain(&mut zone, part)?;
+        }
+        self.constrain(&mut zone, &self.invariants(source)?)?;
+        Ok(zone)
+    }
+
+    /// Whether `cycle` can be repeated forever from some valuation of
+    /// `zone`, the exact zone the path reaches at its start: the greatest
+    /// subset of `zone` each of whose valuations takes the cycle back into
+    /// the subset is not empty. The subset is computed by at most
+    /// [`CYCLE_ROUNDS`] rounds; a cycle that needs more is not accepted.
+    fn repeats(&self, cycle: &[usize], zone: &Zone) -> Step<bool, O> {
+        if cycle.is_empty() {
+            return Ok(false);
+        }
+        let mut held = zone.clone();
+        for _ in 0..CYCLE_ROUNDS {
+            self.poll()?;
+            let mut back = held.clone();
+            for &index in cycle.iter().rev() {
+                back = self.pre(index, &back)?;
+                if back.is_empty() {
+                    return Ok(false);
+                }
+            }
+            // The valuations at the start from which a delay reaches the
+            // first step.
+            let start = self.state(self.certificate.edges[cycle[0]].from)?;
+            let invariants = self.invariants(start)?;
+            self.constrain(&mut back, &invariants)?;
+            if self.elapses(start)? && !back.is_empty() {
+                back.down();
+                self.constrain(&mut back, &invariants)?;
+            }
+            let mut next = held.clone();
+            intersect(&mut next, &back)?;
+            if next.is_empty() {
+                return Ok(false);
+            }
+            if next.includes(&held)? {
+                return Ok(true);
+            }
+            held = next;
+        }
+        Ok(false)
     }
 
     /// Whether `cycle` is a cycle of valid edges from and back to `at`
@@ -949,7 +1467,7 @@ impl<O> Checker<'_, '_, O> {
         let mut node = at;
         for &index in cycle {
             let edge = &self.certificate.edges[index];
-            if edge.from != node || !self.valid.contains(&index) {
+            if edge.from != node || self.covers[index].is_none() {
                 return Ok(false);
             }
             node = edge.to;
@@ -957,21 +1475,25 @@ impl<O> Checker<'_, '_, O> {
         if cycle.is_empty() || node != at {
             return Ok(false);
         }
-        let steps: Vec<(&GuardedStep, usize)> = cycle
-            .iter()
-            .map(|&index| {
-                let part = self.certificate.edges[index].part.unwrap_or_default();
-                self.step_of(index).map(|step| (step, part))
-            })
-            .collect::<Step<_, O>>()?;
         if self.timed.tick_period().is_some() {
-            return Ok(steps.iter().any(|(step, _)| {
-                self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero())
-            }));
+            for &index in cycle {
+                if self.ticks(index)? {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        let mut steps = Vec::with_capacity(cycle.len());
+        for &index in cycle {
+            let successor = self.covered(index)?;
+            steps.push((successor.step.as_ref(), successor.part));
         }
         let length = steps.len();
         for (position, (step, part)) in steps.iter().enumerate() {
-            let Some(constraints) = step.parts().get(*part) else {
+            let Some(constraints) = step
+                .zip(*part)
+                .and_then(|(step, part)| step.parts().get(part))
+            else {
                 continue;
             };
             for constraint in constraints {
@@ -984,7 +1506,7 @@ impl<O> Checker<'_, '_, O> {
                 // around the cycle; this edge's own resets come after it.
                 let reset = (1..=length).find_map(|back| {
                     let (earlier, _) = steps[(position + length - back) % length];
-                    earlier
+                    earlier?
                         .resets()
                         .iter()
                         .rev()
@@ -1004,6 +1526,18 @@ impl<O> Checker<'_, '_, O> {
     }
 }
 
+/// `zone` intersected with `other`, cell by cell.
+fn intersect(zone: &mut Zone, other: &Zone) -> Result<(), ZoneError> {
+    for i in 0..zone.dim() {
+        for j in 0..zone.dim() {
+            if let Some((value, strict)) = other.bound(i, j)? {
+                zone.constrain(i, j, &value, strict)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// `value` in units of `1 / scale`; `None` when the scale does not make it
 /// an integer.
 fn scaled(value: &Rational, scale: &Integer) -> Option<Integer> {
@@ -1012,16 +1546,18 @@ fn scaled(value: &Rational, scale: &Integer) -> Option<Integer> {
         .then(|| Integer::from_big(product.numerator().as_big().clone()))
 }
 
-/// The LU bounds the checker computes from the model: per clock place, the
-/// largest constant a guard, invariant or reset compares it with from
-/// below and from above, scaled; `None` when the scale makes one not an
-/// integer.
+/// The LU bounds the checker computes from the model and, for a TT-2
+/// claim, its automaton's `constants` for the horizon clock: per clock,
+/// the largest constant a guard, invariant or reset compares it with from
+/// below and from above, scaled; `None` when the scale makes any constant
+/// not an integer.
 #[allow(
     clippy::type_complexity,
     reason = "one list of lower and one of upper bounds"
 )]
 fn computed_bounds(
     timed: &TimedSystem<'_, '_>,
+    constants: Option<&[Rational]>,
     scale: &Integer,
 ) -> Option<(Vec<Option<Integer>>, Vec<Option<Integer>>)> {
     let model = timed.model();
@@ -1067,6 +1603,16 @@ fn computed_bounds(
             record(reset.clock().index(), ClockOp::Equal, reset.value());
         }
     }
+    // Every constant, not only the largest, must be exact at the scale: a
+    // checker zone reads each one.
+    let all = lower
+        .iter()
+        .chain(&upper)
+        .flatten()
+        .chain(constants.into_iter().flatten());
+    for value in all {
+        scaled(value, scale)?;
+    }
     let max = |values: &[Rational]| -> Option<Option<Integer>> {
         match values.iter().max() {
             Some(value) => scaled(value, scale).map(Some),
@@ -1080,12 +1626,20 @@ fn computed_bounds(
         lows.push(max(lower.get(clock)?)?);
         highs.push(max(upper.get(clock)?)?);
     }
+    if let Some(constants) = constants {
+        // The horizon clock is compared with every interval end, from both
+        // sides.
+        lows.push(max(constants)?);
+        highs.push(max(constants)?);
+    }
     Some((lows, highs))
 }
 
-/// The bytes a check reads of `certificate`: each node's key and zone
-/// cells, each edge, the LU bounds and the witness, at their integers'
-/// magnitudes.
+/// The size a check charges against `max_certificate_bytes`: each node's
+/// key and zone cells, each edge, the LU bounds and the witness, at their
+/// integers' magnitudes. It bounds the certificate's in-memory reading,
+/// not an encoding: FR-418's byte encoding of the certificate does not
+/// exist yet (spec gap STD-493).
 fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
     let integer = |value: &Integer| value.magnitude_bits() / 8 + 1;
     let mut bytes = integer(&certificate.scale);

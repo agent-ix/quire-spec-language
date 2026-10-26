@@ -49,15 +49,8 @@ mod bounds;
 mod call_replay_context;
 mod call_requirements;
 mod call_site;
-mod compile;
-// The facade exports the rejection vocabulary. Zone arithmetic stays
-// crate-private until `check_zone_certificate` (FR-245) calls it; its tests
-// and Kani harnesses exercise it directly.
-#[allow(
-    dead_code,
-    reason = "the zone certificate checker is its first caller and has not landed yet"
-)]
 mod certificate;
+mod compile;
 mod composite;
 mod execute;
 mod hybrid;
@@ -126,9 +119,9 @@ pub use certificate::state_graph::{
 };
 pub use certificate::zone::{LuBounds, Zone, ZoneError};
 pub use certificate::zone_certificate::{
-    check_zone_certificate, CertEdge, CertNode, CertificateCheckLimits, DivergenceWitness,
-    DivergentTarget, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest,
-    ZoneCertificateVerdict,
+    check_zone_certificate, CertEdge, CertNode, CertificateCheckLimits, CertificateItem,
+    CheckerFault, DivergenceWitness, DivergentTarget, ZoneCertificate, ZoneCertificateRefusal,
+    ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};

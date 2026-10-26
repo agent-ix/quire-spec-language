@@ -16,8 +16,8 @@ mod divergence;
 mod scale;
 mod search;
 mod settle;
-mod window;
 
+pub use certificate::certificate_item;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
 pub use search::{
@@ -25,4 +25,3 @@ pub use search::{
     ZoneCheckRefusal, ZoneCheckRequest, ZoneStats, ZoneStop, ZoneUndecided,
 };
 pub use settle::{settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED};
-pub use window::bounded_window_verdict;

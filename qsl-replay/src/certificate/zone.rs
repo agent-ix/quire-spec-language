@@ -422,6 +422,29 @@ impl<W: Exact> Zone<W> {
         Ok(())
     }
 
+    /// Free `clock` in a canonical zone: every constraint on it is dropped
+    /// but `clock >= 0`, leaving it canonical. With the reset value
+    /// constrained first, this is the inverse image of a reset.
+    pub fn free(&mut self, clock: usize) -> Result<(), ZoneError> {
+        self.check_clock(clock)?;
+        if clock == 0 {
+            return Err(ZoneError::ResetReferenceClock);
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        let dim = self.dim;
+        for k in 0..dim {
+            if k == clock {
+                continue;
+            }
+            self.cells[clock * dim + k] = None;
+            self.cells[k * dim + clock] = self.cell(k, 0).clone();
+        }
+        self.cells[clock] = zero_le();
+        Ok(())
+    }
+
     /// Let time elapse in a canonical zone: every clock's upper bound
     /// against the reference clock becomes `∞`.
     pub fn up(&mut self) {

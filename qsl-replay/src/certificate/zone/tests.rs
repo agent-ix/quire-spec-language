@@ -332,6 +332,37 @@ fn extrapolation_agrees_with_the_reference_on_a_grid() {
     }
 }
 
+/// `free` agrees with the reference's elimination of the clock on 300
+/// seeded zones, and leaves the zone canonical. Part of FR-245's checker
+/// (TC-700), which recomputes predecessors with it.
+#[trace("TC-700")]
+#[test]
+fn free_agrees_with_the_reference_on_a_grid() {
+    const S: i64 = 3;
+    let mut rng = Seeded(0x5eed_f7ee);
+    for _ in 0..300 {
+        let dim = usize::try_from(rng.below(2) + 2).expect("a small dimension");
+        let points = grid(dim, 6 * S);
+        let raw = rng.raw(dim, 4);
+        let mut zone: Zone = raw.to_zone();
+        zone.close();
+        let x = 1 + rng.below(dim as u64 - 1) as usize;
+        let mut freed = zone.clone();
+        freed.free(x).expect("a clock");
+        let expected = raw.free_constraints(x);
+        for p in &points {
+            assert_eq!(
+                reference::zone_contains(&freed, p, S),
+                !zone.is_empty() && reference::constraints_hold(expected.clone(), p, S),
+                "free x{x} of {raw:?} at {p:?}"
+            );
+        }
+        let mut closed = freed.clone();
+        closed.close();
+        assert_eq!(closed, freed);
+    }
+}
+
 /// `down`, `minus` and `from_matrix`, the deadlock check's operations,
 /// against point membership on 300 seeded zones of dimension at most 3:
 /// a grid point is in `down(Z)` exactly when some delay of it on the half

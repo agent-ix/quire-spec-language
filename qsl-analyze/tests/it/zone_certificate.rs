@@ -7,7 +7,9 @@
 //! part of a valid certificate.
 
 use ix_trace_rs::trace;
-use qsl_analyze::zone_check::{settle_zone_check, ZoneCheckLimits, ZoneCheckOutcome, ZoneItem};
+use qsl_analyze::zone_check::{
+    certificate_item, settle_zone_check, ZoneCheckLimits, ZoneCheckOutcome, ZoneItem,
+};
 use qsl_eval::simulation::model::TimedSystem;
 use qsl_replay::{
     CertificateCheckLimits, CertificateLocus, CertificateMember, CertificateRejection,
@@ -17,9 +19,10 @@ use qsl_replay::{
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Cancel;
 
+use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_replay::{fault, lock_resetting, package_id};
 use crate::zone_search::{
-    check, claim, deadlock, lock, proved, rpc, Certificate, Outcome, SUBJECT,
+    check, claim, deadlock, lock, proved, rpc, Certificate, Outcome, INFINITE, SUBJECT,
 };
 
 /// `NoLateReply` over `Rpc` with `T = 4 ms`, proved, with its certificate.
@@ -219,6 +222,7 @@ fn identity_and_budgets_are_checked_first() {
             item: qsl_replay::ModelCheckItem::DeadlockFreedom,
         },
         &other,
+        certificate_item,
         &certificate,
         CertificateCheckLimits::default(),
         &Cancel::new(),
@@ -413,5 +417,320 @@ fn a_zone_proof_settles_through_the_core_checker() {
             rule: CertificateRule::SuccessorMissing,
             at: node(first_source(certificate, last)),
         })
+    );
+}
+
+/// `certificate` with its obligation renamed to `world`'s first clause, so
+/// it is checked as a proof of that clause.
+fn retarget(mut certificate: Certificate, world: &World) -> Certificate {
+    certificate.obligation = ItemObligation {
+        subject: SUBJECT,
+        kind: ObligationKind::Authored(qsl_replay::node_occurrence(
+            &world.package.graph().temporal_clauses()[0],
+        )),
+    };
+    certificate
+}
+
+fn summary(outcome: &Outcome) -> &'static str {
+    match outcome {
+        ZoneCheckOutcome::Holds { .. } => "Holds",
+        ZoneCheckOutcome::Violated { .. } => "Violated",
+        ZoneCheckOutcome::Undecided { .. } => "Undecided",
+        ZoneCheckOutcome::Stopped { .. } => "Stopped",
+    }
+}
+
+/// `flip` moves phase 0 to 1, or with `nondet` to 1 or 2, under one
+/// transition identity; `back` returns from 1. The claim is `always
+/// holds(not (c.phase = 2))`.
+fn flip(nondet: bool) -> World {
+    let post = if nondet {
+        "self.phase = 1 or self.phase = 2"
+    } else {
+        "self.phase = 1"
+    };
+    world(
+        &document(&["x"], &[("flip", &["phase"]), ("back", &["phase"])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Flip using v on M::Call::flip {{ self.phase = 0 }}\n\
+             post Flipped using v on M::Call::flip {{ {post} }}\n\
+             pre Back using v on M::Call::back {{ self.phase = 1 }}\n\
+             post Backed using v on M::Call::back {{ self.phase = 0 }}\n\
+             temporal NoTwo using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(not (c.phase = 2)) }}\n"
+        ),
+    )
+}
+
+/// FR-245 (SR-1637001 FND-001): a successor is matched to an edge by its
+/// post-state too. When one transition identity has two posts, the
+/// deterministic model's certificate, which lists one, is rejected
+/// `SuccessorMissing` over the nondeterministic model, which EN-6 refutes.
+#[trace("TC-700")]
+#[test]
+fn a_successor_is_matched_by_its_post_state() {
+    let nondet = flip(true);
+    let honest = claim(&nondet, ZoneCheckLimits::default(), &Cancel::new());
+    assert_eq!(summary(&honest), "Violated");
+    let det = flip(false);
+    let certificate = retarget(
+        proved(claim(&det, ZoneCheckLimits::default(), &Cancel::new())),
+        &nondet,
+    );
+    assert_eq!(
+        verdict(&nondet, &certificate),
+        rejected(CertificateRule::SuccessorMissing, node(0))
+    );
+}
+
+/// FR-245 (SR-1637001 FND-002): the deadlock-freedom item's coverage is
+/// read under the aM bisimulation, which preserves deadlocks. `go` is
+/// guarded by `x <= 1 ms`, so the model deadlocks past 1; node zones capped
+/// at `x <= 1`, which cover every valuation under the aLU simulation, do
+/// not cover the initial zone and are rejected.
+#[trace("TC-700")]
+#[test]
+fn a_deadlock_is_not_hidden_by_coverage() {
+    let guarded = world(
+        &document(&["x"], &[("go", &[])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.x <= 1 ms }}\n\
+             temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(c.phase = 0) }}\n"
+        ),
+    );
+    assert_eq!(summary(&deadlock(&guarded)), "Undecided");
+    let mut certificate = proved(claim(&guarded, ZoneCheckLimits::default(), &Cancel::new()));
+    certificate.obligation.kind = ObligationKind::DeadlockFreedom;
+    let scale = certificate.scale.clone();
+    for listed in &mut certificate.nodes {
+        listed.zone.constrain(1, 0, &scale, false).expect("a clock");
+    }
+    assert!(matches!(
+        verdict(&guarded, &certificate),
+        ZoneCertificateVerdict::Rejected(CertificateRejection {
+            rule: CertificateRule::InitialMissing,
+            ..
+        })
+    ));
+}
+
+/// `go` needs `x >= 2 ms` to leave phase 0, where with `invariant` time is
+/// held to `x <= 1 ms`, so every behaviour is time-locked.
+fn stuck(invariant: bool) -> World {
+    let held = if invariant {
+        "time invariant Stuck when { self.phase = 0 } { self.x <= 1 ms }\n"
+    } else {
+        ""
+    };
+    world(
+        &document(&["x"], &[("go", &["phase"])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 and self.x >= 2 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             {held}\
+             temporal Fine using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(not (c.phase = 2)) }}\n"
+        ),
+    )
+}
+
+/// FR-245 (SR-1637001 FND-003): `admitted` is recomputed in exact zones
+/// held to each state's own invariants. Over the time-locked model, which
+/// EN-6 finds has no admitted behaviour, a free model's certificate whose
+/// `admitted` path takes `go` to the quiescent phase 1 is rejected
+/// `WitnessFails` at its start: no valuation within `x <= 1` takes `go`,
+/// so the edge holds no successor.
+#[trace("TC-700")]
+#[test]
+fn an_admitted_path_is_one_some_behaviour_takes() {
+    let locked = stuck(true);
+    assert_eq!(
+        summary(&claim(&locked, ZoneCheckLimits::default(), &Cancel::new())),
+        "Undecided"
+    );
+    let free = stuck(false);
+    let mut certificate = retarget(
+        proved(claim(&free, ZoneCheckLimits::default(), &Cancel::new())),
+        &locked,
+    );
+    certificate.lu_bounds.upper[0] = Some(certificate.scale.clone());
+    let go = certificate
+        .edges
+        .iter()
+        .position(|edge| edge.from == 0 && edge.to != 0)
+        .expect("go");
+    let target = certificate.edges[go].to;
+    certificate.admitted.start = 0;
+    certificate.admitted.path = vec![go];
+    certificate.admitted.target = DivergentTarget::Quiescent(target);
+    assert_eq!(
+        verdict(&locked, &certificate),
+        rejected(CertificateRule::WitnessFails, node(0))
+    );
+}
+
+/// `Lock` with a second clock `w`, bounded only by an invariant of a phase
+/// never reached; `ping` resets `x` when `resets`.
+fn lock_with_w(resets: bool) -> World {
+    let ping: &[&str] = if resets { &["x"] } else { &[] };
+    let reset = if resets {
+        "post Pinged using v on M::Call::ping { self.x = 0 ms }\n"
+    } else {
+        ""
+    };
+    world(
+        &document(&["x", "w"], &[("go", &["phase"]), ("ping", ping)]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             pre Ping using v on M::Call::ping {{ self.phase = 1 }}\n\
+             {reset}\
+             time invariant Locked when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+             time invariant Far when {{ self.phase = 3 }} {{ self.w <= 5 ms }}\n\
+             temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(c.phase = 0) }}\n"
+        ),
+    )
+}
+
+/// FR-245 (SR-1637001 FND-004): a set of nodes is Zeno only by a clock its
+/// states' own invariants bound, never by bounds read from node zones.
+/// The plain model's certificate, its nodes renamed to the variant in
+/// which `ping` resets `x` and its zones bounding `w` as `x`, is rejected
+/// `BadState` at the locked node: `ping` then lets time diverge, and EN-6
+/// refutes the variant.
+#[trace("TC-700")]
+#[test]
+fn a_zeno_set_is_bounded_by_its_own_invariants() {
+    let plain = lock_with_w(false);
+    let resetting = lock_with_w(true);
+    assert_eq!(
+        summary(&claim(
+            &resetting,
+            ZoneCheckLimits::default(),
+            &Cancel::new()
+        )),
+        "Violated"
+    );
+    let certificate = proved(claim(&plain, ZoneCheckLimits::default(), &Cancel::new()));
+    let system = resetting.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let start = timed.initial().remove(0);
+    let key = |state: &qsl_eval::simulation::model::ModelSimState| {
+        system.state_key(state).expect("a key").1
+    };
+    let (_, gone) = timed
+        .steps(&start)
+        .expect("decided")
+        .into_iter()
+        .find(|(step, _)| step.operation().contains("Call/go\""))
+        .expect("go");
+    let transition = |state: &qsl_eval::simulation::model::ModelSimState, operation: &str| {
+        timed
+            .guarded_steps(state)
+            .expect("decided")
+            .into_iter()
+            .find(|step| step.operation().contains(&format!("Call/{operation}\"")))
+            .expect("enabled")
+            .transition()
+            .clone()
+    };
+    let (a, b) = (key(start.discrete()), key(gone.discrete()));
+    let (go, ping) = (
+        transition(start.discrete(), "go"),
+        transition(gone.discrete(), "ping"),
+    );
+    let initial_key = certificate.nodes[certificate.initial[0]].state_key;
+    let mut moved = retarget(certificate, &resetting);
+    for listed in &mut moved.nodes {
+        listed.state_key = if listed.state_key == initial_key {
+            a
+        } else {
+            b
+        };
+    }
+    for edge in &mut moved.edges {
+        let old = edge.transition.as_ref().expect("a step");
+        edge.transition = Some(if old.operation().contains("Call/go\"") {
+            go.clone()
+        } else {
+            ping.clone()
+        });
+    }
+    let x = moved
+        .lu_bounds
+        .upper
+        .iter()
+        .position(|upper| upper.as_ref() == Some(&moved.scale))
+        .expect("x's place");
+    moved.lu_bounds.lower[x] = Some(quire_exact::Integer::zero());
+    let locked = moved
+        .nodes
+        .iter()
+        .position(|listed| listed.locked)
+        .expect("the locked node");
+    assert_eq!(
+        verdict(&resetting, &moved),
+        rejected(CertificateRule::BadState, node(locked))
+    );
+}
+
+/// `bad` needs `x < 1/2 ms`; with `reachable` false it is never enabled.
+/// An invariant of an unreached phase compares `x` with 3.
+fn half_guard(reachable: bool) -> World {
+    let pre = if reachable {
+        "self.phase = 0"
+    } else {
+        "self.phase = 3"
+    };
+    world(
+        &document(&["x"], &[("bad", &["phase"])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Bad using v on M::Call::bad {{ {pre} and self.x < rational(1, 2) ms }}\n\
+             post Badded using v on M::Call::bad {{ self.phase = 2 }}\n\
+             time invariant Far when {{ self.phase = 3 }} {{ self.x <= 3 ms }}\n\
+             temporal NoTwo using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(not (c.phase = 2)) }}\n"
+        ),
+    )
+}
+
+/// FR-245 (SR-1637001 FND-005): every constant, not only each clock's
+/// largest, must be exact at the scale. The unreachable-guard model's
+/// certificate at scale 1 is rejected `Malformed` at `scale` over the model
+/// whose `bad` is enabled while `x < 1/2`, which EN-6 refutes.
+#[trace("TC-700")]
+#[test]
+fn every_constant_is_exact_at_the_scale() {
+    let real = half_guard(true);
+    assert_eq!(
+        summary(&claim(&real, ZoneCheckLimits::default(), &Cancel::new())),
+        "Violated"
+    );
+    let sibling = half_guard(false);
+    let mut certificate = retarget(
+        proved(claim(&sibling, ZoneCheckLimits::default(), &Cancel::new())),
+        &real,
+    );
+    certificate.scale = quire_exact::Integer::one();
+    certificate.lu_bounds.upper[0] = Some(quire_exact::Integer::from(3_i64));
+    assert_eq!(
+        verdict(&real, &certificate),
+        rejected(
+            CertificateRule::Malformed,
+            CertificateLocus::CertificateMember(CertificateMember::Scale)
+        )
     );
 }
