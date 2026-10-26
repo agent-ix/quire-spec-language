@@ -156,6 +156,14 @@ pub enum ZoneError {
         /// The argument's dimension.
         right: usize,
     },
+    /// Extrapolation constants whose length is not the zone's clock count.
+    #[error("extrapolation constants for {max} clocks over {clocks} clocks")]
+    ExtrapolationLength {
+        /// Clocks named by the constants.
+        max: usize,
+        /// The zone's clock count.
+        clocks: usize,
+    },
     /// LU bounds whose length is not the zone's clock count.
     #[error("LU bounds for {lower} lower and {upper} upper clocks over {clocks} clocks")]
     LuLength {
@@ -408,9 +416,8 @@ impl<W: Exact> Zone<W> {
     pub fn extrapolate(&mut self, max: &[Option<W>]) -> Result<(), ZoneError> {
         let clocks = self.dim.saturating_sub(1);
         if max.len() != clocks {
-            return Err(ZoneError::LuLength {
-                lower: max.len(),
-                upper: max.len(),
+            return Err(ZoneError::ExtrapolationLength {
+                max: max.len(),
                 clocks,
             });
         }

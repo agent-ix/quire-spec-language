@@ -283,8 +283,51 @@ fn extrapolation_bounds_the_zones_of_a_growing_clock() {
     assert_eq!(two.bound(1, 2), Ok(None));
     assert_eq!(two.bound(2, 0), Ok(Some((Integer::from(1_i64), false))));
     assert_eq!(two.bound(0, 2), Ok(Some((Integer::from(-1_i64), false))));
-    assert!(matches!(
+    assert_eq!(
         two.extrapolate(&[None]),
-        Err(ZoneError::LuLength { clocks: 2, .. })
-    ));
+        Err(ZoneError::ExtrapolationLength { max: 1, clocks: 2 })
+    );
+}
+
+/// `extrapolate` against the reference's entrywise `Extra_M` on 600 seeded
+/// zones of dimension at most 3 with bounds in `[-4, 4]` and constants in
+/// `[0, 4]` or none: a grid point is in the extrapolated zone exactly when
+/// it satisfies the reference's bounds, every point of the zone stays in
+/// it, and the result is canonical.
+#[trace("TC-692")]
+#[test]
+fn extrapolation_agrees_with_the_reference_on_a_grid() {
+    const S: i64 = 3;
+    let mut rng = Seeded(0x5eed_0692);
+    for _ in 0..600 {
+        let dim = usize::try_from(rng.below(3) + 1).expect("a small dimension");
+        let points = grid(dim, 10 * S);
+        let raw = rng.raw(dim, 4);
+        let mut zone: Zone = raw.to_zone();
+        zone.close();
+        let before: Vec<bool> = points
+            .iter()
+            .map(|p| reference::zone_contains(&zone, p, S))
+            .collect();
+        let max: Vec<Option<i64>> = (1..dim)
+            .map(|_| (rng.below(3) > 0).then(|| rng.constant(4).abs()))
+            .collect();
+        let expected = reference::extrapolate(&reference::raw_of(&zone), &max);
+        let mut extrapolated = zone.clone();
+        extrapolated
+            .extrapolate(&max.iter().map(|m| m.map(Integer::from)).collect::<Vec<_>>())
+            .expect("one constant per clock");
+        for (p, inside) in points.iter().zip(&before) {
+            let found = reference::zone_contains(&extrapolated, p, S);
+            assert_eq!(
+                found,
+                expected.contains(p, S),
+                "extrapolate {raw:?} under {max:?} at {p:?}"
+            );
+            assert!(!inside || found, "{raw:?} loses {p:?} under {max:?}");
+        }
+        let mut closed = extrapolated.clone();
+        closed.close();
+        assert_eq!(closed, extrapolated, "canonical after {max:?}");
+    }
 }
