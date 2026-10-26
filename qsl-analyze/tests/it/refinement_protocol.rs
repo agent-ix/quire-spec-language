@@ -15,15 +15,13 @@ use quire_exact::Cancel;
 
 use crate::refinement_fixture::{cas_refines_counter, World, UNLIMITED};
 
-/// `Run`, a protocol of one attempt of `peek` over the compare-and-set
-/// counter, and the refinement of the counter by it.
+/// `Run`, a protocol with an empty `run` sequence (S4 writes no node for an
+/// `attempt` yet, QSL-1126) over the compare-and-set counter, and the refinement of the counter by it.
 fn protocol_refinement() -> String {
     "profile pp = \"quire.protocol.finite-global/v1\";\n\
      protocol Run using v over (k: Impl::Counter) on origin {\n\
      role w on Impl::Counter;\n\
-     run sequence Main {\n\
-     attempt P by w on Impl::Counter::peek contracts [] as (p: Boolean) { true };\n\
-     }\n\
+     run sequence Main { }\n\
      finish Done as (d: Boolean) { true };\n\
      }\n\
      refinement CasRun using inf abstract Spec concrete Impl {\n\
