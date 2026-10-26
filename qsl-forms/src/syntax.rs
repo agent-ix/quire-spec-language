@@ -3634,6 +3634,51 @@ pub struct RewardForm {
     pub span: Span,
 }
 
+/// One `quantity : exact-value` of a `discrete` delay distribution (FR-253).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedDelayForm {
+    /// The delay, as written.
+    pub delay: QuantityForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the pair.
+    pub span: Span,
+}
+
+/// The family of a `delay` declaration, as written (FR-253; QSpec
+/// `delay-dist`). S2 checks no sign, order, repeat or unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DelayDistributionForm {
+    /// `uniform`, or `uniform[a, b]` when both bounds are written.
+    Uniform {
+        /// The bounds, in written order, or `None` for a bare `uniform`.
+        range: Option<Box<(QuantityForm, QuantityForm)>>,
+    },
+    /// `exponential(rate)`.
+    Exponential {
+        /// The rate, as written.
+        rate: ExactValueForm,
+    },
+    /// `discrete { delay: weight, ... }`, in declared order.
+    Discrete {
+        /// The weighted delays.
+        delays: Vec<WeightedDelayForm>,
+    },
+}
+
+/// A `delay Op ~ D;` declaration (FR-253; QSpec `delay-decl`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelayForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The distribution, as written.
+    pub distribution: DelayDistributionForm,
+    /// The span of the distribution.
+    pub distribution_span: Span,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `weight Op = exact-value;` of a workload (FR-311).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkloadWeightForm {
@@ -4160,6 +4205,8 @@ pub enum DeclarationForm {
     Random(Box<RandomForm>),
     /// A `reward` declaration (FR-311), boxed for the same reason.
     Reward(Box<RewardForm>),
+    /// A `delay` declaration (FR-253), boxed for the same reason.
+    Delay(Box<DelayForm>),
     /// A `workload` declaration (FR-311), boxed for the same reason.
     Workload(Box<WorkloadForm>),
     /// A `probabilistic` claim (FR-392), boxed for the same reason.

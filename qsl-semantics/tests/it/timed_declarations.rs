@@ -10,8 +10,8 @@ use serde_json::json;
 
 use crate::model_operations::{
     add_sub_type, admit_and_assemble_with_body, admit_and_assemble_with_profiles,
-    attempt_update_modifies_version_number, config_unit_with_body, config_version_document,
-    config_version_identity, tc465_deep_hierarchy_document, wire_field,
+    attempt_update_modifies_version_number, config_unit_with_body, config_unit_with_profiles,
+    config_version_document, config_version_identity, tc465_deep_hierarchy_document, wire_field,
 };
 
 fn document() -> Vec<u8> {
@@ -599,4 +599,142 @@ fn source_clock_type_still_refuses_at_assembly() {
         AssemblyCause::TimedNotChecked(TimedConstruct::Clock)
     );
     assert_eq!(error.span.start, offset(body, "Clock"));
+}
+
+const SECONDS_AND_MILLISECONDS: &str =
+    "dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\n";
+
+/// The unit `declarations` after a dense `Config` source in milliseconds,
+/// checked; the refusals when it does not check.
+fn check_delays(
+    timed: bool,
+    declarations: &str,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
+    let time = if timed {
+        "time Config dense unit ms;\n"
+    } else {
+        ""
+    };
+    let body = format!("{SECONDS_AND_MILLISECONDS}{time}{declarations}\n");
+    admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &body,
+    )
+    .expect("S2 retains the delay declaration")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+}
+
+/// The one probabilistic refusal of `declarations`: its code, tag and span text.
+fn delay_refusal(timed: bool, declarations: &str) -> (Code, &'static str, String) {
+    let refusals = check_delays(timed, declarations).expect_err("the delay is refused");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    let CheckCause::Probabilistic(cause) = &refusal.cause else {
+        panic!("a probabilistic cause, got {refusal:?}");
+    };
+    let body = format!(
+        "{SECONDS_AND_MILLISECONDS}{}{declarations}\n",
+        if timed {
+            "time Config dense unit ms;\n"
+        } else {
+            ""
+        }
+    );
+    let (text, _) = config_unit_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &body,
+    );
+    let span = cause.span().expect("a delay refusal carries its span");
+    (
+        cause.code(),
+        cause.tag(),
+        text[span.start..span.end].to_owned(),
+    )
+}
+
+#[trace("TC-708")]
+#[test]
+fn a_delay_is_recorded_exactly_in_the_models_unit_and_a_free_delay_is_none() {
+    let checked = check_delays(
+        true,
+        "delay ConfigVersion::attemptUpdate ~ uniform[1 s, 3 s];",
+    )
+    .expect("a delay on a dense model checks");
+    let model = checked.probabilistic_model();
+    let [delay] = model.delays() else {
+        panic!("one delay, got {:?}", model.delays());
+    };
+    let thousand = |n: i64| quire_exact::Rational::new(n.into(), 1_i64.into()).expect("integer");
+    assert_eq!(
+        delay.distribution(),
+        &qsl_semantics::check::DelayDistribution::UniformRange {
+            a: thousand(1000),
+            b: thousand(3000),
+        }
+    );
+    assert_eq!(
+        model.delay(delay.operation().key()),
+        Some(delay.distribution())
+    );
+    let free = check_delays(true, "").expect("no delay checks");
+    assert!(free.probabilistic_model().delays().is_empty());
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn an_exponential_delay_with_a_zero_rate_refuses_at_the_rate() {
+    let (code, tag, at) =
+        delay_refusal(true, "delay ConfigVersion::attemptUpdate ~ exponential(0);");
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (Code::InvalidModelBinding, "malformed-declaration", "0")
+    );
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_discrete_delay_listed_twice_refuses_at_the_repeat() {
+    let (code, tag, at) = delay_refusal(
+        true,
+        "delay ConfigVersion::attemptUpdate ~ discrete { 1 ms: 1, 1 ms: 2 };",
+    );
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (Code::InvalidModelBinding, "malformed-declaration", "1 ms")
+    );
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_uniform_range_that_runs_backwards_refuses_at_the_distribution() {
+    let (code, tag, at) = delay_refusal(
+        true,
+        "delay ConfigVersion::attemptUpdate ~ uniform[3 ms, 1 ms];",
+    );
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (
+            Code::InvalidModelBinding,
+            "malformed-declaration",
+            "uniform[3 ms, 1 ms]"
+        )
+    );
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_delay_in_an_untimed_model_refuses_at_the_declaration() {
+    let declaration = "delay ConfigVersion::attemptUpdate ~ uniform;";
+    let (code, tag, at) = delay_refusal(false, declaration);
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (
+            Code::InvalidProbabilisticModel,
+            "delay-on-untimed-model",
+            declaration
+        )
+    );
 }

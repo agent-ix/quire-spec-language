@@ -19,10 +19,11 @@ use qsl_foundation::Spanned;
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::ActivationForm;
 use super::syntax::{
-    BoundOp, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclaredName, EventForm,
-    ExactValueForm, ExpectedQuantity, FractionForm, HorizonForm, MeasureForm, MeasureWindowForm,
-    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, SchedulerForm, UsingAlias,
-    WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
+    BoundOp, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclaredName,
+    DelayDistributionForm, DelayForm, EventForm, ExactValueForm, ExpectedQuantity, FractionForm,
+    HorizonForm, MeasureForm, MeasureWindowForm, ProbabilisticBody, ProbabilisticForm, RandomForm,
+    RewardForm, SchedulerForm, UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm,
+    WorkloadForm, WorkloadWeightForm,
 };
 use super::temporal_clause::{expression_form, fairness_form, formula_form, parameter_form};
 use super::value::{
@@ -82,6 +83,67 @@ pub(crate) fn reward_declaration(
             only(&declaration_items, Production::QualifiedName, node)?,
         )?,
         expression: expression_form(cst, only(&declaration_items, Production::Expression, node)?)?,
+        span: node.span(),
+    })))
+}
+
+/// `delay Op ~ D;` (FR-253; QSpec `delay-decl`).
+pub(crate) fn delay_declaration(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let declaration_items = items(cst, node);
+    let distribution = only(&declaration_items, Production::DelayDistribution, node)?;
+    let distribution_items = items(cst, distribution);
+    // `uniform`, `exponential` or `discrete` leads the distribution; the
+    // words are contextual, so the family is read by position and spelling.
+    let [family] = tokens_of(&distribution_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(distribution));
+    };
+    let form = match family.spelling() {
+        b"uniform" => {
+            let bounds = nodes_of(&distribution_items, Production::QuantityLiteral);
+            DelayDistributionForm::Uniform {
+                range: match bounds[..] {
+                    [] => None,
+                    [low, high] => Some(Box::new((
+                        quantity_form(cst, low)?,
+                        quantity_form(cst, high)?,
+                    ))),
+                    _ => return Err(unexpected(distribution)),
+                },
+            }
+        }
+        b"exponential" => DelayDistributionForm::Exponential {
+            rate: exact_value(
+                cst,
+                only(&distribution_items, Production::ExactValue, distribution)?,
+            )?,
+        },
+        b"discrete" => DelayDistributionForm::Discrete {
+            delays: nodes_of(&distribution_items, Production::WeightedDelay)
+                .into_iter()
+                .map(|pair| {
+                    let pair_items = items(cst, pair);
+                    Ok(WeightedDelayForm {
+                        delay: quantity_form(
+                            cst,
+                            only(&pair_items, Production::QuantityLiteral, pair)?,
+                        )?,
+                        weight: exact_value(cst, only(&pair_items, Production::ExactValue, pair)?)?,
+                        span: pair.span(),
+                    })
+                })
+                .collect::<Result<_, FormsRefusal>>()?,
+        },
+        _ => return Err(unexpected(distribution)),
+    };
+    Ok(DeclarationForm::Delay(Box::new(DelayForm {
+        operation: name_form(
+            cst,
+            only(&declaration_items, Production::QualifiedName, node)?,
+        )?,
+        distribution: form,
+        distribution_span: distribution.span(),
         span: node.span(),
     })))
 }
