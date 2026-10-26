@@ -1504,16 +1504,17 @@ mod tests {
         let environment = ApplicationEnvironment::new(ObjectClosure::default());
         let mut root_only = meter(1000);
         let mut registry = handle.registry();
-        registry
-            .register(
+        assert_eq!(
+            registry.register(
                 caller,
                 caller.signature(),
                 SitedHost {
                     callee: None,
                     site: site.clone(),
                 },
-            )
-            .expect("register root-only body");
+            ),
+            Ok(Admission::Accepted)
+        );
         registry
             .begin_call(caller, vec![int(3)], &environment, &mut root_only)
             .expect("begin root only")
@@ -1524,16 +1525,17 @@ mod tests {
 
         let mut limited = meter(root_spend);
         let mut registry = handle.registry();
-        registry
-            .register(
+        assert_eq!(
+            registry.register(
                 caller,
                 caller.signature(),
                 SitedHost {
                     callee: Some(callee.key()),
                     site: site.clone(),
                 },
-            )
-            .expect("register nested body");
+            ),
+            Ok(Admission::Accepted)
+        );
         let result = registry
             .begin_call(caller, vec![int(3)], &environment, &mut limited)
             .expect("begin nested")
@@ -1727,16 +1729,17 @@ mod tests {
         let f = select(handle, own, &package, "f");
         let (occurrence, before) = issued(handle, &package, &g).remove(0);
         let mut registry = handle.registry();
-        registry
-            .register(
+        assert_eq!(
+            registry.register(
                 &g,
                 g.signature(),
                 SitedHost {
                     callee: Some(f.key()),
                     site: before.location().clone(),
                 },
-            )
-            .expect("register");
+            ),
+            Ok(Admission::Accepted)
+        );
         let registered = handle
             .nested_call_site(&g, occurrence)
             .expect("after register");
