@@ -367,6 +367,9 @@ impl Lowering<'_> {
                         vec![MemberTerm::Leaf(operand)],
                     )
                 }
+                FormulaNode::Aggregate { .. } => {
+                    return Err(stage_fault(&location, "aggregate-not-emitted"));
+                }
                 FormulaNode::Not(only) => ("quire.op.temporal.not", None, vec![operand(*only)?]),
                 FormulaNode::And(left, right) => (
                     "quire.op.temporal.and",

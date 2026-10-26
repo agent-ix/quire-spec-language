@@ -5,10 +5,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ActivationForm, BuiltinType, DeclarationForm, FairnessGranularity, FairnessKind,
-    IntervalForm, IntervalUpper, OperatorInterval, ParsedUnit, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
-    TypeFormHead,
+    build_unit, ActivationForm, AggregateComparison, AggregateKindForm, BuiltinType,
+    DeclarationForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
+    OperatorInterval, ParsedUnit, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TypeFormHead,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -66,6 +66,52 @@ fn formula_unit(formula: &str) -> (String, ParsedUnit) {
     let text = clause_source(&header(INFINITE, 0), formula);
     let unit = build(&text);
     (text, unit)
+}
+
+/// FR-194-AC-7/9 (TC-629): aggregate atoms retain their complete parsed
+/// shape and the omitted min_count so S3 can apply the specified default.
+#[trace("TC-629", "FR-194-AC-7", "FR-194-AC-9")]
+#[test]
+fn aggregate_atoms_parse_each_kind_window_and_optional_terms() {
+    let cases = [
+        ("count over past[0,9] >= 1", "count"),
+        ("sum of e.x over past[0,9] min_count 0 <= 4", "sum"),
+        ("min of e.x over past[0,9] <= 4", "min"),
+        ("max of e.x where holds(e.x > 0) over past[0,9] <= 4", "max"),
+        ("fraction holds(e.x > 0) over past[0,9] >= 1/2", "fraction"),
+        ("quantile 0.5 of e.x over past[0,9] <= 4", "quantile"),
+    ];
+    for (source, expected_kind) in cases {
+        let (_, unit) = formula_unit(source);
+        let node = clause(&unit).formula.node(clause(&unit).formula.root());
+        let Some(TemporalNodeForm::AggregateAtom(atom)) = node else {
+            panic!("aggregate atom root for {source}: {node:?}");
+        };
+        let kind = match atom.term.kind {
+            AggregateKindForm::Count => "count",
+            AggregateKindForm::Sum => "sum",
+            AggregateKindForm::Min => "min",
+            AggregateKindForm::Max => "max",
+            AggregateKindForm::Fraction(_) => "fraction",
+            AggregateKindForm::Quantile(_) => "quantile",
+        };
+        assert_eq!(kind, expected_kind, "{source}");
+        assert_eq!(
+            atom.comparison,
+            if source.contains(">=") {
+                AggregateComparison::GreaterEqual
+            } else if source.contains("<=") {
+                AggregateComparison::LessEqual
+            } else {
+                panic!("comparison in {source}")
+            }
+        );
+        if source.contains("min_count 0") {
+            assert_eq!(atom.term.min_count.as_ref().map(|n| n.value), Some(0));
+        } else {
+            assert_eq!(atom.term.min_count, None);
+        }
+    }
 }
 
 fn operator(formula: &TemporalFormulaForm, id: TemporalNodeId) -> &TemporalOperatorForm {

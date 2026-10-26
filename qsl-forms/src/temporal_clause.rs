@@ -15,11 +15,11 @@ use qsl_foundation::Span;
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
     ActivationForm, AggregateAtomForm, AggregateComparison, AggregateKindForm, AggregateTermForm,
-    CaptureForm, ClockForm, DeclarationForm, ExactValueForm, ExpressionForm,
-    FairnessConstraintForm, FairnessGranularity, FairnessKind, HorizonForm, IntervalForm,
-    IntervalUpper, OperatorInterval, ParameterForm, PastWindowForm, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
-    TimedIntervalForm, TimedUpper, UsingAlias,
+    CaptureForm, ClockForm, DeclarationForm, ExpressionForm, FairnessConstraintForm,
+    FairnessGranularity, FairnessKind, HorizonForm, IntervalForm, IntervalUpper, OperatorInterval,
+    ParameterForm, PastWindowForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, TimedUpper,
+    UsingAlias,
 };
 use super::value::{
     declared_name, exact_value, expression, has_token, items, name_form, nodes_of, only,
@@ -498,7 +498,9 @@ impl<'c> Formula<'c> {
             }
             [Item::Node(aggregate)] if aggregate.production() == Production::AggregateAtom => {
                 self.add(
-                    TemporalNodeForm::AggregateAtom(aggregate_atom_form(self.cst, aggregate)?),
+                    TemporalNodeForm::AggregateAtom(Box::new(aggregate_atom_form(
+                        self.cst, aggregate,
+                    )?)),
                     task.parent,
                 );
                 Ok(())
@@ -572,9 +574,12 @@ fn aggregate_term_form(
     let term_items = items(cst, term);
     let kind_node = only(&term_items, Production::AggregateKind, term)?;
     let kind_items = items(cst, kind_node);
-    let head = tokens_of(&kind_items, TokenKind::Identifier)
-        .first()
-        .copied()
+    let head = kind_items
+        .iter()
+        .find_map(|item| match item {
+            Item::Token(token) => Some(*token),
+            Item::Node(_) => None,
+        })
         .ok_or_else(|| unexpected(kind_node))?;
     let kind = match head.spelling() {
         b"count" => AggregateKindForm::Count,

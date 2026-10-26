@@ -1551,35 +1551,35 @@ fn temporal(g: &mut Grammar) {
         P::AggregateTerm,
         s(vec![
             r(P::AggregateKind),
-            opt(s(vec![x("of"), r(P::Expression)])),
+            opt(s(vec![literal("of"), r(P::Expression)])),
             opt(s(vec![
-                x("where"),
-                x("holds"),
+                literal("where"),
+                literal("holds"),
                 x("("),
                 r(P::Expression),
                 x(")"),
             ])),
-            x("over"),
-            x("past"),
+            literal("over"),
+            literal("past"),
             r(P::PastWindow),
-            opt(s(vec![x("min_count"), uint()])),
+            opt(s(vec![literal("min_count"), uint()])),
         ]),
     );
     g.insert(
         P::AggregateKind,
         c(vec![
-            x("count"),
-            x("sum"),
-            x("min"),
-            x("max"),
+            literal("count"),
+            literal("sum"),
+            literal("min"),
+            literal("max"),
             s(vec![
-                x("fraction"),
-                x("holds"),
+                literal("fraction"),
+                literal("holds"),
                 x("("),
                 r(P::Expression),
                 x(")"),
             ]),
-            s(vec![x("quantile"), r(P::ExactValue)]),
+            s(vec![literal("quantile"), r(P::ExactValue)]),
         ]),
     );
     g.insert(

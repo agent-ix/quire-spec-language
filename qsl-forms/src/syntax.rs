@@ -3451,7 +3451,7 @@ pub enum TemporalNodeForm {
         span: Span,
     },
     /// A window aggregate atom.
-    AggregateAtom(AggregateAtomForm),
+    AggregateAtom(Box<AggregateAtomForm>),
     /// An operator applied to its operands.
     Operator(TemporalOperatorForm),
 }

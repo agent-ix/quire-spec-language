@@ -3602,6 +3602,7 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
                 };
                 declared_type_spans
                     .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
@@ -3635,6 +3636,7 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
                 };
                 declared_type_spans.insert(hyper_site(behaviours, Site::Node(id.index())), span);
             }

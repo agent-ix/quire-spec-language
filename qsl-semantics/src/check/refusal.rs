@@ -1048,6 +1048,11 @@ impl ProtocolAnchorCause {
 /// no expression tree for a `Location` path to walk.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TemporalCause {
+    /// Several temporal faults retained in source order (FR-194-AC-8).
+    Multiple {
+        /// The individually located causes in source order.
+        causes: Vec<TemporalCause>,
+    },
     /// FR-230: a timed declaration requires the temporal facet selected by
     /// the unit header. Located at the declaration itself.
     TimedFacetRequired {
@@ -1214,6 +1219,32 @@ pub enum TemporalCause {
         /// The constraint's span.
         span: Span,
     },
+    /// FR-194: aggregate terms apply to trace subjects, not model subjects.
+    AggregateModelSubject {
+        /// The aggregate term's span.
+        span: Span,
+    },
+    /// FR-194: an aggregate literal violates its authored-value constraint.
+    InvalidAggregateValue {
+        /// The literal's span.
+        span: Span,
+    },
+    /// FR-194: the window bounds are not ordered.
+    InvalidAggregateWindow {
+        /// The complete `past[a, b]` span.
+        span: Span,
+    },
+    /// FR-194: a window bound has the wrong kind for the selected profile.
+    AggregateWindowKindMismatch {
+        /// The first bound with the wrong kind.
+        span: Span,
+    },
+    /// FR-194: aggregate windows are admitted only by event-position and
+    /// timestamped-event profiles.
+    AggregateProfileUnsupported {
+        /// The aggregate term's span.
+        span: Span,
+    },
     /// A timed interval (FR-393) under a profile other than the timed
     /// profile, where FR-233's `model-steps` rule is not checked yet:
     /// refused rather than checked as a step interval. Located at the
@@ -1340,6 +1371,9 @@ impl TemporalCause {
     /// `Location`'s path).
     pub fn span(&self) -> Span {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Span { start: 0, end: 0 }, TemporalCause::span),
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
@@ -1360,6 +1394,11 @@ impl TemporalCause {
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
+            | Self::AggregateModelSubject { span }
+            | Self::InvalidAggregateValue { span }
+            | Self::InvalidAggregateWindow { span }
+            | Self::AggregateWindowKindMismatch { span }
+            | Self::AggregateProfileUnsupported { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
@@ -1377,7 +1416,14 @@ impl TemporalCause {
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Code::InvalidPackage, TemporalCause::code),
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
+            Self::InvalidAggregateValue { .. } => Code::InvalidPackage,
+            Self::InvalidAggregateWindow { .. } => Code::InvalidPackage,
+            Self::AggregateWindowKindMismatch { .. } => Code::IllTyped,
+            Self::AggregateProfileUnsupported { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
@@ -1391,6 +1437,7 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
+            | Self::AggregateModelSubject { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
@@ -1423,6 +1470,7 @@ impl TemporalCause {
     /// This cause's catalog tag.
     pub fn tag(&self) -> &'static str {
         match self {
+            Self::Multiple { causes } => causes.first().map_or("invalid-value", TemporalCause::tag),
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
@@ -1437,6 +1485,11 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
+            Self::AggregateModelSubject { .. } => "expression-form",
+            Self::InvalidAggregateValue { .. } => "invalid-value",
+            Self::InvalidAggregateWindow { .. } => "invalid-value",
+            Self::AggregateWindowKindMismatch { .. } => "unit-mismatch",
+            Self::AggregateProfileUnsupported { .. } => "expression-form",
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
