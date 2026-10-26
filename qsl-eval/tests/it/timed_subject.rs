@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal, PopulationUniverse,
-    TimedBehaviour, TimedState, TimedSystem,
+    BehaviourReading, ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal,
+    PopulationUniverse, TimedBehaviour, TimedState, TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -553,7 +553,14 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
         .advance(&timed, &exact(1, 1), &reply)
         .expect("reply");
 
-    let trace = behaviour.timed_trace(&timed, true).expect("a timed lasso");
+    // The clause's own profile chooses the idle tail.
+    let node = &world.package.graph().temporal_clauses()[0];
+    let BehaviourReading::Timed(trace) = behaviour
+        .clause_reading(&timed, node.clause().profile())
+        .expect("a timed lasso")
+    else {
+        panic!("the timed profile reads time stamps");
+    };
     assert!(trace.is_lasso());
     let closed = behaviour
         .timed_trace(&timed, false)
@@ -561,7 +568,6 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
     assert!(!closed.is_lasso());
     assert_eq!(closed.stamps().len(), 3);
 
-    let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("the clause has letters");
     let instance = ModelInstance {
         population: DeclarationKey {
@@ -587,12 +593,13 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
 
 /// Part of FR-231-AC-2 (TC-686): in a unit selecting
 /// `quire.temporal.event-position.false-extension/v1`, the behaviour `send`
-/// then `reply` of `Rpc` closes at position 2: its timed reading without
-/// the idle tail is the three positions `0, 0, 1` with no loop, and over the
-/// closed trace of three positions `always[0,1] holds(c.phase = 2)` is
-/// violated at position 2, not pending: false extension reads no position 3,
-/// where the timed profile's idle tail would repeat `Replied`, while
-/// `always[0,0] holds(c.phase = 2)` holds there.
+/// then `reply` of `Rpc` closes at position 2: the clause's profile reads it
+/// as the closed trace of its three positions, with no loop (under
+/// infinite-trace the same behaviour is the lasso looping on position 2),
+/// and over it `always[0,1] holds(c.phase = 2)` is violated at position 2,
+/// not pending: false extension reads no position 3, where the idle tail
+/// would repeat `Replied`, while `always[0,0] holds(c.phase = 2)` holds
+/// there.
 #[trace("TC-686", "FR-231-AC-2")]
 #[test]
 fn under_event_position_the_execution_closes_at_its_last_position() {
@@ -632,13 +639,35 @@ fn under_event_position_the_execution_closes_at_its_last_position() {
         },
         key: "c".to_owned(),
     };
+    let reading = |clause: usize| {
+        let node = &world.package.graph().temporal_clauses()[clause];
+        behaviour
+            .clause_reading(&timed, node.clause().profile())
+            .expect("a closed reading")
+    };
+    assert_eq!(
+        reading(0),
+        BehaviourReading::Untimed(TemporalTrace::Finite { len: 3 })
+    );
+    assert_eq!(
+        behaviour
+            .clause_reading(&timed, qsl_semantics::check::TemporalProfile::InfiniteTrace)
+            .expect("an idle tail"),
+        BehaviourReading::Untimed(TemporalTrace::Lasso {
+            prefix: 2,
+            loop_len: 1
+        })
+    );
     let at = |clause: usize, position: u64| {
         let node = &world.package.graph().temporal_clauses()[clause];
         let letters = system.clause_letters(node).expect("the clause has letters");
         let mut letters = BehaviourLetters::new(&letters, &instance, &behaviour);
+        let BehaviourReading::Untimed(trace) = reading(clause) else {
+            panic!("an untimed reading");
+        };
         evaluate_at(
             node.clause(),
-            TemporalTrace::Finite { len: 3 },
+            trace,
             TemporalPosition::new(position),
             &mut letters,
             &mut quire_exact::Meter::new(METER),

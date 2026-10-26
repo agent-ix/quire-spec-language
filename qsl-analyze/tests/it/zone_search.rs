@@ -7,7 +7,7 @@ use qsl_analyze::zone_check::{
     check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
     ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
-use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
+use qsl_eval::simulation::model::{ModelSystem, TimedBehaviour, TimedSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
 use quire_exact::{Cancel, Integer, Rational, Undefined};
@@ -140,9 +140,11 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
 /// `Rpc` with `T = 4 ms` and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
 /// `0`, `3`, `0`; the deadlock-freedom item holds under both. Not covered:
-/// the `Holds` certificate, which FR-244 builds. With `qsl-eval`'s
-/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, which
-/// checks each step's post-state digest, this is FR-236-AC-1.
+/// the `Holds` certificate, which FR-244 builds. Each step's `post_state` is
+/// the digest of the timed state the subject reaches by the same steps
+/// after the same delays; with `qsl-eval`'s
+/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, this is
+/// FR-236-AC-1.
 #[trace("TC-694")]
 #[trace("TC-696", "FR-241-AC-1")]
 #[trace("TC-691", "FR-236-AC-1")]
@@ -171,6 +173,29 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     );
     assert_eq!(counterexample.final_delay, None);
     assert!(counterexample.over_binding.is_some());
+
+    // FR-236-AC-1: each step's `post_state` is the digest of the timed
+    // state the subject reaches by taking the same steps after the same
+    // delays.
+    let system = three.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = <[_; 1]>::try_from(timed.initial()).expect("one initial state");
+    let mut behaviour = TimedBehaviour::new(initial);
+    for step in &counterexample.prefix {
+        behaviour
+            .advance(
+                &timed,
+                step.delay.as_ref().expect("a timed step carries its delay"),
+                &step.transition,
+            )
+            .expect("the counterexample's step is admitted");
+        assert_eq!(
+            timed
+                .state_digest(behaviour.last().state())
+                .expect("a digest"),
+            step.post_state
+        );
+    }
 
     for world in [&four, &three] {
         assert!(matches!(deadlock(world), ZoneCheckOutcome::Holds { .. }));

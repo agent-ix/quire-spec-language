@@ -1016,6 +1016,55 @@ impl TimedBehaviour {
     }
 }
 
+/// How a temporal clause reads a timed behaviour (FR-231 "Quiescent states
+/// and the idle tail", "Untimed reading"): a position trace for an untimed
+/// claim, or a time-stamped trace for a claim under the timed profile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BehaviourReading {
+    /// The positions an ADR-018 claim reads, with the clock valuation part
+    /// of each position's state.
+    Untimed(crate::temporal::TemporalTrace),
+    /// The time-stamped positions a claim under the timed profile reads.
+    Timed(crate::temporal::TimedTrace),
+}
+
+impl TimedBehaviour {
+    /// The trace a temporal clause checked under `profile` reads this
+    /// behaviour as (FR-231). Under a bounded profile (event-position or
+    /// fixed-sample false extension, or a finite window) the idle tail
+    /// closes the execution at its last discrete step: the closed trace of
+    /// its positions. Under infinite-trace the quiescent last state's
+    /// stutter step repeats forever: the lasso looping on the last position.
+    /// Under the timed profile, the timed lasso of [`Self::timed_trace`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::timed_trace`] with the idle tail, for infinite-trace and
+    /// the timed profile.
+    pub fn clause_reading(
+        &self,
+        system: &TimedSystem<'_, '_>,
+        profile: qsl_semantics::check::TemporalProfile,
+    ) -> Result<BehaviourReading, MoveRefusal> {
+        let len = u64::try_from(self.positions.len()).unwrap_or(u64::MAX);
+        if profile.is_bounded() {
+            return Ok(BehaviourReading::Untimed(
+                crate::temporal::TemporalTrace::Finite { len },
+            ));
+        }
+        let timed = self.timed_trace(system, true)?;
+        if profile == qsl_semantics::check::TemporalProfile::Timed {
+            return Ok(BehaviourReading::Timed(timed));
+        }
+        Ok(BehaviourReading::Untimed(
+            crate::temporal::TemporalTrace::Lasso {
+                prefix: len.saturating_sub(1),
+                loop_len: 1,
+            },
+        ))
+    }
+}
+
 /// The letters of one checked temporal clause over a timed behaviour: a
 /// position reads its model state, and a position past the represented
 /// behaviour the state it wraps to on the idle tail's loop.

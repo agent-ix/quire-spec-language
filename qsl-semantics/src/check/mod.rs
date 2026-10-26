@@ -1084,6 +1084,26 @@ impl PackageDeclarations {
                 &self.models,
                 self.identity,
             );
+            // The model a `time invariant` or `urgent` declaration belongs
+            // to (FR-230 "Timed facet gate"): the one model the unit's
+            // `time` members name, else the unit's one selected model.
+            let timed_model: Option<&str> = {
+                let named: std::collections::BTreeSet<&str> = self
+                    .timed_forms
+                    .iter()
+                    .filter_map(|form| match form {
+                        TimedDeclaration::TimeSource(source) => Some(source.model.name.as_str()),
+                        TimedDeclaration::TimeInvariant(_)
+                        | TimedDeclaration::Urgent(_)
+                        | TimedDeclaration::ClockType(_) => None,
+                    })
+                    .collect();
+                match (named.len(), self.models.as_slice()) {
+                    (1, _) => named.into_iter().next(),
+                    (0, [model]) => model.alias(),
+                    _ => None,
+                }
+            };
             let mut seen_time_sources = BTreeMap::new();
             let refusals = self
                 .timed_forms
@@ -1293,7 +1313,7 @@ impl PackageDeclarations {
                     }
                     let cause = CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
                         construct: form.construct(),
-                        owner: form.owner().to_owned(),
+                        owner: form.owner(timed_model).to_owned(),
                         selected: selected.clone(),
                         required,
                         span: form.span(),

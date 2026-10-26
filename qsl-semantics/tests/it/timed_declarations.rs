@@ -660,7 +660,10 @@ const UNSELECTED_TIMED: &str = "time Config dense unit ms;\n\
      function g using v(): Clock pure { 0 }\n\
      record Timer { x: Clock; n: Integer; }\n\
      type Alias = Clock;\n\
-     type Maybe = Option<Clock>;\n";
+     type Maybe = Option<Clock>;\n\
+     tuple Pair(Clock, Integer);\n\
+     union Armed { On(Clock), Off }\n\
+     type Watches = Set<Clock>;\n";
 
 /// Each refusal of `refusals` as FR-230's facet gate refuses it: the
 /// construct, its owning declaration, the selected header layers and the
@@ -699,12 +702,69 @@ fn facet_refusals(
 /// `quire.model.complete/v1` alone refuses its `time` member, `time
 /// invariant`, `urgent when` declaration and each `Clock` its own source
 /// writes in a type position (a parameter, a result, a record field, an
-/// alias target and the argument of `Option`), `unsupported_construct`/
-/// `declaration-form` at each span, in source order and every one, each with
-/// its family, its owning declaration, the selected layers and the required
-/// facet, and no other refusal. A unit whose header selects
+/// alias target, the argument of `Option`, a tuple element, a union payload
+/// and a collection element), `unsupported_construct`/`declaration-form` at
+/// each span, in source order and every one, each with its family, its
+/// owning declaration (the model `Config` for the `time` member, the `time
+/// invariant` and the `urgent` declaration), the selected layers and the
+/// required facet, and no other refusal. A unit whose header selects
 /// `quire.value.complete/v1` alone refuses each `Clock` alike; S1 admits no
 /// unit without a `profile`, so that is the AC's no-`profile` vector.
+/// FR-230-AC-8 (TC-685 step 8): the unit of AC-7 with the header selection
+/// `profile t = "quire.temporal.complete/v1";` reaches S3 with its `time`
+/// member, `time invariant`, `urgent` declaration and each `Clock` in a type
+/// position, and S3 refuses none of them `unsupported_construct`/
+/// `declaration-form`: the facet gate passes them all. E3's resolution of
+/// the selection to the temporal layer is FR-110-AC-13's
+/// `qsl-replay` test, and every AC-1 to AC-5 test checks a unit selecting
+/// the layer. The same unit without the selection is AC-7's.
+#[trace("TC-685", "FR-230-AC-8")]
+#[test]
+fn a_unit_selecting_the_timed_facet_passes_the_gate() {
+    let declarations = admit_and_assemble_with_profiles(
+        &clock_document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        SELECTED_TIMED,
+    )
+    .expect("S2 retains every grammar-valid timed form");
+    let refusals = declarations
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .err()
+        .unwrap_or_default();
+    let gated: Vec<_> = refusals
+        .iter()
+        .filter(|refusal| {
+            refusal.cause.catalog_code().map(|code| code.to_string())
+                == Some("unsupported_construct/declaration-form".to_owned())
+        })
+        .collect();
+    assert!(gated.is_empty(), "{gated:?}");
+    // Past the gate, only the source `Clock` positions, which S3 does not
+    // check yet, are refused.
+    assert!(
+        refusals.iter().all(|refusal| matches!(
+            refusal.cause,
+            CheckCause::TimedNotChecked {
+                construct: TimedConstruct::Clock,
+                ..
+            }
+        )),
+        "{refusals:?}"
+    );
+}
+
+/// AC-8's unit: AC-7's timed members over the clock `x`, and the `Clock`
+/// type positions a value of the facet checks.
+const SELECTED_TIMED: &str = "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+     time Config dense unit ms;\n\
+     time invariant Deadline when { true } { self.x <= 3 ms }\n\
+     urgent Eager when { true };\n\
+     function f using v(c: Clock): Boolean pure { true }\n\
+     record Timer { x: Clock; n: Integer; }\n\
+     type Alias = Clock;\n\
+     type Maybe = Option<Clock>;\n";
+
 #[trace("TC-685", "FR-230-AC-7")]
 #[test]
 fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
@@ -727,12 +787,12 @@ fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
             ),
             row(
                 TimedConstruct::TimeInvariant,
-                "Deadline",
+                "Config",
                 offset(UNSELECTED_TIMED, "time invariant")
             ),
             row(
                 TimedConstruct::Urgent,
-                "Eager",
+                "Config",
                 offset(UNSELECTED_TIMED, "urgent Eager")
             ),
             row(TimedConstruct::Clock, "f", clocks[0]),
@@ -740,6 +800,9 @@ fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
             row(TimedConstruct::Clock, "Timer", clocks[2]),
             row(TimedConstruct::Clock, "Alias", clocks[3]),
             row(TimedConstruct::Clock, "Maybe", clocks[4]),
+            row(TimedConstruct::Clock, "Pair", clocks[5]),
+            row(TimedConstruct::Clock, "Armed", clocks[6]),
+            row(TimedConstruct::Clock, "Watches", clocks[7]),
         ]
     );
 

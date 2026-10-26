@@ -743,14 +743,16 @@ impl TimedDeclaration {
     }
 
     /// The declaration FR-230's facet gate names as the construct's owner:
-    /// the model for a `time` member, the declaration for a `time
-    /// invariant` or `urgent` declaration, and the declaration whose type
-    /// form writes a `Clock`.
-    pub(super) fn owner(&self) -> &str {
+    /// the model for a `time` member, `time invariant` or `urgent`
+    /// declaration, and the declaration whose type form writes a `Clock`.
+    /// A `time invariant` or `urgent` declaration names no model: its owner
+    /// is `model`, the unit's timed model, and its own name only when the
+    /// unit has no one model it can belong to.
+    pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
         match self {
             Self::TimeSource(source) => &source.model.name,
-            Self::TimeInvariant(invariant) => &invariant.name.name,
-            Self::Urgent(urgent) => &urgent.name.name,
+            Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
+            Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
             Self::ClockType(position) => &position.owner,
         }
     }
