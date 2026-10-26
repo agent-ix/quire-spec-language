@@ -154,6 +154,11 @@ pub(crate) fn deadlock(world: &World) -> Outcome {
 
 /// FR-232's time-lock-freedom item over `world`, decided by EN-6.
 pub(crate) fn time_lock_item(world: &World) -> Outcome {
+    time_lock_item_under(world, ZoneCheckLimits::default())
+}
+
+/// [`time_lock_item`] under `limits`.
+fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -164,7 +169,7 @@ pub(crate) fn time_lock_item(world: &World) -> Outcome {
                 subject: SUBJECT,
                 kind: ObligationKind::TimeLockFreedom,
             },
-            limits: ZoneCheckLimits::default(),
+            limits,
         },
         &Cancel::new(),
     )
@@ -1810,4 +1815,35 @@ fn a_lower_bounded_window_is_decided_by_the_idle_tail() {
         &decided,
         &proved(claim(&decided, ZoneCheckLimits::default(), &Cancel::new())),
     );
+}
+
+/// FR-240's trap search is charged to `max_zone_bytes` (V-7): over `Rpc`
+/// with `T = 4 ms` the time-lock-freedom item holds, storing more zone
+/// bytes than the deadlock-freedom item's search of the same graph, and a
+/// budget one byte short of its count stops it.
+#[trace("TC-694")]
+#[test]
+fn the_trap_search_is_charged_to_the_zone_budget() {
+    let four = rpc(4);
+    let ZoneCheckOutcome::Holds { stats, .. } = time_lock_item(&four) else {
+        panic!("Rpc is time-lock free");
+    };
+    let ZoneCheckOutcome::Holds {
+        stats: searched, ..
+    } = deadlock(&four)
+    else {
+        panic!("Rpc is deadlock free");
+    };
+    assert!(stats.zone_bytes > searched.zone_bytes);
+    let short = ZoneCheckLimits {
+        max_zone_bytes: stats.zone_bytes - 1,
+        ..ZoneCheckLimits::default()
+    };
+    match time_lock_item_under(&four, short) {
+        ZoneCheckOutcome::Stopped { cause, .. } => assert_eq!(
+            cause,
+            ZoneStop::LimitReached(ZoneCheckLimit::MaxZoneBytes(stats.zone_bytes - 1))
+        ),
+        other => panic!("expected a stop, got {other:?}"),
+    }
 }

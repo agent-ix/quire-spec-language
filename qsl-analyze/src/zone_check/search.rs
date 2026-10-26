@@ -866,7 +866,11 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 ))),
             );
         }
-        let bytes = zone_bytes(zone);
+        self.charge_bytes(zone_bytes(zone))
+    }
+
+    /// Charge `bytes` of stored zones against `max_zone_bytes`.
+    pub(super) fn charge_bytes(&mut self, bytes: u64) -> Result<(), Halt> {
         if self.zone_bytes.saturating_add(bytes) > self.limits.max_zone_bytes {
             return Err(
                 self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxZoneBytes(
@@ -1775,7 +1779,7 @@ pub(super) fn scaled(value: &Rational, scale: &BigInt) -> BigInt {
 }
 
 /// The bytes a stored zone takes, by its bounds' magnitudes.
-fn zone_bytes(zone: &Dbm) -> u64 {
+pub(super) fn zone_bytes(zone: &Dbm) -> u64 {
     let mut bytes = 0_u64;
     for i in 0..zone.dim() {
         for j in 0..zone.dim() {

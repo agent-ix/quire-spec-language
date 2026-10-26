@@ -1340,3 +1340,127 @@ fn the_remaining_timed_rows_settle_as_stated() {
         )
     );
 }
+
+/// A one-object model `model` over `clocks` and `operations`, with the
+/// claim `always holds(true)`, which replay of a derived item reads past.
+fn trap_world(time: &str, clocks: &[&str], operations: &[(&str, &[&str])], model: &str) -> World {
+    world(
+        &document(clocks, operations),
+        INFINITE,
+        &format!(
+            "{time}{model}temporal Any using inf over (c: M::Call) clock \"model-steps\" on \
+             origin {{ always holds(true) }}\n"
+        ),
+    )
+}
+
+/// EN-6's time-lock counterexample over `world`, which replay reproduces.
+fn reproduced_time_lock(world: &World) -> TemporalCounterexample {
+    let counterexample = violated(time_lock_item(world));
+    assert_eq!(counterexample.kind, CounterexampleKind::TimeLock);
+    assert_eq!(
+        replay_on(world, &counterexample, true, &Limits::default()).expect("replays"),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: None,
+        }
+    );
+    counterexample
+}
+
+/// FR-240's search over trapped valuations of every shape, each reported
+/// lock replayed (FR-237):
+/// - a diagonal trap reached by a step: `r` resets `x`, and `go` needs
+///   `x >= 2` before `y` reaches 3, so after `r` at `y > 1` only `r`
+///   loops;
+/// - an open boundary: `go` leaves while `x < 1`, so from `x = 1` on, held
+///   to `x <= 2`, only `ping` loops: the least delay into the trap is 1;
+/// - a Zeno reset loop: `ping` resets `x` under `x <= 0`, so time never
+///   passes;
+/// - a tick source: after `work`, only `spin` loops and no tick comes.
+#[trace("TC-695")]
+#[test]
+fn trapped_valuations_of_every_shape_are_found() {
+    let diagonal = trap_world(
+        DENSE,
+        &["x", "y"],
+        &[("go", &["phase"]), ("r", &["x"])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x >= 2 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre R using v on M::Call::r { self.phase = 0 }\n\
+         post Reset using v on M::Call::r { self.x = 0 ms }\n\
+         time invariant Hold when { self.phase = 0 } { self.y <= 3 ms }\n",
+    );
+    let found = reproduced_time_lock(&diagonal);
+    assert_eq!(found.prefix.len(), 1);
+    assert!(found.prefix[0].transition.operation().contains("Call/r\""));
+
+    let open = trap_world(
+        DENSE,
+        &["x"],
+        &[("go", &["phase"]), ("ping", &[])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x < 1 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre Ping using v on M::Call::ping { self.phase = 0 }\n\
+         time invariant Hold when { self.phase = 0 } { self.x <= 2 ms }\n",
+    );
+    let found = reproduced_time_lock(&open);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(1)));
+
+    let zeno = trap_world(
+        DENSE,
+        &["x"],
+        &[("ping", &["x"])],
+        "post Pinged using v on M::Call::ping { self.x = 0 ms }\n\
+         time invariant Frozen when { true } { self.x <= 0 ms }\n",
+    );
+    let found = reproduced_time_lock(&zeno);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(0)));
+
+    let ticks = trap_world(
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         time M tick M::Call::tick period 1 ms unit ms;\n",
+        &[],
+        &[("work", &["phase"]), ("tick", &[]), ("spin", &[])],
+        "pre Tick using v on M::Call::tick { self.phase = 0 }\n\
+         pre Work using v on M::Call::work { self.phase = 0 }\n\
+         post Worked using v on M::Call::work { self.phase = 1 }\n\
+         pre Spin using v on M::Call::spin { self.phase = 1 }\n",
+    );
+    let found = reproduced_time_lock(&ticks);
+    assert_eq!(found.prefix.len(), 1);
+    assert!(found.prefix[0]
+        .transition
+        .operation()
+        .contains("Call/work\""));
+}
+
+/// FR-240's order: at one node a local time-lock comes before a non-local
+/// one, and the first lock in canonical order is reported. Where `go`
+/// leaves while `x < 1` and nothing else is enabled under `x <= 2`, the
+/// valuations from 1 are trapped and `x = 2` is a local time-lock: the
+/// local one is reported, after delay 2. Over the time-locked `Ticker`,
+/// whose last state holds a local time-lock, the initial node's trap comes
+/// first.
+#[trace("TC-695")]
+#[test]
+fn a_local_lock_comes_first_at_a_node_and_the_first_node_first() {
+    let both = trap_world(
+        DENSE,
+        &["x"],
+        &[("go", &["phase"])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x < 1 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         time invariant Hold when { self.phase = 0 } { self.x <= 2 ms }\n",
+    );
+    let found = reproduced_time_lock(&both);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(2)));
+
+    let first = violated(time_lock_item(&ticker(true)));
+    assert!(first.prefix.is_empty());
+    assert_eq!(first.final_delay, Some(whole(0)));
+}

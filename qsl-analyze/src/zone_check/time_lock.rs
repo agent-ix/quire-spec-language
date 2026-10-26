@@ -7,9 +7,11 @@
 //! positive delay is admissible and no step is enabled, computed by DBM
 //! operations. Then the trapped valuations, those with no time-divergent
 //! continuation: a timed state among them is concretised (FR-241) and its
-//! forward closure explored afresh from its point zone; a confirmed trap is
-//! reported, an unconfirmed one passed over. At one node a local time-lock
-//! comes before a non-local one.
+//! forward closure explored afresh from its point zone, which confirms the
+//! trap. The trapped valuations are exact, so FR-240's unconfirmed trap,
+//! which it passes over, cannot arise here: a piece that does not
+//! concretise or is not confirmed is a fault of the engine, never a proof.
+//! At one node a local time-lock comes before a non-local one.
 //!
 //! EZ-7 marks whole symbolic states that reach no divergent target, which
 //! misses a trap that holds only part of a zone: a state whose early
@@ -39,7 +41,7 @@ use qsl_semantics::check::ClockOp;
 use quire_exact::{Integer, Rational};
 
 use super::concretise::{concretise, Concrete, Stage, Target};
-use super::search::{constrain_at, uncovered, Halt, Run};
+use super::search::{constrain_at, uncovered, zone_bytes, Halt, Run};
 use super::{Bound, Dbm, DbmError, ZoneCheckRefusal};
 
 /// A union of zones.
@@ -72,6 +74,23 @@ impl Federation {
         }
         Ok(true)
     }
+}
+
+/// The valuations of each model state of the graph with a time-divergent
+/// continuation.
+struct Divergence {
+    /// Each model state's index, by its state key.
+    keys: BTreeMap<Vec<u8>, usize>,
+    /// Each model state's divergent valuations, as zones whose union they
+    /// are.
+    held: Vec<Vec<Dbm>>,
+}
+
+/// A path to a time-locked valuation: the initial state it starts from and
+/// its concretisation.
+struct LockPath {
+    initial: usize,
+    concrete: Concrete,
 }
 
 /// A model state of the graph, as the trap computation reads it.
@@ -109,13 +128,18 @@ impl Run<'_, '_, '_> {
                 return Err(ZoneCheckRefusal::Fault("time-lock-concretisation").into());
             }
             let state = self.nodes[node].state.clone();
-            for piece in trapped {
-                let Some(concrete) = self.lock_path(node, &Target::Within(piece))? else {
-                    continue;
-                };
-                if !self.point_diverges(&state, &concrete.1)? {
-                    return Ok(Some(time_lock(concrete)?));
+            // The trapped valuations are exact and reached along the node's
+            // real edges: a piece that does not concretise, or whose point
+            // the fresh exploration finds divergent, is the engine's own
+            // disagreement, never a proof of time-lock freedom.
+            if let Some(piece) = trapped.into_iter().next() {
+                let concrete = self
+                    .lock_path(node, &Target::Within(piece))?
+                    .ok_or(ZoneCheckRefusal::Fault("time-lock-concretisation"))?;
+                if self.point_diverges(&state, &concrete.concrete)? {
+                    return Err(ZoneCheckRefusal::Fault("time-lock-confirmation").into());
                 }
+                return Ok(Some(time_lock(concrete)?));
             }
         }
         Ok(None)
@@ -137,7 +161,10 @@ impl Run<'_, '_, '_> {
                 })
                 .collect());
         }
-        let (keys, divergent) = self.divergent_valuations()?;
+        let Divergence {
+            keys,
+            held: divergent,
+        } = self.divergent_valuations()?;
         let mut traps = Vec::with_capacity(self.nodes.len());
         for node in 0..self.nodes.len() {
             let held = keys
@@ -150,9 +177,14 @@ impl Run<'_, '_, '_> {
     }
 
     /// Under a dense source, the valuations of each model state of the
-    /// graph with a time-divergent continuation, by the model state's key.
-    #[allow(clippy::type_complexity, reason = "an index and its sets")]
-    fn divergent_valuations(&mut self) -> Result<(BTreeMap<Vec<u8>, usize>, Vec<Vec<Dbm>>), Halt> {
+    /// graph with a time-divergent continuation.
+    ///
+    /// Every zone a set gains is charged to `max_zone_bytes`, which stops
+    /// the run (V-7): the sets range over every valuation and the `z` clock,
+    /// so they can outgrow the search's own zones. Each ν round computes
+    /// its μ set afresh: the μ set of a smaller ν set is smaller, so the
+    /// previous round's is no start from below.
+    fn divergent_valuations(&mut self) -> Result<Divergence, Halt> {
         let mut keys = BTreeMap::new();
         let mut states = Vec::new();
         for node in 0..self.nodes.len() {
@@ -214,7 +246,7 @@ impl Run<'_, '_, '_> {
             let mut inner = vec![Federation::default(); places.len()];
             for (at, place) in places.iter().enumerate() {
                 if place.quiescent {
-                    inner[at].add(within(place)?)?;
+                    self.hold(&mut inner[at], within(place)?)?;
                 }
                 // The silent step that resets `z` once a unit has passed,
                 // into the outer set.
@@ -223,7 +255,7 @@ impl Run<'_, '_, '_> {
                     reset.constrain(z, 0, Bound::le(0.into()))?;
                     reset.free(z)?;
                     reset.constrain(0, z, Bound::le(-scale.clone()))?;
-                    inner[at].add(before(place, reset)?)?;
+                    self.hold(&mut inner[at], before(place, reset)?)?;
                 }
             }
             loop {
@@ -241,7 +273,7 @@ impl Run<'_, '_, '_> {
                                 pre.free(clock + 1)?;
                             }
                             constrain_at(&mut pre, &step.part, &scale)?;
-                            grew |= inner[at].add(before(place, pre)?)?;
+                            grew |= self.hold(&mut inner[at], before(place, pre)?)?;
                         }
                     }
                 }
@@ -273,7 +305,21 @@ impl Run<'_, '_, '_> {
                     .collect::<Result<Vec<_>, DbmError>>()
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok((keys, divergent))
+        Ok(Divergence {
+            keys,
+            held: divergent,
+        })
+    }
+
+    /// Add `zone` to `set`, charging it to `max_zone_bytes` when the set
+    /// grows; whether it grew.
+    fn hold(&mut self, set: &mut Federation, zone: Dbm) -> Result<bool, Halt> {
+        let bytes = zone_bytes(&zone);
+        if !set.add(zone)? {
+            return Ok(false);
+        }
+        self.charge_bytes(bytes)?;
+        Ok(true)
     }
 
     /// Whether each node has a valuation with a time-divergent continuation
@@ -330,11 +376,7 @@ impl Run<'_, '_, '_> {
     /// FR-241 for a time-lock: the real edges to `node` and then a delay at
     /// it, the last valuation in `target`; the initial state's index and
     /// the path, or `None` when it has no concretisation.
-    fn lock_path(
-        &mut self,
-        node: usize,
-        target: &Target,
-    ) -> Result<Option<(usize, Concrete)>, Halt> {
+    fn lock_path(&mut self, node: usize, target: &Target) -> Result<Option<LockPath>, Halt> {
         let (initial, mut stages, _) = self.stages_to(node)?;
         let state = self.nodes[node].state.clone();
         let invariants = self.timed(self.timed.invariants(&state))?;
@@ -348,14 +390,14 @@ impl Run<'_, '_, '_> {
         Ok(
             concretise(self.timed, self.dim() - 1, &stages, target, &self.scale)
                 .ok()
-                .map(|concrete| (initial, concrete)),
+                .map(|concrete| LockPath { initial, concrete }),
         )
     }
 }
 
 /// FR-236's `TimeLock` counterexample of the path `concrete` from the
 /// initial state `initial`.
-fn time_lock((initial, concrete): (usize, Concrete)) -> Result<TemporalCounterexample, Halt> {
+fn time_lock(LockPath { initial, concrete }: LockPath) -> Result<TemporalCounterexample, Halt> {
     let stem = concrete
         .prefix
         .iter()
