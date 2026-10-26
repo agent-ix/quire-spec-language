@@ -913,8 +913,25 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// The object type a type name `T` or `M::T` denotes, when exactly one
+    /// object type of the package is named `T`.
+    pub(crate) fn object_type_named(&self, written: &NameForm) -> Option<EffectiveId> {
+        let name = match &written.segments[..] {
+            [name] => name.as_str(),
+            [qualifier, name] if self.alias() == Some(qualifier.as_str()) => name.as_str(),
+            _ => return None,
+        };
+        let mut found = self
+            .object_types()
+            .filter(|(key, _)| key.node.rsplit('/').next() == Some(name))
+            .map(|(_, id)| id);
+        let id = found.next()?;
+        found.next().is_none().then_some(id)
+    }
+
     /// Whether every field member of the package named `name` is a clock,
-    /// and one is: a read of `.name` through any path reads a clock.
+    /// and one is: a read of `.name` through a path whose object type is
+    /// not known reads a clock.
     pub(crate) fn names_only_clocks(&self, name: &str) -> bool {
         let mut clock = false;
         for record in self.records.values() {

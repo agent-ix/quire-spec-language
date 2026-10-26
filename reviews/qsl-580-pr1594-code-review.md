@@ -33,3 +33,21 @@ Ticket: QSL-580. Reviewed the PR diff only, with the rust-review lane folded in.
 ## Coverage
 
 Methods: code-review with the rust-review lane. Gap analysis is SR-1594002.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | Regression check of the FND-002 fix: `names_only_clocks` keys on the member name across the whole package, so `o.x` on a clock `Call.x` is still missed when any other type of the package declares a non-clock field named `x`; it then refuses `missing-name` instead of `clock-read-outside-constraint`. Resolve the operand's type and look up that type's field instead. Traced, not reproduced. | qsl-semantics/src/check/lowering/model.rs:916-938; qsl-semantics/src/check/timed_model.rs:541-550 |
+
+## Dispositions
+
+Round 1, against #1602 (qsl-580a-fix-round-1 head 7a91813e9, squash-merged to main as 1434f6e18) over #1594's merge a2e4f192e. Focused tests on origin/main 1434f6e18: `cargo test -p qsl-semantics --test it -- timed_model timed_declarations`, 47 passed.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | accepted-no-change | The field must stay `pub`: qsl-eval builds PackageDeclarations with functional record update (`..PackageDeclarations::new(..)`, qsl-eval/src/value/expression/evaluate.rs:4030 and others), which Rust (E0451) allows only when every field is visible there. The builder stays test-support-gated, matching emit_unwritten_terminals and emit_unwritten_refinements. Real but constrained; ship as is. |
+| FND-005 | fixed | - |
