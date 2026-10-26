@@ -153,19 +153,6 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::ChannelCarriesBounded);
         }
-        if self
-            .checked
-            .channels
-            .iter()
-            .any(|channel| match &channel.ordering {
-                CheckedOrdering::Unordered => false,
-                CheckedOrdering::Fifo { key, .. } => {
-                    matches!(key.root().value_type(), ValueType::Quantity(_))
-                }
-            })
-        {
-            unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
-        }
         if !form.requirements.is_empty() {
             unemitted.push(ProtocolConstruct::Requirements);
         }
@@ -349,7 +336,10 @@ impl Lowering<'_> {
                 }
                 Err(other) => return Err(other),
             };
-            let unemitted = protocol.unemitted();
+            let mut unemitted = protocol.unemitted();
+            if self.fifo_key_unstable(protocol, &location)? {
+                unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
+            }
             if let Some(first) = unemitted.first() {
                 refusals.extend(
                     unemitted
@@ -364,6 +354,79 @@ impl Lowering<'_> {
         }
         self.protocol_keys = keys;
         Ok(refusals)
+    }
+
+    /// Whether a FIFO channel of `protocol` is keyed by a type IR's reader
+    /// does not take as equality-stable (FR-465 "Channel": the key's type
+    /// must be). The reader's rule, over the key type's node: every node
+    /// reached is a Boolean, Integer, Rational, Decimal, Text, String, UUID,
+    /// Timestamp or enum scalar, a `reference`, or a composite whose
+    /// children are such; a bounded domain, a quantity, a float or a
+    /// model-owned node is not.
+    fn fifo_key_unstable(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        location: &Location,
+    ) -> Result<bool, CheckRefusal> {
+        for channel in &protocol.checked.channels {
+            let CheckedOrdering::Fifo { key, .. } = &channel.ordering else {
+                continue;
+            };
+            let node = self.type_node(key.root().value_type(), location)?;
+            if !self.equality_stable(node) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// The reader's `equality_stable` over the type node `key`.
+    fn equality_stable(&self, key: NodeKey) -> bool {
+        let mut pending = vec![key];
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some(key) = pending.pop() {
+            if !visited.insert(key) {
+                continue;
+            }
+            let content = match self.graph.nodes.get(&key) {
+                Some(node) => &node.content,
+                None => match self.drafts.get(&key) {
+                    Some(draft) => &draft.content,
+                    // A nominal enum is keyed by its declaration node, which
+                    // is written with the declarations and not by this
+                    // type: a scalar `enum` the reader compares.
+                    None => continue,
+                },
+            };
+            match (content.node_tag, content.semantic_form) {
+                (
+                    NodeTag::ScalarType,
+                    "boolean" | "integer" | "rational" | "decimal" | "text" | "string" | "uuid"
+                    | "timestamp" | "enum",
+                )
+                | (NodeTag::CompositeType, "reference") => {}
+                (NodeTag::CompositeType, _) => {
+                    content.body.for_each_key(&mut |child| pending.push(child));
+                }
+                (
+                    NodeTag::ScalarType
+                    | NodeTag::BoundedDomain
+                    | NodeTag::Value
+                    | NodeTag::Expression
+                    | NodeTag::Function
+                    | NodeTag::Model
+                    | NodeTag::Relation
+                    | NodeTag::State
+                    | NodeTag::Temporal
+                    | NodeTag::Protocol
+                    | NodeTag::Claim
+                    | NodeTag::Correspondence
+                    | NodeTag::Hybrid,
+                    _,
+                ) => return false,
+            }
+        }
+        true
     }
 
     /// The `value`/`parameter` node of `binder`, at `level`, and the scope

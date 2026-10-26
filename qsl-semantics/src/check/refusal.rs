@@ -804,9 +804,12 @@ pub enum ProtocolConstruct {
     /// `bounded_domain` node, which IR's reader at `quire-contract-ir`
     /// `9a84e654` does not admit as `carries`: QSL-1137.
     ChannelCarriesBounded,
-    /// A FIFO `channel` whose key is typed by a quantity: the check admits
-    /// `=` over it but IR's reader refuses the key as not equality-stable
-    /// (`ill_typed`/`operator-ineligible`): QSL-1142.
+    /// A FIFO `channel` whose key type IR's reader does not take as
+    /// equality-stable (FR-465 "Channel"): the key's type is, or contains
+    /// through an option, a collection or a record field, a bounded domain,
+    /// a quantity, a float or a model-owned type. The check admits `=` over
+    /// it but the reader refuses the key (`ill_typed`/`operator-ineligible`):
+    /// QSL-1142.
     ChannelKeyNotEqualityStable,
     /// A `finish` constraint that calls a function or refers to a protocol:
     /// the node is written before the functions are, so the constraint

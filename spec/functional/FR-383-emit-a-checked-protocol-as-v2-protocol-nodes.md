@@ -155,8 +155,11 @@ the protocol's qualified name.
   against the reader); a channel that carries a bounded scalar or collection
   (QSL-1137: a `bounded_domain` node, which the reader does not admit as
   `carries`; a quantity, a nominal enum, an `option`, an unbounded collection
-  and a declared record are admitted); a FIFO channel keyed by a quantity
-  (QSL-1142: the reader refuses the key as not equality-stable); and a role on a whole model (IR-874: the reader admits
+  and a declared record are admitted); a FIFO channel whose key type is not equality-stable
+  (QSL-1142: the reader accepts only Boolean, Integer, Rational, Decimal,
+  Text, String, UUID, Timestamp and enum scalars, references, and composites
+  of them, so a key that is or contains a bounded domain, a quantity, a float
+  or a model-owned type is refused); and a role on a whole model (IR-874: the reader admits
   only the reference form of the role's `model`, so the text form QSpec FR-465
   specifies cannot be proved admitted). A protocol is never written without a
   part of its graph.

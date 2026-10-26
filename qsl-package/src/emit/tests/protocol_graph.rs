@@ -7,7 +7,7 @@
 
 use super::population_bound::document;
 use super::protocol_reference::{clause_argument, node_by_id, node_of, not_emitted};
-use super::reachability::{lower_with, Lowered};
+use super::reachability::{lower_package, lower_with, Lowered};
 use super::*;
 use qsl_semantics::check::{CheckRefusal, ProtocolConstruct};
 
@@ -607,7 +607,17 @@ fn checked(
     text: &str,
     open: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
-    let document = model();
+    checked_package(model(), ("acme/orders", "1.0.0"), text, open)
+}
+
+/// [`checked`] over the model document `document`, named by `package` and
+/// `version`.
+fn checked_package(
+    document: Vec<u8>,
+    (package, version): (&str, &str),
+    text: &str,
+    open: bool,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -615,7 +625,7 @@ fn checked(
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{text}",
+         model M = {package:?} version {version:?} digest \"sha256-jcs:{}\";\n{text}",
         qsl_semantics::model::key::hex(digest)
     );
     let assembled = assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
@@ -633,6 +643,10 @@ fn checked(
 /// no `protocol_clause` node, so a protocol is never written without part of
 /// its graph. The same protocol with only the written constructs checks and
 /// writes the clause.
+/// Requirements, compensations and relationships are refused by the same
+/// `unemitted()` gate and tested in qsl-semantics (a requirement and a
+/// compensation need a temporal clause and an `attempt` unit; a relationship
+/// cannot be named from a real model package, QSL-1141).
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
@@ -837,10 +851,6 @@ fn a_bounded_carries_and_a_quantity_key_refuse_typed() {
         })
         .collect();
     cases.push((
-        ProtocolConstruct::ChannelCarriesBounded,
-        carrying_flow("Int[0, 5]", "fifo by (m: Int[0, 5]) { m }"),
-    ));
-    cases.push((
         ProtocolConstruct::ChannelKeyNotEqualityStable,
         carrying_flow("Quantity<m>", "fifo by (m: Quantity<m>) { m }"),
     ));
@@ -870,4 +880,155 @@ fn a_bounded_carries_and_a_quantity_key_refuse_typed() {
         ProtocolConstruct::ChannelKeyNotEqualityStable.tracking(),
         "QSL-1142"
     );
+}
+
+/// Declarations the FIFO key cases use: a record per field family.
+const KEYED: &str = "record Plain { x: Integer; }\n\
+    record WithQuantity { q: Quantity<m>; }\n\
+    record WithBounded { b: Int[0, 5]; }\n\
+    record WithDecimal { d: Decimal[-100,100;0,0;nearest-even]; }\n\
+    record WithRational { r: Rational[-100, 100; 1, 1]; }\n\
+    record WithText { t: Text[0, 8; nfc]; }\n";
+
+/// A `Flow` of two roles and a FIFO channel carrying `carries` and keyed by
+/// `key` over the binder `m`, after [`CARRIED`] and [`KEYED`].
+fn keyed_flow(carries: &str, key: &str) -> String {
+    let ordering = format!("fifo by (m: {carries}) {{ {key} }}");
+    format!("{KEYED}{}", carrying_flow(carries, &ordering))
+}
+
+/// FR-465 "Channel" (a FIFO key's type is equality-stable): a key the
+/// reader compares is emitted and read back, for each family of type.
+#[test]
+fn a_fifo_key_the_reader_compares_is_admitted() {
+    let cases = [
+        ("Boolean", "m"),
+        ("Integer", "m"),
+        ("String", "m"),
+        ("UUID", "m"),
+        ("Timestamp", "m"),
+        ("Color", "m"),
+        ("Option<Boolean>", "m"),
+        ("Option<Color>", "m"),
+        ("Sequence<Boolean>", "m"),
+        ("Plain", "m"),
+        ("Plain", "m.x"),
+        ("Integer", "m = m"),
+    ];
+    for (carries, key) in cases {
+        let text = keyed_flow(carries, key);
+        let lowered = lower_with(model(), PROFILES, &text);
+        assert!(
+            lowered.ir.is_ok(),
+            "{carries} {key}: {:?}",
+            lowered.ir.err()
+        );
+        assert!(lowered.verified, "{carries} {key}");
+    }
+}
+
+/// FR-465 "Channel": the reader refuses a FIFO key whose type is not
+/// equality-stable (a bounded domain, a quantity, a float or a model-owned
+/// type, reached through an option, a collection or a record field), so the
+/// check refuses it typed (QSL-1142) rather than emit a package the reader
+/// refuses, and with the gate open writes no clause.
+#[test]
+fn a_fifo_key_the_reader_cannot_compare_refuses_typed() {
+    let cases = [
+        ("Quantity<m>", "m"),
+        ("Option<Int[0, 5]>", "m"),
+        ("Option<Quantity<m>>", "m"),
+        ("Sequence<Int[0, 5]>", "m"),
+        ("Sequence<Quantity<m>>", "m"),
+        ("WithQuantity", "m"),
+        ("WithBounded", "m"),
+        ("WithDecimal", "m"),
+        ("WithRational", "m"),
+        ("WithText", "m"),
+        ("WithQuantity", "m.q"),
+        ("WithBounded", "m.b"),
+        ("WithDecimal", "m.d"),
+        ("WithRational", "m.r"),
+        ("WithText", "m.t"),
+    ];
+    for (carries, key) in cases {
+        let text = keyed_flow(carries, key);
+        assert_keyed_refusal(checked(&text, false), checked(&text, true), &text);
+    }
+}
+
+/// The model-owned families, over the FR-360 variant document: `Tier` (a
+/// variant), `Odd` (a variant of non-identifier cases), `Settings` (a
+/// record), a field of one and a collection of one are refused as keys, and
+/// a variant is admitted as a carried type (unordered).
+#[test]
+fn a_model_owned_fifo_key_refuses_typed_and_a_variant_is_carried() {
+    use super::variant_types::fixture;
+    let document = || {
+        serde_json::to_vec(&fixture::with_types(vec![fixture::variant_type(
+            "Odd",
+            &["2x", "Café", "Gold Plus"],
+        )]))
+        .unwrap()
+    };
+    let package = (fixture::PACKAGE, "1");
+    let flow = |carries: &str, ordering: &str| {
+        let members = format!(
+            "role Buyer on M::Account;\nrole Seller on M::Account;\n{}",
+            channel(
+                "C",
+                ("Buyer", "Seller"),
+                ordering,
+                "unknown",
+                "capacity 4 overflow block"
+            )
+            .replace("carries Boolean", &format!("carries {carries}"))
+        );
+        flow("on origin", &members)
+    };
+    for (carries, key) in [
+        ("M::Tier", "m"),
+        ("M::Odd", "m"),
+        ("M::Settings", "m"),
+        ("M::Settings", "m.tier"),
+        ("Sequence<M::Tier>", "m"),
+    ] {
+        let text = flow(carries, &format!("fifo by (m: {carries}) {{ {key} }}"));
+        assert_keyed_refusal(
+            checked_package(document(), package, &text, false),
+            checked_package(document(), package, &text, true),
+            &text,
+        );
+    }
+    for carries in ["M::Tier", "M::Odd", "M::Settings"] {
+        let text = flow(carries, "unordered");
+        let lowered = lower_package(document(), package, PROFILES, &text);
+        assert!(lowered.ir.is_ok(), "{carries}: {:?}", lowered.ir.err());
+        assert!(lowered.verified, "{carries}");
+    }
+}
+
+/// `closed` refuses with exactly the typed key refusal, and `open` writes no
+/// clause node.
+fn assert_keyed_refusal(
+    closed: Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>>,
+    open: Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>>,
+    text: &str,
+) {
+    let refusals = closed.err().unwrap_or_else(|| panic!("admitted: {text}"));
+    assert_eq!(
+        refusals
+            .iter()
+            .map(|refusal| &refusal.cause)
+            .collect::<Vec<_>>(),
+        [&not_emitted(ProtocolConstruct::ChannelKeyNotEqualityStable)],
+        "{text}"
+    );
+    let open = open.unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+    let clauses = open
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.semantic_form() == "protocol_clause")
+        .count();
+    assert_eq!(clauses, 0, "{text}");
 }
