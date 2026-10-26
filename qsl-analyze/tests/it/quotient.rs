@@ -626,13 +626,17 @@ fn carries_only_concrete_members(counterexample: &TemporalCounterexample) {
         lasso: _,
         blocked,
         refinement,
+        final_delay,
     } = counterexample;
     for ModelStep {
         transition: _,
         post_state: _,
+        delay,
     } in prefix
-    {}
-    assert!(blocked.is_empty() && refinement.is_none());
+    {
+        assert!(delay.is_none());
+    }
+    assert!(blocked.is_empty() && refinement.is_none() && final_delay.is_none());
 }
 
 /// The concretised-counterexample clause (QSL-1045 tracks its wording): its

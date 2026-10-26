@@ -1984,6 +1984,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                     state_key: self.digest(&model)?,
                     locus,
                     transition,
+                    time: None,
                 };
                 // The walk's own transitions are charged once it returns;
                 // until then they bound the concretisation here. `dead_phase`
@@ -2141,6 +2142,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             lasso: None,
             blocked: Vec::new(),
             refinement: None,
+            final_delay: None,
         }))
     }
 
@@ -2155,6 +2157,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             state_key: self.digest(&state.model)?,
             locus,
             transition,
+            time: None,
         })
     }
 
@@ -2186,6 +2189,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             lasso: None,
             blocked: Vec::new(),
             refinement: None,
+            final_delay: None,
         }))
     }
 
@@ -2381,6 +2385,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 }),
                 blocked: Vec::new(),
                 refinement: None,
+                final_delay: None,
             })
         })();
         match lifted {
