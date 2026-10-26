@@ -52,6 +52,7 @@ Round 1, against fix commit ff760ddb5 (`git diff c0f9ec111..ff760ddb5`).
 | FND-007 | fixed | Round 2 (266854466): ADR-027 PA-3 now reads "with it, the clause's fairness set is its authored and memory constraints", in line with FR-212, QSpec FR-430 and ADR-025 MF-1. |
 | FND-008 | fixed | Round 2: `check_closure` and `check_protocol_closure` (FR-338), and `check_components` and `check_protocol_components` (FR-339), now return `Result<TemporalCertificateCheck, ClosureRefusal>`, matching closure.rs:276 and :330. The new cause list is incomplete (new FND-010). |
 | FND-009 | fixed | Round 2: FR-212 gains a `depends_on` edge to FR-228. |
+| FND-010 | fixed | Round 3 (cfa3b9a61): the FR-338 `ClosureRefusal` paragraph now also lists `Fairness` (a fairness constraint names an operation the subject does not admit) and `Fault` (an internal invariant broke). That covers every variant `check_closure` and `check_protocol_closure` can return (closure.rs:209-248). |
 
 ## New findings (disposition pass 1)
 
