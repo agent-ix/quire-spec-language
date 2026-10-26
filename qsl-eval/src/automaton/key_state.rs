@@ -484,6 +484,9 @@ struct Bounds {
 struct Shaped {
     op: Option<Op>,
     interval: Option<Bounds>,
+    /// Whether a non-temporal Boolean connective can remain a current
+    /// tableau obligation until its operands are expanded.
+    boolean_compound: bool,
     /// Whether an operand's subtree holds an interval operator.
     nested_interval: bool,
     /// Whether the occurrence is read at positive and at negative polarity
@@ -640,6 +643,13 @@ fn shape_of(node: &FormulaNode) -> Option<Shaped> {
     Some(Shaped {
         op,
         interval,
+        boolean_compound: matches!(
+            node,
+            FormulaNode::Not(_)
+                | FormulaNode::And(..)
+                | FormulaNode::Or(..)
+                | FormulaNode::Implies(..)
+        ),
         nested_interval: false,
         positive: false,
         negative: false,
@@ -827,6 +837,8 @@ pub(super) struct Reader<'s> {
     pub(super) max_bytes: u64,
     /// FR-338 selects the past-window and acceptance forms by the subject.
     pub(super) subject: SubjectKind,
+    /// TP-4 tableau states can retain an unexpanded Boolean subformula.
+    pub(super) boolean_obligations: bool,
 }
 
 impl Reader<'_> {
@@ -971,11 +983,16 @@ impl Reader<'_> {
         match items.as_slice() {
             [path, polarity] => {
                 let (occurrence, node) = self.occurrence(*path, *polarity)?;
-                // Spec ruling R-3 pending: only a future temporal carry is a
-                // retained current obligation. An open-upper interval's
-                // completed shift is its unbounded obligation (`[o,s]`).
+                // FR-338 carries any unbounded/current subformula, including
+                // Boolean operands that the tableau has not expanded yet.
+                // An open-upper future interval's completed shift is its
+                // unbounded obligation (`[o,s]`); finite interval debt and
+                // past operators use their own forms.
                 let unbounded = node.interval.is_none_or(|bounds| bounds.upper.is_none());
-                if !node.is_future() || !unbounded {
+                if !unbounded
+                    || (node.op.is_some() && !node.is_future())
+                    || (node.op.is_none() && (!self.boolean_obligations || !node.boolean_compound))
+                {
                     return Err(KeyRefusal::Unresolved);
                 }
                 Ok(Obligation::Current(occurrence))
