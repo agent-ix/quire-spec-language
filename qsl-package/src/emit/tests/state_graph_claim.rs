@@ -311,6 +311,111 @@ fn the_form_enters_the_identity_and_equal_claims_share_one_node() {
     assert_eq!(ordinals, [&json!(0), &json!(1)]);
 }
 
+/// The node id of the one `kind` claim that compiling `declarations` emits.
+fn claim_id(declarations: &str, kind: &str) -> String {
+    digest(claim_of(&compile(&unit(declarations)).wire, kind))
+}
+
+const OVER_C: &str = "using v over (c: Config::ConfigVersion)";
+
+/// QSL-1108 (SR-17237 FND-001): the three forms over equal predicates give
+/// three distinct node ids, and swapping `unique path`'s `from` and `to`
+/// gives a fourth, so the form and each predicate's role enter the identity.
+#[trace("TC-1140")]
+#[test]
+fn the_form_and_the_unique_path_roles_each_change_the_node_id() {
+    let two = "c.versionNumber = 2";
+    let possible = claim_id(&format!("possible P {OVER_C} {{ {two} }}"), "possible");
+    let always = claim_id(
+        &format!("always possible P {OVER_C} from (true) {{ {two} }}"),
+        "always-possible",
+    );
+    let unique = claim_id(
+        &format!("unique path P {OVER_C} from (true) to ({two});"),
+        "unique-path",
+    );
+    assert_ne!(possible, always);
+    assert_ne!(always, unique);
+    assert_ne!(possible, unique);
+
+    let forward = claim_id(
+        &format!("unique path P {OVER_C} from (c.versionNumber = 0) to ({two});"),
+        "unique-path",
+    );
+    let swapped = claim_id(
+        &format!("unique path P {OVER_C} from ({two}) to (c.versionNumber = 0);"),
+        "unique-path",
+    );
+    assert_ne!(forward, swapped);
+}
+
+/// QSL-1108 (SR-17237 FND-001): whitespace, redundant parentheses, the claim's
+/// name, the order of the unit's claims and other claims in the unit leave a
+/// claim's node id unchanged.
+#[trace("TC-1140")]
+#[test]
+fn spelling_order_and_other_claims_leave_the_node_id_unchanged() {
+    let plain = claim_id(REACHES_TWO, "possible");
+    let spaced = claim_id(
+        "possible   ReachesTwo   using v\n  over (c: Config::ConfigVersion)\n \
+         {   c.versionNumber   =   2   }",
+        "possible",
+    );
+    let parenthesised = claim_id(
+        "possible ReachesTwo using v over (c: Config::ConfigVersion) \
+         { ((c.versionNumber = 2)) }",
+        "possible",
+    );
+    let renamed = claim_id(&REACHES_TWO.replace("ReachesTwo", "Elsewhere"), "possible");
+    for same in [&spaced, &parenthesised, &renamed] {
+        assert_eq!(&plain, same);
+    }
+
+    let others = format!("{CAN_STILL_WIN}\n{IN_ONE_WAY}");
+    let before = format!("{REACHES_TWO}\n{others}");
+    let after = format!("{others}\n{REACHES_TWO}");
+    for declarations in [before, after] {
+        let compiled = compile(&unit(&declarations));
+        assert_eq!(claim_nodes(&compiled.wire).len(), 3);
+        assert_eq!(digest(claim_of(&compiled.wire, "possible")), plain);
+    }
+}
+
+/// QSL-1108 (SR-17237 FND-001): a `{ true }` target is the `true` literal
+/// node the omitted `from` already references, so one literal node serves
+/// both.
+#[trace("TC-1140")]
+#[test]
+fn a_true_target_reuses_the_true_literal_node() {
+    let compiled = compile(&unit(&format!(
+        "always possible Always {OVER_C} {{ true }}"
+    )));
+    let node = claim_of(&compiled.wire, "always-possible");
+    let from = target(binding(&node["body"], "from"));
+    assert_eq!(from, target(binding(&node["body"], "target")));
+    let truth = node_with(&compiled.wire, from);
+    assert_eq!(truth["body"]["value"], json!(true));
+    let literals = nodes(&compiled.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "literal" && node["body"]["value"] == json!(true))
+        .count();
+    assert_eq!(literals, 1, "one true literal node in the package");
+}
+
+/// QSL-1108 (SR-17236 FND-007): renaming the `over` parameter changes the
+/// node id, because the parameter node carries its name (documented).
+#[trace("TC-1140")]
+#[test]
+fn the_over_parameter_name_enters_the_node_id() {
+    let renamed = REACHES_TWO
+        .replace("(c:", "(d:")
+        .replace("c.version", "d.version");
+    assert_ne!(
+        claim_id(REACHES_TWO, "possible"),
+        claim_id(&renamed, "possible")
+    );
+}
+
 fn wire_id(digest: &str) -> WireNodeId {
     WireNodeId::from_hex(digest).expect("a node digest")
 }

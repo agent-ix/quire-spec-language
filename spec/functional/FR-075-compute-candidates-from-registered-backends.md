@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-193
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-390
+    type: depends_on
 ---
 # FR-075: Compute lowering-target candidates from a registered-backend registry
 
@@ -28,7 +30,9 @@ under one contract. QSL SHALL compute each requested item's candidate set
 from that registry's current contents, matching on capability kind, for
 `probabilistic-satisfaction` the item's exact evidence kind (ADR-012 §7.1,
 §7.2; FR-290, "Evidence kinds"), and for `temporal-satisfaction` the item's
-dynamics (QSpec FR-193 "Routing a hybrid item").
+dynamics (QSpec FR-193 "Routing a hybrid item"). A state-graph item also
+matches only a registration that advertises that item's exact state-graph
+form (QSpec FR-331, FR-390; ADR-022 QS-7).
 
 Resolving a backend by `BackendId` in `route` is this requirement's work
 (#185). The native `lowering` module and its fixed `ProjectionTarget` catalog
@@ -46,10 +50,16 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   supplied when it advertises `probabilistic-satisfaction`, and, when it
   advertises `temporal-satisfaction`, its `dynamics` set, a nonempty subset
   of {`discrete`, `hybrid`} that reads `{discrete}` when the descriptor
-  supplies none. `mode` is
+  supplies none, and its optional `state_graph_forms` set of typed
+  `StateGraphFormKind` values, a nonempty subset of the exact FR-390 forms
+  `Possible`, `AlwaysPossible` and `UniquePath`, serialized as `possible`,
+  `always-possible` and `unique-path` (QSpec FR-331). Absence means it
+  advertises no state-graph form; a non-temporal descriptor cannot supply
+  this member. `mode` is
   `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
-  identity alone (ADR-013 O-19); origin, pairs, domains and evidence kinds
-  are descriptor members, not identity components (FR-288-AC-5/6). The
+  identity alone (ADR-013 O-19); origin, pairs, domains, evidence kinds,
+  dynamics and state-graph forms are descriptor members, not identity
+  components (FR-288-AC-5/6). The
   manifest digest is a descriptor member that counts in equality (QSpec
   FR-290-AC-9, FR-290-AC-10), and keys the `duplicate-backend` refusals.
   The registry's
@@ -65,9 +75,11 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   permanently unregistered (FR-075-AC-4).
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it), its evidence kind when its capability is
-  `probabilistic-satisfaction`, its requirements (`hybrid-dynamics` for the
-  item of a hybrid claim, FR-447 "The provider request"; none otherwise),
-  and, optionally, a named `BackendId`.
+  `probabilistic-satisfaction`, its state-graph form when it is a state-graph
+  item (the form of its checked FR-390 claim, without its predicate or
+  instance operands), its requirements (`hybrid-dynamics` for the item of a
+  hybrid claim, FR-447 "The provider request"; none otherwise), and,
+  optionally, a named `BackendId`.
 - For the request builder: a checked package's requirement records
   (FR-062-AC-13), optionally one named `BackendId` for the request, and
   optionally the request's evidence selection for probabilistic records:
@@ -81,7 +93,9 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   kinds, by one second-kind item per `probabilistic-satisfaction` record,
   in record key order; each with its request index, occurrence key, node,
   kind, extent classification, unbounded domains, result bound, direct
-  conversion context and candidate outcome.
+  conversion context, its `StateGraphFormKind` when the record is a
+  state-graph claim (derived from the checked claim's `StateGraphForm` without
+  its predicate or instance operands), and candidate outcome.
 - A candidate set per item: zero, one or more `BackendId`s, ordered
   bytewise by identity (FR-290 "Candidate set and negotiation").
 - A distinct unknown-backend marker, carrying the named identity, when the
@@ -93,6 +107,15 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   `Registry::refusals`, ordered bytewise by identity.
 
 ## Behavior
+
+### State-graph form identity
+
+`StateGraphFormKind` SHALL be the registry's typed, payload-free identity for
+the checked state-graph form, with exactly `Possible`, `AlwaysPossible` and
+`UniquePath`, corresponding respectively to QSpec FR-390's `possible`,
+`always-possible` and `unique-path`. The request builder derives this value
+from the checked claim's `StateGraphForm`; it SHALL NOT compare claim names,
+predicate operands, instance bindings or source spelling.
 
 ### Candidate computation matches probabilistic evidence exactly
 
@@ -108,6 +131,16 @@ negotiation stage to refuse as `absent-evidence-kind` or
 `unknown-evidence-kind` (FR-290, "Evidence kinds"); it SHALL NOT convert that
 invalid request into a supported candidate.
 
+For a state-graph item, the candidate set SHALL additionally include only
+registrations whose typed `state_graph_forms` set contains the item's exact
+`StateGraphFormKind`. The comparison is by form identity (`Possible`,
+`AlwaysPossible` or `UniquePath`), not by predicate, claim name, instance or
+other operands. A
+temporal descriptor with no `state_graph_forms` is not a candidate for any
+state-graph item. A state-graph item uses both the temporal-dynamics rule
+below and this exact-form rule; a non-state-graph temporal item does not read
+`state_graph_forms`. Other capability kinds are unaffected.
+
 For a `temporal-satisfaction` item, a registration SHALL be a candidate only
 when its `dynamics` set holds `hybrid` for an item carrying the
 `hybrid-dynamics` requirement, and `discrete` for an item carrying none
@@ -119,10 +152,11 @@ registration with `{discrete, hybrid}` is a candidate for both. An item of
 any other kind carries no requirement, and its candidates do not read
 `dynamics`.
 
-For other items, matching remains by capability kind alone. In every case,
+For other items, matching remains by capability kind alone, subject to the
+probabilistic evidence and temporal dynamics rules above. In every case,
 candidate matching SHALL NOT use mode, display name or registration order. A
 registration *matches* an item when it advertises the item's capability kind
-and meets the evidence-kind and dynamics rules above:
+and meets the applicable evidence-kind, dynamics and state-graph-form rules:
 
 - When the request names a registered `BackendId`, the set SHALL contain that
   backend only when it matches the item; otherwise the set is empty.
@@ -391,13 +425,13 @@ were added.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-075-AC-1 | For a non-probabilistic item, given a registry holding one backend that advertises the item's capability kind and no named backend, the candidate set is exactly that backend; a backend not advertising the kind is excluded. For `probabilistic-satisfaction`, a backend is a candidate only when it advertises both the kind and the item's exact evidence kind; neither `statistical` nor `exact` substitutes for the other. | Test (TC-193) |
+| FR-075-AC-1 | For a non-probabilistic item, given a registry holding one backend that advertises the item's capability kind and no named backend, the candidate set is exactly that backend; a backend not advertising the kind is excluded. For `probabilistic-satisfaction`, a backend is a candidate only when it advertises both the kind and the item's exact evidence kind; neither `statistical` nor `exact` substitutes for the other. A state-graph item is also matched by exact form as FR-075-AC-21 specifies. | Test (TC-193) |
 | FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, they report the same registration refusals in the same order, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item -- including probabilistic items and a set that contains an identical repeat of one identity's complete descriptor and a conflicting pair under another. | Test (TC-194) |
 | FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises when a registered backend does not advertise the item's kind or exact probabilistic evidence kind, or no registrant advertises that required combination). | Test (TC-195) |
-| FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, the identity is refused once with `invalid_capability`/`duplicate-backend`, keyed by the identity; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447) |
+| FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, including one differing in `state_graph_forms`, the identity is refused once with `invalid_capability`/`duplicate-backend`, keyed by the identity; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447, TC-193) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, an identity with leading and trailing spaces is kept verbatim, and an empty identity refuses. | Test (TC-433) |
-| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with equal identity, provider origin, manifest digest, advertised pairs, retained `domains`, and evidence-kind set, the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. A repeat differing only in any of those compared members is unequal and follows FR-075-AC-4, a difference in manifest digest alone included. A different identity is a different registry key. | Test (TC-447, TC-448, TC-982) |
+| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with equal identity, provider origin, manifest digest, advertised pairs, retained `domains`, evidence-kind set, dynamics set and `state_graph_forms` set, the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. A repeat differing only in any of those compared members is unequal and follows FR-075-AC-4, a difference in manifest digest alone included. A different identity is a different registry key. | Test (TC-447, TC-448, TC-982, TC-193) |
 | FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
 | FR-075-AC-9 | For the checked function `function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }`, the two `x + 1` requirement records have the same application node and distinct occurrence keys, and the builder returns two items in occurrence-key order. Each item's `path_condition()` equals its own record's canonical path-condition sequence: both contain the `if p` guard occurrence, with `holds` true for the then occurrence and false for the else occurrence. Neither sequence is replaced by the other, flattened, or deduplicated. An unguarded record's item carries an empty path condition. | Test |
 | FR-075-AC-10 | A descriptor advertising `probabilistic-satisfaction` with evidence kinds `{statistical}`, `{exact}` or `{statistical, exact}` is admitted and retains exactly the supplied set on the descriptor. | Test |
@@ -411,6 +445,8 @@ were added.
 | FR-075-AC-18 | Over a registry holding one registration advertising `probabilistic-satisfaction` with `{statistical}` (EN-4's manifest) and one with `{exact}` (EN-5's), and a package whose records in key order are FR-186's `P95` claim (index 0, record evidence kind `statistical`), FR-195's `FairTerminates` (index 1, record evidence kind `exact`) and a `value-validity` record (index 2): with no evidence selection the builder writes three items, `P95`'s naming `statistical` with candidates the EN-4 registration only and `FairTerminates`'s naming `exact` with candidates the EN-5 registration only; with the selection `exact` it writes three items, `P95`'s and `FairTerminates`'s each naming `exact` with candidates the EN-5 registration only, `statistical` never substituting; with both kinds it writes five items, indices 0 to 2 equal to the no-selection items, index 3 `P95`'s `exact` item (EN-5 only) and index 4 `FairTerminates`'s `statistical` item (EN-4 only), each with its record's occurrence key. The `value-validity` item is at index 2 and carries no evidence kind under every selection, and no written item settles `absent-evidence-kind` or `unknown-evidence-kind`. Each probabilistic item's unbounded domains are its record's, naming its claim, under every selection. | Test (TC-1163) |
 | FR-075-AC-19 | Over a registry holding EN-6's `qsl-model-check` registration, advertising `temporal-satisfaction` with no `dynamics`, and a fixture hybrid registration `hybrid-fixture` advertising it with `dynamics` `{hybrid}` and `bounds` `{max_solver_steps: 1000000, max_solver_time: 60}`, the item of FR-447's `SlowEnough`, carrying `hybrid-dynamics`, has the candidate set `[hybrid-fixture]`, and the item of a temporal clause over a model without hybrid dynamics `[qsl-model-check]`; with `hybrid-fixture`'s `dynamics` `{discrete, hybrid}` the second item's set is `[hybrid-fixture, qsl-model-check]`; with only `qsl-model-check` registered the hybrid item's set is empty; naming `qsl-model-check`, the hybrid item's set is empty; a `value-validity` item's set is unchanged by every `dynamics`. Two registries built from these registrations in either order compute equal sets. | Test (TC-193) |
 | FR-075-AC-20 | `descriptor_from_manifest` refuses a `temporal-satisfaction` descriptor whose `dynamics` is `[]`, `["hybrid", "hybrid"]`, `["continuous"]`, `"hybrid"`, or `["hybrid"]` with `bounds` lacking `max_solver_time`, with `invalid_capability`/`invalid-dynamics` keyed by `BackendId`, retaining `empty`, `duplicate-label`, `unknown-label`, `not-a-list` and `missing-bounds` naming `max_solver_time`, before insertion and leaving an earlier registration of that identity standing; one with a `fairness_kinds` defect as well refuses `invalid-fairness-kinds`; a `dynamics` on a descriptor advertising only `value-validity` is ignored and the descriptor is admitted holding none; a descriptor with no `dynamics` is admitted holding none and is read as `{discrete}` for candidates, and the manifest QSL writes from EN-6's `qsl-model-check` descriptor carries no `dynamics` key, its RFC 8785 bytes and manifest digest equal to those of the same descriptor written without the member, so a temporal request over it keeps its request identity and cache key bytes; an EN-6 registration supplying `dynamics` `["discrete"]` beside one supplying none is refused `duplicate-backend`. Two registrations of one identity differing only in `dynamics` conflict as FR-075-AC-4 states. | Test (TC-193) |
+| FR-075-AC-21 | For each FR-390 state-graph form, the request builder carries its exact `StateGraphFormKind` derived from the checked claim's `StateGraphForm`, and the candidate set contains exactly registrations whose typed `state_graph_forms` includes that value, subject to the temporal-dynamics rule; a descriptor with no `state_graph_forms` matches no state-graph form; a temporal-formula item and every other capability kind is unaffected by `state_graph_forms`; two otherwise identical descriptors with different form sets conflict under FR-075-AC-4. | Test (TC-193) |
+| FR-075-AC-22 | `descriptor_from_manifest` admits a temporal descriptor with any nonempty, duplicate-free subset of `possible`, `always-possible` and `unique-path`, admits the member absent as no state-graph forms, and refuses an empty, duplicate or unknown list, a present non-array member, or the member on a descriptor without `temporal-satisfaction` with `invalid_capability`/`invalid-state-graph-forms`, keyed by backend identity, before registry insertion and leaving an earlier registration standing. | Test (TC-193) |
 
 ## Dependencies
 

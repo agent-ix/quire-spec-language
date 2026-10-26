@@ -823,6 +823,14 @@ pub enum TimedConstruct {
     Clock,
     /// A temporal operator's timed interval (FR-233, FR-234).
     TimedInterval,
+    /// A `taskset` declaration (QSpec FR-419, QSL FR-246).
+    Taskset,
+    /// A `schedulable` claim (QSpec FR-419, QSL FR-246).
+    Schedulable,
+    /// A `response` claim (QSpec FR-419, QSL FR-246).
+    Response,
+    /// A `release` declaration (QSpec FR-419, QSL FR-249).
+    Release,
 }
 
 impl TimedConstruct {
@@ -834,6 +842,10 @@ impl TimedConstruct {
             Self::Urgent => "an `urgent` declaration",
             Self::Clock => "the `Clock` type",
             Self::TimedInterval => "a timed interval",
+            Self::Taskset => "a `taskset` declaration",
+            Self::Schedulable => "a `schedulable` claim",
+            Self::Response => "a `response` claim",
+            Self::Release => "a `release` declaration",
         }
     }
 }
@@ -1048,6 +1060,11 @@ impl ProtocolAnchorCause {
 /// no expression tree for a `Location` path to walk.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TemporalCause {
+    /// Several temporal faults retained in source order (FR-194-AC-8).
+    Multiple {
+        /// The individually located causes in source order.
+        causes: Vec<TemporalCause>,
+    },
     /// FR-230: a timed declaration requires the temporal facet selected by
     /// the unit header. Located at the declaration itself.
     TimedFacetRequired {
@@ -1214,6 +1231,32 @@ pub enum TemporalCause {
         /// The constraint's span.
         span: Span,
     },
+    /// FR-194: aggregate terms apply to trace subjects, not model subjects.
+    AggregateModelSubject {
+        /// The aggregate term's span.
+        span: Span,
+    },
+    /// FR-194: an aggregate literal violates its authored-value constraint.
+    InvalidAggregateValue {
+        /// The literal's span.
+        span: Span,
+    },
+    /// FR-194: the window bounds are not ordered.
+    InvalidAggregateWindow {
+        /// The complete `past[a, b]` span.
+        span: Span,
+    },
+    /// FR-194: a window bound has the wrong kind for the selected profile.
+    AggregateWindowKindMismatch {
+        /// The first bound with the wrong kind.
+        span: Span,
+    },
+    /// FR-194: aggregate windows are admitted only by event-position and
+    /// timestamped-event profiles.
+    AggregateProfileUnsupported {
+        /// The aggregate term's span.
+        span: Span,
+    },
     /// A timed interval (FR-393) under a profile other than the timed
     /// profile, where FR-233's `model-steps` rule is not checked yet:
     /// refused rather than checked as a step interval. Located at the
@@ -1275,7 +1318,8 @@ pub enum TemporalCause {
         /// Why the unit is not a time unit (boxed: an affine unit's offset
         /// is an exact rational).
         cause: Box<TimeUnitCause>,
-        /// The unit name's span.
+        /// The unit name's span; for a task's time value (QSL FR-246), the span of
+        /// the whole quantity.
         span: Span,
     },
     /// A clause under the timed profile whose clock binding is not
@@ -1297,6 +1341,114 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// QSL FR-246, QSpec FR-419: a task set or a claim over it that breaks a
+    /// rule of the task model. Located at the offending value, or at the
+    /// declaration for a task set with no task.
+    InvalidTaskSet {
+        /// The task set.
+        task_set: String,
+        /// The tasks the refusal names: none for a task set that declares
+        /// none, one task, or both tasks of a priority clash.
+        tasks: Vec<String>,
+        /// The broken rule.
+        defect: TaskSetDefect,
+        /// The span of the offending value or declaration.
+        span: Span,
+    },
+    /// QSL FR-246: two tasks of one task set share a name. Located at the
+    /// second task's name.
+    DuplicateTask {
+        /// The task set.
+        task_set: String,
+        /// The shared name.
+        task: String,
+        /// The first task's name span.
+        first: Span,
+        /// The second task's name span.
+        span: Span,
+    },
+    /// QSL FR-246: two task sets of one unit share a name. Located at the
+    /// second task set's name.
+    DuplicateTaskSet {
+        /// The shared name.
+        name: String,
+        /// The first task set's name span.
+        first: Span,
+        /// The second task set's name span.
+        span: Span,
+    },
+    /// QSL FR-246: a claim names no task set of the unit. Located at the
+    /// task set name the claim wrote.
+    MissingTaskSet {
+        /// The claim.
+        claim: String,
+        /// The task set as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-246: a `response` claim names no task of its task set.
+    /// Located at the task name the claim wrote.
+    UnknownResponseTask {
+        /// The claim.
+        claim: String,
+        /// The task set.
+        task_set: String,
+        /// The task as written.
+        task: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task set of the unit.
+    /// Located at the task set name the declaration wrote.
+    UnknownReleaseTaskSet {
+        /// The task set as written.
+        name: String,
+        /// The operation the declaration releases on, as written.
+        operation: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task of its task set.
+    /// Located at the task name the declaration wrote.
+    UnknownReleaseTask {
+        /// The task set.
+        task_set: String,
+        /// The task as written.
+        task: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names no operation of a model. Located at
+    /// the operation name.
+    UnresolvedReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names operations of several declaring types,
+    /// none more derived than the others. Located at the operation name.
+    AmbiguousReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: an operation releases one task twice. Located at the
+    /// second declaration.
+    DuplicateRelease {
+        /// The task set.
+        task_set: String,
+        /// The task.
+        task: String,
+        /// The operation as written.
+        operation: String,
+        /// The first declaration's span.
+        first: Span,
+        /// The second declaration's span.
+        span: Span,
+    },
     /// A clause over a non-hybrid subject that writes no `clock` member: its
     /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
     /// built, so the clause is refused rather than stepped by a guessed
@@ -1305,6 +1457,58 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+}
+
+/// A time member of a task, for a refusal to name (QSL FR-246).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TaskTimeMember {
+    /// The period or minimum inter-arrival time.
+    Period,
+    /// The relative deadline.
+    Deadline,
+    /// The `wcet` budget: `C`, or `C(LO)` for a `hi` task.
+    Wcet,
+    /// The `wcet_hi` budget `C(HI)`.
+    WcetHi,
+    /// The release jitter.
+    Jitter,
+    /// The blocking term.
+    Blocking,
+}
+
+/// Which rule of the task model an [`TemporalCause::InvalidTaskSet`] broke
+/// (QSL FR-246, QSpec FR-419). Every one is catalog `invalid_timed_model`/
+/// `invalid-task-set`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum TaskSetDefect {
+    /// The task set declares no task.
+    NoTask,
+    /// A period, minimum inter-arrival time, deadline or WCET is not
+    /// positive.
+    NotPositive(TaskTimeMember),
+    /// A jitter or blocking term is negative.
+    Negative(TaskTimeMember),
+    /// A `hi` task's `C(LO)` exceeds its `C(HI)`.
+    BudgetOrder,
+    /// A `lo` task states a `wcet_hi`.
+    LoDualBudgets,
+    /// A priority is past the largest natural number S3 holds.
+    PriorityOutOfRange,
+    /// A `fixed_priority`, `amc` or `response` claim over a task with no
+    /// priority.
+    MissingPriority,
+    /// A `fixed_priority`, `amc` or `response` claim over two tasks of one
+    /// priority.
+    PriorityClash {
+        /// The shared priority.
+        priority: u64,
+    },
+    /// An `edf` claim over a task whose jitter or blocking term is not zero,
+    /// which the processor-demand test does not read.
+    EdfTerm(TaskTimeMember),
+    /// An `amc` claim over a task whose deadline exceeds its period, which
+    /// AMC-rtb does not cover.
+    AmcDeadlineBeyondPeriod,
 }
 
 /// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
@@ -1340,6 +1544,9 @@ impl TemporalCause {
     /// `Location`'s path).
     pub fn span(&self) -> Span {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Span { start: 0, end: 0 }, TemporalCause::span),
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
@@ -1360,6 +1567,11 @@ impl TemporalCause {
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
+            | Self::AggregateModelSubject { span }
+            | Self::InvalidAggregateValue { span }
+            | Self::InvalidAggregateWindow { span }
+            | Self::AggregateWindowKindMismatch { span }
+            | Self::AggregateProfileUnsupported { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
@@ -1370,6 +1582,16 @@ impl TemporalCause {
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
             | Self::TimedTraceSubject { span }
+            | Self::InvalidTaskSet { span, .. }
+            | Self::DuplicateTask { span, .. }
+            | Self::DuplicateTaskSet { span, .. }
+            | Self::MissingTaskSet { span, .. }
+            | Self::UnknownResponseTask { span, .. }
+            | Self::UnknownReleaseTaskSet { span, .. }
+            | Self::UnknownReleaseTask { span, .. }
+            | Self::UnresolvedReleaseOperation { span, .. }
+            | Self::AmbiguousReleaseOperation { span, .. }
+            | Self::DuplicateRelease { span, .. }
             | Self::MissingClock { span } => *span,
         }
     }
@@ -1377,7 +1599,14 @@ impl TemporalCause {
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Code::InvalidPackage, TemporalCause::code),
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
+            Self::InvalidAggregateValue { .. } => Code::InvalidPackage,
+            Self::InvalidAggregateWindow { .. } => Code::InvalidPackage,
+            Self::AggregateWindowKindMismatch { .. } => Code::IllTyped,
+            Self::AggregateProfileUnsupported { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
@@ -1391,6 +1620,7 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
+            | Self::AggregateModelSubject { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
@@ -1398,9 +1628,18 @@ impl TemporalCause {
             | Self::TimedTraceSubject { .. }
             | Self::MissingClock { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
-            Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
-                Code::InvalidTimedModel
-            }
+            Self::InvalidTimedInterval { .. }
+            | Self::ModelTimeOnUntimedModel { .. }
+            | Self::InvalidTaskSet { .. } => Code::InvalidTimedModel,
+            Self::DuplicateTask { .. }
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => Code::ConflictingDeclaration,
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
@@ -1423,6 +1662,7 @@ impl TemporalCause {
     /// This cause's catalog tag.
     pub fn tag(&self) -> &'static str {
         match self {
+            Self::Multiple { causes } => causes.first().map_or("invalid-value", TemporalCause::tag),
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
@@ -1437,12 +1677,26 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
+            Self::AggregateModelSubject { .. } => "expression-form",
+            Self::InvalidAggregateValue { .. } => "invalid-value",
+            Self::InvalidAggregateWindow { .. } => "invalid-value",
+            Self::AggregateWindowKindMismatch { .. } => "unit-mismatch",
+            Self::AggregateProfileUnsupported { .. } => "expression-form",
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
-            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
-                "duplicate-declaration"
-            }
+            Self::DuplicateTrigger { .. }
+            | Self::DuplicateCapture { .. }
+            | Self::DuplicateTask { .. }
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => "duplicate-declaration",
+            Self::InvalidTaskSet { .. } => "invalid-task-set",
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => "missing-name",
+            Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }

@@ -107,8 +107,23 @@ pub fn check_closure(
     certificate: &ClosureCertificate,
     limits: &ModelCheckLimits, // FR-126; subject meter/expansion limits remain in request
     cancel: &Cancel,           // FR-276
-) -> TemporalCertificateCheck;
+) -> Result<TemporalCertificateCheck, ClosureRefusal>;
+
+pub fn check_protocol_closure(
+    request: &ProtocolCertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal>; // check_closure's check over a protocol subject
 ```
+
+`ClosureRefusal` is the checker's refusal to check at all: the subject does
+not admit (FR-106), a root is unbounded, the item has no translation or no
+instance (FR-125), the subject has no initial state, a state or automaton
+key has no canonical encoding, a protocol subject's protocol system does
+not build (FR-205), a fairness constraint of the item names an operation the
+subject does not admit (`Fairness`), or an internal invariant of the checker
+broke (`Fault`). A refusal is never an acceptance.
 
 EN-1 SHALL set a `ClosureCertificate`'s `package_id` to the `package_id` of
 the package it explored (FR-126); `PackageId` is the type FR-169's

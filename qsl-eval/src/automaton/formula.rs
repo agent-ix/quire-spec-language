@@ -551,6 +551,9 @@ pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, A
                 let positive = ir.atom(atom);
                 (positive, ir.not(positive)?)
             }
+            FormulaNode::Aggregate { .. } => {
+                return Err(invariant("aggregate-formula-not-emitted"));
+            }
             FormulaNode::Not(operand) => {
                 let (positive, negative) = pair_of(*operand)?;
                 (negative, positive)

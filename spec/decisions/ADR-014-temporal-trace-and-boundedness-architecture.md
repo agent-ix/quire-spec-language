@@ -302,13 +302,16 @@ driver uses the record's extent for it.
 
 No new capability kind, flag or mode is added. QSL records; CG settles.
 
-1. QSL S3 records `Requirements{kind, evidence_kind, extent, bounds}` per
+1. QSL S3 records `Requirements{kind, evidence_kind, state_graph_form,
+   extent, bounds}` per
    item (§4); `evidence_kind` carries the item's unmodified label when present
    for `probabilistic-satisfaction` and remains absent when the item omits it,
    so negotiation can distinguish valid, absent and unknown evidence.
-2. `qsl_route::Registry::candidates` matches on capability kind and, for
-   `probabilistic-satisfaction`, the item's exact evidence kind (FR-075);
-   other capability kinds match on kind alone.
+2. `qsl_route::Registry::candidates` matches on capability kind, for
+   `probabilistic-satisfaction` the item's exact evidence kind, and for a
+   state-graph item the exact state-graph form advertised by the provider
+   (FR-075); temporal items also match the item's dynamics. Other capability
+   kinds match on kind alone.
 3. The O-20 request writer writes the item's extent classification,
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the

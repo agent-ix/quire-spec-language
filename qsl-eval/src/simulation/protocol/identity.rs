@@ -348,13 +348,14 @@ enum Members {
     /// `ordering`: a `fence`'s ordering (QSpec FR-426).
     Fence { ordering: &'static str },
     /// A `cattempt`'s `operation`, `receiver` and `arguments`, with the
-    /// FR-120 identity of the application, and its `template` and
-    /// `registration`.
+    /// FR-120 identity of the application, its `template` and
+    /// `registration`, and its attempt `record` (ST-11).
     CAttempt {
         application: ModelTransition,
         operation: String,
         receiver: Enc,
         arguments: Vec<Enc>,
+        record: Enc,
         template: String,
         registration: RegistrationKey,
     },
@@ -728,13 +729,15 @@ impl ProtocolTransition {
     }
 
     /// `cattempt` by the compensation thread `thread` of `registration`,
-    /// applying `application` (ADR-027 ST-11, TS-2).
+    /// applying `application` and binding the attempt record `record`
+    /// (ADR-027 ST-11, TS-2).
     pub(crate) fn cattempt(
         thread: ThreadPath,
         registration: RegistrationKey,
         application: ModelTransition,
         receiver: Enc,
         arguments: Vec<Enc>,
+        record: Enc,
     ) -> Self {
         Self {
             kind: StepKind::CAttempt,
@@ -745,6 +748,7 @@ impl ProtocolTransition {
                 application,
                 receiver,
                 arguments,
+                record,
                 template: registration.template.clone(),
                 registration,
             },
@@ -1097,6 +1101,7 @@ impl ProtocolTransition {
                 operation,
                 receiver,
                 arguments,
+                record,
                 template,
                 registration,
                 ..
@@ -1104,6 +1109,7 @@ impl ProtocolTransition {
                 members.push(("operation", Enc::text(operation.clone())));
                 members.push(("receiver", receiver.clone()));
                 members.push(("arguments", Enc::Array(arguments.clone())));
+                members.push(("record", record.clone()));
                 members.push(("template", Enc::text(template.clone())));
                 members.push(("registration", registration.enc()));
             }
