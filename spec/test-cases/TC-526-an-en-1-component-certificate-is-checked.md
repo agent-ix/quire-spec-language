@@ -31,7 +31,7 @@ Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 and FR-339-AC-7.
    `max_transitions` 9 and `max_automaton_states` 2; under the default
    meter budget; under a meter budget whose `work_units` is 0, then check
    its closure alone (FR-338) under that budget.
-6. Check the certificate of FR-228-AC-2's `tso` proof under its
+6. Check, with `check_protocol_components`, the certificate of FR-228-AC-2's `tso` proof under its
    `ProtocolCertificateRequest`; then with the polling-after-store
    component's witness naming the scheduler constraint of branch `w`, then
    `r`'s `flush` class; then with the polling-before-store component's

@@ -19,6 +19,16 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-specification/FR-430
     type: references
+  - target: ix://agent-ix/quire-specification/FR-436
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-215
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-221
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-222
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-025
+    type: depends_on
 ---
 # FR-339: Check an EN-1 component certificate
 
@@ -46,8 +56,9 @@ it starves.
 
 ## Inputs
 
-- FR-338's `CertificateRequest` for a TP-4 clause; over a protocol subject,
-  its `ProtocolCertificateRequest` with the run's memory and instance bounds.
+- FR-338's `CertificateRequest` for a TP-4 clause over a model subject, or
+  FR-338's `ProtocolCertificateRequest`, with the run's memory and instance
+  bounds, for a TP-4 clause over a protocol subject.
 - A `ComponentCertificate`.
 
 ```rust
@@ -70,6 +81,13 @@ pub enum ProofCertificate {
 
 pub fn check_components(
     request: &CertificateRequest<'_>,
+    certificate: &ComponentCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> TemporalCertificateCheck; // FR-338; existing stop causes only
+
+pub fn check_protocol_components(
+    request: &ProtocolCertificateRequest<'_>,   // FR-338
     certificate: &ComponentCertificate,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
@@ -97,24 +115,24 @@ read from its fairness set (FR-212, FR-228), in the set's order, the JCS
 bytes of its members (QSpec FR-430):
 
 - one resolved constraint per `whole` member;
-- for an `each` member, one per class of it (QSpec FR-430's `each` classes,
-  and, for a `flush(b)` member, FR-228's one class per thread of branch `b`) that a step of an
-  edge the closure check computed, or a step enabled at a reached state,
-  belongs to, ascending by the canonical bytes of the class's identity (its
-  thread path, or its thread path and application);
+- one resolved constraint per `flush(b)` member: QSpec FR-436 derives one
+  such member per thread `b`, whose target names `b`'s thread path and whose
+  one class is `b`'s `flush` steps, so the member resolves to its constraint
+  whether or not any reached state enables it;
+- for any other `each` member, one per class of it (QSpec FR-430's `each`
+  classes) that a step of an edge the closure check computed, or a step
+  enabled at a reached state, belongs to, ascending by the canonical bytes of
+  the class's identity (its thread path, or its thread path and application);
 - the visibility pairs last, as the `UnfairVisibility` rule below states.
 
 At a protocol state, a class SHALL be enabled when one of its steps is
 enabled in the protocol system (FR-212), memory steps included (FR-221,
-FR-222), and a store that is not expanded only because of a memory bound
-SHALL read as enabled (ADR-025 MB-3, MF-4). Under `tso`, `flush(b)` is
+FR-222). No reached state of an accepted certificate is bound-limited, since
+FR-338 "Memory bounds" rejects one with `SuccessorMissing`, so every enabled
+store is an expanded edge. Under `tso`, `flush(b)` is
 enabled exactly when `b`'s buffer is non-empty (ADR-025 MS-4). The closure
 check computes these enabled sets, so the component rules read them as they
 read a model state's.
-
-EN-1 SHALL list the resolved constraints in the same order when it writes a
-witness (FR-126 "Certificates"), so `UnfairWeak{constraint}` for a flush
-constraint names the resolved index of that thread's `flush` class.
 
 ## Outputs
 
@@ -127,6 +145,10 @@ constraint names the resolved index of that thread's `flush` class.
 
 ## Behavior
 
+- `check_protocol_components` SHALL apply every rule of this requirement as
+  `check_components` does, running FR-338's `check_protocol_closure` on the
+  certificate's closure in place of `check_closure` and reading the resolved
+  constraints and enabled sets by "Protocol subjects".
 - The checker SHALL compare the recompiled package's `package_id` with the
   closure's `package_id` first, before the closure check and any component
   rule.
@@ -204,7 +226,7 @@ constraint names the resolved index of that thread's `flush` class.
 | FR-339-AC-5 | Fixture: ADR-018 §6's example unit with universe `{a, b}`, both versions 0, and a checked package that carries the clause's `temporal_clause` node in the shape S4 emits for a guarded `on each` activation (FR-337-AC-6), built by the test as in FR-338-AC-10, the condition read by the test's own letters. `eventually holds(c.versionNumber = 2)` under infinite-trace `on each` with the condition `c.versionNumber = 1` and a weak `each` constraint on `attemptUpdate` returns a `ComponentCertificate` in which, for binding `a`, the component of the active states at `(1,0)`, `(1,1)`, `(1,2)` carries `UnfairWeak` naming `upd(a)` and the component of the waiting states carries `MissingAcceptance{set: 0}` (symmetrically for `b`); `check_components` accepts it and FR-127 settles `proved`. The same clause with the condition `c.versionNumber = 7` and no fairness constraint gives a certificate whose every non-trivial component carries `MissingAcceptance{set: 0}`, accepted. Rejected vectors on the first certificate: the waiting component's witness changed to `UnfairWeak` naming `upd(a)` is `WitnessFails` (edges inside it take `upd(a)`); the active component's witness changed to `MissingAcceptance{set: 0}` is `WitnessFails` at its first state; the closure with binding `a`'s active state at `(1,0)` removed is `SuccessorMissing` at it; with the condition undefined at version 1, `BadState` at binding `a`'s waiting state at `(0,0)`, whose expansion reads it. | Test (TC-1215) |
 | FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
 | FR-339-AC-6 | Charges. AC-1's certificate checked with `max_states`, `max_transitions` and `max_automaton_states` equal to the product states, edges and automaton states its closure holds is `Accepted`; with `max_states` one below that count the closure check returns `Stopped(LimitReached{MaxStates, value, setting})` with the consumed value and the request's setting, never `Rejected` or `Accepted`. Component work charges nothing: the `Ring` unit (population `rings`, field `v: Int[0, 2]`, universe `{r}`, initial `v` 0, operations `a` from 0 to 1, `x` from 0 to 0, `b` from 1 to 2 and `c` from 2 to 0, no `terminal` declaration) with `always eventually holds(r.v = 1)` under a weak constraint on `a` (no granularity) returns `Holds{Exhaustive}` over five product states `(0,q0)`, `(0,q1)`, `(1,q0)`, `(2,q0)`, `(2,q1)` (canonical breadth-first indices 0 to 4) and nine edges, with two automaton states, and a certificate whose components are listed `{(0,q0), (1,q0), (2,q0)}` (`MissingAcceptance`), `{(2,q1)}` (`Trivial`), `{(0,q1)}` (`UnfairWeak` naming `a`, enabled at `v` 0 by the closure's enabled set and taken by no edge inside, whose one edge is `x`). Checked with `max_states` 5, `max_transitions` 9 and `max_automaton_states` 2 it is `Accepted`: the closure check charges all five product states, nine edges and two automaton states and the three components charge none of them. Under the default meter budget the certificate is `Accepted`, as FR-338's closure check of its closure alone is. Under a meter budget whose `work_units` is 0, the closure check's first clause or atom evaluation at the initial state is denied, and `check_components` returns `Stopped(LimitReached{EvaluationMeter, value, setting})` equal in limit, value and setting to the stop FR-338's closure check of the same closure returns under that budget, before any component rule runs; for every meter budget the certificate is accepted exactly when its closure check alone completes. AC-1's certificate checked with a Cancel handle cancelled at its first check after the closure check completes returns `Stopped(Cancelled{source: Requested})`. Each stop settles `incomplete` (FR-127), never `CertificateRejected` or `proved`. | Test (TC-526) |
-| FR-339-AC-7 | Protocol subject. FR-228-AC-2's `tso` proof of `eventually holds(c.r = 1)`, checked under its `ProtocolCertificateRequest` with `max_store_buffer` and `max_messages` `None`, returns a `ComponentCertificate` whose resolved constraints are its fairness set's members in JCS order, the members `fair weak each flush(w)` and `fair weak each flush(r)` each resolving to one constraint, for its branch's one thread. In it, the component of the product states at which `w` is done with buffer `[x := 1]` and `r` polls carries `UnfairWeak` naming `w`'s `flush` class, the only weak constraint enabled at every state of it and taken by no edge inside it (the scheduler constraint of branch `w` is not enabled there, since `flush` is in no thread class); the component at which `w` has not stored and `r` polls carries `UnfairWeak` naming the scheduler constraint of branch `w`; and `check_components` accepts it. Rejected vectors, each `WitnessFails`: the first component's witness changed to name the scheduler constraint of branch `w`, or `r`'s `flush` class (`r`'s buffer is empty at every state); the second component's witness changed to name `w`'s `flush` class (`w`'s buffer is empty before its store). | Test (TC-526) |
+| FR-339-AC-7 | Protocol subject. FR-228-AC-2's `tso` proof of `eventually holds(c.r = 1)`, checked by `check_protocol_components` under its `ProtocolCertificateRequest` with `max_store_buffer` and `max_messages` `None`, returns a `ComponentCertificate` whose resolved constraints are its fairness set's members in JCS order, the `flush` members of `w` and `r` each resolving to exactly one constraint (QSpec FR-436), `r`'s although `r` never stores. In it, the component of the product states at which `w` is done with buffer `[x := 1]` and `r` polls carries `UnfairWeak` naming `w`'s `flush` class, the only weak constraint enabled at every state of it and taken by no edge inside it (the scheduler constraint of branch `w` is not enabled there, since `flush` is in no thread class); the component at which `w` has not stored and `r` polls carries `UnfairWeak` naming the scheduler constraint of branch `w`; and `check_protocol_components` accepts it. Rejected vectors, each `WitnessFails`: the first component's witness changed to name the scheduler constraint of branch `w`, or `r`'s `flush` class (`r`'s buffer is empty at every state); the second component's witness changed to name `w`'s `flush` class (`w`'s buffer is empty before its store). | Test (TC-526) |
 
 ## Dependencies
 
@@ -216,6 +238,4 @@ constraint names the resolved index of that thread's `flush` class.
 
 ## References
 
-- Owning ticket: Linear QSL-366. The certificate producer and
-  `check_components` for model subjects: Linear QSL-893 (slices QSL-1097 to
-  QSL-1099). Protocol subjects ("Protocol subjects", AC-7): Linear QSL-1060.
+- Owning ticket: Linear QSL-366.

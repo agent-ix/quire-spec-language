@@ -108,6 +108,13 @@ pub fn check_closure(
     limits: &ModelCheckLimits, // FR-126; subject meter/expansion limits remain in request
     cancel: &Cancel,           // FR-276
 ) -> TemporalCertificateCheck;
+
+pub fn check_protocol_closure(
+    request: &ProtocolCertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> TemporalCertificateCheck; // check_closure's check over a protocol subject
 ```
 
 EN-1 SHALL set a `ClosureCertificate`'s `package_id` to the `package_id` of

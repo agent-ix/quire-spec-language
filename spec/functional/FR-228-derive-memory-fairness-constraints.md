@@ -25,6 +25,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-365
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-339
+    type: depends_on
 ---
 # FR-228: Derive flush fairness under tso and visibility fairness under ra
 
@@ -89,18 +91,18 @@ visible.
   using only the edges the decomposition kept.
 - A TP-4 item over a subject with a weak `parallel` SHALL settle `proved`
   only with FR-126's `ComponentCertificate` that FR-339's checker accepts
-  (FR-339 "Protocol subjects"). Its certificate SHALL carry
-  `UnfairWeak{constraint}` naming a flush constraint's resolved index for each
-  component that flush fairness alone starves, and `UnfairVisibility{constraints,
-  sub}` for each visibility removal (ADR-018 PC-4, FR-339); a `refuted` claim
-  carries no certificate.
-- EN-1's safety path (TP-1, TP-2, TP-3) SHALL read no fairness constraint, so
-  the memory constraints change liveness verdicts only (ADR-025 MF-3); the
+  (FR-339 "Protocol subjects"). Each component's witness SHALL be the first
+  that holds for it in FR-126 "Certificates"' witness order: a component no
+  earlier witness covers and that a flush constraint starves carries
+  `UnfairWeak{constraint}` naming that constraint's resolved index, and a
+  visibility removal carries `UnfairVisibility{constraints, sub}` (ADR-018
+  PC-4, FR-339); a `refuted` claim carries no certificate.
+- The memory constraints change liveness verdicts only (ADR-025 MF-3); the
   safety verdicts of ADR-025 §10 are FR-221-AC-1's and FR-222-AC-1's.
 - No request member, unit member or derived item SHALL remove a memory
   constraint from a fairness set: the constraints belong to the model
-  (ADR-025 MF-1), and no `memory`-origin counterpart of FR-212's `scheduling
-  adversarial` exists. That a memory constraint is what rejects a lasso is
+  (ADR-025 MF-1). FR-212's `scheduling adversarial` removes the scheduler
+  constraints only and keeps the memory constraints (QSpec FR-430). That a memory constraint is what rejects a lasso is
   observed at FR-126's fairness filter, which is one function over an SCC and
   a fairness set (ADR-018 FA-5), given the set with and without its `memory`
   members.
@@ -111,8 +113,8 @@ visible.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-228-AC-1 | `eventually holds(c1.r <= 1)` under infinite-trace over `SB` resolved to `tso` carries `fair weak each flush(left)` and `fair weak each flush(right)` with origin `memory` beside the three `scheduler` constraints; resolved to `ra` it carries one visibility member of kind `strong` with origin `memory`, target `{"type":"visibility","model":"ra"}`, and one pair per (thread, loaded location) in the resolved program; resolved to `sc` it carries no memory constraint. | Test (TC-673) |
-| FR-228-AC-2 | A weak `parallel` with branch `w`, one `relaxed` store `x := 1`, and branch `r`, a `repeat` with no maximum whose body is one `relaxed` load of `x` into `c.r` and whose guard is that load's binder reading 0, so that `x` is shared, under `tso`: `eventually holds(c.r = 1)` returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts (FR-339-AC-7), and FR-127 settles it `proved`, `Certified`. The lasso whose stem is `fork`, `w`'s store, and whose loop is `r`'s load reading 0, with `w`'s buffer `[x := 1]` throughout, meets every scheduler constraint, since `w` has no enabled step and `r` steps on every edge. FR-126's fairness filter, given the SCC that holds that loop, rejects it with `fair weak each flush(w)` as its only failing member over the clause's fairness set, and passes it over the same set without its `memory` members. | Test (TC-673) |
+| FR-228-AC-1 | `eventually holds(c1.r <= 1)` under infinite-trace over `SB` resolved to `tso` carries `fair weak each flush(left)` and `fair weak each flush(right)` with origin `memory` beside the three `scheduler` constraints, and with `scheduling adversarial` it carries the same two `memory` constraints and no `scheduler` constraint; resolved to `ra` it carries one visibility member of kind `strong` with origin `memory`, target `{"type":"visibility","model":"ra"}`, and one pair per (thread, loaded location) in the resolved program; resolved to `sc` it carries no memory constraint. | Test (TC-673) |
+| FR-228-AC-2 | A weak `parallel` with branch `w`, one `relaxed` store `x := 1`, and branch `r`, a `repeat` with no maximum whose body is one `relaxed` load of `x` into `c.r` and whose guard is that load's binder reading 0, so that `x` is shared, with `x` and `c.r` initially 0, under `tso`: `eventually holds(c.r = 1)` returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts (FR-339-AC-7), and FR-127 settles it `proved`, `Certified`. The lasso whose stem is `fork`, `w`'s store, and whose loop is `r`'s load reading 0, with `w`'s buffer `[x := 1]` throughout, meets every scheduler constraint, since `w` has no enabled step and `r` steps on every edge. FR-126's fairness filter, given the SCC that holds that loop, rejects it with `fair weak each flush(w)` as its only failing member over the clause's fairness set, and passes it over the same set without its `memory` members. | Test (TC-673) |
 | FR-228-AC-3 | The fairness filter, given an SCC every cycle of which takes a load by thread `b` of `ℓ` from a message that is not mo-last, and none of whose edges loads `ℓ`'s mo-last message by `b`, rejects it under visibility fairness; given one that also holds a load by `b` of `ℓ`'s mo-last message, it passes it. | Test (TC-673) |
 | FR-228-AC-4 | A `fair weak` constraint naming `flush` refuses `missing_declaration`/`missing-name`. | Test (TC-673) |
 | FR-228-AC-5 | A synthesized accepting product SCC on states `p`, `q`, `r`, passed straight to the visibility filter as AC-3's SCCs are, with the edges `p → q`, `q → p` and `r → q` (thread `a`, which loads nothing) and `q → r` (thread `b` loads `ℓ` from a message that is not mo-last), `p` the only accepting state: the filter removes `q → r`, decomposes `{p, q, r}` into `{r}` then `{p, q}`, passes `{p, q}`, and the lasso `p q p q …` meets the lasso form of visibility fairness. (A protocol form of this vector needs `scheduling adversarial;`, since the default scheduler constraint for `b` would reject `{p, q}` unless `b` is disabled at `p`.) | Test (TC-673) |
@@ -133,5 +135,3 @@ visible.
 ## References
 
 - Owning ticket: Linear QSL-372. QSpec half: QSpec FR-436, FR-437 (Linear STD-138).
-- The `proved` half of AC-2 and the filter-level form of its unflushed lasso:
-  Linear QSL-1060.

@@ -17,7 +17,7 @@ Scope: FR-228-AC-1 to FR-228-AC-9.
 ## Test Procedure
 
 1. Read the fairness set of FR-228-AC-1's clause under `tso`, `ra` and
-   `sc`.
+   `sc`, and under `tso` with `scheduling adversarial`.
 2. Check FR-228-AC-2's store-and-poll protocol under `tso` and check its
    component certificate (FR-339); pass the SCC of its unflushed lasso's
    loop to the fairness filter over the clause's fairness set, then over
@@ -38,7 +38,8 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: two `flush` constraints with origin `memory` under `tso`;
+- Step 1: two `flush` constraints with origin `memory` under `tso`, with
+  and without `scheduling adversarial` (no `scheduler` constraint with it);
   one `strong` visibility member per (thread, loaded location) under `ra`,
   with origin `memory` and target `{"type":"visibility","model":"ra"}`;
   none under `sc`.
