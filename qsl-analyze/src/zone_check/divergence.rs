@@ -24,7 +24,7 @@ use num_bigint::BigInt;
 use qsl_eval::simulation::model::ModelSimState;
 
 use super::search::{Halt, Run};
-use super::{Bound, Dbm, ZoneCheckLimit, ZoneStop};
+use super::{Bound, Dbm};
 
 /// A node of the divergence graph.
 struct Node {
@@ -43,11 +43,13 @@ struct Edge {
 pub(super) struct Escape {
     /// Whether some valuation of the symbolic state diverges.
     pub diverges: bool,
-    /// Under a dense source, the model steps from the symbolic state to the
-    /// first quiescent state it reaches, each as the source's model state,
-    /// the step's index and the part's index; every valuation of a
-    /// quiescent state diverges by its idle tail.
-    pub to_quiescent: Option<Vec<(ModelSimState, usize, usize)>>,
+    /// Under a dense source, for each quiescent node the test reaches in
+    /// breadth-first order, the model steps from the symbolic state to it,
+    /// each as the source's model state, the step's index and the part's
+    /// index; every valuation of a quiescent state diverges by its idle
+    /// tail.
+    #[allow(clippy::type_complexity, reason = "paths of (state, step, part)")]
+    pub to_quiescent: Vec<Vec<(ModelSimState, usize, usize)>>,
 }
 
 impl Run<'_, '_, '_> {
@@ -76,6 +78,8 @@ impl Run<'_, '_, '_> {
         // then taken.
         self.settle_at(state, &mut start, factor)?;
         let z = start.dim() - 1;
+        self.charge_state(&start)?;
+        self.escape_state();
         let mut nodes = vec![Node {
             state: state.clone(),
             zone: start,
@@ -87,14 +91,14 @@ impl Run<'_, '_, '_> {
         // `None` for the `z` reset.
         #[allow(clippy::type_complexity, reason = "a source and an optional step")]
         let mut parent: Vec<Option<(usize, Option<(usize, usize)>)>> = vec![None];
-        let mut quiescent = None;
+        let mut quiescent = Vec::new();
         let mut queue = VecDeque::from([0_usize]);
         while let Some(at) = queue.pop_front() {
             self.poll()?;
             let node_state = nodes[at].state.clone();
             let node_zone = nodes[at].zone.clone();
-            if dense && quiescent.is_none() && self.timed(self.timed.is_quiescent(&node_state))? {
-                quiescent = Some(at);
+            if dense && self.timed(self.timed.is_quiescent(&node_state))? {
+                quiescent.push(at);
             }
             let mut targets = Vec::new();
             for successor in self.successors(&node_state, &node_zone, factor)? {
@@ -135,13 +139,8 @@ impl Run<'_, '_, '_> {
                 let to = match found {
                     Some(to) => to,
                     None => {
-                        if u64::try_from(nodes.len()).unwrap_or(u64::MAX)
-                            >= self.limits.max_symbolic_states
-                        {
-                            return Err(self.stop(ZoneStop::LimitReached(
-                                ZoneCheckLimit::MaxSymbolicStates(self.limits.max_symbolic_states),
-                            )));
-                        }
+                        self.charge_state(&target_zone)?;
+                        self.escape_state();
                         let index = nodes.len();
                         nodes.push(Node {
                             state: target,
@@ -154,6 +153,8 @@ impl Run<'_, '_, '_> {
                         index
                     }
                 };
+                self.charge_edge()?;
+                self.escape_edge();
                 out[at].push(Edge { to, accepting });
             }
         }
@@ -172,18 +173,21 @@ impl Run<'_, '_, '_> {
                 .iter()
                 .any(|edge| edge.accepting && component_of[from] == component_of[edge.to])
         });
-        let to_quiescent = quiescent.map(|mut at| {
-            let mut path = Vec::new();
-            while let Some((from, step)) = parent[at] {
-                // A `z` reset only lets time pass.
-                if let Some((step, part)) = step {
-                    path.push((nodes[from].state.clone(), step, part));
+        let to_quiescent = quiescent
+            .into_iter()
+            .map(|mut at| {
+                let mut path = Vec::new();
+                while let Some((from, step)) = parent[at] {
+                    // A `z` reset only lets time pass.
+                    if let Some((step, part)) = step {
+                        path.push((nodes[from].state.clone(), step, part));
+                    }
+                    at = from;
                 }
-                at = from;
-            }
-            path.reverse();
-            path
-        });
+                path.reverse();
+                path
+            })
+            .collect();
         Ok(Escape {
             diverges,
             to_quiescent,

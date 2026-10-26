@@ -37,3 +37,24 @@ Ticket: QSL-581. I traced the passed/waiting search, aLU coverage (`alu_covered_
 ## Coverage
 
 Methods: code-review with the rust-review lane. Gap analysis is SR-1599002. Probe tests were run in the reviewer's own worktree and discarded.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | A finite path whose backward target is infeasible, and whose least-delay endpoint does not diverge, returns `Undecided(LassoNotConcretized)`, a cause FR-241 defines for lassos only. No other divergent point of the last zone or other path is tried. It is sound (settles inconclusive), but it names the wrong cause and gives up early. Use a finite-path cause, or search the last zone's divergent valuations before giving up. | qsl-analyze/src/zone_check/search.rs:995-1002 |
+| FND-009 | low | Each `escape` call (one per violating node, per root and per point check) builds a fresh divergence graph. It is charged against `max_symbolic_states` per call only, never cumulatively, and never against `max_symbolic_transitions` or `max_zone_bytes`. A run's total work can exceed the caller's budgets. Charge the divergence graphs to the run's counters. | qsl-analyze/src/zone_check/divergence.rs:133-141 |
+
+## Dispositions
+
+Round 1, against #1599 fix commit 1c963df6f (head; 69990aada..fb3b8137f are `=` in `git range-diff cb95a247a..7ac32b8d7 3880da60a..fb3b8137f`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | deferred | Half fixed, half deferred: `DivergenceUnknown` is gone with FND-003. `DeadlockAfterDelay` stays, citing STD-493 (Backlog), because FR-236 and QSpec FR-417 give `final_delay` to time-lock counterexamples only. It needs an FR-235 row or a spec'd counterexample form from STD-493. |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |

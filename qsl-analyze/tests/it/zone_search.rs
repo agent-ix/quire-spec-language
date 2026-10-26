@@ -321,9 +321,11 @@ fn ticker(locked: bool) -> World {
 /// cause `division-by-zero` at position 2, time stamp 2 and `x = 0`, keyed
 /// by the model state alone. With the unconditional invariant that state is
 /// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`. Not
-/// covered: the AC's atom `2 / (2 - t.n) >= 1`, whose literals the checker
-/// refuses as ambiguous here (`6 mod (2 - n)` has the same cause), and the
-/// time-lock-freedom item refuted over the time-locked variant.
+/// covered: the AC's atom `2 / (2 - t.n) >= 1`, which S3 refuses here as
+/// `ill_typed` `AmbiguousLiteral` over this fixture, with or without
+/// `quire.value.complete/v1`; `6 mod (2 - n)` is undefined with the same
+/// cause. Nor is the time-lock-freedom item
+/// refuted over the time-locked variant.
 #[trace("TC-710")]
 #[test]
 fn an_undefined_atom_refutes_only_where_time_diverges() {
@@ -516,4 +518,43 @@ fn a_counterexample_ends_where_time_can_diverge() {
     ));
     assert_eq!(operations(&counterexample), ["go"]);
     assert_eq!(delays(&counterexample), [exact(5, 2)]);
+}
+
+/// FR-239's budgets bound the divergence checks with the search (SR-1599001
+/// FND-009): over the `Lock` model, whose claim holds vacuously after a
+/// divergence check of `B`, a `max_symbolic_states` that the search alone
+/// fits stops once the checks' states are charged with it.
+#[trace("TC-694")]
+#[test]
+fn a_tight_budget_stops_a_divergence_check() {
+    let lock = world(
+        &document(&["x"], &[("go", &["phase"]), ("ping", &[])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             pre Ping using v on M::Call::ping {{ self.phase = 1 }}\n\
+             time invariant Locked when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+             temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always holds(c.phase = 0) }}\n"
+        ),
+    );
+    let ZoneCheckOutcome::Holds { graph, .. } =
+        claim(&lock, ZoneCheckLimits::default(), &Cancel::new())
+    else {
+        panic!("the claim holds vacuously in B");
+    };
+    let searched = u64::try_from(graph.nodes.len()).expect("a small graph");
+    let limits = ZoneCheckLimits {
+        max_symbolic_states: searched,
+        ..ZoneCheckLimits::default()
+    };
+    let ZoneCheckOutcome::Stopped { cause, .. } = claim(&lock, limits, &Cancel::new()) else {
+        panic!("the divergence check exceeds the budget");
+    };
+    assert_eq!(
+        cause,
+        ZoneStop::LimitReached(ZoneCheckLimit::MaxSymbolicStates(searched))
+    );
 }

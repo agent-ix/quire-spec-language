@@ -119,7 +119,8 @@ pub enum ZoneUndecided {
     /// TD-6): the claim would hold vacuously.
     NoAdmittedBehaviour,
     /// FR-241: a violation has a time-divergent continuation, but no
-    /// concretisation of its path ends at a valuation that has one.
+    /// concretisation of its path ends at a valuation that has one. FR-241
+    /// defines it for lassos; a finite path reuses it (spec gap STD-493).
     LassoNotConcretized,
     /// A quiescent symbolic state has deadlocked valuations only after a
     /// delay, which no position of a counterexample names: FR-236 and QSpec
@@ -358,7 +359,13 @@ pub(super) struct Run<'r, 's, 'a> {
     /// The retained edges leaving each node, by index into `edges`.
     out: Vec<Vec<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
+    /// The bytes of every zone stored, by the search and by its divergence
+    /// checks.
     zone_bytes: u64,
+    /// The symbolic states and transitions the divergence checks stored,
+    /// charged with the search's own against the same budgets.
+    escape_states: u64,
+    escape_edges: u64,
     /// The guarded steps of each model state reached, by its key.
     steps: BTreeMap<Vec<u8>, Vec<GuardedStep>>,
 }
@@ -387,6 +394,8 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             out: Vec::new(),
             passed: BTreeMap::new(),
             zone_bytes: 0,
+            escape_states: 0,
+            escape_edges: 0,
             steps: BTreeMap::new(),
         }
     }
@@ -603,22 +612,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 }
             }
         }
-        if widen(self.nodes.len()) >= self.limits.max_symbolic_states {
-            return Err(
-                self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxSymbolicStates(
-                    self.limits.max_symbolic_states,
-                ))),
-            );
-        }
-        let bytes = zone_bytes(&zone);
-        if self.zone_bytes.saturating_add(bytes) > self.limits.max_zone_bytes {
-            return Err(
-                self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxZoneBytes(
-                    self.limits.max_zone_bytes,
-                ))),
-            );
-        }
-        self.zone_bytes += bytes;
+        self.charge_state(&zone)?;
         let index = self.nodes.len();
         self.nodes.push(SymbolicNode {
             state,
@@ -646,12 +640,54 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         Ok(Some(index))
     }
 
-    fn retain(&mut self, edge: SymbolicEdge) -> Result<(), Halt> {
-        if widen(self.edges.len()) >= self.limits.max_symbolic_transitions {
+    /// Charge one stored symbolic state with `zone` against
+    /// `max_symbolic_states` and `max_zone_bytes`, counting the search's
+    /// states and every divergence check's together.
+    pub(super) fn charge_state(&mut self, zone: &Dbm) -> Result<(), Halt> {
+        let states = widen(self.nodes.len()).saturating_add(self.escape_states);
+        if states >= self.limits.max_symbolic_states {
+            return Err(
+                self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxSymbolicStates(
+                    self.limits.max_symbolic_states,
+                ))),
+            );
+        }
+        let bytes = zone_bytes(zone);
+        if self.zone_bytes.saturating_add(bytes) > self.limits.max_zone_bytes {
+            return Err(
+                self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxZoneBytes(
+                    self.limits.max_zone_bytes,
+                ))),
+            );
+        }
+        self.zone_bytes += bytes;
+        Ok(())
+    }
+
+    /// Charge one symbolic transition against `max_symbolic_transitions`,
+    /// the search's and every divergence check's together.
+    pub(super) fn charge_edge(&mut self) -> Result<(), Halt> {
+        let edges = widen(self.edges.len()).saturating_add(self.escape_edges);
+        if edges >= self.limits.max_symbolic_transitions {
             return Err(self.stop(ZoneStop::LimitReached(
                 ZoneCheckLimit::MaxSymbolicTransitions(self.limits.max_symbolic_transitions),
             )));
         }
+        Ok(())
+    }
+
+    /// Count a state a divergence check stored, once charged.
+    pub(super) fn escape_state(&mut self) {
+        self.escape_states += 1;
+    }
+
+    /// Count a transition a divergence check stored, once charged.
+    pub(super) fn escape_edge(&mut self) {
+        self.escape_edges += 1;
+    }
+
+    fn retain(&mut self, edge: SymbolicEdge) -> Result<(), Halt> {
+        self.charge_edge()?;
         let (from, _) = edge.ends();
         if let Some(out) = self.out.get_mut(from) {
             out.push(self.edges.len());
@@ -981,14 +1017,20 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         // quiescent state diverges by its idle tail; otherwise the target is
         // the valuations from which the model steps to a quiescent state are
         // taken, and failing that the least-delay point, checked.
-        let target = match &badness {
-            Badness::Deadlock(zone) => Some(zone.clone()),
-            Badness::False(_) | Badness::Undefined(..) => match &escape.to_quiescent {
-                Some(path) => Some(self.pre_path(path)?),
-                None => None,
-            },
+        // Each divergent target in turn: a deadlock's own valuations, or the
+        // predecessors of each quiescent state the divergence test reached,
+        // in its breadth-first order.
+        let targets = match &badness {
+            Badness::Deadlock(zone) => vec![zone.clone()],
+            Badness::False(_) | Badness::Undefined(..) => {
+                let mut targets = Vec::with_capacity(escape.to_quiescent.len());
+                for path in &escape.to_quiescent {
+                    targets.push(self.pre_path(path)?);
+                }
+                targets
+            }
         };
-        let within = target.and_then(|zone| {
+        let within = targets.into_iter().find_map(|zone| {
             concretise(self.timed, &stages, &Target::Within(zone), &self.scale).ok()
         });
         let state = self.nodes[node].state.clone();
@@ -998,6 +1040,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 let concrete = concretise(self.timed, &stages, &Target::Any, &self.scale)
                     .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
                 if !self.point_diverges(&state, &concrete)? {
+                    // FR-241 names no cause for a finite path with no
+                    // divergent concretisation, only `LassoNotConcretized`
+                    // for a lasso; it is reused here (spec gap STD-493).
                     return Err(self.undecided(ZoneUndecided::LassoNotConcretized));
                 }
                 concrete

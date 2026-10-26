@@ -34,3 +34,20 @@ Ticket: QSL-581. Plan completion: not assessed. FR-239-AC-2, AC-3 and FR-241-AC-
 ## Coverage
 
 Plan completion: not assessed. FR-241-AC-3 to AC-5 and the time-lock-freedom item are declared out of scope (581b/581c). Semantic review: done by hand for the claimed ACs.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new doc comment says the checker refuses AC-5's literal atom `2 / (2 - t.n) >= 1` "as ambiguous". Reproduced on 1c963df6f: the refusal is `ProfileProhibitedOperator(Divide)`, because the `timed_world` fixture's selected profiles do not admit `/`. AC-5's literal form stays untested for a fixture reason, not a checker one. Select a profile that admits division in the fixture and use the AC's atom, or correct the comment. | qsl-analyze/tests/it/zone_search.rs:318-330 |
+
+## Dispositions
+
+Round 1, against #1599 fix commit 1c963df6f (head; 69990aada..fb3b8137f are `=` in `git range-diff cb95a247a..7ac32b8d7 3880da60a..fb3b8137f`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
