@@ -382,3 +382,70 @@ fn a_referenced_clock_or_an_omitted_component_refuses() {
         );
     }
 }
+
+/// Part of FR-230-AC-10 (TC-685 step 12): with `peer: Reference<Call>` (a
+/// required field typed by the object type `Call`), `function
+/// peer_clock(o: Call): Clock { o.peer.x }` called as `peer_clock(self) <=
+/// 2 ms` checks to one convex part constraining the clock `x` of the object
+/// `self.peer` refers to, reached through the field `peer`; each state's
+/// `self.peer` selects that object (`qsl-eval`'s
+/// `a_peer_clock_is_the_clock_of_the_referenced_object` reads the parts
+/// over a universe). `own_clock(self.peer)` of `function own_clock(o:
+/// Call): Clock { o.x }` reads the same place.
+#[trace("TC-685")]
+#[test]
+fn a_clock_through_a_reference_field_is_the_referenced_objects() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(field("peer", &package("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let declaration = "function peer_clock using v(o: Config::Call): Clock pure { o.peer.x }\n";
+    let body = format!(
+        "{UNITS}{DENSE}{declaration}\
+         pre Near using v on Config::Call::reply {{ peer_clock(self) <= 2 ms }}\n"
+    );
+    let graph = check(&document, &body).expect("the peer's clock is a place");
+    let model = timed(&graph);
+    let [part] = model.guards()[0].parts() else {
+        panic!("one convex part: {:?}", model.guards());
+    };
+    assert!(part.data().is_none());
+    let [constraint] = part.clocks() else {
+        panic!("one clock constraint: {:?}", part.clocks());
+    };
+    assert_eq!(
+        (
+            model.clock(constraint.clock()).expect("a clock").name(),
+            constraint.via(),
+            constraint.op(),
+            constraint.bound().clone()
+        ),
+        (
+            "x",
+            &[PlaceStep::Field("peer".to_owned())][..],
+            ClockOp::LessOrEqual,
+            exact(2, 1)
+        )
+    );
+    // Passed the referenced object itself, the body's own clock is the
+    // peer's.
+    let own = "function own_clock using v(o: Config::Call): Clock pure { o.x }\n";
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}{own}\
+             pre Near using v on Config::Call::reply {{ own_clock(self.peer) <= 2 ms }}\n"
+        ),
+    )
+    .expect("`self.peer` is an object argument");
+    let model = timed(&graph);
+    let vias: Vec<&[PlaceStep]> = model.guards()[0].parts()[0]
+        .clocks()
+        .iter()
+        .map(|constraint| constraint.via())
+        .collect();
+    assert_eq!(vias, [&[PlaceStep::Field("peer".to_owned())][..]]);
+}

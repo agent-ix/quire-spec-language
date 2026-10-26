@@ -41,7 +41,12 @@ use quire_checked::key::DeclarationKey;
 
 /// The places a place expression can denote, each with the data literals
 /// that select it.
-pub(super) type Places = Vec<(Vec<(DataLiteral, bool)>, ClockId)>;
+pub(super) type Places = Vec<(Vec<(DataLiteral, bool)>, Place)>;
+
+/// A clock place relative to the receiver: the reference fields walked from
+/// the receiver to the object holding the clock (none for the receiver's
+/// own clock), and the clock.
+pub(super) type Place = (Vec<PlaceStep>, ClockId);
 
 /// The unit's clock-reading declarations, by name.
 pub(crate) struct Declarations<'r> {
@@ -83,34 +88,52 @@ impl<'r> Declarations<'r> {
         )
     }
 
-    /// What the path `steps` below `root` reaches.
+    /// What the path `steps` below `root` reaches. From an object
+    /// parameter, the leading reference fields select the object the rest
+    /// of the path is read on (FR-230-AC-10's `o.peer.x`).
     fn path_kind(&self, root: &PathRoot, steps: &[PlaceStep]) -> PathKind {
-        let places: Vec<Vec<PlaceStep>> = match root {
+        let reached: Vec<(Vec<PlaceStep>, &[PlaceStep])> = match root {
             PathRoot::Object(object) => self
                 .models
                 .iter()
                 .flat_map(|model| {
+                    let (rest, holder) = match object {
+                        Some(object) => {
+                            let (walked, holder) = model.through_references(*object, steps);
+                            (&steps[walked..], Some(holder))
+                        }
+                        None => (steps, None),
+                    };
                     model
                         .clock_places()
                         .iter()
                         .filter(|place| {
-                            object.is_none_or(|object| model.conforms(object, place.owner))
+                            holder.is_none_or(|holder| model.conforms(holder, place.owner))
                         })
-                        .map(|place| place.path.clone())
+                        .map(|place| (place.path.clone(), rest))
                         .collect::<Vec<_>>()
                 })
                 .collect(),
             PathRoot::Record(model, key) => self
                 .models
                 .get(*model)
-                .map(|model| model.record_clock_paths(key))
+                .map(|model| {
+                    model
+                        .record_clock_paths(key)
+                        .into_iter()
+                        .map(|path| (path, steps))
+                        .collect()
+                })
                 .unwrap_or_default(),
         };
-        if places.iter().any(|place| place.as_slice() == steps) {
-            PathKind::Clock
-        } else if places
+        if reached
             .iter()
-            .any(|place| crate::check::lowering::strictly_below(place, steps))
+            .any(|(place, rest)| place.as_slice() == *rest)
+        {
+            PathKind::Clock
+        } else if reached
+            .iter()
+            .any(|(place, rest)| crate::check::lowering::strictly_below(place, rest))
         {
             PathKind::Bearing
         } else {
@@ -632,7 +655,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         budget: &mut PartBudget,
     ) -> Result<Option<Places>, CheckCause> {
         if let Some(clock) = self.located.clock(id) {
-            return Ok(Some(vec![(Vec::new(), clock)]));
+            return Ok(Some(vec![(Vec::new(), (Vec::new(), clock))]));
         }
         match self.located.node(id) {
             Some(ExprNode::If {
@@ -733,10 +756,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     if self.located.reads_clock(argument) {
                         return Err(timed(self.located.outside(argument)));
                     }
-                    let receiver = matches!(self.located.node(argument), Some(ExprNode::SelfRef))
-                        && self.declarations.object_type(type_form).is_some();
-                    if receiver {
-                        Argument::Path(Vec::new())
+                    if let Some(path) = self.site_object(type_form, argument) {
+                        // `self`, or an object `self` refers to.
+                        Argument::Path(path)
                     } else {
                         Argument::Value {
                             term: DataLiteral::Site(argument),
@@ -748,6 +770,24 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             bound.insert(name.clone(), read);
         }
         Ok(bound)
+    }
+
+    /// The reference fields a call-site argument for an object parameter of
+    /// type `type_form` walks from `self`: none for `self`, `[peer]` for
+    /// `self.peer`, each a required single reference to an object of the
+    /// parameter's type. `None` for any other argument, which is data.
+    fn site_object(
+        &self,
+        type_form: &qsl_forms::TypeForm,
+        argument: ExprId,
+    ) -> Option<Vec<PlaceStep>> {
+        let (model, expected) = self.declarations.object_type(type_form)?;
+        let path = match self.located.node(argument)? {
+            ExprNode::SelfRef => Vec::new(),
+            _ => super::self_path(self.located.form, argument)?,
+        };
+        let (walked, holder) = model.through_references(self.context, &path);
+        (walked == path.len() && model.conforms(holder, expected)).then_some(path)
     }
 
     /// The record path a call-site argument for a clock-bearing parameter of
@@ -978,16 +1018,20 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 let (root, steps) = body.path(id).ok_or_else(not_a_place)?;
                 let mut path = self.prefix(frame, root)?;
                 path.extend(steps);
+                // A clock of another object: the leading reference fields
+                // select the object holding it (FR-230-AC-10's `peer`).
+                let (walked, holder) = self.clocks.model.through_references(self.context, &path);
+                let (via, rest) = path.split_at(walked);
                 let clock = self
                     .clocks
                     .fields
                     .iter()
                     .position(|clock| {
-                        clock.path == path && self.clocks.model.conforms(self.context, clock.owner)
+                        clock.path == rest && self.clocks.model.conforms(holder, clock.owner)
                     })
                     .map(ClockId)
                     .ok_or_else(not_a_place)?;
-                Ok(vec![(Vec::new(), clock)])
+                Ok(vec![(Vec::new(), (via.to_vec(), clock))])
             }
             Some(ExprNode::If {
                 condition,
@@ -1010,10 +1054,10 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 let mut places = Vec::new();
                 for (condition, branch) in [(selected, then), (rejected, otherwise)] {
                     for (literals, _) in condition {
-                        for (selecting, clock) in &branch {
+                        for (selecting, place) in &branch {
                             places.push((
                                 literals.iter().chain(selecting).cloned().collect(),
-                                *clock,
+                                place.clone(),
                             ));
                         }
                     }
@@ -1206,22 +1250,23 @@ fn guarded(places: Places, literal: (DataLiteral, bool)) -> Places {
 /// exhaustive (each place expression's branches partition its conditions),
 /// so the negation is the same places with each constraint negated.
 pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: Span) -> (Dnf, Dnf) {
-    let constraint = |clock: ClockId, op: ClockOp| ClockConstraint {
-        clock,
+    let constraint = |(via, clock): &Place, op: ClockOp| ClockConstraint {
+        clock: *clock,
+        via: via.clone(),
         op,
         bound: bound.clone(),
         span,
     };
     let positive = places
         .iter()
-        .map(|(literals, clock)| (literals.clone(), vec![constraint(*clock, op)]))
+        .map(|(literals, place)| (literals.clone(), vec![constraint(place, op)]))
         .collect();
     let negative = places
         .iter()
-        .flat_map(|(literals, clock)| {
+        .flat_map(|(literals, place)| {
             op.negated()
                 .into_iter()
-                .map(move |negated| (literals.clone(), vec![constraint(*clock, negated)]))
+                .map(move |negated| (literals.clone(), vec![constraint(place, negated)]))
         })
         .collect();
     (positive, negative)

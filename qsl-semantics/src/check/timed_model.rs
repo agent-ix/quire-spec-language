@@ -178,20 +178,30 @@ impl ClockOp {
     }
 }
 
-/// An atomic clock constraint `x ~ c` over the clock `x` of `self`, its
-/// bound exact in the model's unit (FR-230 `ClockConstraint`).
+/// An atomic clock constraint `x ~ c` over the clock `x` of `self`, or of
+/// the object `self` reaches through the reference fields `via`, its bound
+/// exact in the model's unit (FR-230 `ClockConstraint`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockConstraint {
     clock: ClockId,
+    via: Vec<PlaceStep>,
     op: ClockOp,
     bound: Rational,
     span: Span,
 }
 
 impl ClockConstraint {
-    /// The constrained clock of the receiver.
+    /// The constrained clock of the object holding it.
     pub fn clock(&self) -> ClockId {
         self.clock
+    }
+
+    /// The reference fields walked from the receiver to the object holding
+    /// the clock, in order: none for a clock of the receiver; `[peer]` for
+    /// `self.peer`'s clock, which each state's value of `self.peer` selects
+    /// (FR-230-AC-10).
+    pub fn via(&self) -> &[PlaceStep] {
+        &self.via
     }
 
     /// The comparison.
@@ -1492,6 +1502,7 @@ fn time_invariant(
                 )?;
                 Ok(ClockConstraint {
                     clock,
+                    via: Vec::new(),
                     op: if bound.strict {
                         ClockOp::Less
                     } else {

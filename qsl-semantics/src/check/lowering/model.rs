@@ -1155,6 +1155,50 @@ impl AdmittedModel {
         paths
     }
 
+    /// The object type a required single-valued field `name` of an object
+    /// of type `object` refers to: the field's type is a package object
+    /// type, so its value is a reference to one object of it (FR-230-AC-10's
+    /// `peer`).
+    pub(crate) fn referenced_object(&self, object: EffectiveId, name: &str) -> Option<EffectiveId> {
+        use crate::model::domain_package::ValueTypeRef;
+        self.records.values().find_map(|record| {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                return None;
+            };
+            let owner = self.object_type_id(&field.owner)?;
+            let field_name =
+                crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+            if field_name != name || !self.conforms(object, owner) {
+                return None;
+            }
+            let single = field.multiplicity.lower == 1
+                && field.multiplicity.upper == Some(1)
+                && field.presence == quire_exact::Presence::Required;
+            match &field.value_type {
+                ValueTypeRef::Package(target) if single => self.object_type_id(target),
+                _ => None,
+            }
+        })
+    }
+
+    /// `path` from an object of type `object` split where it leaves the
+    /// objects it reaches by reference: the leading reference fields walked,
+    /// counted, and the object type the rest of the path starts from.
+    pub(crate) fn through_references(
+        &self,
+        object: EffectiveId,
+        path: &[PlaceStep],
+    ) -> (usize, EffectiveId) {
+        let mut at = object;
+        for (walked, PlaceStep::Field(name)) in path.iter().enumerate() {
+            match self.referenced_object(at, name) {
+                Some(next) => at = next,
+                None => return (walked, at),
+            }
+        }
+        (path.len(), at)
+    }
+
     /// The package record type of the value an object of type `object`
     /// holds at `path`: a record field of the object, or of a record below
     /// it.

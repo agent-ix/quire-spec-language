@@ -651,9 +651,10 @@ fn clock_reading_misuses_refuse_at_their_span() {
 /// `pick(self.x, self.y, self.ready) >= 1 ms` checks to two convex parts,
 /// `x >= 1` with the data predicate `self.ready` and `y >= 1` with
 /// `not self.ready`; `function g(): Clock { 0 }` refuses `ill_typed`/
-/// `type-mismatch` at the body. Not covered: `peer_clock(o: Call): Clock {
-/// o.peer.x }`, a place reached through a reference, which the clock-place
-/// slice builds with FR-230-AC-24.
+/// `type-mismatch` at the body. `peer_clock(o: Call): Clock { o.peer.x }`
+/// is `clock_places::a_clock_through_a_reference_field_is_the_referenced_objects`
+/// at S3 and `qsl-eval`'s `a_peer_clock_is_the_clock_of_the_referenced_object`
+/// over a universe.
 #[trace("TC-685")]
 #[test]
 fn a_clock_result_function_selects_its_place_by_data() {
