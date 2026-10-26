@@ -2769,6 +2769,19 @@ fn encode_formula(formula: &TemporalFormulaForm, swap: Swap<'_>) -> (Vec<u8>, bo
                 opaque_mention |= encodings.opaque_mention;
                 Encoded::Plain(node_bytes(b"holds", &[encodings.root]))
             }
+            TemporalNodeForm::AggregateAtom(atom) => {
+                // This encoder is used for relation identity, not aggregate
+                // checking. Preserve distinct authored sites conservatively;
+                // FR-194's monitor checker owns aggregate semantics.
+                opaque_mention = true;
+                Encoded::Plain(node_bytes(
+                    b"aggregate-unchecked",
+                    &[
+                        atom.span.start.to_be_bytes().to_vec(),
+                        atom.span.end.to_be_bytes().to_vec(),
+                    ],
+                ))
+            }
             TemporalNodeForm::Operator(operator) => {
                 let operands: Vec<Encoded> = operator
                     .operands

@@ -157,6 +157,12 @@ impl Plan {
                     atoms.push(index);
                     Node::Atom
                 }
+                FormulaNode::Aggregate { .. } => {
+                    return Err(InternalFault::new(
+                        "temporal.plan",
+                        "aggregate-formula-not-emitted",
+                    ));
+                }
                 FormulaNode::Not(operand) => Node::Not(operand.index()),
                 FormulaNode::And(left, right) => Node::And(left.index(), right.index()),
                 FormulaNode::Or(left, right) => Node::Or(left.index(), right.index()),

@@ -33,6 +33,7 @@ use super::state_graph;
 use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
+use super::task_set;
 use super::temporal_clause;
 use super::terminal_declaration;
 use super::time_model;
@@ -206,6 +207,19 @@ pub enum LeadingTokenKind {
     /// `urgent`: an urgency declaration (FR-393), a declaration-head
     /// spelling only.
     Urgent,
+    /// `taskset`: a task set for one preemptive uniprocessor (QSpec FR-419),
+    /// a declaration-head spelling only.
+    Taskset,
+    /// `schedulable`: a schedulability claim over a task set (QSpec FR-419),
+    /// a declaration-head spelling only.
+    Schedulable,
+    /// `response`: a response-time claim over a task (QSpec FR-419), a
+    /// declaration-head spelling only.
+    Response,
+    /// `release`: a task release on an operation (QSpec FR-419). The word is
+    /// the reserved temporal operator, which is infix, so at a declaration
+    /// head it leads this form only.
+    Release,
     /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
     /// over a finite trace domain (FR-171).
     Hyper,
@@ -438,6 +452,10 @@ fn dispatch(
         LeadingTokenKind::Refinement => refinement::refinement_declaration(construct),
         LeadingTokenKind::Time => time_model::time_member(construct),
         LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
+        LeadingTokenKind::Taskset => task_set::taskset_declaration(construct),
+        LeadingTokenKind::Schedulable => task_set::schedulable_declaration(construct),
+        LeadingTokenKind::Response => task_set::response_declaration(construct),
+        LeadingTokenKind::Release => task_set::release_declaration(construct),
         LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
         LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         LeadingTokenKind::Random => probabilistic::random_declaration(construct),
@@ -491,6 +509,10 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"refinement" => Some(LeadingTokenKind::Refinement),
         b"time" => Some(LeadingTokenKind::Time),
         b"urgent" => Some(LeadingTokenKind::Urgent),
+        b"taskset" => Some(LeadingTokenKind::Taskset),
+        b"schedulable" => Some(LeadingTokenKind::Schedulable),
+        b"response" => Some(LeadingTokenKind::Response),
+        b"release" => Some(LeadingTokenKind::Release),
         b"hyper" => Some(LeadingTokenKind::Hyper),
         b"relation" => Some(LeadingTokenKind::Relation),
         b"random" => Some(LeadingTokenKind::Random),

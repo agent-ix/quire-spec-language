@@ -145,8 +145,21 @@ productions! {
     ClockBound,
     #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
     UrgentDeclaration,
+    #[doc = "`taskset <identifier> { <task>* }`: a task set for one preemptive uniprocessor (QSpec FR-419)."]
+    TasksetDeclaration,
+    #[doc = "`task <identifier> (periodic | sporadic) <signed-quantity> deadline <signed-quantity> wcet <signed-quantity> [priority <uint>] [jitter <signed-quantity>] [blocking <signed-quantity>] (lo [wcet_hi <signed-quantity>] | hi wcet_hi <signed-quantity>) ;`: one task of a task set."]
+    Task,
+    #[doc = "`[-] <quantity-literal>`: a time value a task states, whose sign S3 checks."]
+    SignedQuantity,
+    #[doc = "`schedulable <identifier> on <identifier> under <policy> ;`: a schedulability claim over a task set."]
+    SchedulableDeclaration,
+    #[doc = "`response <identifier> on <identifier> . <identifier> <= <quantity-literal> under fixed_priority ;`: a response-time claim over one task of a task set."]
+    ResponseDeclaration,
+    #[doc = "`release <identifier> . <identifier> on <qualified-name> ;`: each step of an operation releases one job of a task of a task set (QSpec FR-419)."]
+    ReleaseDeclaration,
     TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
+    AggregateAtom, AggregateTerm, AggregateKind, PastWindow,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
     #[doc = "`random <qualified-name> ( <identifier> ) ~ { <weighted-value>, ... } ;`: a distribution on an operation parameter."]

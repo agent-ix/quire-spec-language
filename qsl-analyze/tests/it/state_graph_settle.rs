@@ -1188,3 +1188,41 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
     assert_eq!(record.value, TerminalValue::Failed);
     assert_eq!(replays, 0);
 }
+
+/// QSL-1108 (SR-17236 FND-002): a request whose handle is cancelled before
+/// `settle_state_graph` stops at the claim-root resolution, which settles
+/// `Incomplete(Cancelled)` (not `Failed`) for a witnessed outcome that would
+/// otherwise prove; nothing is checked or replayed.
+#[trace("TC-1140")]
+#[test]
+fn a_cancelled_request_settles_incomplete_before_any_replay() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let result = run(world.request(
+        AB,
+        vec![world.item("ReachesTwo")],
+        ModelCheckLimits::default(),
+    ));
+    let instance = &result.items[0][0];
+    let mut replays = 0;
+    let live = Settling::of(&world, no_samples());
+    let proved = settle_with(&world, AB, "ReachesTwo", instance, &live, &mut replays);
+    assert!(
+        matches!(proved.value, TerminalValue::Proved { .. }),
+        "the same request proves when it is not cancelled: {:?}",
+        proved.value
+    );
+    assert_eq!(replays, 1);
+
+    let cancelled = Settling::of(&world, no_samples());
+    cancelled.cancel.cancel(CancelCause::Requested);
+    let mut replays = 0;
+    let record = settle_with(&world, AB, "ReachesTwo", instance, &cancelled, &mut replays);
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: CancelCause::Requested,
+        })
+    );
+    assert_eq!(record.execution, Execution::ResourceIncomplete);
+    assert_eq!(replays, 0);
+}

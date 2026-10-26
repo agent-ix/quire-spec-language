@@ -384,6 +384,10 @@ fn is_symbol(production: Production) -> bool {
             | Production::RewardDeclaration
             | Production::DelayDeclaration
             | Production::WorkloadDeclaration
+            | Production::TasksetDeclaration
+            | Production::SchedulableDeclaration
+            | Production::ResponseDeclaration
+            | Production::ReleaseDeclaration
             | Production::ProbabilisticClause
             | Production::StateGraphClaim
             | Production::ProtocolClause

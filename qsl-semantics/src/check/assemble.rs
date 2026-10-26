@@ -769,6 +769,8 @@ struct Unit {
     hybrids: Vec<qsl_forms::HybridForm>,
     /// The timed declarations in source order, with their complete S2 forms.
     timed: Vec<TimedDeclaration>,
+    /// The task sets and the claims over them in source order (QSL FR-246).
+    task_sets: Vec<super::task_set::TaskSetDeclaration>,
     /// Each state-graph claim's form, in source order, resolved by the
     /// caller into `StateGraphDeclaration`s (FR-165).
     state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
@@ -796,6 +798,7 @@ impl Unit {
             refinements: Vec::new(),
             hybrids: Vec::new(),
             timed: Vec::new(),
+            task_sets: Vec::new(),
             state_graph_claims: Vec::new(),
         };
         for form in forms {
@@ -850,6 +853,18 @@ impl Unit {
                 DeclarationForm::Urgent(urgent) => {
                     unit.timed.push(TimedDeclaration::Urgent(*urgent))
                 }
+                DeclarationForm::Taskset(set) => unit
+                    .task_sets
+                    .push(super::task_set::TaskSetDeclaration::Taskset(set)),
+                DeclarationForm::Schedulable(claim) => unit
+                    .task_sets
+                    .push(super::task_set::TaskSetDeclaration::Schedulable(claim)),
+                DeclarationForm::Response(claim) => unit
+                    .task_sets
+                    .push(super::task_set::TaskSetDeclaration::Response(claim)),
+                DeclarationForm::Release(release) => unit
+                    .task_sets
+                    .push(super::task_set::TaskSetDeclaration::Release(release)),
                 DeclarationForm::HyperBehaviours(clause) => unit
                     .hyper_clauses
                     .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
@@ -3602,6 +3617,7 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
                 };
                 declared_type_spans
                     .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
@@ -3635,6 +3651,7 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
                 };
                 declared_type_spans.insert(hyper_site(behaviours, Site::Node(id.index())), span);
             }
@@ -3730,6 +3747,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
+        package.task_set_forms = unit.task_sets;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {
             (
