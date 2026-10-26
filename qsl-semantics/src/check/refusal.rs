@@ -1732,8 +1732,7 @@ impl TemporalCause {
             | Self::TimeInvariantWithoutTimeSource { .. }
             | Self::UnknownClock { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedDeclaration { .. } => Code::AmbiguousDeclaration,
-            Self::TimedStateObject { ambiguous, .. }
-            | Self::UrgentOperation { ambiguous, .. } => {
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
                 if *ambiguous {
                     Code::AmbiguousDeclaration
                 } else {
@@ -1809,8 +1808,7 @@ impl TemporalCause {
             | Self::TimeInvariantWithoutTimeSource { .. }
             | Self::UnknownClock { .. } => "missing-name",
             Self::AmbiguousTimedDeclaration { .. } => "ambiguous-name",
-            Self::TimedStateObject { ambiguous, .. }
-            | Self::UrgentOperation { ambiguous, .. } => {
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
                 if *ambiguous {
                     "ambiguous-name"
                 } else {

@@ -42,8 +42,8 @@ use super::ir::{CheckedBody, CheckedNode};
 use super::lowering::AdmittedModel;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{
-    check_clause, population_of, ClauseDeclarations, ClauseOperation, ClauseView,
-    PopulationDomain, StateClauseDeclaration,
+    check_clause, population_of, ClauseDeclarations, ClauseOperation, ClauseView, PopulationDomain,
+    StateClauseDeclaration,
 };
 use super::state_graph_claim::StatePredicate;
 use super::temporal_clause::{ModelTimeSource, TimeSourceKind};
@@ -482,6 +482,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) timed_forms: &'a [TimedDeclaration],
     pub(crate) units: &'a TimeUnits,
     pub(crate) rational_bits: u64,
+    /// The package's expression-node limit, which bounds each guard's
+    /// disjunctive form.
+    pub(crate) nodes: u64,
 }
 
 fn refusal(cause: TemporalCause) -> CheckRefusal {
@@ -521,12 +524,10 @@ impl Clocks<'_> {
 
     /// The exact value of the time quantity `quantity`, in the model's unit.
     fn quantity(&self, quantity: &QuantityForm) -> Result<Rational, TemporalCause> {
-        let magnitude =
-            super::probabilistic::exact_value(&quantity.magnitude, self.rational_bits).map_err(
-                |_| TemporalCause::ClockBoundNotConstant {
-                    span: quantity.span,
-                },
-            )?;
+        let magnitude = super::probabilistic::exact_value(&quantity.magnitude, self.rational_bits)
+            .map_err(|_| TemporalCause::ClockBoundNotConstant {
+                span: quantity.span,
+            })?;
         let Some(target) = &self.target else {
             return Err(TemporalCause::ClockBoundNotConstant {
                 span: quantity.span,
@@ -546,73 +547,25 @@ impl Clocks<'_> {
         }
         Ok(value)
     }
-
-    /// The non-negative constant `id` of `form` denotes: a time quantity
-    /// literal. A negated literal is negative.
-    fn constant(&self, form: &ExpressionForm, id: ExprId) -> Result<Rational, TemporalCause> {
-        let span = span_of(form, id);
-        match form.expression.get(id).map(|node| node.node()) {
-            Some(ExprNode::Quantity(quantity)) => self.quantity(quantity),
-            Some(ExprNode::Negate(operand))
-                if matches!(
-                    form.expression.get(*operand).map(|node| node.node()),
-                    Some(ExprNode::Quantity(_))
-                ) =>
-            {
-                Err(TemporalCause::NegativeClockConstant { span })
-            }
-            _ => Err(TemporalCause::ClockBoundNotConstant { span }),
-        }
-    }
 }
 
-/// The span of node `id` of `form`, or of its root when the spans do not
-/// reach it.
-fn span_of(form: &ExpressionForm, id: ExprId) -> Span {
-    let path = path_to(form, id);
-    path.and_then(|path| form.spans.at(&path))
-        .or_else(|| form.spans.span(form.spans.root()))
-        .unwrap_or(Span { start: 0, end: 0 })
-}
-
-/// The child-index path from the root of `form` to `id`.
-fn path_to(form: &ExpressionForm, id: ExprId) -> Option<Vec<usize>> {
-    let parents = parents(form);
-    let mut path = Vec::new();
-    let mut at = id;
-    while let Some((parent, index)) = parents.get(at.index()).copied().flatten() {
-        path.push(index);
-        at = parent;
-    }
-    (at == form.expression.root_id()).then(|| {
-        path.reverse();
-        path
-    })
-}
-
-/// Each node's parent and its index among the parent's children.
-fn parents(form: &ExpressionForm) -> Vec<Option<(ExprId, usize)>> {
-    let mut parents = vec![None; form.expression.len()];
-    for node in form.expression.iter() {
-        for (index, child) in node.node().children().into_iter().enumerate() {
-            if let Some(slot) = parents.get_mut(child.index()) {
-                *slot = Some((node.id(), index));
-            }
-        }
-    }
-    parents
-}
-
-/// What each node of a clause body reads of the clocks.
-struct Reads {
+/// One expression form with the span of each node and what each node reads
+/// of the clocks.
+struct Located<'f> {
+    form: &'f ExpressionForm,
+    /// The span of each node, by id.
+    spans: Vec<Span>,
     /// The clock a node reads directly, `self.x`.
     clock: Vec<Option<ClockId>>,
-    /// The span of the first clock read under each node, in node order.
+    /// The span of the first clock read under each node.
     first: Vec<Option<Span>>,
 }
 
-impl Reads {
-    fn of(form: &ExpressionForm, clocks: &Clocks<'_>, context: EffectiveId) -> Self {
+impl<'f> Located<'f> {
+    /// `form`'s clock reads, for a clause about `context`; `None` when its
+    /// spans do not fit it.
+    fn of(form: &'f ExpressionForm, clocks: &Clocks<'_>, context: EffectiveId) -> Option<Self> {
+        let spans = form.spans.of_nodes(&form.expression)?;
         let mut clock = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         // Children precede their parents, so each child is final when its
@@ -621,7 +574,7 @@ impl Reads {
             let id = node.id();
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
-                first[id.index()] = Some(span_of(form, id));
+                first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
             first[id.index()] = node
@@ -630,11 +583,31 @@ impl Reads {
                 .into_iter()
                 .find_map(|child| first.get(child.index()).copied().flatten());
         }
-        Self { clock, first }
+        Some(Self {
+            form,
+            spans,
+            clock,
+            first,
+        })
+    }
+
+    fn node(&self, id: ExprId) -> Option<&'f ExprNode> {
+        self.form.expression.get(id).map(|node| node.node())
+    }
+
+    fn root(&self) -> ExprId {
+        self.form.expression.root_id()
+    }
+
+    fn span(&self, id: ExprId) -> Span {
+        self.spans
+            .get(id.index())
+            .copied()
+            .unwrap_or(Span { start: 0, end: 0 })
     }
 
     fn reads_clock(&self, id: ExprId) -> bool {
-        self.first.get(id.index()).copied().flatten().is_some()
+        self.first(id).is_some()
     }
 
     fn first(&self, id: ExprId) -> Option<Span> {
@@ -644,84 +617,139 @@ impl Reads {
     fn clock(&self, id: ExprId) -> Option<ClockId> {
         self.clock.get(id.index()).copied().flatten()
     }
+
+    /// A clock read under `id` where no constraint may read it, at the read.
+    fn outside(&self, id: ExprId) -> TemporalCause {
+        TemporalCause::ClockReadOutsideConstraint {
+            span: self.first(id).unwrap_or_else(|| self.span(id)),
+        }
+    }
+
+    /// The non-negative constant `id` denotes: a time quantity literal. A
+    /// negated literal is negative.
+    fn constant(&self, id: ExprId, clocks: &Clocks<'_>) -> Result<Rational, TemporalCause> {
+        let span = self.span(id);
+        match self.node(id) {
+            Some(ExprNode::Quantity(quantity)) => clocks.quantity(quantity),
+            Some(ExprNode::Negate(operand))
+                if matches!(self.node(*operand), Some(ExprNode::Quantity(_))) =>
+            {
+                Err(TemporalCause::NegativeClockConstant { span })
+            }
+            _ => Err(TemporalCause::ClockBoundNotConstant { span }),
+        }
+    }
+
+    /// The atomic clock constraint `id` is, when it compares a clock with a
+    /// constant.
+    fn atom(
+        &self,
+        id: ExprId,
+        clocks: &Clocks<'_>,
+    ) -> Result<Option<ClockConstraint>, TemporalCause> {
+        let Some(ExprNode::Binary {
+            operator,
+            left,
+            right,
+        }) = self.node(id)
+        else {
+            return Ok(None);
+        };
+        let Some(op) = ClockOp::of(*operator) else {
+            return Ok(None);
+        };
+        let span = self.span(id);
+        let (clock, op, constant) = match (self.clock(*left), self.clock(*right)) {
+            (Some(_), Some(_)) => return Err(TemporalCause::ClockComparison { span }),
+            (Some(clock), None) => (clock, op, *right),
+            (None, Some(clock)) => (clock, op.mirrored(), *left),
+            (None, None) => return Ok(None),
+        };
+        if self.reads_clock(constant) {
+            return Err(TemporalCause::ClockComparison { span });
+        }
+        Ok(Some(ClockConstraint {
+            clock,
+            op,
+            bound: self.constant(constant, clocks)?,
+            span,
+        }))
+    }
 }
 
-/// A disjunctive form: each part a set of data literals (node, positive)
-/// and clock constraints.
+/// A disjunctive form: each part a list of data literals (node, positive)
+/// and a conjunction of clock constraints.
 type Dnf = Vec<(Vec<(ExprId, bool)>, Vec<ClockConstraint>)>;
 
-fn product(left: &Dnf, right: &Dnf) -> Dnf {
-    left.iter()
-        .flat_map(|(data, clocks)| {
-            right.iter().map(move |(more_data, more_clocks)| {
-                (
-                    data.iter().chain(more_data).copied().collect(),
-                    clocks.iter().chain(more_clocks).cloned().collect(),
-                )
-            })
-        })
-        .collect()
+/// The parts of a guard's disjunctive forms, counted against the package's
+/// node limit: a guard whose disjunctive form grows past it is refused, as
+/// a body with that many nodes would be.
+struct PartBudget {
+    limit: u64,
+    used: u64,
 }
 
-/// The atomic clock constraint node `id` of `form` is, when it compares a
-/// clock with a constant.
-fn atom(
-    form: &ExpressionForm,
-    id: ExprId,
-    reads: &Reads,
-    clocks: &Clocks<'_>,
-) -> Result<Option<ClockConstraint>, TemporalCause> {
-    let Some(ExprNode::Binary {
-        operator,
-        left,
-        right,
-    }) = form.expression.get(id).map(|node| node.node())
-    else {
-        return Ok(None);
-    };
-    let Some(op) = ClockOp::of(*operator) else {
-        return Ok(None);
-    };
-    let span = span_of(form, id);
-    let (clock, op, constant) = match (reads.clock(*left), reads.clock(*right)) {
-        (Some(_), Some(_)) => return Err(TemporalCause::ClockComparison { span }),
-        (Some(clock), None) => (clock, op, *right),
-        (None, Some(clock)) => (clock, op.mirrored(), *left),
-        (None, None) => return Ok(None),
-    };
-    if reads.reads_clock(constant) {
-        return Err(TemporalCause::ClockComparison { span });
+impl PartBudget {
+    fn charge(&mut self, parts: usize) -> Result<(), CheckCause> {
+        let actual = self
+            .used
+            .saturating_add(u64::try_from(parts).unwrap_or(u64::MAX));
+        if actual > self.limit {
+            return Err(CheckCause::ResourceExhausted(Box::new(
+                super::refusal::StageLimitCause {
+                    stage: super::refusal::CheckingStage::Typing,
+                    kind: super::refusal::CheckingLimitKind::Nodes,
+                    limit: self.limit,
+                    actual: u128::from(actual),
+                    region: None,
+                },
+            )));
+        }
+        self.used = actual;
+        Ok(())
     }
-    let bound = clocks.constant(form, constant)?;
-    Ok(Some(ClockConstraint {
-        clock,
-        op,
-        bound,
-        span,
-    }))
+
+    fn product(&mut self, left: &Dnf, right: &Dnf) -> Result<Dnf, CheckCause> {
+        self.charge(left.len().saturating_mul(right.len()))?;
+        Ok(left
+            .iter()
+            .flat_map(|(data, clocks)| {
+                right.iter().map(move |(more_data, more_clocks)| {
+                    (
+                        data.iter().chain(more_data).copied().collect(),
+                        clocks.iter().chain(more_clocks).cloned().collect(),
+                    )
+                })
+            })
+            .collect())
+    }
+}
+
+fn timed(cause: TemporalCause) -> CheckCause {
+    CheckCause::Temporal(Box::new(cause))
 }
 
 /// A precondition body's guard: its disjunctive form over clock constraints
 /// and maximal clock-free data subterms, and the polarity of each clock
 /// constraint node (true where read positively).
 fn guard(
-    form: &ExpressionForm,
-    reads: &Reads,
+    located: &Located<'_>,
     clocks: &Clocks<'_>,
-) -> Result<(Dnf, BTreeMap<ExprId, bool>), TemporalCause> {
-    let len = form.expression.len();
+    budget: &mut PartBudget,
+) -> Result<(Dnf, BTreeMap<ExprId, bool>), CheckCause> {
+    let len = located.form.expression.len();
     let mut positive: Vec<Option<Dnf>> = vec![None; len];
     let mut negative: Vec<Option<Dnf>> = vec![None; len];
     let mut atoms = BTreeSet::new();
     let take = |dnf: &[Option<Dnf>], id: ExprId| dnf.get(id.index()).cloned().flatten();
-    for node in form.expression.iter() {
+    for node in located.form.expression.iter() {
         let id = node.id();
-        let (pos, neg) = if !reads.reads_clock(id) {
+        let (pos, neg) = if !located.reads_clock(id) {
             (
                 vec![(vec![(id, true)], Vec::new())],
                 vec![(vec![(id, false)], Vec::new())],
             )
-        } else if let Some(constraint) = atom(form, id, reads, clocks)? {
+        } else if let Some(constraint) = located.atom(id, clocks).map_err(timed)? {
             atoms.insert(id);
             let negated = constraint
                 .op
@@ -731,66 +759,59 @@ fn guard(
                 .collect();
             (vec![(Vec::new(), vec![constraint])], negated)
         } else {
-            let structure = match node.node() {
+            match node.node() {
                 ExprNode::Binary {
-                    operator: operator @ (BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies),
+                    operator:
+                        operator @ (BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies),
                     left,
                     right,
-                } => Some((*operator, *left, *right)),
-                _ => None,
-            };
-            match (structure, node.node()) {
-                (Some((operator, left, right)), _) => {
+                } => {
                     let (Some(lp), Some(ln), Some(rp), Some(rn)) = (
-                        take(&positive, left),
-                        take(&negative, left),
-                        take(&positive, right),
-                        take(&negative, right),
+                        take(&positive, *left),
+                        take(&negative, *left),
+                        take(&positive, *right),
+                        take(&negative, *right),
                     ) else {
-                        return Err(outside(reads, id, form));
+                        return Err(timed(located.outside(id)));
                     };
                     match operator {
-                        BinaryOperator::And => (product(&lp, &rp), [ln, rn].concat()),
-                        BinaryOperator::Or => ([lp, rp].concat(), product(&ln, &rn)),
-                        _ => ([ln, rp].concat(), product(&lp, &rn)),
+                        BinaryOperator::And => (budget.product(&lp, &rp)?, [ln, rn].concat()),
+                        BinaryOperator::Or => ([lp, rp].concat(), budget.product(&ln, &rn)?),
+                        _ => ([ln, rp].concat(), budget.product(&lp, &rn)?),
                     }
                 }
-                (None, ExprNode::Not(operand)) => {
-                    let (Some(pos), Some(neg)) = (take(&positive, *operand), take(&negative, *operand))
+                ExprNode::Not(operand) => {
+                    let (Some(pos), Some(neg)) =
+                        (take(&positive, *operand), take(&negative, *operand))
                     else {
-                        return Err(outside(reads, id, form));
+                        return Err(timed(located.outside(id)));
                     };
                     (neg, pos)
                 }
-                _ => return Err(outside(reads, id, form)),
+                // Not a Boolean of the guard's structure: an error only where
+                // the structure reads it.
+                _ => continue,
             }
         };
         positive[id.index()] = Some(pos);
         negative[id.index()] = Some(neg);
     }
-    let root = form.expression.root_id();
-    let dnf = take(&positive, root).ok_or_else(|| outside(reads, root, form))?;
-    Ok((dnf, polarity(form, &atoms)))
-}
-
-/// A clock read where no constraint may read it, at the read.
-fn outside(reads: &Reads, id: ExprId, form: &ExpressionForm) -> TemporalCause {
-    TemporalCause::ClockReadOutsideConstraint {
-        span: reads.first(id).unwrap_or_else(|| span_of(form, id)),
-    }
+    let root = located.root();
+    let dnf = take(&positive, root).ok_or_else(|| timed(located.outside(root)))?;
+    Ok((dnf, polarity(located, &atoms)))
 }
 
 /// Each of `atoms` with whether it is read positively: under an even number
 /// of `not`s and `implies` premises.
-fn polarity(form: &ExpressionForm, atoms: &BTreeSet<ExprId>) -> BTreeMap<ExprId, bool> {
+fn polarity(located: &Located<'_>, atoms: &BTreeSet<ExprId>) -> BTreeMap<ExprId, bool> {
     let mut found = BTreeMap::new();
-    let mut pending = vec![(form.expression.root_id(), true)];
+    let mut pending = vec![(located.root(), true)];
     while let Some((id, positive)) = pending.pop() {
         if atoms.contains(&id) {
             found.insert(id, positive);
             continue;
         }
-        match form.expression.get(id).map(|node| node.node()) {
+        match located.node(id) {
             Some(ExprNode::Not(operand)) => pending.push((*operand, !positive)),
             Some(ExprNode::Binary {
                 operator: BinaryOperator::Implies,
@@ -814,12 +835,12 @@ fn polarity(form: &ExpressionForm, atoms: &BTreeSet<ExprId>) -> BTreeMap<ExprId,
     found
 }
 
-/// The conjuncts of `form`'s top-level `and` chain, in source order.
-fn conjuncts(form: &ExpressionForm) -> Vec<ExprId> {
+/// The conjuncts of the top-level `and` chain, in source order.
+fn conjuncts(located: &Located<'_>) -> Vec<ExprId> {
     let mut found = Vec::new();
-    let mut pending = vec![form.expression.root_id()];
+    let mut pending = vec![located.root()];
     while let Some(id) = pending.pop() {
-        match form.expression.get(id).map(|node| node.node()) {
+        match located.node(id) {
             Some(ExprNode::Binary {
                 operator: BinaryOperator::And,
                 left,
@@ -836,14 +857,14 @@ fn conjuncts(form: &ExpressionForm) -> Vec<ExprId> {
 
 /// The data predicate of one guard part: its literals, each cut from the
 /// clause body, in source order.
-fn part_predicate(form: &ExpressionForm, literals: &[(ExprId, bool)]) -> Option<ExpressionForm> {
+fn part_predicate(located: &Located<'_>, literals: &[(ExprId, bool)]) -> Option<ExpressionForm> {
     let mut literals: Vec<(ExprId, bool)> = literals.to_vec();
-    literals.sort_by_key(|(id, _)| span_of(form, *id).start);
+    literals.sort_by_key(|(id, _)| located.span(*id).start);
     literals.dedup();
     let operands = literals
         .into_iter()
         .map(|(id, positive)| {
-            let cut = form.cut(id, &BTreeMap::new())?;
+            let cut = located.form.cut(id, &BTreeMap::new())?;
             if positive {
                 Some(cut)
             } else {
@@ -854,109 +875,123 @@ fn part_predicate(form: &ExpressionForm, literals: &[(ExprId, bool)]) -> Option<
     ExpressionForm::conjunction(operands)
 }
 
-/// One state clause, its clocks read out: a precondition's guard parts, a
+/// What one state clause contributes to its operation's timing.
+enum ClauseClocks {
+    /// The clause reads no clock.
+    None,
+    /// A precondition's guard parts.
+    Guard(Vec<PartDraft>),
+    /// A postcondition's resets.
+    Resets(Vec<ClockReset>),
+}
+
+/// The resets of a postcondition: each top-level conjunct `self.x = c` that
+/// writes a clock of the operation's frame.
+fn resets(
+    located: &Located<'_>,
+    clause: &StateClauseDeclaration,
+    clocks: &Clocks<'_>,
+) -> Result<(BTreeMap<ExprId, ExprNode>, Vec<ClockReset>), TemporalCause> {
+    let written: BTreeSet<&DeclarationKey> = clause
+        .operation
+        .iter()
+        .flat_map(|operation| operation.declaration.effect().written_fields())
+        .collect();
+    let mut leaves = BTreeMap::new();
+    let mut resets = Vec::new();
+    for conjunct in conjuncts(located) {
+        if !located.reads_clock(conjunct) {
+            continue;
+        }
+        let span = located.span(conjunct);
+        let Some(ExprNode::Binary {
+            operator: BinaryOperator::Equal,
+            left,
+            right,
+        }) = located.node(conjunct)
+        else {
+            return Err(located.outside(conjunct));
+        };
+        let Some(clock) = located.clock(*left) else {
+            return Err(located.outside(conjunct));
+        };
+        if located.reads_clock(*right) {
+            return Err(TemporalCause::ClockWrite { span });
+        }
+        let value = match located.constant(*right, clocks) {
+            Ok(value) => value,
+            Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                return Err(TemporalCause::ClockWrite { span })
+            }
+            Err(cause) => return Err(cause),
+        };
+        let in_frame = clocks
+            .fields
+            .get(clock.0)
+            .is_some_and(|field| written.contains(&field.field));
+        if !in_frame {
+            return Err(TemporalCause::ClockWrite { span });
+        }
+        leaves.insert(conjunct, ExprNode::Boolean(true));
+        resets.push(ClockReset { clock, value, span });
+    }
+    Ok((leaves, resets))
+}
+
+/// One state clause, its clocks read out: a precondition's guard parts or a
 /// postcondition's resets, and the clause body with each clock constraint
 /// and reset replaced by the Boolean it contributes to the data reading.
 fn read_clause(
     clause: &mut StateClauseDeclaration,
     clocks: &Clocks<'_>,
-) -> Result<(Option<Vec<PartDraft>>, Option<Vec<ClockReset>>), TemporalCause> {
+    budget: &mut PartBudget,
+) -> Result<ClauseClocks, CheckCause> {
     let form = ExpressionForm {
         expression: clause.body.clone(),
         spans: clause.spans.body.clone(),
     };
-    let reads = Reads::of(&form, clocks, clause.context);
-    let root = form.expression.root_id();
-    if !reads.reads_clock(root) {
-        return Ok((None, None));
+    let Some(located) = Located::of(&form, clocks, clause.context) else {
+        return Ok(ClauseClocks::None);
+    };
+    let root = located.root();
+    if !located.reads_clock(root) {
+        return Ok(ClauseClocks::None);
     }
-    let (leaves, guard_parts, resets) = match clause.kind {
-        StateClauseKind::Invariant => return Err(outside(&reads, root, &form)),
+    let (leaves, read) = match clause.kind {
+        StateClauseKind::Invariant => return Err(timed(located.outside(root))),
         StateClauseKind::Precondition => {
-            let (dnf, polarity) = guard(&form, &reads, clocks)?;
+            let (dnf, polarity) = guard(&located, clocks, budget)?;
             let parts = dnf
                 .into_iter()
                 .map(|(literals, clocks)| {
                     let data = if literals.is_empty() {
                         None
                     } else {
-                        Some(part_predicate(&form, &literals).ok_or(
-                            TemporalCause::ClockReadOutsideConstraint {
-                                span: span_of(&form, root),
-                            },
-                        )?)
+                        Some(
+                            part_predicate(&located, &literals)
+                                .ok_or_else(|| timed(located.outside(root)))?,
+                        )
                     };
                     Ok(PartDraft { data, clocks })
                 })
-                .collect::<Result<Vec<_>, TemporalCause>>()?;
+                .collect::<Result<Vec<_>, CheckCause>>()?;
             let leaves = polarity
                 .into_iter()
                 .map(|(id, positive)| (id, ExprNode::Boolean(positive)))
                 .collect();
-            (leaves, Some(parts), None)
+            (leaves, ClauseClocks::Guard(parts))
         }
         StateClauseKind::Postcondition => {
-            let written = clause
-                .operation
-                .as_ref()
-                .map(|operation| {
-                    operation
-                        .declaration
-                        .effect()
-                        .written_fields()
-                        .cloned()
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            let mut leaves = BTreeMap::new();
-            let mut resets = Vec::new();
-            for conjunct in conjuncts(&form) {
-                if !reads.reads_clock(conjunct) {
-                    continue;
-                }
-                let span = span_of(&form, conjunct);
-                let Some(ExprNode::Binary {
-                    operator: BinaryOperator::Equal,
-                    left,
-                    right,
-                }) = form.expression.get(conjunct).map(|node| node.node())
-                else {
-                    return Err(outside(&reads, conjunct, &form));
-                };
-                let Some(clock) = reads.clock(*left) else {
-                    return Err(outside(&reads, conjunct, &form));
-                };
-                if reads.reads_clock(*right) {
-                    return Err(TemporalCause::ClockWrite { span });
-                }
-                let in_frame = clocks
-                    .fields
-                    .get(clock.0)
-                    .is_some_and(|field| written.contains(&field.field));
-                let value = match clocks.constant(&form, *right) {
-                    Ok(value) => value,
-                    Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                        return Err(TemporalCause::ClockWrite { span })
-                    }
-                    Err(cause) => return Err(cause),
-                };
-                if !in_frame {
-                    return Err(TemporalCause::ClockWrite { span });
-                }
-                leaves.insert(conjunct, ExprNode::Boolean(true));
-                resets.push(ClockReset { clock, value, span });
-            }
-            (leaves, None, Some(resets))
+            let (leaves, resets) = resets(&located, clause, clocks).map_err(timed)?;
+            (leaves, ClauseClocks::Resets(resets))
         }
     };
     let rewritten = form
         .cut(root, &leaves)
-        .ok_or(TemporalCause::ClockReadOutsideConstraint {
-            span: span_of(&form, root),
-        })?;
+        .ok_or_else(|| timed(located.outside(root)))?;
     clause.body = rewritten.expression;
     clause.spans.body = rewritten.spans;
-    Ok((guard_parts, resets))
+    Ok(read)
 }
 
 /// The state object of `model` and its population, which a time invariant
@@ -974,12 +1009,11 @@ fn state_object(
             span,
         });
     };
-    let population = population_of(models, *context, types).map_err(|_| {
-        TemporalCause::TimedStateObject {
+    let population =
+        population_of(models, *context, types).map_err(|_| TemporalCause::TimedStateObject {
             ambiguous: true,
             span,
-        }
-    })?;
+        })?;
     Ok((*context, population))
 }
 
@@ -990,9 +1024,10 @@ fn state_predicate(
     context: EffectiveId,
     population: Option<PopulationDomain>,
 ) -> Result<PredicateDraft, TemporalCause> {
-    let reads = Reads::of(predicate, clocks, context);
-    if let Some(span) = reads.first(predicate.expression.root_id()) {
-        return Err(TemporalCause::ClockReadOutsideConstraint { span });
+    if let Some(located) = Located::of(predicate, clocks, context) {
+        if located.reads_clock(located.root()) {
+            return Err(located.outside(located.root()));
+        }
     }
     Ok(PredicateDraft {
         context,
@@ -1008,28 +1043,32 @@ fn time_invariant(
     population: Option<PopulationDomain>,
 ) -> Result<InvariantDraft, TemporalCause> {
     let predicate = state_predicate(&form.guard, clocks, context, population)?;
-    let bounds = form
-        .bounds
-        .iter()
-        .map(|bound| {
-            let root = bound.clock.expression.root_id();
-            let clock = clocks
-                .read(&bound.clock, root, context)
-                .ok_or(TemporalCause::UnknownClock {
-                    span: span_of(&bound.clock, root),
-                })?;
-            Ok(ClockConstraint {
-                clock,
-                op: if bound.strict {
-                    ClockOp::Less
-                } else {
-                    ClockOp::LessOrEqual
-                },
-                bound: clocks.quantity(&bound.bound)?,
-                span: bound.span,
+    let bounds =
+        form.bounds
+            .iter()
+            .map(|bound| {
+                let root = bound.clock.expression.root_id();
+                let clock = clocks.read(&bound.clock, root, context).ok_or(
+                    TemporalCause::UnknownClock {
+                        span: bound
+                            .clock
+                            .spans
+                            .span(bound.clock.spans.root())
+                            .unwrap_or(bound.span),
+                    },
+                )?;
+                Ok(ClockConstraint {
+                    clock,
+                    op: if bound.strict {
+                        ClockOp::Less
+                    } else {
+                        ClockOp::LessOrEqual
+                    },
+                    bound: clocks.quantity(&bound.bound)?,
+                    span: bound.span,
+                })
             })
-        })
-        .collect::<Result<_, TemporalCause>>()?;
+            .collect::<Result<_, TemporalCause>>()?;
     Ok(InvariantDraft {
         name: form.name.name.clone(),
         predicate,
@@ -1089,17 +1128,29 @@ pub(crate) fn prepare(
     inputs: &Inputs<'_>,
     state_clauses: &mut [StateClauseDeclaration],
 ) -> Result<TimedDrafts, CheckRefusal> {
-    prepare_models(inputs, state_clauses).map_err(refusal)
+    prepare_models(inputs, state_clauses).map_err(|cause| CheckRefusal {
+        location: quire_semantic_value::location::Location::root(
+            quire_semantic_value::location::Origin::Expression,
+        ),
+        cause,
+    })
 }
 
 fn prepare_models(
     inputs: &Inputs<'_>,
     state_clauses: &mut [StateClauseDeclaration],
-) -> Result<TimedDrafts, TemporalCause> {
+) -> Result<TimedDrafts, CheckCause> {
+    let mut budget = PartBudget {
+        limit: inputs.nodes,
+        used: 0,
+    };
     let source_of = |model: &AdmittedModel| {
-        model
-            .alias()
-            .and_then(|alias| inputs.time_sources.iter().find(|source| source.model == alias))
+        model.alias().and_then(|alias| {
+            inputs
+                .time_sources
+                .iter()
+                .find(|source| source.model == alias)
+        })
     };
     let clocks_of = |model| {
         let fields = AdmittedModel::clock_fields(model)
@@ -1136,14 +1187,15 @@ fn prepare_models(
                     expression: clause.body.clone(),
                     spans: clause.spans.body.clone(),
                 };
-                Reads::of(&form, &clocks, clause.context).first(form.expression.root_id())
+                Located::of(&form, &clocks, clause.context)
+                    .and_then(|located| located.first(located.root()))
             }),
         };
         if let Some(span) = span {
-            return Err(TemporalCause::ClockWithoutDenseTime {
+            return Err(timed(TemporalCause::ClockWithoutDenseTime {
                 field: field.name.clone(),
                 span,
-            });
+            }));
         }
     }
     let declarations: Vec<&TimedDeclaration> = inputs
@@ -1154,10 +1206,14 @@ fn prepare_models(
     if let Some(form) = declarations.first() {
         match (inputs.time_sources, form) {
             ([], TimedDeclaration::TimeInvariant(form)) => {
-                return Err(TemporalCause::TimeInvariantWithoutTimeSource { span: form.span })
+                return Err(timed(TemporalCause::TimeInvariantWithoutTimeSource {
+                    span: form.span,
+                }))
             }
             ([], TimedDeclaration::Urgent(form)) => {
-                return Err(TemporalCause::UrgencyWithoutTimeSource { span: form.span })
+                return Err(timed(TemporalCause::UrgencyWithoutTimeSource {
+                    span: form.span,
+                }))
             }
             ([_], _) | ([], _) => {}
             (_, form) => {
@@ -1166,7 +1222,7 @@ fn prepare_models(
                     TimedDeclaration::Urgent(form) => form.span,
                     TimedDeclaration::TimeSource(form) => form.span,
                 };
-                return Err(TemporalCause::AmbiguousTimedDeclaration { span });
+                return Err(timed(TemporalCause::AmbiguousTimedDeclaration { span }));
             }
         }
     }
@@ -1189,27 +1245,29 @@ fn prepare_models(
             if model.type_key(clause.context).is_none() {
                 continue;
             }
-            let (parts, written) = read_clause(clause, &clocks)?;
-            if let Some(parts) = parts {
-                let first = parts
-                    .iter()
-                    .flat_map(|part| &part.clocks)
-                    .next()
-                    .and_then(|constraint| clocks.fields.get(constraint.clock.0));
-                if let (Some(key), Some(clock)) = (&clause.operation_key, first) {
-                    guarded
-                        .entry(key.clone())
-                        .or_insert_with(|| clock.name.clone());
+            match read_clause(clause, &clocks, &mut budget)? {
+                ClauseClocks::None => {}
+                ClauseClocks::Guard(parts) => {
+                    let first = parts
+                        .iter()
+                        .flat_map(|part| &part.clocks)
+                        .next()
+                        .and_then(|constraint| clocks.fields.get(constraint.clock.0));
+                    if let (Some(key), Some(clock)) = (&clause.operation_key, first) {
+                        guarded
+                            .entry(key.clone())
+                            .or_insert_with(|| clock.name.clone());
+                    }
+                    guards.push((index, parts));
                 }
-                guards.push((index, parts));
-            }
-            if let (Some(written), Some(operation)) = (written, &clause.operation) {
-                if !written.is_empty() {
-                    resets.push(ClockResets {
-                        clause: clause.name.clone(),
-                        operation: operation.clone(),
-                        resets: written,
-                    });
+                ClauseClocks::Resets(written) => {
+                    if let (false, Some(operation)) = (written.is_empty(), &clause.operation) {
+                        resets.push(ClockResets {
+                            clause: clause.name.clone(),
+                            operation: operation.clone(),
+                            resets: written,
+                        });
+                    }
                 }
             }
         }
@@ -1224,11 +1282,13 @@ fn prepare_models(
             let state = || state_object(model, inputs.models, inputs.types, span);
             match form {
                 TimedDeclaration::TimeInvariant(form) => {
-                    let (context, population) = state()?;
-                    invariants.push(time_invariant(form, &clocks, context, population)?);
+                    let (context, population) = state().map_err(timed)?;
+                    invariants
+                        .push(time_invariant(form, &clocks, context, population).map_err(timed)?);
                 }
                 TimedDeclaration::Urgent(form) => {
-                    urgency_drafts.push(urgency(form, model, &clocks, state, &guarded)?);
+                    urgency_drafts
+                        .push(urgency(form, model, &clocks, state, &guarded).map_err(timed)?);
                 }
                 TimedDeclaration::TimeSource(_) => {}
             }

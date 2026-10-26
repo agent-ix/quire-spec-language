@@ -169,30 +169,37 @@ impl ExpressionSpans {
         root: ExprId,
         leaves: &BTreeSet<ExprId>,
     ) -> Option<Self> {
-        let mut ids = vec![None; expression.len()];
-        let mut stack = vec![(self.root(), expression.root_id())];
-        while let Some((span, id)) = stack.pop() {
-            *ids.get_mut(id.index())? = Some(span);
-            let children = expression.get(id)?.node().children();
-            let spans = &self.nodes.get(span.0)?.children;
-            if spans.len() != children.len() {
-                return None;
-            }
-            stack.extend(spans.iter().copied().zip(children));
-        }
-        let span_of = |id: ExprId| ids.get(id.index()).copied().flatten();
-        let mut tree = Self::new(self.span(span_of(root)?)?).ok()?;
+        let spans = self.of_nodes(expression)?;
+        let span_of = |id: ExprId| spans.get(id.index()).copied();
+        let mut tree = Self::new(span_of(root)?).ok()?;
         let mut pending = vec![(root, tree.root())];
         while let Some((source, target)) = pending.pop() {
             if leaves.contains(&source) {
                 continue;
             }
             for child in expression.get(source)?.node().children() {
-                let added = tree.push_child(target, self.span(span_of(child)?)?).ok()?;
+                let added = tree.push_child(target, span_of(child)?).ok()?;
                 pending.push((child, added));
             }
         }
         Some(tree)
+    }
+
+    /// The span of each node of `expression`, indexed by its id, when these
+    /// spans fit it.
+    pub fn of_nodes(&self, expression: &Expression) -> Option<Vec<Span>> {
+        let mut spans = vec![None; expression.len()];
+        let mut stack = vec![(self.root(), expression.root_id())];
+        while let Some((span, id)) = stack.pop() {
+            let node = self.nodes.get(span.0)?;
+            *spans.get_mut(id.index())? = Some(node.span);
+            let children = expression.get(id)?.node().children();
+            if node.children.len() != children.len() {
+                return None;
+            }
+            stack.extend(node.children.iter().copied().zip(children));
+        }
+        spans.into_iter().collect()
     }
 
     /// The tree whose root has `span` and whose children are `children`, in

@@ -1766,9 +1766,7 @@ impl Expression {
                 Some(leaf) => leaf.clone(),
                 None => {
                     let mut copy = self.nodes[id.0].clone();
-                    copy.shift_children(|child| {
-                        renumbered[child.0].unwrap_or(ExprId(usize::MAX))
-                    });
+                    copy.shift_children(|child| renumbered[child.0].unwrap_or(ExprId(usize::MAX)));
                     copy
                 }
             })

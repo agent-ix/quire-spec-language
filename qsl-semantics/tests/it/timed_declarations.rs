@@ -111,9 +111,13 @@ fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     )
     .expect("a package Clock field is admitted at intake");
     let checked = declarations
+        .with_unwritten_timed_members()
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("the time source checks beside the Clock field");
     assert_eq!(checked.time_sources()[0].model, "Config");
+    let timed = checked.timed_model("Config").expect("a timed model");
+    let clocks: Vec<&str> = timed.clocks().iter().map(|clock| clock.name()).collect();
+    assert_eq!(clocks, ["x"]);
 }
 
 /// FR-230-AC-5/AC-33: a package-owned unit resolves through its model owner

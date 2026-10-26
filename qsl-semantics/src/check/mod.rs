@@ -1322,6 +1322,7 @@ impl PackageDeclarations {
                     timed_forms: &self.timed_forms,
                     units: &units,
                     rational_bits: limits.rational_bits(),
+                    nodes: limits.nodes(),
                 },
                 &mut self.state_clauses,
             )
@@ -2344,7 +2345,7 @@ impl PackageDeclarations {
                 declarations: &declarations,
                 state_clauses: &state_clause_forms,
                 complete_value: crate::value::definition::DefinitionLock::pinned()
-                    .closure(&self.header_layers)
+                    .closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
             };
             match timed_model::check(timed_drafts, &checking, &mut contract_cx) {
@@ -5321,7 +5322,9 @@ impl CheckedGraph {
 
     /// FR-230: the checked timed model of the model alias `model`.
     pub fn timed_model(&self, model: &str) -> Option<&TimedModel> {
-        self.timed_models.iter().find(|timed| timed.model() == model)
+        self.timed_models
+            .iter()
+            .find(|timed| timed.model() == model)
     }
 
     /// FR-124: the intended terminal states of the model `alias`; `None` when
