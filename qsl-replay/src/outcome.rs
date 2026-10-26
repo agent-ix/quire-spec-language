@@ -617,6 +617,7 @@ impl OutcomeItem {
                     | UnavailabilityCause::UnsupportedReduction { .. }
                     | UnavailabilityCause::HiddenFieldLiveness
                     | UnavailabilityCause::UnsupportedHyperForm { .. }
+                    | UnavailabilityCause::UnsupportedSmtFragment
                     | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
                     | UnavailabilityCause::ConfidenceBeyondPrecision

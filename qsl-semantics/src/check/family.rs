@@ -947,6 +947,13 @@ fn is_package_independent(value_type: &ValueType) -> bool {
     }
 }
 
+/// Whether `name` is the authored spelling of the IEEE square-root function.
+/// `#[string_edge]`: reads a written call name before it is resolved.
+#[ix_trace_rs::string_edge]
+fn is_ieee_sqrt(name: &str) -> bool {
+    name == "quire::value::ieee::sqrt"
+}
+
 impl<'a> Application<'a> {
     /// Resolve a call of `name` with `arity` arguments: a declared function
     /// callable by name, else a tuple constructor; refuses an arity
@@ -958,7 +965,7 @@ impl<'a> Application<'a> {
         hint: Option<&ValueType>,
         location: &CheckLocation,
     ) -> Result<Self, CheckRefusal> {
-        if name == "quire::value::ieee::sqrt" {
+        if is_ieee_sqrt(name) {
             if arity != 1 {
                 return Err(CheckRefusal::ill_typed(
                     location,
