@@ -40,3 +40,10 @@ AC-2's `tso` half is covered by `a_relaxed_flag_refutes_race_freedom_under_tso_a
 ## Verdict
 
 The `tso` half of AC-2 is covered and gated. AC-6 and AC-7 under `tso` are uncovered. The fence and RMW carrier paths are untested.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | b056e2ce6 adds `the_tso_race_summary_holds_the_typed_values_of_the_message_passing_shape` (FR-224-AC-6). It asserts `race-summary`, writer `race-summaries` `cur`/`acq`/`rel(flag)`, element `race` for `data` and `flag`, `race-memory` after `flush` with a `release` and a `relaxed` store, `proved` with `release`/`acquire` and with `send`/`receive`, the queue entry's `race` member, and `refuted` with `relaxed`. It fails with `"view"` restored. FR-438-AC-7's reader-`cur` value is not asserted. |
+| FND-002 | deferred | QSL-1119 (FR-224-AC-7, `tso` RMW). The fence, locked-RMW and channel carrier paths now have tests: `a_forged_race_through_tso_fences_and_a_locked_access_is_refused`, `a_forged_race_through_a_tso_channel_is_refused_and_a_real_one_replays`, and `seq_cst_fences_do_not_order_threads_under_tso`. AC-7 needs EN-1 to classify an RMW whose precondition is false initially as an application. That matches the `WeakAccessShape` "access local" refusal I hit with a precondition-gated reader in the QSL-932 round-3 probe. |

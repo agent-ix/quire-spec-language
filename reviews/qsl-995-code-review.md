@@ -74,3 +74,13 @@ Other checks:
 Mutation check: with `TsoRace::enter` disabled (no summary), `a_relaxed_flag_refutes_race_freedom_under_tso_and_the_race_replays` (AC-2) and the two-receiver `tso` test fail. The AC-1, AC-4 and forged-`tso` tests still pass.
 
 Evidence: `cargo test -p qsl-analyze --test it -- race_freedom:: weak_memory:: tso_fairness:: protocol_system:: release_acquire::` gave 113 passed and 0 failed. `make ci` was not run, by brief.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | b056e2ce6: `reproduces(steps, race, tso)` skips the `S` join when `tso` holds, and replay sets `tso` from `system.memory().models()` containing `Tso` (only `Tso` lists it). `seq_cst_fences_do_not_order_threads_under_tso` fails with the old join restored. |
+| FND-002 | fixed | b056e2ce6: `MemoryModel::carried_member()` defaults to `"view"`, which leaves `ra` unchanged, and `Tso` returns `"race"`. The AC-6 test fails with `"view"` restored for `tso`. |
+| FND-003 | fixed | b056e2ce6 deletes `a_race_changes_no_authored_claims_verdict_under_tso`. AC-4 has no `tso` half. |
+| FND-004 | fixed | b056e2ce6 deletes the AC-1-tagged test and folds its `proved` assertion into the AC-6 test (`#[trace("TC-669", "FR-224-AC-6")]`). |
+| FND-005 | fixed | b056e2ce6 drops the FR-227-AC-3 tag and adds a doc line naming FR-227 "For `kind: Race`" with no `tso` AC. |
