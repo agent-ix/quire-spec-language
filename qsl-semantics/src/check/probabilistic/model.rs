@@ -595,7 +595,7 @@ pub(crate) struct ProbabilisticInput<'a> {
 }
 
 /// Why an operation name resolves to no single operation.
-pub(super) enum Unresolved {
+pub(crate) enum Unresolved {
     Missing,
     Ambiguous,
 }
@@ -603,7 +603,7 @@ pub(super) enum Unresolved {
 impl<'a> ProbabilisticInput<'a> {
     /// The operation `written` names: in the model `model` only when given,
     /// else in every selected model.
-    pub(super) fn operation(
+    pub(crate) fn operation(
         &self,
         written: &NameForm,
         model: Option<&str>,
