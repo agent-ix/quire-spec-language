@@ -10,13 +10,14 @@
 //! The arena is flat, so building, walking and dropping it never recurse,
 //! however deep the tree.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use qsl_foundation::Span;
 
 #[cfg(doc)]
 use super::ExprNode;
-use super::Expression;
+use super::{ExprId, Expression};
 
 /// One node of an [`ExpressionSpans`] arena. Minted only by the arena that
 /// holds the node.
@@ -156,6 +157,59 @@ impl ExpressionSpans {
             }
         }
         Some(tree)
+    }
+
+    /// The spans of [`Expression::cut`]`(root, leaves)` when these spans
+    /// fit `expression`: the tree under `root`'s span, each leaf keeping its
+    /// own span and none of its descendants'. `None` when the spans do not
+    /// fit or `root` is no node of `expression`.
+    pub fn cut(
+        &self,
+        expression: &Expression,
+        root: ExprId,
+        leaves: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
+        let mut ids = vec![None; expression.len()];
+        let mut stack = vec![(self.root(), expression.root_id())];
+        while let Some((span, id)) = stack.pop() {
+            *ids.get_mut(id.index())? = Some(span);
+            let children = expression.get(id)?.node().children();
+            let spans = &self.nodes.get(span.0)?.children;
+            if spans.len() != children.len() {
+                return None;
+            }
+            stack.extend(spans.iter().copied().zip(children));
+        }
+        let span_of = |id: ExprId| ids.get(id.index()).copied().flatten();
+        let mut tree = Self::new(self.span(span_of(root)?)?).ok()?;
+        let mut pending = vec![(root, tree.root())];
+        while let Some((source, target)) = pending.pop() {
+            if leaves.contains(&source) {
+                continue;
+            }
+            for child in expression.get(source)?.node().children() {
+                let added = tree.push_child(target, self.span(span_of(child)?)?).ok()?;
+                pending.push((child, added));
+            }
+        }
+        Some(tree)
+    }
+
+    /// The tree whose root has `span` and whose children are `children`, in
+    /// order.
+    pub fn joined(span: Span, children: &[Self]) -> Result<Self, SpanRefusal> {
+        let mut tree = Self::new(span)?;
+        for child in children {
+            let top = tree.push_child(tree.root(), child.span(child.root()).unwrap_or(span))?;
+            let mut pending = vec![(child.root(), top)];
+            while let Some((source, target)) = pending.pop() {
+                for &grandchild in &child.nodes[source.0].children {
+                    let added = tree.push_child(target, child.nodes[grandchild.0].span)?;
+                    pending.push((grandchild, added));
+                }
+            }
+        }
+        Ok(tree)
     }
 
     /// The span of `node`, when it is a node of this tree.
