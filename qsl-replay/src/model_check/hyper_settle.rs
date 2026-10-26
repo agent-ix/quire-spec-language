@@ -70,7 +70,8 @@ pub struct HyperRecord {
     pub execution: Execution,
     /// The truth.
     pub truth: Truth,
-    /// The settlement method: [`EXPLICIT_STATE`].
+    /// The settlement method: [`EXPLICIT_STATE`] for an EN-1 run,
+    /// [`K_INDUCTION`] for an EN-3 induction run.
     pub method: &'static str,
     /// The search horizon a V-5 record states.
     pub depth: Option<u64>,
@@ -288,7 +289,7 @@ fn used(limits: &ModelCheckLimits, requested: &[ModelCheckLimit]) -> [UsedLimit;
 /// The outcome must carry the item's own product identity. An
 /// `Inductive{depth}` outcome settles V-3, `proved`, `decisive-witness`,
 /// `Uncertified`, when every subject has an initial state and the clause's
-/// `Î¼_U` is empty; no match witness is built yet, so a non-empty `Î¼_U`
+/// `μ_U` is empty; no match witness is built yet, so a non-empty `μ_U`
 /// settles `VacuousMatch`. An `InductionNotClosed{depth}` outcome settles
 /// `inconclusive`.
 ///
@@ -296,7 +297,8 @@ fn used(limits: &ModelCheckLimits, requested: &[ModelCheckLimit]) -> [UsedLimit;
 ///
 /// [`HyperSettleRefusal::ItemIdentity`] when the item has no identity, and
 /// [`HyperSettleRefusal::ProductMismatch`] when the outcome answers another
-/// product. An internal fault in computing the identity settles `failed`.
+/// product, or carries no identity. An internal fault in computing the
+/// item's identity settles `failed`.
 pub fn settle_hyper_smt(
     item: &HyperQueryRequest<'_>,
     outcome: &HyperSmtOutcome,
@@ -304,10 +306,15 @@ pub fn settle_hyper_smt(
     requested: &[ModelCheckLimit],
 ) -> Result<HyperRecord, HyperSettleRefusal> {
     let row = match HyperProductIdentity::of(item) {
-        Err(refusal) if refusal.code().is_none() => Row::failed(),
+        Err(SmtEncodingRefusal::Fault(_)) => Row::failed(),
         Err(refusal) => return Err(HyperSettleRefusal::ItemIdentity(refusal)),
         Ok(identity) => {
-            if let Some(member) = ProductMember::first_difference(&identity, &outcome.product) {
+            let Ok(named) = &outcome.product else {
+                return Err(HyperSettleRefusal::ProductMismatch {
+                    member: ProductMember::Clause,
+                });
+            };
+            if let Some(member) = ProductMember::first_difference(&identity, named) {
                 return Err(HyperSettleRefusal::ProductMismatch { member });
             }
             match outcome.result {
@@ -334,7 +341,8 @@ pub fn settle_hyper_smt(
     })
 }
 
-/// V-3 and its guards for an `Inductive{depth}` outcome, in FR-182's order.
+/// V-3 and its guards for an `Inductive{depth}` outcome, in FR-182's order. A
+/// subject whose `ModelSystem::new` fails settles `failed`.
 fn inductive_row(item: &HyperQueryRequest<'_>, depth: u64) -> Row {
     for subject in item.subjects {
         match ModelSystem::new(subject.simulation.clone()) {

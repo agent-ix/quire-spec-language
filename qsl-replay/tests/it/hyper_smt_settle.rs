@@ -4,8 +4,8 @@
 use ix_trace_rs::trace;
 use qsl_replay::{
     settle_hyper_smt, Certification, HyperProductIdentity, HyperQueryRequest, HyperSettleRefusal,
-    HyperSmtOutcome, HyperSmtResult, InconclusiveCause, ModelCheckLimits, ProductMember,
-    ProofBasis, SettlementBasis, SmtEncodingLimits, TerminalValue,
+    HyperSmtOutcome, HyperSmtResult, InconclusiveCause, InternalFault, ModelCheckLimits,
+    ProductMember, ProofBasis, SettlementBasis, SmtEncodingLimits, TerminalValue,
 };
 use quire_exact::Meter;
 
@@ -23,17 +23,32 @@ fn settle(
     outcome_key: &str,
     result: HyperSmtResult,
 ) -> Result<qsl_replay::HyperRecord, HyperSettleRefusal> {
+    settle_with(world, item_key, Some(outcome_key), result)
+}
+
+/// As [`settle`]; `None` hands over an outcome whose `product` is `Err`.
+fn settle_with(
+    world: &World,
+    item_key: &str,
+    outcome_key: Option<&str>,
+    result: HyperSmtResult,
+) -> Result<qsl_replay::HyperRecord, HyperSettleRefusal> {
     let subjects = [world.subject()];
     let mut meter = Meter::new(UNLIMITED);
-    let named = instance(outcome_key);
-    let product = HyperProductIdentity::of(&HyperQueryRequest {
-        clause: world.clause(),
-        subjects: &subjects,
-        instance: &named,
-        meter: &mut meter,
-        encoding: SmtEncodingLimits::default(),
-    })
-    .expect("the outcome's identity");
+    let product = match outcome_key {
+        Some(key) => {
+            let named = instance(key);
+            Ok(HyperProductIdentity::of(&HyperQueryRequest {
+                clause: world.clause(),
+                subjects: &subjects,
+                instance: &named,
+                meter: &mut meter,
+                encoding: SmtEncodingLimits::default(),
+            })
+            .expect("the outcome's identity"))
+        }
+        None => Err(InternalFault::new("smt-encoding", "the identity faulted")),
+    };
     let key = instance(item_key);
     let item = HyperQueryRequest {
         clause: world.clause(),
@@ -69,12 +84,11 @@ fn an_inductive_outcome_with_an_empty_match_settles_proved_uncertified() {
     assert_eq!(record.method, "k-induction");
 }
 
-/// FR-182-AC-7: an `Inductive` outcome whose clause has a non-empty `μ_U` and
-/// no accepted witness is never `proved`; an outcome for another instance is
-/// refused.
-#[trace("TC-607", "FR-182-AC-7")]
+/// An `Inductive` outcome whose clause has a non-empty `μ_U` and no accepted
+/// witness settles `inconclusive`, `VacuousMatch`, never `proved`.
+#[trace("TC-607", "FR-182-AC-1")]
 #[test]
-fn an_inductive_outcome_is_not_proved_without_a_match_or_for_another_instance() {
+fn an_inductive_outcome_with_a_match_and_no_witness_is_vacuous() {
     let world = World::new(&["v", "w"], false, &non_interference(EQUAL_INPUTS, ""));
     let record = settle(&world, "v", "v", HyperSmtResult::Inductive { depth: 1 })
         .expect("the outcome answers the item");
@@ -82,16 +96,45 @@ fn an_inductive_outcome_is_not_proved_without_a_match_or_for_another_instance() 
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::VacuousMatch)
     );
+}
+
+/// An outcome carrying another instance's identity, or no identity, is no
+/// evidence for the item and is refused.
+#[trace("TC-607", "FR-182-AC-11")]
+#[test]
+fn an_outcome_for_another_product_is_refused() {
+    let world = World::new(&["v", "w"], false, &non_interference("", ""));
+    let result = HyperSmtResult::Inductive { depth: 1 };
     assert_eq!(
-        settle(&world, "v", "w", HyperSmtResult::Inductive { depth: 1 }).unwrap_err(),
+        settle(&world, "v", "w", result).unwrap_err(),
         HyperSettleRefusal::ProductMismatch {
             member: ProductMember::Instance
         }
     );
+    assert_eq!(
+        settle_with(&world, "v", None, result).unwrap_err(),
+        HyperSettleRefusal::ProductMismatch {
+            member: ProductMember::Clause
+        }
+    );
 }
 
-/// FR-182: `InductionNotClosed{depth}` settles `inconclusive`, never `proved`.
-#[trace("TC-607", "FR-182-AC-7")]
+/// FR-182-AC-10: a subject with an empty initial list settles
+/// `inconclusive`, `NoInitialState`, never `proved`.
+#[trace("TC-607", "FR-182-AC-10")]
+#[test]
+fn an_empty_initial_list_settles_no_initial_state() {
+    let world = World::new(&["v"], false, &non_interference("", "")).without_initial_states();
+    let record = settle(&world, "v", "v", HyperSmtResult::Inductive { depth: 1 })
+        .expect("the outcome answers the item");
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+    );
+}
+
+/// `InductionNotClosed{depth}` settles `inconclusive`, never `proved`.
+#[trace("TC-607", "FR-182-AC-1")]
 #[test]
 fn an_unclosed_induction_is_inconclusive() {
     let world = World::new(&["v"], false, &non_interference("", ""));
