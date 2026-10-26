@@ -155,6 +155,8 @@ productions! {
     SchedulableDeclaration,
     #[doc = "`response <identifier> on <identifier> . <identifier> <= <quantity-literal> under fixed_priority ;`: a response-time claim over one task of a task set."]
     ResponseDeclaration,
+    #[doc = "`release <identifier> . <identifier> on <qualified-name> ;`: each step of an operation releases one job of a task of a task set (QSpec FR-419)."]
+    ReleaseDeclaration,
     TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     AggregateAtom, AggregateTerm, AggregateKind, PastWindow,

@@ -1207,6 +1207,7 @@ impl<'c> Mapping<'c> {
             | Production::SignedQuantity
             | Production::SchedulableDeclaration
             | Production::ResponseDeclaration
+            | Production::ReleaseDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction
@@ -1888,6 +1889,7 @@ impl<'c> Mapping<'c> {
             | Production::SignedQuantity
             | Production::SchedulableDeclaration
             | Production::ResponseDeclaration
+            | Production::ReleaseDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction

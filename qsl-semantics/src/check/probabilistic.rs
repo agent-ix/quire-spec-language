@@ -38,7 +38,7 @@ pub use claim::{
     ClaimNormalForm, Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm,
     ProbScheduler, ReachTarget,
 };
-pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
+pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput, Unresolved};
 pub use model::{
     CheckedProbabilisticModel, Delay, DelayDistribution, PreconditionSite, ProbabilisticFeature,
     ProbabilisticOperation, RandomParameter, Reward, SupportValue, Workload,

@@ -383,11 +383,10 @@ fn spelling_order_and_other_claims_leave_the_node_id_unchanged() {
 
 /// QSL-1108 (SR-17237 FND-001): a `{ true }` target is the `true` literal
 /// node the omitted `from` already references, so one literal node serves
-/// both; and renaming the `over` parameter changes the node id, because the
-/// parameter node carries its name (SR-17236 FND-007, documented behavior).
+/// both.
 #[trace("TC-1140")]
 #[test]
-fn a_true_target_reuses_the_true_literal_and_the_over_name_enters_the_id() {
+fn a_true_target_reuses_the_true_literal_node() {
     let compiled = compile(&unit(&format!(
         "always possible Always {OVER_C} {{ true }}"
     )));
@@ -401,7 +400,13 @@ fn a_true_target_reuses_the_true_literal_and_the_over_name_enters_the_id() {
         .filter(|node| node["semantic_form"] == "literal" && node["body"]["value"] == json!(true))
         .count();
     assert_eq!(literals, 1, "one true literal node in the package");
+}
 
+/// QSL-1108 (SR-17236 FND-007): renaming the `over` parameter changes the
+/// node id, because the parameter node carries its name (documented).
+#[trace("TC-1140")]
+#[test]
+fn the_over_parameter_name_enters_the_node_id() {
     let renamed = REACHES_TWO
         .replace("(c:", "(d:")
         .replace("c.version", "d.version");

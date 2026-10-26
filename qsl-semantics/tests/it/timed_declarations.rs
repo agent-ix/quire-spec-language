@@ -840,22 +840,12 @@ fn each_malformed_delay_value_refuses_with_its_own_fault() {
     }
 }
 
-/// QSL-1110 (SR-17238 FND-002/FND-003): a second `delay` of one operation is
-/// refused as malformed at the second declaration, and the first stays
-/// recorded; a delay on an operation no model declares is unresolved.
+/// QSL-1110 (SR-17238 FND-002): a delay on an operation no model declares is
+/// unresolved (the second-delay case is
+/// `a_second_delay_of_one_operation_refuses_at_the_second_declaration`).
 #[trace("TC-708")]
 #[test]
-fn a_second_delay_of_one_operation_and_an_unknown_operation_refuse() {
-    let second = format!("{ATTEMPT} ~ uniform[2 ms, 3 ms];");
-    let (fault, at) = malformed_delay(&format!("{ATTEMPT} ~ uniform;\n{second}"));
-    assert_eq!(
-        (fault, at.as_str()),
-        (
-            qsl_semantics::check::DelayFault::RepeatedDeclaration,
-            second.as_str()
-        )
-    );
-
+fn a_delay_on_an_unknown_operation_refuses_as_unresolved() {
     let (cause, at) = delay_cause(DENSE, "delay ConfigVersion::noSuchOperation ~ uniform;");
     assert!(
         matches!(
@@ -932,5 +922,17 @@ fn boundary_and_recorded_delay_distributions_read_back_exactly() {
         DelayDistribution::Exponential {
             rate: milliseconds(1, 1000),
         }
+    );
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_second_delay_of_one_operation_refuses_at_the_second_declaration() {
+    let first = "delay ConfigVersion::attemptUpdate ~ uniform;";
+    let second = "delay ConfigVersion::attemptUpdate ~ exponential(1);";
+    let (code, tag, at) = delay_refusal(true, &format!("{first}\n{second}"));
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (Code::InvalidModelBinding, "malformed-declaration", second)
     );
 }
