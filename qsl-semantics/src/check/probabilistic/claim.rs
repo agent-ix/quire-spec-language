@@ -1052,6 +1052,13 @@ impl Pass<'_, '_> {
                         span: *span,
                     }));
                 }
+                Some(TemporalNodeForm::AggregateAtom(atom)) => {
+                    predicates.push(None);
+                    refusals.push(refusal(ProbabilisticCause::NotStatePredicate {
+                        claim: claim.claim().to_owned(),
+                        span: atom.span,
+                    }));
+                }
                 None => {
                     refusals.push(broken("reach-operand-is-in-the-formula"));
                     return None;
@@ -1137,6 +1144,7 @@ impl Pass<'_, '_> {
             Some(
                 TemporalNodeForm::Holds { span, .. } | TemporalNodeForm::Constant { span, .. },
             ) => *span,
+            Some(TemporalNodeForm::AggregateAtom(atom)) => atom.span,
             None => claim.form.span,
         };
         if !bounded {

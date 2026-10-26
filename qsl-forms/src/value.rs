@@ -1306,7 +1306,11 @@ impl<'c> Mapping<'c> {
             | Production::FieldBinding
             | Production::PopulationBinding
             | Production::FrameBinding
-            | Production::ParameterBinding => Err(unexpected(node)),
+            | Production::ParameterBinding
+            | Production::AggregateAtom
+            | Production::AggregateTerm
+            | Production::AggregateKind
+            | Production::PastWindow => Err(unexpected(node)),
         }
     }
 
@@ -1987,7 +1991,11 @@ impl<'c> Mapping<'c> {
             | Production::FieldBinding
             | Production::PopulationBinding
             | Production::FrameBinding
-            | Production::ParameterBinding => Err(unexpected(child)),
+            | Production::ParameterBinding
+            | Production::AggregateAtom
+            | Production::AggregateTerm
+            | Production::AggregateKind
+            | Production::PastWindow => Err(unexpected(child)),
         }
     }
 
