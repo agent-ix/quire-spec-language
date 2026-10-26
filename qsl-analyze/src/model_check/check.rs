@@ -96,9 +96,9 @@ use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
-    ProductStateRef, ProofCertificate, Proviso, ReachedLimit, ReductionCause, RunStats,
-    Race, SymmetryRefusal, TemporalCounterexample, Translation, UndecidedCause,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ProductStateRef, ProofCertificate, Proviso, Race, ReachedLimit, ReductionCause, RunStats,
+    SymmetryRefusal, TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CaptureSite, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -2562,12 +2562,7 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// from node `parent` into depth `later` completes: `earlier` is the
     /// position the canonical path to `parent` reached by the last access
     /// the race's summary names.
-    fn race_found(
-        &self,
-        race: &DataRace,
-        parent: usize,
-        later: usize,
-    ) -> Step<CounterexampleKind> {
+    fn race_found(&self, race: &DataRace, parent: usize, later: usize) -> Step<CounterexampleKind> {
         let mut cursor = parent;
         let earlier = loop {
             let node = &self.nodes[cursor];

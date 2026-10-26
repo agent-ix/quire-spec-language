@@ -52,10 +52,7 @@ impl AccessRecord {
     /// the conflict's thread, and a write or a read as the conflict says.
     pub fn is_named_by(&self, race: &DataRace) -> bool {
         self.location == race.location
-            && race
-                .earlier
-                .iter()
-                .any(|earlier| earlier.is_named_by(self))
+            && race.earlier.iter().any(|earlier| earlier.is_named_by(self))
     }
 }
 

@@ -73,8 +73,8 @@ use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
-    SubjectTransition, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
+    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
+    TransitionSystem, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};

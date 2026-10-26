@@ -17,9 +17,7 @@ use qsl_replay::{
 use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
 
 use crate::litmus::{attempt, contracts, protocol, NO_BOTH_ZERO};
-use crate::weak_memory::{
-    litmus_run, load_ordered, select, steps, Case, MP,
-};
+use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
 /// `SB::Main::Both` resolved to `ra`.
 fn ra() -> [MemorySelection; 1] {
@@ -237,7 +235,10 @@ fn a_forged_race_settles_inconclusive_under_ra() {
                 } else {
                     is_at(transition, node)
                 };
-                at && transition.memory_choice().and_then(|choice| choice.read_depth) == read
+                at && transition
+                    .memory_choice()
+                    .and_then(|choice| choice.read_depth)
+                    == read
             })
             .unwrap_or_else(|| panic!("{node} is enabled"));
         let (_, digest) = SubjectSystem::state_key(&system, &next).expect("a key");

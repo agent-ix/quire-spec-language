@@ -10,9 +10,9 @@
 //! callers builds one.
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::Location;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
+use qsl_eval::simulation::Location;
 use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;

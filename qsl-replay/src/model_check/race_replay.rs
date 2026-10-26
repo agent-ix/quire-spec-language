@@ -218,7 +218,9 @@ impl Replay {
         let len = messages.len();
         let read = match choice.read_depth {
             Some(depth) => {
-                let at = len.checked_sub(1)?.checked_sub(usize::try_from(depth).ok()?)?;
+                let at = len
+                    .checked_sub(1)?
+                    .checked_sub(usize::try_from(depth).ok()?)?;
                 Some((at, messages.get(at)?.clone()))
             }
             None => None,

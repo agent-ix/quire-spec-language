@@ -945,12 +945,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .memory
             .split(&next.memory, path, &children, model, &cells, &next.model);
         self.normalize(&mut next, ordinal)?;
-        gathered
-            .successors
-            .push((
-                ProtocolTransition::fork(path.clone(), text).forking(children),
-                next,
-            ));
+        gathered.successors.push((
+            ProtocolTransition::fork(path.clone(), text).forking(children),
+            next,
+        ));
         Ok(())
     }
 

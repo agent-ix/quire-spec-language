@@ -26,6 +26,16 @@
 //!   `join` the component is empty: each location's model-state cell holds
 //!   its mo-last message's value throughout, so atoms read the model state.
 //!
+//! For each shared location some attempt accesses non-atomically the
+//! component also holds a race summary and every view its race Booleans
+//! (ADR-025 DR-3; QSpec FR-438, FR-224). An access decides the data race it
+//! completes from its pre-state over its thread's current view, records
+//! itself in the summary and updates the Booleans of every carrier, and only
+//! then applies RA-2 to RA-4; the view a queued `send` carries is updated
+//! alike ([`MemoryModel::carried_after`]). The race goes to the step as
+//! [`Chosen::race`]; [`super::race`] holds the parts another model with
+//! happens-before carriers shares.
+//!
 //! Messages and events carry ids that only this module reads; the state key
 //! names them by depth and rank, so equal futures share one key.
 //!
@@ -495,7 +505,8 @@ impl RaComponent {
                 continue;
             }
             if cell.non_atomic {
-                self.races.insert(cell.location.clone(), RaceSummary::default());
+                self.races
+                    .insert(cell.location.clone(), RaceSummary::default());
             }
             let id = self.fresh();
             let value = state.cell(cell.cell).cloned();
