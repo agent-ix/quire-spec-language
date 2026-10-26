@@ -162,10 +162,11 @@ pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
     ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
-    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementFairness,
-    RefinementFairnessOrigin, RefinementRefusal, RefinementStepSource, RefinementSupport,
-    RefinementThreadTarget, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow,
-    StepTarget, UnsupportedFeature,
+    ProtocolStepKind, RefinementCatalogClass, RefinementCatalogNode, RefinementCause,
+    RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
+    RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
+    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
+    UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -2776,6 +2777,24 @@ impl PackageDeclarations {
             std::iter::repeat_with(|| None)
                 .take(refinement_slots.len())
                 .collect();
+        let protocol_views: Vec<refinement::ProtocolView<'_>> = self
+            .protocols
+            .iter()
+            .map(|form| {
+                let place = checked_protocols
+                    .iter()
+                    .position(|checked| checked.name == form.name.name.as_str());
+                refinement::ProtocolView {
+                    form,
+                    checked: place
+                        .and_then(|place| checked_protocols.get(place))
+                        .filter(|_| !refused_protocols.contains(form.name.name.as_str())),
+                    attempts: place
+                        .and_then(|place| protocol_bindings.get(place))
+                        .map_or(&[], Vec::as_slice),
+                }
+            })
+            .collect();
         for (slot, pending) in protocol_refinements {
             let index = pending.protocol();
             let place = protocol_places.get(index).copied().flatten();
@@ -2817,8 +2836,12 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            let (completed, used) =
-                pending.complete(clause.as_ref(), &declarations, &mut contract_cx);
+            let (completed, used) = pending.complete(
+                clause.as_ref(),
+                &protocol_views,
+                &declarations,
+                &mut contract_cx,
+            );
             nodes_used = used;
             match completed {
                 Ok((checked, selected)) => {
