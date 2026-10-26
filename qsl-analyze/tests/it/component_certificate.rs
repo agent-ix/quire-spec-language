@@ -25,11 +25,11 @@ use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::{
     check_closure, check_components, settle_model_check, CertificateLocus, CertificateRejection,
-    CertificateRequest, CertificateRule, Certification, ClosureCertificate, Component,
-    ComponentCertificate, ComponentWitness, Execution, IncompleteCause, InconclusiveCause,
-    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef,
-    ProofBasis, ProofCertificate, ResultLabel, RunStats, SettlementBasis, SmtEncodingLimits,
-    TemporalCertificateCheck, TerminalValue,
+    CertificateRequest, CertificateRule, Certification, ClosureCertificate, ClosureRefusal,
+    Component, ComponentCertificate, ComponentWitness, Execution, IncompleteCause,
+    InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ProductStateRef, ProofBasis, ProofCertificate, ResultLabel, RunStats, SettlementBasis,
+    SmtEncodingLimits, TemporalCertificateCheck, TerminalValue,
 };
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
@@ -542,26 +542,22 @@ fn component_work_charges_no_budget_and_the_closure_check_stops_first() {
         limit(ModelCheckLimit::MaxAutomatonStates, 1)
     );
 
-    // The meter stop is the closure check's own.
+    // The meter stop is the closure check's own: a certificate with no
+    // components stops at the same place, before any component rule runs.
     let defaults = ModelCheckLimits::default();
+    let closure_only = ComponentCertificate {
+        closure: certificate.closure.clone(),
+        components: Vec::new(),
+    };
     let alone = |meter| {
-        let (letters, _) = fixture.letters(0, ring_atoms());
-        let mut subject = fixture.subject();
-        subject.simulation.meter = meter;
-        check_closure(
-            &CertificateRequest {
-                subject,
-                item: ModelCheckItem::Clause {
-                    clause: fixture.clause(0),
-                    letters: &letters,
-                },
-                smt_encoding: SmtEncodingLimits::default(),
-            },
-            &certificate.closure,
+        unit_check(
+            &fixture,
+            ring_atoms(),
+            &closure_only,
             &defaults,
+            meter,
             &Cancel::new(),
         )
-        .expect("the request is checked")
     };
     let stopped = alone(ZERO);
     assert!(
@@ -575,39 +571,35 @@ fn component_work_charges_no_budget_and_the_closure_check_stops_first() {
         "{stopped:?}"
     );
     assert_eq!(unit(&defaults, ZERO, &Cancel::new()), stopped);
-    assert_eq!(alone(UNLIMITED), ACCEPTED);
+    let TemporalCertificateCheck::Rejected(CertificateRejection {
+        rule: CertificateRule::NotPartition,
+        ..
+    }) = alone(UNLIMITED)
+    else {
+        panic!("a closure with no components is not a partition");
+    };
 
-    // A cancel at the first poll after the closure check's last.
-    let polls = Arc::new(AtomicU32::new(0));
-    let counted = Arc::clone(&polls);
-    let counting = Cancel::observing(move || {
-        counted.fetch_add(1, Ordering::Relaxed);
-    });
-    assert_eq!(unit(&defaults, UNLIMITED, &counting), ACCEPTED);
-    let components_start = {
-        let before = Arc::new(AtomicU32::new(0));
-        let counted = Arc::clone(&before);
-        let closure_only = Cancel::observing(move || {
+    // A cancel at the first poll after the closure check's last: the
+    // closure check of an unpartitioned closure polls no more, and the
+    // checks of the whole certificate poll beyond it.
+    let count = |certificate: &ComponentCertificate| {
+        let polls = Arc::new(AtomicU32::new(0));
+        let counted = Arc::clone(&polls);
+        let counting = Cancel::observing(move || {
             counted.fetch_add(1, Ordering::Relaxed);
         });
-        let (letters, _) = fixture.letters(0, ring_atoms());
-        check_closure(
-            &CertificateRequest {
-                subject: fixture.subject(),
-                item: ModelCheckItem::Clause {
-                    clause: fixture.clause(0),
-                    letters: &letters,
-                },
-                smt_encoding: SmtEncodingLimits::default(),
-            },
-            &certificate.closure,
+        unit_check(
+            &fixture,
+            ring_atoms(),
+            certificate,
             &defaults,
-            &closure_only,
-        )
-        .expect("the request is checked");
-        before.load(Ordering::Relaxed)
+            UNLIMITED,
+            &counting,
+        );
+        polls.load(Ordering::Relaxed)
     };
-    assert!(polls.load(Ordering::Relaxed) > components_start);
+    let components_start = count(&closure_only);
+    assert!(count(&certificate) > components_start);
     assert_eq!(
         unit(&defaults, UNLIMITED, &cancelled_after(components_start)),
         TemporalCertificateCheck::Stopped(IncompleteCause::Cancelled {
@@ -637,7 +629,7 @@ fn digest_of(fixture: &Fixture, phase: u8) -> qsl_replay::DigestRecord {
 /// vertex index, and `(2,q1)`, which no edge leaves, is last. Only
 /// `(1,q0)`, the terminal stutter, carries `MissingAcceptance`; the others
 /// are `Trivial`; the checker accepts it.
-#[trace("TC-521", "FR-126-AC-18")]
+#[trace("TC-521")]
 #[test]
 fn components_are_listed_by_the_least_vertex_whose_predecessors_are_listed() {
     let fixture = fork();
@@ -697,7 +689,7 @@ fn components_are_listed_by_the_least_vertex_whose_predecessors_are_listed() {
 /// duplicate, every component of binding `a` is listed before every
 /// component of binding `b`, each component's states ascend, and a second
 /// run gives an equal certificate.
-#[trace("TC-521", "FR-126-AC-18")]
+#[trace("TC-521")]
 #[test]
 fn a_certificate_lists_its_states_and_bindings_in_canonical_order() {
     let (world, certificate, _) = weak_each_proof();
@@ -976,4 +968,134 @@ fn a_guarded_each_activation_has_its_own_acceptance_set_in_the_certificate() {
         .any(|component| component.witness == MISSING));
     let accepts_never = with_production_letters(&unmet, |production| production.check(&never));
     assert_eq!(accepts_never, ACCEPTED);
+}
+
+// ---------------------------------------------------------------------------
+// A closure is not a liveness proof
+// ---------------------------------------------------------------------------
+
+/// FR-339-AC-8: a TP-4 clause is proved only by a component certificate. The
+/// `Counter`'s `always eventually holds(c.value = 3)` with letters that never
+/// hold is `Violated`; a closure grown from the checker's own `InitialMissing`
+/// and `SuccessorMissing` rejections of that claim covers every product
+/// state, and offered as the certificate of a `Holds` it is refused by
+/// `check_closure`, so it settles `failed` and never `proved`. The component
+/// certificate of the claim under its own letters settles `proved`,
+/// `certified`.
+#[trace("TC-526", "FR-339-AC-8")]
+#[test]
+fn a_closure_certificate_never_proves_a_liveness_claim() {
+    fn never(_: i64) -> Option<bool> {
+        Some(false)
+    }
+    let fixture = counter(
+        crate::counter::document(false),
+        "",
+        "always eventually holds(c.value = 3)",
+    );
+    let (honest, stats) = fixture.certified(is_three);
+    let recompiled = honest.closure.package_id;
+    let violated = fixture.decide(never).expect("the clause is decided");
+    assert!(matches!(violated, ModelCheckOutcome::Violated { .. }));
+
+    let letters = fixture.letters(never);
+    let request = fixture.certificate_request(&letters, UNLIMITED);
+    let mut forged = ComponentCertificate {
+        closure: ClosureCertificate {
+            package_id: recompiled,
+            states: Vec::new(),
+        },
+        components: Vec::new(),
+    };
+    loop {
+        let verdict = check(
+            &request,
+            &forged,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        );
+        let TemporalCertificateCheck::Rejected(CertificateRejection {
+            rule: CertificateRule::InitialMissing | CertificateRule::SuccessorMissing,
+            at: CertificateLocus::ProductState(missing),
+        }) = verdict
+        else {
+            break;
+        };
+        forged.closure.states.push(missing);
+        forged.closure.states.sort();
+    }
+    assert!(forged.closure.states.len() >= 4);
+
+    let settle = |certificate: ProofCertificate, request: &CertificateRequest<'_>| {
+        settle_model_check(
+            &ModelCheckOutcome::Holds { certificate, stats },
+            &ModelCheckLimits::default(),
+            &recompiled.record(),
+            request,
+            &Cancel::new(),
+            |_| panic!("a proof replays nothing"),
+        )
+    };
+    let record = settle(ProofCertificate::Closure(forged.closure.clone()), &request);
+    assert_eq!(record.label, ResultLabel::Failed);
+    assert!(matches!(
+        check_closure(
+            &request,
+            &forged.closure,
+            &ModelCheckLimits::default(),
+            &Cancel::new()
+        ),
+        Err(ClosureRefusal::LivenessNeedsComponents)
+    ));
+
+    let honest_letters = fixture.letters(is_three);
+    let record = settle(
+        ProofCertificate::Component(honest),
+        &fixture.certificate_request(&honest_letters, UNLIMITED),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Exhaustive,
+            certification: Certification::Certified,
+        }
+    );
+}
+
+/// FR-339: components offered for an item that is not a TP-4 clause are
+/// refused `NotLiveness`, never accepted and never rejected.
+#[trace("TC-526", "FR-339-AC-8")]
+#[test]
+fn components_offered_for_a_safety_clause_are_refused() {
+    let fixture = counter(
+        crate::counter::document(false),
+        "",
+        "always holds(c.value <= 3)",
+    );
+    let letters = fixture.letters(is_three);
+    let (mut liveness, _) = counter(
+        crate::counter::document(false),
+        "",
+        "always eventually holds(c.value = 3)",
+    )
+    .certified(is_three);
+    // The package of the safety unit, which the check reads first.
+    let TemporalCertificateCheck::PackageMismatch { recompiled, .. } = check(
+        &fixture.certificate_request(&letters, UNLIMITED),
+        &liveness,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    ) else {
+        panic!("the two claims are two packages");
+    };
+    liveness.closure.package_id = recompiled;
+    assert!(matches!(
+        check_components(
+            &fixture.certificate_request(&letters, UNLIMITED),
+            &liveness,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        ),
+        Err(ClosureRefusal::NotLiveness)
+    ));
 }

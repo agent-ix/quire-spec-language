@@ -216,8 +216,11 @@ impl<T: SubjectTransition> ModelCheckRecord<T> {
 /// after the request's own package is emitted and its `package_id` equals
 /// `package_id` (another package settles
 /// `Inconclusive(ReplayRefused(stale_dependency))`, one that does not emit
-/// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and [`check_closure`] checks its certificate for
-/// `certificate` under `limits` and `cancel`; a refused check settles
+/// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and
+/// its certificate is checked for `certificate` under `limits` and `cancel`:
+/// a closure by [`check_closure`], a component certificate (a liveness proof)
+/// by [`check_components`], and a closure offered for a TP-4 clause is
+/// refused, which settles `failed`; a refused check settles
 /// `inconclusive` by `NoInstance` or `NoInitialState` and `failed`
 /// otherwise, `clause-root-unresolved` among the causes. A `Violated` outcome's
 /// counterexample is handed to `replay` (FR-128) and settles by its result:
@@ -256,7 +259,9 @@ pub fn settle_model_check(
 
 /// FR-215 and FR-217 (ADR-027 TS-6, PX-1): [`settle_model_check`]'s one
 /// settlement map over an outcome of a protocol subject. A `Holds` outcome's
-/// certificate is checked by [`check_protocol_closure`] over `certificate`;
+/// certificate is checked over `certificate` by [`check_protocol_closure`] (a
+/// closure) or [`check_protocol_components`] (a component certificate, the
+/// only proof of a TP-4 clause);
 /// a `Violated` outcome's counterexample is handed to `replay` (in
 /// production [`replay_protocol_trace`]).
 ///
