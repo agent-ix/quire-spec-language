@@ -13,8 +13,15 @@
 //! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
 //! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
 //! subject, unless its protocol clause declares `terminal any`.
+//!
+//! A protocol subject with a weak `parallel` and a non-atomic shared access
+//! gets one race-freedom item (FR-224, ADR-025 DR-4) from
+//! [`race_freedom_items`]. It is the same shape, `always holds(not raced)`,
+//! with the fixed kind `race-freedom` and the subject's resolved models in its
+//! identity.
 
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     Capability, CheckedGraph, CheckedProtocol, CheckedTerminalMember, TerminalMode,
 };
@@ -66,6 +73,14 @@ pub enum ObligationKind {
     /// The derived deadlock-freedom item: the fixed kind
     /// `deadlock-freedom`.
     DeadlockFreedom,
+    /// The derived race-freedom item (FR-224, ADR-025 DR-4): the fixed kind
+    /// `race-freedom`, over the subject's resolved models, which are part of
+    /// its identity (ADR-013 O-09).
+    RaceFreedom {
+        /// The resolved model of each outermost `parallel`, by its scoped
+        /// path, in ascending path order.
+        models: Vec<(String, MemoryModelName)>,
+    },
 }
 
 /// An obligation identity over a model subject: the subject and the kind.
@@ -181,6 +196,94 @@ pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
         }
         derived.push(DeadlockFreedomItem {
             subject: item.subject.clone(),
+        });
+    }
+    derived
+}
+
+/// One item over a protocol subject, as the race-freedom writer reads it
+/// (FR-224): the subject, the resolved model of each of its outermost
+/// `parallel`s, and whether it has a non-atomic shared access (ADR-025 MA-2).
+#[derive(Debug)]
+pub struct ProtocolMemoryItem<'g, S> {
+    /// The protocol subject.
+    pub subject: &'g S,
+    /// The resolved model of each outermost `parallel`, by scoped path.
+    pub models: &'g [(String, MemoryModelName)],
+    /// Whether some access of a weak `parallel` loads or stores a shared
+    /// location with no `ordering`.
+    pub non_atomic_access: bool,
+}
+
+impl<S> Clone for ProtocolMemoryItem<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for ProtocolMemoryItem<'_, S> {}
+
+/// One derived race-freedom item (FR-224).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RaceFreedomItem<S> {
+    subject: S,
+    models: Vec<(String, MemoryModelName)>,
+}
+
+impl<S: Clone> RaceFreedomItem<S> {
+    /// The subject the item is over.
+    pub fn subject(&self) -> &S {
+        &self.subject
+    }
+
+    /// The item's obligation identity: the subject, its resolved models and
+    /// `race-freedom`.
+    pub fn obligation(&self) -> ItemObligation<S> {
+        ItemObligation {
+            subject: self.subject.clone(),
+            kind: ObligationKind::RaceFreedom {
+                models: self.models.clone(),
+            },
+        }
+    }
+
+    /// The requested capability kind: `temporal-satisfaction`.
+    pub fn kind(&self) -> Capability {
+        Capability::TemporalSatisfaction
+    }
+
+    /// The extent classification: unbounded, as the deadlock-freedom item's.
+    pub fn extent(&self) -> ExtentClassification {
+        ExtentClassification::Unbounded {
+            finite_bound_available: false,
+        }
+    }
+
+    /// The property form the item is routed and settled as.
+    pub fn property_form(&self) -> PropertyForm {
+        PropertyForm::ReachableInvariant
+    }
+}
+
+/// FR-224 (ADR-025 DR-4): the race-freedom items of a request whose items
+/// over protocol subjects are `items`: one per distinct (subject, resolved
+/// models) among those with a weak resolved model and a non-atomic shared
+/// access, in the order they first appear, and none for any other subject.
+pub fn race_freedom_items<S: Clone + Eq>(
+    items: &[ProtocolMemoryItem<'_, S>],
+) -> Vec<RaceFreedomItem<S>> {
+    let mut derived: Vec<RaceFreedomItem<S>> = Vec::new();
+    for item in items {
+        let weak = item.models.iter().any(|(_, model)| model.is_weak());
+        let seen = derived
+            .iter()
+            .any(|seen| seen.subject == *item.subject && seen.models == item.models);
+        if !weak || !item.non_atomic_access || seen {
+            continue;
+        }
+        derived.push(RaceFreedomItem {
+            subject: item.subject.clone(),
+            models: item.models.to_vec(),
         });
     }
     derived

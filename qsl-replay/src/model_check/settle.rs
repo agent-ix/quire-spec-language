@@ -477,6 +477,11 @@ fn settle<T: SubjectTransition>(
                 })
             }
         },
+        ModelCheckOutcome::RecoveryView { predicate, .. } => {
+            Row::unsupported(UnavailabilityCause::RecoveryView {
+                predicate: predicate.clone(),
+            })
+        }
         ModelCheckOutcome::BoundReached { depth: reached, .. } => {
             depth = Some(*reached);
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })

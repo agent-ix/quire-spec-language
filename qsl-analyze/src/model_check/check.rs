@@ -81,7 +81,7 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    activates_on_each, check_protocol_bounds, live_instance_bound, MemoryModel,
+    activates_on_each, check_protocol_bounds, live_instance_bound, DataRace, MemoryModel,
     ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
@@ -96,7 +96,7 @@ use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
-    ProductStateRef, ProofCertificate, Proviso, ReachedLimit, ReductionCause, RunStats,
+    ProductStateRef, ProofCertificate, Proviso, Race, ReachedLimit, ReductionCause, RunStats,
     SymmetryRefusal, TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation,
     UndefinedLocus, UndefinedSite,
 };
@@ -148,6 +148,15 @@ pub enum ModelCheckRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
+    /// The race-freedom item (FR-224) over a protocol subject with a `tso`
+    /// `parallel`, whose race summary is not built yet
+    /// (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide the race-freedom item over a `tso` `parallel` yet")]
+    TsoRace,
+    /// The race-freedom item (FR-224) over a model subject, which has no
+    /// memory model and so no data race.
+    #[error("the race-freedom item is decided over a protocol subject only")]
+    RaceOverModel,
     /// The refinement's concrete subject is a protocol, whose refinement
     /// check is not built yet (FR-142, FR-145).
     #[error("a refinement over a concrete protocol is not checked yet")]
@@ -160,8 +169,9 @@ pub enum ModelCheckRefusal {
         form: Option<PropertyForm>,
     },
     /// A `holds` condition of the clause reads a capture (FR-337 "Capture
-    /// observation"); what a read of a capture means is undecided (QSL-1092),
-    /// so no state is explored.
+    /// observation"): FR-338's automaton-state keys carry no capture vector, so
+    /// the engine returns no verdict (the standing decision of QSL-1092) and
+    /// explores no state.
     #[error("a `holds` condition of clause `{clause}` reads the capture `{capture}`")]
     CaptureRead {
         /// The clause's name.
@@ -277,15 +287,18 @@ enum Item<'a> {
         canonical: Vec<BoundedTranslation>,
     },
     Deadlock,
+    /// FR-224's derived race-freedom item: `always holds(not raced)`, read
+    /// from the step into each position.
+    Race,
 }
 
 impl Item<'_> {
-    /// The item's authored fairness set: empty for the deadlock-freedom
-    /// item.
+    /// The item's authored fairness set: empty for the derived deadlock-
+    /// and race-freedom items.
     fn fairness(&self) -> &[FairnessConstraint] {
         match self {
             Self::Clause { fairness, .. } => fairness,
-            Self::Deadlock => &[],
+            Self::Deadlock | Self::Race => &[],
         }
     }
 
@@ -293,7 +306,7 @@ impl Item<'_> {
     fn instance_count(&self) -> usize {
         match self {
             Self::Clause { bindings, .. } => bindings.len(),
-            Self::Deadlock => 1,
+            Self::Deadlock | Self::Race => 1,
         }
     }
 }
@@ -649,6 +662,18 @@ pub fn check_protocol(
             return check_protocol_liveness(request, cancel);
         }
     }
+    if matches!(request.item, ModelCheckItem::RaceFreedom)
+        && matches!(
+            SubjectMemory::of(
+                &request.subject.memory,
+                request.max_store_buffer,
+                request.max_messages
+            ),
+            SubjectMemory::Tso(_)
+        )
+    {
+        return Err(ModelCheckRefusal::TsoRace);
+    }
     let max_automaton_states = request.limits.max_automaton_states;
     let (mut item, automaton, certified) =
         prepare(request.item, max_automaton_states, Counting::ByKind)?;
@@ -771,6 +796,12 @@ pub fn check_protocol(
             cause: MemoryCause::WeakAccessShape(shape),
             stats: RunStats::default(),
         }),
+        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
+        // state is explored.
+        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
+            predicate,
+            stats: RunStats::default(),
+        }),
         Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
     }
 }
@@ -851,6 +882,12 @@ fn check_protocol_liveness(
             cause: MemoryCause::WeakAccessShape(shape),
             stats: RunStats::default(),
         }),
+        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
+        // state is explored.
+        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
+            predicate,
+            stats: RunStats::default(),
+        }),
         Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
     }
 }
@@ -885,7 +922,7 @@ impl ProtocolRun<'_> {
         // FR-430 adds scheduler constraints to infinite-trace clauses, not
         // to the derived deadlock-freedom item.
         let fairness = match self.item {
-            Item::Deadlock => Vec::new(),
+            Item::Deadlock | Item::Race => Vec::new(),
             Item::Clause { .. } => system.fairness_set(self.item.fairness())?,
         };
         let mut run = Run {
@@ -1032,6 +1069,7 @@ fn check_reduced(
             group: group.clone(),
             orbit: Vec::new(),
         }],
+        ModelCheckItem::RaceFreedom => return Err(ModelCheckRefusal::RaceOverModel),
     };
     refuse_capture_read(request.item)?;
     let mut total = RunStats::default();
@@ -1255,7 +1293,7 @@ fn ample_of<'r, 'a>(
             fairness,
             constraint,
         ),
-        Item::Deadlock => Por::new(system, None, &[], &[], constraint),
+        Item::Deadlock | Item::Race => Por::new(system, None, &[], &[], constraint),
     }?;
     Ok(ModelAmple { system, por })
 }
@@ -1290,7 +1328,9 @@ pub(super) fn precheck(
             ModelCheckItem::Clause { clause, .. } => clause
                 .property_form()
                 .ok_or_else(|| fault("a-decided-clause-has-a-form"))?,
-            ModelCheckItem::DeadlockFreedom => PropertyForm::ReachableInvariant,
+            ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
+                PropertyForm::ReachableInvariant
+            }
         };
         return Ok(Admitted::Settled(settled(ReductionCause::NotPreserving {
             reduction,
@@ -1336,7 +1376,16 @@ fn prepare(
     counting: Counting,
 ) -> Result<Prepared<'_>, ModelCheckRefusal> {
     let ModelCheckItem::Clause { clause, letters } = item else {
-        return Ok((Item::Deadlock, Box::new(deadlock_automaton()?), true));
+        // The derived items read one atom, true at every position, so they
+        // share an automaton.
+        let derived = match (item, counting) {
+            (ModelCheckItem::RaceFreedom, Counting::Every) => {
+                return Err(ModelCheckRefusal::RaceOverModel)
+            }
+            (ModelCheckItem::RaceFreedom, Counting::ByKind) => Item::Race,
+            _ => Item::Deadlock,
+        };
+        return Ok((derived, Box::new(deadlock_automaton()?), true));
     };
     let form = clause.property_form();
     let bounded = match form {
@@ -1389,7 +1438,7 @@ fn bounded_translations(instances: &[Instance]) -> Vec<BoundedTranslation> {
         .iter()
         .filter_map(|instance| match &instance.translation {
             Translation::Bounded(translation) => Some(translation.clone()),
-            Translation::Safety(_) => None,
+            Translation::Safety(_) | Translation::Liveness(_) => None,
         })
         .collect()
 }
@@ -1543,6 +1592,11 @@ impl<S: SubjectSystem> Run<'_, S> {
                         automaton_state: key.clone(),
                     }));
                 }
+                // The producer refuses liveness clauses before instancing; only
+                // the closure checker builds this variant.
+                Translation::Liveness(_) => {
+                    return Err(fault("a-producer-run-has-no-liveness-translation"))
+                }
                 Translation::Bounded(translation) => {
                     for (node, canonical) in self.nodes.iter().zip(&self.canonical) {
                         let state = canonical
@@ -1591,6 +1645,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             AutomatonError::AtomOutOfRange { .. }
             | AutomatonError::UnknownState { .. }
             | AutomatonError::NotSafetyAutomaton { .. }
+            | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
             | AutomatonError::ProfileNotTranslated { .. }
@@ -2196,7 +2251,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 last_read: Some(last),
                 ..
             } => usize::try_from(*last).map_or(usize::MAX, |last| last.saturating_add(1)),
-            Item::Clause { .. } | Item::Deadlock => 0,
+            Item::Clause { .. } | Item::Deadlock | Item::Race => 0,
         };
         (key, monitor, distance.min(reach))
     }
@@ -2286,6 +2341,16 @@ impl<S: SubjectSystem> Run<'_, S> {
     ) -> Step<Reading> {
         if matches!(self.item, Item::Deadlock) {
             return Ok((before.to_vec(), Vec::new(), None));
+        }
+        if matches!(self.item, Item::Race) {
+            let bad = match &node.parent {
+                Some((parent, Some(transition))) => match transition.race() {
+                    Some(race) => Some((self.race_found(race, *parent, node.depth)?, 0)),
+                    None => None,
+                },
+                Some((_, None)) | None => None,
+            };
+            return Ok((before.to_vec(), Vec::new(), bad));
         }
         let counted = match &node.parent {
             Some((_, Some(transition))) => self.system.counts_step(transition),
@@ -2529,13 +2594,40 @@ impl<S: SubjectSystem> Run<'_, S> {
         Ok(())
     }
 
+    /// ADR-025 DR-5: the counterexample kind of the race `race` that the step
+    /// from node `parent` into depth `later` completes: `earlier` is the
+    /// position the canonical path to `parent` reached by the last access
+    /// the race's summary names.
+    fn race_found(&self, race: &DataRace, parent: usize, later: usize) -> Step<CounterexampleKind> {
+        let mut cursor = parent;
+        let earlier = loop {
+            let node = &self.nodes[cursor];
+            let Some((up, step)) = &node.parent else {
+                return Err(fault("a-race-names-an-earlier-access").into());
+            };
+            if step
+                .as_ref()
+                .and_then(SubjectTransition::access)
+                .is_some_and(|access| access.is_named_by(race))
+            {
+                break node.depth;
+            }
+            cursor = *up;
+        };
+        Ok(CounterexampleKind::Race(Race {
+            location: race.location.clone(),
+            earlier: widen(earlier),
+            later: widen(later),
+        }))
+    }
+
     /// The `over` binding of a clause's instance `instance`, none for the
-    /// deadlock-freedom item. A violation that is not a clause's own names
+    /// derived items. A violation that is not a clause's own names
     /// the first instance.
     fn binding_of(&self, instance: usize) -> Option<ModelInstance> {
         match self.item {
             Item::Clause { bindings, .. } => bindings.get(instance).cloned(),
-            Item::Deadlock => None,
+            Item::Deadlock | Item::Race => None,
         }
     }
 

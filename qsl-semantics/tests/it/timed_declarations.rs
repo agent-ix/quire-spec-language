@@ -111,9 +111,13 @@ fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     )
     .expect("a package Clock field is admitted at intake");
     let checked = declarations
+        .with_unwritten_timed_members()
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("the time source checks beside the Clock field");
     assert_eq!(checked.time_sources()[0].model, "Config");
+    let timed = checked.timed_model("Config").expect("a timed model");
+    let clocks: Vec<&str> = timed.clocks().iter().map(|clock| clock.name()).collect();
+    assert_eq!(clocks, ["x"]);
 }
 
 /// FR-230-AC-5/AC-33: a package-owned unit resolves through its model owner
@@ -610,11 +614,21 @@ fn check_delays(
     timed: bool,
     declarations: &str,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
-    let time = if timed {
-        "time Config dense unit ms;\n"
-    } else {
-        ""
-    };
+    check_delays_under(
+        if timed {
+            "time Config dense unit ms;\n"
+        } else {
+            ""
+        },
+        declarations,
+    )
+}
+
+/// As [`check_delays`], with `time` the model's time-source line.
+fn check_delays_under(
+    time: &str,
+    declarations: &str,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let body = format!("{SECONDS_AND_MILLISECONDS}{time}{declarations}\n");
     admit_and_assemble_with_profiles(
         &document(),
@@ -736,5 +750,193 @@ fn a_delay_in_an_untimed_model_refuses_at_the_declaration() {
             "delay-on-untimed-model",
             declaration
         )
+    );
+}
+
+/// The one probabilistic cause that checking `declarations` under the
+/// time-source line `time` refuses, and the source text of its span.
+fn delay_cause(
+    time: &str,
+    declarations: &str,
+) -> (qsl_semantics::check::ProbabilisticCause, String) {
+    let refusals = check_delays_under(time, declarations).expect_err("the delay is refused");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    let CheckCause::Probabilistic(cause) = &refusal.cause else {
+        panic!("a probabilistic cause, got {refusal:?}");
+    };
+    let body = format!("{SECONDS_AND_MILLISECONDS}{time}{declarations}\n");
+    let (text, _) = config_unit_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &body,
+    );
+    let span = cause.span().expect("a delay refusal carries its span");
+    ((**cause).clone(), text[span.start..span.end].to_owned())
+}
+
+const DENSE: &str = "time Config dense unit ms;\n";
+const ATTEMPT: &str = "delay ConfigVersion::attemptUpdate";
+
+/// A `delay` the checker refuses as malformed: its fault and the span text.
+fn malformed_delay(declarations: &str) -> (qsl_semantics::check::DelayFault, String) {
+    let (cause, at) = delay_cause(DENSE, declarations);
+    let qsl_semantics::check::ProbabilisticCause::InvalidDelay { fault, .. } = cause else {
+        panic!("an invalid delay, got {cause:?}");
+    };
+    (fault, at)
+}
+
+fn milliseconds(numerator: i64, denominator: i64) -> quire_exact::Rational {
+    quire_exact::Rational::new(numerator.into(), denominator.into()).expect("a rational")
+}
+
+/// QSL-1110 (SR-17238 FND-001): a `delay` on a `time tick` model refuses
+/// like an untimed one, because only a `time dense` source admits delays.
+#[trace("TC-708")]
+#[test]
+fn a_delay_on_a_tick_model_refuses_at_the_declaration() {
+    let declaration = format!("{ATTEMPT} ~ uniform;");
+    let tick = "time Config tick ConfigVersion::attemptUpdate period 1 ms unit ms;\n";
+    assert!(
+        check_delays_under(tick, "").is_ok(),
+        "the tick source alone checks"
+    );
+    let (cause, at) = delay_cause(tick, &declaration);
+    assert_eq!(
+        (cause.code(), cause.tag(), at.as_str()),
+        (
+            Code::InvalidProbabilisticModel,
+            "delay-on-untimed-model",
+            declaration.as_str()
+        )
+    );
+}
+
+/// QSL-1110 (SR-17238 FND-002): each malformed distribution is refused with
+/// its own fault at the offending value, where the first fault of a
+/// `discrete` list wins.
+#[trace("TC-708")]
+#[test]
+fn each_malformed_delay_value_refuses_with_its_own_fault() {
+    use qsl_semantics::check::DelayFault;
+    for (declaration, fault, at) in [
+        ("~ discrete { 1 ms: 0 }", DelayFault::NonPositiveWeight, "0"),
+        (
+            "~ discrete { 1 ms: 2, 3 ms: rational(-1, 2) }",
+            DelayFault::NonPositiveWeight,
+            "rational(-1, 2)",
+        ),
+        (
+            "~ discrete { rational(-1, 1) ms: 1 }",
+            DelayFault::NegativeDelay,
+            "rational(-1, 1) ms",
+        ),
+        (
+            "~ uniform[rational(-1, 1) ms, 2 ms]",
+            DelayFault::UniformRange,
+            "uniform[rational(-1, 1) ms, 2 ms]",
+        ),
+    ] {
+        let found = malformed_delay(&format!("{ATTEMPT} {declaration};"));
+        assert_eq!(found, (fault, at.to_owned()), "{declaration}");
+    }
+}
+
+/// QSL-1110 (SR-17238 FND-002): a delay on an operation no model declares is
+/// unresolved (the second-delay case is
+/// `a_second_delay_of_one_operation_refuses_at_the_second_declaration`).
+#[trace("TC-708")]
+#[test]
+fn a_delay_on_an_unknown_operation_refuses_as_unresolved() {
+    let (cause, at) = delay_cause(DENSE, "delay ConfigVersion::noSuchOperation ~ uniform;");
+    assert!(
+        matches!(
+            &cause,
+            qsl_semantics::check::ProbabilisticCause::UnresolvedOperation { .. }
+        ),
+        "{cause:?}"
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), at.as_str()),
+        (
+            Code::MissingDeclaration,
+            "missing-name",
+            "ConfigVersion::noSuchOperation"
+        )
+    );
+}
+
+/// QSL-1110 (SR-17238 FND-002): the boundary distributions check and are
+/// recorded exactly in the model's unit: `uniform[a, a]`, a zero delay, a
+/// `discrete` list in mixed units, `exponential` unconverted and `discrete`
+/// weights as written, read back through `CheckedProbabilisticModel::delay`.
+#[trace("TC-708")]
+#[test]
+fn boundary_and_recorded_delay_distributions_read_back_exactly() {
+    use qsl_semantics::check::DelayDistribution;
+    let recorded = |declaration: &str| -> DelayDistribution {
+        let checked = check_delays(true, &format!("{ATTEMPT} ~ {declaration};"))
+            .unwrap_or_else(|refusals| panic!("{declaration} checks: {refusals:?}"));
+        let model = checked.probabilistic_model();
+        let [delay] = model.delays() else {
+            panic!("one delay, got {:?}", model.delays());
+        };
+        model
+            .delay(delay.operation().key())
+            .expect("the delay is recorded under its operation")
+            .clone()
+    };
+    assert_eq!(
+        recorded("uniform[2 ms, 2 ms]"),
+        DelayDistribution::UniformRange {
+            a: milliseconds(2, 1),
+            b: milliseconds(2, 1),
+        }
+    );
+    assert_eq!(
+        recorded("uniform[0 ms, 0 ms]"),
+        DelayDistribution::UniformRange {
+            a: milliseconds(0, 1),
+            b: milliseconds(0, 1),
+        }
+    );
+    assert_eq!(
+        recorded("discrete { 0 ms: 1 }"),
+        DelayDistribution::Discrete(vec![(milliseconds(0, 1), milliseconds(1, 1))])
+    );
+    assert_eq!(
+        recorded("discrete { 1 ms: 1, 1 s: 2, 0 ms: 3 }"),
+        DelayDistribution::Discrete(vec![
+            (milliseconds(1, 1), milliseconds(1, 1)),
+            (milliseconds(1000, 1), milliseconds(2, 1)),
+            (milliseconds(0, 1), milliseconds(3, 1)),
+        ])
+    );
+    assert_eq!(
+        recorded("discrete { 1 ms: 90, 3 ms: 10 }"),
+        DelayDistribution::Discrete(vec![
+            (milliseconds(1, 1), milliseconds(90, 1)),
+            (milliseconds(3, 1), milliseconds(10, 1)),
+        ])
+    );
+    assert_eq!(
+        recorded("exponential(rational(1, 1000))"),
+        DelayDistribution::Exponential {
+            rate: milliseconds(1, 1000),
+        }
+    );
+}
+
+#[trace("TC-708", "FR-253-AC-3")]
+#[test]
+fn a_second_delay_of_one_operation_refuses_at_the_second_declaration() {
+    let first = "delay ConfigVersion::attemptUpdate ~ uniform;";
+    let second = "delay ConfigVersion::attemptUpdate ~ exponential(1);";
+    let (code, tag, at) = delay_refusal(true, &format!("{first}\n{second}"));
+    assert_eq!(
+        (code, tag, at.as_str()),
+        (Code::InvalidModelBinding, "malformed-declaration", second)
     );
 }

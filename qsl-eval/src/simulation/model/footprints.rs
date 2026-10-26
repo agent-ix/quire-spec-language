@@ -25,6 +25,7 @@ use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, ObjectReference, Value, ValueType};
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::model_subject::ModelInstance;
@@ -348,14 +349,36 @@ fn declared_target(value_type: &ValueType) -> Option<EffectiveId> {
 }
 
 /// Whether a value of `value_type` can hold an object reference, through
-/// options and collections; a composite or population value is taken to.
-fn holds_reference(value_type: &ValueType) -> bool {
+/// options, collections and the fields of records; a tuple, a union or a
+/// population value is taken to. `visiting` holds the records being
+/// followed, so a record that contains itself adds nothing on re-entry.
+fn holds_reference(
+    value_type: &ValueType,
+    types: &TypeEnvironment,
+    visiting: &mut Vec<NodeKey>,
+) -> bool {
     match value_type {
         ValueType::Reference(_) => true,
-        ValueType::Option(payload) => holds_reference(payload),
-        ValueType::Collection(collection) => holds_reference(collection.element()),
-        // A composite's members are not followed; taken to hold one.
-        ValueType::Composite(_) | ValueType::Population(_) => true,
+        ValueType::Option(payload) => holds_reference(payload, types, visiting),
+        ValueType::Collection(collection) => holds_reference(collection.element(), types, visiting),
+        ValueType::Composite(declaration) => {
+            if visiting.contains(declaration) {
+                return false;
+            }
+            let Some(CompositeShape::Record(fields)) = types
+                .composite(*declaration)
+                .map(CompositeDeclaration::shape)
+            else {
+                return true;
+            };
+            visiting.push(*declaration);
+            let holds = fields
+                .iter()
+                .any(|field| holds_reference(field.value_type(), types, visiting));
+            visiting.pop();
+            holds
+        }
+        ValueType::Population(_) => true,
         ValueType::Boolean
         | ValueType::Int(_)
         | ValueType::Integer
@@ -453,7 +476,7 @@ impl<'a> ModelSystem<'a> {
     /// state, so it reads the any-object membership of every population;
     /// any other type reads nothing.
     pub(crate) fn record_reads(&self, value_type: &ValueType) -> BTreeSet<Location> {
-        if !holds_reference(value_type) {
+        if !holds_reference(value_type, self.types, &mut Vec::new()) {
             return BTreeSet::new();
         }
         self.model

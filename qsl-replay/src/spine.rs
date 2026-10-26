@@ -1233,6 +1233,28 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: the capture `{name}` repeats the name of the `over` parameter, \
                      the `on each` parameter or an earlier capture"
                 ),
+                TemporalCause::UnknownReleaseTaskSet {
+                    name, operation, ..
+                } => format!(
+                    "{message}: the release on `{operation}` names no task set `{name}`"
+                ),
+                TemporalCause::UnknownReleaseTask { task_set, task, .. } => format!(
+                    "{message}: the release names no task `{task}` of task set `{task_set}`"
+                ),
+                TemporalCause::UnresolvedReleaseOperation { name, .. } => {
+                    format!("{message}: the release operation `{name}` names no model operation")
+                }
+                TemporalCause::AmbiguousReleaseOperation { name, .. } => format!(
+                    "{message}: the release operation `{name}` names operations of several types"
+                ),
+                TemporalCause::DuplicateRelease {
+                    task_set,
+                    task,
+                    operation,
+                    ..
+                } => format!(
+                    "{message}: `{operation}` already releases task `{task}` of task set `{task_set}`"
+                ),
                 TemporalCause::UnresolvedFairnessOperation { name, .. } => {
                     format!("{message}: the fairness operation `{name}` names no model operation")
                 }
@@ -1321,6 +1343,61 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::UrgencyWithoutTimeSource { .. } => {
                     format!("{message}: `urgent when` needs a model with a time source")
                 }
+                TemporalCause::TimeInvariantWithoutTimeSource { .. } => {
+                    format!("{message}: a time invariant needs a model with a time source")
+                }
+                TemporalCause::AmbiguousTimedDeclaration { .. } => format!(
+                    "{message}: the unit has several time sources, so a time invariant or \
+                     `urgent` declaration names no one model"
+                ),
+                TemporalCause::TimedStateObject { ambiguous, .. } => {
+                    if *ambiguous {
+                        format!("{message}: the timed model's populations range over several object types")
+                    } else {
+                        format!("{message}: the timed model's populations range over no object type")
+                    }
+                }
+                TemporalCause::ClockWithoutDenseTime { field, .. } => {
+                    format!("{message}: the clock `{field}` needs a `dense` time source")
+                }
+                TemporalCause::ClockReadOutsideConstraint { .. } => format!(
+                    "{message}: a clock is read only as the clock of an atomic clock constraint"
+                ),
+                TemporalCause::ClockComparison { .. } => {
+                    format!("{message}: a clock constraint compares a clock with a constant")
+                }
+                TemporalCause::NegativeClockConstant { .. } => {
+                    format!("{message}: a clock constant is non-negative")
+                }
+                TemporalCause::ClockBoundNotConstant { .. } => {
+                    format!("{message}: a clock is compared with a time quantity literal")
+                }
+                TemporalCause::ClockWrite { .. } => format!(
+                    "{message}: the one write to a clock is a reset of a clock of the frame \
+                     to a constant"
+                ),
+                TemporalCause::UnknownClock { .. } => {
+                    format!("{message}: a time invariant bounds a clock of `self`")
+                }
+                TemporalCause::UrgentOperation {
+                    name, ambiguous, ..
+                } => {
+                    if *ambiguous {
+                        format!("{message}: the urgent operation `{name}` resolves more than once")
+                    } else {
+                        format!("{message}: the urgent operation `{name}` names no operation")
+                    }
+                }
+                TemporalCause::UrgentGuardReadsClock { clock, .. } => {
+                    format!("{message}: the urgent operation's guard reads the clock `{clock}`")
+                }
+                TemporalCause::TimedPredicate { .. } => {
+                    format!("{message}: a timed model's predicate does not check")
+                }
+                TemporalCause::TimedModelNotEmitted { model, .. } => format!(
+                    "{message}: the clocks of timed model `{model}` are not written to the \
+                     checked package yet"
+                ),
                 TemporalCause::MalformedTimeUnit { name, .. } => {
                     format!("{message}: the time unit `{name}` has a zero scale")
                 }

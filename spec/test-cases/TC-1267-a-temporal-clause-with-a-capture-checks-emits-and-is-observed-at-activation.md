@@ -56,8 +56,10 @@ infinite-trace unless a step names another profile.
    cases of AC-12 (infinite-trace `always`, a bounded `on origin` monitor, a
    second capture, an unbounded root), checking that no state is charged.
 7. Run FR-128 replay and the FR-338 checker over AC-13's clauses (the unguarded
-   `on each` clause for the certificate; the replay of an undefined capture
-   and FR-339's checker wait on QSL-1096 and FR-339), and read the footprint of AC-14's clause with and without the
+   `on each` clause for the certificate; FR-128 also replays AC-11's `z`
+   counterexample, then with `where.locus` naming the activation or another
+   capture and with `where.position` 1; FR-339's checker waits on its
+   implementation), and read the footprint of AC-14's clause with and without the
    capture.
 8. Compile event-position and timestamped-event clauses containing each
    aggregate kind, including a
@@ -99,9 +101,10 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`.
   for the unbounded root; the second clause returns step 5's first verdict.
 - Step 7: replay `reproduced-with-evaluated-witness`; `Holds{Exhaustive}`
   accepted by FR-338; a certificate for a reached state at which `z` is
-  undefined is rejected `BadState` by FR-338 (the replay to
-  `UndefinedEvaluation` at `z` is QSL-1096's, FR-339's rejection waits on its
-  checker); the footprint holds `Counter::value` with the `over` receiver only with the
+  undefined is rejected `BadState` by FR-338; the `z` counterexample replays
+  to `reproduced-with-evaluated-witness` with `UndefinedEvaluation` at position
+  2 located at `z`, and each altered payload settles `inconclusive`,
+  `ReplayParity` (FR-339's rejection waits on its checker); the footprint holds `Counter::value` with the `over` receiver only with the
   capture.
 - Step 8: each emitted formula atom uses `quire.op.temporal.aggregate` with
   the closed ordered payload in QSpec FR-370; omitted and explicit `min_count 1` yield the

@@ -146,6 +146,7 @@ mod task_set;
 mod temporal_clause;
 mod terminal;
 mod time_units;
+mod timed_model;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
     CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Delay, DelayDistribution,
@@ -157,8 +158,8 @@ pub use probabilistic::{
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 pub use task_set::{
-    Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, ScheduleClaim, SchedulingPolicy,
-    Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
+    Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, Release, ScheduleClaim,
+    SchedulingPolicy, Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
@@ -401,6 +402,10 @@ pub use temporal_clause::{
     TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
     TimedPropertyForm, UnaryTemporal,
 };
+pub use timed_model::{
+    CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp, ClockReset,
+    ClockResets, ConvexPart, TimeInvariant, TimedModel, Urgency,
+};
 
 /// A checked function.
 #[derive(Debug)]
@@ -571,6 +576,9 @@ pub struct CheckedGraph {
     /// FR-124: the intended terminal states of each selected model, by
     /// alias.
     terminals: Vec<CheckedTerminal>,
+    /// FR-230: the checked timed model of each time source, in time-source
+    /// order.
+    timed_models: Vec<TimedModel>,
     /// FR-135 to FR-137: every checked refinement, in declaration order.
     refinements: Vec<CheckedRefinement>,
     /// FR-304: the unit's `abstraction` declarations, in declaration order,
@@ -1267,31 +1275,11 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
-                        if let TimedDeclaration::Urgent(urgent) = form {
-                            if matches!(urgent.target, qsl_forms::UrgentTarget::When(_))
-                                && self.time_sources.is_empty()
-                                && !self
-                                    .timed_forms
-                                    .iter()
-                                    .any(|form| matches!(form, TimedDeclaration::TimeSource(_)))
-                            {
-                                return Some(CheckRefusal {
-                                    location: root(Origin::Expression),
-                                    cause: CheckCause::Temporal(Box::new(
-                                        TemporalCause::UrgencyWithoutTimeSource {
-                                            span: urgent.span,
-                                        },
-                                    )),
-                                });
-                            }
-                        }
+                        // A time invariant and an `urgent` declaration are
+                        // checked with the clauses they read (`timed_model`).
+                        return None;
                     }
-                    let cause = if admitted {
-                        CheckCause::TimedNotChecked {
-                            construct: form.construct(),
-                            span: form.span(),
-                        }
-                    } else {
+                    let cause = {
                         let owner = match form {
                             TimedDeclaration::TimeSource(source) => source.model.name.clone(),
                             TimedDeclaration::TimeInvariant(invariant) => {
@@ -1317,6 +1305,29 @@ impl PackageDeclarations {
                 return Err(refusals);
             }
         }
+        // FR-230: the clocks of each timed model, read out of the state
+        // clauses before they are typed.
+        let timed_drafts = {
+            let units = time_units::TimeUnits::new(
+                &self.units,
+                self.nominal_spans.keys().copied(),
+                &self.models,
+                self.identity,
+            );
+            timed_model::prepare(
+                &timed_model::Inputs {
+                    models: &self.models,
+                    types: &self.types,
+                    time_sources: &self.time_sources,
+                    timed_forms: &self.timed_forms,
+                    units: &units,
+                    rational_bits: limits.rational_bits(),
+                    nodes: limits.nodes(),
+                },
+                &mut self.state_clauses,
+            )
+            .map_err(|refusal| vec![refusal])?
+        };
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
         let body_location = |index: usize, name: &str| {
@@ -1335,12 +1346,14 @@ impl PackageDeclarations {
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
+        let mut task_sets_admitted = false;
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
             let admitted = crate::value::definition::DefinitionLock::pinned()
                 .closure(&selected)
                 .contains(&required);
+            task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
                     &self.units,
@@ -2338,6 +2351,51 @@ impl PackageDeclarations {
             }
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
+        // FR-230: each timed model's guard parts, time invariants and
+        // `urgent when` predicates, each typed as a Boolean over the state.
+        let timed_models = {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let checking = timed_model::Checking {
+                declarations: &declarations,
+                state_clauses: &state_clause_forms,
+                complete_value: crate::value::definition::DefinitionLock::pinned()
+                    .closure(&header_layers)
+                    .contains(&crate::value::layer::HeaderLayer::ValueComplete),
+            };
+            match timed_model::check(timed_drafts, &checking, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    checked
+                }
+                Err(refusal) => {
+                    let exhausted =
+                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                    Vec::new()
+                }
+            }
+        };
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
         // state-clause bodies over the concrete object. FR-147: the
         // `refinement_internals` value is parsed once. A refinement over a
@@ -3165,6 +3223,22 @@ impl PackageDeclarations {
         );
         refusals.extend(checked_probabilistic.refusals);
         let probabilistic_model = checked_probabilistic.model;
+        // QSL FR-249: the `release` declarations, resolved against the task
+        // sets and the operations of the admitted models.
+        if task_sets_admitted {
+            refusals.extend(
+                task_set::check_releases(
+                    &self.task_set_forms,
+                    &probabilistic_input,
+                    &mut checked_task_sets,
+                )
+                .into_iter()
+                .map(|cause| CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::Temporal(Box::new(cause)),
+                }),
+            );
+        }
         // FR-165: each state-graph claim, checked through the `StateGraph`
         // family's contract once every function signature is known, against
         // the same package-wide node total and contract meter.
@@ -4680,6 +4754,14 @@ impl PackageDeclarations {
                 refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
             }));
         }
+        if !self.emit_unwritten_timed_members {
+            unwritten.extend(
+                timed_models
+                    .iter()
+                    .filter(|model| model.has_members())
+                    .map(timed_model::not_emitted),
+            );
+        }
         if !unwritten.is_empty() {
             return Err(unwritten);
         }
@@ -4707,6 +4789,7 @@ impl PackageDeclarations {
             state_clauses,
             type_invariants,
             terminals,
+            timed_models,
             refinements,
             abstractions: self.abstractions,
             model_names,
@@ -5287,6 +5370,19 @@ impl CheckedGraph {
     /// in ascending order.
     pub fn terminals(&self) -> &[CheckedTerminal] {
         &self.terminals
+    }
+
+    /// FR-230: the checked timed model of each time source, in time-source
+    /// order.
+    pub fn timed_models(&self) -> &[TimedModel] {
+        &self.timed_models
+    }
+
+    /// FR-230: the checked timed model of the model alias `model`.
+    pub fn timed_model(&self, model: &str) -> Option<&TimedModel> {
+        self.timed_models
+            .iter()
+            .find(|timed| timed.model() == model)
     }
 
     /// FR-124: the intended terminal states of the model `alias`; `None` when

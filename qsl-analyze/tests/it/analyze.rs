@@ -5,23 +5,18 @@
 //! and counterexample replay; no test hands `analyze` a verdict.
 //!
 //! Open: FR-281-AC-2 for an invariant one transition breaks. The authored
-//! clause's counterexample would settle `refuted` only if
-//! `replay_model_trace` replayed it, and that refuses an authored clause
-//! until FR-337, as for AC-7. The deadlock case here is TC-762 step 2's
+//! clause's counterexample now replays (`replay_model_trace` reproduces an
+//! authored clause's counterexample, QSL-1096), but no test here builds that
+//! item over a real clause yet. The deadlock case here is TC-762 step 2's
 //! refuted item, not AC-2's clause.
-//!
-//! Open: the second half of FR-281-AC-4 (TC-763 step 2): a proof from an
-//! engine with no core checker settles `proved`, `uncertified`, naming the
-//! engine. No layer-A engine reports a proof without a checker today, and
-//! `analyze` accepts no engine-supplied proof, so there is no code or test
-//! for it until an engine without a checker exists.
 //!
 //! Not covered, because EN-5 has no solver or certificate checker yet
 //! (QSL-574, QSL-575): FR-281-AC-1's EN-5 item, and so the EN-5 half of
 //! FR-281-AC-3 and of FR-281-AC-6 (EN-1 runs those here). Not covered:
-//! FR-281-AC-7's replay of the undefined value, since `replay_model_trace`
-//! refuses an authored clause until FR-337; its settlement from a replay
-//! result that reproduces the undefined value is.
+//! FR-281-AC-7's replay of the undefined value through a real authored
+//! clause (the replay exists, QSL-1096, but the test supplies the replay
+//! result by hand); its settlement from a replay result that reproduces the
+//! undefined value is.
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
@@ -211,6 +206,50 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     );
 }
 
+/// FR-281-AC-4 (TC-763 step 2): a proof from an engine whose result no core
+/// checker covers settles `proved`, category success, `uncertified`, naming
+/// that engine. EN-1 under partial-order reduction is such an engine: a
+/// reduced graph has no core checker (ADR-021 RV-1, FR-160), so its proof
+/// carries no certificate to check. The same item unreduced settles
+/// `certified`, so the label comes from the missing checker and not from the
+/// engine.
+#[trace("TC-763", "FR-281-AC-4")]
+#[test]
+fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let run = |reduced: bool| {
+        let mut item = invariant.model_item(&world, ModelCheckLimits::default(), |_| {
+            panic!("a proved item replays nothing")
+        });
+        item.request.reductions.partial_order = reduced;
+        only(analyze(
+            &en1(),
+            vec![model_item(index(0), item)],
+            &Cancel::new(),
+        ))
+    };
+    let reduced = run(true);
+    let TerminalValue::Proved {
+        basis: ProofBasis::Reduced { .. },
+        certification,
+    } = value(&reduced)
+    else {
+        panic!("expected a reduced proof: {:?}", value(&reduced));
+    };
+    assert_eq!(certification, Certification::Uncertified);
+    let terminal = reduced.terminal().expect("a terminal record");
+    assert_eq!(terminal.value().category(), Category::Success);
+    assert_eq!(terminal.backend().map(BackendId::as_str), Some("en-1"));
+    assert_eq!(
+        value(&run(false)),
+        TerminalValue::Proved {
+            basis: ProofBasis::Exhaustive,
+            certification: Certification::Certified,
+        }
+    );
+}
+
 /// FR-281-AC-5 (TC-763 step 3), over EN-1's refuted deadlock item: a
 /// counterexample the real replay does not reproduce (its prefix truncated)
 /// settles `inconclusive` with `replay_parity`; one the replay refuses (a
@@ -308,9 +347,9 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
 /// evaluation. The counterexample is the Counter subject's deadlock
 /// counterexample with its kind set to the undefined evaluation at its last
 /// state, and its replay is the real replay of that deadlock with the
-/// reproduced value replaced by the undefined one: `replay_model_trace`
-/// refuses an authored clause until FR-337, so no real replay reproduces an
-/// undefined clause evaluation yet. The item settles `refuted`, category
+/// reproduced value replaced by the undefined one: the test does not build a
+/// real authored clause whose replay reproduces the undefined evaluation
+/// (QSL-1096 makes that replay possible). The item settles `refuted`, category
 /// violation, with cause `undefined-evaluation` whose `where` names the state
 /// and whose `cause` is the undefined reason, and the document writes no
 /// `undefined` label.

@@ -89,6 +89,8 @@ mod strong_fairness;
 #[cfg(feature = "test-support")]
 mod symmetric_population;
 #[cfg(feature = "test-support")]
+mod task_set_releases;
+#[cfg(feature = "test-support")]
 mod task_sets;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
@@ -100,6 +102,8 @@ mod terminal_declarations;
 mod timed_declarations;
 #[cfg(feature = "test-support")]
 mod timed_intervals;
+#[cfg(feature = "test-support")]
+mod timed_model;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;

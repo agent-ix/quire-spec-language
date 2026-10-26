@@ -16,11 +16,11 @@ use qsl_cst::{CstNode, CstToken, LosslessCst, Production, TokenKind};
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
     ArrivalForm, CriticalityForm, DeclarationForm, DeclaredName, PolicyForm, PriorityForm,
-    ResponseForm, SchedulableForm, SignedQuantityForm, TaskForm, TasksetForm,
+    ReleaseForm, ResponseForm, SchedulableForm, SignedQuantityForm, TaskForm, TasksetForm,
 };
 use super::value::{
-    integer, items, nodes_of, only, production_node, quantity_form, text, tokens_of, unexpected,
-    Item,
+    integer, items, name_form, nodes_of, only, production_node, quantity_form, text, tokens_of,
+    unexpected, Item,
 };
 
 fn name_of(token: &CstToken, node: &CstNode) -> Result<DeclaredName, FormsRefusal> {
@@ -198,6 +198,29 @@ pub(crate) fn response_declaration(
         bound: quantity_form(
             cst,
             only(&declaration_items, Production::QuantityLiteral, node)?,
+        )?,
+        span: node.span(),
+    })))
+}
+
+/// `release TaskSet.task on Model::operation;` (QSpec `release-decl`).
+pub(crate) fn release_declaration(
+    construct: Construct<'_>,
+) -> Result<DeclarationForm, FormsRefusal> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let declaration_items = items(cst, node);
+    // `release` and `on` are reserved words, so the two identifier tokens are
+    // the task set and the task.
+    let [set, task] = tokens_of(&declaration_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(node));
+    };
+    Ok(DeclarationForm::Release(Box::new(ReleaseForm {
+        task_set: name_of(set, node)?,
+        task: name_of(task, node)?,
+        operation: name_form(
+            cst,
+            only(&declaration_items, Production::QualifiedName, node)?,
         )?,
         span: node.span(),
     })))

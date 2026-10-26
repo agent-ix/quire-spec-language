@@ -520,7 +520,7 @@ const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.v
                        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
 
 /// The deadlock-freedom item's analogue of FR-128-AC-5 (ADR-018 UE-6),
-/// which is not that criterion: its TP-1 clause's replay waits on FR-337.
+/// which is not that criterion (FR-128-AC-5 is tested in lasso_replay).
 /// The
 /// counterexample of an undefined precondition guard replays to
 /// `reproduced-with-evaluated-witness` with the undefined value at position
@@ -1072,4 +1072,34 @@ fn a_terminal_declaration_changes_the_deadlock_item_identity() {
         deadlock_freedom_clause(&declared.package_id),
         deadlock_freedom_clause(&none.package_id)
     );
+}
+
+/// FR-227: a race counterexample names a protocol subject's memory model; the
+/// replay over a model subject refuses it, `RaceOverModel`.
+#[test]
+fn a_race_counterexample_over_a_model_subject_refuses_the_replay() {
+    let case = case(CONTRACT, &[0]);
+    let mut payload = counterexample(&case);
+    payload.kind = CounterexampleKind::Race(qsl_replay::Race {
+        location: qsl_eval::simulation::Location::AnyField {
+            field: crate::litmus::key("v"),
+        },
+        earlier: 1,
+        later: 1,
+    });
+    let (node, occurrence) = qsl_replay::race_freedom_clause(&case.package_id);
+    let result = replay_model_trace(
+        request(
+            &case.documents.document,
+            case.documents.snapshot_bytes(),
+            &case.unit,
+            case.package_id,
+        ),
+        &trace_subject(&case),
+        &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+        &NO_ATOMS,
+        ReplayLimits::default(),
+    );
+    let (refused, _, _) = refusal(result);
+    assert_eq!(refused, ModelTraceRefusal::RaceOverModel);
 }

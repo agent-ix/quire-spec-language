@@ -492,6 +492,9 @@ pub struct PackageDeclarations {
     /// FR-124: the unit's `terminal` declarations in declaration order, each
     /// resolved by the FR-091 assembler and checked beside the state clauses.
     pub terminals: Vec<super::TerminalClauseDeclaration>,
+    /// Test-only: check a package whose timed model holds clocks, time
+    /// invariants or urgency without refusing it as not emitted (FR-230).
+    pub emit_unwritten_timed_members: bool,
     /// FR-135 to FR-137: the unit's `refinement` declarations in declaration
     /// order, each resolved by the FR-091 assembler and checked after the
     /// state clauses.
@@ -529,6 +532,17 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
+    /// These declarations, to be checked without refusing a timed model's
+    /// clocks, time invariants or urgency as not emitted, so the S3 value
+    /// (`CheckedGraph::timed_models`) stays testable until S4 writes it
+    /// (FR-230).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_timed_members(mut self) -> Self {
+        self.emit_unwritten_timed_members = true;
+        self
+    }
+
     /// These declarations, to be checked without refusing a `refinement`
     /// declaration as not emitted, so the S3 value
     /// (`CheckedGraph::refinements`) stays testable until S4 writes it
@@ -636,6 +650,7 @@ impl PackageDeclarations {
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             terminals: Vec::new(),
+            emit_unwritten_timed_members: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
             hybrid_claims: Vec::new(),

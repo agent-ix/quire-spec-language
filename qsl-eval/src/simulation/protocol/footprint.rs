@@ -148,6 +148,9 @@ pub enum ProtocolLocation {
     /// `view(b)`: thread `b`'s three views in the memory component
     /// (ADR-025 MR-1, `ra`).
     View(ThreadPath),
+    /// `race(ℓ)`: the race summary of shared location `ℓ` in the memory
+    /// component (ADR-025 DR-3).
+    Race(Box<Location>),
     /// `S`: the global `seq_cst` fence view (ADR-025 RA-1).
     ScView,
     /// The SC event graph (ADR-025 PSC-1).
@@ -232,6 +235,7 @@ impl ProtocolLocation {
             | (Self::Binder { .. }, Self::Binder { .. })
             | (Self::Buffer(_), Self::Buffer(_))
             | (Self::Messages(_), Self::Messages(_))
+            | (Self::Race(_), Self::Race(_))
             | (Self::View(_), Self::View(_))
             | (Self::ScView, Self::ScView)
             | (Self::ScGraph, Self::ScGraph)
@@ -248,6 +252,7 @@ impl ProtocolLocation {
                 | Self::Binder { .. }
                 | Self::Buffer(_)
                 | Self::Messages(_)
+                | Self::Race(_)
                 | Self::View(_)
                 | Self::ScView
                 | Self::ScGraph
@@ -796,7 +801,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// node `node` is, or whose trigger type its record has; for a trigger,
     /// the control of every compensation thread of the template up to the
     /// last ordinal its waiting registrations can take, and the control of
-    /// each it can create.
+    /// each it can create; for a commit node, the control of every
+    /// compensation thread of a template that names it.
     fn folded(
         &self,
         built: &mut Builder,
@@ -814,6 +820,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 });
                 built.read(registrations.clone());
                 built.write(registrations);
+            }
+            if template.commit == Some(node) {
+                // CP-4, PS-8: the step removes the attempt record of each
+                // thread of the template that holds one, so it writes every
+                // such thread's control whether or not the state has a
+                // record, a footprint being static.
+                for (thread, compensating) in &instance.compensating {
+                    if compensating.registration.template == index {
+                        built.write(control(thread));
+                    }
+                }
             }
             if !triggers {
                 continue;
@@ -904,6 +921,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     instance: path.instance,
                     template: template.name.clone(),
                 }));
+                // The records of the attempt type, and so the steps, depend
+                // on which objects a reference of the type ranges over
+                // (FT-1, FT-3).
+                for location in self.model.record_reads(template.attempt_type) {
+                    built.enabling(location);
+                }
             }
             StepKind::CEnd if retry => {
                 let registration = protocol(ProtocolLocation::Registration {

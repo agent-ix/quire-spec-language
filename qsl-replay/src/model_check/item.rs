@@ -8,15 +8,16 @@
 //! at request time (FR-125 Instancing). Each instance has its own
 //! translation, under a key context that binds the typed reference of its
 //! key: two admitting populations that hold the same key give two instances
-//! with one key context. The deadlock-freedom item has one instance with the
-//! binding `[]`.
+//! with one key context. The deadlock-freedom and race-freedom items have one
+//! instance with the binding `[]`.
 //!
 //! A clause's key contexts name its identity, which the item does not carry:
 //! [`ClauseIdentity::resolve`] reads it from the request's package
 //! (FR-337-AC-5), so no caller names an occurrence or an `over` node.
 
 use qsl_eval::automaton::{
-    bounded_shape, BoundedTranslation, ContextBinding, SafetyTranslation, StateContext,
+    bounded_shape, translate, translate_counted, AutomatonError, AutomatonKind, BoundedTranslation,
+    BuchiStates, ContextBinding, PropertyAutomaton, SafetyTranslation, StateContext, SubjectKind,
     TranslationRefusal, MAX_ATOMS,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
@@ -25,6 +26,7 @@ use qsl_eval::simulation::NotSimulated;
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::{Cancel, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::fairness::PropertyForm;
 
 use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 
@@ -42,11 +44,14 @@ pub enum ModelCheckItem<'a> {
     },
     /// FR-124's derived deadlock-freedom item.
     DeadlockFreedom,
+    /// FR-224's derived race-freedom item, `always holds(not raced)`, over a
+    /// protocol subject with a weak `parallel`.
+    RaceFreedom,
 }
 
 /// One instance of an item: the bound population key, `None` for the
 /// deadlock-freedom item, and the translation under its context.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Instance {
     /// The population key the instance binds.
     pub binding: Option<ModelInstance>,
@@ -56,12 +61,21 @@ pub struct Instance {
 
 /// The canonical translation of one instance (FR-338): a safety item's, or a
 /// bounded clause's.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Translation {
     /// A TP-1 clause or the deadlock-freedom item.
     Safety(SafetyTranslation),
     /// A bounded `eventually[0,u]` or `always[0,u]` clause on origin (TP-2).
     Bounded(BoundedTranslation),
+    /// A TP-4 liveness clause, built only for the closure checker.
+    Liveness(Box<LivenessTranslation>),
+}
+
+/// The TP-4 engine automaton and its FR-338 state-key context.
+#[derive(Debug)]
+pub struct LivenessTranslation {
+    pub(crate) automaton: PropertyAutomaton,
+    pub(crate) keys: BuchiStates,
 }
 
 impl Translation {
@@ -71,8 +85,17 @@ impl Translation {
         match self {
             Self::Safety(translation) => translation.admit(octets).is_ok(),
             Self::Bounded(translation) => translation.admit(octets).is_ok(),
+            Self::Liveness(translation) => translation.keys.admit(octets).is_ok(),
         }
     }
+}
+
+/// The TP-4 request of a closure check: the subject's key algebra and the
+/// automaton state bound.
+#[derive(Clone, Copy)]
+struct Tp4 {
+    subject_kind: SubjectKind,
+    max_automaton_states: u64,
 }
 
 /// Why an item has no canonical translation.
@@ -96,6 +119,9 @@ pub enum ItemRefusal {
     /// The deadlock-freedom item's context did not encode.
     #[error("the deadlock-freedom context does not encode")]
     DeadlockContext,
+    /// The race-freedom item's context did not encode.
+    #[error("the race-freedom context does not encode")]
+    RaceContext,
     /// FR-125: a population that admits the `over` type has no universe
     /// (`RequiresBound`), or that check could not classify it.
     #[error("the clause's instances are not finite: {0:?}")]
@@ -103,6 +129,9 @@ pub enum ItemRefusal {
     /// An invariant of the subject broke.
     #[error("instancing broke invariant {0:?}")]
     Fault(InternalFault),
+    /// The requested TP-4 property automaton could not be materialized.
+    #[error(transparent)]
+    Automaton(#[from] AutomatonError),
 }
 
 impl ModelCheckItem<'_> {
@@ -122,12 +151,49 @@ impl ModelCheckItem<'_> {
         system: &ModelSystem<'_>,
         cancel: &Cancel,
     ) -> Result<Vec<Instance>, ItemRefusal> {
+        self.build_instances(subject, system, cancel, None)
+    }
+
+    /// Instances whose TP-4 liveness clauses carry a subject-specific key
+    /// algebra, for the closure checker.
+    pub(crate) fn instances_for(
+        &self,
+        subject: &ModelSubject<'_>,
+        system: &ModelSystem<'_>,
+        cancel: &Cancel,
+        subject_kind: SubjectKind,
+        max_automaton_states: u64,
+    ) -> Result<Vec<Instance>, ItemRefusal> {
+        self.build_instances(
+            subject,
+            system,
+            cancel,
+            Some(Tp4 {
+                subject_kind,
+                max_automaton_states,
+            }),
+        )
+    }
+
+    fn build_instances(
+        &self,
+        subject: &ModelSubject<'_>,
+        system: &ModelSystem<'_>,
+        cancel: &Cancel,
+        tp4: Option<Tp4>,
+    ) -> Result<Vec<Instance>, ItemRefusal> {
         match self {
             Self::DeadlockFreedom => Ok(vec![Instance {
                 binding: None,
                 translation: Translation::Safety(
                     SafetyTranslation::deadlock_freedom()
                         .map_err(|_| ItemRefusal::DeadlockContext)?,
+                ),
+            }]),
+            Self::RaceFreedom => Ok(vec![Instance {
+                binding: None,
+                translation: Translation::Safety(
+                    SafetyTranslation::race_freedom().map_err(|_| ItemRefusal::RaceContext)?,
                 ),
             }]),
             Self::Clause { clause, .. } => {
@@ -164,6 +230,33 @@ impl ModelCheckItem<'_> {
                             StateContext::clause(clause, identity.occurrence().clone(), binding);
                         let translation = if bounded_shape(clause).is_some() {
                             Translation::Bounded(BoundedTranslation::clause(clause, &context)?)
+                        } else if let Some(tp4) =
+                            tp4.filter(|_| clause.property_form() == Some(PropertyForm::Liveness))
+                        {
+                            let automaton = match tp4.subject_kind {
+                                SubjectKind::Ordinary => {
+                                    translate(clause, tp4.max_automaton_states)
+                                }
+                                SubjectKind::Protocol => {
+                                    translate_counted(clause, tp4.max_automaton_states)
+                                }
+                            }
+                            .map_err(ItemRefusal::Automaton)?;
+                            if automaton.kind() == AutomatonKind::Liveness {
+                                let keys = BuchiStates::clause(clause, &context, tp4.subject_kind)
+                                    .map_err(ItemRefusal::Translation)?;
+                                Translation::Liveness(Box::new(LivenessTranslation {
+                                    automaton,
+                                    keys,
+                                }))
+                            } else {
+                                // Counted protocol progress can lower a
+                                // liveness-form formula into the safety
+                                // fragment; its replay form is the safety one.
+                                Translation::Safety(SafetyTranslation::reachable_invariant(
+                                    clause, &context,
+                                )?)
+                            }
                         } else {
                             Translation::Safety(SafetyTranslation::reachable_invariant(
                                 clause, &context,

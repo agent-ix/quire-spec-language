@@ -829,6 +829,8 @@ pub enum TimedConstruct {
     Schedulable,
     /// A `response` claim (QSpec FR-419, QSL FR-246).
     Response,
+    /// A `release` declaration (QSpec FR-419, QSL FR-249).
+    Release,
 }
 
 impl TimedConstruct {
@@ -843,6 +845,7 @@ impl TimedConstruct {
             Self::Taskset => "a `taskset` declaration",
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
+            Self::Release => "a `release` declaration",
         }
     }
 }
@@ -1102,6 +1105,110 @@ pub enum TemporalCause {
     /// FR-230: `urgent when` has no timed model to bind its predicate.
     UrgencyWithoutTimeSource {
         /// The urgency declaration's span.
+        span: Span,
+    },
+    /// FR-230: a `time invariant` has no timed model to bind its
+    /// predicate and bounds.
+    TimeInvariantWithoutTimeSource {
+        /// The time invariant's span.
+        span: Span,
+    },
+    /// FR-230: a time invariant or `urgent` declaration of a unit with
+    /// several time sources, which names none of them.
+    AmbiguousTimedDeclaration {
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230: the timed model's populations range over no object type, or
+    /// over several, so a time invariant or `urgent when` has no `self`.
+    /// Located at the declaration.
+    TimedStateObject {
+        /// Whether several object types were found rather than none.
+        ambiguous: bool,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230 "Clocks and resets": a model holds a `Clock` field but its
+    /// time source is not `dense`. Located at the time declaration, or at
+    /// the model alias of a model with no time declaration.
+    ClockWithoutDenseTime {
+        /// The clock field's member name.
+        field: String,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230 "Clock constraints and guards": a clock read anywhere but as
+    /// the clock operand of an atomic clock constraint. Located at the
+    /// read.
+    ClockReadOutsideConstraint {
+        /// The read's span.
+        span: Span,
+    },
+    /// FR-230: an atomic constraint compares a clock with another clock.
+    /// Located at the comparison.
+    ClockComparison {
+        /// The comparison's span.
+        span: Span,
+    },
+    /// FR-230: a clock constraint's constant, or a reset value, is
+    /// negative. Located at the constant.
+    NegativeClockConstant {
+        /// The constant's span.
+        span: Span,
+    },
+    /// FR-230: a clock constraint's bound, or a reset's value, is not an
+    /// exact time quantity literal. Located at the bound.
+    ClockBoundNotConstant {
+        /// The bound's span.
+        span: Span,
+    },
+    /// FR-230 "Clocks and resets": a write to a clock that is not a reset
+    /// of a clock of the operation's frame to a constant. Located at the
+    /// write.
+    ClockWrite {
+        /// The write's span.
+        span: Span,
+    },
+    /// FR-230: a time invariant bound's operand names no clock of the
+    /// state object. Located at the operand.
+    UnknownClock {
+        /// The operand's span.
+        span: Span,
+    },
+    /// FR-230 "Time invariants and urgency": `urgent O` names no operation
+    /// of the timed model, or several. Located at the name.
+    UrgentOperation {
+        /// The operation as written.
+        name: String,
+        /// Whether several operations were found rather than none.
+        ambiguous: bool,
+        /// The name's span.
+        span: Span,
+    },
+    /// FR-230: `urgent O` names an operation whose guard reads a clock.
+    /// Located at the declaration.
+    UrgentGuardReadsClock {
+        /// The clock the guard reads.
+        clock: String,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230: the `when` predicate of a time invariant or `urgent`
+    /// declaration, or a guard's data part, refused as the clause checker
+    /// refuses an invariant body. Located at the node the refusal names.
+    TimedPredicate {
+        /// The clause checker's refusal.
+        cause: Box<CheckCause>,
+        /// The span of the node it names.
+        span: Span,
+    },
+    /// FR-230: a timed model with clocks, time invariants or urgency that
+    /// no S4 emission writes yet: refused rather than compiled and silently
+    /// missing from the package's identity.
+    TimedModelNotEmitted {
+        /// The model alias.
+        model: String,
+        /// The model's `time` declaration span.
         span: Span,
     },
     /// FR-230: a tick source's period is zero or negative.
@@ -1396,6 +1503,56 @@ pub enum TemporalCause {
         /// The name's span.
         span: Span,
     },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task set of the unit.
+    /// Located at the task set name the declaration wrote.
+    UnknownReleaseTaskSet {
+        /// The task set as written.
+        name: String,
+        /// The operation the declaration releases on, as written.
+        operation: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249, QSpec FR-419: a `release` names no task of its task set.
+    /// Located at the task name the declaration wrote.
+    UnknownReleaseTask {
+        /// The task set.
+        task_set: String,
+        /// The task as written.
+        task: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names no operation of a model. Located at
+    /// the operation name.
+    UnresolvedReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: a `release` names operations of several declaring types,
+    /// none more derived than the others. Located at the operation name.
+    AmbiguousReleaseOperation {
+        /// The operation as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// QSL FR-249: an operation releases one task twice. Located at the
+    /// second declaration.
+    DuplicateRelease {
+        /// The task set.
+        task_set: String,
+        /// The task.
+        task: String,
+        /// The operation as written.
+        operation: String,
+        /// The first declaration's span.
+        first: Span,
+        /// The second declaration's span.
+        span: Span,
+    },
     /// A clause over a non-hybrid subject that writes no `clock` member: its
     /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
     /// built, so the clause is refused rather than stepped by a guessed
@@ -1499,6 +1656,20 @@ impl TemporalCause {
             | Self::MissingTimedModel { span, .. }
             | Self::AmbiguousTimedModel { span, .. }
             | Self::UrgencyWithoutTimeSource { span }
+            | Self::TimeInvariantWithoutTimeSource { span }
+            | Self::AmbiguousTimedDeclaration { span }
+            | Self::TimedStateObject { span, .. }
+            | Self::ClockWithoutDenseTime { span, .. }
+            | Self::ClockReadOutsideConstraint { span }
+            | Self::ClockComparison { span }
+            | Self::NegativeClockConstant { span }
+            | Self::ClockBoundNotConstant { span }
+            | Self::ClockWrite { span }
+            | Self::UnknownClock { span }
+            | Self::UrgentOperation { span, .. }
+            | Self::UrgentGuardReadsClock { span, .. }
+            | Self::TimedPredicate { span, .. }
+            | Self::TimedModelNotEmitted { span, .. }
             | Self::InvalidTickPeriod { span }
             | Self::MalformedTimeUnit { span, .. }
             | Self::MissingTickOperation { span, .. }
@@ -1534,6 +1705,11 @@ impl TemporalCause {
             | Self::DuplicateTaskSet { span, .. }
             | Self::MissingTaskSet { span, .. }
             | Self::UnknownResponseTask { span, .. }
+            | Self::UnknownReleaseTaskSet { span, .. }
+            | Self::UnknownReleaseTask { span, .. }
+            | Self::UnresolvedReleaseOperation { span, .. }
+            | Self::AmbiguousReleaseOperation { span, .. }
+            | Self::DuplicateRelease { span, .. }
             | Self::MissingClock { span } => *span,
         }
     }
@@ -1552,7 +1728,26 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
-            Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
+            Self::UrgencyWithoutTimeSource { .. }
+            | Self::TimeInvariantWithoutTimeSource { .. }
+            | Self::UnknownClock { .. } => Code::MissingDeclaration,
+            Self::AmbiguousTimedDeclaration { .. } => Code::AmbiguousDeclaration,
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
+                if *ambiguous {
+                    Code::AmbiguousDeclaration
+                } else {
+                    Code::MissingDeclaration
+                }
+            }
+            Self::ClockWithoutDenseTime { .. }
+            | Self::ClockReadOutsideConstraint { .. }
+            | Self::ClockComparison { .. }
+            | Self::NegativeClockConstant { .. }
+            | Self::ClockBoundNotConstant { .. }
+            | Self::ClockWrite { .. }
+            | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
+            Self::TimedPredicate { cause, .. } => cause.code(),
+            Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
             }
@@ -1573,12 +1768,15 @@ impl TemporalCause {
             Self::InvalidTimedInterval { .. }
             | Self::ModelTimeOnUntimedModel { .. }
             | Self::InvalidTaskSet { .. } => Code::InvalidTimedModel,
-            Self::DuplicateTask { .. } | Self::DuplicateTaskSet { .. } => {
-                Code::ConflictingDeclaration
-            }
-            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => {
-                Code::MissingDeclaration
-            }
+            Self::DuplicateTask { .. }
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => Code::ConflictingDeclaration,
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
@@ -1606,7 +1804,26 @@ impl TemporalCause {
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
             Self::AmbiguousTimedModel { .. } => "ambiguous-name",
-            Self::UrgencyWithoutTimeSource { .. } => "missing-name",
+            Self::UrgencyWithoutTimeSource { .. }
+            | Self::TimeInvariantWithoutTimeSource { .. }
+            | Self::UnknownClock { .. } => "missing-name",
+            Self::AmbiguousTimedDeclaration { .. } => "ambiguous-name",
+            Self::TimedStateObject { ambiguous, .. } | Self::UrgentOperation { ambiguous, .. } => {
+                if *ambiguous {
+                    "ambiguous-name"
+                } else {
+                    "missing-name"
+                }
+            }
+            Self::ClockWithoutDenseTime { .. } => "clock-without-dense-time",
+            Self::ClockReadOutsideConstraint { .. } => "clock-read-outside-constraint",
+            Self::ClockComparison { .. } => "clock-comparison",
+            Self::NegativeClockConstant { .. } => "negative-clock-constant",
+            Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
+            Self::ClockWrite { .. } => "clock-write",
+            Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
+            Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
+            Self::TimedModelNotEmitted { .. } => "not-yet-implemented",
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 "malformed-declaration"
             }
@@ -1627,9 +1844,15 @@ impl TemporalCause {
             Self::DuplicateTrigger { .. }
             | Self::DuplicateCapture { .. }
             | Self::DuplicateTask { .. }
-            | Self::DuplicateTaskSet { .. } => "duplicate-declaration",
+            | Self::DuplicateTaskSet { .. }
+            | Self::DuplicateRelease { .. } => "duplicate-declaration",
             Self::InvalidTaskSet { .. } => "invalid-task-set",
-            Self::MissingTaskSet { .. } | Self::UnknownResponseTask { .. } => "missing-name",
+            Self::MissingTaskSet { .. }
+            | Self::UnknownResponseTask { .. }
+            | Self::UnknownReleaseTaskSet { .. }
+            | Self::UnknownReleaseTask { .. }
+            | Self::UnresolvedReleaseOperation { .. } => "missing-name",
+            Self::AmbiguousReleaseOperation { .. } => "ambiguous-name",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }

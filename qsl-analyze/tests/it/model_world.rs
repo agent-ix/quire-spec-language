@@ -216,6 +216,8 @@ pub(crate) struct World {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
+    /// The native unit the package was checked from.
+    pub(crate) unit: Vec<u8>,
 }
 
 impl World {
@@ -294,10 +296,16 @@ impl World {
             packages,
             snapshots: BTreeMap::new(),
             initial: Vec::new(),
+            unit: unit.into_bytes(),
         };
         let start = world.snapshot(start);
         world.initial.push(start);
         world
+    }
+
+    /// The bytes of each provisioned snapshot, by digest.
+    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
+        self.snapshots.iter()
     }
 
     /// An initialization snapshot of `objects`, provisioned here.
