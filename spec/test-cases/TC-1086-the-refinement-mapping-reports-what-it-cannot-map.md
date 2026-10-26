@@ -36,8 +36,13 @@ FR-140-AC-7.
 6. Call `ModelSystem::over_model` over `example/not-selected`, and over each
    of the unit's selected models.
 7. Map the ring state of FR-140-AC-2 under the FR-140-AC-12 variant.
-8. Map `head = 1`, `size = 2` and then `head = 0`, `size = 0` under the FR-140-AC-11 variants, as `head: Int[0, 1]?` and as `head: Option<Int[0, 1]>`.
-9. Map AC-9's variant with its rows written in another source order; map it with a fault injected into the evaluator after an undefined row.
+8. Parse and check the FR-140-AC-11 row as `head: Int[0, 1]?` and as
+   `head: Option<Int[0, 1]>`; then map `head = 1`, `size = 2` and
+   `head = 0`, `size = 0` under both variants.
+9. Map AC-9's variant with its rows written in another source order. Separately,
+   map a state whose synthesized observation hits a broken evaluator invariant,
+   with an earlier mapping row whose expression would be undefined for the
+   corresponding state with a valid observation.
 
 Tag the tests `#[trace("TC-1086", "<AC id>")]`.
 
@@ -56,5 +61,10 @@ Tag the tests `#[trace("TC-1086", "<AC id>")]`.
 - Step 6: `invalid_runtime_input`/`wrong-role-mapping`; then a system that
   reports its model.
 - Step 7: `cells` holds the `Cell` references `s0` and `s1`, in key order.
-- Step 8: at `head = 1`, `size = 2` the mapped `head` is 1; at `size = 0` it is unset and not hidden (`?`), or an explicit `none` (`Option<T>`).
-- Step 9: the same reported row and object; then `Fault` with the catalog code.
+- Step 8: S2 parses and S3 checks both rows; `Some(self.head)` has type
+  `Option<Int[0, 1]>` and `none` takes that contextual type. At `head = 1`,
+  `size = 2` the mapped `head` is 1; at `size = 0` it is unset and not hidden
+  (`?`), or an explicit `none` (`Option<T>`).
+- Step 9: the same reported row and object under the row-order permutation;
+  for the broken-observation state, `Fault` with the catalog code before any
+  row is read, rather than `Undefined` or `Undetermined`.
