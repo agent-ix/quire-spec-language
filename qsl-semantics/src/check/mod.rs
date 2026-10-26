@@ -3023,6 +3023,22 @@ impl PackageDeclarations {
             .zip(selected_protocols)
             .filter_map(|(checked, selected)| Some((checked?, selected)))
             .unzip();
+        for checked in &mut refinements {
+            let abstract_model = models
+                .iter()
+                .find(|model| model.alias() == Some(checked.abstract_model()));
+            checked.abstract_subject_declaration =
+                abstract_model.and_then(AdmittedModel::state_machine_declaration);
+            checked.abstract_subject_node =
+                abstract_model.and_then(|model| model.state_machine_node_key(self.identity));
+            let concrete_model = models
+                .iter()
+                .find(|model| model.alias() == Some(checked.concrete_model()));
+            checked.concrete_subject_declaration =
+                concrete_model.and_then(AdmittedModel::state_machine_declaration);
+            checked.concrete_subject_node =
+                concrete_model.and_then(|model| model.state_machine_node_key(self.identity));
+        }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
@@ -4789,7 +4805,7 @@ impl PackageDeclarations {
         );
         let mut unwritten = Vec::new();
         if !self.emit_unwritten_refinements {
-            unwritten.extend(self.refinements.iter().map(|declaration| {
+            unwritten.extend(self.refinements.iter().filter_map(|declaration| {
                 // FR-136-AC-12: a subject without exactly one state machine is
                 // refused by name before the generic not-emitted refusal. S3
                 // checked every declaration (an unchecked one refused above
@@ -4799,7 +4815,7 @@ impl PackageDeclarations {
                     .iter()
                     .find(|checked| checked.name() == declaration.form.name.name)
                 else {
-                    return CheckRefusal {
+                    return Some(CheckRefusal {
                         location: Location::root(Origin::Expression),
                         cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
                             quire_semantic_value::catalog::InternalFault::new(
@@ -4807,7 +4823,7 @@ impl PackageDeclarations {
                                 "refinement-declaration-checked",
                             ),
                         ))),
-                    };
+                    });
                 };
                 refinement::subject_refusal(checked, declaration.form.span, |alias| {
                     models
@@ -4816,12 +4832,16 @@ impl PackageDeclarations {
                         .map(AdmittedModel::state_machine_count)
                         .sum()
                 })
-                .unwrap_or_else(|| {
-                    refinement::not_emitted(
-                        declaration.form.name.name.clone(),
-                        declaration.form.span,
-                    )
+                .or_else(|| {
+                    (!checked.v2_empty_model_body()).then(|| {
+                        refinement::not_emitted(
+                            declaration.form.name.name.clone(),
+                            declaration.form.span,
+                        )
+                    })
                 })
+                // `None` means this checked declaration is included by the
+                // current V2 emission slice.
             }));
         }
         if !self.emit_unwritten_timed_members {

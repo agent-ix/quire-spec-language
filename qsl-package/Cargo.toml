@@ -55,6 +55,7 @@ quire-checked = { workspace = true }
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
 serde = "1.0.228"
+serde_json = "1.0.151"
 thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]
