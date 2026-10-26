@@ -84,6 +84,11 @@ impl<'a> ModelSystem<'a> {
             .into_iter()
             .map(|row| row.reference)
             .collect();
+        if let quire_exact::ValueType::Composite(_) | quire_exact::ValueType::Enum(_) = value_type {
+            return super::domain::composite_values(value_type, &references, self.types, || {
+                budget.charge()
+            });
+        }
         let Some(domain) = super::domain::Domain::of(value_type, &references, self.types) else {
             return Ok(None);
         };
@@ -95,6 +100,18 @@ impl<'a> ModelSystem<'a> {
             index = index.saturating_add(1);
         }
         Ok(Some(values))
+    }
+
+    /// Whether [`Self::values_of`] enumerates `value_type`: a type FR-120
+    /// enumerates, or an enum, record, tuple or union of finite fields.
+    pub(crate) fn enumerates(&self, value_type: &quire_exact::ValueType) -> bool {
+        super::domain::enumerable_in(value_type, self.types)
+    }
+
+    /// The child-index paths of the leaves of `value_type` that
+    /// [`Self::enumerates`] refuses.
+    pub(crate) fn unenumerable_paths(&self, value_type: &quire_exact::ValueType) -> Vec<Vec<u32>> {
+        super::domain::unenumerable_paths(value_type, self.types)
     }
 
     /// The candidate budget of one expansion (FR-120 "Post-states").

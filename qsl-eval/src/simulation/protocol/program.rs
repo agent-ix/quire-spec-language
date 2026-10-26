@@ -154,6 +154,12 @@ pub(super) struct Template<'a> {
     pub(super) activation: Vec<(String, &'a CheckedBody)>,
     /// The authored `attempts n`, at least 1.
     pub(super) attempts: u64,
+    /// The template's attempt type: each `cattempt` takes one record of it
+    /// (ST-11).
+    pub(super) attempt_type: &'a ValueType,
+    /// Whether the retry relation reads its `earlier` binder, so that the
+    /// thread keeps its attempt record (PS-8).
+    pub(super) keeps_attempt: bool,
     pub(super) retry: &'a CheckedBody,
     pub(super) commit: Option<ProtocolNodeId>,
     pub(super) recover: &'a CheckedBody,
@@ -374,10 +380,8 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
 }
 
 /// Each `compensate` template of `protocol` (FR-381), or the refusal of a
-/// template part this system cannot step: a retry relation that reads the
-/// attempt records of a template with more than one attempt, which no
-/// operation result binds here, and a recovery predicate that reads its
-/// recovery binder, whose recovery view no rule derives from a model state.
+/// recovery predicate that reads its recovery binder, whose recovery view no
+/// rule derives from a model state.
 fn templates<'p>(
     protocol: &'p CheckedProtocol,
     replicated: &[(usize, Replicated<'p>)],
@@ -398,14 +402,12 @@ fn templates<'p>(
     let mut templates = Vec::with_capacity(obligations.compensations.len());
     for template in &obligations.compensations {
         let relation = &template.retry.relation;
-        if template.maximum_attempts > 1 && (relation.reads_local(0) || relation.reads_local(1)) {
-            return Err(unsupported(Unsupported::UnboundAttemptRecord));
-        }
+        let name = format!("{}::{}", protocol.name, template.name);
         if template.recover.predicate.reads_local(0) {
-            return Err(unsupported(Unsupported::RecoveryView));
+            return Err(ProtocolRefusal::RecoveryView { predicate: name });
         }
         templates.push(Template {
-            name: format!("{}::{}", protocol.name, template.name),
+            name,
             effect: template.effect,
             declaring: template.operation.declaring,
             operation: template.operation.declaration.name().to_owned(),
@@ -414,6 +416,8 @@ fn templates<'p>(
             registration: captures(&template.registration_captures)?,
             activation: captures(&template.activation_captures)?,
             attempts: template.maximum_attempts,
+            attempt_type: &template.attempt_type,
+            keeps_attempt: relation.reads_local(0),
             retry: relation,
             commit: match template.commit {
                 CheckedCommit::Never => None,

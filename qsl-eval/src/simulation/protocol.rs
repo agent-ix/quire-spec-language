@@ -41,10 +41,12 @@ mod tso;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
+use qsl_semantics::family::ClaimExtent;
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -59,7 +61,7 @@ use crate::simulation::model::{
     verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
     BROKEN,
 };
-use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, RequiresBound};
 use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
@@ -110,12 +112,6 @@ pub enum Unsupported {
     /// A `choice` guard, `repeat` guard or `check` undecided at an initial
     /// state, before any position a finding can name.
     UndecidedInitialGuard,
-    /// A retry relation of a template with more than one attempt that reads
-    /// the attempt records, which no operation result binds here (ST-11).
-    UnboundAttemptRecord,
-    /// A recovery predicate that reads its recovery binder, whose recovery
-    /// view no rule derives from a model state (ST-12).
-    RecoveryView,
     /// A capture of the protocol clause.
     Capture,
     /// `activation on each` in a protocol with a compensation template,
@@ -149,8 +145,6 @@ impl Unsupported {
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
-            Self::UnboundAttemptRecord => "retry relation over unbound attempt records",
-            Self::RecoveryView => "recovery predicate over the recovery view",
             Self::Capture => "protocol capture",
             Self::ActivationOnEachTemplate => "activation on each with a compensation template",
             Self::JoinPredicate => "join predicate",
@@ -206,6 +200,15 @@ pub enum ProtocolRefusal {
     /// (FR-219, FR-220): the item settles V-8 `WeakAccessShape`.
     #[error("unsupported: weak-access-shape at {}", .0.site)]
     WeakAccessShape(Box<WeakAccessShape>),
+    /// A template's recovery predicate reads its recovery binder, whose
+    /// recovery view no rule derives from a model state (ADR-027 ST-12,
+    /// FR-207-AC-5): the item settles V-8 `unsupported`, `RecoveryView`.
+    #[error("unsupported: recovery-view of {predicate}")]
+    RecoveryView {
+        /// The template whose recovery predicate reads the view, by its
+        /// qualified name.
+        predicate: String,
+    },
     /// The protocol holds a construct this system does not step
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
@@ -242,9 +245,10 @@ impl ProtocolRefusal {
             | Self::OverBinding { .. }
             | Self::RolePopulation { .. }
             | Self::Memory(_) => Code::InvalidRuntimeInput,
-            Self::Unsupported(_) | Self::NodeFootprint { .. } | Self::WeakAccessShape(_) => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unsupported(_)
+            | Self::NodeFootprint { .. }
+            | Self::WeakAccessShape(_)
+            | Self::RecoveryView { .. } => Code::UnsupportedConstruct,
             Self::InitialStop(stop) => {
                 Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
             }
@@ -262,6 +266,7 @@ impl ProtocolRefusal {
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) | Self::NodeFootprint { .. } => "not-yet-implemented",
             Self::WeakAccessShape(_) => "weak-access-shape",
+            Self::RecoveryView { .. } => "recovery-view",
             Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
         }
@@ -418,12 +423,14 @@ struct Registration {
     captures: Vec<Bound>,
 }
 
-/// One compensation thread (ADR-027 CP-3): the registration it compensates
-/// and its attempt count.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One compensation thread (ADR-027 CP-3): the registration it compensates,
+/// its attempt count and its attempt record (PS-8), which it holds only
+/// while the key keeps it.
+#[derive(Clone, Debug)]
 struct Compensating {
     registration: Registered,
     count: u64,
+    attempt: Option<Bound>,
 }
 
 /// A role instance's status (ADR-027 RR-3).
@@ -584,11 +591,12 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// FR-215 "Model checking a protocol subject" (ADR-027 TS-5): the roots of
 /// `protocol` beside its model's: the record type of every binder of an
 /// `event`, `send`, `receive` and `finish` step, each named by the
-/// protocol and the binder. A bounded record type this module cannot
-/// enumerate is refused when the system is built
-/// ([`Unsupported::UnenumerableRecord`]).
+/// protocol and the binder, and the attempt type of every compensation
+/// template. A binder's bounded record type this module cannot enumerate is
+/// refused when the system is built ([`Unsupported::UnenumerableRecord`]); an
+/// attempt type it cannot enumerate is an unbounded root.
 pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
-    protocol
+    let binders = protocol
         .slots
         .binders
         .iter()
@@ -598,8 +606,51 @@ pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueTyp
                 binder_root(&protocol.name, &binder.name),
                 binder.value_type.clone(),
             )
-        })
-        .collect()
+        });
+    // A `cattempt` takes one record of its template's attempt type (ST-11).
+    let attempts = protocol.obligations.compensations.iter().map(|template| {
+        (
+            attempt_root(protocol, &template.name),
+            template.attempt_type.clone(),
+        )
+    });
+    binders.chain(attempts).collect()
+}
+
+/// The root a template's attempt type is named by.
+fn attempt_root(protocol: &CheckedProtocol, template: &str) -> WireNodeId {
+    binder_root(&protocol.name, &format!("{template}.attempt"))
+}
+
+/// ADR-027 TS-5, ST-11: a bounded attempt type that `values_of` cannot
+/// enumerate (a `String` or `Text` field, say, which `classify_extent` takes
+/// as bounded) is as unbounded to the run as an `Integer`: every leaf that
+/// cannot be enumerated is a domain of the request, at its child-index path.
+fn check_attempt_types(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+) -> Result<(), NotSimulated> {
+    let mut domains = BTreeMap::new();
+    for template in &protocol.obligations.compensations {
+        if model.enumerates(&template.attempt_type) {
+            continue;
+        }
+        for path in model.unenumerable_paths(&template.attempt_type) {
+            domains.insert(
+                DomainKey::Node {
+                    node: attempt_root(protocol, &template.name),
+                    path,
+                },
+                DomainKind::Integer,
+            );
+        }
+    }
+    match ClaimExtent::from_domains(domains) {
+        ClaimExtent::Bounded => Ok(()),
+        ClaimExtent::Unbounded(domains) => {
+            Err(NotSimulated::RequiresBound(RequiresBound { domains }))
+        }
+    }
 }
 
 /// The root a protocol binder's record type is named by: the digest of
@@ -627,7 +678,8 @@ pub fn check_protocol_bounds(
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
     let domains = subject_domains(model, protocol);
-    check_requires_bound(&roots(&domains), model.types(), position_limit)
+    check_requires_bound(&roots(&domains), model.types(), position_limit)?;
+    check_attempt_types(model, protocol)
 }
 
 /// The roots of `model` and of `protocol`.
@@ -661,6 +713,7 @@ pub fn explore_protocol<M: MemoryModel>(
     limits: crate::simulation::explore::Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<crate::simulation::explore::Exploration<ModelFinding>, NotSimulated> {
+    check_attempt_types(&system.model, system.protocol)?;
     let domains = subject_domains(&system.model, system.protocol);
     crate::simulation::explore::explore_request(
         system,
@@ -1127,7 +1180,9 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// PS-8 lists no member for it. A compensation thread's `thread-state`
     /// also names the registration it compensates, as `registration`: which
     /// registration each thread's `cattempt` and `cend` act on decides its
-    /// successors, and PS-8 lists no member for that mapping either.
+    /// successors, and PS-8 lists no member for that mapping either. A
+    /// compensation thread's attempt record is an `observations` entry
+    /// `{"type":"attempt-record","thread"}`.
     fn key_members(&self, state: &ProtocolState<M>) -> Vec<(&'static str, Enc)> {
         let text = |value: &str| Enc::tagged("text", vec![("value", Enc::text(value))]);
         let mut control = Vec::new();
@@ -1279,6 +1334,12 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 ));
             }
             for (thread, compensating) in &instance.compensating {
+                if let Some(attempt) = &compensating.attempt {
+                    observations.push((
+                        Enc::tagged("attempt-record", vec![("thread", thread.enc())]),
+                        attempt.enc.clone(),
+                    ));
+                }
                 bounds.push((
                     Enc::tagged("attempt-count", vec![("thread", thread.enc())]),
                     Enc::tagged(

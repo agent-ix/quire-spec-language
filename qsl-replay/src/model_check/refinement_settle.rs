@@ -160,6 +160,7 @@ fn settle_liveness(
         ModelCheckOutcome::Holds { .. }
         | ModelCheckOutcome::Reduction { .. }
         | ModelCheckOutcome::Memory { .. }
+        | ModelCheckOutcome::RecoveryView { .. }
         | ModelCheckOutcome::BoundReached { .. } => Row::failed(),
     };
     record_of(row, limits, None, counterexample)

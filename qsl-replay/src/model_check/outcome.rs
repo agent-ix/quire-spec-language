@@ -175,6 +175,16 @@ pub enum ModelCheckOutcome<T: SubjectTransition = ModelTransition> {
         /// The run's counts.
         stats: RunStats,
     },
+    /// V-8: a compensation template's recovery predicate reads its recovery
+    /// binder, whose recovery view no rule derives from a model state
+    /// (ADR-027 ST-12); settled `unsupported` in the pre-check, with no
+    /// state explored.
+    RecoveryView {
+        /// The template, by its qualified name.
+        predicate: String,
+        /// The run's counts.
+        stats: RunStats,
+    },
     /// The canonical counterexample, to be replayed before it counts (V-4).
     Violated {
         /// The counterexample.
@@ -216,6 +226,7 @@ impl<T: SubjectTransition> ModelCheckOutcome<T> {
             | Self::HoldsReduced { stats, .. }
             | Self::Reduction { stats, .. }
             | Self::Memory { stats, .. }
+            | Self::RecoveryView { stats, .. }
             | Self::Violated { stats, .. }
             | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }
