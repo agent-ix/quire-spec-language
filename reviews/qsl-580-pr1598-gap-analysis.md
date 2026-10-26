@@ -32,3 +32,12 @@ Ticket: QSL-580. Plan completion: not assessed. FR-232-AC-1, AC-2 and AC-4 are a
 ## Coverage
 
 Plan completion: not assessed. FR-236-AC-1 to AC-3 are declared out of scope (they need EN-6). Semantic review: done by hand for the claimed ACs.
+
+## Dispositions
+
+Round 1, against #1598 fix commit f2efd8da7 on the restacked head bd68b877a (is_timed fix carried in restacked 3880da60a; `git range-diff ddeff5dd6..cb95a247a origin/main..3880da60a`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

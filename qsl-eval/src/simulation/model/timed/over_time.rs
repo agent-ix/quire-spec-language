@@ -10,7 +10,7 @@
 //! intervals. The reading is exact: each end point is a rational and keeps
 //! whether it is included.
 
-use quire_exact::Rational;
+use quire_exact::{Integer, NonZeroInteger, Rational};
 
 use qsl_semantics::check::ClockOp;
 
@@ -463,9 +463,7 @@ impl TimedSystem<'_, '_> {
                 if reset(place) {
                     continue;
                 }
-                while *value <= ceiling {
-                    *value = value.add(&total);
-                }
+                *value = past(value, &ceiling, &total);
             }
             clocks = super::ClockValuation(shifted);
         }
@@ -490,10 +488,28 @@ impl TimedSystem<'_, '_> {
     }
 }
 
+/// `value` plus the least multiple `k * total` that exceeds `ceiling`, `k`
+/// at least 1 when `value <= ceiling` and 0 otherwise; `total` is positive.
+/// Computed at once, so a constant of any size costs no more than a small
+/// one.
+fn past(value: &Rational, ceiling: &Rational, total: &Rational) -> Rational {
+    if value > ceiling {
+        return value.clone();
+    }
+    // `gap >= 0`, and its denominator is positive, so nonzero.
+    let Some(gap) = ceiling.sub(value).div(total) else {
+        return value.clone();
+    };
+    let Ok(denominator) = NonZeroInteger::try_from(gap.denominator()) else {
+        return value.clone();
+    };
+    let (whole, _) = gap.numerator().div_mod_floor(denominator);
+    let count = Rational::from_integer(whole.add(&Integer::one()));
+    value.add(&total.mul(&count))
+}
+
 #[cfg(test)]
 mod tests {
-    use quire_exact::Integer;
-
     use super::*;
 
     fn exact(value: i64) -> Rational {

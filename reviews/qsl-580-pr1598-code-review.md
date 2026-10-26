@@ -34,3 +34,20 @@ Ticket: QSL-580. Coder note on wire and identity: `TemporalCounterexample` and `
 ## Coverage
 
 Methods: code-review with the rust-review lane. Gap analysis is SR-1598002.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | Regression from the FND-001 fix: `weakly_fair` shifts each unreset clock past the model's largest constant with `while *value <= ceiling { *value = value.add(&total) }`, one exact addition per loop repetition, with no meter or cancel. Reproduced on bd68b877a: an idle tail with stutter delay 1 under a guard `x >= 1000000000000 ms` did not return within 60 s. FR-230 admits constants up to `10^40 ms` (FR-230-AC-4), so a valid model hangs the check. Compute the repetition count directly, `k = floor((ceiling - value) / total) + 1`. | qsl-eval/src/simulation/model/timed/over_time.rs:455-470 |
+
+## Dispositions
+
+Round 1, against #1598 fix commit f2efd8da7 on the restacked head bd68b877a (is_timed fix carried in restacked 3880da60a; `git range-diff ddeff5dd6..cb95a247a origin/main..3880da60a`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | accepted-no-change | Documented helper limit, as the finding recorded: `time_lock` decides only states where time is already stopped, and its doc comment hands the rest to the zone engine. #1599's FR-240 divergence test (zone_check/divergence.rs) is the TD-1 decision procedure. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

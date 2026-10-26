@@ -895,3 +895,38 @@ fn an_idle_tail_is_unfair_to_a_constraint_its_delay_enables() {
     assert!(!fair(">="));
     assert!(fair("<="));
 }
+
+/// FR-232 "Fairness over time" with a guard constant of `10^40 ms`, which
+/// FR-230-AC-4 admits (SR-1598001 FND-005): the idle tail's clock is moved
+/// past the constant in one step, so the verdict is the one a small
+/// constant gives, unfair under `x >= c` and fair under `x <= c`, and it
+/// returns at once.
+#[trace("TC-687")]
+#[test]
+fn a_huge_guard_constant_decides_fairness_as_a_small_one_does() {
+    let fair = |guard: &str, constant: &str| {
+        let serve = world(&only(
+            &["timeout"],
+            &format!(
+                "pre Serve using v on M::Call::timeout {{ self.x {guard} {constant} ms }}\n\
+                 post Served using v on M::Call::timeout {{ self.phase = 3 }}\n"
+            ),
+        ));
+        let serve_system = system(&serve);
+        let timed = TimedSystem::new(&serve_system, "M").expect("a timed subject");
+        let behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        timed
+            .weakly_fair(&behaviour, 0, &exact(2, 1), |step| {
+                step.operation().contains("Call/timeout")
+            })
+            .expect("decided")
+    };
+    let huge = format!("1{}", "0".repeat(40));
+    let started = std::time::Instant::now();
+    for guard in [">=", "<="] {
+        assert_eq!(fair(guard, &huge), fair(guard, "1"), "{guard}");
+    }
+    assert!(!fair(">=", &huge));
+    assert!(fair("<=", &huge));
+    assert!(started.elapsed() < std::time::Duration::from_secs(30));
+}
