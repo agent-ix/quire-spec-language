@@ -41,3 +41,13 @@ Ticket: QSL-991. PR: quire-spec-language#1587, head 2d47d5bce. Method: code-revi
 ## Verdict
 
 Not mergeable as is: fix FND-001 in this PR and file the FND-002 subticket. The built rows are sound. Dropping `Copy` from `HyperSettleRefusal` is required, because `SmtEncodingRefusal` holds `String`s, and it breaks no workspace use: `qsl-analyze` tests compile. CG depends on `qsl-replay` and `qsl-replay` does not depend on CG, so there is no cycle. CG can construct `HyperSmtOutcome` from `HyperQuery.product`.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit 910ca97d4: `pub product: Result<HyperProductIdentity, InternalFault>`. An `Err` product against an item identity of `Ok` now refuses `ProductMismatch{Clause}`, which `an_outcome_for_another_product_is_refused` tests. |
+| FND-002 | deferred | QSL-1112 is a child of QSL-991 and tracks the MatchWitness and ReplayLimits parameters, the other 8 `HyperSmtResult` variants, and the `LimitNotApplicable` and `QueryKind` refusals. |
+| FND-003 | fixed | Commit 910ca97d4: the doc comment now reads `μ_U`. |
+| FND-004 | fixed | Commit 910ca97d4: the `method` doc names `EXPLICIT_STATE` for EN-1 and `K_INDUCTION` for EN-3. |
+| FND-005 | fixed | Commit 910ca97d4: the code matches `Err(SmtEncodingRefusal::Fault(_))`, and the `inductive_row` doc states that a `ModelSystem::new` failure settles `failed`. |
