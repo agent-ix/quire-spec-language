@@ -51,9 +51,21 @@ use crate::temporal::UndefinedCause;
 pub struct ClockPlace {
     object: ObjectReference,
     clock: ClockId,
+    /// The population and key the object is held under.
+    instance: crate::model_subject::ModelInstance,
 }
 
 impl ClockPlace {
+    /// Whether `state` holds the place's object: a clock of an absent object
+    /// has no value (QSpec FR-181 "Timed subjects").
+    pub fn present(&self, state: &ModelSimState) -> bool {
+        state
+            .state()
+            .populations
+            .get(&self.instance.population)
+            .is_some_and(|objects| objects.contains_key(&self.instance.key))
+    }
+
     /// The object whose clock it is.
     pub fn object(&self) -> &ObjectReference {
         &self.object
@@ -328,9 +340,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             }
         }
         let mut objects = std::collections::BTreeMap::new();
+        let mut held = std::collections::BTreeMap::new();
         let mut instances_of = |owner: EffectiveId, name: &str| {
-            if let Some(found) = objects.get(&owner) {
-                return Ok::<Vec<ObjectReference>, TimedSubjectRefusal>(Vec::clone(found));
+            if let Some(found) = held.get(&owner) {
+                return Ok::<
+                    Vec<(crate::model_subject::ModelInstance, ObjectReference)>,
+                    TimedSubjectRefusal,
+                >(Vec::clone(found));
             }
             let unbounded = || TimedSubjectRefusal::Unbounded {
                 clock: name.to_owned(),
@@ -344,12 +360,18 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| unbounded())?;
             objects.insert(owner, references.clone());
-            Ok(references)
+            let pairs: Vec<_> = instances.into_iter().zip(references).collect();
+            held.insert(owner, pairs.clone());
+            Ok(pairs)
         };
         let mut places = Vec::new();
         for (clock, field) in timed.clock_fields() {
-            for object in instances_of(field.owner(), field.name())? {
-                places.push(ClockPlace { object, clock });
+            for (instance, object) in instances_of(field.owner(), field.name())? {
+                places.push(ClockPlace {
+                    object,
+                    clock,
+                    instance,
+                });
             }
         }
         for invariant in timed.invariants() {
@@ -601,7 +623,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         })
                         .collect();
                 }
-                let resets = self
+                let mut resets: Vec<(usize, Rational)> = self
                     .model
                     .resets()
                     .iter()
@@ -617,6 +639,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         ))
                     })
                     .collect();
+                // A clock whose object the step makes present takes the
+                // constant of its write, 0 when the step writes none
+                // (QSpec FR-181 "Timed subjects").
+                for (place, clock) in self.places.iter().enumerate() {
+                    if !clock.present(state)
+                        && clock.present(post)
+                        && resets.iter().all(|(reset, _)| *reset != place)
+                    {
+                        resets.push((place, zero()));
+                    }
+                }
                 steps.push(GuardedStep {
                     transition: transition.clone(),
                     receiver: vector.receiver.clone(),
@@ -789,6 +822,9 @@ pub enum MoveRefusal {
     Step,
     /// The move could not be decided.
     Stopped(TimedStop),
+    /// The behaviour ends at a state that is not quiescent, so it has no
+    /// idle tail and no divergent reading (FR-231).
+    NotDivergent,
 }
 
 impl From<TimedStop> for MoveRefusal {
@@ -875,13 +911,16 @@ impl TimedBehaviour {
     /// state's stutter step repeated forever, each after a positive delay:
     /// the lasso that loops on its last position with a delay of one unit,
     /// or of the tick period under a tick source, whose stutter step counts
-    /// as a tick. Otherwise, as under a bounded profile, the trace closes at
-    /// its last position.
+    /// as a tick. A behaviour that ends anywhere else has no such reading
+    /// and is not admitted. Without `idle_tail`, as under a bounded profile,
+    /// the trace closes at its last position.
     ///
     /// # Errors
     ///
     /// [`MoveRefusal::Stopped`] when quiescence cannot be decided;
-    /// [`MoveRefusal::Delay`] when the stamps do not form a timed trace.
+    /// [`MoveRefusal::Delay`] when the stamps do not form a timed trace;
+    /// [`MoveRefusal::NotDivergent`] with `idle_tail` when the last state is
+    /// not quiescent.
     pub fn timed_trace(
         &self,
         system: &TimedSystem<'_, '_>,
@@ -893,6 +932,11 @@ impl TimedBehaviour {
             .map(|position| position.stamp.clone())
             .collect();
         let quiescent = idle_tail && system.is_quiescent(&self.last().state.discrete)?;
+        if idle_tail && !quiescent {
+            // FR-231 admits a behaviour only when its time stamps diverge;
+            // one that ends where time is bounded is no admitted behaviour.
+            return Err(MoveRefusal::NotDivergent);
+        }
         let trace = if quiescent {
             let last = u64::try_from(self.positions.len().saturating_sub(1)).unwrap_or(u64::MAX);
             let delay = system

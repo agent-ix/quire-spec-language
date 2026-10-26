@@ -87,7 +87,8 @@ fn operation(name: &str, modifies: &[&str]) -> Json {
             "startLine": 1, "startColumn": 1}},
         "frame": {
             "modifies": modifies.iter().map(|field| ident(&format!("Call/{field}"))).collect::<Vec<_>>(),
-            "creates": [], "deletes": [],
+            "creates": if name == "spawn" { vec![ident("Call")] } else { vec![] },
+            "deletes": [],
         },
     })
 }
@@ -148,6 +149,7 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
                     operation("timeout", &["phase"]),
                     operation("tick", &[]),
                     operation("work", &[]),
+                    operation("spawn", &[]),
                 ],
                 "relationships": [],
             })),
@@ -404,10 +406,11 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
-/// FR-231-AC-2: with `urgent when { self.phase = 1 }`, no positive delay is
-/// admissible after `send`; the `Replied` state is quiescent and the
-/// waiting one is not.
-#[trace("TC-686", "FR-231-AC-2")]
+/// Part of FR-231-AC-2 (TC-686): with `urgent when { self.phase = 1 }`, no
+/// positive delay is admissible after `send`; the `Replied` state is
+/// quiescent and the waiting one is not. The idle-tail reading is the next
+/// test's.
+#[trace("TC-686")]
 #[test]
 fn an_urgent_state_admits_no_positive_delay() {
     let urgent = world(&rpc_unit(4, "urgent Eager when { self.phase = 1 };"));
@@ -455,12 +458,14 @@ fn an_urgent_state_admits_no_positive_delay() {
         .is_some());
 }
 
-/// FR-231-AC-2: a behaviour of `Rpc` that ends at the quiescent `Replied`
-/// state reads under the timed profile as its stutter step repeated after
-/// positive delays, so `always holds(c.phase != 1)` is true from position 2
-/// and false from position 1; closed, as under a bounded profile, the trace
-/// ends at position 2.
-#[trace("TC-686", "FR-231-AC-2")]
+/// Part of FR-231-AC-2 (TC-686): a behaviour of `Rpc` that ends at the
+/// quiescent `Replied` state reads under the timed profile as its stutter
+/// step repeated after positive delays, so `always holds(c.phase != 1)` is
+/// true from position 2 and false from position 1; the closed reading ends
+/// at position 2, and one ending at the waiting state has no idle tail. Not
+/// covered: the closed reading under a unit selecting the event-position
+/// profile.
+#[trace("TC-686")]
 #[test]
 fn a_quiescent_end_reads_as_an_idle_tail() {
     use qsl_eval::model_subject::ModelInstance;
@@ -566,9 +571,10 @@ fn a_tick_source_stamps_positions_by_tick_count() {
     assert_eq!(timed.tick_period(), Some(&exact(5, 1)));
 }
 
-/// FR-230-AC-4: 64 package clock fields over a universe of 100 objects are
-/// 6,400 clock places, each 0 initially.
-#[trace("FR-230-AC-4")]
+/// Part of FR-230-AC-4 (TC-685): 64 package clock fields over a universe of
+/// 100 objects are 6,400 clock places, each 0 initially. The guard's convex
+/// parts and the `10^40 ms` constant are S3's (qsl-semantics `timed_model`).
+#[trace("TC-685")]
 #[test]
 fn every_object_holds_its_own_clock_of_every_clock_field() {
     let names: Vec<String> = (0..63).map(|index| format!("c{index:02}")).collect();
@@ -595,11 +601,13 @@ fn every_object_holds_its_own_clock_of_every_clock_field() {
         .all(|value| value == &exact(0, 1)));
 }
 
-/// FR-231-AC-4 (first half): `always holds(not c.late)` reads the same at
-/// every position of a behaviour of `Rpc` on its timed lasso under the timed
-/// profile and, in a unit selecting infinite-trace instead, on the untimed
-/// lasso of the same positions.
-#[trace("TC-686", "FR-231-AC-4")]
+/// Part of FR-231-AC-4 (TC-686): `always holds(not c.late)` reads the same
+/// at every position of a behaviour of `Rpc` on its timed lasso under the
+/// timed profile and, in a unit selecting infinite-trace instead, on the
+/// untimed lasso of the same positions. Not covered: a claim atom
+/// `c.x <= 3 ms` reading the clock valuation, which S3 does not admit in a
+/// temporal `holds` yet.
+#[trace("TC-686")]
 #[test]
 fn a_claim_reads_alike_with_and_without_time_stamps() {
     use qsl_eval::model_subject::ModelInstance;
@@ -665,4 +673,40 @@ fn a_claim_reads_alike_with_and_without_time_stamps() {
     assert!(with_time
         .iter()
         .all(|reading| reading == &TemporalOutcome::Holds));
+}
+
+/// QSpec FR-181 "Timed subjects" (TC-686): a clock of an object a step makes
+/// present takes the constant of its write, 0 when the step writes none,
+/// not the value its place held while the object was absent. Over the
+/// universe `{c, d}` with `d` absent, `spawn` after a delay of 2 creates `d`
+/// with `x = 0` while `c`'s clock reads 2.
+#[trace("TC-686")]
+#[test]
+fn a_created_objects_clock_starts_at_its_write() {
+    let world = world(&rpc_unit(4, ""));
+    let system = system_over(&world, &["c", "d"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    assert_eq!(timed.places().len(), 2);
+    let initial = timed.initial().remove(0);
+    let delayed = timed
+        .delay(&initial, &exact(2, 1))
+        .expect("decided")
+        .expect("Idle is quiescent");
+    let fresh = |state: &qsl_eval::simulation::model::TimedState| {
+        timed
+            .places()
+            .iter()
+            .position(|place| place.present(state.discrete()) && !place.present(delayed.discrete()))
+    };
+    let (step, created) = timed
+        .steps(&delayed)
+        .expect("decided")
+        .into_iter()
+        .find(|(step, reached)| step.operation().contains("Call/spawn") && fresh(reached).is_some())
+        .expect("spawn creates d");
+    let d = fresh(&created).expect("d is new");
+    assert!(step.resets().contains(&(d, exact(0, 1))));
+    let c = 1 - d;
+    assert_eq!(created.clocks().get(d), Some(&exact(0, 1)));
+    assert_eq!(created.clocks().get(c), Some(&exact(2, 1)));
 }
