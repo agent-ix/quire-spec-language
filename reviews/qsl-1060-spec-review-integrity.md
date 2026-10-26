@@ -49,6 +49,9 @@ Round 1, against fix commit ff760ddb5 (`git diff c0f9ec111..ff760ddb5`).
 | FND-004 | fixed | FR-338 adds `check_protocol_closure` and FR-339 adds `check_protocol_components`, both taking `&ProtocolCertificateRequest`. The FR-339 Behavior bullet and AC-7 and TC-526 step 6 use it. The name matches the existing `qsl-replay/src/certificate/closure.rs:330` function. |
 | FND-005 | fixed | FR-126 "Certificates" now names FR-339's resolved-constraint order for `UnfairWeak`, and the producer sentence is gone from FR-339. The References line that split ownership between QSL-893 and QSL-1060 is removed, so the spec no longer contradicts QSL-893's recorded scope. |
 | FND-006 | fixed | FR-339 gains edges to QSpec FR-436, FR-215, FR-221, FR-222 and ADR-025. FR-228 gains a `depends_on` edge to FR-339. |
+| FND-007 | fixed | Round 2 (266854466): ADR-027 PA-3 now reads "with it, the clause's fairness set is its authored and memory constraints", in line with FR-212, QSpec FR-430 and ADR-025 MF-1. |
+| FND-008 | fixed | Round 2: `check_closure` and `check_protocol_closure` (FR-338), and `check_components` and `check_protocol_components` (FR-339), now return `Result<TemporalCertificateCheck, ClosureRefusal>`, matching closure.rs:276 and :330. The new cause list is incomplete (new FND-010). |
+| FND-009 | fixed | Round 2: FR-212 gains a `depends_on` edge to FR-228. |
 
 ## New findings (disposition pass 1)
 
@@ -57,3 +60,9 @@ Round 1, against fix commit ff760ddb5 (`git diff c0f9ec111..ff760ddb5`).
 | FND-007 | medium | ADR-027 PA-3, which FR-212 depends on, still says that with `scheduling adversarial` "the clause's fairness set is its authored constraints alone". Amended FR-212 now keeps the memory constraints, as QSpec FR-430 does, so FR-212 contradicts its own governing ADR. A reader of ADR-027 would drop the memory constraints. Amend PA-3 to "its authored and memory constraints" (ADR-025 MF-1) in this PR. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:260; spec/functional/FR-212-derive-scheduler-fairness-with-an-adversarial-opt-out.md:100-102 |
 | FND-008 | low | The new `check_protocol_closure` signature in FR-338 returns `TemporalCertificateCheck`. The function already in `qsl-replay/src/certificate/closure.rs:330` returns `Result<TemporalCertificateCheck, ClosureRefusal>`, as `check_closure` does at :276. The new spec signature copies the existing spec's omission of `ClosureRefusal`, and `check_protocol_components` will inherit it. Spell the `Result` and `ClosureRefusal` in FR-338 and FR-339. | spec/functional/FR-338-check-an-en-1-closure-certificate.md:105-117; spec/functional/FR-339-check-an-en-1-component-certificate.md:89-94; qsl-replay/src/certificate/closure.rs:276-281, :330-335 |
 | FND-009 | low | Amended FR-212 now cites FR-228 for the memory constraints, but its frontmatter has no `relationships` edge to FR-228. | spec/functional/FR-212-derive-scheduler-fairness-with-an-adversarial-opt-out.md:1-27, :60-63 |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | FR-338's new `ClosureRefusal` paragraph reads as the full list of causes. It names seven: admission, an unbounded root, no translation, no instance, no initial state, encoding, and protocol system. It omits two variants that `check_closure` and `check_protocol_closure` can return: `Fairness`, when a fairness constraint of the item names an operation the subject does not admit (closure.rs:861, on the zero-progress lasso path), and `Fault`, an internal invariant break (closure.rs:1204, :1242, :1253). The enum's `ProtocolRefinement` and `ProtocolAbstractSide` are raised only by the refinement checker (simulation.rs:394, :398), so leaving them out is correct. Add the two missing causes, or say "among them". | spec/functional/FR-338-check-an-en-1-closure-certificate.md:120-124; qsl-replay/src/certificate/closure.rs:209-248, :861 |
