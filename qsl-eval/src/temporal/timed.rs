@@ -413,6 +413,7 @@ impl Evaluator<'_> {
         Ok(match node {
             FormulaNode::Constant(value) => Tri::of(*value),
             FormulaNode::Holds { .. } => return Err(broken("atom-read-from-letters")),
+            FormulaNode::Aggregate { .. } => return Err(broken("aggregate-formula-not-emitted")),
             FormulaNode::Not(operand) => self.value(operand.index(), i)?.negate(),
             FormulaNode::And(left, right) => self
                 .value(left.index(), i)?

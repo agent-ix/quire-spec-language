@@ -64,6 +64,10 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
         | DeclarationForm::Urgent(_)
+        | DeclarationForm::Taskset(_)
+        | DeclarationForm::Schedulable(_)
+        | DeclarationForm::Response(_)
+        | DeclarationForm::Release(_)
         | DeclarationForm::HyperBehaviours(_)
         | DeclarationForm::HyperFinite(_)
         | DeclarationForm::ModelRelation(_)
@@ -238,6 +242,10 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::TimeSource(_) => "time",
             DeclarationForm::TimeInvariant(_) => "time invariant",
             DeclarationForm::Urgent(_) => "urgent",
+            DeclarationForm::Taskset(_) => "taskset",
+            DeclarationForm::Schedulable(_) => "schedulable",
+            DeclarationForm::Response(_) => "response",
+            DeclarationForm::Release(_) => "release",
             DeclarationForm::HyperBehaviours(_) => "hyper_behaviours",
             DeclarationForm::HyperFinite(_) => "hyper_finite",
             DeclarationForm::ModelRelation(_) => "model_relation",

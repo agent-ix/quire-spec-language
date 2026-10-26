@@ -65,7 +65,12 @@ fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
 }
 
 fn level() -> Json {
-    let identity = ident("Level");
+    bounded("Level", "3")
+}
+
+/// The integer value type `name`, from 0 to `max`.
+fn bounded(name: &str, max: &str) -> Json {
+    let identity = ident(name);
     let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"), "keyword": keyword,
@@ -77,7 +82,7 @@ fn level() -> Json {
         &identity,
         "value_type",
         json!({"scalar": "integer",
-            "constraints": [constraint("min", "0"), constraint("max", "3")]}),
+            "constraints": [constraint("min", "0"), constraint("max", max)]}),
     )
 }
 
@@ -129,18 +134,40 @@ pub(crate) fn document() -> Vec<u8> {
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
+    .chain([json!({"kind": {"module": PACKAGE, "name": "variant_type"},
+        "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}})])
     .collect();
     let value = ident("Cell/v");
     let weight = ident("Cell/w");
     let population = ident("cells");
-    let attempt = ident("Attempt");
-    let attempt_tally = ident("Attempt/n");
-    let attempt_field = json!({
-        "identity": attempt_tally, "name": "n", "typeRef": ident("Level"),
-        "presence": "required", "nullable": false, "defaultKind": "none",
-        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-        "origin": origin(&attempt_tally),
-    });
+    // A record type of one field, whose type is `type_ref`.
+    let record = |name: &str, field: &str, type_ref: &str, presence: &str| {
+        let identity = ident(&format!("{name}/{field}"));
+        let member = json!({
+            "identity": identity, "name": field, "typeRef": type_ref,
+            "presence": presence, "nullable": false, "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": origin(&identity),
+        });
+        wire_type(
+            &ident(name),
+            "record_value_type",
+            json!({
+                "supertypes": [], "fields": [member], "operations": [],
+            }),
+        )
+    };
+    let mode_cases: Vec<Json> = ["fast", "slow"]
+        .iter()
+        .enumerate()
+        .map(|(line, case)| {
+            json!({"identity": ident(&format!("variant/Mode-{case}")), "name": case,
+                "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                    "startLine": line + 1, "startColumn": 3}}})
+        })
+        .collect();
     let fields: Vec<Json> = [("v", &value), ("w", &weight)]
         .into_iter()
         .map(|(name, field)| {
@@ -163,6 +190,7 @@ pub(crate) fn document() -> Vec<u8> {
         "constructs": constructs,
         "types": [
             level(),
+            bounded("Tally", "0"),
             wire_type(&cell, "object_type", json!({
                 "supertypes": [],
                 "fields": fields,
@@ -180,11 +208,20 @@ pub(crate) fn document() -> Vec<u8> {
             wire_type(&ident("Idle"), "object_type", json!({
                 "supertypes": [], "fields": [], "operations": [], "relationships": [],
             })),
-            wire_type(&attempt, "record_value_type", json!({
-                "supertypes": [],
-                "fields": [attempt_field],
-                "operations": [],
-            })),
+            // One record, so a `cattempt` of `Attempt` has one choice of
+            // record.
+            record("Attempt", "n", &ident("Tally"), "required"),
+            record("RefundAttempt", "ok", "ix://quire/native/Boolean", "required"),
+            record("PeerAttempt", "p", &cell, "required"),
+            // An optional field: three records, absent first.
+            record("OptAttempt", "ok", "ix://quire/native/Boolean", "optional"),
+            // An enum field: two records, named by their declared cases.
+            wire_type(&ident("Mode"), "variant_type", json!({"variants": mode_cases})),
+            record("ModeAttempt", "m", &ident("Mode"), "required"),
+            // A field with no finite enumeration here, though bounded.
+            record("TextAttempt", "s", "ix://quire/native/String", "required"),
+            // An unbounded field: no finite domain.
+            record("WideAttempt", "n", "ix://quire/native/Integer", "required"),
         ],
         "populations": [{
             "identity": population, "displayName": population,

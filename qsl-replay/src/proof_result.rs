@@ -409,6 +409,13 @@ pub enum UnavailabilityCause {
         /// partial-order, constraint, that is not offered.
         reduction: ReductionKind,
     },
+    /// ADR-027 ST-12 (FR-207-AC-5): a compensation template's recovery
+    /// predicate reads its recovery binder, whose recovery view no rule
+    /// derives from a model state. Wire cause `recovery-view`.
+    RecoveryView {
+        /// The template, by its qualified name.
+        predicate: String,
+    },
     /// ADR-025 MA-4, MV-1 (QSpec FR-439): the EN-1 pre-check found an
     /// access shape under a weak memory model, including every failure
     /// found at the first failing state. Wire cause `weak-access-shape`.
@@ -541,6 +548,7 @@ impl UnavailabilityCause {
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
+            Self::RecoveryView { .. } => "recovery-view",
             Self::PunctualInterval { .. } => "punctual-interval",
         }
     }
@@ -555,6 +563,7 @@ impl UnavailabilityCause {
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
             | Self::WeakAccessShape { .. }
+            | Self::RecoveryView { .. }
             | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::HybridProviderAbsent

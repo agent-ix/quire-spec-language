@@ -795,6 +795,12 @@ pub fn check_protocol(
             cause: MemoryCause::WeakAccessShape(shape),
             stats: RunStats::default(),
         }),
+        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
+        // state is explored.
+        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
+            predicate,
+            stats: RunStats::default(),
+        }),
         Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
     }
 }
@@ -873,6 +879,12 @@ fn check_protocol_liveness(
         // is explored.
         Err(ProtocolRefusal::WeakAccessShape(shape)) => Ok(ModelCheckOutcome::Memory {
             cause: MemoryCause::WeakAccessShape(shape),
+            stats: RunStats::default(),
+        }),
+        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
+        // state is explored.
+        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
+            predicate,
             stats: RunStats::default(),
         }),
         Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),

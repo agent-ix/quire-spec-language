@@ -66,6 +66,7 @@ mod release_acquire;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;
+mod schedulability_routing;
 mod scheduler_fairness;
 mod smt_query;
 mod state_graph;

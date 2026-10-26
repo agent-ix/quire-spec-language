@@ -70,10 +70,13 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 - Every time value SHALL be an exact rational time quantity (QSpec FR-142,
   FR-230's time units); a value of another dimension SHALL refuse
   `ill_typed`/`type-mismatch` at its span.
-- **The task set's unit.** The checker SHALL take the unit of the task set's
-  first time quantity in source order as the task set's unit, and SHALL
-  convert every time value of the task set, and the bound `d` of every
-  `response` claim over it, exactly into that unit (QSpec FR-142). EN-7's
+- **The task set's unit.** The checker SHALL order the tasks by task name in
+  Unicode scalar value order (the order FR-482 writes them), then take the
+  unit of the first task's period or minimum inter-arrival time as the task
+  set's unit. It SHALL convert every time value of the task set, and the
+  bound `d` of every `response` claim over it, exactly into that unit (QSpec
+  FR-142). Reordering task declarations SHALL NOT change the chosen unit or
+  any checked value. EN-7's
   evidence (FR-247) and the settled record (FR-248) state their values in
   that unit, and the checked-package node holds them in it (FR-454). A task
   set written entirely in `ms` keeps `ms`, so `Ctl`'s fixpoints are
@@ -127,7 +130,7 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 |----|----------|--------------|
 | FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable CtlFp on Ctl under fixed_priority;` and `schedulable CtlEdf on Ctl under edf;` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6 gives a different obligation identity. | Test (TC-701) |
 | FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a jitter of -1 ms; a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed_priority`; two tasks with priority 1 under `fixed_priority`; a task with blocking 1 ms under `edf`; a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; a task with no priority under `response R on Ctl.c <= 12 ms under fixed_priority;`; two tasks with priority 1 under `response R on Ctl.c <= 12 ms under fixed_priority;`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response R on Ctl.zz <= 5 ms under fixed_priority;` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
-| FR-246-AC-3 | `Ctl` written in `ms` has unit `ms`, and FR-248 settles `CtlFp` with fixpoints `(1, 3, 12)`; `Ctl` with its first task's period written `4000 us` has unit `us`, every value and `response R on Ctl.c <= 12 ms under fixed_priority;`'s bound converted exactly (`12 ms` is `12000`), and fixpoints `(1000, 3000, 12000)`. `Ctl` with the first task's jitter `-1 ms` and the second's blocking `-1 ms`, under `CtlEdf`, reports four `invalid_timed_model`/`invalid-task-set` refusals in this order: the first task, the second task (the task set's own), then the first task and the second task (`edf`'s non-zero terms); with tasks declared in the order `a` (valid), `a` (valid) and `z` (period 0 ms), it reports `conflicting_declaration`/`duplicate-declaration` at the second `a`, then `invalid_timed_model`/`invalid-task-set` at `z`, in that order. `taskset Empty { }` with `response R on Empty.c <= 12 ms under fixed_priority;` has no unit, refuses `invalid-task-set` naming `Empty` and `missing_declaration`/`missing-name` at `c`, and keeps the bound `12 ms`. | Test (TC-701) |
+| FR-246-AC-3 | `Ctl` written in `ms` has unit `ms`, and FR-248 settles `CtlFp` with fixpoints `(1, 3, 12)`; `Ctl` with task `a`'s period written `4000 us` has unit `us`, every value and `response R on Ctl.c <= 12 ms under fixed_priority;`'s bound converted exactly (`12 ms` is `12000`), and fixpoints `(1000, 3000, 12000)`. Reordering those same tasks so `c` is first in source, while task `a` still has period `4000 us`, keeps unit `us`, all checked values and claim identity unchanged. `Ctl` with the first task's jitter `-1 ms` and the second's blocking `-1 ms`, under `CtlEdf`, reports four `invalid_timed_model`/`invalid-task-set` refusals in this order: the first task, the second task (the task set's own), then the first task and the second task (`edf`'s non-zero terms); with tasks declared in the order `a` (valid), `a` (valid) and `z` (period 0 ms), it reports `conflicting_declaration`/`duplicate-declaration` at the second `a`, then `invalid_timed_model`/`invalid-task-set` at `z`, in that order. `taskset Empty { }` with `response R on Empty.c <= 12 ms under fixed_priority;` has no unit, refuses `invalid-task-set` naming `Empty` and `missing_declaration`/`missing-name` at `c`, and keeps the bound `12 ms`. | Test (TC-701) |
 
 ## Dependencies
 
