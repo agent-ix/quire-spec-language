@@ -4,8 +4,8 @@
 //! whose idle tail lets time diverge, or a cycle with positive total delay.
 //!
 //! Under a dense source it explores FR-238's zone successor relation from
-//! the state's point zone with the core's own DBMs ([`super::dbm`]), never
-//! EN-6's. A fresh clock `z`, never compared by the model, is reset by a
+//! the state's point zone with the core's own DBMs
+//! ([`crate::certificate::zone`], the certificate checker's), never EN-6's. A fresh clock `z`, never compared by the model, is reset by a
 //! silent step whenever `z >= 1`, and a cycle of the closure through such a
 //! reset is a cycle along which time advances by at least 1 on every
 //! repetition (Tripakis's non-Zeno construction, as FR-240 states it).
@@ -15,18 +15,19 @@
 //! steps reach: a terminal state's stutter step is a tick, and a cycle
 //! through a tick step advances time.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
 use num_integer::Integer as _;
+use qsl_eval::fairness::{components, EdgeLabel, Graph as Digraph, Identity};
 use qsl_eval::simulation::model::{
     ModelSimState, PlaceConstraint, TimedState, TimedStop, TimedSystem,
 };
 use qsl_eval::simulation::Limits;
 use qsl_semantics::check::ClockOp;
-use quire_exact::Rational;
+use quire_exact::{Cancel, Integer, Rational};
 
-use super::dbm::{Bound, Dbm};
+use crate::certificate::zone::{Zone, ZoneError};
 
 /// What the exploration finds.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +53,16 @@ pub(crate) enum ExploreStop {
     Timed,
     /// A state has no canonical key.
     StateKey,
+    /// A zone operation named a clock the zone does not have.
+    Zone,
+    /// The explored graph named a vertex it does not hold.
+    Graph,
+}
+
+impl From<ZoneError> for ExploreStop {
+    fn from(_: ZoneError) -> Self {
+        Self::Zone
+    }
 }
 
 impl From<TimedStop> for ExploreStop {
@@ -125,24 +136,35 @@ impl<K: Ord> Graph<K> {
         Ok(())
     }
 
-    /// Whether some cycle passes through an edge along which time advances.
-    fn advancing_cycle(&self) -> bool {
-        let adjacency: Vec<Vec<usize>> = self
+    /// Whether some cycle passes through an edge along which time advances:
+    /// one whose ends lie in one strongly connected component.
+    fn advancing_cycle(&self) -> Result<bool, ExploreStop> {
+        let mut graph = Digraph::new();
+        let vertices: Vec<_> = self
             .out
             .iter()
-            .map(|edges| edges.iter().map(|(to, _)| *to).collect())
+            .map(|_| graph.add_vertex(std::iter::empty::<Identity>()))
             .collect();
-        let mut component = vec![usize::MAX; self.out.len()];
-        for (index, members) in sccs(&adjacency).into_iter().enumerate() {
-            for member in members {
-                component[member] = index;
+        for (from, edges) in self.out.iter().enumerate() {
+            for (to, _) in edges {
+                graph
+                    .add_edge(vertices[from], vertices[*to], EdgeLabel::Stutter)
+                    .map_err(|_| ExploreStop::Graph)?;
             }
         }
-        self.out.iter().enumerate().any(|(from, edges)| {
+        let within: BTreeSet<_> = vertices.iter().copied().collect();
+        let found = components(&graph, &within, &Cancel::new()).map_err(|_| ExploreStop::Graph)?;
+        let mut component = vec![usize::MAX; self.out.len()];
+        for (index, members) in found.iter().enumerate() {
+            for member in members.vertices() {
+                component[member.index()] = index;
+            }
+        }
+        Ok(self.out.iter().enumerate().any(|(from, edges)| {
             edges
                 .iter()
                 .any(|(to, advances)| *advances && component[from] == component[*to])
-        })
+        }))
     }
 }
 
@@ -199,7 +221,7 @@ fn explore_ticks(
             }
         }
     }
-    Ok(if graph.advancing_cycle() {
+    Ok(if graph.advancing_cycle()? {
         Closure::Divergent
     } else {
         Closure::Locked
@@ -216,7 +238,7 @@ fn zero() -> Rational {
 struct Scale {
     factor: BigInt,
     /// One per clock place, then `z`'s.
-    max: Vec<Option<BigInt>>,
+    max: Vec<Option<Integer>>,
 }
 
 impl Scale {
@@ -254,35 +276,41 @@ impl Scale {
             .chain(start.clocks().values())
             .map(|value| scaled(value, &factor))
             .max()
-            .unwrap_or_default();
+            .unwrap_or_else(Integer::zero);
         let mut max = vec![Some(scaled_max); timed.places().len()];
         // `z` is compared with 1 only.
-        max.push(Some(factor.clone()));
+        max.push(Some(Integer::from_big(factor.clone())));
         Self { factor, max }
     }
 }
 
 /// `value` in units of `1 / factor`, which `factor` makes exact.
-fn scaled(value: &Rational, factor: &BigInt) -> BigInt {
-    value.numerator().as_big() * factor / value.denominator().as_big()
+fn scaled(value: &Rational, factor: &BigInt) -> Integer {
+    Integer::from_big(value.numerator().as_big() * factor / value.denominator().as_big())
 }
 
-/// Intersect `zone` with `constraints`, place `p` the DBM's clock `p + 1`.
-fn constrain(zone: &mut Dbm, constraints: &[PlaceConstraint], factor: &BigInt) {
+/// Intersect `zone` with `constraints`, place `p` the zone's clock `p + 1`.
+fn constrain(
+    zone: &mut Zone,
+    constraints: &[PlaceConstraint],
+    factor: &BigInt,
+) -> Result<(), ZoneError> {
     for constraint in constraints {
         let clock = constraint.place() + 1;
         let bound = scaled(constraint.bound(), factor);
+        let below = bound.neg();
         match constraint.op() {
-            ClockOp::Less => zone.constrain(clock, 0, Bound::lt(bound)),
-            ClockOp::LessOrEqual => zone.constrain(clock, 0, Bound::le(bound)),
+            ClockOp::Less => zone.constrain(clock, 0, &bound, true)?,
+            ClockOp::LessOrEqual => zone.constrain(clock, 0, &bound, false)?,
             ClockOp::Equal => {
-                zone.constrain(clock, 0, Bound::le(bound.clone()));
-                zone.constrain(0, clock, Bound::le(-bound));
+                zone.constrain(clock, 0, &bound, false)?;
+                zone.constrain(0, clock, &below, false)?;
             }
-            ClockOp::GreaterOrEqual => zone.constrain(0, clock, Bound::le(-bound)),
-            ClockOp::Greater => zone.constrain(0, clock, Bound::lt(-bound)),
+            ClockOp::GreaterOrEqual => zone.constrain(0, clock, &below, false)?,
+            ClockOp::Greater => zone.constrain(0, clock, &below, true)?,
         }
     }
+    Ok(())
 }
 
 /// Under a dense source: zones with the `z` clock.
@@ -295,27 +323,24 @@ fn explore_zones(
     let factor = &scale.factor;
     let z = timed.places().len() + 1;
     // Let time pass at `state` within its invariants, then extrapolate.
-    let settle = |state: &ModelSimState, zone: &mut Dbm| -> Result<(), ExploreStop> {
+    let settle = |state: &ModelSimState, zone: &mut Zone| -> Result<(), ExploreStop> {
         let invariants = timed.invariants(state)?;
-        constrain(zone, &invariants, factor);
+        constrain(zone, &invariants, factor)?;
         if !timed.is_urgent(state)? {
             zone.up();
-            constrain(zone, &invariants, factor);
+            constrain(zone, &invariants, factor)?;
         }
-        zone.extrapolate(&scale.max);
+        zone.extrapolate(&scale.max)?;
         Ok(())
     };
-    let mut values: Vec<BigInt> = start
-        .clocks()
-        .values()
-        .iter()
-        .map(|value| scaled(value, factor))
-        .collect();
-    values.push(BigInt::from(0));
-    let mut zone = Dbm::point(&values);
+    // The point zone of `start`'s clocks, `z` at 0.
+    let mut zone = Zone::zero(z + 1);
+    for (place, value) in start.clocks().values().iter().enumerate() {
+        zone.reset(place + 1, &scaled(value, factor))?;
+    }
     settle(start.discrete(), &mut zone)?;
-    let mut graph: Graph<(Vec<u8>, Dbm)> = Graph::new();
-    let mut nodes: Vec<(ModelSimState, Dbm)> = Vec::new();
+    let mut graph: Graph<(Vec<u8>, Zone)> = Graph::new();
+    let mut nodes: Vec<(ModelSimState, Zone)> = Vec::new();
     match graph.node((key_of(timed, start.discrete())?, zone.clone()), limits) {
         Ok(_) => nodes.push((start.discrete().clone(), zone)),
         Err(stopped) => return Ok(stopped),
@@ -327,19 +352,19 @@ fn explore_zones(
         if timed.is_quiescent(&state)? {
             return Ok(Closure::Divergent);
         }
-        let mut targets: Vec<(ModelSimState, Dbm, bool)> = Vec::new();
+        let mut targets: Vec<(ModelSimState, Zone, bool)> = Vec::new();
         for step in timed.guarded_steps(&state)? {
             let target = timed.invariants(step.post())?;
             for part in step.parts() {
                 let mut after = zone.clone();
-                constrain(&mut after, part, factor);
+                constrain(&mut after, part, factor)?;
                 if after.is_empty() {
                     continue;
                 }
                 for (place, value) in step.resets() {
-                    after.reset(place + 1, &scaled(value, factor));
+                    after.reset(place + 1, &scaled(value, factor))?;
                 }
-                constrain(&mut after, &target, factor);
+                constrain(&mut after, &target, factor)?;
                 if after.is_empty() {
                     continue;
                 }
@@ -349,9 +374,9 @@ fn explore_zones(
         }
         // The silent step that resets `z` once a unit of time has passed.
         let mut reset = zone.clone();
-        reset.constrain(0, z, Bound::le(-factor.clone()));
+        reset.constrain(0, z, &Integer::from_big(-factor.clone()), false)?;
         if !reset.is_empty() {
-            reset.reset(z, &BigInt::from(0));
+            reset.reset(z, &Integer::zero())?;
             settle(&state, &mut reset)?;
             targets.push((state.clone(), reset, true));
         }
@@ -371,81 +396,9 @@ fn explore_zones(
             }
         }
     }
-    Ok(if graph.advancing_cycle() {
+    Ok(if graph.advancing_cycle()? {
         Closure::Divergent
     } else {
         Closure::Locked
     })
-}
-
-/// The strongly connected components of `out` (node `i`'s successors are
-/// `out[i]`), by Tarjan's algorithm without recursion.
-fn sccs(out: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let size = out.len();
-    let mut index = vec![usize::MAX; size];
-    let mut low = vec![0; size];
-    let mut on_stack = vec![false; size];
-    let mut stack = Vec::new();
-    let mut found = Vec::new();
-    let mut counter = 0;
-    for root in 0..size {
-        if index[root] != usize::MAX {
-            continue;
-        }
-        // Each frame: the node and the next successor to visit.
-        let mut frames = vec![(root, 0)];
-        index[root] = counter;
-        low[root] = counter;
-        counter += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&mut (node, ref mut next)) = frames.last_mut() {
-            if let Some(&successor) = out[node].get(*next) {
-                *next += 1;
-                if index[successor] == usize::MAX {
-                    index[successor] = counter;
-                    low[successor] = counter;
-                    counter += 1;
-                    stack.push(successor);
-                    on_stack[successor] = true;
-                    frames.push((successor, 0));
-                } else if on_stack[successor] {
-                    low[node] = low[node].min(index[successor]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                low[parent] = low[parent].min(low[node]);
-            }
-            if low[node] == index[node] {
-                let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
-                    }
-                }
-                found.push(component);
-            }
-        }
-    }
-    found
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sccs;
-
-    /// A cycle is one component and a tail node its own.
-    #[test]
-    fn a_cycle_is_one_component() {
-        let mut found = sccs(&[vec![1], vec![2], vec![1, 3], vec![]]);
-        for component in &mut found {
-            component.sort_unstable();
-        }
-        found.sort();
-        assert_eq!(found, [vec![0], vec![1, 2], vec![3]]);
-    }
 }

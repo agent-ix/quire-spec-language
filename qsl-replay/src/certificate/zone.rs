@@ -115,8 +115,9 @@ impl Exact for i64 {
 type Cell<W> = Option<W>;
 
 /// A zone: a conjunction of `x_i - x_j ≺ c` over the reference clock and
-/// `dim - 1` clocks, as an encoded difference-bound matrix.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// `dim - 1` clocks, as an encoded difference-bound matrix. Its order is an
+/// arbitrary total one, for keying.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Zone<W: Exact = Integer> {
     dim: usize,
     cells: Vec<Cell<W>>,
@@ -396,6 +397,51 @@ impl<W: Exact> Zone<W> {
             .iter()
             .zip(&other.cells)
             .all(|(mine, theirs)| !tighter(mine, theirs)))
+    }
+
+    /// The classical `Extra_M` extrapolation (Behrmann, Bouyer, Larsen and
+    /// Pelánek) of a canonical zone, left canonical: entry `k` of `max` is
+    /// clock `k + 1`'s largest constant, `None` for a clock no constant is
+    /// compared with. A bound `x_i - x_j ≺ c` with `c > M_i` becomes `∞`,
+    /// and one with `c < -M_j` becomes `< -M_j`, so the zones a run reaches
+    /// are finitely many (FR-237's fresh exploration).
+    pub fn extrapolate(&mut self, max: &[Option<W>]) -> Result<(), ZoneError> {
+        let clocks = self.dim.saturating_sub(1);
+        if max.len() != clocks {
+            return Err(ZoneError::LuLength {
+                lower: max.len(),
+                upper: max.len(),
+                clocks,
+            });
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        let ceiling = |k: usize| if k == 0 { None } else { max[k - 1].as_ref() };
+        let dim = self.dim;
+        for i in 0..dim {
+            for j in (0..dim).filter(|&j| j != i) {
+                let Some((value, _)) = self.bound(i, j)? else {
+                    continue;
+                };
+                let above = match ceiling(i) {
+                    Some(m) => &value > m,
+                    None => i != 0,
+                };
+                let below = match ceiling(j) {
+                    Some(m) => value < m.negated(),
+                    None => j != 0 && value < W::of(0),
+                };
+                if above {
+                    self.cells[i * dim + j] = None;
+                } else if below {
+                    let m = ceiling(j).cloned().unwrap_or_else(|| W::of(0));
+                    self.cells[i * dim + j] = Some(strict(&m.negated()));
+                }
+            }
+        }
+        self.close();
+        Ok(())
     }
 
     /// Whether this canonical zone is covered by canonical `target` under
