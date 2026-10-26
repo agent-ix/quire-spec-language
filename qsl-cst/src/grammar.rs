@@ -335,6 +335,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::UrgentDeclaration),
         r(P::RandomDeclaration),
         r(P::RewardDeclaration),
+        r(P::DelayDeclaration),
         r(P::WorkloadDeclaration),
         r(P::ProbabilisticClause),
         r(P::StateGraphClaim),
@@ -2424,6 +2425,48 @@ fn probabilistic(g: &mut Grammar) {
             r(P::Expression),
             x(";"),
         ]),
+    );
+    g.insert(
+        P::DelayDeclaration,
+        s(vec![
+            literal("delay"),
+            r(P::QualifiedName),
+            x("~"),
+            r(P::DelayDistribution),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::DelayDistribution,
+        c(vec![
+            s(vec![
+                literal("uniform"),
+                opt(s(vec![
+                    x("["),
+                    r(P::QuantityLiteral),
+                    x(","),
+                    r(P::QuantityLiteral),
+                    x("]"),
+                ])),
+            ]),
+            s(vec![
+                literal("exponential"),
+                x("("),
+                r(P::ExactValue),
+                x(")"),
+            ]),
+            s(vec![
+                literal("discrete"),
+                x("{"),
+                list(|| r(P::WeightedDelay)),
+                opt(x(",")),
+                x("}"),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::WeightedDelay,
+        s(vec![r(P::QuantityLiteral), x(":"), r(P::ExactValue)]),
     );
     g.insert(
         P::WorkloadDeclaration,

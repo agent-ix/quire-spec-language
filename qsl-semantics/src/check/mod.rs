@@ -147,10 +147,11 @@ mod terminal;
 mod time_units;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
-    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Event, FractionMeasure,
-    ModelSubjectRef, OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
-    ReachTarget, Reward, SupportValue, WeightOwner, Workload,
+    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Delay, DelayDistribution,
+    DelayFault, Event, FractionMeasure, ModelSubjectRef, OverBinding, PreconditionSite, ProbForm,
+    ProbScheduler, ProbabilisticCause, ProbabilisticDeclaration, ProbabilisticFeature,
+    ProbabilisticOperation, RandomParameter, ReachTarget, Reward, SupportValue, WeightOwner,
+    Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -1503,7 +1504,7 @@ impl PackageDeclarations {
                         add_activation_model_calls(&claim.activation, &mut model_context_calls);
                         add_probabilistic_body_model_calls(&claim.body, &mut model_context_calls);
                     }
-                    ProbabilisticDeclaration::Workload(_) => {}
+                    ProbabilisticDeclaration::Delay(_) | ProbabilisticDeclaration::Workload(_) => {}
                 }
             }
             for hyper in &self.hyper_clauses {
@@ -2986,6 +2987,8 @@ impl PackageDeclarations {
             models: &models,
             model_objects: &model_objects,
             object_types: &object_types,
+            time_sources: &self.time_sources,
+            time_units: &time_units,
             preconditions: &precondition_reads,
             profiles: &self.profile_selections,
             limits,
