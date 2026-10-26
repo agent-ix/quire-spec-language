@@ -169,8 +169,9 @@ pub enum ModelCheckRefusal {
         form: Option<PropertyForm>,
     },
     /// A `holds` condition of the clause reads a capture (FR-337 "Capture
-    /// observation"); what a read of a capture means is undecided (QSL-1092),
-    /// so no state is explored.
+    /// observation"): FR-338's automaton-state keys carry no capture vector, so
+    /// the engine returns no verdict (the standing decision of QSL-1092) and
+    /// explores no state.
     #[error("a `holds` condition of clause `{clause}` reads the capture `{capture}`")]
     CaptureRead {
         /// The clause's name.
@@ -1437,7 +1438,7 @@ fn bounded_translations(instances: &[Instance]) -> Vec<BoundedTranslation> {
         .iter()
         .filter_map(|instance| match &instance.translation {
             Translation::Bounded(translation) => Some(translation.clone()),
-            Translation::Safety(_) => None,
+            Translation::Safety(_) | Translation::Liveness(_) => None,
         })
         .collect()
 }
@@ -1591,6 +1592,11 @@ impl<S: SubjectSystem> Run<'_, S> {
                         automaton_state: key.clone(),
                     }));
                 }
+                // The producer refuses liveness clauses before instancing; only
+                // the closure checker builds this variant.
+                Translation::Liveness(_) => {
+                    return Err(fault("a-producer-run-has-no-liveness-translation"))
+                }
                 Translation::Bounded(translation) => {
                     for (node, canonical) in self.nodes.iter().zip(&self.canonical) {
                         let state = canonical
@@ -1639,6 +1645,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             AutomatonError::AtomOutOfRange { .. }
             | AutomatonError::UnknownState { .. }
             | AutomatonError::NotSafetyAutomaton { .. }
+            | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
             | AutomatonError::ProfileNotTranslated { .. }

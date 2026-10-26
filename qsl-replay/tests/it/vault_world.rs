@@ -13,7 +13,8 @@ use qsl_foundation::bound::ProofBound;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    check_hyper_clauses, CheckedHyper, CheckedHyperClause, PackageDeclarations,
+    check_clauses, check_hyper_clauses, CheckedHyper, CheckedHyperClause, CheckedTemporalClause,
+    PackageDeclarations,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -380,6 +381,7 @@ fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &st
 /// A checked vault world with one hyper clause.
 pub struct World {
     package: CheckedPackage,
+    temporal_clause: Option<CheckedTemporalClause>,
     /// The same clause as S3 checked it, before any package assembled it.
     pub unassembled: CheckedHyperClause,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
@@ -454,7 +456,12 @@ impl World {
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
         let text = unit_text(&document, other, build, &format!("{declaration}\n"));
-        let graph = declarations(&documents, &text)
+        let assembled = declarations(&documents, &text);
+        let temporal_clause = check_clauses(&assembled)
+            .into_iter()
+            .next()
+            .map(|checked| checked.expect("the temporal clause checks"));
+        let graph = assembled
             .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
@@ -497,6 +504,7 @@ impl World {
         let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
         Self {
             package,
+            temporal_clause,
             unassembled,
             packages: package_input(documents.iter().copied()),
             snapshots,
@@ -597,5 +605,356 @@ impl World {
     /// The vault's subject.
     pub fn subject(&self) -> ModelSubject<'_> {
         self.subject_over(&self.package, Vec::new())
+    }
+}
+
+/// The TP-4 closure replay fixtures (FR-338-AC-24, FR-338-AC-25).
+mod tp4 {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use qsl_eval::automaton::{
+        translate, BuchiState, BuchiStates, ContextBinding, Letter, StateContext, SubjectKind,
+    };
+    use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
+    use qsl_eval::simulation::model::ModelSimState;
+    use qsl_eval::simulation::model::ModelSystem;
+    use qsl_eval::temporal::AtomReading;
+    use qsl_foundation::digest::WireNodeId;
+    use qsl_foundation::source::provenance::OccurrenceKey;
+    use qsl_replay::ClauseIdentity;
+    use qsl_replay::{
+        check_closure, CertificateLocus, CertificateRequest, CertificateRule, ClosureCertificate,
+        ModelCheckItem, ModelCheckLimits, TemporalCertificateCheck,
+    };
+    use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
+    use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+    use quire_exact::{Cancel, Meter, Origin, Role};
+    use quire_exact::{Value, ValueType};
+
+    use super::{World, FORALL_EXISTS};
+
+    /// Every `holds` atom is true at every position, so the engine walks a
+    /// path whose states differ by the past history it has retained.
+    struct TrueLetters;
+
+    impl ModelLetters for TrueLetters {
+        fn atom(
+            &self,
+            _atom: FormulaNodeId,
+            _instance: &ModelInstance,
+            _state: &ModelSimState,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, AtomStop> {
+            Ok(AtomReading::True)
+        }
+
+        fn activation(
+            &self,
+            _instance: &ModelInstance,
+            _state: &ModelSimState,
+            _meter: &mut Meter,
+        ) -> Result<AtomReading, AtomStop> {
+            Ok(AtomReading::True)
+        }
+
+        fn activation_reads(&self) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+            Ok(BTreeSet::new())
+        }
+
+        fn reads(
+            &self,
+            _atom: FormulaNodeId,
+        ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+            Ok(BTreeSet::new())
+        }
+    }
+
+    static LETTERS: TrueLetters = TrueLetters;
+
+    /// A TP-4 liveness clause whose reached automaton states carry several
+    /// distinct keys: the past operand's retained history differs between
+    /// the first position and the later ones.
+    const BODY: &str = "always eventually (holds(v.l = 0) and once[1,1] holds(v.l = 0))";
+
+    pub struct Case {
+        world: World,
+        package_id: qsl_semantics::library::PackageId,
+    }
+
+    impl Case {
+        pub fn new() -> Self {
+            let temporal = format!(
+                "temporal Live using inf over (v: V::Vault) clock \"model-steps\" on origin {{ {BODY} }}"
+            );
+            let world = World::new(&["v"], false, &format!("{FORALL_EXISTS}\n{temporal}"));
+            let package_id = qsl_package::emit_checked(world.package())
+                .expect("the checked package emits")
+                .package()
+                .package_id();
+            Self { world, package_id }
+        }
+
+        pub fn clause(&self) -> &CheckedTemporalClause {
+            self.world
+                .temporal_clause
+                .as_ref()
+                .expect("the checked package contains the TP-4 clause")
+        }
+
+        pub fn request(&self) -> CertificateRequest<'_> {
+            CertificateRequest {
+                subject: self.world.subject(),
+                item: ModelCheckItem::Clause {
+                    clause: self.clause(),
+                    letters: &LETTERS,
+                },
+                smt_encoding: Default::default(),
+            }
+        }
+
+        pub fn check(
+            &self,
+            certificate: &ClosureCertificate,
+        ) -> Result<TemporalCertificateCheck, qsl_replay::ClosureRefusal> {
+            check_closure(
+                &self.request(),
+                certificate,
+                &ModelCheckLimits::default(),
+                &Cancel::new(),
+            )
+        }
+
+        /// The accepted certificate, grown from the checker's named product
+        /// states, each key of which must be one the engine replay reached.
+        pub fn certificate(&self) -> ClosureCertificate {
+            let keys = self.expected_keys();
+            let mut certificate = ClosureCertificate {
+                package_id: self.package_id,
+                states: Vec::new(),
+            };
+            // The checker names each absent product state (its model-state
+            // digest is the model's identity, which this test does not
+            // recompute); the automaton key of every one is checked against
+            // the independent replay, and the key set is pinned by the tests.
+            for _ in 0..512 {
+                match self.check(&certificate).expect("the request admits") {
+                    TemporalCertificateCheck::Accepted => return certificate,
+                    TemporalCertificateCheck::Rejected(rejection) => {
+                        let CertificateLocus::ProductState(state) = rejection.at else {
+                            panic!("TP-4 closure failures name product states");
+                        };
+                        assert!(
+                            matches!(
+                                rejection.rule,
+                                CertificateRule::InitialMissing | CertificateRule::SuccessorMissing
+                            ),
+                            "unexpected rejection {:?}",
+                            rejection.rule
+                        );
+                        assert!(
+                            keys.contains_key(state.automaton_state.as_bytes()),
+                            "the checker named a key the independent replay did not reach"
+                        );
+                        certificate.states.push(state);
+                        certificate.states.sort();
+                        certificate.states.dedup();
+                    }
+                    other => panic!("unexpected TP-4 closure result: {other:?}"),
+                }
+            }
+            panic!("the reachable product closure is finite");
+        }
+
+        /// The key context the checker builds for the clause's one instance:
+        /// the package's own clause identity and the instance's reference.
+        fn context(&self) -> StateContext {
+            let subject = self.world.subject();
+            let identity = ClauseIdentity::resolve(
+                subject.simulation.package,
+                subject.simulation.packages,
+                self.clause(),
+                &Cancel::new(),
+            )
+            .expect("the clause resolves in its package");
+            let system = ModelSystem::new(subject.simulation).expect("the model admits");
+            let over = &self.clause().over().1;
+            let instance = system
+                .instances(over)
+                .expect("the population is bounded")
+                .into_iter()
+                .next()
+                .expect("one instance");
+            let ValueType::Reference(object_type) = over else {
+                panic!("the clause ranges over a reference");
+            };
+            let reference = system
+                .bound_reference(*object_type, &instance)
+                .expect("the instance has a reference");
+            StateContext::clause(
+                self.clause(),
+                identity.occurrence().clone(),
+                vec![ContextBinding {
+                    parameter: identity.over().expect("the clause has an over node"),
+                    value: Value::Reference(reference),
+                }],
+            )
+        }
+
+        pub fn keys(&self) -> BuchiStates {
+            BuchiStates::clause(self.clause(), &self.context(), SubjectKind::Ordinary)
+                .expect("the TP-4 key context translates")
+        }
+
+        /// Every automaton key at least one letter-step from the initial
+        /// state under the all-true letter, by replaying the engine alone.
+        pub fn expected_keys(&self) -> BTreeMap<Vec<u8>, BuchiState> {
+            let keys = self.keys();
+            let mut automaton = translate(
+                self.clause(),
+                ModelCheckLimits::default().max_automaton_states,
+            )
+            .expect("the clause translates");
+            let letter = Letter::from_bits((1u64 << automaton.atoms().len()) - 1);
+            let mut seen = BTreeSet::new();
+            let mut reached = BTreeMap::new();
+            let mut pending = vec![automaton.initial().expect("initial state fits")];
+            while let Some(from) = pending.pop() {
+                for to in automaton
+                    .successors(from, letter)
+                    .expect("successors materialize")
+                {
+                    if seen.insert(to) {
+                        let structural = automaton
+                            .buchi_state(to, keys.max_key_bytes())
+                            .expect("the state resolves structurally");
+                        let key = keys.key(&structural).expect("the state encodes");
+                        reached.insert(key.as_bytes().to_vec(), structural);
+                        pending.push(to);
+                    }
+                }
+            }
+            reached
+        }
+
+        pub fn foreign_keys(&self) -> BuchiStates {
+            let identity = OccurrenceKey::new(
+                WireNodeId::from_digest([0x53; 32]),
+                Origin::new(Role::new("temporal"), 1),
+            );
+            let context = StateContext::clause(self.clause(), identity, Vec::new());
+            BuchiStates::clause(self.clause(), &context, SubjectKind::Ordinary)
+                .expect("the foreign TP-4 key context builds")
+        }
+    }
+
+    fn assert_missing(case: &Case, certificate: &ClosureCertificate, what: &str) {
+        match case.check(certificate).expect("the request admits") {
+            TemporalCertificateCheck::Rejected(rejection) => assert!(
+                matches!(
+                    rejection.rule,
+                    CertificateRule::InitialMissing | CertificateRule::SuccessorMissing
+                ),
+                "{what}: rejected {:?}",
+                rejection.rule
+            ),
+            other => panic!("{what}: expected a rejection, got {other:?}"),
+        }
+    }
+
+    /// FR-338-AC-24: the TP-4 certificate carries the keys of the structural
+    /// states an independent replay of the engine reaches, with at least two
+    /// distinct keys, and the checker accepts it.
+    #[ix_trace_rs::trace("TC-525", "FR-338-AC-24")]
+    #[test]
+    fn tp4_closure_accepts_the_independently_replayed_keys() {
+        let case = Case::new();
+        let expected = case.expected_keys();
+        assert!(
+            expected.len() >= 2,
+            "the fixture must reach distinct automaton keys"
+        );
+        let certificate = case.certificate();
+        let carried: BTreeSet<Vec<u8>> = certificate
+            .states
+            .iter()
+            .map(|state| state.automaton_state.as_bytes().to_vec())
+            .collect();
+        assert_eq!(carried, expected.keys().cloned().collect::<BTreeSet<_>>());
+        assert!(matches!(
+            case.check(&certificate),
+            Ok(TemporalCertificateCheck::Accepted)
+        ));
+    }
+
+    /// FR-338-AC-24: a certificate whose key is replaced, swapped, rotated or
+    /// dropped is rejected at a missing product state, never accepted.
+    #[ix_trace_rs::trace("TC-525", "FR-338-AC-24")]
+    #[test]
+    fn tp4_closure_refuses_each_key_tamper() {
+        let case = Case::new();
+        let certificate = case.certificate();
+        let states = &certificate.states;
+        let key = |index: usize| states[index].automaton_state.clone();
+        let (first, second) = (0..states.len())
+            .flat_map(|first| (0..states.len()).map(move |second| (first, second)))
+            .find(|&(first, second)| key(first) != key(second))
+            .expect("two product states carry distinct keys");
+
+        let mut replaced = certificate.clone();
+        replaced.states[first].automaton_state = key(second);
+        assert_missing(&case, &replaced, "replacing one state's key");
+
+        // A swap of two keys of one model state leaves the same set, so the
+        // pair is one whose swap changes the set.
+        let swap = |first: usize, second: usize| {
+            let mut swapped = certificate.clone();
+            swapped.states[first].automaton_state = key(second);
+            swapped.states[second].automaton_state = key(first);
+            swapped
+        };
+        let as_set = |certificate: &ClosureCertificate| {
+            certificate.states.iter().cloned().collect::<BTreeSet<_>>()
+        };
+        let (a, b) = (0..states.len())
+            .flat_map(|a| (0..states.len()).map(move |b| (a, b)))
+            .find(|&(a, b)| as_set(&swap(a, b)) != as_set(&certificate))
+            .expect("some swap changes the product-state set");
+        assert_missing(&case, &swap(a, b), "swapping two states' keys");
+
+        let mut rotated = certificate.clone();
+        for (index, state) in rotated.states.iter_mut().enumerate() {
+            state.automaton_state = key((index + 1) % states.len());
+        }
+        assert_ne!(rotated, certificate);
+        assert_missing(&case, &rotated, "rotating every state's key");
+
+        for index in 0..states.len() {
+            let mut dropped = certificate.clone();
+            dropped.states.remove(index);
+            assert_missing(&case, &dropped, "dropping a product state");
+        }
+    }
+
+    /// FR-338-AC-25: a well-formed key of another clause context is rejected
+    /// `ShapeMismatch` at its product state, before membership is checked.
+    #[ix_trace_rs::trace("TC-525", "FR-338-AC-25")]
+    #[test]
+    fn tp4_closure_refuses_a_foreign_context_key() {
+        let case = Case::new();
+        let certificate = case.certificate();
+        let (_, structural) = case.expected_keys().into_iter().next().expect("a key");
+        let foreign_key = case
+            .foreign_keys()
+            .key(&structural)
+            .expect("the foreign key is well formed");
+        let mut foreign = certificate.clone();
+        foreign.states[0].automaton_state = foreign_key;
+        let at = foreign.states[0].clone();
+        assert!(matches!(
+            case.check(&foreign),
+            Ok(TemporalCertificateCheck::Rejected(rejection))
+                if rejection.rule == CertificateRule::ShapeMismatch
+                    && rejection.at == CertificateLocus::ProductState(at)
+        ));
     }
 }

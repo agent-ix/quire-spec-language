@@ -759,6 +759,7 @@ impl SafetyStates {
             shape: &self.shape,
             max_bytes: self.max_bytes,
             subject: self.subject,
+            boolean_obligations: false,
         }
         .branches(branches)
     }

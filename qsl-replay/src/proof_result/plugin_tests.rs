@@ -1153,10 +1153,10 @@ fn tc_774_a_transitive_dependency_replays() {
 ///
 /// Not asserted here, so no `FR-290-AC-1` tag: FR-281-AC-1's `certified`
 /// record naming the EN-5 checker (EN-5 has no certificate checker or
-/// `analyze` item adapter until QSL-574 and QSL-575) and FR-281-AC-4's
-/// `uncertified` record from a test engine with no checker (no such engine
-/// exists, and `analyze` accepts no engine-supplied proof). The tag moves to
-/// a test that asserts all four.
+/// `analyze` item adapter until QSL-574 and QSL-575). FR-281-AC-4's
+/// `uncertified` record is assertable now, from EN-1 under partial-order
+/// reduction (TC-763); the tag waits only on the EN-5 record. The tag moves
+/// to a test that asserts all four.
 #[trace("TC-774")]
 #[test]
 fn tc_774_plugin_proof_settles_trusted_and_kani_proof_certified() {
