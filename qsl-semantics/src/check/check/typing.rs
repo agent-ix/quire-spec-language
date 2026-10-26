@@ -41,8 +41,9 @@ use qsl_forms::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{
-    ArithmeticOperator, CollectionKind, CollectionType, IllTypedCause, Integer, IntegerInterval,
-    NodeKey, OrderingOperator, Value, ValueType,
+    ArithmeticOperator, CollectionKind, CollectionType, FloatType, IeeeValue, IeeeWidth,
+    IllTypedCause, Integer, IntegerInterval, NodeKey, OrderingOperator, RoundingMode, Value,
+    ValueType,
 };
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
@@ -437,18 +438,23 @@ enum Callee<'r> {
 
 impl<'r> Callee<'r> {
     /// The type the argument at `index` is checked against.
-    fn parameter(&self, index: usize) -> Option<&'r ValueType> {
+    fn parameter(&self, index: usize) -> Option<ValueType> {
         match self {
             Self::Value(application) => application.parameter(index),
-            Self::Union(member) => member.parameter(index),
+            Self::Union(member) => member.parameter(index).cloned(),
         }
     }
 
     /// The node over its checked `arguments`.
-    fn finish(self, arguments: Vec<NodeId>, location: &Location) -> Node {
+    fn finish(
+        self,
+        arguments: Vec<NodeId>,
+        argument_types: Vec<ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         match self {
-            Self::Value(application) => application.finish(arguments, location),
-            Self::Union(member) => member.finish(arguments, location),
+            Self::Value(application) => application.finish(arguments, argument_types, location),
+            Self::Union(member) => Ok(member.finish(arguments, location)),
         }
     }
 }
@@ -459,6 +465,7 @@ struct ApplicationFrame<'e, 'r> {
     arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<NodeId>,
+    argument_types: Vec<ValueType>,
 }
 
 /// A record literal, admitting its initializers in source order.
@@ -957,6 +964,15 @@ impl<'a> Typer<'a> {
                     &location,
                 )
             }
+            ExprNode::Float32(bits) => self.ieee_literal(
+                IeeeWidth::Binary32,
+                u64::from(*bits),
+                hint.as_deref(),
+                &location,
+            )?,
+            ExprNode::Float64(bits) => {
+                self.ieee_literal(IeeeWidth::Binary64, *bits, hint.as_deref(), &location)?
+            }
             ExprNode::String(text) => node(
                 NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
                 ValueType::String,
@@ -1275,7 +1291,7 @@ impl<'a> Typer<'a> {
                 } else {
                     let arity = arguments.len();
                     let application = match resolve_target(self, &name.name, &location, || {
-                        Application::resolve(self, &name.name, arity, &location)
+                        Application::resolve(self, &name.name, arity, hint.as_deref(), &location)
                     })
                     .map_err(|refusal| qualified_name_refusal(refusal, name))?
                     {
@@ -1285,15 +1301,16 @@ impl<'a> Typer<'a> {
                         }
                         ResolvedTarget::Value(application) => Callee::Value(application),
                     };
-                    return Ok(Self::application(
+                    return Self::application(
                         Box::new(ApplicationFrame {
                             application,
                             arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
                             location,
                             typed: Vec::with_capacity(arguments.len()),
+                            argument_types: Vec::with_capacity(arguments.len()),
                         }),
                         frames,
-                    ));
+                    );
                 }
             }
             ExprNode::Record { name, fields } => {
@@ -1564,6 +1581,34 @@ impl<'a> Typer<'a> {
 
     /// Start `left op right`: a connective checks both operands Boolean;
     /// any other operator types its operands as a pair.
+    /// The bit-exact IEEE literal, using its same-width expected type's
+    /// rounding mode and strict `exact` otherwise.
+    fn ieee_literal(
+        &self,
+        width: IeeeWidth,
+        bits: u64,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let rounding = match hint {
+            Some(ValueType::Float(float)) if float.width() == width => float.rounding(),
+            Some(_) => return Err(mismatch(location)),
+            None => RoundingMode::Exact,
+        };
+        if self.scope.ieee_profile.is_none() {
+            return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
+        }
+        let value = match width {
+            IeeeWidth::Binary32 => IeeeValue::binary32(bits as u32),
+            IeeeWidth::Binary64 => IeeeValue::binary64(bits),
+        };
+        Ok(node(
+            NodeKind::Literal(CheckedLiteral(Value::Float(value))),
+            ValueType::Float(FloatType::new(width, rounding)),
+            location,
+        ))
+    }
+
     fn binary<'e, 'r>(
         &mut self,
         operator: BinaryOperator,
@@ -1784,29 +1829,33 @@ impl<'a> Typer<'a> {
     fn application<'e, 'r>(
         frame: Box<ApplicationFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
-    ) -> Step<'e, 'r> {
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let index = frame.typed.len();
-        match (
-            frame.arguments.get(index).copied(),
-            frame.application.parameter(index),
-        ) {
-            (Some(argument), Some(parameter)) => {
+        match frame.arguments.get(index).copied() {
+            Some(argument) => {
                 let location = frame.location.child(index);
+                let expected = frame.application.parameter(index);
                 frames.push(Frame::Application(frame));
-                Step::Descend(Goal::Expect(
-                    argument,
-                    Expected::Checked(Cow::Borrowed(parameter)),
-                    location,
-                ))
+                match expected {
+                    Some(parameter) => Ok(Step::Descend(Goal::Expect(
+                        argument,
+                        Expected::Checked(Cow::Owned(parameter)),
+                        location,
+                    ))),
+                    None => Ok(Step::Descend(Goal::Infer(argument, None, location))),
+                }
             }
-            _ => {
+            None => {
                 let ApplicationFrame {
                     application,
                     location,
                     typed,
+                    argument_types,
                     ..
                 } = *frame;
-                Step::Typed(application.finish(typed, &location))
+                application
+                    .finish(typed, argument_types, &location)
+                    .map(Step::Typed)
             }
         }
     }
@@ -2034,8 +2083,9 @@ impl<'a> Typer<'a> {
                 )
                 .map(Step::Typed),
             Frame::Application(mut frame) => {
+                frame.argument_types.push(typed.value_type.clone());
                 frame.typed.push(self.push(typed));
-                Ok(Self::application(frame, frames))
+                Self::application(frame, frames)
             }
             Frame::Record(mut frame) => {
                 if let Some(index) = frame.awaiting.take() {

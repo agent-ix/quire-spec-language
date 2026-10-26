@@ -463,7 +463,7 @@ fn the_accessor_yields_every_cause_in_order() {
     );
 }
 
-fn current_report(clause: &str, root: i64, child: i64) -> ClauseRunReport {
+pub(super) fn current_report(clause: &str, root: i64, child: i64) -> ClauseRunReport {
     let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("current-snap");
     let bytes = config_version_snapshot(&label, &model_digest_hex, root, Some(child));
@@ -600,6 +600,7 @@ fn dispositions_the_gate_never_produces_are_tool_failures() {
             usage: Default::default(),
             basis: crate::proof_result::SettlementBasis::Unavailable,
             witness: None,
+            consequent_source_events: Default::default(),
             disposition,
         };
         assert_eq!(
@@ -760,6 +761,7 @@ fn a_clause_run_compile_type_admission_limit_names_the_limit() {
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
+        consequent_source_events: Default::default(),
         disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
             code: Code::StageLimitExceeded,
             cause: "type-limit",
@@ -904,6 +906,7 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
+        consequent_source_events: Default::default(),
         disposition: ClauseDisposition::ArgumentRefusal(Box::new(RunRefusal::Cancelled(
             quire_exact::CancelCause::Requested,
         ))),

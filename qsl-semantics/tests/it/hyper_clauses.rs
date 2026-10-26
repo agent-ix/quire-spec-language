@@ -1696,6 +1696,36 @@ fn an_indexed_let_and_deref_read_one_component() {
     );
 }
 
+/// FR-172-AC-7: a receiver label whose operation set spans two object types
+/// is refused at the read rather than being assigned one trace's type.
+#[trace("TC-1264", "FR-172-AC-7")]
+#[test]
+fn receiver_read_over_two_object_types_is_refused_at_the_read() {
+    let declaration = behaviours(
+        "forall trace a of V forall trace b of S",
+        "match { a.step.receiver = b.tick.receiver }",
+        "always holds(true)",
+    );
+    let (text, cause) = hyper_cause(&["V", "S"], &declaration);
+    let code = cause.code();
+    let tag = cause.tag();
+    assert_eq!(
+        (code, tag),
+        (Code::UnsupportedConstruct, "expression-form"),
+        "{cause:?}"
+    );
+    let (start, end) = match cause {
+        HyperCause::MatchReadsState { span } => (span.start, span.end),
+        HyperCause::BodyUnsupported { span } => (span.start, span.end),
+        HyperCause::BodyIllTyped { span } => (span.start, span.end),
+        other => panic!("the receiver read is the refusal locus: {other:?}"),
+    };
+    assert!(
+        text[start..end].contains("receiver"),
+        "the refusal region {start}..{end} names the receiver read"
+    );
+}
+
 /// FR-487-AC-10: definedness is per component. A reference presence proved in
 /// component `a` does not prove the same reference in component `b`.
 #[trace("TC-1264", "FR-487-AC-10")]

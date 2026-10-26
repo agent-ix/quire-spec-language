@@ -399,6 +399,10 @@ impl<'r, 'a> Reader<'r, 'a> {
                     defined: Term::all([left.defined, right.defined]),
                 })
             }
+            NodeKind::IeeeNumericEquality(_, _) => Err(self.refuse(
+                node,
+                "IEEE numeric equality is not in the scalar SMT subset",
+            )),
             NodeKind::Connective(connective, left, right) => {
                 let (left, left_defined) = self.boolean_operand(node, *left, depth)?;
                 let (right, right_defined) = self.boolean_operand(node, *right, depth)?;

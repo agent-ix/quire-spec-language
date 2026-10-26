@@ -611,6 +611,87 @@ pub struct ClauseRunUsage {
     pub evaluation_consumed: Vec<(quire_exact::LimitKind, u64)>,
 }
 
+/// Whether native evaluation entered one implication's consequent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsequentState {
+    /// The implication was reached and its false antecedent skipped the
+    /// consequent.
+    Skipped,
+    /// The implication was reached and its true antecedent entered the
+    /// consequent.
+    Entered,
+    /// The implication sits in an operand that an enclosing connective's or
+    /// implication's own recorded decision provably skipped.
+    NotReached,
+}
+
+/// One checked implication's consequent at its source location, with the
+/// state observed in the native clause evaluation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConsequentSourceEvent {
+    /// The stable zero-based ordinal of this consequent in the pre-order
+    /// walk of the checked clause body. It equals the event's position in
+    /// the stream and does not depend on the evaluated values.
+    pub index: usize,
+    /// The `package_id` of the checked package that owns the clause.
+    pub package_id: PackageId,
+    /// The source region of the implication expression, which identifies
+    /// the generated activation site.
+    pub implication: qsl_foundation::source::provenance::SourceRegion,
+    /// The source region of the consequent expression.
+    pub consequent: qsl_foundation::source::provenance::SourceRegion,
+    /// Whether native evaluation entered this consequent.
+    pub state: ConsequentState,
+}
+
+/// Why a completed run reports no consequent source events: the evaluation
+/// does not determine every consequent's state, so none is guessed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsequentEventRefusal {
+    /// A reachable implication sits under a quantifier, comprehension,
+    /// fold or sequence binder, whose per-element decisions the evaluator
+    /// does not record.
+    UnderBinder,
+    /// The clause body calls or dispatches to a function whose body the
+    /// events do not enumerate.
+    CalledFunction,
+    /// A reachable implication has no recorded decision and no enclosing
+    /// recorded decision proves it unreached.
+    DecisionNotRecorded,
+    /// The clause is temporal; its events are not derived.
+    Temporal,
+    /// The checked source map has no region for an implication or its
+    /// consequent.
+    SourceRegionUnavailable,
+}
+
+impl ConsequentEventRefusal {
+    /// The stable code of this refusal.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::UnderBinder => "consequent-events-under-binder",
+            Self::CalledFunction => "consequent-events-called-function",
+            Self::DecisionNotRecorded => "consequent-events-decision-not-recorded",
+            Self::Temporal => "consequent-events-temporal-clause",
+            Self::SourceRegionUnavailable => "consequent-events-source-region-unavailable",
+        }
+    }
+}
+
+/// The consequent source events of one run.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum ConsequentSourceEvents {
+    /// The run completed no Boolean truth, or selected a function: none
+    /// were derived.
+    #[default]
+    Unavailable,
+    /// Every implication consequent of the completed Boolean clause, in
+    /// pre-order of the checked body; empty when the body has none.
+    Produced(Vec<ConsequentSourceEvent>),
+    /// The completed clause's events cannot be known from its evaluation.
+    Refused(ConsequentEventRefusal),
+}
+
 impl ClauseRunUsage {
     fn from_meter(
         meter: &Meter,
@@ -642,6 +723,9 @@ pub struct ClauseRunReport {
     /// FR-266 (QSpec FR-351): the separating witness record, present
     /// exactly when `basis` is decisive.
     pub witness: Option<SeparatingWitnessRecord>,
+    /// Per-implication consequent observations from a completed native
+    /// Boolean clause evaluation, in checked expression order.
+    pub consequent_source_events: ConsequentSourceEvents,
 }
 
 /// FR-266: the basis of a report that derives no witness: `closed-scope`
@@ -749,6 +833,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         package_id,
         disposition,
         usage: ClauseRunUsage::default(),
+        consequent_source_events: ConsequentSourceEvents::Unavailable,
     };
 
     if let Some(language) = unit.language {
@@ -895,6 +980,7 @@ impl CompiledRun<'_> {
             package_id: Some(self.package_id),
             disposition,
             usage: ClauseRunUsage::default(),
+            consequent_source_events: ConsequentSourceEvents::Unavailable,
         }
     }
 }
@@ -910,6 +996,89 @@ pub(crate) fn check_clause(
     selection: &ClauseSelection,
 ) -> ClauseRunReport {
     check_clause_admitted(run, clause, selection).report
+}
+
+/// Derive the source event for every authored implication consequent from
+/// the evaluator's checked-node decision trail. The trail covers only the
+/// claim's own level, so a consequent whose decision it cannot hold is
+/// refused unless an enclosing recorded decision proves it unreached.
+fn derive_consequent_source_events(
+    graph: &CheckedGraph,
+    package_id: PackageId,
+    clause: &CheckedStateClause,
+    evaluation: &qsl_eval::value::ClauseEvaluation,
+) -> ConsequentSourceEvents {
+    use qsl_semantics::check::{Connective, NodeKind};
+
+    let mut events = Vec::new();
+    // (node, provably unreached, under a binder)
+    let mut pending = vec![(clause.body(), false, false)];
+    while let Some((node, unreached, binder)) = pending.pop() {
+        let decision = evaluation.decision(node.location());
+        // The operand position the node's recorded decision proves skipped.
+        let skipped_child = match node.kind() {
+            NodeKind::Connective(Connective::Implies | Connective::And, _, _) => {
+                (decision == Some(false)).then_some(1)
+            }
+            NodeKind::Connective(Connective::Or, _, _) => (decision == Some(true)).then_some(1),
+            NodeKind::If { .. } => decision.map(|taken| if taken { 2 } else { 1 }),
+            _ => None,
+        };
+        if !unreached
+            && matches!(
+                node.kind(),
+                NodeKind::Call { .. } | NodeKind::ImportedCall { .. } | NodeKind::Dispatch { .. }
+            )
+        {
+            return ConsequentSourceEvents::Refused(ConsequentEventRefusal::CalledFunction);
+        }
+        if let NodeKind::Connective(Connective::Implies, _, consequent) = node.kind() {
+            let state = if unreached {
+                ConsequentState::NotReached
+            } else if binder {
+                return ConsequentSourceEvents::Refused(ConsequentEventRefusal::UnderBinder);
+            } else {
+                match decision {
+                    Some(true) => ConsequentState::Entered,
+                    Some(false) => ConsequentState::Skipped,
+                    None => {
+                        return ConsequentSourceEvents::Refused(
+                            ConsequentEventRefusal::DecisionNotRecorded,
+                        )
+                    }
+                }
+            };
+            let consequent = node.at(*consequent);
+            let (Some(implication), Some(consequent)) = (
+                graph.region(node.location()),
+                graph.region(consequent.location()),
+            ) else {
+                return ConsequentSourceEvents::Refused(
+                    ConsequentEventRefusal::SourceRegionUnavailable,
+                );
+            };
+            events.push(ConsequentSourceEvent {
+                index: events.len(),
+                package_id,
+                implication,
+                consequent,
+                state,
+            });
+        }
+        let child_binder = binder
+            || matches!(
+                node.kind(),
+                NodeKind::Query { .. } | NodeKind::Fold { .. } | NodeKind::Seq { .. }
+            );
+        for (position, child) in node.children().into_iter().enumerate().rev() {
+            pending.push((
+                child,
+                unreached || skipped_child == Some(position),
+                child_binder,
+            ));
+        }
+    }
+    ConsequentSourceEvents::Produced(events)
 }
 
 /// [`check_clause`]'s report, with the observations admission produced
@@ -978,23 +1147,28 @@ pub(crate) fn check_clause_admitted(
         };
     };
     let mut derived = None;
+    let mut consequent_source_events = ConsequentSourceEvents::Unavailable;
     let disposition = match run
         .package
         .evaluate_clause(&qualified, &observations, &mut meter)
     {
-        Ok(evaluation) => match derive_separating_witness(clause, &evaluation) {
-            Err(fault) => ClauseDisposition::EvaluateFault(fault),
-            Ok(witness) => {
-                derived = witness;
-                match convert_outcome(evaluation.evaluation, graph, run.sources) {
-                    Ok(outcome) => ClauseDisposition::Evaluate(outcome),
-                    Err(refusal) => match *refusal {
-                        RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-                        other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-                    },
+        Ok(evaluation) => {
+            consequent_source_events =
+                derive_consequent_source_events(graph, run.package_id, clause, &evaluation);
+            match derive_separating_witness(clause, &evaluation) {
+                Err(fault) => ClauseDisposition::EvaluateFault(fault),
+                Ok(witness) => {
+                    derived = witness;
+                    match convert_outcome(evaluation.evaluation, graph, run.sources) {
+                        Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+                        Err(refusal) => match *refusal {
+                            RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                            other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+                        },
+                    }
                 }
             }
-        },
+        }
         Err(CallFailure::Input(input)) => match input {
             InputRefusal::UnknownClause(name) => ClauseDisposition::MissingName { name },
             // Unreachable in this flow: `clause` was resolved by name and
@@ -1026,6 +1200,9 @@ pub(crate) fn check_clause_admitted(
         )),
     };
     let mut report = run.report(disposition);
+    if report.disposition.truth().is_some() {
+        report.consequent_source_events = consequent_source_events;
+    }
     report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
     // FR-266: a `Clause` run that completed a Boolean takes FR-265's basis
     // and record; every other disposition keeps `unavailable`.
@@ -1208,6 +1385,7 @@ fn run_function(
         package_id: Some(package_id),
         disposition,
         usage: ClauseRunUsage::default(),
+        consequent_source_events: ConsequentSourceEvents::Unavailable,
     };
 
     let selected = match select(package, name) {
