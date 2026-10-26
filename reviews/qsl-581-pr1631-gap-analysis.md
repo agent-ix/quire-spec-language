@@ -49,3 +49,18 @@ Spec gaps on STD-493 comment 5b5714c3, posted 2026-10-26 by this lane:
 ## Coverage
 
 Bindings checked: `a_punctual_window_is_decided_by_a_horizon_clock` → FR-242-AC-2 (correct), `a_timed_invariant_builds_no_automaton` → FR-242-AC-3 (correct). The random-lasso test carries `TC-697` only, which is correct for a partial AC. `quire matrix` was started and did not finish within the review, so the bindings were read from the `#[trace]` attributes directly.
+
+## Dispositions
+
+Round 1, fix commit 0f579f44c. Each finding was verified against the code and Linear. The two new STD-493 gaps (comment 520d0b26) were judged as follows:
+
+- **Gap 1, horizon cut vs whole-trace undefinedness:** a real conflict between two FR-242 SHALLs.
+- **Gap 2, idle-tail stutter delays:** a real gap, not a code bug. FR-231 makes each stutter delay any positive value, and FR-239 checks every behaviour. So an idle behaviour with stutters at, say, 1 ms and 3.5 ms has no position in `[2 ms, 3 ms]`. Under the pointwise meaning (FR-234, QSpec FR-416), `eventually[2 ms, 3 ms] holds(q)` is false on it, so `Violated` is the spec's verdict as written. The gap is the conflict with `TimedBehaviour::timed_trace`, which reads the idle tail with one fixed delay (the tick period, or 1) and would make it hold, plus whether that pointwise artefact is intended. Under a tick source the stutter is a tick and the verdict is `Holds`, which I probed.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Zone-level tests were added: `a_window_over_a_tick_source_is_read_at_each_tick` (would have caught SR-1631001 FND-001), `an_open_and_a_closed_end_are_read_on_their_own_pieces`, `a_lower_bounded_window_is_decided_by_the_idle_tail`, and `an_undefined_atom_inside_a_window_refutes_it`. |
+| FND-002 | fixed | The agreement test now also runs `always[1,2]`, `release(1,2]`, a punctual window under `and`, `once ... or eventually`, `since`, and `historically implies always(0,1]`. It compares whole outcomes, with 1 reading in 25 undefined or short, and requires held, failed and odd readings to occur. |
+| FND-003 | fixed | STD-493 comment 5b5714c3 was edited to drop the "one horizon clock" claim; it now says FR-242 does not specify per-activation clocks. QSL-583 comment a2a9789a takes nested TT-2 into its scope, and the PR body lists it under deferrals. `NestedWindow` stays as a sound refusal until QSL-583 lands. |
+| FND-004 | fixed | `an_idle_tail_passes_a_window` asserts `kind == Formula`, an empty prefix and `entry == 0`. The lower-bounded idle variants are in `a_lower_bounded_window_is_decided_by_the_idle_tail`. |
+| FND-005 | fixed | FR-242-AC-3 now runs over ADR-026 §11's `Rpc` through `rpc_claim`, at `T = 3` and `T = 4`, with zero automaton states asserted for both and `Holds` at 4. |

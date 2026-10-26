@@ -249,6 +249,18 @@ impl WindowClaim {
         })
     }
 
+    /// The index of the first instance that read a window short of data at
+    /// or before `q` (ADR-024 WA-4): the evaluator reports such a trace
+    /// `InsufficientData` whatever the clause's value, unless a reading is
+    /// undefined.
+    pub(super) fn insufficient(&self, q: usize) -> Option<usize> {
+        let state = self.states.get(q)?;
+        if state.undefined.is_some() {
+            return None;
+        }
+        state.insufficient.iter().position(|&short| short)
+    }
+
     /// Whether every obligation of every instance is decided at `q`, so no
     /// later position changes the clause: FR-242 stops the path there.
     pub(super) fn decided(&self, q: usize) -> bool {

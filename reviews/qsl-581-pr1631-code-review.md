@@ -59,3 +59,24 @@ Rust lane: production paths have no `unwrap`, `expect` or indexing panic (`statu
 ## Coverage
 
 Methods: code-review with the rust-review lane. Gap analysis is SR-1631002. The probe tests (the tick source, product-level `always`, and 13 formulas against the evaluator) ran in the reviewer's own detached worktree under locked-build, and were then reverted.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | In the product, an instance whose clause value is `False` but which read a short window (`InsufficientData`) is never reported (`violated` skips it). The search then ends `Holds`, where `evaluate_timed_at` gives `InsufficientData` for that trace. Today this is unreachable: a TT-2 clause's atoms are `holds` conditions with no window aggregate, and `Aggregate` is refused. But if it ever becomes reachable, it is a silent `Holds`. Fix: settle such a node as an undecided cause (or refuse the claim), not as nothing. | qsl-analyze/src/zone_check/window.rs:244-250 |
+
+## Dispositions
+
+Round 1, fix commit 0f579f44c. I verified each finding in a fresh detached worktree, re-ran the round-0 probes, and added new probes (tick terminal and tick-plus-`go` models, dense idle and `go` models, Rpc TT-2 windows, and 9 more formulas checked outcome for outcome on 1,000 lassos each, including undefined and short readings: 9,000/9,000 agree). All probes were reverted afterwards. Gates at 0f579f44c: fmt exit 0, clippy `-p qsl-analyze -p qsl-eval --all-targets --all-features -D warnings` exit 0, `zone_search` 26/26, zone_check lib 7/7.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Under a tick source the automaton state now keeps the stamp, capped at the last interval end plus one period. A tick step advances it by the period, and the terminal stutter counts as a tick. The round-0 repro is now `Violated` after four ticks. Under a tick source, `eventually[2,3]` holds and `eventually(2,3)` is violated over a terminal state, and `always[5,5]` after `go` is violated after five ticks, all as FR-231 "Digital time" requires. Regression test: `a_window_over_a_tick_source_is_read_at_each_tick`. |
+| FND-002 | fixed | Once every obligation is decided, a step reads no position, keeps `q` and frees `h`, and the zone graph continues so that `admitted` still works. The conflict with the evaluator's whole-trace reading of undefined atoms is filed as STD-493 comment 520d0b26, gap 1. |
+| FND-003 | fixed | Obligations now carry the evaluator's `(acc, held)` Kleene scan. Every atom is read at every open position, in clause-node order, and stops at the first undefined one. `bounded_window_verdict` matches `evaluate_timed_at` outcome for outcome, including `Undefined` and `InsufficientData`. A zone-level undefined test was added. The remaining product difference for `InsufficientData` is the new FND-009. |
+| FND-004 | fixed | Fixed differently from the suggestion: concretisation now accepts a zero-delay stutter. This is sound because a re-read at the same state and stamp leaves `(acc, held)` unchanged, so a violation can never depend on it. Stutter delays are not in the counterexample (STD-493 gap 2). |
+| FND-005 | fixed | `CertEdge.part` is now `Option<usize>` (`None` for a stutter), and `CertEdge.horizon` carries the piece as constraints on `h`. It is `None` without an automaton, past the horizon, and under a tick source. STD-493 gap 3 still names the spec side. |
+| FND-006 | fixed | `follow` is now iterative, and dead `(node, depth)` pairs are memoised, so each pair is tried once. |
+| FND-007 | fixed | `bounded_window_verdict` is `#[doc(hidden)]` and returns a typed `TemporalOutcome` (`Undefined` with its cause, `InsufficientData`, `Pending`), not a stringified refusal. |
+| FND-008 | fixed | The pieces are computed once in `Run::new` (`Run::pieces`). Under a tick source there is a single piece. |

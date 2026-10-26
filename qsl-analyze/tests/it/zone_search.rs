@@ -2,6 +2,8 @@
 //! FR-239 (TC-694, TC-710) and FR-241's finite paths (TC-696): EN-6's
 //! symbolic zone search over the timed fixtures of `crate::timed_world`.
 
+use std::collections::BTreeSet;
+
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use qsl_analyze::zone_check::{
@@ -9,7 +11,8 @@ use qsl_analyze::zone_check::{
     ZoneCertificate, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
     ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
-use qsl_eval::simulation::model::{ModelSystem, PlaceConstraint, TimedSystem};
+use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PlaceConstraint, TimedSystem};
 use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
@@ -18,6 +21,7 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{ClockOp, FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
 
@@ -1134,6 +1138,113 @@ fn a_punctual_window_is_decided_by_a_horizon_clock() {
     assert_eq!(late.kind, CounterexampleKind::Formula);
     assert_eq!(operations(&late), ["go"]);
     assert_eq!(delays(&late), [exact(5, 2)]);
+}
+
+/// Model letters that read every false `holds` atom as a window aggregate
+/// short of data (ADR-024 WA-4), as no TT-2 clause can author today.
+struct ShortOfData<'a>(&'a dyn ModelLetters);
+
+impl ModelLetters for ShortOfData<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, AtomStop> {
+        Ok(match self.0.atom(atom, instance, state, meter)? {
+            AtomReading::False => AtomReading::Undefined(short_of_data()),
+            reading => reading,
+        })
+    }
+
+    fn activation(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, AtomStop> {
+        self.0.activation(instance, state, meter)
+    }
+
+    fn activation_reads(&self) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+        self.0.activation_reads()
+    }
+
+    fn reads(&self, atom: FormulaNodeId) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+        self.0.reads(atom)
+    }
+}
+
+fn short_of_data() -> UndefinedCause {
+    UndefinedCause::InsufficientData(InsufficientData {
+        count: 0,
+        min_count: 1,
+    })
+}
+
+/// Part of FR-242-AC-2 (TC-697): a window that read short of data is not
+/// proved. Where every false reading of `retried` is instead a window
+/// short of data, the evaluator reports `eventually[2 ms, 2 ms]` over
+/// `retried` first holding at 5/2 ms `InsufficientData`, and EN-6 leaves
+/// the claim undecided with that cause, never `Holds`. Not covered: an
+/// authored aggregate atom, which no TT-2 clause has yet.
+#[trace("TC-697")]
+#[test]
+fn a_window_short_of_data_is_insufficient_data_not_holds() {
+    let world = retried_at("rational(5, 2) ms");
+    let unrolled = Unrolled {
+        stamps: vec![exact(0, 1), exact(5, 2)],
+        p: Vec::new(),
+        q: vec![false, true],
+        odd: vec![Some(short_of_data()), None],
+    };
+    let clause = world.package.graph().temporal_clauses()[0].clause();
+    let trace = TimedTrace::new(unrolled.stamps.clone()).expect("a timed trace");
+    let mut meter = Meter::new(world.system().meter_limits());
+    let reference = evaluate_timed_at(
+        clause,
+        &trace,
+        TemporalPosition::new(0),
+        &mut Lasso {
+            unrolled: &unrolled,
+            p: None,
+        },
+        &mut meter,
+    )
+    .expect("the evaluator reads the trace");
+    assert!(
+        matches!(reference, TemporalOutcome::InsufficientData(_)),
+        "{reference:?}"
+    );
+
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("letters");
+    let outcome = check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::Clause {
+                clause: node.clause(),
+                letters: &ShortOfData(&letters),
+            },
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::Authored(claim_occurrence()),
+            },
+            limits: ZoneCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("EN-6 takes the claim");
+    match outcome {
+        ZoneCheckOutcome::Undecided {
+            cause: ZoneUndecided::InsufficientData(_),
+            ..
+        } => {}
+        other => panic!("expected InsufficientData, got {other:?}"),
+    }
 }
 
 /// FR-242-AC-3: over ADR-026 §11's `Rpc` (TC-697's fixture), `always

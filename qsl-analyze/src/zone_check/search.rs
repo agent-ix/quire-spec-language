@@ -135,6 +135,11 @@ pub enum ZoneUndecided {
     /// delay, which no position of a counterexample names: FR-236 and QSpec
     /// FR-417 give `final_delay` to time-locks only (spec gap STD-493).
     DeadlockAfterDelay,
+    /// FR-242 over ADR-024 WA-4: no violation was found, but an admitted
+    /// behaviour read a window aggregate short of data for this instance,
+    /// which the evaluator reports `InsufficientData`, so the claim is not
+    /// proved.
+    InsufficientData(ModelInstance),
 }
 
 /// The run's counts.
@@ -457,6 +462,8 @@ pub(super) struct Run<'r, 's, 'a> {
     escape_edges: u64,
     /// The guarded steps of each model state reached, by its key.
     steps: BTreeMap<Vec<u8>, Vec<GuardedStep>>,
+    /// The first instance an admitted behaviour read short of data for.
+    insufficient: Option<ModelInstance>,
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
@@ -493,6 +500,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             escape_states: 0,
             escape_edges: 0,
             steps: BTreeMap::new(),
+            insufficient: None,
         }
     }
 
@@ -698,6 +706,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             // state has no counterexample form (FR-236 gives `final_delay`
             // to time-locks only), so it is neither proved away nor refuted.
             Some(_) if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
+            // ADR-024 WA-4: an admitted behaviour read a window short of
+            // data, which the evaluator reports `InsufficientData`.
+            Some(_) if self.insufficient.is_some() => {
+                let instance = self.insufficient.take();
+                Err(self.undecided(ZoneUndecided::InsufficientData(
+                    instance.ok_or(ZoneCheckRefusal::Fault("insufficient-instance"))?,
+                )))
+            }
             Some((root, witness)) => {
                 let witness = witness.ok_or(ZoneCheckRefusal::Fault("divergence-witness"))?;
                 let proof = self.certificate(&roots, root, &witness)?;
@@ -1037,7 +1053,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let badness = match self.badness(node)? {
             Some(Ok(badness)) => badness,
             Some(Err(())) => return Ok(true),
-            None => return Ok(false),
+            None => {
+                self.note_insufficient(node)?;
+                return Ok(false);
+            }
         };
         let escape = self.node_escape(node)?;
         if !escape.diverges {
@@ -1051,6 +1070,32 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             counterexample: Box::new(counterexample),
             stats: self.stats(),
         })))
+    }
+
+    /// Keep the first instance an admitted behaviour through `node` read
+    /// short of data for: with no violation, the evaluator reports that
+    /// behaviour `InsufficientData`, never `Holds`.
+    fn note_insufficient(&mut self, node: usize) -> Result<(), Halt> {
+        if self.insufficient.is_some() {
+            return Ok(());
+        }
+        let Some(at) = self
+            .window
+            .as_ref()
+            .and_then(|window| window.insufficient(self.nodes[node].q))
+        else {
+            return Ok(());
+        };
+        if self.node_escape(node)?.diverges {
+            let instance = self
+                .claim
+                .as_ref()
+                .and_then(|claim| claim.instances.get(at))
+                .cloned()
+                .ok_or(ZoneCheckRefusal::Fault("window-instance"))?;
+            self.insufficient = Some(instance);
+        }
+        Ok(())
     }
 
     /// FR-240's test from `node`.
