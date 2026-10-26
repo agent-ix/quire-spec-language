@@ -524,7 +524,7 @@ const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.v
                        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
 
 /// The deadlock-freedom item's analogue of FR-128-AC-5 (ADR-018 UE-6),
-/// which is not that criterion: its TP-1 clause's replay waits on FR-337.
+/// which is not that criterion (FR-128-AC-5 is tested in lasso_replay).
 /// The
 /// counterexample of an undefined precondition guard replays to
 /// `reproduced-with-evaluated-witness` with the undefined value at position

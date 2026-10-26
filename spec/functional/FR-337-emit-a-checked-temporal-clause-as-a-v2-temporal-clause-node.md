@@ -372,17 +372,23 @@ FR-381 checks a protocol capture and keeps it.
   by the engine with `ModelCheckRefusal::CaptureRead`, naming the clause and
   the first capture a condition reads, before any state is explored, and
   returns no verdict. It still checks at S3 and is emitted at S4. This is the
-  standing decision of QSL-1092, not a stage gap: FR-338's
-  `AutomatonStateKey` names the automaton state alone, and a `holds` atom that
-  reads a capture is true or false by the capture vector the activation fixed
-  (§ above), so a key without the vector would identify product states whose
-  futures differ and a certificate over such keys could not be sound. An
-  `on each` clause also holds concurrent activations with different vectors,
-  so the keyed unit would be a set of (automaton state, capture vector)
-  pairs, which changes the FR-338 key algebra, the FR-339 component keys and
-  the TP-4 state-key bridge of QSL-1098 together. The engine returns no
-  verdict rather than one over a key that cannot tell the vectors apart. A
-  clause whose conditions read no capture is unaffected, and a capture that
+  standing decision of QSL-1092, not a stage gap, for two reasons. A letter
+  is one set of atoms per position, while an atom that reads a capture is
+  true or false per activation, so the concurrent activations of an
+  `on each` clause, whose capture vectors differ, cannot share a letter
+  (an `on origin` clause has one vector). And a `Holds` verdict carries a
+  certificate over FR-338's `AutomatonStateKey`, which names the automaton
+  state alone: a key without the vector would identify product states whose
+  futures differ, so a sound key is a set of (automaton state, capture
+  vector) pairs for `on each` and a single pair for `on origin`, which
+  changes the FR-338 key algebra, the FR-339 component keys and the TP-4
+  state-key bridge of QSL-1098 together. The key argument bears on a `Holds`
+  that carries a certificate; the letter argument bears on every verdict, a
+  `Violated` counterexample included. The engine therefore returns no
+  verdict, and `analyze` reports it on the wire as
+  `unsupported_construct`/`not-yet-implemented`, the catalog's only cause for
+  an engine that does not decide a form; no cause names a standing refusal.
+  A clause whose conditions read no capture is unaffected, and a capture that
   no condition reads changes no key. Deciding such a clause is a later
   requirement that amends FR-338 and FR-339 after the QSL-1098 bridge is on
   main; it is not specified here.

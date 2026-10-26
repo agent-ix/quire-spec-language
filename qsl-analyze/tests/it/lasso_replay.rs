@@ -31,7 +31,7 @@ use crate::counter::{
     document, document_with_ranged_parameter, package_from_text, subject, unit_text, universe,
     Documents, Letters, CONTRACT, UNLIMITED,
 };
-use crate::liveness::{counter, is_zero, Fixture};
+use crate::liveness::{counter, fixture, is_zero, Fixture};
 use crate::model_settle::{envelope_at, request};
 
 const FORMULA: &str = "always eventually holds(c.value = 3)";
@@ -560,6 +560,81 @@ fn an_authored_clauses_undefined_evaluation_replays() {
     let mut truncated = payload.clone();
     truncated.prefix.truncate(1);
     parity(truncated);
+}
+
+/// FR-128-AC-6's authored half, and the order of one position's reads: over
+/// the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`
+/// from value 2, the empty-prefix counterexample of the authored clause
+/// `always holds(...)` located at the `CanInc` guard replays to
+/// `reproduced-with-evaluated-witness` at position 0 when the letter is
+/// defined, and located at the clause's atom settles `inconclusive`,
+/// `ReplayParity`. Where the atom is also undefined at position 0, the
+/// letter is read first: the payload at the atom reproduces, and the payload
+/// at the guard is a disagreement. Not asserted whole: the AC's deadlock-freedom
+/// halves are TC-539's other tests, and FR-128-AC-7 and AC-8 have no authored
+/// fixture here.
+#[trace("TC-539")]
+#[test]
+fn an_authored_clauses_letter_is_read_before_its_contract_conjunctions() {
+    fn defined(_: i64) -> Option<bool> {
+        Some(true)
+    }
+    fn undefined(_: i64) -> Option<bool> {
+        None
+    }
+    let guarded = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n";
+    let fixture = fixture(
+        document(false),
+        guarded,
+        "",
+        "always holds(c.value >= 0)",
+        &[("c", 2)],
+    );
+    let at_guard = found(&fixture, defined);
+    let qsl_replay::CounterexampleKind::UndefinedEvaluation(guard) = at_guard.kind.clone() else {
+        panic!("expected an undefined guard: {at_guard:?}");
+    };
+    assert_eq!(guard.site.position, 0);
+    assert!(matches!(guard.site.locus, UndefinedLocus::Contract(_)));
+    let at_atom = found(&fixture, undefined);
+    let qsl_replay::CounterexampleKind::UndefinedEvaluation(atom) = at_atom.kind.clone() else {
+        panic!("expected an undefined atom: {at_atom:?}");
+    };
+    assert_eq!(atom.site.position, 0);
+    assert!(matches!(atom.site.locus, UndefinedLocus::Atom(_)));
+
+    let settle = |payload: &TemporalCounterexample, letters: fn(i64) -> Option<bool>| {
+        replay_with(&fixture, payload.clone(), letters)
+            .expect("replays")
+            .settlement
+    };
+    let reproduces =
+        |payload: &TemporalCounterexample, evaluation: &UndefinedEvaluation, letters| {
+            assert_eq!(
+                settle(payload, letters),
+                ModelTraceSettlement::Reproduced {
+                    value: ModelTraceValue::Undefined(evaluation.clone()),
+                    trace_position: Some(0),
+                }
+            );
+        };
+    let disagrees = |payload: &TemporalCounterexample, letters| {
+        assert!(matches!(
+            settle(payload, letters),
+            ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts { .. })
+        ));
+    };
+    let with = |payload: &TemporalCounterexample, evaluation: &UndefinedEvaluation| {
+        let mut payload = payload.clone();
+        payload.kind = qsl_replay::CounterexampleKind::UndefinedEvaluation(evaluation.clone());
+        payload
+    };
+    // A defined letter: the guard is the position's undefined evaluation.
+    reproduces(&at_guard, &guard, defined);
+    disagrees(&with(&at_guard, &atom), defined);
+    // An undefined letter is read first: the guard is never reached.
+    reproduces(&at_atom, &atom, undefined);
+    disagrees(&with(&at_atom, &guard), undefined);
 }
 
 /// Under a bounded profile a finite prefix reads as a closed trace, so a

@@ -15,10 +15,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::{
     check_closure, compile_package, replay_model_trace, CertificateRequest, CertificateRule,
-    CounterexampleKind, DependencyInput, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, SmtEncodingLimits,
-    TemporalCertificateCheck, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    WireNodeId,
+    CounterexampleKind, DependencyInput, DisagreementCause, ModelCheckItem, ModelCheckLimits,
+    ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits,
+    SmtEncodingLimits, TemporalCertificateCheck, TemporalCounterexample, UndefinedEvaluation,
+    UndefinedLocus, WireNodeId,
 };
 use quire_exact::{Cancel, Meter};
 use serde_json::json;
@@ -488,8 +488,11 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
         };
         edit(evaluation);
         assert!(
-            matches!(replay(payload), ModelTraceSettlement::Inconclusive(_)),
-            "a payload that misplaces the undefined capture is inconclusive"
+            matches!(
+                replay(payload),
+                ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts { .. })
+            ),
+            "a payload that misplaces the undefined capture is a `ReplayParity` disagreement"
         );
     }
 }

@@ -177,7 +177,9 @@ member of its own.
     the order the engine reads them (FR-126, ADR-018 UE-4): for a formula
     item, the letter (a guarded activation's `when` condition, then the
     clause's captures at an activation, FR-337 "Capture observation", then
-    its atoms in clause-node order, UE-2), then the
+    its atoms in clause-node order, UE-2), then, when the request's
+    item is an authored clause with a state constraint at that locus, the state
+    constraint, which the engine reads only where the letter is defined, then the
     contract conjunctions of the position's expansion in the order the
     expansion records them; for the deadlock-freedom item, the contract
     conjunctions, then `P` at a terminal state, since only the expansion
@@ -209,7 +211,10 @@ member of its own.
     recompiled package has no `constraint` clause there;
   - it SHALL re-execute the prefix and evaluate the constraint at every
     replayed state in order by FR-158's truth rule, and check no fairness
-    and no formula;
+    and, for the deadlock-freedom item, no formula; for an authored clause it
+    reads the clause's letter first at each position, so a position at which
+    the letter is undefined is the position's undefined evaluation and the
+    constraint is not read there;
   - when the first replayed state where the constraint is `Undefined` is the
     last one, at `where.position`, with an undefined cause equal to `cause`,
     and the constraint holds at every earlier replayed state, then the

@@ -1840,7 +1840,8 @@ enum LetterRead {
 /// ADR-018 UE-5 and UE-6: the first replayed position at which an
 /// expression of the item is undefined must be the payload's `where`, at its
 /// locus, with its cause. At one position an authored clause's letter is
-/// read before the contract conjunctions of the expansion; the
+/// read first, then the state constraint, then the contract conjunctions of
+/// the expansion; the
 /// deadlock-freedom item reads the contract conjunctions, then the
 /// `terminal when` predicate at a terminal state.
 fn undefined<S: SubjectSystem>(
@@ -1875,6 +1876,25 @@ fn undefined<S: SubjectSystem>(
             locus,
             transition,
         };
+        // An authored clause's letter is read first at a position, and the
+        // state constraint only where the letter is defined (the engine's
+        // order, FR-128).
+        if let ItemReads::Authored(Some(letter)) = reads {
+            if letter.position == index {
+                let found = UndefinedEvaluation {
+                    site: site(letter.locus.clone(), None),
+                    cause: letter.cause.clone(),
+                };
+                return Ok(if found == *claimed {
+                    ModelTraceSettlement::Reproduced {
+                        value: ModelTraceValue::Undefined(found),
+                        trace_position: payload.trace_position(),
+                    }
+                } else {
+                    disagrees(Category::Violation)
+                });
+            }
+        }
         if let Some(name) = constraint {
             match constraints.constraint_value(&position.state, name) {
                 Ok(ConstraintValue::Undefined { cause, .. }) => {
@@ -1896,40 +1916,27 @@ fn undefined<S: SubjectSystem>(
                 Err(_) => return Ok(no_value()),
             }
         }
-        let letter = match reads {
-            ItemReads::Authored(Some(letter)) if letter.position == index => Some(letter),
-            ItemReads::Authored(_) | ItemReads::Deadlock => None,
+        let (expansion, cut) = match expand_bounded(system, &position.state)? {
+            Ok(bounded) => bounded,
+            Err(_) => return Ok(no_value()),
         };
-        let found = if let Some(letter) = letter {
+        let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
             Some(UndefinedEvaluation {
-                site: site(letter.locus.clone(), None),
-                cause: letter.cause.clone(),
+                site: site(locus, guard_of),
+                cause,
             })
-        } else {
-            let (expansion, cut) = match expand_bounded(system, &position.state)? {
-                Ok(bounded) => bounded,
-                Err(_) => return Ok(no_value()),
-            };
-            if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
-                Some(UndefinedEvaluation {
-                    site: site(locus, guard_of),
+        } else if matches!(reads, ItemReads::Deadlock) {
+            match SubjectSystem::terminal_class(system, &position.state, &expansion, cut) {
+                Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
+                    site: site(UndefinedLocus::Terminal(model), None),
                     cause,
-                })
-            } else if matches!(reads, ItemReads::Deadlock) {
-                match SubjectSystem::terminal_class(system, &position.state, &expansion, cut) {
-                    Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
-                        site: site(UndefinedLocus::Terminal(model), None),
-                        cause,
-                    }),
-                    Ok(_) => None,
-                    Err(stop) if stop.is_internal_failure() => {
-                        return Err(fault("terminal-predicate"))
-                    }
-                    Err(_) => return Ok(no_value()),
-                }
-            } else {
-                None
+                }),
+                Ok(_) => None,
+                Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
+                Err(_) => return Ok(no_value()),
             }
+        } else {
+            None
         };
         if let Some(found) = found {
             return Ok(if found == *claimed {
