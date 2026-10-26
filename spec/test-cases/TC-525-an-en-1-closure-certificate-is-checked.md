@@ -13,7 +13,7 @@ relationships:
 Verify that `check_closure` accepts a safety proof's closure and rejects a
 missing initial state, a missing successor and a bad state.
 
-Scope: FR-338-AC-1 to FR-338-AC-7, FR-338-AC-10, FR-338-AC-16 and FR-338-AC-23. Canonical translation-state cases below
+Scope: FR-338-AC-1 to FR-338-AC-7, FR-338-AC-10, FR-338-AC-16 and FR-338-AC-23 to FR-338-AC-25. Canonical translation-state cases below
 are prospective qualification procedures; this artifact claims no execution.
 
 ## Test Procedure
@@ -101,12 +101,15 @@ are prospective qualification procedures; this artifact claims no execution.
     refused.
 12. For an infinite-trace TP-4 clause, reach an equivalent structural state
     through two different transition/materialization orders and compare the
-    state keys emitted for their run-local `StateId`s. Build the complete
-    reachable product-state set using those keys and check the closure
-    certificate; remove one generated successor and verify that the checker
-    reports `SuccessorMissing` at its `ProductStateRef`. Replace one
-    generated automaton key with a well-formed key from a different item
-    context and verify `ShapeMismatch` before certificate membership.
+    state keys emitted for their run-local `StateId`s (FR-338-AC-23).
+13. For an infinite-trace TP-4 clause whose reached states carry at least two
+    distinct keys, replay the engine independently to obtain the expected key
+    set, check that the certificate carries exactly it and is accepted, then
+    replace one key with another, swap two keys, rotate every key and drop
+    each product state in turn, and verify each is rejected at a missing
+    product state (FR-338-AC-24).
+14. Replace one key with a well-formed key of another item context and verify
+    `ShapeMismatch` at its product state before membership (FR-338-AC-25).
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -160,6 +163,9 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   activation acceptance set contains active states only. The origin
   `buchi` tag, guarded `each-when` context and timed profile are refused.
 - Step 12: equal structural states have equal FR-338 key octets even when
-  their `StateId`s differ; the complete TP-4 closure is accepted, the omitted
-  successor is rejected at its canonical product state, and a foreign
-  context key is rejected before membership.
+  their `StateId`s differ.
+- Step 13: the certificate's keys equal the independently replayed key set,
+  the complete certificate is accepted, and every tamper is rejected
+  `InitialMissing` or `SuccessorMissing`.
+- Step 14: a foreign context key is rejected `ShapeMismatch` at its product
+  state.

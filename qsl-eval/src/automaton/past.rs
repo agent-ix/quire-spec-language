@@ -234,8 +234,11 @@ impl Past {
                 buckets = merged_buckets(buckets);
             } else if self.subject == SubjectKind::Protocol {
                 let transform = self.transform(guard, witness);
-                if let Some(index) = buckets.iter().position(|(first, _, _)| *first == 0) {
-                    let (_, last, previous) = buckets[index];
+                if let Some((index, &(_, last, previous))) = buckets
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (first, _, _))| *first == 0)
+                {
                     let composed = compose(transform, previous);
                     buckets.remove(index);
                     if composed != [false, true] {
@@ -384,7 +387,8 @@ impl Past {
                         });
                     }
                     let offsets = if dual {
-                        let mut offsets = Vec::with_capacity(count as usize);
+                        let mut offsets =
+                            Vec::with_capacity(usize::try_from(count).unwrap_or_default());
                         let mut next = 1;
                         for (first, last) in &internal_true {
                             if next < *first {

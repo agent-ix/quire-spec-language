@@ -650,10 +650,7 @@ fn a_past_operator_is_tracked_as_automaton_state_across_the_loop_edge() {
     let body = "always eventually (holds(p) and once[1,1] holds(q))";
     let subject = infinite(body);
     assert_eq!(subject.property.kind(), AutomatonKind::Liveness);
-    // FR-338's reached-state key retains the past operand history needed to
-    // resolve this engine state structurally, adding one state to the old
-    // evaluator-only construction.
-    assert!(subject.gba.state_count() <= 17);
+    assert!(subject.gba.state_count() < 16);
     // `p` holds at the loop's first position, `q` at its last: the position
     // before the first is the last, across the edge.
     let word = [

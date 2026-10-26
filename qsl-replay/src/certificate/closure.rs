@@ -89,7 +89,7 @@ use crate::certificate::check::{
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{
-    ClosureInstance, ClosureTranslation, ItemRefusal, LivenessTranslation, ModelCheckItem,
+    Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,
 };
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
@@ -676,7 +676,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         poll(self.cancel)
     }
 
-    fn run(&mut self, instances: &mut [ClosureInstance]) -> Step<()> {
+    fn run(&mut self, instances: &mut [Instance]) -> Step<()> {
         self.poll()?;
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
@@ -688,13 +688,13 @@ impl<S: SubjectSystem> Check<'_, S> {
         for instance in instances {
             let binding = instance.binding.as_ref();
             match &mut instance.translation {
-                ClosureTranslation::Safety(translation) => {
+                Translation::Safety(translation) => {
                     self.run_safety(binding, translation, &initial)?;
                 }
-                ClosureTranslation::Bounded(translation) => {
+                Translation::Bounded(translation) => {
                     self.run_bounded(binding, translation, &initial)?;
                 }
-                ClosureTranslation::Liveness(translation) => {
+                Translation::Liveness(translation) => {
                     self.run_liveness(binding, translation, &initial)?;
                 }
             }

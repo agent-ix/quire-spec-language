@@ -123,6 +123,8 @@ impl PropertyAutomaton {
     /// Resolve a reached TP-4 engine state to FR-338's structural state.
     /// The returned value is independent of this automaton's run-local
     /// `StateId` and can be encoded under the clause's checked context.
+    /// Its obligation and acceptance vectors are in engine order, so only the
+    /// key octets are canonical (not equality with `admit`'s decoded state).
     pub fn buchi_state(
         &self,
         state: StateId,
@@ -961,9 +963,8 @@ impl Translator {
                 } else {
                     BuchiPhase::Active
                 };
-                // The exact guarded/unguarded form is carried by the
-                // translation's synthetic atom count and source activation.
-                // `activation_guarded` is set by translate_formula below.
+                // The guarded/unguarded form is the clause's own activation,
+                // recorded in `activation_guarded` when the translator is built.
                 if self.activation_guarded == Some(true) {
                     Ok(BuchiState::Guarded(phase, branch))
                 } else {

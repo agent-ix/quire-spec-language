@@ -26,6 +26,7 @@ use qsl_eval::simulation::NotSimulated;
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::{Cancel, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::fairness::PropertyForm;
 
 use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 
@@ -63,6 +64,8 @@ pub enum Translation {
     Safety(SafetyTranslation),
     /// A bounded `eventually[0,u]` or `always[0,u]` clause on origin (TP-2).
     Bounded(BoundedTranslation),
+    /// A TP-4 liveness clause, built only for the closure checker.
+    Liveness(Box<LivenessTranslation>),
 }
 
 /// The TP-4 engine automaton and its FR-338 state-key context.
@@ -79,35 +82,17 @@ impl Translation {
         match self {
             Self::Safety(translation) => translation.admit(octets).is_ok(),
             Self::Bounded(translation) => translation.admit(octets).is_ok(),
-        }
-    }
-}
-
-/// A closure checker's instance, whose TP-4 state stays in the replay lane.
-#[derive(Debug)]
-pub(crate) struct ClosureInstance {
-    pub(crate) binding: Option<ModelInstance>,
-    pub(crate) translation: ClosureTranslation,
-}
-
-/// A closure checker's canonical translation, including TP-4's Büchi state
-/// bridge. The producer's public `Translation` remains limited to the forms
-/// it materializes in its certificate today.
-#[derive(Debug)]
-pub(crate) enum ClosureTranslation {
-    Safety(SafetyTranslation),
-    Bounded(BoundedTranslation),
-    Liveness(LivenessTranslation),
-}
-
-impl ClosureTranslation {
-    pub(crate) fn admits(&self, octets: &[u8]) -> bool {
-        match self {
-            Self::Safety(translation) => translation.admit(octets).is_ok(),
-            Self::Bounded(translation) => translation.admit(octets).is_ok(),
             Self::Liveness(translation) => translation.keys.admit(octets).is_ok(),
         }
     }
+}
+
+/// The TP-4 request of a closure check: the subject's key algebra and the
+/// automaton state bound.
+#[derive(Clone, Copy)]
+struct Tp4 {
+    subject_kind: SubjectKind,
+    max_automaton_states: u64,
 }
 
 /// Why an item has no canonical translation.
@@ -160,35 +145,11 @@ impl ModelCheckItem<'_> {
         system: &ModelSystem<'_>,
         cancel: &Cancel,
     ) -> Result<Vec<Instance>, ItemRefusal> {
-        self.build_instances(
-            subject,
-            system,
-            cancel,
-            SubjectKind::Ordinary,
-            u64::MAX,
-            false,
-        )?
-        .into_iter()
-        .map(|instance| {
-            let translation = match instance.translation {
-                ClosureTranslation::Safety(translation) => Translation::Safety(translation),
-                ClosureTranslation::Bounded(translation) => Translation::Bounded(translation),
-                ClosureTranslation::Liveness(_) => {
-                    return Err(ItemRefusal::Fault(InternalFault::new(
-                        "tp4-translation-not-produced",
-                        "the model-check producer does not materialize TP-4 closure keys",
-                    )))
-                }
-            };
-            Ok(Instance {
-                binding: instance.binding,
-                translation,
-            })
-        })
-        .collect()
+        self.build_instances(subject, system, cancel, None)
     }
 
-    /// Instances with a subject-specific TP-4 key algebra.
+    /// Instances whose TP-4 liveness clauses carry a subject-specific key
+    /// algebra, for the closure checker.
     pub(crate) fn instances_for(
         &self,
         subject: &ModelSubject<'_>,
@@ -196,14 +157,15 @@ impl ModelCheckItem<'_> {
         cancel: &Cancel,
         subject_kind: SubjectKind,
         max_automaton_states: u64,
-    ) -> Result<Vec<ClosureInstance>, ItemRefusal> {
+    ) -> Result<Vec<Instance>, ItemRefusal> {
         self.build_instances(
             subject,
             system,
             cancel,
-            subject_kind,
-            max_automaton_states,
-            true,
+            Some(Tp4 {
+                subject_kind,
+                max_automaton_states,
+            }),
         )
     }
 
@@ -212,14 +174,12 @@ impl ModelCheckItem<'_> {
         subject: &ModelSubject<'_>,
         system: &ModelSystem<'_>,
         cancel: &Cancel,
-        subject_kind: SubjectKind,
-        max_automaton_states: u64,
-        include_tp4: bool,
-    ) -> Result<Vec<ClosureInstance>, ItemRefusal> {
+        tp4: Option<Tp4>,
+    ) -> Result<Vec<Instance>, ItemRefusal> {
         match self {
-            Self::DeadlockFreedom => Ok(vec![ClosureInstance {
+            Self::DeadlockFreedom => Ok(vec![Instance {
                 binding: None,
-                translation: ClosureTranslation::Safety(
+                translation: Translation::Safety(
                     SafetyTranslation::deadlock_freedom()
                         .map_err(|_| ItemRefusal::DeadlockContext)?,
                 ),
@@ -256,41 +216,41 @@ impl ModelCheckItem<'_> {
                         };
                         let context =
                             StateContext::clause(clause, identity.occurrence().clone(), binding);
-                        let tp4_keys = include_tp4
-                            .then(|| BuchiStates::clause(clause, &context, subject_kind).ok())
-                            .flatten();
                         let translation = if bounded_shape(clause).is_some() {
-                            ClosureTranslation::Bounded(BoundedTranslation::clause(
-                                clause, &context,
-                            )?)
-                        } else if let Some(keys) = tp4_keys {
-                            let automaton = match subject_kind {
-                                SubjectKind::Ordinary => translate(clause, max_automaton_states),
+                            Translation::Bounded(BoundedTranslation::clause(clause, &context)?)
+                        } else if let Some(tp4) =
+                            tp4.filter(|_| clause.property_form() == Some(PropertyForm::Liveness))
+                        {
+                            let automaton = match tp4.subject_kind {
+                                SubjectKind::Ordinary => {
+                                    translate(clause, tp4.max_automaton_states)
+                                }
                                 SubjectKind::Protocol => {
-                                    translate_counted(clause, max_automaton_states)
+                                    translate_counted(clause, tp4.max_automaton_states)
                                 }
                             }
                             .map_err(ItemRefusal::Automaton)?;
                             if automaton.kind() == AutomatonKind::Liveness {
-                                ClosureTranslation::Liveness(LivenessTranslation {
+                                let keys = BuchiStates::clause(clause, &context, tp4.subject_kind)
+                                    .map_err(ItemRefusal::Translation)?;
+                                Translation::Liveness(Box::new(LivenessTranslation {
                                     automaton,
                                     keys,
-                                })
+                                }))
                             } else {
-                                // Counted protocol progress can lower an
-                                // infinite-profile formula into the safety
-                                // fragment. Keep the existing safety replay
-                                // representation for those clauses.
-                                ClosureTranslation::Safety(SafetyTranslation::reachable_invariant(
+                                // Counted protocol progress can lower a
+                                // liveness-form formula into the safety
+                                // fragment; its replay form is the safety one.
+                                Translation::Safety(SafetyTranslation::reachable_invariant(
                                     clause, &context,
                                 )?)
                             }
                         } else {
-                            ClosureTranslation::Safety(SafetyTranslation::reachable_invariant(
+                            Translation::Safety(SafetyTranslation::reachable_invariant(
                                 clause, &context,
                             )?)
                         };
-                        Ok(ClosureInstance {
+                        Ok(Instance {
                             binding: Some(instance),
                             translation,
                         })

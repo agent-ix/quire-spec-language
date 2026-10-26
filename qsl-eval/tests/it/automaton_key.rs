@@ -1324,7 +1324,7 @@ fn text_of(key: &qsl_eval::automaton::AutomatonStateKey) -> String {
 #[trace("TC-525", "FR-338-AC-23")]
 #[test]
 fn reached_tp4_engine_states_resolve_to_fr338_keys() {
-    let mut different_ids_for_same_key = false;
+    let mut different_ids_for_same_key = BTreeMap::new();
     for body in [
         "always eventually (holds(p) and once[1,1] holds(q))",
         "eventually (always[0,2] eventually[0,1] holds(p))",
@@ -1416,12 +1416,21 @@ fn reached_tp4_engine_states_resolve_to_fr338_keys() {
                 by_key.keys().collect::<BTreeSet<_>>(),
                 reversed_by_key.keys().collect()
             );
-            different_ids_for_same_key |= by_key
+            let differs = by_key
                 .iter()
                 .any(|(key, state)| reversed_by_key.get(key).is_some_and(|other| other != state));
+            different_ids_for_same_key.insert((body, subject == SubjectKind::Protocol), differs);
         }
     }
-    assert!(different_ids_for_same_key);
+    // The past-operand body reaches one key through different `StateId`s in
+    // the two discovery orders, under both key algebras.
+    let past = "always eventually (holds(p) and once[1,1] holds(q))";
+    for protocol in [false, true] {
+        assert_eq!(
+            different_ids_for_same_key.get(&(past, protocol)),
+            Some(&true)
+        );
+    }
 }
 
 /// FR-338's TP-4 vector: for `eventually holds(p)` the elementary
