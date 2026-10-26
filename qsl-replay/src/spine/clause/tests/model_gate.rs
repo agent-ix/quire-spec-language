@@ -503,17 +503,17 @@ fn forms_no_gate_covers_stay_ungated() {
     }
 }
 
-/// FR-361-AC-4 (TC-1015): a state-graph claim is outside the unit-level
-/// model gate. With only the value layer, its refusal is FR-110's ordinary
-/// layer refusal, which retains no model-construct family.
+/// FR-361-AC-4: a state-graph claim is not a model-gate refusal. Its S4
+/// emission makes it available to the checked package instead of returning
+/// the former `NotEmitted` refusal.
 #[trace("FR-361-AC-4", "TC-1015")]
 #[test]
 fn state_graph_claims_are_not_refused_by_the_model_gate() {
     let claim = "possible ReachesTwo using v over (c: Config::ConfigVersion) \
                  { c.versionNumber = 2 }";
-    compile(&[("v", VALUE)], claim)
-        .1
-        .unwrap_or_else(|refusal| panic!("the state-graph claim compiles: {refusal:?}"));
+    let (_, compiled) = compile(&[("v", VALUE)], claim);
+    let composed = compiled.expect("the model gate admits a state-graph claim");
+    assert_eq!(composed.package.graph().state_graph_claims().len(), 1);
 }
 
 /// FR-361-AC-13: `deref` and `reaches` are `state.graph`'s. Under an alias
