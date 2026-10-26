@@ -59,6 +59,9 @@ const HIDDEN_TRIGGER: &str = " trigger";
 pub(crate) struct TypedConditions {
     /// Each `holds` atom's condition, by its formula node's index.
     pub(crate) holds: BTreeMap<usize, TypedCondition>,
+    /// Aggregate atom expressions, in source order, by formula node. These
+    /// are type checked at S3 while aggregate wire emission is provisional.
+    pub(crate) aggregates: BTreeMap<usize, Vec<TypedCondition>>,
     /// The `when` guard, typed over the `over` parameter at slot 0 and the
     /// trigger binder at slot 1.
     pub(crate) guard: Option<TypedCondition>,
@@ -75,6 +78,7 @@ impl TypedConditions {
             .iter()
             .chain(&self.captures)
             .chain(self.holds.values())
+            .chain(self.aggregates.values().flatten())
     }
 
     /// Every condition, mutably.
@@ -83,6 +87,7 @@ impl TypedConditions {
             .iter_mut()
             .chain(&mut self.captures)
             .chain(self.holds.values_mut())
+            .chain(self.aggregates.values_mut().flatten())
     }
 }
 
@@ -157,21 +162,96 @@ pub(crate) fn check_conditions(
     }
     bound.extend(visible.into_iter().skip(1 + usize::from(trigger.is_some())));
     for (id, node) in form.formula.iter() {
-        let TemporalNodeForm::Holds { condition, .. } = node else {
-            continue;
-        };
         let location = temporal_location(clause, TemporalSite::Condition(id.index()));
-        let typed = type_condition(
-            Goal::Boolean,
-            condition,
-            &bound,
-            &location,
-            input,
-            &named,
-            &mut nodes,
-            cx,
-        )?;
-        conditions.holds.insert(id.index(), typed);
+        match node {
+            TemporalNodeForm::Holds { condition, .. } => {
+                let typed = type_condition(
+                    Goal::Boolean,
+                    condition,
+                    &bound,
+                    &location,
+                    input,
+                    &named,
+                    &mut nodes,
+                    cx,
+                )?;
+                conditions.holds.insert(id.index(), typed);
+            }
+            TemporalNodeForm::AggregateAtom(atom) => {
+                let mut typed = Vec::new();
+                let mut aggregate_value_type = None;
+                if let Some(value) = &atom.term.value {
+                    let value = type_condition(
+                        Goal::Any,
+                        value,
+                        &bound,
+                        &location,
+                        input,
+                        &named,
+                        &mut nodes,
+                        cx,
+                    )?;
+                    aggregate_value_type = Some(value.body.root().value_type().clone());
+                    typed.push(value);
+                }
+                if let Some(filter) = &atom.term.filter {
+                    typed.push(type_condition(
+                        Goal::Boolean,
+                        filter,
+                        &bound,
+                        &location,
+                        input,
+                        &named,
+                        &mut nodes,
+                        cx,
+                    )?);
+                }
+                if let qsl_forms::AggregateKindForm::Fraction(predicate) = &atom.term.kind {
+                    typed.push(type_condition(
+                        Goal::Boolean,
+                        predicate,
+                        &bound,
+                        &location,
+                        input,
+                        &named,
+                        &mut nodes,
+                        cx,
+                    )?);
+                }
+                let threshold = type_condition(
+                    Goal::Any,
+                    &atom.threshold,
+                    &bound,
+                    &location,
+                    input,
+                    &named,
+                    &mut nodes,
+                    cx,
+                )?;
+                let threshold_type = threshold.body.root().value_type();
+                let compatible = if !is_exact_numeric(threshold_type) {
+                    false
+                } else if matches!(
+                    atom.term.kind,
+                    qsl_forms::AggregateKindForm::Count | qsl_forms::AggregateKindForm::Fraction(_)
+                ) {
+                    !matches!(threshold_type, ValueType::Quantity(_))
+                } else if let Some(value_type) = &aggregate_value_type {
+                    same_dimension(value_type, threshold_type, input.scope.types().units())
+                } else {
+                    true
+                };
+                if !compatible {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                    });
+                }
+                typed.push(threshold);
+                conditions.aggregates.insert(id.index(), typed);
+            }
+            TemporalNodeForm::Constant { .. } | TemporalNodeForm::Operator(_) => {}
+        }
     }
     Ok((conditions, nodes))
 }
@@ -231,6 +311,35 @@ enum Goal<'t> {
     Boolean,
     /// A capture's declared type.
     Declared(&'t ValueType),
+    /// Infer an aggregate value or comparison threshold without a dimension
+    /// constraint (the operator is still a provisional wire contract).
+    Any,
+}
+
+fn is_exact_numeric(value_type: &ValueType) -> bool {
+    matches!(
+        value_type,
+        ValueType::Integer
+            | ValueType::Int(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Quantity(_)
+    )
+}
+
+fn same_dimension(
+    left: &ValueType,
+    right: &ValueType,
+    units: &quire_semantic_value::quantity::UnitTable,
+) -> bool {
+    match (left, right) {
+        (ValueType::Quantity(left), ValueType::Quantity(right)) => units
+            .get(*left)
+            .zip(units.get(*right))
+            .is_some_and(|(left, right)| left.dimension() == right.dimension()),
+        (ValueType::Quantity(_), _) | (_, ValueType::Quantity(_)) => false,
+        _ => is_exact_numeric(left) && is_exact_numeric(right),
+    }
 }
 
 /// Type `condition` against `goal` over `bound`, bound from slot 0, at
@@ -282,6 +391,7 @@ fn type_condition(
             Goal::Declared(declared) => {
                 typer.check_as(&condition.expression, declared, &location)?
             }
+            Goal::Any => typer.infer(&condition.expression, None, &location)?,
         };
         let slots = typer.slots();
         let slot_names = typer.slot_names().to_vec();

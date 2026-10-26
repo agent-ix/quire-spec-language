@@ -15,4 +15,5 @@ mod nesting_levels;
 mod probabilistic;
 mod protocol_memory_refinement;
 mod selection;
+mod taskset;
 mod terminal_declaration;
