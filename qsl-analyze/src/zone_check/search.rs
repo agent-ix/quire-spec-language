@@ -36,7 +36,7 @@ use qsl_semantics::check::{
 };
 use quire_exact::{Cancel, Meter, Rational};
 
-use super::certificate::{Proof, ZoneCertificate};
+use super::certificate::Proof;
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
 use super::window::{Read, Stamp, WindowClaim};
@@ -213,7 +213,7 @@ pub enum ZoneCheckOutcome<S> {
     /// time-divergent behaviour.
     Holds {
         /// FR-244's certificate, built from the retained graph.
-        certificate: Box<ZoneCertificate<S>>,
+        certificate: Box<qsl_replay::ZoneCertificate<ItemObligation<S>>>,
         /// The run's counts.
         stats: ZoneStats,
     },

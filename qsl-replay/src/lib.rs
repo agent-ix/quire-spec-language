@@ -124,7 +124,13 @@ pub use certificate::simulation::{
 pub use certificate::state_graph::{
     check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
 };
-pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
+pub use certificate::zone::{LuBounds, Zone, ZoneError};
+pub use certificate::zone_certificate::{
+    check_zone_certificate, CertEdge, CertNode, CertificateCheckLimits, DivergenceWitness,
+    DivergentTarget, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest,
+    ZoneCertificateVerdict,
+};
+pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,

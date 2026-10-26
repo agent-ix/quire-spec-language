@@ -5,24 +5,26 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use num_bigint::BigInt;
 use qsl_analyze::zone_check::{
-    bounded_window_verdict, check_timed_model, Bound, CertEdge, Dbm, DivergentTarget,
-    ZoneCertificate, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
+    bounded_window_verdict, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PlaceConstraint, TimedSystem};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedSystem};
 use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
+use qsl_replay::{
+    check_zone_certificate, CertEdge, CertificateCheckLimits, CounterexampleKind, DivergentTarget,
+    ModelCheckItem, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
+    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
+};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
-use qsl_semantics::check::{ClockOp, FormulaNode, FormulaNodeId};
+use qsl_semantics::check::{FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
@@ -136,7 +138,7 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
     .expect("EN-6 takes the claim")
 }
 
-fn deadlock(world: &World) -> Outcome {
+pub(crate) fn deadlock(world: &World) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -642,7 +644,7 @@ pub(crate) fn lock() -> World {
 }
 
 /// The certificate of a `Holds` outcome.
-fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
+pub(crate) fn proved(outcome: Outcome) -> Certificate {
     match outcome {
         ZoneCheckOutcome::Holds { certificate, .. } => *certificate,
         other => panic!("expected a proof, got {other:?}"),
@@ -650,7 +652,7 @@ fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
 }
 
 /// The operation an edge's transition names.
-fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'static str {
+fn operation(certificate: &Certificate, edge: usize) -> &'static str {
     let Some(transition) = &certificate.edges[edge].transition else {
         return "stutter";
     };
@@ -663,89 +665,46 @@ fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'stat
     .unwrap_or("?")
 }
 
-/// `bound` in units of `1 / scale`.
-fn scaled(bound: &Rational, scale: &BigInt) -> BigInt {
-    let value = bound.mul(&Rational::from_integer(Integer::from_big(scale.clone())));
-    value.numerator().as_big() / value.denominator().as_big()
-}
+/// FR-244's certificate of a proof of an item over [`SUBJECT`].
+pub(crate) type Certificate = ZoneCertificate<ItemObligation<&'static str>>;
 
-/// `zone` intersected with `constraints`, bounds in units of `1 / scale`.
-fn constrain(zone: &mut Dbm, constraints: &[PlaceConstraint], scale: &BigInt) {
-    for constraint in constraints {
-        let clock = constraint.place() + 1;
-        let bound = scaled(constraint.bound(), scale);
-        match constraint.op() {
-            ClockOp::Less => zone.constrain(clock, 0, Bound::lt(bound)),
-            ClockOp::LessOrEqual => zone.constrain(clock, 0, Bound::le(bound)),
-            ClockOp::Equal => zone
-                .constrain(clock, 0, Bound::le(bound.clone()))
-                .and_then(|()| zone.constrain(0, clock, Bound::le(-bound))),
-            ClockOp::GreaterOrEqual => zone.constrain(0, clock, Bound::le(-bound)),
-            ClockOp::Greater => zone.constrain(0, clock, Bound::lt(-bound)),
-        }
-        .expect("a clock of the zone");
-    }
-}
-
-/// FR-244 "Reachability part", checked from the certificate and the
-/// subject alone: following the edges from the single initial state, each
-/// edge's step and part from its source zone (guard, resets, the target's
-/// invariants, time elapsing unless urgent) gives a successor that the
-/// target's zone covers under the aLU simulation with the listed bounds,
-/// and the target names the successor's model state.
-fn assert_edges_cover(world: &World, certificate: &ZoneCertificate<&'static str>) {
+/// FR-245's check of `certificate` against `world`'s subject, for the item
+/// its obligation names: the first clause, or the deadlock-freedom item.
+pub(crate) fn check(
+    world: &World,
+    certificate: &Certificate,
+    limits: CertificateCheckLimits,
+) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<&'static str>>> {
     let system = world.system();
-    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
-    let scale = &certificate.scale;
-    let lower: Vec<Option<BigInt>> = certificate
-        .lu_bounds
-        .iter()
-        .map(|b| b.lower.clone())
-        .collect();
-    let upper: Vec<Option<BigInt>> = certificate
-        .lu_bounds
-        .iter()
-        .map(|b| b.upper.clone())
-        .collect();
-    let mut states = vec![None; certificate.nodes.len()];
-    let [root] = certificate.initial.as_slice() else {
-        panic!("one initial node");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("letters");
+    let item = match certificate.obligation.kind {
+        ObligationKind::DeadlockFreedom => ModelCheckItem::DeadlockFreedom,
+        _ => ModelCheckItem::Clause {
+            clause: node.clause(),
+            letters: &letters,
+        },
     };
-    states[*root] = Some(timed.initial().remove(0).discrete().clone());
-    for edge in &certificate.edges {
-        let state = states[edge.from].clone().expect("a source reached first");
-        let steps = timed.guarded_steps(&state).expect("its steps");
-        let step = steps
-            .iter()
-            .find(|step| Some(step.transition()) == edge.transition.as_ref())
-            .expect("the edge's transition is enabled");
-        let mut zone = certificate.nodes[edge.from].zone.clone();
-        constrain(
-            &mut zone,
-            &step.parts()[edge.part.expect("a step's part")],
-            scale,
-        );
-        for (place, value) in step.resets() {
-            zone.reset(place + 1, &scaled(value, scale))
-                .expect("a place");
-        }
-        let target = timed.invariants(step.post()).expect("invariants");
-        constrain(&mut zone, &target, scale);
-        if !timed.is_urgent(step.post()).expect("urgency") {
-            zone.up();
-            constrain(&mut zone, &target, scale);
-        }
-        assert!(!zone.is_empty(), "the edge's successor is not empty");
-        let to = &certificate.nodes[edge.to];
-        assert!(
-            zone.alu_covered_by(&to.zone, &lower, &upper)
-                .expect("a shape"),
-            "edge {edge:?} is covered"
-        );
-        let (_, key) = system.state_key(step.post()).expect("a state key");
-        assert_eq!(key, to.state_key);
-        states[edge.to].get_or_insert_with(|| step.post().clone());
-    }
+    check_zone_certificate(
+        ZoneCertificateRequest {
+            simulation: world.request(),
+            model: "M",
+            item,
+        },
+        &certificate.obligation,
+        certificate,
+        limits,
+        &Cancel::new(),
+    )
+}
+
+/// FR-244 "Reachability part", checked by the core (FR-245): every edge's
+/// successor is covered by its target, and the certificate is accepted.
+fn assert_edges_cover(world: &World, certificate: &Certificate) {
+    assert_eq!(
+        check(world, certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Accepted)
+    );
 }
 
 /// Part of FR-244-AC-1 (TC-699): `NoLateReply` over `Rpc` with `T = 4 ms`
@@ -766,7 +725,7 @@ fn a_safety_proof_carries_a_reachability_certificate() {
         ObligationKind::Authored(claim_occurrence())
     );
     assert_eq!(certificate.initial, [0]);
-    assert_eq!(certificate.lu_bounds.len(), 1);
+    assert_eq!(certificate.lu_bounds.lower.len(), 1);
     assert!(certificate.nodes.len() > 1);
     // Edges by source in discovery order.
     assert!(certificate
@@ -812,8 +771,8 @@ fn a_locked_node_is_listed_with_its_edges() {
         panic!("one locked node: {locked:?}");
     };
     // `x <= 1` in scaled units: the upper bound of `x` is the scale.
-    let one = Bound::le(certificate.scale.clone());
-    assert_eq!(certificate.nodes[*b].zone.bound(1, 0).expect("x"), &one);
+    let one = Ok(Some((certificate.scale.clone(), false)));
+    assert_eq!(certificate.nodes[*b].zone.bound(1, 0), one);
     // Everything `B` reaches.
     let mut reached = vec![*b];
     let mut at = 0;
@@ -832,7 +791,7 @@ fn a_locked_node_is_listed_with_its_edges() {
     for &node in &reached {
         let node = &certificate.nodes[node];
         assert!(node.locked);
-        assert_eq!(node.zone.bound(1, 0).expect("x"), &one);
+        assert_eq!(node.zone.bound(1, 0), one);
     }
     assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
     assert!(certificate
@@ -842,7 +801,7 @@ fn a_locked_node_is_listed_with_its_edges() {
         .all(|&edge| !certificate.nodes[certificate.edges[edge].to].locked));
 }
 
-fn edge_index(certificate: &ZoneCertificate<&'static str>, edge: &CertEdge) -> usize {
+fn edge_index(certificate: &Certificate, edge: &CertEdge) -> usize {
     certificate
         .edges
         .iter()
@@ -851,7 +810,7 @@ fn edge_index(certificate: &ZoneCertificate<&'static str>, edge: &CertEdge) -> u
 }
 
 /// The witness's cycle, checked to close at the path's end.
-fn witness_cycle(certificate: &ZoneCertificate<&'static str>) -> Vec<&'static str> {
+fn witness_cycle(certificate: &Certificate) -> Vec<&'static str> {
     let admitted = &certificate.admitted;
     let DivergentTarget::Cycle(cycle) = &admitted.target else {
         panic!("a cycle witness: {admitted:?}");

@@ -10,8 +10,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    settle_zone_check, ZoneCertificateCheck, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRecord,
-    ZoneItem, ZoneStats,
+    settle_zone_check, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRecord, ZoneItem, ZoneStats,
 };
 use qsl_eval::simulation::model::{TimedState, TimedSystem};
 use qsl_eval::simulation::Limits;
@@ -23,7 +22,7 @@ use qsl_replay::{
     DisagreementCause, IncompleteCause, InconclusiveCause, Lasso, ModelCheckLimit, ModelStep,
     ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceValue, ProofBasis,
     ReplayRefusal, ResultLabel, SettlementBasis, StrongFairnessHint, TemporalCounterexample,
-    TerminalValue, UnavailabilityCause,
+    TerminalValue, UnavailabilityCause, ZoneCertificateVerdict,
 };
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::{Cancel, Rational, Undefined};
@@ -325,7 +324,7 @@ fn an_undefined_evaluation_replays_at_its_time() {
 }
 
 /// `Lock` with `ping` resetting `x` when `resets`.
-fn lock_resetting(resets: bool) -> World {
+pub(crate) fn lock_resetting(resets: bool) -> World {
     if !resets {
         return lock();
     }
@@ -394,7 +393,7 @@ fn package() -> qsl_semantics::library::PackageId {
     qsl_semantics::library::PackageId::of_preimage(b"zone-replay")
 }
 
-fn package_id() -> DigestRecord {
+pub(crate) fn package_id() -> DigestRecord {
     package().record()
 }
 
@@ -411,7 +410,7 @@ fn replayed(settlement: ModelTraceSettlement) -> ModelTraceReplayResult {
 /// `result`.
 fn settle(
     outcome: &Outcome,
-    check: ZoneCertificateCheck,
+    check: ZoneCertificateVerdict,
     result: Result<ModelTraceSettlement, ReplayRefusal>,
 ) -> ZoneCheckRecord {
     settle_zone_check(
@@ -433,7 +432,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     let four = rpc(4);
     let proof = claim(&four, ZoneCheckLimits::default(), &Cancel::new());
     // V-1.
-    let record = settle(&proof, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&proof, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Proved {
@@ -455,10 +454,10 @@ fn each_timed_verdict_row_settles_as_stated() {
     let at = CertificateLocus::Entry { index: 0 };
     let record = settle(
         &proof,
-        ZoneCertificateCheck::Rejected {
+        ZoneCertificateVerdict::Rejected(qsl_replay::CertificateRejection {
             rule,
             at: at.clone(),
-        },
+        }),
         Err(fault()),
     );
     assert_eq!(
@@ -478,7 +477,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 9,
     };
-    let record = settle(&proof, ZoneCertificateCheck::Stopped(limit), Err(fault()));
+    let record = settle(&proof, ZoneCertificateVerdict::Stopped(limit), Err(fault()));
     assert_eq!(record.value, TerminalValue::Incomplete(limit));
     assert_eq!(record.value.category(), Category::Incomplete);
 
@@ -491,7 +490,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(reproduced.clone()),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -511,7 +510,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Inconclusive(cause.clone())),
     );
     assert_eq!(
@@ -520,7 +519,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     );
     let refused =
         ReplayRefusal::ModelTrace(Box::new(ModelTraceRefusal::LoopZeroDelay { entry: 0 }));
-    let record = settle(&refuted, ZoneCertificateCheck::Accepted, Err(refused));
+    let record = settle(&refuted, ZoneCertificateVerdict::Accepted, Err(refused));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::InvalidRuntimeInput))
@@ -531,7 +530,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&refuted),
         &qsl_semantics::library::PackageId::of_preimage(b"another").record(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Ok(replayed(reproduced.clone())),
     );
     assert_eq!(
@@ -546,7 +545,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&cancelled),
         &package_id(),
         &cancel,
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Err(fault()),
     );
     assert!(
@@ -579,7 +578,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     }
 }
 
-fn fault() -> ReplayRefusal {
+pub(crate) fn fault() -> ReplayRefusal {
     ReplayRefusal::Fault(quire_semantic_value::catalog::InternalFault::new(
         "test",
         "not-called",
@@ -602,7 +601,7 @@ fn a_timed_refutation_settles_through_its_replay() {
             ZoneItem::Outcome(outcome),
             &package_id(),
             &Cancel::new(),
-            |_| ZoneCertificateCheck::Accepted,
+            |_| ZoneCertificateVerdict::Accepted,
             |payload| replay(&three, payload).map(replayed),
         )
     };
@@ -638,7 +637,7 @@ fn a_timed_refutation_settles_through_its_replay() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |payload| replay_on(&locked, payload, true, &Limits::default()).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -666,7 +665,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         "always holds(true)",
     );
     let outcome = claim(&stall, ZoneCheckLimits::default(), &Cancel::new());
-    let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoAdmittedBehaviour)
@@ -687,7 +686,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         ZoneItem::Unsupported(&disposed),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Err(fault()),
     );
     assert_eq!(record.label, ResultLabel::Unsupported);
@@ -702,7 +701,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         ..ZoneCheckLimits::default()
     };
     let stopped = claim(&rpc(4), tight, &Cancel::new());
-    let record = settle(&stopped, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&stopped, ZoneCertificateVerdict::Accepted, Err(fault()));
     let limit = IncompleteCause::LimitReached {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 2,
@@ -730,7 +729,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |payload| replay(&world, payload).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -752,7 +751,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
     );
 
     let locked = claim(&ticker(true), ZoneCheckLimits::default(), &Cancel::new());
-    let record = settle(&locked, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&locked, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoAdmittedBehaviour)
@@ -768,7 +767,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
 #[test]
 fn a_window_short_of_data_settles_inconclusive() {
     let outcome = short_of_data_claim(&retried_at("rational(5, 2) ms"));
-    let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor)
@@ -1135,7 +1134,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
             cause,
             stats: ZoneStats::default(),
         };
-        let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+        let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
         assert_eq!(
             record.value,
             TerminalValue::Inconclusive(InconclusiveCause::LassoNotConcretized)
@@ -1158,7 +1157,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Stopped {
             reached,
             count: Some(1),
@@ -1203,7 +1202,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
     };
     let record = settle(
         &deadlock,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Reproduced {
             value: ModelTraceValue::Truth(false),
             trace_position: None,

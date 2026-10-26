@@ -331,3 +331,74 @@ fn extrapolation_agrees_with_the_reference_on_a_grid() {
         assert_eq!(closed, extrapolated, "canonical after {max:?}");
     }
 }
+
+/// `down`, `minus` and `from_matrix`, the deadlock check's operations,
+/// against point membership on 300 seeded zones of dimension at most 3:
+/// a grid point is in `down(Z)` exactly when some delay of it on the half
+/// grid is in `Z`; it is in `Z minus Z'` exactly when it is in `Z` and not
+/// in `Z'`, in at most one piece; and a matrix read back is its zone.
+/// Part of FR-245's checker (TC-700). Not covered: a Kani harness for
+/// them, which FR-245-AC-4's list does not name.
+#[trace("TC-700")]
+#[test]
+fn down_and_minus_agree_with_point_membership() {
+    const S: i64 = 3;
+    let mut rng = Seeded(0x5eed_0245);
+    for _ in 0..300 {
+        let dim = usize::try_from(rng.below(3) + 1).expect("a small dimension");
+        let points = grid(dim, 6 * S);
+        let raw = rng.raw(dim, 4);
+        let mut zone: Zone = raw.to_zone();
+        zone.close();
+        let mut down = zone.clone();
+        down.down();
+        for p in &points {
+            let doubled: Vec<i64> = p.iter().map(|c| 2 * c).collect();
+            let reachable = (0..=24 * S).any(|d| {
+                let later: Vec<i64> = doubled
+                    .iter()
+                    .enumerate()
+                    .map(|(k, c)| if k == 0 { 0 } else { c + d })
+                    .collect();
+                reference::zone_contains(&zone, &later, 2 * S)
+            });
+            assert_eq!(
+                reference::zone_contains(&down, p, S),
+                reachable,
+                "down {raw:?} at {p:?}"
+            );
+        }
+
+        let other_raw = rng.raw(dim, 4);
+        let mut other: Zone = other_raw.to_zone();
+        other.close();
+        let pieces = zone.minus(&other).expect("equal dimensions");
+        for p in &points {
+            let count = pieces
+                .iter()
+                .filter(|piece| reference::zone_contains(piece, p, S))
+                .count();
+            let expected =
+                reference::zone_contains(&zone, p, S) && !reference::zone_contains(&other, p, S);
+            assert_eq!(
+                count,
+                usize::from(expected),
+                "{raw:?} minus {other_raw:?} at {p:?}"
+            );
+        }
+
+        let read = Zone::<Integer>::from_matrix(
+            dim,
+            (0..dim).flat_map(|i| {
+                let zone = &zone;
+                (0..dim).map(move |j| zone.bound(i, j).expect("in range"))
+            }),
+        )
+        .expect("a square matrix");
+        assert_eq!(read, zone);
+    }
+    assert_eq!(
+        Zone::<Integer>::from_matrix(2, [None]),
+        Err(ZoneError::MatrixShape { cells: 1, dim: 2 })
+    );
+}
