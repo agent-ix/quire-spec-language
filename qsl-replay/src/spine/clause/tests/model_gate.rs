@@ -12,7 +12,7 @@ use crate::spine::{CompileRefusal, SuppliedLibrary};
 use qsl_semantics::check::{
     AbstractionKey, AbstractionRefusal, AssemblyCause, AssemblyError, AuthoredBinding, CheckCause,
     FrameBinding, MalformedEntry, ModelFamily, ObjectBinding, OperationKey, OwnerKind,
-    PopulationBinding, ProfileCause, RustField, RustPath, RustReceiver, StateGraphCause,
+    PopulationBinding, ProfileCause, RustField, RustPath, RustReceiver,
 };
 use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm};
 
@@ -511,21 +511,9 @@ fn forms_no_gate_covers_stay_ungated() {
 fn state_graph_claims_are_not_refused_by_the_model_gate() {
     let claim = "possible ReachesTwo using v over (c: Config::ConfigVersion) \
                  { c.versionNumber = 2 }";
-    let (_, compiled) = compile(&[("v", VALUE)], claim);
-    let CompileRefusal::Check { refusals, .. } = *compiled.expect_err("the claim is not emitted")
-    else {
-        panic!("the state-graph claim reaches S3, not a model-gate refusal");
-    };
-    assert!(matches!(
-        refusals.as_slice(),
-        [refusal]
-            if matches!(
-                &refusal.cause,
-                CheckCause::StateGraph(cause)
-                    if matches!(cause.as_ref(), StateGraphCause::NotEmitted { name, .. }
-                        if name == "ReachesTwo")
-            )
-    ));
+    compile(&[("v", VALUE)], claim)
+        .1
+        .unwrap_or_else(|refusal| panic!("the state-graph claim compiles: {refusal:?}"));
 }
 
 /// FR-361-AC-13: `deref` and `reaches` are `state.graph`'s. Under an alias
