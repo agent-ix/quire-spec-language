@@ -46,3 +46,11 @@ ccad669c, and passed (exit 0).
 | FND-001 | low | `convert` is shared with `task_set.rs` and `temporal_clause.rs` (timed intervals), so the new refusal now applies to task-set quantities and timed-interval bounds too. That is consistent with FR-142, but no test covers a foreign-`Time` unit on either path. Those callers also keep locating the refusal at the unit span rather than at the quantity. | qsl-semantics/src/check/time_units.rs:299-311; qsl-semantics/src/check/task_set.rs:351; qsl-semantics/src/check/temporal_clause.rs:917 |
 | FND-002 | low | The FR-230-AC-15 test misses three things. It does not assert the `Set<Quantity<ms>>` member (`marks`). It checks the operation parameter and result only as `ValueType::Quantity(_)`, not as the one `ms` unit node. It does not check the span of `f(3 s)`'s `type-mismatch` (FR-230: "at the expression"). | qsl-semantics/tests/it/unit_typed_members.rs:80-214 |
 | FND-003 | low | `three_time_dimensions_give_three_package_identities` compares identities of three units whose source texts differ (`R::ms`, `F::sec`, `s`). The `package_id` assertions would pass for any source change. The `time_dimension` assertions next to them are the ones that tie the result to the dimension (confidence low that this matters). | qsl-package/src/emit/tests/timed_source.rs:275-330 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix commit 30fb512ad: `time_dimensions_of_different_owners_do_not_mix` adds a task `wcet 1 F::sec`, refused at the quantity, and a timed interval bound `3 F::sec`, refused at the unit. The difference in location is recorded in the doc comment. |
+| FND-002 | fixed | The AC-15 test asserts that the `Set<Quantity<ms>>` member's composite holds the `ms` unit node, that the operation parameter equals `f`'s parameter type, and that `f(3 s)` refuses at the text `3 s`. |
+| FND-003 | fixed | The emission test reads each emitted timed root's `time_dimension` reference, asserts that it equals the checked `time_dimension`, and asserts that the three dimensions and the three identities differ pairwise. |
