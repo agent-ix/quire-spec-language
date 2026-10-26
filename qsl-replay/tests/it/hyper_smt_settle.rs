@@ -101,7 +101,6 @@ fn an_inductive_outcome_with_a_match_and_no_witness_is_vacuous() {
 
 /// An outcome carrying another instance's identity, or no identity, is no
 /// evidence for the item and is refused.
-#[trace("TC-607", "FR-182-AC-11")]
 #[test]
 fn an_outcome_for_another_product_is_refused() {
     let world = World::new(&["v", "w"], false, &non_interference("", ""));
@@ -120,9 +119,9 @@ fn an_outcome_for_another_product_is_refused() {
     );
 }
 
-/// FR-182-AC-10: a subject with an empty initial list settles
+/// A subject with an empty initial list settles
 /// `inconclusive`, `NoInitialState`, never `proved`.
-#[trace("TC-607", "FR-182-AC-10")]
+#[trace("TC-607", "FR-182-AC-1")]
 #[test]
 fn an_empty_initial_list_settles_no_initial_state() {
     let world = World::new(&["v"], false, &non_interference("", "")).without_initial_states();

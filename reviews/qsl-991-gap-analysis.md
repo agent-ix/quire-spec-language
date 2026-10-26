@@ -37,3 +37,18 @@ Ticket: QSL-991. PR: quire-spec-language#1587, head 2d47d5bce. Method: gap-analy
 ## Verdict
 
 Not mergeable as is. Retag FND-001 and FND-002 so each test names only criteria it fully asserts (AC-1 for the table rows, TC-607). Add the `NoInitialState` test (FND-003). The unbuilt witness path of AC-10 and AC-11 belongs to the subticket in SR-1587001 FND-002. Settling a non-empty `μ_U` as `VacuousMatch` is not a stub: with no witness, FR-182 Behavior requires exactly that result, and the code never settles `proved` there.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Tag inflation. `an_outcome_for_another_product_is_refused` is tagged `("TC-607", "FR-182-AC-11")`. It asserts only one AC-11 clause (`ProductMismatch` naming `instance`) plus FR-315-AC-30's `Err` to `Clause` rule. AC-11's witness outcomes, the `subjects` and `clause` refusals and member ordering, and the `ItemIdentity` refusal stay untested, and AC-11's verification is TC-1190, not TC-607. | qsl-replay/tests/it/hyper_smt_settle.rs:104-122 |
+| FND-005 | medium | Tag inflation. `an_empty_initial_list_settles_no_initial_state` is tagged FR-182-AC-10. It asserts one AC-10 sentence, without a witness. AC-10's witness outcomes are unbuilt (QSL-1112). The V-6 `NoInitialState` row it does assert is FR-182-AC-1. | qsl-replay/tests/it/hyper_smt_settle.rs:125-135 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit 910ca97d4 splits the test. `an_inductive_outcome_with_a_match_and_no_witness_is_vacuous` asserts only `VacuousMatch` and is tagged `("TC-607", "FR-182-AC-1")`. The `ProductMismatch` half moved to a new test, judged as new FND-004. |
+| FND-002 | fixed | Commit 910ca97d4: `an_unclosed_induction_is_inconclusive` is tagged `("TC-607", "FR-182-AC-1")`. |
+| FND-003 | fixed | Commit 910ca97d4 adds `an_empty_initial_list_settles_no_initial_state`. `World::without_initial_states` clears the list that `subject_over` passes into `ModelSimulationRequest.initial`. Production `inductive_row` computes `NoInitialState` from `ModelSystem::initial()`, so deleting the guard makes the test see `proved`, and it fails. It is not a tautology. 5 of 5 focused tests pass. Its tag is judged as new FND-005. |
