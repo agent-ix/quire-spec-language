@@ -104,6 +104,7 @@ mod timed_declarations;
 mod timed_intervals;
 #[cfg(feature = "test-support")]
 mod timed_model;
+mod unit_typed_members;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;
