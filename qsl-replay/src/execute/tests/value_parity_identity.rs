@@ -530,6 +530,9 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             crate::ReplaySource::ObservedTemporal(_) => {
                 panic!("value-parity packets cannot carry observed temporal sources")
             }
+            crate::ReplaySource::ModelGraph(_) => {
+                panic!("value-parity packets cannot carry state-graph sources")
+            }
         };
         let packet = WitnessPacket {
             obligation_identity: Some(identity),

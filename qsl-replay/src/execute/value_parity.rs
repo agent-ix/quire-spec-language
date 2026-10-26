@@ -181,7 +181,10 @@ fn check_identity(
     call: &Selected,
     function: &QualifiedName,
 ) -> Result<(), ReplayRefusal> {
-    let key = request.replay_target().occurrence_key().ok_or_else(|| {
+    let replay_target = request
+        .replay_target()
+        .ok_or(ReplayRefusal::WrongModelGraphEntry)?;
+    let key = replay_target.occurrence_key().ok_or_else(|| {
         ReplayRefusal::Fault(InternalFault::new(
             "replay",
             "function-request-carries-an-occurrence-key",

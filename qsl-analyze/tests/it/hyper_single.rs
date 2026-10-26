@@ -447,6 +447,7 @@ fn the_seed_names_the_walks_and_the_run_is_reproducible() {
             .map(|witness| match &witness.source {
                 WitnessSource::Sampled(provenance) => (provenance.seed, provenance.trace),
                 WitnessSource::Explored => panic!("expected a sampled witness"),
+                WitnessSource::Unrolled { .. } => panic!("expected a sampled witness"),
             })
             .collect::<Vec<_>>()
     };

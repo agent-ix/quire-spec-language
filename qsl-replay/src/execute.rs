@@ -345,6 +345,19 @@ pub enum ReplayRefusal {
     /// FR-331: observed temporal replay requires a witness source.
     #[error("invalid_runtime_input/invalid-value at /replay/source: observed temporal replay requires a Witness source")]
     WrongObservedTemporalSource,
+    /// FR-170 replay requires its explicit subject argument.
+    #[error("invalid_runtime_input/invalid-value: model-graph replay requires replay_model_graph and its subject")]
+    WrongModelGraphEntry,
+    /// FR-170: model-graph envelope metadata differs from the request or
+    /// the recompiled claim.
+    #[error("stale_dependency/content-mismatch: model-graph {member} differs from the replay request or recompiled claim")]
+    ModelGraphMismatch {
+        /// The mismatching envelope member.
+        member: &'static str,
+    },
+    /// FR-170: the explicit state-graph replay entry received another arm.
+    #[error("invalid_runtime_input/invalid-value at /replay/source: state-graph replay requires a ModelGraph source")]
+    WrongModelGraphSource,
     /// FR-116, FR-122: the envelope's replay target differs from the
     /// request's (`stale_dependency`/`content-mismatch`), naming both.
     #[error("stale_dependency/content-mismatch: the request's target is {request} but the envelope's is {envelope}")]
@@ -510,6 +523,7 @@ impl ReplayRefusal {
             | Self::ClaimOccurrence { .. } => Code::MissingDeclaration,
             Self::MissingFairnessPremise { .. } => Code::UnsupportedProjection,
             Self::ObservedTemporalMismatch { .. } => Code::StaleDependency,
+            Self::ModelGraphMismatch { .. } => Code::StaleDependency,
             Self::ObservedTemporalInput { .. } => Code::InvalidRuntimeInput,
             Self::ObservedTemporalRefusal(TemporalRefusal::Fault(_)) => Code::RuntimeInvariant,
             Self::ObservedTemporalRefusal(_) => Code::InvalidRuntimeInput,
@@ -517,6 +531,7 @@ impl ReplayRefusal {
             Self::WrongObservedTemporalTarget { .. } | Self::WrongObservedTemporalSource => {
                 Code::InvalidRuntimeInput
             }
+            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Code::InvalidRuntimeInput,
             Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::FrameIdentity(_)
@@ -570,6 +585,7 @@ impl ReplayRefusal {
             | Self::UnknownClause { .. } => Some("missing-name"),
             Self::MissingFairnessPremise { .. } => Some("missing-fairness-premise"),
             Self::ObservedTemporalMismatch { .. } => Some("content-mismatch"),
+            Self::ModelGraphMismatch { .. } => Some("content-mismatch"),
             Self::ObservedTemporalInput { .. } => Some("invalid-value"),
             Self::ObservedTemporalRefusal(TemporalRefusal::Fault(_)) => None,
             Self::ObservedTemporalRefusal(_) => Some("invalid-value"),
@@ -580,6 +596,7 @@ impl ReplayRefusal {
             Self::WrongReplayTarget { .. } => Some("unknown-member"),
             Self::WrongObservedTemporalTarget { .. } => Some("unknown-member"),
             Self::WrongObservedTemporalSource => Some("invalid-value"),
+            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Some("invalid-value"),
             Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
@@ -623,6 +640,7 @@ impl ReplayRefusal {
             Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
             Self::WrongObservedTemporalTarget { .. } => Some("/replay/observed_counterexample"),
             Self::WrongObservedTemporalSource => Some("/replay/source"),
+            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Some("/replay/source"),
             Self::ObservedTemporalMismatch { member } => Some(match *member {
                 "clause_node" => "/replay/observed_counterexample/clause_node",
                 "occurrence_key" => "/replay/observed_counterexample/occurrence_key",
@@ -631,6 +649,16 @@ impl ReplayRefusal {
                 "profile_selections" => "/replay/profile_selections",
                 "obligation_identity" => "/replay/obligation_identity",
                 _ => "/replay/source",
+            }),
+            Self::ModelGraphMismatch { member } => Some(match *member {
+                "claim_identity" | "clause_node" => "/replay/source/model_graph/clause_node",
+                "occurrence_key" => "/replay/source/model_graph/occurrence_key",
+                "package_id" => "/replay/source/model_graph/package_id",
+                "source_digests" => "/replay/source_digests",
+                "profile_selections" => "/replay/profile_selections",
+                "declared_domains" => "/replay/declared_domains",
+                "undefined_locus" => "/replay/source/model_graph/undefined/where/locus",
+                _ => "/replay/obligation_identity",
             }),
             Self::ObservedTemporalInput { pointer, .. } => Some(pointer),
             _ => None,
@@ -846,7 +874,9 @@ fn replay_observed_temporal(
         return Err(ReplayRefusal::WrongObservedTemporalSource);
     };
     let envelope = envelope.as_ref();
-    let target = request.replay_target();
+    let Some(target) = request.replay_target() else {
+        return Err(ReplayRefusal::WrongModelGraphEntry);
+    };
     if target.member() != TargetMember::StateClause {
         return Err(ReplayRefusal::WrongObservedTemporalTarget {
             target: Box::new(target.clone()),
@@ -1085,8 +1115,12 @@ pub fn replay_with_cancel(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
+    if matches!(request.source(), ReplaySource::ModelGraph(_)) {
+        return Err(ReplayRefusal::WrongModelGraphEntry);
+    }
     let function = match request.source() {
         ReplaySource::ObservedTemporal(_) => None,
+        ReplaySource::ModelGraph(_) => None,
         ReplaySource::Witness(_) | ReplaySource::Input(_) => {
             Some(function_target(&request, ReplayEntry::Replay)?)
         }
@@ -1114,7 +1148,10 @@ pub fn replay_with_cancel(
             "non-temporal-source-has-function-target",
         ))
     })?;
-    let claim = function_claim(&compiled, function, request.replay_target())?;
+    let replay_target = request
+        .replay_target()
+        .ok_or(ReplayRefusal::WrongModelGraphEntry)?;
+    let claim = function_claim(&compiled, function, replay_target)?;
     let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
         package,
@@ -1318,6 +1355,9 @@ fn settle(
         )),
         ReplaySource::ObservedTemporal(_) => {
             unreachable!("observed temporal requests dispatch before function replay settlement")
+        }
+        ReplaySource::ModelGraph(_) => {
+            unreachable!("state-graph requests dispatch before function replay settlement")
         }
     }
 }
@@ -1799,10 +1839,12 @@ pub(crate) fn function_target(
     request: &ReplayRequest,
     entry: ReplayEntry,
 ) -> Result<&QualifiedName, ReplayRefusal> {
-    request
+    let target = request
         .replay_target()
+        .ok_or(ReplayRefusal::WrongModelGraphEntry)?;
+    target
         .as_function()
-        .ok_or_else(|| wrong_target(request.replay_target(), entry, TargetMember::Function))
+        .ok_or_else(|| wrong_target(target, entry, TargetMember::Function))
 }
 
 /// `entry` reads `member`, but the request's target is `target`.
@@ -1823,11 +1865,14 @@ pub(crate) fn check_envelope_target(
     request: &ReplayRequest,
     envelope: &ReplayTarget,
 ) -> Result<(), ReplayRefusal> {
-    if request.replay_target() == envelope {
+    let Some(target) = request.replay_target() else {
+        return Err(ReplayRefusal::WrongModelGraphEntry);
+    };
+    if target == envelope {
         return Ok(());
     }
     Err(ReplayRefusal::TargetMismatch {
-        request: Box::new(request.replay_target().clone()),
+        request: Box::new(target.clone()),
         envelope: Box::new(envelope.clone()),
     })
 }
@@ -2012,6 +2057,12 @@ fn arguments(
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",
                 "observed-temporal-source-dispatched-by-replay-facade",
+            )))
+        }
+        ReplaySource::ModelGraph(_) => {
+            return Err(ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "state-graph-source-dispatched-by-replay-facade",
             )))
         }
     };

@@ -165,6 +165,7 @@ pub use model_check::counterexample::{
     UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
+pub use model_check::graph_replay::{replay_model_graph, replay_model_graph_with_cancel};
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
     StateGraphRecord,
@@ -214,8 +215,9 @@ pub use model_check::smt_query::{
     encode_smt_query, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind,
 };
 pub use model_check::state_graph::{
-    GraphUndefined, GraphWitness, LassoWitness, ModelLasso, ModelPath, OpenCause, RunEnd,
-    StateGraphInstanceOutcome, StateGraphOutcome, WitnessSource,
+    GraphEvidence, GraphEvidenceEnvelope, GraphUndefined, GraphWitness, LassoWitness, ModelLasso,
+    ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, TrapClosure,
+    WitnessPath, WitnessSource,
 };
 pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
