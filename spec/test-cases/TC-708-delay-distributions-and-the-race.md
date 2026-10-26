@@ -16,11 +16,11 @@ Scope: FR-253-AC-1 to FR-253-AC-4.
 
 ## Test Procedure
 
-Fixtures: ADR-026 §11's stochastic variant with workload `Even`; the refusal fixtures of FR-253-AC-3; the variant with no `delay` member on `timeout`.
+Fixtures: ADR-026 §11's stochastic variant with workload `Even`; the refusal fixtures of FR-253-AC-3; the variant with no `delay` declaration on `timeout`.
 
 1. Check the stochastic variant and compute the windows after `send`.
 2. Compute the race's outcome probabilities in that state.
-3. Check each refusal fixture and the unbounded-uniform state.
+3. Check each refusal fixture (including a second `delay` of one operation) and the unbounded-uniform state.
 4. Check the free-`timeout` variant and build the race just after `send`.
 
 Tag the tests `#[trace("TC-708", "FR-253-AC-n")]`.

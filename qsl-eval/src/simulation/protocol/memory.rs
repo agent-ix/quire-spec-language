@@ -16,6 +16,7 @@ use super::fairness::ProtocolFairness;
 use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
 use super::ra::CarriedView;
+use super::race::{AccessRecord, DataRace};
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::Enc;
 use crate::simulation::model::{Cell, ModelSimState};
@@ -83,6 +84,10 @@ pub struct SharedCell<'a> {
     pub location: &'a Location,
     /// Its cell.
     pub cell: &'a Cell,
+    /// Whether some attempt of the subject accesses the location with no
+    /// `ordering` (ADR-025 MA-2): the memory component then holds its race
+    /// summary (DR-3).
+    pub non_atomic: bool,
 }
 
 /// What an attempt's application is, as EN-1 classifies it (FR-220): its
@@ -207,14 +212,19 @@ pub struct Chosen<C> {
     pub choice: Option<MemoryChoice>,
     /// Where the delta went.
     pub written: Written<C>,
+    /// The data race the access completes (ADR-025 DR-4); `None` when it
+    /// completes none, and under a model with no race summary.
+    pub race: Option<DataRace>,
 }
 
 impl<C> Chosen<C> {
-    /// The one way a model that chooses nothing writes `written`.
+    /// The one way a model that chooses nothing, and records no race
+    /// summary, writes `written`.
     pub fn only(written: Written<C>) -> Vec<Self> {
         vec![Self {
             choice: None,
             written,
+            race: None,
         }]
     }
 }
@@ -310,6 +320,12 @@ pub trait MemoryModel {
     ) -> Self::Component {
         component.clone()
     }
+
+    /// `carried`, a view a queued `send` carries, after `access`: a write to
+    /// a location makes its write Boolean false in every carrier but the
+    /// writer's own, and a read its read Boolean (ADR-025 DR-3). A model that
+    /// carries no race summary leaves it unchanged.
+    fn carried_after(&self, _carried: &mut CarriedView, _access: &AccessRecord) {}
 
     /// `carried` in the state key, read against `component`.
     fn carried_key(&self, _component: &Self::Component, _carried: &CarriedView) -> CarriedKey {

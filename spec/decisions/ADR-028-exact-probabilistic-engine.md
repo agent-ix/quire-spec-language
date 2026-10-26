@@ -57,7 +57,7 @@ never a proof. ADR-024 leaves three things to an exact backend:
 ADR-026 adds timed subjects. Its RU-5 and SS-7 route `exact` evidence over a
 timed subject to EN-5 when the subject's constraints are all closed: EN-5
 reads it through digital clocks as a probabilistic timed automaton (PTA).
-An operation with no `delay` member has a free, nondeterministic delay
+An operation with no `delay` declaration has a free, nondeterministic delay
 (ADR-026 SD-1), which the claim's scheduler resolves (§13). A strict
 constraint and an SD-1 delay distribution with no exact digital reading
 settle `unsupported` on that route and are measured by EN-4.
@@ -741,7 +741,7 @@ Each amended text carries an "Amended by ADR-028" note.
   `uniform`, `uniform[a, b]` or `exponential` delay stays EN-4's. The causes
   `DelayDistribution`, `StrictClockConstraint`, `ZeroDelayCycle` and
   `TimedFormShape`.
-- ADR-026 SD-1: an operation that declares no `delay` member has a free,
+- ADR-026 SD-1: an operation that declares no `delay` declaration has a free,
   nondeterministic delay, never an implied distribution, so the leftover
   delay nondeterminism of TA-1 is defined in one place (team-leader
   decision; see References).
@@ -802,7 +802,7 @@ Each amended text carries an "Amended by ADR-028" note.
   layout (RU-2, CB-2, CB-3), with the uncertified-proof rule the owner
   ruled: Linear QSL-390, on its own draft branch.
 - Team-leader decision of 2026-10-01 on ADR-026 SD-1: an operation with no
-  `delay` member has a nondeterministic delay, resolved by its minimum or
+  `delay` declaration has a nondeterministic delay, resolved by its minimum or
   maximum under a workload (RU-6), never an implied distribution.
 - Sibling records: ADR-018 (QSL-366), ADR-021 (QSL-368, state-space
   reduction), ADR-022 (QSL-369, possible properties), ADR-024 (QSL-371,

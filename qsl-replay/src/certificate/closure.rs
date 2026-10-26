@@ -14,7 +14,8 @@
 //! - no reached product state is bad (`BadState`): its monitor state rejects,
 //!   its letter is undefined, its expansion records `ContractUndetermined`,
 //!   or, for the deadlock-freedom item alone, it is deadlocked (ADR-018
-//!   DL-6).
+//!   DL-6), or, for the race-freedom item alone, a step into it completes a
+//!   data race (FR-224).
 //!
 //! A subject with no initial state is refused: no behaviour is examined, so
 //! no certificate of it is accepted. Admission polls the cancel handle at
@@ -72,8 +73,8 @@ use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
-    ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
+    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
+    TransitionSystem, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
@@ -708,9 +709,15 @@ impl<S: SubjectSystem> Check<'_, S> {
                 Some(expansion) => expansion,
                 None => self.expand(&pending.state, &pending.at)?,
             };
-            for (_, digest, state) in self.ordered(expansion.successors)? {
+            for (transition, digest, state) in self.ordered(expansion.successors)? {
                 self.poll()?;
                 self.charge_edge()?;
+                // FR-224: the race-freedom item is bad at the post-state of a
+                // step that completes a data race, whichever state it reaches.
+                if translation.item() == SafetyItem::RaceFreedom && transition.race().is_some() {
+                    let at = self.product(translation, digest, SafetyState::Rejected)?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                }
                 if let Some(next) = self.reach(
                     instance,
                     translation,
@@ -1063,6 +1070,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     }
                 }
             }
+            SafetyItem::RaceFreedom => (translation.read(before, true), None),
             SafetyItem::DeadlockFreedom => {
                 if !self.models.contains(&digest) {
                     let at = self.product(translation, digest, SafetyState::Carried)?;

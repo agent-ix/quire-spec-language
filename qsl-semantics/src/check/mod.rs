@@ -157,8 +157,8 @@ pub use probabilistic::{
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 pub use task_set::{
-    Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, ScheduleClaim, SchedulingPolicy,
-    Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
+    Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, Release, ScheduleClaim,
+    SchedulingPolicy, Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
@@ -1335,12 +1335,14 @@ impl PackageDeclarations {
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
+        let mut task_sets_admitted = false;
         if !self.task_set_forms.is_empty() {
             let required = crate::value::layer::HeaderLayer::TemporalComplete;
             let selected = self.header_layers.clone();
             let admitted = crate::value::definition::DefinitionLock::pinned()
                 .closure(&selected)
                 .contains(&required);
+            task_sets_admitted = admitted;
             if admitted {
                 let units = time_units::TimeUnits::new(
                     &self.units,
@@ -3168,6 +3170,22 @@ impl PackageDeclarations {
         );
         refusals.extend(checked_probabilistic.refusals);
         let probabilistic_model = checked_probabilistic.model;
+        // QSL FR-249: the `release` declarations, resolved against the task
+        // sets and the operations of the admitted models.
+        if task_sets_admitted {
+            refusals.extend(
+                task_set::check_releases(
+                    &self.task_set_forms,
+                    &probabilistic_input,
+                    &mut checked_task_sets,
+                )
+                .into_iter()
+                .map(|cause| CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::Temporal(Box::new(cause)),
+                }),
+            );
+        }
         // FR-165: each state-graph claim, checked through the `StateGraph`
         // family's contract once every function signature is known, against
         // the same package-wide node total and contract meter.
