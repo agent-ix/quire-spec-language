@@ -46,9 +46,9 @@
 //! model state's own successor relation, never from product edges (FA-2).
 //!
 //! A product graph whose second phase finds no passing component proves the
-//! item only with FR-339's component certificate, which is not built yet:
-//! that run is refused ([`LivenessRefusal::ComponentCertificateNotBuilt`])
-//! rather than returned as a closure proof, which does not check acceptance.
+//! item with FR-339's component certificate (`component`): the closure of the
+//! explored product states and the partition of them into components, each
+//! with the witness the fairness kernels found for it.
 //!
 //! Under symmetry (ADR-021 SYM-6, EI-3) each orbit of the `over` binding is
 //! one product, bound to its least key and reduced by that key's
@@ -84,7 +84,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId,
+    translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId, SubjectKind,
 };
 use qsl_eval::fairness::{
     analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
@@ -102,11 +102,13 @@ use qsl_eval::simulation::{
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
+use qsl_package::CheckedPackage;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
-    IncompleteCause, ItemRefusal, Lasso, MemoryBound, MemoryCause, ModelCheckItem, ModelCheckLimit,
-    ModelCheckOutcome, ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats,
-    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    IncompleteCause, Instance, ItemRefusal, Lasso, MemoryBound, MemoryCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckOutcome, ModelStep, ProofCertificate, Proviso, ReachedLimit,
+    ReductionCause, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CaptureSite, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -132,6 +134,8 @@ use super::quotient::{
 };
 use super::reduce;
 
+mod component;
+
 /// `resource_exhausted`/`insufficient-next-charge`, the code of an expansion
 /// that stopped; [`Halt`] records which budget it was.
 const STOPPED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
@@ -147,14 +151,6 @@ pub enum LivenessRefusal {
     UnknownOperation {
         /// The operation's resolved name.
         name: String,
-    },
-    /// No fair accepting cycle exists in the fully explored product, which
-    /// proves the item only with FR-339's component certificate, and that
-    /// certificate and its core checker are not built yet.
-    #[error("the item holds over {} product states, but FR-339's component certificate is not built yet", .stats.product_states)]
-    ComponentCertificateNotBuilt {
-        /// The run's counts.
-        stats: RunStats,
     },
 }
 
@@ -242,6 +238,18 @@ pub(super) fn check(
             memory_bound: None,
             root_cancelled,
             no_initial,
+            certify: Certify {
+                package: request.subject.simulation.package,
+                instances: &|| {
+                    request.item.instances_for(
+                        &request.subject,
+                        &system,
+                        cancel,
+                        SubjectKind::Ordinary,
+                        request.limits.max_automaton_states,
+                    )
+                },
+            },
         },
         RunRequest {
             max_depth: request.max_depth,
@@ -307,6 +315,18 @@ pub(super) fn check_protocol<M: MemoryModel>(
             memory_bound,
             root_cancelled,
             no_initial: simulation.initial.is_empty(),
+            certify: Certify {
+                package: simulation.package,
+                instances: &|| {
+                    item.instances_for(
+                        &subject.model,
+                        model,
+                        cancel,
+                        SubjectKind::Protocol,
+                        limits.max_automaton_states,
+                    )
+                },
+            },
         },
         RunRequest {
             max_depth,
@@ -333,6 +353,17 @@ struct Bound<'r, S: LiveSubject> {
     /// The cancellation that stopped the clause identity's resolution.
     root_cancelled: Option<CancelCause>,
     no_initial: bool,
+    certify: Certify<'r>,
+}
+
+/// What a proof's component certificate (FR-339) reads of the subject beside
+/// the explored products.
+struct Certify<'r> {
+    /// The package the run explored (FR-282).
+    package: &'r CheckedPackage,
+    /// The item's instances with the key contexts of their automaton states,
+    /// in FR-125's canonical instance order.
+    instances: &'r dyn Fn() -> Result<Vec<Instance>, ItemRefusal>,
 }
 
 /// The bindings' run over `system`, after the settlements no exploration
@@ -388,6 +419,7 @@ fn decide_bindings<S: LiveSubject>(
         transitions_left: Cell::new(max_transitions),
         lifted: Cell::new(0),
         dead_limited: RefCell::new(BTreeSet::new()),
+        certify: bound.certify,
     };
     run.decide(totals)
 }
@@ -1405,6 +1437,7 @@ struct Run<'r, S: LiveSubject> {
     /// The model states the memory bound cut a store of in the model-only
     /// passes.
     dead_limited: RefCell<BTreeSet<DigestRecord>>,
+    certify: Certify<'r>,
 }
 
 impl<'r, S: LiveSubject> Run<'r, S> {
@@ -1580,10 +1613,17 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 reductions,
                 stats: totals.stats(),
             }),
-            _ => Err(LivenessRefusal::ComponentCertificateNotBuilt {
-                stats: totals.stats(),
-            }
-            .into()),
+            _ => match self.component_certificate(&explored)? {
+                Ok(certificate) => Ok(ModelCheckOutcome::Holds {
+                    certificate: ProofCertificate::Component(certificate),
+                    stats: totals.stats(),
+                }),
+                Err(source) => Ok(stopped(
+                    IncompleteCause::Cancelled { source },
+                    None,
+                    totals.stats(),
+                )),
+            },
         }
     }
 
@@ -2549,7 +2589,21 @@ impl FairModel {
                 .copied()
                 .ok_or_else(|| fault("every-seen-transition-is-numbered"))
         };
+        let fair = Self::graph(run, &identity)?;
+        let constraints = system.constraints(fairness, &transitions, &identity)?;
+        Ok(Self {
+            graph: fair,
+            constraints,
+        })
+    }
 
+    /// The fairness graph of `run`'s retained states, numbering each
+    /// transition by `identity`.
+    fn graph<S: LiveSubject>(
+        run: &Explored<'_, S>,
+        identity: &dyn Fn(&Tr<S>) -> Result<Identity, ModelCheckRefusal>,
+    ) -> Result<Graph, ModelCheckRefusal> {
+        let graph = &run.graph;
         let mut fair = Graph::new();
         let mut vertices = Vec::with_capacity(graph.states().len());
         for state in graph.states() {
@@ -2598,11 +2652,7 @@ impl FairModel {
             fair.add_acceptance_set(members)
                 .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
         }
-        let constraints = system.constraints(fairness, &transitions, &identity)?;
-        Ok(Self {
-            graph: fair,
-            constraints,
-        })
+        Ok(fair)
     }
 }
 

@@ -73,8 +73,8 @@ use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
-    TransitionSystem, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
+    ConstraintError, Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem,
+    SubjectTransition, TransitionSystem, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
@@ -87,6 +87,8 @@ use serde::{ser::SerializeStruct, Serialize, Serializer};
 use crate::certificate::check::{
     admit, expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step,
 };
+use crate::certificate::recording::Recording;
+use crate::certificate::scc::{check_partition, Component, ComponentCertificate};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{
@@ -222,6 +224,15 @@ pub enum ClosureRefusal {
     /// The item has no instance (FR-125), so there is nothing to certify.
     #[error("the item has no instance")]
     NoInstance,
+    /// A component certificate was offered for an item that is not a TP-4
+    /// clause, which has no components (FR-339).
+    #[error("the item is not a TP-4 clause, so it has no component certificate")]
+    NotLiveness,
+    /// A closure certificate alone was offered for a TP-4 clause. A liveness
+    /// proof is a component certificate (FR-339): a closure says nothing of
+    /// acceptance, so it never proves one.
+    #[error("a TP-4 clause is proved by a component certificate, not a closure")]
+    LivenessNeedsComponents,
     /// The subject has no initial state (ADR-016 EX-10), so no behaviour is
     /// examined and there is nothing to certify.
     #[error("the subject has no initial state")]
@@ -267,6 +278,30 @@ fn checked_package_id(package: &qsl_package::CheckedPackage) -> Result<PackageId
         .ok_or_else(|| fault("the-certificate-package-has-an-emitted-identity"))
 }
 
+/// What a check reads of a certificate: the closure of every proof and, for
+/// a liveness proof, the components that partition it (FR-339).
+#[derive(Clone, Copy)]
+struct Proof<'c> {
+    closure: &'c ClosureCertificate,
+    components: Option<&'c [Component]>,
+}
+
+impl<'c> Proof<'c> {
+    const fn closure(closure: &'c ClosureCertificate) -> Self {
+        Self {
+            closure,
+            components: None,
+        }
+    }
+
+    const fn components(certificate: &'c ComponentCertificate) -> Self {
+        Self {
+            closure: &certificate.closure,
+            components: Some(certificate.components.as_slice()),
+        }
+    }
+}
+
 /// FR-338: check `certificate` for `request`'s item, under `limits` and the
 /// subject's own evaluation meter and candidate bound, polling `cancel` at
 /// every charge.
@@ -282,10 +317,38 @@ pub fn check_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    check_model(request, Proof::closure(certificate), limits, cancel)
+}
+
+/// FR-339: check `certificate`, a liveness (TP-4) proof's component
+/// certificate, for `request`'s item: FR-338's check of its closure, then
+/// the partition of the reached product states into components and each
+/// component's witness.
+///
+/// # Errors
+///
+/// [`ClosureRefusal`] as [`check_closure`] returns it, and
+/// [`ClosureRefusal::NotLiveness`] when the item is not a TP-4 clause. A
+/// refusal is never an acceptance.
+pub fn check_components(
+    request: &CertificateRequest<'_>,
+    certificate: &ComponentCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    check_model(request, Proof::components(certificate), limits, cancel)
+}
+
+fn check_model(
+    request: &CertificateRequest<'_>,
+    proof: Proof<'_>,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let recompiled = checked_package_id(request.subject.simulation.package)?;
-    if certificate.package_id != recompiled {
+    if proof.closure.package_id != recompiled {
         return Ok(TemporalCertificateCheck::PackageMismatch {
-            certificate: certificate.package_id,
+            certificate: proof.closure.package_id,
             recompiled,
         });
     }
@@ -298,7 +361,7 @@ pub fn check_closure(
         SubjectKind::Ordinary,
         &request.subject,
         &request.item,
-        certificate,
+        proof,
         limits,
         cancel,
     )
@@ -337,10 +400,37 @@ pub fn check_protocol_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    check_protocol(request, Proof::closure(certificate), limits, cancel)
+}
+
+/// FR-339 over a protocol subject: [`check_components`]'s check, with the
+/// closure checked by [`check_protocol_closure`] and the resolved constraints
+/// and enabled sets read from the subject's fairness set and protocol system
+/// ("Protocol subjects").
+///
+/// # Errors
+///
+/// [`ClosureRefusal`] as [`check_protocol_closure`] and [`check_components`]
+/// return it.
+pub fn check_protocol_components(
+    request: &ProtocolCertificateRequest<'_>,
+    certificate: &ComponentCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    check_protocol(request, Proof::components(certificate), limits, cancel)
+}
+
+fn check_protocol(
+    request: &ProtocolCertificateRequest<'_>,
+    proof: Proof<'_>,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let recompiled = checked_package_id(request.subject.model.simulation.package)?;
-    if certificate.package_id != recompiled {
+    if proof.closure.package_id != recompiled {
         return Ok(TemporalCertificateCheck::PackageMismatch {
-            certificate: certificate.package_id,
+            certificate: proof.closure.package_id,
             recompiled,
         });
     }
@@ -384,7 +474,7 @@ pub fn check_protocol_closure(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
-                certificate,
+                proof,
                 limits,
                 cancel,
             )
@@ -407,7 +497,7 @@ pub fn check_protocol_closure(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
-                certificate,
+                proof,
                 limits,
                 cancel,
             )
@@ -430,7 +520,7 @@ pub fn check_protocol_closure(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
-                certificate,
+                proof,
                 limits,
                 cancel,
             )
@@ -456,7 +546,7 @@ fn check_system<S: SubjectSystem>(
     subject_kind: SubjectKind,
     subject: &ModelSubject<'_>,
     item: &ModelCheckItem<'_>,
-    certificate: &ClosureCertificate,
+    proof: Proof<'_>,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
@@ -483,6 +573,13 @@ fn check_system<S: SubjectSystem>(
     if instances.is_empty() {
         return Err(ClosureRefusal::NoInstance);
     }
+    let liveness = |instance: &Instance| matches!(instance.translation, Translation::Liveness(_));
+    if proof.components.is_some() && !instances.iter().all(liveness) {
+        return Err(ClosureRefusal::NotLiveness);
+    }
+    if proof.components.is_none() && instances.iter().any(liveness) {
+        return Err(ClosureRefusal::LivenessNeedsComponents);
+    }
     if system.initial().is_empty() {
         return Err(ClosureRefusal::NoInitialState);
     }
@@ -493,7 +590,7 @@ fn check_system<S: SubjectSystem>(
     let mut members = BTreeSet::new();
     let mut models = BTreeSet::new();
     let mut refused: Option<ProductStateRef> = None;
-    for (read, state) in certificate.states.iter().enumerate() {
+    for (read, state) in proof.closure.states.iter().enumerate() {
         if let Err(halt) = poll(cancel) {
             return finish(Err(halt));
         }
@@ -548,6 +645,7 @@ fn check_system<S: SubjectSystem>(
         keys: BTreeSet::new(),
         limited: BTreeSet::new(),
         instance_limited: BTreeSet::new(),
+        recording: proof.components.map(|_| Recording::new()),
     };
     let run = check.run(&mut instances);
     // ADR-025 MB-4: a reached set closed only because the memory bound cut
@@ -572,7 +670,12 @@ fn check_system<S: SubjectSystem>(
             None => Err(fault("instance-bound-cut-without-bound")),
         };
     }
-    finish(run)
+    match (finish(run)?, proof.components, check.recording.take()) {
+        (TemporalCertificateCheck::Accepted, Some(components), Some(recording)) => {
+            check.components(recording, components)
+        }
+        (closure, _, _) => Ok(closure),
+    }
 }
 
 fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCheck {
@@ -608,7 +711,13 @@ struct LivenessPending<S: SubjectSystem> {
     state: S::State,
     at: ProductStateRef,
     automaton: StateId,
+    /// The state's place in the recording of the product graph.
+    index: usize,
 }
+
+/// The reached product states of one TP-4 instance, with the recording
+/// index each has.
+type Reached = BTreeMap<(DigestRecord, StateId), usize>;
 
 /// A product state of a bounded instance, as the run tells two apart.
 type BoundedKey = (DigestRecord, BoundedState, u64);
@@ -666,6 +775,10 @@ struct Check<'c, S: SubjectSystem> {
     /// The reached model states whose expansion left an `activate` step
     /// unexpanded at the instance bound (ADR-027 AE-4).
     instance_limited: BTreeSet<DigestRecord>,
+    /// The product graph a component check partitions (FR-339): the reached
+    /// states, the edges computed between them and each state's enabled
+    /// transitions. Only a component certificate's check records it.
+    recording: Option<Recording<S>>,
 }
 
 impl<S: SubjectSystem> Check<'_, S> {
@@ -675,6 +788,36 @@ impl<S: SubjectSystem> Check<'_, S> {
 
     fn poll(&self) -> Step<()> {
         poll(self.cancel)
+    }
+
+    /// FR-339: the partition `components` of the closure the run accepted,
+    /// checked over the product graph the run recorded and the clause's
+    /// resolved constraints. It reads no fact but the recorded ones.
+    fn components(
+        &self,
+        recording: Recording<S>,
+        components: &[Component],
+    ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+        let ModelCheckItem::Clause { clause, .. } = self.item else {
+            return Err(fault("tp4-clause-item"));
+        };
+        let recorded = recording
+            .finish()
+            .map_err(|_| fault("the-recorded-product-graph-is-well-formed"))?;
+        let constraints = self
+            .system
+            .clause_constraints(clause.fairness(), &recorded.transitions, &|transition| {
+                recorded.identity(self.system, transition)
+            })
+            .map_err(|error| match error {
+                ConstraintError::UnknownOperation { name } => {
+                    ClosureRefusal::Fairness(ProtocolFairnessError::UnknownOperation { name })
+                }
+                ConstraintError::Protocol(error) => ClosureRefusal::Fairness(error),
+                ConstraintError::Unnumbered => fault("every-recorded-transition-is-numbered"),
+            })?;
+        check_partition(&recorded.graph, components, &constraints, self.cancel)
+            .map_err(|_| fault("a-reached-closure-holds-an-initial-state"))
     }
 
     fn run(&mut self, instances: &mut [Instance]) -> Step<()> {
@@ -774,7 +917,10 @@ impl<S: SubjectSystem> Check<'_, S> {
             .automaton
             .initial()
             .map_err(|error| self.automaton_error(error))?;
-        let mut visited = BTreeSet::new();
+        if let Some(recording) = &mut self.recording {
+            recording.begin_instance();
+        }
+        let mut visited = Reached::new();
         let mut queue = VecDeque::new();
         for (_, _, digest, state) in initial {
             self.poll()?;
@@ -789,21 +935,20 @@ impl<S: SubjectSystem> Check<'_, S> {
                 .successors(start, letter)
                 .map_err(|error| self.automaton_error(error))?;
             for automaton in successors {
-                if let Some(pending) = self.reach_liveness(
+                let (_, pending) = self.reach_liveness(
                     translation,
                     state.clone(),
                     *digest,
                     automaton,
                     CertificateRule::InitialMissing,
                     &mut visited,
-                )? {
-                    queue.push_back(pending);
-                }
+                )?;
+                queue.extend(pending);
             }
         }
         while let Some(pending) = queue.pop_front() {
             self.poll()?;
-            let (expansion, _) = self.expand(&pending.state, &pending.at)?;
+            let (expansion, cut) = self.expand(&pending.state, &pending.at)?;
             if expansion.findings.iter().any(|finding| {
                 matches!(
                     finding,
@@ -812,6 +957,57 @@ impl<S: SubjectSystem> Check<'_, S> {
                 )
             }) {
                 return Err(Self::reject(CertificateRule::BadState, pending.at));
+            }
+            if let Some(recording) = &mut self.recording {
+                let enabled: Vec<&S::TransitionId> = expansion
+                    .successors
+                    .iter()
+                    .map(|(transition, _)| transition)
+                    .collect();
+                recording.enable(self.system, pending.index, &enabled)?;
+            }
+            // ADR-018 SM-4: a model state with no step continues along its
+            // stutter edge, unless a method bound cut its steps (ADR-025
+            // MB-3, ADR-027 AE-4): a boundary state is never stuttered.
+            if expansion.successors.is_empty() && !(cut.memory || cut.instances) {
+                let letter = self.liveness_letter(
+                    translation,
+                    *letters,
+                    clause,
+                    binding,
+                    &pending.state,
+                    true,
+                    false,
+                )?;
+                let Some(letter) = letter else {
+                    let at = self.product_liveness(
+                        translation,
+                        pending.at.model_state,
+                        pending.automaton,
+                    )?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                };
+                let successors = translation
+                    .automaton
+                    .successors(pending.automaton, letter)
+                    .map_err(|error| self.automaton_error(error))?;
+                for automaton in successors {
+                    self.poll()?;
+                    self.charge_edge()?;
+                    let (to, next) = self.reach_liveness(
+                        translation,
+                        pending.state.clone(),
+                        pending.at.model_state,
+                        automaton,
+                        CertificateRule::SuccessorMissing,
+                        &mut visited,
+                    )?;
+                    if let Some(recording) = &mut self.recording {
+                        recording.edge(self.system, pending.index, to, None)?;
+                    }
+                    queue.extend(next);
+                }
+                continue;
             }
             for (transition, digest, state) in self.ordered(expansion.successors)? {
                 self.poll()?;
@@ -835,16 +1031,18 @@ impl<S: SubjectSystem> Check<'_, S> {
                     .map_err(|error| self.automaton_error(error))?;
                 for automaton in successors {
                     self.charge_edge()?;
-                    if let Some(next) = self.reach_liveness(
+                    let (to, next) = self.reach_liveness(
                         translation,
                         state.clone(),
                         digest,
                         automaton,
                         CertificateRule::SuccessorMissing,
                         &mut visited,
-                    )? {
-                        queue.push_back(next);
+                    )?;
+                    if let Some(recording) = &mut self.recording {
+                        recording.edge(self.system, pending.index, to, Some(&transition))?;
                     }
+                    queue.extend(next);
                 }
             }
         }
@@ -941,6 +1139,10 @@ impl<S: SubjectSystem> Check<'_, S> {
         Ok(Some(letter))
     }
 
+    /// Reach `state`, whose digest is `digest`, in the automaton state
+    /// `automaton`: require it in the certificate under `missing`. The state
+    /// is pending unless this instance reached it before; its recording
+    /// index comes back either way.
     fn reach_liveness(
         &mut self,
         translation: &LivenessTranslation,
@@ -948,10 +1150,10 @@ impl<S: SubjectSystem> Check<'_, S> {
         digest: DigestRecord,
         automaton: StateId,
         missing: CertificateRule,
-        visited: &mut BTreeSet<(DigestRecord, StateId)>,
-    ) -> Step<Option<LivenessPending<S>>> {
-        if visited.contains(&(digest, automaton)) {
-            return Ok(None);
+        visited: &mut Reached,
+    ) -> Step<(usize, Option<LivenessPending<S>>)> {
+        if let Some(index) = visited.get(&(digest, automaton)) {
+            return Ok((*index, None));
         }
         let at = self.product_liveness(translation, digest, automaton)?;
         if self.reached >= self.limits.limits.max_states {
@@ -961,15 +1163,30 @@ impl<S: SubjectSystem> Check<'_, S> {
             ));
         }
         self.reached += 1;
-        visited.insert((digest, automaton));
         if !self.members.contains(&at) {
             return Err(Self::reject(missing, at));
         }
-        Ok(Some(LivenessPending {
-            state,
-            at,
-            automaton,
-        }))
+        let index = match &mut self.recording {
+            Some(recording) => {
+                let accepting: Vec<bool> = (0..translation.automaton.acceptance_set_count())
+                    .map(|set| translation.automaton.is_accepting_in(set, automaton))
+                    .collect();
+                recording
+                    .reach(&at, &accepting)
+                    .ok_or_else(|| fault("tp4-instances-share-acceptance-sets"))?
+            }
+            None => 0,
+        };
+        visited.insert((digest, automaton), index);
+        Ok((
+            index,
+            Some(LivenessPending {
+                state,
+                at,
+                automaton,
+                index,
+            }),
+        ))
     }
 
     fn product_liveness(

@@ -525,7 +525,7 @@ fn the_production_letters_read_the_counter_guard_and_its_footprint() {
     holds(&outcome);
 }
 
-/// A TP-4 clause is decided by the liveness engine (here its proof waits for
+/// A TP-4 clause is decided by the liveness engine (here its proof is
 /// FR-339's component certificate), and a guarded `on each` activation is
 /// no reason to refuse it: the engine reads the `when` condition through the
 /// letters (FR-126-AC-16).
@@ -533,7 +533,7 @@ fn the_production_letters_read_the_counter_guard_and_its_footprint() {
 #[test]
 fn a_liveness_clause_is_decided_with_or_without_a_guarded_activation() {
     let guarded = format!("{} when (true)", each("Counter"));
-    let refused = |profile, activation: &str, formula, guarded: bool| {
+    let proved = |profile, activation: &str, formula, guarded: bool| {
         let world = counter_world(
             profile,
             &[Clause {
@@ -547,10 +547,9 @@ fn a_liveness_clause_is_decided_with_or_without_a_guarded_activation() {
         } else {
             letters
         };
-        run_letters(&world, 0, &["c"], &letters, ModelCheckLimits::default())
-            .expect_err("its proof waits for the component certificate")
+        run_letters(&world, 0, &["c"], &letters, ModelCheckLimits::default()).expect("checked")
     };
-    let refusal = refused(
+    let refusal = proved(
         INFINITE,
         ORIGIN,
         "always eventually holds(c.value = 3)",
@@ -559,13 +558,14 @@ fn a_liveness_clause_is_decided_with_or_without_a_guarded_activation() {
     assert!(
         matches!(
             refusal,
-            ModelCheckRefusal::Liveness(
-                qsl_analyze::model_check::LivenessRefusal::ComponentCertificateNotBuilt { .. }
-            )
+            ModelCheckOutcome::Holds {
+                certificate: qsl_replay::ProofCertificate::Component(_),
+                ..
+            }
         ),
         "{refusal:?}"
     );
-    let refusal = refused(
+    let refusal = proved(
         INFINITE,
         &guarded,
         "always eventually holds(c.value = 3)",
@@ -574,9 +574,10 @@ fn a_liveness_clause_is_decided_with_or_without_a_guarded_activation() {
     assert!(
         matches!(
             refusal,
-            ModelCheckRefusal::Liveness(
-                qsl_analyze::model_check::LivenessRefusal::ComponentCertificateNotBuilt { .. }
-            )
+            ModelCheckOutcome::Holds {
+                certificate: qsl_replay::ProofCertificate::Component(_),
+                ..
+            }
         ),
         "{refusal:?}"
     );
@@ -821,7 +822,9 @@ fn a_guarded_invariant_clause_is_read_from_its_activating_positions() {
     let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
-    let qsl_replay::ProofCertificate::Closure(certificate) = certificate;
+    let qsl_replay::ProofCertificate::Closure(certificate) = certificate else {
+        panic!("a safety clause holds with a closure: {certificate:?}");
+    };
     assert!(certificate.states.is_empty(), "{certificate:?}");
 }
 

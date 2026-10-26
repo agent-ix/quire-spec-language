@@ -53,5 +53,5 @@ pub use sampled::{
     SampledDisagreement, SampledPosition, SampledRecord, SampledReplay, SampledReplayRefusal,
     SampledStep, StepAt,
 };
-pub use subject::{Bounded, Cut, SubjectSystem, SubjectTransition};
+pub use subject::{Bounded, ConstraintError, Cut, SubjectSystem, SubjectTransition};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

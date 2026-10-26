@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     BinaryOperator, ExprId, ExprNode, ExpressionForm, QuantityForm, StateClauseKind,
-    TimeInvariantForm, UrgentForm, UrgentTarget,
+    TimeInvariantForm, TypeFormHead, UrgentForm, UrgentTarget,
 };
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
@@ -405,6 +405,14 @@ impl TimedModel {
         &self.clocks
     }
 
+    /// Each clock field with its id, in order.
+    pub fn clock_fields(&self) -> impl Iterator<Item = (ClockId, &ClockField)> {
+        self.clocks
+            .iter()
+            .enumerate()
+            .map(|(index, field)| (ClockId(index), field))
+    }
+
     /// The clock field `id` names.
     pub fn clock(&self, id: ClockId) -> Option<&ClockField> {
         self.clocks.get(id.0)
@@ -537,16 +545,83 @@ impl Clocks<'_> {
     }
 
     /// Whether node `id` of `form` reads a clock through a path other than
-    /// `self`, `o.x`: a read no clock constraint admits (FR-230).
-    fn foreign(&self, form: &ExpressionForm, id: ExprId) -> bool {
+    /// `self`, `o.x`: a read no clock constraint admits (FR-230). The field
+    /// is looked up on the operand's object type; when that type is not
+    /// known, `.x` reads a clock when every package field named `x` is one.
+    fn foreign(
+        &self,
+        form: &ExpressionForm,
+        id: ExprId,
+        context: EffectiveId,
+        parents: &[Option<ExprId>],
+    ) -> bool {
         let Some(ExprNode::Field { operand, field }) = form.expression.get(id).map(|n| n.node())
         else {
             return false;
         };
-        !matches!(
+        if matches!(
             form.expression.get(*operand).map(|n| n.node()),
             Some(ExprNode::SelfRef)
-        ) && self.model.names_only_clocks(field)
+        ) {
+            return false;
+        }
+        match self.object_of(form, *operand, context, parents) {
+            Some(object) => self.model.clock_field(object, field).is_some(),
+            None => self.model.names_only_clocks(field),
+        }
+    }
+
+    /// The object type node `id` of `form` denotes an object of, when it is
+    /// `self` or the binder of an enclosing query over `allInstances<T>`.
+    fn object_of(
+        &self,
+        form: &ExpressionForm,
+        id: ExprId,
+        context: EffectiveId,
+        parents: &[Option<ExprId>],
+    ) -> Option<EffectiveId> {
+        let name = match form.expression.get(id)?.node() {
+            ExprNode::SelfRef => return Some(context),
+            ExprNode::Name(name) if name.segments.len() == 1 => name.name.as_str(),
+            _ => return None,
+        };
+        // The nearest enclosing binding of `name` whose scope holds `id`.
+        let mut child = id;
+        while let Some(parent) = parents.get(child.index()).copied().flatten() {
+            let (binder, source) = match form.expression.get(parent)?.node() {
+                ExprNode::Query { binder, source, .. }
+                | ExprNode::Count { binder, source, .. }
+                | ExprNode::Sum { binder, source, .. } => (binder.as_str(), Some(*source)),
+                ExprNode::Accumulate {
+                    binder,
+                    accumulator,
+                    source,
+                    ..
+                } => {
+                    if accumulator == name && *source != child {
+                        return None;
+                    }
+                    (binder.as_str(), Some(*source))
+                }
+                ExprNode::Let { name: bound, .. } | ExprNode::Seq { binder: bound, .. } => {
+                    (bound.as_str(), None)
+                }
+                ExprNode::Population { binder, .. } => (binder.as_str(), None),
+                _ => ("", None),
+            };
+            if binder == name && source != Some(child) {
+                let ExprNode::AllInstances { target, .. } = form.expression.get(source?)?.node()
+                else {
+                    return None;
+                };
+                let TypeFormHead::Name(written) = &target.head else {
+                    return None;
+                };
+                return self.model.object_type_named(written);
+            }
+            child = parent;
+        }
+        None
     }
 
     /// The exact value of the time quantity `quantity`, in the model's unit.
@@ -595,6 +670,14 @@ impl<'f> Located<'f> {
         let spans = form.spans.of_nodes(&form.expression)?;
         let mut clock = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
+        let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
+        for node in form.expression.iter() {
+            for child in node.node().children() {
+                if let Some(slot) = parents.get_mut(child.index()) {
+                    *slot = Some(node.id());
+                }
+            }
+        }
         // Children precede their parents, so each child is final when its
         // parent is reached.
         for node in form.expression.iter() {
@@ -606,7 +689,7 @@ impl<'f> Located<'f> {
             }
             // A clock read through another path is a read, though no
             // constraint can take it.
-            if clocks.foreign(form, id) {
+            if clocks.foreign(form, id, context, &parents) {
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }

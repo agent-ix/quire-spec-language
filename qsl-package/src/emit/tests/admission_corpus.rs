@@ -608,6 +608,11 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::SystemsPort), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsConnection), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsAllocation), NO_RECORD_FORM),
+        (
+            K::Relation(RelationForm::Refinement),
+            "S3 refuses every `refinement` declaration RefinementNotEmitted (FR-135), so \
+             S4 writes no refinement node and no `refinement_step_rows` member",
+        ),
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),

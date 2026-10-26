@@ -609,7 +609,7 @@ fn a_self_recursive_function_keys_to_g4_to_g6() {
 
 /// TC-413 step 9 (FR-092-AC-11): `ping` and `pong` key to G10 to G15,
 /// whichever is declared first.
-#[trace("FR-092-AC-11", "TC-413")]
+#[trace("FR-092-AC-11", "FR-383-AC-25", "TC-413")]
 #[test]
 fn a_mutually_recursive_pair_keys_to_g10_to_g15_in_either_order() {
     let keys = |functions: Vec<FunctionDeclaration>| {
@@ -876,7 +876,25 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     }
     let keying = admitted - declared;
     let members = u64::try_from(3 * k).unwrap();
-    assert!(keying > members * members, "keying charged {keying}");
+    assert!(
+        keying > members,
+        "the group keying charges each member: {keying}"
+    );
+    assert!(checked(0).is_err(), "zero work refuses the group");
+    assert!(
+        checked(admitted).is_ok(),
+        "the exact required budget admits"
+    );
+    let one_short = checked(admitted - 1).expect_err("one unit short refuses");
+    assert!(
+        one_short.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::WorkBudget
+                    && exceeded.limit == admitted - 1
+        )),
+        "{one_short:?}"
+    );
 }
 
 /// `charge_work`'s refusal reports `actual` as exactly the

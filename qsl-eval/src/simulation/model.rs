@@ -29,6 +29,7 @@ mod state_predicate;
 mod symbolic;
 mod symmetry;
 mod terminal;
+mod timed;
 mod walk;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,6 +93,11 @@ pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub(crate) use symbolic::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
+pub use timed::{
+    BehaviourLetters, ClockPlace, ClockValuation, GuardedStep, MoveRefusal, PlaceConstraint,
+    TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop, TimedSubjectRefusal,
+    TimedSystem,
+};
 pub(crate) use walk::{Applied, Budget};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an

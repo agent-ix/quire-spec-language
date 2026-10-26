@@ -65,6 +65,7 @@ use crate::simulation::model::{
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, RequiresBound};
 use crate::simulation::progress::ZeroProgressError;
+use crate::simulation::subject::ConstraintError;
 use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
 use steps::ProtocolExpansion;
@@ -1639,6 +1640,21 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
             .into_iter()
             .map(|(_, constraint)| constraint)
             .collect())
+    }
+
+    fn clause_constraints(
+        &self,
+        authored: &[quire_semantic_value::fairness::FairnessConstraint],
+        transitions: &[ProtocolTransition],
+        identity: &dyn Fn(&ProtocolTransition) -> Option<Identity>,
+    ) -> Result<Vec<Constraint>, ConstraintError> {
+        let members = self.fairness_set(authored)?;
+        Ok(protocol_constraints(&members, transitions, |transition| {
+            identity(transition).ok_or(ConstraintError::Unnumbered)
+        })?
+        .into_iter()
+        .map(|(_, constraint)| constraint)
+        .collect())
     }
 
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState> {
