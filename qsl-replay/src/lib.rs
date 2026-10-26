@@ -175,8 +175,10 @@ pub use model_check::hyper_counterexample::{
 pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
-    settle_hyper_check, settle_hyper_form, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+    settle_hyper_check, settle_hyper_form, settle_hyper_smt, HyperRecord, HyperSettleRefusal,
+    LimitOrigin, ProductMember, UsedLimit,
 };
+pub use model_check::hyper_smt_outcome::{HyperSmtOutcome, HyperSmtResult};
 pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
