@@ -281,7 +281,6 @@ impl World {
         };
         let unit = format!("{text}{declared}");
         let graph = declarations(&unit)
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{unit}: the unit checks: {refusals:?}"));
         let checked: Vec<CheckedTemporalClause> = graph

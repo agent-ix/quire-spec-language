@@ -143,7 +143,6 @@ pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<Check
     )
     .expect("the unit assembles");
     let graph = declarations
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
     let clauses = graph

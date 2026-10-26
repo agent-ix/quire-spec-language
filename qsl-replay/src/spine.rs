@@ -1004,8 +1004,8 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::Hybrid(cause) => {
             message = format!("{message}: in a hybrid model or temporal claim: {cause:?}");
         }
-        CheckCause::TerminalNotEmitted { name, .. } => {
-            message = format!("{message}: `terminal {name}` checks but is not emitted yet");
+        CheckCause::TerminalWithoutObjectType { name, .. } => {
+            message = format!("{message}: `terminal {name}` is on a model with no object type");
         }
         CheckCause::RefinementNotEmitted { name, .. } => {
             message = format!("{message}: `refinement {name}` checks but is not emitted yet");

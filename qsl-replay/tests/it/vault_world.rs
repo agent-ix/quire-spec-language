@@ -462,7 +462,6 @@ impl World {
             .next()
             .map(|checked| checked.expect("the temporal clause checks"));
         let graph = assembled
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);

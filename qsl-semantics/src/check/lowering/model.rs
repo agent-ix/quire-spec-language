@@ -644,6 +644,24 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// The object type a `terminal` declaration's model node names (FR-411):
+    /// the one object type the package's populations range over (FR-124),
+    /// else its least object type by declaration key, so that a model with
+    /// no population still names a model node. QSpec FR-476 does not say
+    /// which model node a `terminal any` over several object types names;
+    /// the least is the current choice until STD-492 settles it.
+    pub(crate) fn terminal_object(&self) -> Option<EffectiveId> {
+        let populated = self.population_objects();
+        let mut populated = populated.iter();
+        match (populated.next(), populated.next()) {
+            (Some(only), None) => Some(*only),
+            _ => self
+                .object_types()
+                .min_by(|(left, _), (right, _)| left.cmp(right))
+                .map(|(_, id)| id),
+        }
+    }
+
     /// The declaring object type's effective identity and operation name for
     /// one admitted FCD operation member.
     pub(crate) fn operation_anchor_declaration(
