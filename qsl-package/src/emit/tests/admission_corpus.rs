@@ -96,13 +96,15 @@ enum Fixture {
     TemporalClause,
     /// TC-1266: [`HYPER_CLAUSE`] over the ConfigVersion domain package.
     HyperClause,
+    /// TC-1140: [`STATE_GRAPH_CLAIMS`] over the ConfigVersion domain package.
+    StateGraphClaim,
     /// TC-1187, TC-1220: [`HYBRID_UNIT`], hybrid models and their claims.
     Hybrid,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 24] = [
+    const ALL: [Self; 25] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -126,6 +128,7 @@ impl Fixture {
         Self::UnionNodes,
         Self::TemporalClause,
         Self::HyperClause,
+        Self::StateGraphClaim,
         Self::Hybrid,
     ];
 }
@@ -179,6 +182,19 @@ const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
      forall trace b of Config \
      match { a.step.op = b.step.op } \
      { always holds(c.versionNumber @ a = c.versionNumber @ b) }\n";
+
+/// FR-410: ADR-022 section 7's three forms over the ConfigVersion domain
+/// package, a claim with no `over`, and an `always possible` claim written
+/// with and without `from`, emitting the `claim`/`state_graph` family.
+const STATE_GRAPH_CLAIMS: &str =
+    "model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n\
+     always possible CanStillWin using v over (c: Config::ConfigVersion) \
+     from (c.versionNumber != 0) { c.versionNumber = 2 }\n\
+     always possible Open using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n\
+     unique path InOneWay using v over (c: Config::ConfigVersion) \
+     from (c.versionNumber = 0) to (c.versionNumber = 2);\n\
+     possible Anything using v { true }\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
@@ -342,6 +358,14 @@ impl Fixture {
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
                     HYPER_CLAUSE.replace("{}", &document_digest(document))
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
+            Self::StateGraphClaim => {
+                let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}{}",
+                    STATE_GRAPH_CLAIMS.replace("{}", &document_digest(document))
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -523,6 +547,7 @@ fn rows() -> Vec<Row> {
         row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
         row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
         row(K::Claim(ClaimForm::Hyperproperty), F::HyperClause),
+        row(K::Claim(ClaimForm::StateGraph), F::StateGraphClaim),
         row(K::Hybrid(HybridForm::Model), F::Hybrid),
         row(K::Hybrid(HybridForm::Mode), F::Hybrid),
         row(K::Hybrid(HybridForm::Transition), F::Hybrid),
@@ -552,6 +577,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (
             K::Expression(ExpressionForm::Reference),
             "a name read lowers to a reference term, not a node",
+        ),
+        (
+            K::Temporal(TemporalForm::Terminal),
+            "no S4 emission writes a `terminal` declaration (terminal::not_emitted)",
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
