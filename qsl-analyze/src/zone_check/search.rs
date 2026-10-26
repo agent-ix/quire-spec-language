@@ -286,7 +286,7 @@ enum Badness {
 
 /// A halt of the search.
 enum Halt {
-    Outcome(ZoneCheckOutcome),
+    Outcome(Box<ZoneCheckOutcome>),
     Refusal(ZoneCheckRefusal),
 }
 
@@ -339,7 +339,8 @@ pub fn check_timed_model(
     };
     let mut run = Run::new(request.subject, claim, request.limits, cancel);
     match run.search() {
-        Ok(outcome) | Err(Halt::Outcome(outcome)) => Ok(outcome),
+        Ok(outcome) => Ok(outcome),
+        Err(Halt::Outcome(outcome)) => Ok(*outcome),
         Err(Halt::Refusal(refusal)) => Err(refusal),
     }
 }
@@ -365,6 +366,8 @@ struct Run<'r, 's, 'a> {
     /// The real edge that created each node, `None` for an initial one.
     parent: Vec<Option<usize>>,
     edges: Vec<SymbolicEdge>,
+    /// The retained edges leaving each node, by index into `edges`.
+    out: Vec<Vec<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
     zone_bytes: u64,
     /// The guarded steps of each expanded node's model state.
@@ -392,6 +395,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             expanded: Vec::new(),
             parent: Vec::new(),
             edges: Vec::new(),
+            out: Vec::new(),
             passed: BTreeMap::new(),
             zone_bytes: 0,
             steps: BTreeMap::new(),
@@ -408,17 +412,17 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     fn stop(&self, cause: ZoneStop) -> Halt {
-        Halt::Outcome(ZoneCheckOutcome::Stopped {
+        Halt::Outcome(Box::new(ZoneCheckOutcome::Stopped {
             cause,
             stats: self.stats(),
-        })
+        }))
     }
 
     fn undecided(&self, cause: ZoneUndecided) -> Halt {
-        Halt::Outcome(ZoneCheckOutcome::Undecided {
+        Halt::Outcome(Box::new(ZoneCheckOutcome::Undecided {
             cause,
             stats: self.stats(),
-        })
+        }))
     }
 
     fn poll(&self) -> Result<(), Halt> {
@@ -487,6 +491,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let dim = self.timed.places().len() + 1;
         let mut queue = VecDeque::new();
         let mut roots = Vec::new();
+        let mut delayed_deadlock = false;
         for (index, state) in initial.iter().enumerate() {
             let discrete = state.discrete().clone();
             let mut zone = Dbm::zero(dim);
@@ -497,20 +502,17 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             if let Some(node) = self.insert(discrete, zone, Some(index), None)? {
                 roots.push(node);
                 queue.push_back(node);
-                self.judge(node)?;
+                delayed_deadlock |= self.judge(node)?;
             }
         }
         if roots.is_empty() {
             return Err(self.undecided(ZoneUndecided::NoInitialState));
         }
-        let mut delayed_deadlock = false;
         while let Some(node) = queue.pop_front() {
             self.poll()?;
             for created in self.expand(node)? {
                 queue.push_back(created);
-                if self.judge(created)? {
-                    delayed_deadlock = true;
-                }
+                delayed_deadlock |= self.judge(created)?;
             }
         }
         // Vacuity (ADR-026 TD-6): an initial state with a time-divergent
@@ -599,6 +601,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         });
         self.keys.push(key.clone());
         self.expanded.push(false);
+        self.out.push(Vec::new());
         self.passed.entry(key).or_default().push(index);
         let parent = match edge {
             Some((from, step, part)) => {
@@ -621,6 +624,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             return Err(self.stop(ZoneStop::LimitReached(
                 ZoneCheckLimit::MaxSymbolicTransitions(self.limits.max_symbolic_transitions),
             )));
+        }
+        let (from, _) = edge.ends();
+        if let Some(out) = self.out.get_mut(from) {
+            out.push(self.edges.len());
         }
         self.edges.push(edge);
         Ok(())
@@ -691,10 +698,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             }
             Divergence::Admitted | Divergence::Unknown => {
                 let counterexample = self.counterexample(node, badness)?;
-                Err(Halt::Outcome(ZoneCheckOutcome::Violated {
+                Err(Halt::Outcome(Box::new(ZoneCheckOutcome::Violated {
                     counterexample: Box::new(counterexample),
                     stats: self.stats(),
-                }))
+                })))
             }
         }
     }
@@ -837,32 +844,35 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// The forward closure of `node` on the retained graph, expanding every
     /// node it reaches, and what it admits.
     fn divergence(&mut self, node: usize) -> Result<Divergence, Halt> {
-        let mut seen = vec![node];
+        // Under a tick source every infinite behaviour counts ticks, the
+        // terminal stutter step among them (FR-231 "Digital time").
+        if self.timed.tick_period().is_some() {
+            return Ok(Divergence::Admitted);
+        }
+        let mut seen = vec![false; self.nodes.len()];
+        let mut closure = vec![node];
+        seen[node] = true;
         let mut frontier = vec![node];
         while let Some(at) = frontier.pop() {
             self.poll()?;
             self.expand(at)?;
-            let targets: Vec<usize> = self
-                .edges
-                .iter()
-                .map(SymbolicEdge::ends)
-                .filter(|(from, _)| *from == at)
-                .map(|(_, to)| to)
-                .collect();
-            for to in targets {
-                if !seen.contains(&to) {
-                    seen.push(to);
+            seen.resize(self.nodes.len(), false);
+            for &edge in &self.out[at] {
+                let (_, to) = self.edges[edge].ends();
+                if !seen[to] {
+                    seen[to] = true;
+                    closure.push(to);
                     frontier.push(to);
                 }
             }
         }
-        for &at in &seen {
+        for &at in &closure {
             let state = self.nodes[at].state.clone();
-            if self.timed(self.timed.is_quiescent(&state))? && self.timed.tick_period().is_none() {
+            if self.timed(self.timed.is_quiescent(&state))? {
                 return Ok(Divergence::Admitted);
             }
         }
-        for component in components(&seen, &self.edges) {
+        for component in components(&closure, &self.edges, &self.out) {
             if !self.zeno(&component)? {
                 return Ok(Divergence::Unknown);
             }
@@ -1051,41 +1061,66 @@ fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
     Ok(parts)
 }
 
-/// The non-trivial strongly connected components of the subgraph on
-/// `nodes`: those with an edge inside them.
-fn components(nodes: &[usize], edges: &[SymbolicEdge]) -> Vec<Vec<usize>> {
-    let reach = |from: usize| -> Vec<usize> {
-        let mut seen = vec![from];
-        let mut frontier = vec![from];
-        while let Some(at) = frontier.pop() {
-            for (source, target) in edges.iter().map(SymbolicEdge::ends) {
-                if source == at && nodes.contains(&target) && !seen.contains(&target) {
-                    seen.push(target);
-                    frontier.push(target);
-                }
-            }
-        }
-        seen
-    };
-    let reaches: BTreeMap<usize, Vec<usize>> = nodes.iter().map(|&n| (n, reach(n))).collect();
-    let mut assigned = Vec::new();
+/// The non-trivial strongly connected components of the subgraph that
+/// `nodes`, a forward-closed set, spans: those with an edge inside them, by
+/// Tarjan's algorithm run without recursion.
+fn components(nodes: &[usize], edges: &[SymbolicEdge], out: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let size = out.len();
+    let mut index = vec![usize::MAX; size];
+    let mut low = vec![0_usize; size];
+    let mut on_stack = vec![false; size];
+    let mut stack = Vec::new();
+    let mut next = 0_usize;
     let mut found = Vec::new();
-    for &n in nodes {
-        if assigned.contains(&n) {
+    for &root in nodes {
+        if index[root] != usize::MAX {
             continue;
         }
-        let component: Vec<usize> = nodes
-            .iter()
-            .copied()
-            .filter(|&m| reaches[&n].contains(&m) && reaches[&m].contains(&n))
-            .collect();
-        assigned.extend(component.iter().copied());
-        let cyclic = edges
-            .iter()
-            .map(SymbolicEdge::ends)
-            .any(|(from, to)| component.contains(&from) && component.contains(&to));
-        if cyclic {
-            found.push(component);
+        // Each frame: a node and how many of its edges are visited.
+        let mut frames = vec![(root, 0_usize)];
+        index[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(&mut (at, ref mut visited)) = frames.last_mut() {
+            if let Some(&edge) = out[at].get(*visited) {
+                *visited += 1;
+                let (_, to) = edges[edge].ends();
+                if index[to] == usize::MAX {
+                    index[to] = next;
+                    low[to] = next;
+                    next += 1;
+                    stack.push(to);
+                    on_stack[to] = true;
+                    frames.push((to, 0));
+                } else if on_stack[to] {
+                    low[at] = low[at].min(index[to]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                low[parent] = low[parent].min(low[at]);
+            }
+            if low[at] == index[at] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == at {
+                        break;
+                    }
+                }
+                let cyclic = component.iter().any(|&member| {
+                    out[member]
+                        .iter()
+                        .any(|&edge| component.contains(&edges[edge].ends().1))
+                });
+                if cyclic {
+                    found.push(component);
+                }
+            }
         }
     }
     found

@@ -124,6 +124,8 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
                 "heartbeat",
                 "retry",
                 "step",
+                "go",
+                "ping",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))
@@ -207,7 +209,7 @@ fn the_retry_that_integer_time_misses_is_found() {
     };
     let (zero, one) = (exact(0, 1), exact(1, 1));
     assert!(d1 > &zero && d1 < &one, "{d1:?}");
-    assert!(d2 < &one && &d1.add(d2) > &one, "{d2:?}");
+    assert!(d2 < &one && d1.add(d2) > one, "{d2:?}");
     assert_eq!(
         counterexample,
         violated(claim(&world, ZoneCheckLimits::default(), &Cancel::new()))
@@ -340,4 +342,91 @@ fn an_undefined_atom_refutes_only_where_time_diverges() {
         }
         other => panic!("expected no admitted behaviour, got {other:?}"),
     }
+}
+
+/// The deadlock-freedom item over a quiescent state with no step: `go`
+/// sets `retried`, after which nothing is enabled, and none intends the
+/// state. With `go` guarded by `x <= 1 ms` and `work` enabled once
+/// `retried` holds, the initial valuations past 1 are deadlocked only after
+/// a delay, which no position names.
+#[trace("TC-694")]
+#[test]
+fn a_quiescent_terminal_state_is_a_deadlock_over_time() {
+    let counterexample = violated(deadlock(&world(
+        &document(&["x"], &[("go", &["retried"])]),
+        "",
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ not self.retried }}\n\
+             post Gone using v on M::Call::go {{ self.retried }}\n"
+        ),
+    )));
+    assert_eq!(counterexample.kind, CounterexampleKind::Deadlock);
+    assert_eq!(operations(&counterexample), ["go"]);
+    assert_eq!(delays(&counterexample), [exact(0, 1)]);
+
+    let delayed = deadlock(&world(
+        &document(&["x"], &[("go", &["retried"]), ("work", &[])]),
+        "",
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ not self.retried and self.x <= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.retried }}\n\
+             pre Work using v on M::Call::work {{ self.retried }}\n"
+        ),
+    ));
+    match delayed {
+        ZoneCheckOutcome::Undecided { cause, .. } => {
+            assert_eq!(cause, ZoneUndecided::DeadlockAfterDelay);
+        }
+        other => panic!("expected a deadlock after a delay, got {other:?}"),
+    }
+}
+
+/// FR-239 "Admitted behaviour" over the `Lock` model: `go` moves `A` (`0`)
+/// to `B` (`1`), `x <= 1 ms` while in `B`, and `ping`, enabled in `B`,
+/// changes nothing. `always holds(c.phase = 0)` fails only in `B`, where
+/// every behaviour is Zeno: the violation is kept as a `locked` node and
+/// the claim holds. When `ping` resets `x`, `B` diverges and the claim is
+/// refuted by `go` after delay 0.
+#[trace("TC-694")]
+#[test]
+fn a_violation_on_time_locked_states_holds_vacuously() {
+    let lock = |ping_resets: bool| {
+        let (modifies, post): (&[&str], &str) = if ping_resets {
+            (
+                &["x"],
+                "post Pinged using v on M::Call::ping { self.x = 0 ms }\n",
+            )
+        } else {
+            (&[], "")
+        };
+        world(
+            &document(&["x"], &[("go", &["phase"]), ("ping", modifies)]),
+            INFINITE,
+            &format!(
+                "{DENSE}\
+                 pre Go using v on M::Call::go {{ self.phase = 0 }}\n\
+                 post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+                 pre Ping using v on M::Call::ping {{ self.phase = 1 }}\n{post}\
+                 time invariant Locked when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+                 temporal StaysA using inf over (c: M::Call) clock \"model-steps\" on origin \
+                 {{ always holds(c.phase = 0) }}\n"
+            ),
+        )
+    };
+    let ZoneCheckOutcome::Holds { graph, .. } =
+        claim(&lock(false), ZoneCheckLimits::default(), &Cancel::new())
+    else {
+        panic!("the claim holds vacuously in B");
+    };
+    assert_eq!(graph.nodes.iter().filter(|node| node.locked).count(), 1);
+
+    let counterexample = violated(claim(
+        &lock(true),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    assert_eq!(operations(&counterexample), ["go"]);
+    assert_eq!(delays(&counterexample), [exact(0, 1)]);
 }
