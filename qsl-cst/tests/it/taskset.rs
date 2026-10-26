@@ -150,7 +150,7 @@ fn every_added_word_is_an_identifier_outside_its_position() {
 /// beside a temporal `release` operator in the same unit. The word is the
 /// reserved temporal operator, which is infix, so each keeps its position and
 /// neither reads as the other.
-#[trace("TC-704")]
+#[trace("TC-704", "FR-249-AC-3")]
 #[test]
 fn a_release_declaration_parses_beside_the_temporal_release_operator() {
     let release = "release Ctl.a on Config::ConfigVersion::sample;";

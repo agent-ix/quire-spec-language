@@ -13,18 +13,19 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
 use crate::model_operations::{
-    admit_and_assemble_with_profiles, attempt_update_modifies_version_number,
-    config_unit_with_profiles, config_version_document_with_operations, empty_frame, operation,
+    admit_and_assemble_with_profiles, ambiguous_operation_document,
+    attempt_update_modifies_version_number, config_unit_with_profiles,
+    config_version_document_with_operations, empty_frame, operation,
 };
 
 const PROFILES: &str = "profile t = \"quire.temporal.complete/v1\";\n";
 
-const SET: &str = "dimension Time;\n\
-     unit s : Time = rational(1, 1);\n\
-     unit ms : Time = rational(1, 1000) * s;\n\
-     taskset Ctl {\n\
-     task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
-     task b periodic 6 ms deadline 6 ms wcet 2 ms priority 2 lo;\n\
+const SET: &str = "dimension Time;\n
+     unit s : Time = rational(1, 1);\n
+     unit ms : Time = rational(1, 1000) * s;\n
+     taskset Ctl {\n
+     task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n
+     task b periodic 6 ms deadline 6 ms wcet 2 ms priority 2 lo;\n
      }\n";
 
 fn document() -> Vec<u8> {
@@ -72,7 +73,7 @@ fn refused(declarations: &str) -> Vec<(Code, &'static str, String)> {
 #[test]
 fn a_release_is_recorded_on_its_operation_and_a_second_task_is_allowed() {
     let graph = checked(
-        "release Ctl.a on ConfigVersion::attemptUpdate;\n\
+        "release Ctl.a on ConfigVersion::attemptUpdate;\n
          release Ctl.b on ConfigVersion::attemptUpdate;",
     );
     let sets = graph.task_sets();
@@ -105,7 +106,7 @@ fn an_operation_that_releases_nothing_records_no_release() {
         .expect("a release");
     assert_ne!(&other, release.operation().key());
     assert_eq!(graph.task_sets().released_by(&other).count(), 0);
-    // A unit that declares no task set and no release records none.
+    // A unit with a task set and no release records none.
     let bare = check("").expect("a unit with a task set and no release checks");
     assert!(bare.task_sets().releases().is_empty());
 }
@@ -114,7 +115,7 @@ fn an_operation_that_releases_nothing_records_no_release() {
 #[test]
 fn a_second_release_of_one_task_on_one_operation_refuses_at_the_second() {
     let reported = refused(
-        "release Ctl.a on ConfigVersion::attemptUpdate;\n\
+        "release Ctl.a on ConfigVersion::attemptUpdate;\n
          release Ctl.a on ConfigVersion::attemptUpdate;",
     );
     assert_eq!(
@@ -127,7 +128,7 @@ fn a_second_release_of_one_task_on_one_operation_refuses_at_the_second() {
     );
     // The same task on another operation is not a duplicate.
     checked(
-        "release Ctl.a on ConfigVersion::attemptUpdate;\n\
+        "release Ctl.a on ConfigVersion::attemptUpdate;\n
          release Ctl.a on ConfigVersion::command;",
     );
 }
@@ -154,8 +155,8 @@ fn an_unresolved_task_set_task_or_operation_refuses_at_the_name() {
 #[trace("TC-704", "FR-249-AC-3")]
 #[test]
 fn a_task_of_another_task_set_is_not_a_task_of_the_named_one() {
-    let other = "taskset Other {\n\
-         task z periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
+    let other = "taskset Other {\n
+         task z periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n
          }\n";
     let declarations = format!("{other}release Ctl.z on ConfigVersion::attemptUpdate;");
     assert_eq!(
@@ -196,11 +197,49 @@ fn a_release_is_refused_unless_the_timed_facet_is_selected() {
     .expect("S2 keeps the forms")
     .check(CheckingLimits::default())
     .expect_err("the facet gate refuses");
-    assert!(refusals.iter().any(|refusal| matches!(
-        &refusal.cause,
-        CheckCause::Temporal(cause) if matches!(
-            &**cause,
-            TemporalCause::TimedFacetRequired { construct: TimedConstruct::Release, .. }
+    let found = refusals.iter().any(|refusal| {
+        matches!(
+            &refusal.cause,
+            CheckCause::Temporal(cause) if matches!(
+                &**cause,
+                TemporalCause::TimedFacetRequired { construct: TimedConstruct::Release, .. }
+            ) && cause.code() == Code::UnsupportedConstruct && cause.tag() == "declaration-form"
         )
-    )));
+    });
+    assert!(found, "{refusals:?}");
+}
+
+#[trace("TC-704", "FR-249-AC-3")]
+#[test]
+fn releases_check_over_a_time_dense_model() {
+    let graph = checked(
+        "time Config dense unit ms;\n
+         release Ctl.a on ConfigVersion::attemptUpdate;\n
+         release Ctl.b on ConfigVersion::command;",
+    );
+    assert_eq!(graph.task_sets().releases().len(), 2);
+}
+
+/// `Both` inherits `dup` from two unrelated types, so `Both::dup` names no one
+/// operation: `ambiguous_declaration`/`ambiguous-name` at the operation name.
+#[trace("TC-704", "FR-249-AC-3")]
+#[test]
+fn an_operation_inherited_from_two_unrelated_types_is_ambiguous() {
+    let declarations = "release Ctl.a on Config::Both::dup;";
+    let text = unit_text(declarations);
+    let refusals =
+        admit_and_assemble_with_profiles(&ambiguous_operation_document(), PROFILES, &text)
+            .expect("S2 keeps the release")
+            .check(CheckingLimits::default())
+            .expect_err("the operation is ambiguous");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a temporal refusal: {refusal:?}");
+    };
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::AmbiguousDeclaration, "ambiguous-name")
+    );
 }

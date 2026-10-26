@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify that under a workload EN-5 leaves the delay of an operation with no
-`delay` member to the scheduler, assumes no distribution for it, and reads a
+`delay` declaration to the scheduler, assumes no distribution for it, and reads a
 `>= θ` bound on the minimum and a `<= θ` bound on the maximum over that
 choice.
 
@@ -19,7 +19,7 @@ Scope: FR-204-AC-5.
 
 ## Test Procedure
 
-Fixture: §15.5's `Retx`, whose `send` has no `delay` member, and the
+Fixture: §15.5's `Retx`, whose `send` has no `delay` declaration, and the
 workload `One` with weight 1 on `send`.
 
 1. Decide `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]`

@@ -16,7 +16,7 @@ Scope: FR-254-AC-1 to FR-254-AC-3, FR-254-AC-4.
 
 ## Test Procedure
 
-Fixtures: the stochastic `Rpc` variant and its `uniform` reply variant; a model that never regenerates; the strict-guard variant; the variant with no `delay` member on `timeout`; the `Lock` model (FR-237-AC-6) and its variants.
+Fixtures: the stochastic `Rpc` variant and its `uniform` reply variant; a model that never regenerates; the strict-guard variant; the variant with no `delay` declaration on `timeout`; the `Lock` model (FR-237-AC-6) and its variants.
 
 1. Measure `RareLate` over both variants, twice with one seed.
 2. Inspect sampled delays, replay a witness, change one delay and replay; repeat with `q` 8.
