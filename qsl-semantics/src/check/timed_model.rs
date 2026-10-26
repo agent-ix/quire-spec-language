@@ -39,7 +39,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use super::assemble::TimedDeclaration;
 use super::ir::{CheckedBody, CheckedNode};
-use super::lowering::{AdmittedModel, PlaceStep};
+use super::lowering::{strictly_below, AdmittedModel, PlaceStep};
 use super::refusal::TimedConstruct;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{
@@ -68,7 +68,7 @@ impl ClockId {
 
 /// One clock place of a timed model's object type (FR-230 `ClockField`,
 /// "Places"): an object's clock field, or a clock below one of its fields
-/// along a path of record fields and union cases. Every object of the type
+/// along a path of record fields. Every object of the type
 /// holds its own clock of the place.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockField {
@@ -560,13 +560,14 @@ impl Clocks<'_> {
     /// Whether the path `self.f…` at `id` of `form` is a value holding clock
     /// places below it: a clock-bearing record or union value.
     fn bears(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> bool {
-        let Some(path) = self_path(form, id) else {
-            return false;
-        };
+        self_path(form, id).is_some_and(|path| self.bears_path(&path, context))
+    }
+
+    /// Whether the value an object of type `context` holds at `path` is
+    /// clock-bearing: a clock place lies strictly below it.
+    fn bears_path(&self, path: &[PlaceStep], context: EffectiveId) -> bool {
         self.fields.iter().any(|clock| {
-            clock.path.len() > path.len()
-                && clock.path.starts_with(&path)
-                && self.model.conforms(context, clock.owner)
+            strictly_below(&clock.path, path) && self.model.conforms(context, clock.owner)
         })
     }
 
@@ -757,7 +758,13 @@ impl<'f> Located<'f> {
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
-            if self_path(form, id).is_some() {
+            // A data field of a clock-bearing record (`self.t.n`) reads no
+            // clock; any other path is decided below.
+            if self_path(form, id).is_some_and(|path| {
+                path.split_last().is_some_and(|(_, record)| {
+                    !record.is_empty() && clocks.bears_path(record, context)
+                })
+            }) {
                 continue;
             }
             // A clock read through another path is a read, though no
@@ -1163,16 +1170,14 @@ fn resets(
             let Some(path) = self_path(located.form, *left) else {
                 return Err(located.outside(*left));
             };
-            record_resets(
+            RecordWrite {
                 located,
-                clause.context,
+                context: clause.context,
                 clocks,
-                &written,
-                path,
-                *right,
+                written: &written,
                 span,
-                &mut cut,
-            )?;
+            }
+            .resets(path, *right, &mut cut)?;
             continue;
         }
         let Some(clock) = located.clock(*left) else {
@@ -1204,74 +1209,109 @@ fn resets(
     Ok(cut)
 }
 
-/// The resets of `self.<path> = literal`: each clock component of the
-/// record literal a reset of its place to its constant, each clock-bearing
-/// component a literal read the same way, each data component kept.
-#[allow(clippy::too_many_arguments)] // one recursion over one literal's parts
-fn record_resets(
-    located: &Located<'_>,
+/// One postcondition conjunct `self.f = literal` writing a clock-bearing
+/// record: the clause, the receiver's type, the model's clocks, the fields
+/// the operation's frame writes and the conjunct's span.
+struct RecordWrite<'w, 'f, 'c> {
+    located: &'w Located<'f>,
     context: EffectiveId,
-    clocks: &Clocks<'_>,
-    written: &BTreeSet<&DeclarationKey>,
-    path: Vec<PlaceStep>,
-    literal: ExprId,
+    clocks: &'w Clocks<'c>,
+    written: &'w BTreeSet<&'w DeclarationKey>,
     span: Span,
-    cut: &mut ResetCut,
-) -> Result<(), TemporalCause> {
-    let Some(ExprNode::Record { fields, .. }) = located.node(literal) else {
-        return Err(TemporalCause::ClockWrite {
-            span: located.span(literal),
-        });
-    };
-    cut.literals.insert(literal);
-    for (name, initializer) in fields {
-        let mut below = path.clone();
-        below.push(PlaceStep::Field(name.clone()));
-        let place = clocks
+}
+
+impl RecordWrite<'_, '_, '_> {
+    /// The clock places of the receiver at `path` or strictly below it.
+    fn places_below<'p>(
+        &'p self,
+        path: &'p [PlaceStep],
+    ) -> impl Iterator<Item = (usize, &'p ClockField)> + 'p {
+        self.clocks
             .fields
             .iter()
-            .position(|clock| clock.path == below && clocks.model.conforms(context, clock.owner));
-        let bears = clocks.fields.iter().any(|clock| {
-            clock.path.len() > below.len()
-                && clock.path.starts_with(&below)
-                && clocks.model.conforms(context, clock.owner)
-        });
-        let qsl_forms::FieldInitializer::Value(value) = initializer else {
-            if place.is_some() || bears {
-                return Err(TemporalCause::ClockWrite { span });
-            }
-            continue;
-        };
-        if let Some(index) = place {
-            if located.reads_clock(*value) {
-                return Err(TemporalCause::ClockWrite { span });
-            }
-            let value_span = located.span(*value);
-            let constant = match located.constant(*value, clocks) {
-                Ok(constant) => constant,
-                Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                    return Err(TemporalCause::ClockWrite { span: value_span })
-                }
-                Err(cause) => return Err(cause),
-            };
-            let in_frame = clocks
-                .fields
-                .get(index)
-                .is_some_and(|field| written.contains(&field.field));
-            if !in_frame {
-                return Err(TemporalCause::ClockWrite { span });
-            }
-            cut.removed.insert(*value);
-            cut.resets.push(ClockReset {
-                clock: ClockId(index),
-                value: constant,
-                span: value_span,
-            });
-        } else if bears {
-            record_resets(located, context, clocks, written, below, *value, span, cut)?;
-        }
+            .enumerate()
+            .filter(move |(_, clock)| {
+                strictly_below(&clock.path, path)
+                    && self.clocks.model.conforms(self.context, clock.owner)
+            })
     }
-    Ok(())
+
+    /// The resets of `self.<path> = literal`: each clock component of the
+    /// record literal a reset of its place to its constant, each
+    /// clock-bearing component a literal read the same way, each data
+    /// component kept. A literal that leaves out a clock component writes
+    /// that clock no constant, which no reset admits (`clock-write`).
+    fn resets(
+        &self,
+        path: Vec<PlaceStep>,
+        literal: ExprId,
+        cut: &mut ResetCut,
+    ) -> Result<(), TemporalCause> {
+        let located = self.located;
+        let Some(ExprNode::Record { fields, .. }) = located.node(literal) else {
+            return Err(TemporalCause::ClockWrite {
+                span: located.span(literal),
+            });
+        };
+        cut.literals.insert(literal);
+        let named: BTreeSet<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
+        let omitted = self.places_below(&path).any(|(_, clock)| {
+            clock
+                .path
+                .get(path.len())
+                .is_some_and(|PlaceStep::Field(component)| !named.contains(component.as_str()))
+        });
+        if omitted {
+            return Err(TemporalCause::ClockWrite {
+                span: located.span(literal),
+            });
+        }
+        for (name, initializer) in fields {
+            let mut below = path.clone();
+            below.push(PlaceStep::Field(name.clone()));
+            let place = self
+                .places_below(&path)
+                .find(|(_, clock)| clock.path == below)
+                .map(|(index, _)| index);
+            let bears = self.places_below(&below).next().is_some();
+            let qsl_forms::FieldInitializer::Value(value) = initializer else {
+                if place.is_some() || bears {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                continue;
+            };
+            if let Some(index) = place {
+                if located.reads_clock(*value) {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                let value_span = located.span(*value);
+                let constant = match located.constant(*value, self.clocks) {
+                    Ok(constant) => constant,
+                    Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                        return Err(TemporalCause::ClockWrite { span: value_span })
+                    }
+                    Err(cause) => return Err(cause),
+                };
+                let in_frame = self
+                    .clocks
+                    .fields
+                    .get(index)
+                    .is_some_and(|field| self.written.contains(&field.field));
+                if !in_frame {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                cut.removed.insert(*value);
+                cut.resets.push(ClockReset {
+                    clock: ClockId(index),
+                    value: constant,
+                    span: value_span,
+                });
+            } else if bears {
+                self.resets(below, *value, cut)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A postcondition's clock read under `conjunct` that is no top-level reset:
@@ -1572,12 +1612,12 @@ fn prepare_models(
     };
     let clocks_of = |model| {
         let fields = AdmittedModel::clock_places(model)
-            .into_iter()
+            .iter()
             .map(|place| ClockField {
                 owner: place.owner,
                 field: place.field.clone(),
                 name: place.name(),
-                path: place.path,
+                path: place.path.clone(),
             })
             .collect();
         let target = source_of(model)

@@ -47,12 +47,12 @@ pub enum PlaceStep {
 /// One clock place of an object type of the package (FR-230 "Places",
 /// QSpec FR-415 "Clock places").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PackagePlace<'m> {
+pub(crate) struct PackagePlace {
     /// The object type whose field holds the place.
     pub(crate) owner: EffectiveId,
     /// The object's field the place is under: the member an operation's
     /// frame names to reset it.
-    pub(crate) field: &'m DeclarationKey,
+    pub(crate) field: DeclarationKey,
     /// The path from the object to the clock, the object's field first.
     pub(crate) path: Vec<PlaceStep>,
     /// Whether an optional member (`presence: optional`, `Option<Clock>`)
@@ -63,7 +63,13 @@ pub(crate) struct PackagePlace<'m> {
     pub(crate) collection: bool,
 }
 
-impl PackagePlace<'_> {
+/// Whether the place path `place` lies strictly below `path`: the value at
+/// `path` holds the place.
+pub(crate) fn strictly_below(place: &[PlaceStep], path: &[PlaceStep]) -> bool {
+    place.len() > path.len() && place.starts_with(path)
+}
+
+impl PackagePlace {
     /// The place's path written with `.` between its steps.
     pub(crate) fn name(&self) -> String {
         self.path
@@ -98,6 +104,9 @@ pub struct AdmittedModel {
     /// `bound` declarations name, by the population's declaration key.
     /// Empty until the assembler resolves the unit's bounds.
     population_bounds: BTreeMap<DeclarationKey, AuthoredBound>,
+    /// Every clock place of the package's object types
+    /// ([`Self::clock_places`]), found once from `records`.
+    places: Vec<PackagePlace>,
 }
 
 /// One population of an admitted package as FR-391 names it
@@ -497,6 +506,7 @@ impl AdmittedModel {
                 .collect(),
             alias: None,
             population_bounds: BTreeMap::new(),
+            places: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -511,6 +521,13 @@ impl AdmittedModel {
                 .map(|(key, id)| (*id, key.clone()))
                 .collect(),
         }
+        .with_places()
+    }
+
+    /// The model with its clock places found.
+    fn with_places(mut self) -> Self {
+        self.places = self.find_places();
+        self
     }
 
     /// `domain_package` with the given `EffectiveId` of each object type,
@@ -528,6 +545,7 @@ impl AdmittedModel {
             supertypes: BTreeMap::new(),
             alias: None,
             population_bounds: BTreeMap::new(),
+            places: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -538,6 +556,7 @@ impl AdmittedModel {
             units: domain_package.units.clone(),
             types: types.into_iter().collect(),
         }
+        .with_places()
     }
 
     /// This package admitted for the `model` declaration `alias`: FR-115's
@@ -938,12 +957,17 @@ impl AdmittedModel {
 
     /// FR-230 "Places": every clock place of an object type of this
     /// package, in ascending declaration-key order of the object's fields
-    /// and, below a field, of each record's fields and each union's cases.
-    /// A field typed `Clock` is one place, and a field of a package record
-    /// type holds the places of the record's fields. The FCD semantic IR
-    /// admits `Clock` only as a field type, so a package has no clock alias,
-    /// clock union case, optional clock or clock collection to place.
-    pub(crate) fn clock_places(&self) -> Vec<PackagePlace<'_>> {
+    /// and, below a field, of each record's fields. A field typed `Clock` is
+    /// one place, and a field of a package record type holds the places of
+    /// the record's fields. The FCD semantic IR admits `Clock` only as a
+    /// field type, so a package has no clock alias, clock union case,
+    /// optional clock or clock collection to place.
+    pub(crate) fn clock_places(&self) -> &[PackagePlace] {
+        &self.places
+    }
+
+    /// The clock places [`Self::clock_places`] lists, found from `records`.
+    fn find_places(&self) -> Vec<PackagePlace> {
         let mut places = Vec::new();
         for record in self.records.values() {
             let DomainPackageRecord::FieldMember(field) = record else {
@@ -959,7 +983,7 @@ impl AdmittedModel {
             };
             let root = PackagePlace {
                 owner,
-                field: &field.key,
+                field: field.key.clone(),
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
                 collection: false,
@@ -975,9 +999,9 @@ impl AdmittedModel {
     fn places_of<'m>(
         &'m self,
         field: &'m crate::model::domain_package::FieldMemberRecord,
-        mut at: PackagePlace<'m>,
+        mut at: PackagePlace,
         visiting: &mut Vec<&'m DeclarationKey>,
-        places: &mut Vec<PackagePlace<'m>>,
+        places: &mut Vec<PackagePlace>,
     ) {
         use crate::model::domain_package::ValueTypeRef;
         let single = field.multiplicity.lower == 1 && field.multiplicity.upper == Some(1);
@@ -1031,26 +1055,30 @@ impl AdmittedModel {
         &self,
         object: EffectiveId,
         path: &[PlaceStep],
-    ) -> Option<PackagePlace<'_>> {
+    ) -> Option<&PackagePlace> {
         self.clock_places()
-            .into_iter()
+            .iter()
             .find(|place| place.path == path && self.conforms(object, place.owner))
     }
 
-    /// The package record type a written name `T` or `M::T` names.
+    /// The package record type a written name `T` or `M::T` names, when
+    /// exactly one does.
     pub(crate) fn record_named(&self, written: &NameForm) -> Option<&DeclarationKey> {
         let name = match &written.segments[..] {
             [name] => name.as_str(),
             [qualifier, name] if self.alias() == Some(qualifier.as_str()) => name.as_str(),
             _ => return None,
         };
-        self.records
+        let mut found = self
+            .records
             .iter()
-            .find(|(key, record)| {
+            .filter(|(key, record)| {
                 matches!(record, DomainPackageRecord::RecordValueType(_))
                     && key.node.rsplit('/').next() == Some(name)
             })
-            .map(|(key, _)| key)
+            .map(|(key, _)| key);
+        let key = found.next()?;
+        found.next().is_none().then_some(key)
     }
 
     /// Whether the record literal `written` (`T` or `M::T`) names a record
@@ -1241,7 +1269,7 @@ impl AdmittedModel {
     /// on `object` itself or on one of its ancestors.
     pub(crate) fn clock_field(&self, object: EffectiveId, name: &str) -> Option<&DeclarationKey> {
         self.clock_place(object, &[PlaceStep::Field(name.to_owned())])
-            .map(|place| place.field)
+            .map(|place| &place.field)
     }
 
     /// The key of every declaration record of the package, of any kind.

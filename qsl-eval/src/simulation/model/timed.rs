@@ -822,7 +822,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         ("path", path),
                         (
                             "value",
-                            super::encode::value_enc(&quire_exact::Value::Rational(value.clone())),
+                            super::encode::value_enc(
+                                &quire_exact::Value::Rational(value.clone()),
+                                self.system.typing(),
+                            ),
                         ),
                     ],
                 )
@@ -833,7 +836,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             vec![
                 (
                     "state",
-                    super::encode::model_key(&self.system.model, state.discrete.state()).0,
+                    super::encode::model_key(
+                        &self.system.model,
+                        state.discrete.state(),
+                        self.system.typing(),
+                    )
+                    .0,
                 ),
                 ("clocks", super::encode::Enc::Array(clocks)),
             ],

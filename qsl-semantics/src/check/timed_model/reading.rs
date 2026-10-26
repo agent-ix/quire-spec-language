@@ -92,11 +92,11 @@ impl<'r> Declarations<'r> {
                 .flat_map(|model| {
                     model
                         .clock_places()
-                        .into_iter()
+                        .iter()
                         .filter(|place| {
                             object.is_none_or(|object| model.conforms(object, place.owner))
                         })
-                        .map(|place| place.path)
+                        .map(|place| place.path.clone())
                         .collect::<Vec<_>>()
                 })
                 .collect(),
@@ -110,7 +110,7 @@ impl<'r> Declarations<'r> {
             PathKind::Clock
         } else if places
             .iter()
-            .any(|place| place.len() > steps.len() && place.starts_with(steps))
+            .any(|place| crate::check::lowering::strictly_below(place, steps))
         {
             PathKind::Bearing
         } else {

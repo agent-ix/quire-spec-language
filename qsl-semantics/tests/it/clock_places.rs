@@ -142,6 +142,17 @@ fn a_package_record_holds_its_clock_as_a_place_of_its_object() {
         })
         .collect();
     assert_eq!(reset, [("t.x", exact(0, 1))]);
+    // The data component `n: 3` stays a write of the postcondition: the
+    // literal `3` is in the checked body, the clock constant `0 ms` is not.
+    let mut literals: Vec<String> = Vec::new();
+    let mut pending = vec![graph.state_clause("Q").expect("Q").body()];
+    while let Some(node) = pending.pop() {
+        if matches!(node.kind(), qsl_semantics::check::NodeKind::Literal(_)) {
+            literals.push(crate::timed_model::shown(node));
+        }
+        pending.extend(node.children());
+    }
+    assert_eq!(literals, ["3"]);
     let timer = graph
         .scope()
         .types()
@@ -199,9 +210,9 @@ fn without_own_clock(document: &mut Value) {
 /// record holds a clock refuses `invalid_timed_model`/
 /// `clock-without-dense-time` under a `time tick` source, at the time
 /// declaration, and in a model with no `time` member, at the model's
-/// declaration. Not covered: the field's own span, which a package field
-/// does not carry (STD-493), and `ts: Sequence<Timer>`, the clock
-/// collections' slice.
+/// declaration. `ts: Sequence<Timer>` is
+/// `a_record_clock_under_an_optional_or_collection_field`'s. Not covered:
+/// the field's own span, which a package field does not carry (STD-493).
 #[trace("TC-685")]
 #[test]
 fn a_record_clock_without_dense_time_refuses() {
@@ -272,5 +283,102 @@ fn a_record_parameter_reads_its_clock_by_path() {
             &format!("{UNITS}{DENSE}{declarations}{clause}\n"),
         );
         assert_eq!((cause.tag(), text.as_str()), (tag, at), "{clause}");
+    }
+}
+
+/// Part of FR-230-AC-14 (TC-685 step 16) and FR-230 "Records, tuples and
+/// unions": a `Timer` held by an optional field (`o?: Timer`) or a
+/// collection field (`ts: Timer` of multiplicity `[0, 3]`, the package form
+/// of `ts: Sequence<Timer>`) under a dense source is a guarded or
+/// collection place S3 does not check yet (STD-493 item 17), refused at the
+/// time declaration; under a tick source and with no time source the
+/// collection refuses `clock-without-dense-time` as a single field does.
+#[trace("TC-685")]
+#[test]
+fn a_record_clock_under_an_optional_or_collection_field() {
+    let with = |name: &'static str, presence: &'static str, upper: u64| {
+        timer_document(move |document: &mut Value| {
+            let mut held = field(name, &package("Timer"));
+            held["presence"] = json!(presence);
+            held["multiplicity"]["lower"] = json!(if upper == 1 { 1 } else { 0 });
+            held["multiplicity"]["upper"] = json!(upper);
+            document["types"][1]["fields"]
+                .as_array_mut()
+                .expect("Call fields")
+                .push(held);
+        })
+    };
+    for document in [with("o", "optional", 1), with("ts", "required", 3)] {
+        let refusals = check(&document, &format!("{UNITS}{DENSE}")).expect_err("not checked");
+        assert!(
+            matches!(
+                refusals.as_slice(),
+                [qsl_semantics::check::CheckRefusal {
+                    cause: qsl_semantics::check::CheckCause::TimedNotChecked {
+                        construct: qsl_semantics::check::TimedConstruct::Clock,
+                        ..
+                    },
+                    ..
+                }]
+            ),
+            "{refusals:?}"
+        );
+    }
+    let collection = {
+        let mut document: Value = serde_json::from_slice(&with("ts", "required", 3)).expect("JSON");
+        without_own_clock(&mut document);
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let tick = "time Config tick Config::Call::bump period 1 ms unit ms;";
+    let (cause, text) = refused(&collection, &format!("{UNITS}{tick}\n"));
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (Code::InvalidTimedModel, "clock-without-dense-time", tick)
+    );
+    let (cause, _) = refused(&collection, UNITS);
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::InvalidTimedModel, "clock-without-dense-time")
+    );
+}
+
+/// FR-230 "Clock constraints and guards" and "Records, tuples and unions"
+/// (TC-685): `self.peer.x`, a clock of another object read through a
+/// reference field, is a clock read no constraint at a call site takes:
+/// `clock-read-outside-constraint` at the read, in a guard and in a write.
+/// A `Timer` literal that leaves out its clock component writes `t.x` no
+/// constant: `clock-write` at the literal.
+#[trace("TC-685")]
+#[test]
+fn a_referenced_clock_or_an_omitted_component_refuses() {
+    let document = timer_document(|document: &mut Value| {
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(field("peer", &package("Call")));
+    });
+    for (clause, tag, at) in [
+        (
+            "pre P using v on Config::Call::reply { self.peer.x >= 1 ms }",
+            "clock-read-outside-constraint",
+            "self.peer.x",
+        ),
+        (
+            "post Q using v on Config::Call::send { self.t.n = 1 and self.peer.x = self.peer.x }",
+            "clock-read-outside-constraint",
+            "self.peer.x",
+        ),
+        (
+            "post Q using v on Config::Call::send { self.t = Config::Timer { n: 3 } }",
+            "clock-write",
+            "Config::Timer { n: 3 }",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, tag, at),
+            "{clause}"
+        );
     }
 }

@@ -202,7 +202,7 @@ pub(super) fn walk_of<'s, 'a>(
     enforcement: Option<&'s Enforcement<'s>>,
 ) -> Result<Walk<'s, 'a>, ExpansionStop> {
     let identity = identity_limits();
-    let state_key = encode::model_key(&system.model, &state.state);
+    let state_key = encode::model_key(&system.model, &state.state, system.typing());
     let (_, digest) = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
     let observation = system
         .model

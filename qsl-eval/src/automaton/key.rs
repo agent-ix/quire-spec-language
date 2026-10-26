@@ -45,7 +45,7 @@ use quire_exact::Value;
 use quire_semantic_value::fairness::PropertyForm;
 
 use super::key_state::{safety_enc, Configuration, FormulaShape, Polarity, Reader};
-use crate::simulation::model::encode::{hex, value_enc, Enc};
+use crate::simulation::model::encode::{hex, untyped_value_enc, Enc};
 
 /// The discriminator of a key's octet encoding (not a digest domain).
 pub const AUTOMATON_STATE_KEY_V1: &str = "quire.automaton-state-key/v1";
@@ -229,7 +229,12 @@ impl StateContext {
         let binding = self
             .binding
             .iter()
-            .map(|entry| Enc::Array(vec![node_enc(entry.parameter), value_enc(&entry.value)]))
+            .map(|entry| {
+                Enc::Array(vec![
+                    node_enc(entry.parameter),
+                    untyped_value_enc(&entry.value),
+                ])
+            })
             .collect();
         Enc::Array(vec![
             root,

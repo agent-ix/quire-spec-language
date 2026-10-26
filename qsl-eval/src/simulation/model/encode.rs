@@ -185,9 +185,43 @@ fn unhex32(text: &str) -> Option<[u8; 32]> {
     unhex(text)?.try_into().ok()
 }
 
-/// FR-181's typed canonical form of `value`.
-pub(crate) fn value_enc(value: &Value) -> Enc {
-    value_enc_with(value, &|_| None)
+/// The declarations a value's typed canonical form reads: the package's
+/// record, tuple and union types and, where the caller has them, its
+/// variant (enum) types.
+#[derive(Clone, Copy)]
+pub(crate) struct Typing<'t> {
+    /// `None` only where a value is compared, not encoded: see
+    /// [`values_equal`].
+    types: Option<&'t TypeEnvironment>,
+    variants: &'t [VariantTypeDeclaration],
+}
+
+impl<'t> Typing<'t> {
+    /// No declarations: a record, tuple or enum value has no form.
+    fn none() -> Self {
+        Self {
+            types: None,
+            variants: &[],
+        }
+    }
+
+    /// The record, tuple and union types of `types` and the variant types
+    /// `variants`.
+    pub(crate) fn with_variants(
+        types: &'t TypeEnvironment,
+        variants: &'t [VariantTypeDeclaration],
+    ) -> Self {
+        Self {
+            types: Some(types),
+            variants,
+        }
+    }
+}
+
+/// FR-181's typed canonical form of `value`, its records, tuples, unions and
+/// enums read from `typing`.
+pub(crate) fn value_enc(value: &Value, typing: Typing<'_>) -> Enc {
+    value_enc_with(value, typing, &|_| None)
 }
 
 /// FR-120's typed canonical form of `value`, where a record value is
@@ -197,59 +231,13 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
 /// `{"type":"tuple","name":…,"components":[…]}`; a union is
 /// `{"type":"union","name":…,"member":…,"components":[…]}`; and an enum is
 /// `{"type":"enum","name":…,"member":…}` with `name` the variant type's node
-/// id and `member` the declared case, both read from `variants`. Any other
-/// value is [`value_enc`]'s.
+/// id and `member` the declared case, both read from `variants`.
 pub(crate) fn typed_value_enc(
     value: &Value,
     types: &TypeEnvironment,
     variants: &[VariantTypeDeclaration],
 ) -> Enc {
-    let slot_enc = |slot: &FieldValue| match slot {
-        FieldValue::Present(inner) => typed_value_enc(inner, types, variants),
-        FieldValue::Absent | FieldValue::Null => Enc::Null,
-    };
-    match value {
-        Value::Enum(member) => variants
-            .iter()
-            .find_map(|declared| {
-                declared
-                    .cases()
-                    .iter()
-                    .find(|case| case.variant() == member.variant())
-                    .map(|case| (declared, case))
-            })
-            .map_or(
-                Enc::Unencodable("an undeclared enum value"),
-                |(declared, case)| {
-                    Enc::tagged(
-                        "enum",
-                        vec![
-                            ("name", Enc::text(hex(declared.node().as_bytes()))),
-                            ("member", Enc::text(case.name())),
-                        ],
-                    )
-                },
-            ),
-        Value::Union(union) => Enc::tagged(
-            "union",
-            vec![
-                ("name", Enc::text(hex(union.declaration().as_bytes()))),
-                ("member", Enc::text(union.member().identifier().as_str())),
-                (
-                    "components",
-                    Enc::Array(
-                        union
-                            .payload()
-                            .iter()
-                            .map(|inner| typed_value_enc(inner, types, variants))
-                            .collect(),
-                    ),
-                ),
-            ],
-        ),
-        Value::Composite(composite) => composite_enc(composite, types, &slot_enc),
-        other => value_enc(other),
-    }
+    value_enc(value, Typing::with_variants(types, variants))
 }
 
 /// FR-181's `record` or `tuple` form of `composite`, its declaration read
@@ -294,9 +282,10 @@ fn composite_enc(
                 ),
             ],
         ),
-        Some(CompositeShape::Record(_) | CompositeShape::Union(_)) | None => {
-            Enc::Unencodable("an undeclared record")
+        Some(CompositeShape::Record(_)) => {
+            Enc::Unencodable("a record whose slots are not its declared fields")
         }
+        Some(CompositeShape::Union(_)) | None => Enc::Unencodable("an undeclared record"),
     }
 }
 
@@ -304,19 +293,12 @@ fn composite_enc(
 /// reference the encoding names by a placeholder, `None` to encode it.
 pub(super) type Placeholder<'p> = dyn Fn(&ObjectReference) -> Option<Enc> + 'p;
 
-/// FR-181's typed canonical form of `value`, with each reference
-/// `placeholder` replaces written as its replacement.
-pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> Enc {
-    value_enc_in(value, None, placeholder)
-}
-
-/// FR-181's typed canonical form of `value`, as [`value_enc_with`]; with
-/// `types`, a record or tuple value is written in its `record` or `tuple`
-/// form and a union value in its `union` form, recursively through nested
-/// options, collections, records, tuples and unions.
-fn value_enc_in(
+/// FR-181's typed canonical form of `value`, as [`value_enc`], with each
+/// reference `placeholder` replaces written as its replacement, recursively
+/// through options, collections, records, tuples and unions.
+pub(super) fn value_enc_with(
     value: &Value,
-    types: Option<&TypeEnvironment>,
+    typing: Typing<'_>,
     placeholder: &Placeholder<'_>,
 ) -> Enc {
     match value {
@@ -362,7 +344,7 @@ fn value_enc_in(
             vec![(
                 "value",
                 option.payload().map_or(Enc::Null, |payload| {
-                    value_enc_in(payload, types, placeholder)
+                    value_enc_with(payload, typing, placeholder)
                 }),
             )],
         ),
@@ -376,7 +358,7 @@ fn value_enc_in(
             let mut elements: Vec<Enc> = collection
                 .elements()
                 .iter()
-                .map(|element| value_enc_in(element, types, placeholder))
+                .map(|element| value_enc_with(element, typing, placeholder))
                 .collect();
             if matches!(
                 collection.collection_type().kind(),
@@ -399,46 +381,103 @@ fn value_enc_in(
             "timestamp",
             vec![("nanoseconds", Enc::text(value.to_string()))],
         ),
-        Value::Enum(_) => Enc::Unencodable("an enum value"),
+        Value::Enum(member) => typing
+            .variants
+            .iter()
+            .find_map(|declared| {
+                declared
+                    .cases()
+                    .iter()
+                    .find(|case| case.variant() == member.variant())
+                    .map(|case| (declared, case))
+            })
+            .map_or(
+                Enc::Unencodable("an undeclared enum value"),
+                |(declared, case)| {
+                    Enc::tagged(
+                        "enum",
+                        vec![
+                            ("name", Enc::text(hex(declared.node().as_bytes()))),
+                            ("member", Enc::text(case.name())),
+                        ],
+                    )
+                },
+            ),
         Value::Population(_) => Enc::Unencodable("a population value"),
-        Value::Composite(composite) => match types {
+        Value::Composite(composite) => match typing.types {
             Some(types) => composite_enc(composite, types, &|slot| match slot {
-                FieldValue::Present(inner) => value_enc_in(inner, Some(types), placeholder),
+                FieldValue::Present(inner) => value_enc_with(inner, typing, placeholder),
                 FieldValue::Absent | FieldValue::Null => Enc::Null,
             }),
             None => Enc::Unencodable("a record or tuple value"),
         },
-        Value::Union(union) => match types {
-            Some(_) => Enc::tagged(
-                "union",
-                vec![
-                    ("name", Enc::text(hex(union.declaration().as_bytes()))),
-                    ("member", Enc::text(union.member().identifier().as_str())),
-                    (
-                        "components",
-                        Enc::Array(
-                            union
-                                .payload()
-                                .iter()
-                                .map(|inner| value_enc_in(inner, types, placeholder))
-                                .collect(),
-                        ),
+        Value::Union(union) => Enc::tagged(
+            "union",
+            vec![
+                ("name", Enc::text(hex(union.declaration().as_bytes()))),
+                ("member", Enc::text(union.member().identifier().as_str())),
+                (
+                    "components",
+                    Enc::Array(
+                        union
+                            .payload()
+                            .iter()
+                            .map(|inner| value_enc_with(inner, typing, placeholder))
+                            .collect(),
                     ),
-                ],
-            ),
-            None => Enc::Unencodable("a union value"),
-        },
+                ),
+            ],
+        ),
     }
 }
 
 /// Whether two values have the same typed canonical form. A value with no
-/// form equals nothing.
+/// form equals nothing. Two records, tuples or unions are compared
+/// component by component, which is what their forms compare: one
+/// declaration, one member, and the same component at each slot.
 pub(super) fn values_equal(left: &Value, right: &Value) -> bool {
-    let (left, right) = (value_enc(left), value_enc(right));
-    !matches!(
-        (&left, &right),
-        (Enc::Unencodable(_), _) | (_, Enc::Unencodable(_))
-    ) && left == right
+    let slot_equal = |left: &FieldValue, right: &FieldValue| match (left, right) {
+        (FieldValue::Present(left), FieldValue::Present(right)) => values_equal(left, right),
+        (FieldValue::Absent | FieldValue::Null, FieldValue::Absent | FieldValue::Null) => true,
+        _ => false,
+    };
+    match (left, right) {
+        (Value::Composite(left), Value::Composite(right)) => {
+            left.declaration() == right.declaration()
+                && left.slots().len() == right.slots().len()
+                && left
+                    .slots()
+                    .iter()
+                    .zip(right.slots())
+                    .all(|(left, right)| slot_equal(left, right))
+        }
+        (Value::Union(left), Value::Union(right)) => {
+            left.declaration() == right.declaration()
+                && left.member().identifier() == right.member().identifier()
+                && left.payload().len() == right.payload().len()
+                && left
+                    .payload()
+                    .iter()
+                    .zip(right.payload())
+                    .all(|(left, right)| values_equal(left, right))
+        }
+        (Value::Composite(_) | Value::Union(_), _) | (_, Value::Composite(_) | Value::Union(_)) => {
+            false
+        }
+        _ => {
+            let (left, right) = (untyped_value_enc(left), untyped_value_enc(right));
+            !matches!(
+                (&left, &right),
+                (Enc::Unencodable(_), _) | (_, Enc::Unencodable(_))
+            ) && left == right
+        }
+    }
+}
+
+/// A value's typed canonical form where no package declarations are at
+/// hand: every family but records, tuples and enums, which have none here.
+pub(crate) fn untyped_value_enc(value: &Value) -> Enc {
+    value_enc(value, Typing::none())
 }
 
 /// FR-181's `map`: `{"type":"map","entries":[{"key":..,"value":..}, ...]}`
@@ -471,7 +510,7 @@ pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
 /// and anchor"): each population's declaration identity text, mapped to its
 /// objects' reference triples, each mapped to a `record` of its declared
 /// fields in declaration order.
-pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
+pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
     let mut populations = Vec::new();
     for (population, objects) in &state.populations {
         let mut entries = Vec::new();
@@ -479,7 +518,7 @@ pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
             let Ok(reference) = model.object_reference(&object.type_identity, key) else {
                 return Enc::Unencodable("an object whose reference does not resolve");
             };
-            let record = object_enc(model, object, &|_| None);
+            let record = object_enc(model, object, typing, &|_| None);
             entries.push((reference_enc(&reference), record));
         }
         populations.push((
@@ -496,6 +535,7 @@ pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
 pub(super) fn object_enc(
     model: &StateModel,
     object: &qsl_semantics::model::state::StateObject,
+    typing: Typing<'_>,
     placeholder: &Placeholder<'_>,
 ) -> Enc {
     let Ok(Some(fields)) = model.fields(&object.type_identity) else {
@@ -506,10 +546,10 @@ pub(super) fn object_enc(
         .map(|field| {
             // QSpec FR-181: a field declared `Option<T>` holds an option
             // value; an absent presence-optional field is a plain `null`
-            // entry; a record, tuple or union value takes its declared form
-            // from the package's types.
+            // entry; a record, tuple, union or enum value takes its declared
+            // form from `typing`.
             let value = object.fields.get(&field.key).map_or(Enc::Null, |value| {
-                value_enc_in(value, Some(model.types()), placeholder)
+                value_enc_with(value, typing, placeholder)
             });
             Enc::Object(vec![
                 ("name", Enc::text(field.name.clone())),
@@ -541,11 +581,11 @@ fn empty_map() -> Enc {
 
 /// FR-181's state key for a model state (FR-120 "State, state key and
 /// anchor"): the five members a model state does not use are empty maps.
-pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
+pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> ModelKey {
     ModelKey(Enc::tagged(
         "simulation-state",
         vec![
-            ("semantic", semantic_enc(model, state)),
+            ("semantic", semantic_enc(model, state, typing)),
             ("control", empty_map()),
             ("queues", empty_map()),
             ("roles", empty_map()),
@@ -570,7 +610,7 @@ mod tests {
     #[trace("TC-471", "FR-120-AC-4")]
     #[test]
     fn an_integer_encodes_as_a_tagged_decimal_string() {
-        let text = value_enc(&Value::Integer(Integer::from(-12_i64)))
+        let text = untyped_value_enc(&Value::Integer(Integer::from(-12_i64)))
             .canonical_text(Limits::new(1024))
             .expect("an integer encodes");
         assert_eq!(text, r#"{"type":"integer","value":"-12"}"#);
@@ -585,13 +625,13 @@ mod tests {
         let timestamp = Timestamp::from_canonical_text("-1").expect("canonical timestamp");
 
         assert_eq!(
-            value_enc(&Value::Uuid(uuid))
+            untyped_value_enc(&Value::Uuid(uuid))
                 .canonical_text(Limits::new(1024))
                 .expect("a UUID encodes"),
             r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
         );
         assert_eq!(
-            value_enc(&Value::Timestamp(timestamp))
+            untyped_value_enc(&Value::Timestamp(timestamp))
                 .canonical_text(Limits::new(1024))
                 .expect("a Timestamp encodes"),
             r#"{"nanoseconds":"-1","type":"timestamp"}"#
@@ -620,17 +660,157 @@ mod tests {
         );
 
         assert_eq!(
-            value_enc(&ids)
+            untyped_value_enc(&ids)
                 .canonical_text(Limits::new(1024))
                 .expect("the UUID set encodes"),
             r#"{"elements":[{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeefe"},{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}],"type":"set"}"#
         );
         assert_eq!(
-            value_enc(&times)
+            untyped_value_enc(&times)
                 .canonical_text(Limits::new(1024))
                 .expect("the Timestamp set encodes"),
             r#"{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}"#
         );
+    }
+
+    /// The declarations of FR-120-AC-16's `Tag { sku: Integer, note?:
+    /// Boolean }` (node `11…`), `Pair(Boolean, Integer)` (`22…`) and `Shape`
+    /// with the nullary member `none` and the member `tagged(Tag)` (`33…`),
+    /// and the values `Tag { sku }`, `Pair(true, -3)` and `none`.
+    fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
+        use quire_exact::{from_admitted_slots, Identifier, Presence, UnionMember, UnionValue};
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, FieldDeclaration, UnionMemberDeclaration,
+        };
+        let (tag, pair, shape) = (
+            NodeKey::from_digest([0x11; 32]),
+            NodeKey::from_digest([0x22; 32]),
+            NodeKey::from_digest([0x33; 32]),
+        );
+        let none = UnionMember::from_admitted(
+            shape,
+            NodeKey::from_digest([0x34; 32]),
+            Identifier::new("none").expect("an identifier"),
+        );
+        let types = TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    tag,
+                    "Tag",
+                    CompositeShape::Record(vec![
+                        FieldDeclaration::new("sku", ValueType::Integer, Presence::Required),
+                        FieldDeclaration::new("note", ValueType::Boolean, Presence::Optional),
+                    ]),
+                ),
+                CompositeDeclaration::new(
+                    pair,
+                    "Pair",
+                    CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Integer]),
+                ),
+                CompositeDeclaration::new(
+                    shape,
+                    "Shape",
+                    CompositeShape::Union(vec![UnionMemberDeclaration::from_verified(
+                        none.clone(),
+                        vec![],
+                    )]),
+                ),
+            ],
+            [],
+        )
+        .expect("the declarations admit");
+        let tag_value = move |sku: i64| {
+            from_admitted_slots(
+                tag,
+                vec![
+                    FieldValue::Present(Value::Integer(Integer::from(sku))),
+                    FieldValue::Absent,
+                ]
+                .into_boxed_slice(),
+            )
+        };
+        let pair_value = from_admitted_slots(
+            pair,
+            vec![
+                FieldValue::Present(Value::Boolean(true)),
+                FieldValue::Present(Value::Integer(Integer::from(-3_i64))),
+            ]
+            .into_boxed_slice(),
+        );
+        let none_value = UnionValue::from_admitted(none, vec![]);
+        (types, tag_value, pair_value, none_value)
+    }
+
+    /// FR-120-AC-16 (TC-1195): FR-181-AC-19's record, tuple and nullary
+    /// union bytes, each `name` the declaration's checked node id in 64 hex.
+    #[trace("TC-1195", "FR-120-AC-16")]
+    #[test]
+    fn a_record_tuple_and_union_encode_in_their_declared_forms() {
+        let (types, tag, pair, none) = declared();
+        let text = |value: &Value| {
+            value_enc(value, Typing::with_variants(&types, &[]))
+                .canonical_text(Limits::new(4096))
+                .expect("the value encodes")
+        };
+        let (tag_name, pair_name, shape_name) = ("11".repeat(32), "22".repeat(32), "33".repeat(32));
+        assert_eq!(
+            text(&tag(7)),
+            format!(
+                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"7"}}}},{{"name":"note","value":null}}],"name":"{tag_name}","type":"record"}}"#
+            )
+        );
+        assert_eq!(
+            text(&pair),
+            format!(
+                r#"{{"components":[{{"type":"boolean","value":true}},{{"type":"integer","value":"-3"}}],"name":"{pair_name}","type":"tuple"}}"#
+            )
+        );
+        assert_eq!(
+            text(&none),
+            format!(r#"{{"components":[],"member":"none","name":"{shape_name}","type":"union"}}"#)
+        );
+        // Without the declarations a record has no form; a union keeps its.
+        assert!(matches!(untyped_value_enc(&tag(7)), Enc::Unencodable(_)));
+    }
+
+    /// FR-120-AC-16 (TC-1195): the declared forms nest through an option and
+    /// a set, whose records are ordered by their encoded bytes; equality
+    /// compares records component by component.
+    #[trace("TC-1195")]
+    #[test]
+    fn declared_forms_nest_through_options_and_sets() {
+        let (types, tag, _, _) = declared();
+        let typing = Typing::with_variants(&types, &[]);
+        let record = |sku: &str| {
+            format!(
+                r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"{sku}"}}}},{{"name":"note","value":null}}],"name":"{}","type":"record"}}"#,
+                "11".repeat(32)
+            )
+        };
+        let tag_type = ValueType::Composite(NodeKey::from_digest([0x11; 32]));
+        let option = quire_exact::OptionValue::from_admitted(tag_type.clone(), Some(tag(7)));
+        assert_eq!(
+            value_enc(&option, typing)
+                .canonical_text(Limits::new(4096))
+                .expect("the option encodes"),
+            format!(r#"{{"type":"option","value":{}}}"#, record("7"))
+        );
+        let set = from_admitted(
+            CollectionType::new(CollectionKind::Set, tag_type, None),
+            vec![tag(7), tag(10)],
+        );
+        assert_eq!(
+            value_enc(&set, typing)
+                .canonical_text(Limits::new(4096))
+                .expect("the set encodes"),
+            format!(
+                r#"{{"elements":[{},{}],"type":"set"}}"#,
+                record("10"),
+                record("7")
+            )
+        );
+        assert!(values_equal(&tag(7), &tag(7)));
+        assert!(!values_equal(&tag(7), &tag(10)));
     }
 
     /// FR-120-AC-16 / FR-189-AC-15: a quantity keeps its exact magnitude and
@@ -643,7 +823,7 @@ mod tests {
             Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
             unit,
         ));
-        let text = value_enc(&quantity)
+        let text = untyped_value_enc(&quantity)
             .canonical_text(Limits::new(1024))
             .expect("a quantity encodes");
         assert_eq!(
@@ -678,7 +858,7 @@ mod tests {
             Some(Value::Integer(Integer::from(1_i64))),
         );
         let text = |value: &Value| {
-            value_enc(value)
+            untyped_value_enc(value)
                 .canonical_text(Limits::new(1024))
                 .expect("an option encodes")
         };

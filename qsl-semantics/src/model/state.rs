@@ -83,12 +83,6 @@ pub struct StateModel {
 }
 
 impl StateModel {
-    /// The package's type environment, which declares the record, tuple
-    /// and union types a state's values hold.
-    pub fn types(&self) -> &TypeEnvironment {
-        &self.types
-    }
-
     /// Re-admit and re-normalize the domain packages `model_selections` name
     /// against `packages`, as FR-106 admission does.
     ///

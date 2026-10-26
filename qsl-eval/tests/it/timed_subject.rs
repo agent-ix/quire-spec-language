@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
-    BehaviourReading, ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal,
-    PopulationUniverse, TimedBehaviour, TimedState, TimedSystem,
+    BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest, ModelSystem,
+    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -1129,6 +1129,15 @@ fn timer_document() -> Vec<u8> {
         .as_array_mut()
         .expect("Call fields")
         .push(wire_field("t", &timer));
+    // `send` also writes `t`.
+    for operation in types[1]["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "send" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("a frame")
+                .push(json!(ident("Call/t")));
+        }
+    }
     document["constructs"]
         .as_array_mut()
         .expect("constructs")
@@ -1192,6 +1201,28 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         initial.clocks().delayed(&exact(1, 2)),
     );
     assert_ne!(timed.state_digest(&shifted).expect("a digest"), digest);
+    // One value at `t.x` and the other at `t.y` are two states.
+    let at = |name: &str| {
+        timed
+            .places()
+            .iter()
+            .position(|place| {
+                place.object().object().as_str() == "c"
+                    && timed.model().clock(place.clock()).map(|clock| clock.name()) == Some(name)
+            })
+            .expect("a place of c")
+    };
+    let one_at = |place: usize| {
+        let mut values = vec![exact(0, 1); timed.places().len()];
+        values[place] = exact(1, 1);
+        timed
+            .state_digest(&TimedState::new(
+                initial.discrete().clone(),
+                ClockValuation::new(values),
+            ))
+            .expect("a digest")
+    };
+    assert_ne!(one_at(at("t.x")), one_at(at("t.y")));
     let other = holding("1");
     let other_system = system_over(&other, &["c", "d", "e"]);
     let other_timed = TimedSystem::new(&other_system, "M").expect("a timed subject");
@@ -1203,4 +1234,75 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         digest,
         "the record's data field is in the state key"
     );
+}
+
+/// Part of FR-230-AC-11 (TC-685): a state holding a record value steps.
+/// From `Call.t = Timer { n: 0 }`, after a delay of 2, `send` (whose
+/// postcondition writes `phase`) has its four successors, each keeping `t`
+/// and every clock at 2, and each post state has a digest. Not covered:
+/// a step writing `t` through a record literal, which FR-120's value domains
+/// do not reach (a record is an unbounded domain; STD-493 item 21).
+#[trace("TC-685")]
+#[test]
+fn a_record_holding_state_steps() {
+    let world = world_holding(
+        timer_document(),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.phase = 1 }\n",
+        ),
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}}}),
+    );
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = timed
+        .delay(initial, &exact(2, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let steps = timed.steps(&later).expect("a record-holding state steps");
+    assert_eq!(
+        steps.len(),
+        4,
+        "one successor per value of `inflight` and `late`"
+    );
+    let t_key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/t"),
+    };
+    let t_of = |state: &TimedState| {
+        state
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&t_key))
+            .cloned()
+            .expect("c holds t")
+    };
+    for (step, post) in &steps {
+        assert!(step.operation().contains("Call/send\""));
+        assert!(post
+            .clocks()
+            .values()
+            .iter()
+            .all(|value| value == &exact(2, 1)));
+        let (quire_exact::Value::Composite(before), quire_exact::Value::Composite(after)) =
+            (t_of(&later), t_of(post))
+        else {
+            panic!("t is a record");
+        };
+        assert_eq!(
+            format!("{:?}", before.slots()),
+            format!("{:?}", after.slots()),
+            "send keeps t"
+        );
+        timed
+            .state_digest(post)
+            .expect("the post state has a digest");
+    }
 }
