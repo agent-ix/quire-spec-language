@@ -672,7 +672,9 @@ fn closure_check(
     letters: &dyn ModelLetters,
     certificate: &ProofCertificate,
 ) -> TemporalCertificateCheck {
-    let ProofCertificate::Closure(certificate) = certificate;
+    let ProofCertificate::Closure(certificate) = certificate else {
+        panic!("a safety clause holds with a closure: {certificate:?}");
+    };
     check_protocol_closure(
         &ProtocolCertificateRequest {
             subject: case.subject("P"),
@@ -735,7 +737,9 @@ fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
         .iter()
         .map(|step| step.post_state)
         .collect();
-    let ProofCertificate::Closure(certificate) = &certificate;
+    let ProofCertificate::Closure(certificate) = &certificate else {
+        panic!("a safety clause holds with a closure: {certificate:?}");
+    };
     let owing: Vec<&ProductStateRef> = certificate
         .states
         .iter()

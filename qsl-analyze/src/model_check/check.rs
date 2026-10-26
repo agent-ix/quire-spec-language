@@ -1551,7 +1551,7 @@ struct Run<'r, S: SubjectSystem> {
     instance_limited: BTreeSet<DigestRecord>,
 }
 
-fn certificate_package_id(
+pub(super) fn certificate_package_id(
     package: &qsl_package::CheckedPackage,
 ) -> Result<qsl_semantics::library::PackageId, ModelCheckRefusal> {
     package

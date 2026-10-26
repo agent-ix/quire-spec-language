@@ -196,7 +196,6 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         | ModelCheckRefusal::InstanceLiveness
         | ModelCheckRefusal::ReducedLiveness
         | ModelCheckRefusal::ProtocolAbstractSide
-        | ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
         | ModelCheckRefusal::Hyper(
             HyperRefusal::FormNotDecided { .. } | HyperRefusal::NotSingleExistential { .. },
         ) => Refusal::Unsupported(NOT_YET),
@@ -393,14 +392,6 @@ mod tests {
         };
         let not_yet = Some("unsupported_construct/not-yet-implemented".to_owned());
         assert_eq!(unsupported(ModelCheckRefusal::ReducedLiveness), not_yet);
-        assert_eq!(
-            unsupported(ModelCheckRefusal::Liveness(
-                LivenessRefusal::ComponentCertificateNotBuilt {
-                    stats: qsl_replay::RunStats::default()
-                }
-            )),
-            not_yet
-        );
         assert_eq!(
             unsupported(ModelCheckRefusal::Hyper(HyperRefusal::FormNotDecided {
                 form: None

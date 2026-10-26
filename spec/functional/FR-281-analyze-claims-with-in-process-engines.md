@@ -120,7 +120,7 @@ with the record naming the engine:
 | `RequiresBound` (FR-126 `ModelCheckRefusal::RequiresBound`, FR-192, FR-203 `NotSimulated(RequiresBound)`) | `unsupported` with the diagnostic `unsupported_projection`/`unbounded-extent`, whose payload is QSpec FR-272's for that cause: the item's FR-290 kind, the candidate (the engine's `BackendId`) and the modes its manifest advertises for that kind (QSpec FR-272-AC-9). FR-272 closes that payload, so the unbounded root FR-101's `RequiresBound` names is not written in the record |
 | EN-4 `Symmetry` (a malformed symmetry declaration, FR-151) | `declined`, cause `invalid-input`, diagnostic `invalid_runtime_input`/`invalid-value` |
 | EN-4 `NotStatistical` | `invalid-request` with `invalid_capability`/`not-statistical`, settled by that disposition and carrying no result (QSpec FR-331) |
-| Any other engine refusal with no settlement-map row, whose FR-272 diagnostic code is `unsupported_construct` or `unsupported_projection` (for example FR-126's `LivenessRefusal::ComponentCertificateNotBuilt`) | `unsupported` with that diagnostic |
+| Any other engine refusal with no settlement-map row, whose FR-272 diagnostic code is `unsupported_construct` or `unsupported_projection` | `unsupported` with that diagnostic |
 | Any other engine refusal with no settlement-map row | `failed` with its FR-272 diagnostic |
 
 An engine refusal never settles `proved`, `refuted` or `measured`, and no item
