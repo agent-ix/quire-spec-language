@@ -4915,11 +4915,23 @@ pub fn read_domain_package(
         .filter_map(|node| {
             let identity = node.get("identity")?.as_str()?;
             let name = node.get("name")?.as_str()?;
-            let base = node.get("terms")?.as_array()?.is_empty();
+            let written = node.get("terms")?.as_array()?;
+            let terms = written
+                .iter()
+                .map(|term| {
+                    let dimension = term.get("dimension")?.as_str()?;
+                    let exponent = term.get("exponent")?.as_str()?;
+                    Some((
+                        declaration_key(&selection.identity, dimension),
+                        <quire_exact::Integer as std::str::FromStr>::from_str(exponent).ok()?,
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
             Some(PackageDimensionRecord {
                 key: declaration_key(&selection.identity, identity),
                 name: name.to_owned(),
-                base,
+                base: written.is_empty(),
+                terms,
             })
         })
         .collect();

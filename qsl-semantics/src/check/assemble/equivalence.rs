@@ -15,13 +15,13 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, NodeKey, Rational};
 
-use super::units::{Assembled, ComposedUnit};
+use super::units::{Assembled, Provisional};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits};
 use crate::check::lowering::AdmittedModel;
 use crate::check::node_key::{nominal_key, SourceOwner};
 use crate::check::time_units::package_unit_scale;
-use crate::value::semantic_node::{ModelSubject, NodeOwner};
-use crate::value::unit::{DimensionEquivalencePreimage, DimensionPreimage};
+use crate::value::unit::DimensionEquivalencePreimage;
+use quire_checked::key::DeclarationKey;
 
 /// Why a dimension equivalence was refused past name resolution (QSpec
 /// FR-142 "Dimension equivalence" steps 3 to 7).
@@ -38,6 +38,48 @@ pub enum EquivalenceFault {
     /// Step 5, an affine unit or a ratio number that is not positive:
     /// `invalid_package`/`invalid-value`.
     InvalidValue,
+}
+
+/// What a dimension-equivalence refusal retains (QSpec FR-142 "Dimension
+/// equivalence"): the declarations, dimensions, units and values its step
+/// names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EquivalenceRetained {
+    /// An equivalence declaration: its two dimension names as written and
+    /// its span.
+    Declaration {
+        /// The two dimension names, in written order.
+        dimensions: [String; 2],
+        /// The declaration's span.
+        span: Span,
+    },
+    /// A dimension: its name as written and its node key, when fixed.
+    Dimension {
+        /// The name as written.
+        name: String,
+        /// The dimension node's key.
+        key: Option<NodeKey>,
+    },
+    /// A unit, by its name as written.
+    Unit {
+        /// The name as written.
+        name: String,
+    },
+    /// A value: a unit's composed offset or a ratio number.
+    Value(Rational),
+}
+
+impl std::fmt::Display for EquivalenceRetained {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Declaration {
+                dimensions: [first, second],
+                ..
+            } => write!(f, "{first} ~ {second}"),
+            Self::Dimension { name, .. } | Self::Unit { name } => f.write_str(name),
+            Self::Value(value) => write!(f, "{value}"),
+        }
+    }
 }
 
 /// One admitted dimension equivalence.
@@ -131,35 +173,127 @@ fn sizes(pairs: &[(NodeKey, NodeKey, Rational)]) -> BTreeMap<NodeKey, (NodeKey, 
     members
 }
 
-/// A resolved dimension: its key, its label as written, and its normalized
-/// base map (a base dimension's is itself with exponent one).
+/// What a dimension name names: a dimension form of the unit, by its name,
+/// or a dimension of an admitted domain package, by its FCD identity.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum DimensionRef {
+    Source(String),
+    Package(DeclarationKey),
+}
+
+/// A resolved dimension: what it names, its label as written, its key and
+/// normalized base map when they are fixed (a base dimension's map is
+/// itself with exponent one), and whether it is a base dimension.
+#[derive(Clone)]
 struct Dimension {
-    key: NodeKey,
+    id: DimensionRef,
     label: String,
-    map: BTreeMap<NodeKey, Integer>,
+    key: Option<NodeKey>,
+    map: Option<BTreeMap<NodeKey, Integer>>,
+    base: bool,
 }
 
 impl Dimension {
-    fn is_base(&self) -> bool {
-        self.map.len() == 1 && self.map.get(&self.key) == Some(&Integer::one())
+    fn retained(&self) -> EquivalenceRetained {
+        EquivalenceRetained::Dimension {
+            name: self.label.clone(),
+            key: self.key,
+        }
     }
 }
 
-/// What a dimension name resolves to.
-enum Named {
-    Dimension(Dimension),
-    /// A derived dimension of a domain package, whose terms intake does not
-    /// retain, so no key or base map can be formed for it.
-    DerivedPackage {
-        alias: String,
-        node: String,
-    },
+/// A resolved unit: the dimension it belongs to and, when its target chain
+/// fixes one, its composed scale and offset to that dimension's root.
+#[derive(Clone)]
+struct Unit {
+    name: String,
+    dimension: DimensionRef,
+    composed: Option<(Rational, Rational)>,
+    /// Whether the unit is a package's: a package unit's chain was admitted
+    /// at intake, so one that fixes no scale is refused here rather than at
+    /// a dimension's turn.
+    package: bool,
+}
+
+/// What the unit's own dimension and unit declarations fix: provisionally,
+/// before the topology is decided, or as the admitted graph holds them.
+pub(super) enum SourceView<'a> {
+    /// Before the first dimension turn: the base dimensions' keys and each
+    /// unit's chain as far as it is sound.
+    Provisional(&'a Provisional),
+    /// After the last turn: the admitted graph's keys, maps and units.
+    Admitted(&'a Assembled),
+}
+
+impl SourceView<'_> {
+    fn dimension(&self, name: &str) -> Option<Dimension> {
+        let id = DimensionRef::Source(name.to_owned());
+        match self {
+            Self::Provisional(fixed) => {
+                if let Some(key) = fixed.bases.get(name) {
+                    return Some(Dimension {
+                        id,
+                        label: name.to_owned(),
+                        key: Some(*key),
+                        map: Some(BTreeMap::from([(*key, Integer::one())])),
+                        base: true,
+                    });
+                }
+                fixed.derived.contains(name).then(|| Dimension {
+                    id,
+                    label: name.to_owned(),
+                    key: None,
+                    map: None,
+                    base: false,
+                })
+            }
+            Self::Admitted(assembled) => {
+                let (key, map) = assembled.dimensions.get(name)?;
+                let base = map.len() == 1 && map.get(key) == Some(&Integer::one());
+                Some(Dimension {
+                    id,
+                    label: name.to_owned(),
+                    key: Some(*key),
+                    map: Some(map.clone()),
+                    base,
+                })
+            }
+        }
+    }
+
+    fn unit(&self, name: &str) -> Option<Unit> {
+        match self {
+            Self::Provisional(fixed) => {
+                let (dimension, composed) = fixed.units.get(name)?;
+                Some(Unit {
+                    name: name.to_owned(),
+                    dimension: DimensionRef::Source(dimension.clone()),
+                    composed: composed.clone(),
+                    package: false,
+                })
+            }
+            Self::Admitted(assembled) => {
+                let unit = assembled.units.get(name)?;
+                let dimension = assembled
+                    .dimensions
+                    .iter()
+                    .find(|(_, (key, _))| *key == unit.dimension)
+                    .map(|(name, _)| name.clone())?;
+                Some(Unit {
+                    name: name.to_owned(),
+                    dimension: DimensionRef::Source(dimension),
+                    composed: Some((unit.scale.clone(), unit.offset.clone())),
+                    package: false,
+                })
+            }
+        }
+    }
 }
 
 /// The names one unit of compilation sees: its own dimensions and units
 /// and those of each selected package by its model alias.
 struct Scope<'a> {
-    source: Option<&'a Assembled>,
+    source: SourceView<'a>,
     models: &'a [AdmittedModel],
     identity: qsl_foundation::IdentityLimits,
 }
@@ -171,73 +305,37 @@ impl Scope<'_> {
             .find(|model| model.alias() == Some(alias))
     }
 
-    fn package_dimension_key(
-        &self,
-        model: &AdmittedModel,
-        dimension: &crate::model::domain_package::PackageDimensionRecord,
-    ) -> Option<NodeKey> {
-        let owner = NodeOwner::Model(ModelSubject {
-            identity: model.selection().identity.clone(),
-            node: dimension.key.node.clone(),
-        });
-        let preimage = DimensionPreimage::new(owner, vec![dimension.name.clone()], vec![]).ok()?;
-        nominal_key(&preimage, self.identity).ok()
+    #[ix_trace_rs::string_edge]
+    fn dimension(&self, name: &NameForm) -> Option<Dimension> {
+        let Some((alias, rest)) = name.name.split_once("::") else {
+            return self.source.dimension(&name.name);
+        };
+        let model = self.model(alias)?;
+        let dimension = model.dimensions.iter().find(|d| d.name == rest)?;
+        let (key, map, _) =
+            super::units::package_dimension(model, dimension, self.identity, &mut Vec::new())?;
+        Some(Dimension {
+            id: DimensionRef::Package(dimension.key.clone()),
+            label: name.name.clone(),
+            key: Some(key),
+            map: Some(map),
+            base: dimension.base,
+        })
     }
 
     #[ix_trace_rs::string_edge]
-    fn dimension(&self, name: &NameForm) -> Option<Named> {
-        match name.name.split_once("::") {
-            None => {
-                let (key, map) = self.source?.dimensions.get(&name.name)?;
-                Some(Named::Dimension(Dimension {
-                    key: *key,
-                    label: name.name.clone(),
-                    map: map.clone(),
-                }))
-            }
-            Some((alias, rest)) => {
-                let model = self.model(alias)?;
-                let dimension = model.dimensions.iter().find(|d| d.name == rest)?;
-                if !dimension.base {
-                    return Some(Named::DerivedPackage {
-                        alias: alias.to_owned(),
-                        node: dimension.key.node.clone(),
-                    });
-                }
-                let key = self.package_dimension_key(model, dimension)?;
-                Some(Named::Dimension(Dimension {
-                    key,
-                    label: name.name.clone(),
-                    map: BTreeMap::from([(key, Integer::one())]),
-                }))
-            }
-        }
-    }
-
-    /// A unit by name: `Some(None)` for a package unit whose dimension is a
-    /// derived package dimension or whose target chain fixes no scale.
-    #[ix_trace_rs::string_edge]
-    fn unit(&self, name: &str) -> Option<Option<ComposedUnit>> {
-        match name.split_once("::") {
-            None => Some(Some(self.source?.units.get(name)?.clone())),
-            Some((alias, rest)) => {
-                let model = self.model(alias)?;
-                let unit = model.units.iter().find(|unit| unit.name == rest)?;
-                let dimension = model
-                    .dimensions
-                    .iter()
-                    .find(|dimension| dimension.key == unit.dimension)
-                    .filter(|dimension| dimension.base)
-                    .and_then(|dimension| self.package_dimension_key(model, dimension));
-                Some(dimension.zip(package_unit_scale(unit, &model.units)).map(
-                    |(dimension, (scale, offset))| ComposedUnit {
-                        dimension,
-                        scale,
-                        offset,
-                    },
-                ))
-            }
-        }
+    fn unit(&self, name: &str) -> Option<Unit> {
+        let Some((alias, rest)) = name.split_once("::") else {
+            return self.source.unit(name);
+        };
+        let model = self.model(alias)?;
+        let unit = model.units.iter().find(|unit| unit.name == rest)?;
+        Some(Unit {
+            name: name.to_owned(),
+            dimension: DimensionRef::Package(unit.dimension.clone()),
+            composed: package_unit_scale(unit, &model.units),
+            package: true,
+        })
     }
 }
 
@@ -245,19 +343,28 @@ impl Scope<'_> {
 struct Resolved<'f> {
     form: &'f DimensionEquivalenceForm,
     dimensions: [Dimension; 2],
-    units: [Option<ComposedUnit>; 2],
+    units: [Unit; 2],
 }
 
 impl Resolved<'_> {
-    fn label(&self) -> String {
-        format!(
-            "{} ~ {}",
-            self.dimensions[0].label, self.dimensions[1].label
-        )
+    fn retained(&self) -> EquivalenceRetained {
+        EquivalenceRetained::Declaration {
+            dimensions: [
+                self.dimensions[0].label.clone(),
+                self.dimensions[1].label.clone(),
+            ],
+            span: self.form.span,
+        }
     }
 
-    fn pair(&self) -> BTreeSet<NodeKey> {
-        BTreeSet::from([self.dimensions[0].key, self.dimensions[1].key])
+    fn pair(&self) -> BTreeSet<DimensionRef> {
+        BTreeSet::from([self.dimensions[0].id.clone(), self.dimensions[1].id.clone()])
+    }
+
+    /// The two dimensions' keys, both fixed for a base pair and after the
+    /// last turn.
+    fn keys(&self) -> Option<[NodeKey; 2]> {
+        Some([self.dimensions[0].key?, self.dimensions[1].key?])
     }
 }
 
@@ -265,7 +372,11 @@ fn error(cause: AssemblyCause, span: Span) -> AssemblyError {
     AssemblyError { cause, span }
 }
 
-fn refused(fault: EquivalenceFault, retained: Vec<String>, span: Span) -> AssemblyError {
+fn refused(
+    fault: EquivalenceFault,
+    retained: Vec<EquivalenceRetained>,
+    span: Span,
+) -> AssemblyError {
     error(
         AssemblyCause::DimensionEquivalence { fault, retained },
         span,
@@ -308,13 +419,26 @@ fn positive(value: &Rational) -> bool {
     !value.is_zero() && !value.numerator().is_negative()
 }
 
-/// The unit's admitted dimension equivalences, or every error found.
+/// Which declarations FR-091's assembler decides in one call.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Phase {
+    /// Before the first dimension turn: every declaration's steps 1 and 2,
+    /// and the base pairs' steps 3 to 5 and 7. Admits nothing.
+    Base,
+    /// After the last turn: every declaration, admitted with its key.
+    All,
+}
+
+/// The unit's dimension equivalences decided in `phase`: in
+/// [`Phase::Base`] no equivalence and every error of that phase, in
+/// [`Phase::All`] the admitted equivalences or every error found.
 pub(super) fn assemble(
     forms: &[DimensionEquivalenceForm],
-    source: Option<&Assembled>,
+    source: SourceView<'_>,
     models: &[AdmittedModel],
     owner: &SourceOwner,
     limits: AssemblyLimits,
+    phase: Phase,
 ) -> Result<Vec<DimensionEquivalence>, Vec<AssemblyError>> {
     let scope = Scope {
         source,
@@ -329,14 +453,7 @@ pub(super) fn assemble(
         let mut dimensions = Vec::with_capacity(2);
         for name in &form.dimensions {
             match scope.dimension(name) {
-                Some(Named::Dimension(dimension)) => dimensions.push(dimension),
-                Some(Named::DerivedPackage { alias, node }) => {
-                    errors.push(error(
-                        AssemblyCause::UnsupportedModelMember { alias, node },
-                        name.span,
-                    ));
-                    continue 'forms;
-                }
+                Some(dimension) => dimensions.push(dimension),
                 None => {
                     errors.push(error(
                         AssemblyCause::UnresolvedQuantityName {
@@ -365,11 +482,11 @@ pub(super) fn assemble(
         }
         let (Ok(dimensions), Ok(units)) = (
             <[Dimension; 2]>::try_from(dimensions),
-            <[Option<ComposedUnit>; 2]>::try_from(units),
+            <[Unit; 2]>::try_from(units),
         ) else {
             continue;
         };
-        if dimensions[0].key == dimensions[1].key {
+        if dimensions[0].id == dimensions[1].id {
             let label = dimensions[0].label.clone();
             errors.push(error(
                 AssemblyCause::QuantityCycle {
@@ -384,7 +501,7 @@ pub(super) fn assemble(
             dimensions,
             units,
         };
-        if resolved.dimensions.iter().all(Dimension::is_base) {
+        if resolved.dimensions.iter().all(|dimension| dimension.base) {
             base.push(resolved);
         } else {
             derived.push(resolved);
@@ -402,12 +519,14 @@ pub(super) fn assemble(
     }
     let mut consistent: Vec<(&Resolved<'_>, Rational)> = Vec::new();
     for (resolved, ratio) in admitted {
-        let [first, second] = [resolved.dimensions[0].key, resolved.dimensions[1].key];
+        let Some([first, second]) = resolved.keys() else {
+            continue;
+        };
         match path(&consistent, first, second) {
             Some((implied, cycle)) if implied != ratio => {
                 let mut retained: Vec<_> = cycle
                     .into_iter()
-                    .map(|index| consistent[index].0)
+                    .filter_map(|index| consistent.get(index).map(|(declaration, _)| *declaration))
                     .chain([resolved])
                     .collect();
                 retained.sort_by_key(|declaration| declaration.form.span.start);
@@ -415,7 +534,7 @@ pub(super) fn assemble(
                     EquivalenceFault::Conflicting,
                     retained
                         .iter()
-                        .map(|declaration| declaration.label())
+                        .map(|declaration| declaration.retained())
                         .collect(),
                     resolved.form.span,
                 ));
@@ -423,17 +542,21 @@ pub(super) fn assemble(
             Some(_) | None => consistent.push((resolved, ratio)),
         }
     }
+    if phase == Phase::Base {
+        return if errors.is_empty() {
+            Ok(Vec::new())
+        } else {
+            Err(errors)
+        };
+    }
 
     // The base classes: each base dimension's representative and root size.
     let classes = sizes(
         &consistent
             .iter()
-            .map(|(resolved, ratio)| {
-                (
-                    resolved.dimensions[0].key,
-                    resolved.dimensions[1].key,
-                    ratio.clone(),
-                )
+            .filter_map(|(resolved, ratio)| {
+                let [first, second] = resolved.keys()?;
+                Some((first, second, ratio.clone()))
             })
             .collect::<Vec<_>>(),
     );
@@ -444,20 +567,19 @@ pub(super) fn assemble(
             .unwrap_or_else(|| (base, Rational::from_integer(Integer::one())))
     };
     // A dimension's map over the class representatives, and the size its
-    // root has against the product of those representatives' roots.
+    // root has against the product of those representatives' roots; `None`
+    // when a power has no exact value.
     let over_classes = |dimension: &Dimension| {
         let mut map: BTreeMap<NodeKey, Integer> = BTreeMap::new();
         let mut size = Rational::from_integer(Integer::one());
-        for (base, exponent) in &dimension.map {
+        for (base, exponent) in dimension.map.as_ref()? {
             let (representative, ratio) = class_of(*base);
             let entry = map.entry(representative).or_insert_with(Integer::zero);
             *entry = entry.add(exponent);
-            if let Some(power) = ratio.pow(exponent) {
-                size = size.mul(&power);
-            }
+            size = size.mul(&ratio.pow(exponent)?);
         }
         map.retain(|_, exponent| !exponent.is_zero());
-        (map, size)
+        Some((map, size))
     };
 
     // Phase two: every other pair, steps 3 to 6 in source order.
@@ -468,18 +590,26 @@ pub(super) fn assemble(
             continue;
         };
         named.push(resolved);
-        let (first_map, first_size) = over_classes(&resolved.dimensions[0]);
-        let (second_map, second_size) = over_classes(&resolved.dimensions[1]);
-        let fixed = first_size.div(&second_size);
-        if first_map != second_map || fixed.as_ref() != Some(&ratio) {
+        let incompatible = |errors: &mut Vec<AssemblyError>| {
             errors.push(refused(
                 EquivalenceFault::Incompatible,
                 vec![
-                    resolved.dimensions[0].label.clone(),
-                    resolved.dimensions[1].label.clone(),
+                    resolved.dimensions[0].retained(),
+                    resolved.dimensions[1].retained(),
                 ],
                 resolved.form.span,
             ));
+        };
+        let (Some((first_map, first_size)), Some((second_map, second_size))) = (
+            over_classes(&resolved.dimensions[0]),
+            over_classes(&resolved.dimensions[1]),
+        ) else {
+            incompatible(&mut errors);
+            continue;
+        };
+        let fixed = first_size.div(&second_size);
+        if first_map != second_map || fixed.as_ref() != Some(&ratio) {
+            incompatible(&mut errors);
             continue;
         }
         kept.push((resolved, ratio));
@@ -494,13 +624,7 @@ pub(super) fn assemble(
     let mut equivalences = Vec::with_capacity(kept.len());
     for (resolved, ratio) in kept {
         let fault = |cause| vec![error(cause, resolved.form.span)];
-        let preimage = DimensionEquivalencePreimage::new(
-            node_owner.clone(),
-            resolved.dimensions[0].key,
-            resolved.dimensions[1].key,
-            &ratio,
-        )
-        .ok_or_else(|| {
+        let non_canonical = || {
             fault(AssemblyCause::nominal(
                 quire_semantic_value::semantic_node::InvalidSemanticGraph {
                     cause:
@@ -508,7 +632,10 @@ pub(super) fn assemble(
                 }
                 .into(),
             ))
-        })?;
+        };
+        let [first, second] = resolved.keys().ok_or_else(non_canonical)?;
+        let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
+            .ok_or_else(non_canonical)?;
         let key = nominal_key(&preimage, limits.identity)
             .map_err(|refusal| fault(AssemblyCause::nominal(refusal)))?;
         let bytes = preimage
@@ -526,8 +653,8 @@ pub(super) fn assemble(
 }
 
 /// Steps 3 to 5 of one declaration: its root ratio, or `None` with the
-/// refusal pushed (or, for a unit whose chain fixes no scale, nothing to
-/// decide past step 4).
+/// refusal pushed. A source unit whose target chain fixes no scale is
+/// decided up to step 4: its dimension's turn reports the defect.
 fn steps_three_to_five(
     resolved: &Resolved<'_>,
     named: &[&Resolved<'_>],
@@ -542,35 +669,60 @@ fn steps_three_to_five(
     {
         errors.push(refused(
             EquivalenceFault::Conflicting,
-            vec![earlier.label(), resolved.label()],
+            vec![earlier.retained(), resolved.retained()],
             span,
         ));
         return None;
     }
-    let mut scales = Vec::with_capacity(2);
-    for ((term, unit), dimension) in resolved
-        .form
-        .ratio
-        .iter()
-        .zip(&resolved.units)
-        .zip(&resolved.dimensions)
-    {
-        let unit = unit.as_ref()?;
-        if unit.dimension != dimension.key {
+    // Step 4: each unit belongs to the dimension it is named for.
+    for (unit, dimension) in resolved.units.iter().zip(&resolved.dimensions) {
+        if unit.dimension != dimension.id {
             errors.push(refused(
                 EquivalenceFault::Incompatible,
-                vec![term.unit.name.clone(), dimension.label.clone()],
+                vec![
+                    EquivalenceRetained::Unit {
+                        name: unit.name.clone(),
+                    },
+                    dimension.retained(),
+                ],
                 span,
             ));
             return None;
         }
-        scales.push(unit);
     }
-    for (term, unit) in resolved.form.ratio.iter().zip(&scales) {
-        if !unit.offset.is_zero() {
+    let mut scales = Vec::with_capacity(2);
+    for (unit, dimension) in resolved.units.iter().zip(&resolved.dimensions) {
+        match &unit.composed {
+            Some(composed) => scales.push(composed),
+            // A package unit's chain was admitted, so one that fixes no
+            // scale is not a unit of the dimension's graph.
+            None if unit.package => {
+                errors.push(refused(
+                    EquivalenceFault::Incompatible,
+                    vec![
+                        EquivalenceRetained::Unit {
+                            name: unit.name.clone(),
+                        },
+                        dimension.retained(),
+                    ],
+                    span,
+                ));
+                return None;
+            }
+            None => return None,
+        }
+    }
+    // Step 5: an affine unit, or a ratio number that is not positive.
+    for (unit, (_, offset)) in resolved.units.iter().zip(&scales) {
+        if !offset.is_zero() {
             errors.push(refused(
                 EquivalenceFault::InvalidValue,
-                vec![term.unit.name.clone(), unit.offset.to_string()],
+                vec![
+                    EquivalenceRetained::Unit {
+                        name: unit.name.clone(),
+                    },
+                    EquivalenceRetained::Value(offset.clone()),
+                ],
                 span,
             ));
             return None;
@@ -580,10 +732,10 @@ fn steps_three_to_five(
     for term in &resolved.form.ratio {
         match ratio_number(&term.number, limits) {
             Ok(number) if positive(&number) => numbers.push(number),
-            Ok(_) => {
+            Ok(number) => {
                 errors.push(refused(
                     EquivalenceFault::InvalidValue,
-                    vec![resolved.label()],
+                    vec![resolved.retained(), EquivalenceRetained::Value(number)],
                     span,
                 ));
                 return None;
@@ -596,10 +748,10 @@ fn steps_three_to_five(
     }
     // `x U = y V`, `U` being `a` roots of the first and `V` `b` roots of the
     // second: one root of the first is `(y × b) / (x × a)` of the second.
-    let ([x, y], [a, b]) = (numbers.as_slice(), scales.as_slice()) else {
+    let ([x, y], [(a, _), (b, _)]) = (numbers.as_slice(), scales.as_slice()) else {
         return None;
     };
-    y.mul(&b.scale).div(&x.mul(&a.scale))
+    y.mul(b).div(&x.mul(a))
 }
 
 /// The root ratio `pairs` imply between `from` and `to` (`root(from) = r ×
@@ -619,7 +771,9 @@ fn path(
             continue;
         };
         for (index, (resolved, ratio)) in pairs.iter().enumerate() {
-            let [first, second] = [resolved.dimensions[0].key, resolved.dimensions[1].key];
+            let Some([first, second]) = resolved.keys() else {
+                continue;
+            };
             // root(from) = size × root(node); root(first) = ratio × root(second).
             let step = if first == node {
                 Some((second, size.mul(ratio)))

@@ -581,6 +581,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedQuantityName { name } => {
             format!("no dimension or unit is named `{name}`")
         }
+        AssemblyCause::UnanchoredBaseDimension { dimension, unit } => {
+            format!("the base dimension `{dimension}` of unit `{unit}` has no unit")
+        }
         AssemblyCause::UnresolvedModelQuantityType {
             name,
             member_identity,
@@ -599,7 +602,11 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::DimensionEquivalence { retained, .. } => {
             format!(
                 "the dimension equivalence is not admissible at {}",
-                retained.join(", ")
+                retained
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )
         }
         AssemblyCause::UnitGraphTopology { declarations, .. } => {

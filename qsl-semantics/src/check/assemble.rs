@@ -73,7 +73,9 @@ use std::sync::Arc;
 mod equivalence;
 mod units;
 
-pub use equivalence::{DimensionEquivalence, EquivalenceClasses, EquivalenceFault};
+pub use equivalence::{
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
+};
 
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
@@ -308,7 +310,18 @@ pub enum AssemblyCause {
         /// Which step refused.
         fault: EquivalenceFault,
         /// The declarations, units, dimensions or values the step retains.
-        retained: Vec<String>,
+        retained: Vec<EquivalenceRetained>,
+    },
+    /// FR-142's base-dimension rule: a base dimension with no unit, here or
+    /// in the package that declares it, that a local unit's dimension
+    /// carries in its normalized map.
+    UnanchoredBaseDimension {
+        /// The base dimension: a source dimension's name, or a package
+        /// dimension's FCD identity.
+        dimension: String,
+        /// The first local unit, in source order, whose dimension carries
+        /// it.
+        unit: String,
     },
     /// A unit-graph topology error, naming the declarations it concerns.
     UnitGraphTopology {
@@ -502,7 +515,9 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
-            Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                Code::MissingDeclaration
+            }
             Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
@@ -589,7 +604,9 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
-            Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                "missing-name"
+            }
             Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
@@ -2706,21 +2723,32 @@ impl PackageDeclarations {
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
         let quantity_owners = OwnerSelection::new([owner.node_owner()]);
-        let quantity_result = units::assemble(
-            &unit.dimensions,
-            &unit.units,
-            &owner,
-            &quantity_owners,
-            limits,
+        // The models and the one meter their admission counted on; checking
+        // continues that meter into the conformance stage.
+        let (models, model_meter) = models.into().into_parts();
+        // The selected packages' dimensions, which a source dimension's
+        // terms may name.
+        let imported = units::Imported::new(
+            &selections
+                .models
+                .iter()
+                .filter_map(|selection| {
+                    let model = models.iter().find(|model| model.alias == selection.alias)?;
+                    Some((
+                        AdmittedModel::from_view(&model.view).with_alias(&selection.alias),
+                        selection.span,
+                    ))
+                })
+                .collect::<Vec<_>>(),
+            limits.identity,
         );
+        let quantity_result =
+            units::assemble(&unit.dimensions, &unit.units, &imported, &owner, limits);
         let model_units = quantity_result
             .as_ref()
             .ok()
             .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
             .unwrap_or_default();
-        // The models and the one meter their admission counted on; checking
-        // continues that meter into the conformance stage.
-        let (models, model_meter) = models.into().into_parts();
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
@@ -3006,26 +3034,47 @@ impl PackageDeclarations {
             }
         }
 
-        // The unit's dimensions and units, admitted under its owner.
+        // The unit's dimensions and units, admitted under its owner, and its
+        // dimension equivalences over them and those of its selected
+        // packages, in FR-091's phases: the base pairs before the first
+        // dimension turn, every other pair after the last.
         let owners = quantity_owners;
-        let quantities = match quantity_result {
-            Ok(quantities) => Some(quantities),
-            Err(found) => {
-                errors.extend(found);
-                None
+        let (quantities, equivalences) = match quantity_result {
+            Ok(quantities) => {
+                let equivalences = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Admitted(&quantities),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::All,
+                )
+                .unwrap_or_else(|found| {
+                    errors.extend(found);
+                    Vec::new()
+                });
+                (Some(quantities), equivalences)
             }
-        };
-        // The unit's dimension equivalences, over its own dimensions and
-        // units and those of its selected packages.
-        let equivalences = match &quantities {
-            Some(source) => {
-                equivalence::assemble(&unit.equivalences, Some(source), &admitted, &owner, limits)
-                    .unwrap_or_else(|found| {
-                        errors.extend(found);
-                        Vec::new()
-                    })
+            Err(refused) => {
+                let base = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Provisional(&refused.provisional),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::Base,
+                )
+                .err()
+                .unwrap_or_default();
+                // A base-pair refusal comes before the first turn, so it
+                // stands in for the turns' topology defects.
+                let topology_only = refused.topology && !base.is_empty();
+                if !topology_only {
+                    errors.extend(refused.errors);
+                }
+                errors.extend(base);
+                (None, Vec::new())
             }
-            None => Vec::new(),
         };
 
         // Every type form names declarations of the unit or admitted model

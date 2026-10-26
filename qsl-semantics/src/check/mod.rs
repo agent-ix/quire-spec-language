@@ -289,8 +289,8 @@ pub use ir::{
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
-    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, TimedDeclaration, TopologyFault,
-    DEFAULT_DECIMAL_SCALE,
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
+    TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{

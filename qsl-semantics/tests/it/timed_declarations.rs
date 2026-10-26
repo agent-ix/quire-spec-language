@@ -220,7 +220,7 @@ fn a_source_without_base_time_refuses_before_looking_up_the_unit() {
 #[trace("TC-685")]
 #[test]
 fn derived_duration_is_not_the_base_time_dimension() {
-    let body = "dimension Time;\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\ntime Config dense unit d;\n";
+    let body = "dimension Time;\nunit s : Time = rational(1, 1);\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\ntime Config dense unit d;\n";
     let declarations = admit_and_assemble_with_profiles(
         &document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
@@ -1586,7 +1586,7 @@ fn guarded(equivalence: &str, bound: &str, reset: &str) -> String {
     )
 }
 
-/// FR-230-AC-27 (TC-685 step 16): over AC-18's `R` and `F` with
+/// Part of FR-230-AC-27 (TC-685 step 16): over AC-18's `R` and `F` with
 /// `dimension R::Time ~ F::Time by 1 R::s = 1 F::sec;` (root ratio 1),
 /// under `time R dense unit R::ms` the bound `x <= 3 F::sec` converts to
 /// `3000`, a reset of `x` to `2 F::sec` to `2000`, and `time R tick ...
@@ -1597,7 +1597,7 @@ fn guarded(equivalence: &str, bound: &str, reset: &str) -> String {
 /// identities, and one that differs without the equivalence) waits on
 /// STD-493 item 9: no checked timed member reaches S4, and QSpec FR-322's
 /// closed `scalar_type` forms in IR do not yet hold `dimension_equivalence`.
-#[trace("TC-685", "FR-230-AC-27")]
+#[trace("TC-685")]
 #[test]
 fn an_equivalence_of_equal_roots_converts_the_other_owners_time() {
     const EQUIVALENT: &str = "dimension R::Time ~ F::Time by 1 R::s = 1 F::sec;";
@@ -1636,7 +1636,7 @@ fn an_equivalence_of_equal_roots_converts_the_other_owners_time() {
     }
 }
 
-/// FR-230-AC-28 (TC-685 step 16): with `R` and `G` (root `msec`, `sec` of
+/// Part of FR-230-AC-28 (TC-685 step 16): with `R` and `G` (root `msec`, `sec` of
 /// `1000`) and `dimension R::Time ~ G::Time by 1 R::s = 1000 G::msec;`
 /// (root ratio 1000), under `time R dense unit R::ms` the bound `x <= 3
 /// G::msec` converts to `3`, a reset to `2000 G::msec` to `2000`, and a
@@ -1644,7 +1644,7 @@ fn an_equivalence_of_equal_roots_converts_the_other_owners_time() {
 /// ratio 1) the same bound converts to `3000`; `x <= 3 s` over the source
 /// `Time` refuses `ill_typed`/`type-mismatch`. The identity half waits on
 /// STD-493 item 9, as AC-27's.
-#[trace("TC-685", "FR-230-AC-28")]
+#[trace("TC-685")]
 #[test]
 fn an_equivalence_of_unequal_roots_carries_its_root_ratio() {
     const THOUSAND: &str = "dimension R::Time ~ G::Time by 1 R::s = 1000 G::msec;";
