@@ -177,36 +177,43 @@ fn ieee_profile_is_not_header_selectable_with_or_without_float_functions() {
     }
 }
 
-#[trace("TC-1091", "FR-397-AC-6")]
+#[trace("TC-1091", "FR-322-AC-112", "FR-397-AC-6")]
 #[test]
-fn float_comparisons_refuse_before_mixed_operand_type_checks() {
-    for (left, right) in [
-        ("Float32[nearest-even]", "Float32[nearest-even]"),
-        ("Float64[nearest-even]", "Float64[nearest-even]"),
-        ("Float32[nearest-even]", "Float64[nearest-even]"),
-        ("Float64[nearest-even]", "Float32[nearest-even]"),
-        ("Float64[nearest-even]", "Int[0, 10]"),
-        ("Int[0, 10]", "Float64[nearest-even]"),
-        ("Float32[nearest-even]", "Rational[-100, 100; 1, 16]"),
-        ("Rational[-100, 100; 1, 16]", "Float32[nearest-even]"),
+fn same_width_float_equality_lowers_as_ieee_numeric_equal() {
+    for (_width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float64", "Float64[nearest-even]"),
     ] {
-        for operator in ["=", "!=", "<", "<=", ">", ">="] {
-            let source = format!("{HEADER}function compare using v(a: {left}, b: {right}): Boolean pure {{ a {operator} b }}");
-            let refusal = refusal(&source, Code::IllTyped, "operator-ineligible");
-            let qsl_replay::spine::CompileRefusal::Check {
-                region: Some(region),
-                ..
-            } = *refusal
-            else {
-                panic!("comparison refusal has a source region");
-            };
-            assert!(
-                source[usize::try_from(region.start()).unwrap()
-                    ..usize::try_from(region.end()).unwrap()]
-                    .contains(operator),
-                "comparison refusal covers its operator",
-            );
+        for operator in ["=", "!="] {
+            let source = format!("{HEADER}function compare using v(a: {ty}, b: {ty}): Boolean pure {{ a {operator} b }}");
+            let wire = wire(&source);
+            let numeric_equal = operation(&wire, "quire.op.ieee.numeric_equal");
+            assert_ieee_law(&wire, numeric_equal);
+            if operator == "!=" {
+                assert!(wire["semantic_graph"]["nodes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|node| node["body"]["operation"]["identity"] == "quire.op.boolean.not"));
+            }
         }
+        for operator in ["<", "<=", ">", ">="] {
+            let source = format!("{HEADER}function compare using v(a: {ty}, b: {ty}): Boolean pure {{ a {operator} b }}");
+            refusal(&source, Code::IllTyped, "operator-ineligible");
+        }
+        for other in ["Float64[nearest-even]", "Float32[nearest-even]"] {
+            if ty == other {
+                continue;
+            }
+            let source = format!(
+                "{HEADER}function compare using v(a: {ty}, b: {other}): Boolean pure {{ a = b }}"
+            );
+            refusal(&source, Code::IllTyped, "type-mismatch");
+        }
+        let source = format!(
+            "{HEADER}function compare using v(a: {ty}, b: Int[0, 10]): Boolean pure {{ a = b }}"
+        );
+        refusal(&source, Code::IllTyped, "operator-ineligible");
     }
 }
 
@@ -240,7 +247,6 @@ fn mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch() {
 #[test]
 fn reserved_ieee_intrinsic_calls_refuse_with_the_named_missing_identity() {
     for (intrinsic, arguments) in [
-        ("sqrt", "a"),
         ("fma", "a, b, a"),
         ("numericEqual", "a, b"),
         ("totalOrder", "a, b"),
@@ -256,6 +262,26 @@ fn reserved_ieee_intrinsic_calls_refuse_with_the_named_missing_identity() {
             &refusals[0].cause,
             CheckCause::MissingQualifiedName(name) if name.name == identity
         ));
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-15")]
+#[test]
+fn square_root_lowers_with_its_float_width_rounding_mode_and_profile_law() {
+    for (width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float64", "Float64[nearest-even]"),
+    ] {
+        let source = format!(
+            "{HEADER}function root using v(a: {ty}): {ty} pure {{ quire::value::ieee::sqrt(a) }}"
+        );
+        let wire = wire(&source);
+        let operation = operation(&wire, &format!("quire.op.ieee.{width}.sqrt"));
+        assert_ieee_law(&wire, operation);
+        assert_eq!(
+            operation["body"]["operation"]["mode"],
+            json!({"kind": "rounding", "value": "nearest-even"}),
+        );
     }
 }
 
@@ -283,24 +309,23 @@ fn rational_comparison_evaluates_float_conversion_as_a_separate_operation() {
     assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
 }
 
-// Supplemental S2 source-boundary control; this does not claim conversion AC-8.
-#[trace("TC-1091")]
+// FR-322's `float32_bits` and `float64_bits` scalar literal forms.
+#[trace("TC-1091", "FR-397-AC-20")]
 #[test]
-fn bit_level_float_constructors_remain_unrepresented_source_forms() {
+fn bit_level_float_constructors_lower_to_exact_wire_literals() {
     for (width, bits) in [("32", "0x3f800000"), ("64", "0x3ff0000000000000")] {
         let source = format!("{HEADER}function one using v(): Float{width}[nearest-even] pure {{ float{width}(bits: {bits}) }}");
-        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
-            panic!("a float constant has no complete-V1 source route");
-        };
-        let qsl_replay::spine::CompileRefusal::Forms { failure, .. } = *refusal else {
-            panic!("the float constructor refuses at S2: {refusal:?}");
-        };
-        assert!(matches!(
-            failure.cause,
-            qsl_forms::FormsCause::UnrepresentedConstruct {
-                production: qsl_cst::Production::FloatValue,
-            }
-        ));
+        let wire = wire(&source);
+        let value_kind = format!("float{width}_bits");
+        let literal_bits = bits.trim_start_matches("0x");
+        assert!(wire["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["body"]["term"] == "literal"
+                && node["body"]["value_kind"] == value_kind
+                && node["body"]["value"] == literal_bits));
+        assert_eq!(ieee_selection(&wire).len(), 1);
     }
 }
 

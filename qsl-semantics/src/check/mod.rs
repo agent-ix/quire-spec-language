@@ -1682,8 +1682,22 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        let has_ieee_literal = self.functions.iter().any(|function| {
+            function.body.contains_ieee_literal()
+                || function
+                    .measure
+                    .as_ref()
+                    .is_some_and(qsl_forms::Expression::contains_ieee_literal)
+        }) || self
+            .state_clauses
+            .iter()
+            .any(|clause| clause.body.contains_ieee_literal())
+            || self
+                .hyper_clauses
+                .iter()
+                .any(hyper_clause::declaration_has_ieee_literal);
         scope
-            .select_declared_ieee_profile(&signatures)
+            .select_declared_ieee_profile(&signatures, has_ieee_literal)
             .map_err(|refusal| vec![refusal])?;
         let signatures = Signatures::new(signatures);
         let mut seen_operations = std::collections::BTreeSet::new();

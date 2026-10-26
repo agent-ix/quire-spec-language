@@ -645,6 +645,8 @@ struct Pending {
 enum Shape {
     Boolean(bool),
     Integer(Integer),
+    Float32(u32),
+    Float64(u64),
     Rational(Integer, Integer),
     Quantity(QuantityForm),
     String(String),
@@ -744,6 +746,14 @@ impl Shape {
             Self::Integer(value) => {
                 arity(0)?;
                 ExprNode::Integer(value)
+            }
+            Self::Float32(bits) => {
+                arity(0)?;
+                ExprNode::Float32(bits)
+            }
+            Self::Float64(bits) => {
+                arity(0)?;
+                ExprNode::Float64(bits)
             }
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
@@ -1768,7 +1778,26 @@ impl<'c> Mapping<'c> {
                 let denominator = integer(&spelled(self.cst, denominator)?, child)?;
                 self.leaf(Shape::Rational(numerator, denominator), &task)
             }
-            Production::FloatValue => Err(unrepresented(Production::FloatValue, child.span())),
+            Production::FloatValue => {
+                let bits = match items.first() {
+                    Some(Item::Token(token)) if token.spelling() == b"float32" => {
+                        let hex = spelled(self.cst, only(&items, Production::Hex32, child)?)?;
+                        let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
+                        Shape::Float32(
+                            u32::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
+                        )
+                    }
+                    Some(Item::Token(token)) if token.spelling() == b"float64" => {
+                        let hex = spelled(self.cst, only(&items, Production::Hex64, child)?)?;
+                        let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
+                        Shape::Float64(
+                            u64::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
+                        )
+                    }
+                    _ => return Err(unexpected(child)),
+                };
+                self.leaf(bits, &task)
+            }
             Production::QuantityLiteral => {
                 let quantity = quantity_form(self.cst, child)?;
                 self.leaf(Shape::Quantity(quantity), &task)

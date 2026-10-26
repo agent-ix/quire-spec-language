@@ -435,6 +435,8 @@ pub enum UnavailabilityCause {
         /// The rule that placed the clause in HP-4.
         reason: HyperUnsupported,
     },
+    /// FR-182 V-8: an SMT hyper encoding is outside its supported fragment.
+    UnsupportedSmtFragment,
     /// A refinement with a strong constraint in `F_A`, whose liveness half
     /// the second phase does not decide: it reads a class as weak. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -542,6 +544,7 @@ impl UnavailabilityCause {
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::UnsupportedHyperForm { .. }
+            | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => "unsupported-requested-capability",
             Self::NotMarkov => "not-markov",
@@ -570,6 +573,7 @@ impl UnavailabilityCause {
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::UnsupportedHyperForm { .. }
+            | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => Some("unsupported_projection"),
         }
