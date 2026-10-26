@@ -83,7 +83,7 @@
 //! [`encode_checked_package_v2`]; this module defines no envelope type of its
 //! own, and IR's reader admits exactly the bytes that encoder writes.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
@@ -91,10 +91,11 @@ use quire_contract_model::{
     CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
     CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
-    CheckedPackageV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
+    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
+    PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -865,22 +866,29 @@ fn stale_protocol_reference(
 /// group's members are written together, in ordinal order, where the group's
 /// first member by node id would be.
 fn graph_order<'c, 'g>(kept: &[&'c Candidate<'g>]) -> Vec<&'c Candidate<'g>> {
-    let mut groups: BTreeMap<String, Vec<&'c Candidate<'g>>> = BTreeMap::new();
+    let mut groups: HashMap<[u8; 32], Vec<Option<&'c Candidate<'g>>>> = HashMap::new();
     for candidate in kept {
-        if let Some(recursion) = candidate.node.recursion() {
-            groups.entry(recursion.label()).or_default().push(candidate);
+        let Some(recursion) = candidate.node.recursion() else {
+            continue;
+        };
+        let members = groups
+            .entry(*recursion.group())
+            .or_insert_with(|| vec![None; recursion.size()]);
+        if let Some(member) = members.get_mut(recursion.ordinal()) {
+            *member = Some(*candidate);
         }
     }
-    for members in groups.values_mut() {
-        members.sort_by_key(|member| member.node.recursion().map(|group| group.ordinal()));
-    }
     let mut order = Vec::with_capacity(kept.len());
+    let mut emitted_groups = HashSet::new();
     for candidate in kept {
         match candidate.node.recursion() {
             None => order.push(*candidate),
             Some(recursion) => {
-                if let Some(members) = groups.remove(&recursion.label()) {
-                    order.extend(members);
+                let group = *recursion.group();
+                if emitted_groups.insert(group) {
+                    if let Some(members) = groups.remove(&group) {
+                        order.extend(members.into_iter().flatten());
+                    }
                 }
             }
         }
@@ -1278,7 +1286,10 @@ pub fn emit_timed_models(
             &semantic_id(package_id),
             &lock,
             &semantic_graph,
-            &source_map,
+            CheckedPackageSourceCorrespondenceRef {
+                source_map: &source_map,
+                refinement_step_rows: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
@@ -1755,7 +1766,10 @@ fn emit_package_inner(
             &semantic_id(package_id),
             &lock,
             &semantic_graph,
-            &source_map,
+            CheckedPackageSourceCorrespondenceRef {
+                source_map: &source_map,
+                refinement_step_rows: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,

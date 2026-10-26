@@ -40,8 +40,9 @@ use quire_contract_model::{
     derive_application_node_id, derive_structural_candidates, encode_checked_package_v2,
     ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
-    CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticId,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedTerm,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -478,7 +479,10 @@ fn retarget(
         &package_id,
         base.lock(),
         &graph,
-        &source_map,
+        CheckedPackageSourceCorrespondenceRef {
+            source_map: &source_map,
+            refinement_step_rows: base.refinement_step_rows(),
+        },
         base.capability_report(),
         base.diagnostics(),
         limits,

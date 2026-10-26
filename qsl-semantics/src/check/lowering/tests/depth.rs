@@ -12,6 +12,25 @@ use super::*;
 /// The stack each check runs on.
 const STACK: usize = 512 * 1024;
 
+/// FR-383-AC-25: SCC traversal handles a cycle much deeper than the host
+/// stack by keeping its traversal frames on the heap.
+#[trace("FR-383-AC-25")]
+#[test]
+fn a_100000_vertex_cycle_is_found_on_a_small_stack() {
+    const COUNT: usize = 100_000;
+    let edges: Vec<Vec<usize>> = (0..COUNT)
+        .map(|vertex| vec![(vertex + 1) % COUNT])
+        .collect();
+    let result = std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(move || super::super::strongly_connected(&edges))
+        .expect("the SCC test thread spawns")
+        .join()
+        .expect("iterative SCC traversal does not overflow the native stack");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].len(), COUNT);
+}
+
 fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }

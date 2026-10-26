@@ -2,6 +2,8 @@
 //! Unit tests for the FR-322 application-node key, and the opt-in
 //! conformance check against QSpec's published `operation_vectors`.
 
+use std::collections::BTreeSet;
+
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
