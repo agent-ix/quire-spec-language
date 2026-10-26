@@ -196,6 +196,7 @@ fn rpc_unit_guarded(t: u32, guard: &str, extra: &str) -> String {
          post ResetIdle using v on M::Call::reset {{ self.phase = 0 }}\n\
          pre NoTick using v on M::Call::tick {{ false }}\n\
          pre NoWork using v on M::Call::work {{ false }}\n\
+         pre NoSpawn using v on M::Call::spawn {{ false }}\n\
          time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
          time invariant ClientDeadline when {{ self.phase = 1 }} {{ self.x <= {t} ms }}\n\
          {extra}\n"
@@ -698,7 +699,7 @@ fn a_claim_reads_alike_with_and_without_time_stamps() {
 #[trace("TC-686")]
 #[test]
 fn a_created_objects_clock_starts_at_its_write() {
-    let world = world(&rpc_unit(4, ""));
+    let world = world(&only(&["spawn"], ""));
     let system = system_over(&world, &["c", "d"]);
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     assert_eq!(timed.places().len(), 2);
@@ -729,7 +730,7 @@ fn a_created_objects_clock_starts_at_its_write() {
 /// The unit over [`rpc_document`] with a dense source and `body`, every
 /// operation `body` leaves unguarded except `work` disabled.
 fn only(enabled: &[&str], body: &str) -> String {
-    let disabled: String = ["send", "reply", "timeout", "reset", "tick", "work"]
+    let disabled: String = ["send", "reply", "timeout", "reset", "tick", "work", "spawn"]
         .iter()
         .filter(|name| !enabled.contains(name))
         .map(|name| format!("pre No{name} using v on M::Call::{name} {{ false }}\n"))
@@ -797,10 +798,12 @@ fn a_strict_guard_time_locks_where_a_closed_one_does_not() {
     assert!(!timed.deadlocked(replied).expect("decided"));
 }
 
-/// FR-232-AC-3 (the time-lock half): in `Stall` the timed state
+/// Part of FR-232-AC-3 (TC-687): in `Stall` the timed state
 /// `(s0, x = 1)` is a non-local time-lock, since `ping` is enabled there and
-/// no state it reaches admits a positive delay.
-#[trace("TC-687", "FR-232-AC-3")]
+/// no state it reaches admits a positive delay. Not covered: `always
+/// holds(true)` settling `inconclusive`, `NoAdmittedBehaviour`, which needs
+/// the zone search and FR-235's settlement (QSL-581).
+#[trace("TC-687")]
 #[test]
 fn a_stall_that_only_pings_is_a_non_local_time_lock() {
     use qsl_eval::simulation::model::TimeLock;
@@ -854,7 +857,37 @@ fn weak_fairness_reads_enabledness_at_every_instant_of_the_loop() {
             .advance(&timed, &exact(1, 1), &idle)
             .expect("idle");
         timed
-            .weakly_fair(&behaviour, 1, |step| {
+            .weakly_fair(&behaviour, 1, &exact(0, 1), |step| {
+                step.operation().contains("Call/timeout")
+            })
+            .expect("decided")
+    };
+    assert!(!fair(">="));
+    assert!(fair("<="));
+}
+
+/// FR-232 "Fairness over time" over the idle tail (SR-1598001 FND-001): a
+/// behaviour of `Serve` that stays at its initial state, `x = 0`, and
+/// repeats its stutter step after a delay of 2 holds `serve`'s guard
+/// `x >= 1 ms` from time 1 on at every instant, so it is unfair under
+/// `fair weak serve`; with the guard `x <= 1 ms`, disabled from time 1 on,
+/// it is fair.
+#[trace("TC-687")]
+#[test]
+fn an_idle_tail_is_unfair_to_a_constraint_its_delay_enables() {
+    let fair = |guard: &str| {
+        let serve = world(&only(
+            &["timeout"],
+            &format!(
+                "pre Serve using v on M::Call::timeout {{ self.x {guard} 1 ms }}\n\
+                 post Served using v on M::Call::timeout {{ self.phase = 3 }}\n"
+            ),
+        ));
+        let serve_system = system(&serve);
+        let timed = TimedSystem::new(&serve_system, "M").expect("a timed subject");
+        let behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        timed
+            .weakly_fair(&behaviour, 0, &exact(2, 1), |step| {
                 step.operation().contains("Call/timeout")
             })
             .expect("decided")

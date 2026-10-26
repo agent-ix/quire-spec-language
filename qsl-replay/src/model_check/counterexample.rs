@@ -286,14 +286,22 @@ impl<T: SubjectTransition> TemporalCounterexample<T> {
 
 impl<T: SubjectTransition> FamilyPayload for TemporalCounterexample<T> {
     /// The inline size plus each step's, each constraint's and each blocked
-    /// thread's, its paths and names included.
+    /// thread's, its paths and names included. A delay counts only where
+    /// it is present, so an untimed counterexample measures what it did
+    /// before FR-236 gave steps a `delay` (SR-1598001 FND-003).
     fn measured_bytes(&self) -> usize {
+        let delay = std::mem::size_of::<Option<Rational>>();
+        let present = |value: &Option<Rational>| value.as_ref().map_or(0, |_| delay);
         std::mem::size_of_val(self)
-            .saturating_add(
-                self.prefix
-                    .len()
-                    .saturating_mul(std::mem::size_of::<ModelStep<T>>()),
-            )
+            .saturating_sub(delay)
+            .saturating_add(present(&self.final_delay))
+            .saturating_add(self.prefix.iter().fold(0_usize, |bytes, step| {
+                bytes.saturating_add(
+                    std::mem::size_of::<ModelStep<T>>()
+                        .saturating_sub(delay)
+                        .saturating_add(present(&step.delay)),
+                )
+            }))
             .saturating_add(
                 self.fairness
                     .len()

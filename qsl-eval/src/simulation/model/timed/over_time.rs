@@ -359,13 +359,51 @@ impl TimedSystem<'_, '_> {
         Ok(covers(&intervals, delay))
     }
 
+    /// The largest constant any guard, time invariant or reset of the model
+    /// compares a clock with.
+    fn max_constant(&self) -> Rational {
+        let model = self.model;
+        let guards = model
+            .guards()
+            .iter()
+            .flat_map(|guard| guard.parts())
+            .flat_map(|part| part.clocks())
+            .map(|constraint| constraint.bound().clone());
+        let invariants = model
+            .invariants()
+            .iter()
+            .flat_map(|invariant| invariant.bounds())
+            .map(|constraint| constraint.bound().clone());
+        let resets = model
+            .resets()
+            .iter()
+            .flat_map(|resets| resets.resets())
+            .map(|reset| reset.value().clone());
+        guards.chain(invariants).chain(resets).fold(
+            zero(),
+            |max, value| {
+                if value > max {
+                    value
+                } else {
+                    max
+                }
+            },
+        )
+    }
+
     /// FR-232 "Fairness over time": whether the loop of `behaviour` from
-    /// position `entry` to its last position, repeated, satisfies weak
-    /// fairness for the constraint naming the steps `constrained` accepts.
-    /// It does unless the constraint is enabled at every instant of the
-    /// loop, positions and the delays between them, while the loop takes
-    /// none of its steps. The last position re-enters `entry`'s discrete
-    /// state.
+    /// position `entry` to its last position, repeated forever, satisfies
+    /// weak fairness for the constraint naming the steps `constrained`
+    /// accepts. It does unless, from some repetition on, the constraint is
+    /// enabled at every instant of the loop, positions and the delays
+    /// between them, while the loop takes none of its steps.
+    ///
+    /// A loop of two or more positions ends where it re-enters `entry`'s
+    /// discrete state. A loop of one position is FR-231's idle tail: its
+    /// stutter step after `stutter_delay`. A clock the loop never resets
+    /// grows by the loop's total delay at each repetition, so the loop is
+    /// read at the first repetition where every such clock is above every
+    /// constant of the model, after which each repetition reads alike.
     ///
     /// # Errors
     ///
@@ -374,33 +412,81 @@ impl TimedSystem<'_, '_> {
         &self,
         behaviour: &super::TimedBehaviour,
         entry: usize,
+        stutter_delay: &Rational,
         constrained: impl Fn(&GuardedStep) -> bool,
     ) -> Result<bool, TimedStop> {
         let positions = behaviour.positions();
-        let looped = positions.get(entry..).unwrap_or_default();
-        if looped
+        let Some(looped) = positions.get(entry..).filter(|looped| !looped.is_empty()) else {
+            return Ok(true);
+        };
+        let steps: Vec<&GuardedStep> = looped
             .iter()
             .skip(1)
             .filter_map(super::TimedPosition::step)
-            .any(&constrained)
-        {
+            .collect();
+        if steps.iter().any(|step| constrained(step)) {
             return Ok(true);
         }
-        for pair in looped.windows(2) {
-            let delay = pair[1].stamp.sub(&pair[0].stamp).sub(
-                &pair[1]
-                    .step
-                    .as_ref()
-                    .map_or_else(zero, |step| self.tick_of(&step.operation)),
-            );
-            if !self.enabled_throughout(&pair[0].state, &delay, &constrained)? {
+        // Each window of one repetition: the delay before it and the step
+        // that ends it, the idle tail's being the stutter step.
+        let windows: Vec<(Rational, Option<&GuardedStep>)> = if looped.len() == 1 {
+            vec![(stutter_delay.clone(), None)]
+        } else {
+            looped
+                .windows(2)
+                .map(|pair| {
+                    let tick = pair[1]
+                        .step
+                        .as_ref()
+                        .map_or_else(zero, |step| self.tick_of(&step.operation));
+                    (
+                        pair[1].stamp.sub(&pair[0].stamp).sub(&tick),
+                        pair[1].step.as_ref(),
+                    )
+                })
+                .collect()
+        };
+        let total = windows
+            .iter()
+            .fold(zero(), |sum, (delay, _)| sum.add(delay));
+        // Shift each clock the loop never resets past every constant.
+        let mut clocks = looped[0].state.clocks.clone();
+        if total > zero() {
+            let ceiling = self.max_constant();
+            let reset = |place: usize| {
+                steps
+                    .iter()
+                    .any(|step| step.resets.iter().any(|(reset, _)| *reset == place))
+            };
+            let mut shifted = clocks.0.clone();
+            for (place, value) in shifted.iter_mut().enumerate() {
+                if reset(place) {
+                    continue;
+                }
+                while *value <= ceiling {
+                    *value = value.add(&total);
+                }
+            }
+            clocks = super::ClockValuation(shifted);
+        }
+        let mut state = TimedState {
+            discrete: looped[0].state.discrete.clone(),
+            clocks,
+        };
+        for (delay, step) in windows {
+            if !self.enabled_throughout(&state, &delay, &constrained)? {
                 return Ok(true);
             }
+            if let Some(step) = step {
+                state = TimedState {
+                    discrete: step.post.clone(),
+                    clocks: step.reset(&state.clocks.delayed(&delay)),
+                };
+            } else {
+                state.clocks = state.clocks.delayed(&delay);
+            }
         }
-        match looped.last() {
-            Some(last) => Ok(!self.enabled_throughout(&last.state, &zero(), &constrained)?),
-            None => Ok(true),
-        }
+        Ok(false)
     }
 }
 

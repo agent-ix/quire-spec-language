@@ -337,7 +337,7 @@ fn is_timed(package: &CheckedGraph, models: &[String]) -> bool {
     package
         .time_sources()
         .iter()
-        .any(|source| models.iter().any(|model| *model == source.model))
+        .any(|source| models.contains(&source.model))
 }
 
 /// FR-232: the time-lock-freedom items of a request's temporal and
