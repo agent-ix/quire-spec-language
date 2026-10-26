@@ -1697,6 +1697,7 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
         prefix.push(ModelStep {
             transition: transition.clone(),
             post_state: digest,
+            delay: None,
         });
         at = wanted;
     }

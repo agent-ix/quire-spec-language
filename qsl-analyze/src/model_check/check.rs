@@ -2213,6 +2213,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     .reported(transition.clone(), &node.state)
                     .map_err(|stop| self.expansion_stop(stop))?,
                 post_state: node.digest,
+                delay: None,
             });
         }
         counterexample.lasso = Some(Lasso {
@@ -2724,6 +2725,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     .reported(transition.clone(), &node.state)
                     .map_err(|stop| self.expansion_stop(stop))?,
                 post_state: node.digest,
+                delay: None,
             });
         }
         let initial_state = path
@@ -2767,6 +2769,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             lasso,
             blocked,
             refinement: None,
+            final_delay: None,
         })
     }
 }
