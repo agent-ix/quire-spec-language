@@ -111,7 +111,10 @@ pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnreso
 pub use state_graph_root::{
     resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
 };
-pub use terminal::{read_terminal, read_terminals, ReadTerminal, ReadTerminalDeclaration};
+pub use terminal::{
+    read_terminal, read_terminals, resolve_terminals, PackageTerminal, PackageTerminalDeclaration,
+    ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
+};
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
     CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,

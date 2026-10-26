@@ -180,6 +180,37 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     assert_eq!(binding(&parameter["body"], "level")["value"], "0");
     let condition = node_with(&when.wire, target(binding(body, "condition")));
     assert_eq!(condition["node_tag"], "expression");
+    // The condition is the predicate's own `self.versionNumber = 3`: an
+    // integer equality over a read of `self` and the literal 3.
+    assert_eq!(
+        condition["body"]["operation"]["identity"],
+        "quire.op.integer.eq"
+    );
+    let [read, literal] = condition["body"]["arguments"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("two operands: {condition}");
+    };
+    let read = node_with(&when.wire, target(read));
+    assert!(
+        read["dependencies"]
+            .as_array()
+            .unwrap()
+            .contains(&parameter["node_id"]),
+        "the field read depends on `self`: {read}"
+    );
+    assert_eq!(node_with(&when.wire, target(literal))["body"]["value"], "3");
+    // `self` is typed `Reference<T>` for the model's one object type, which is
+    // the node the terminal's `model` binding names.
+    let self_type = node_with(
+        &when.wire,
+        parameter["semantic_type"]["digest"].as_str().unwrap(),
+    );
+    assert_eq!(self_type["node_tag"], "composite_type");
+    assert_eq!(self_type["semantic_form"], "reference");
+    assert_eq!(target(&self_type["body"]["members"][0]), node_id(model));
     let claims: Vec<&Value> = when.wire["source_map"]
         .as_array()
         .unwrap()
@@ -341,4 +372,57 @@ fn the_i2_read_refuses_a_malformed_terminal_node_at_its_locus() {
         empty.path.as_ref().map(|path| path.as_str()),
         Some(&*format!("{body}/3"))
     );
+}
+
+/// FR-382-AC-6, second half (TC-1059): with the model alias naming a model,
+/// each of the `when` and `any` units checks and its package holds the
+/// `temporal`/`terminal` node.
+#[trace("TC-1059", "FR-382-AC-6")]
+#[test]
+fn a_checked_terminal_declaration_is_held_by_the_package_as_its_node() {
+    for (declaration, mode) in [(WHEN, "when"), (ANY, "any")] {
+        let compiled = compile(declaration);
+        let node = terminal_node(&compiled.wire);
+        assert_eq!(binding(&node["body"], "mode")["value"], mode);
+    }
+}
+
+/// FR-411-AC-1: a package's terminal declarations resolve through its emitted
+/// nodes: the mode is the node's, the declaration is found by the node's
+/// `claim` occurrence, and a model with no node has none.
+#[trace("TC-1142", "FR-411-AC-1")]
+#[test]
+fn a_packages_terminals_resolve_through_their_emitted_nodes() {
+    use crate::checked_v2::{resolve_terminals, PackageTerminalDeclaration};
+
+    let resolved = |declaration: &str| {
+        let text = unit(declaration);
+        let packages = qsl_semantics::model::intake::package_input([document()]);
+        let graph = assemble_with_models(text.as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .expect("the package checks");
+        let package = CheckedPackage::link(graph);
+        let terminals = resolve_terminals(&package)
+            .expect("the terminals resolve")
+            .into_iter()
+            .map(|terminal| {
+                (
+                    terminal.model.to_owned(),
+                    terminal.name.to_owned(),
+                    matches!(terminal.declaration, PackageTerminalDeclaration::Any),
+                )
+            })
+            .collect::<Vec<_>>();
+        terminals
+    };
+    assert_eq!(
+        resolved(WHEN),
+        [("Config".to_owned(), "Done".to_owned(), false)]
+    );
+    assert_eq!(
+        resolved(ANY),
+        [("Config".to_owned(), "Halt".to_owned(), true)]
+    );
+    assert_eq!(resolved(NONE), []);
 }

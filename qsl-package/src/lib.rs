@@ -32,14 +32,15 @@ pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
     clause_roots, hyper_roots, read_hybrids, read_import_view, read_terminal, read_terminals,
-    resolve_clause_root, resolve_hyper_root, resolve_state_graph_root, state_graph_roots,
-    supply_closure, AdmittedPackages, CheckedClockConstraint, CheckedClockPlace, CheckedClockReset,
-    CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate,
-    CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockPathStep, ClockSlotSelector, HybridRead,
-    HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal, ReadHybridClaim,
+    resolve_clause_root, resolve_hyper_root, resolve_state_graph_root, resolve_terminals,
+    state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint, CheckedClockPlace,
+    CheckedClockReset, CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel,
+    CheckedTimedPredicate, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockPathStep,
+    ClockSlotSelector, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
     ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
-    V2ReadLimits, V2ReadRefusal,
+    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
+    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{

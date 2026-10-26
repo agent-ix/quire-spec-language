@@ -1013,6 +1013,19 @@ fn an_undefined_terminal_predicate_reproduces_and_a_deadlock_kind_settles_the_sa
 fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused() {
     let case = case(&with_terminal(TERMINAL_WHEN), &[0]);
     let payload = counterexample(&case);
+    // The `when` unit's package holds its terminal node.
+    let terminals = qsl_package::resolve_terminals(&case.checked).expect("the node resolves");
+    assert!(
+        matches!(
+            terminals[..],
+            [qsl_package::PackageTerminal {
+                declaration: qsl_package::PackageTerminalDeclaration::When(_),
+                ..
+            }]
+        ),
+        "{terminals:?}"
+    );
+    let any_package_id = self::case(&with_terminal(TERMINAL_ANY), &[0]).package_id;
     let swapped = unit_text(&case.documents.document, &with_terminal(TERMINAL_ANY)).into_bytes();
     let stale = replay_model_trace(
         request(
@@ -1027,12 +1040,23 @@ fn a_counterexample_against_a_unit_with_another_terminal_declaration_is_refused(
         ReplayLimits::default(),
     );
     let (code, tag) = match &stale {
-        Err(error @ ReplayRefusal::PackageIdMismatch { .. }) => {
+        Err(
+            error @ ReplayRefusal::PackageIdMismatch {
+                requested,
+                recompiled,
+            },
+        ) => {
+            // The refusal names both identities: the `when` unit's, which the
+            // envelope carries, and the `any` unit's, which the byte
+            // provision recompiles to.
+            assert_eq!(requested, &case.package_id);
+            assert_eq!(recompiled.hex(), any_package_id.hex());
             (error.code(), error.cause().expect("a cause"))
         }
         other => panic!("expected PackageIdMismatch, got {other:?}"),
     };
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+    assert_ne!(case.package_id.hex(), any_package_id.hex());
 }
 
 /// FR-411-AC-2: the deadlock-freedom item over the Counter subject with the

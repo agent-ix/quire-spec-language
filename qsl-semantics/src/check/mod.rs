@@ -2258,18 +2258,34 @@ impl PackageDeclarations {
         for (index, terminal) in self.terminals.iter().enumerate() {
             // FR-411: the declaration and its predicate are located at
             // declaration sites, so the emitted node's occurrences resolve.
-            if let Origin::TypeDeclaration { name } =
-                lowering::terminal_location(index, lowering::TerminalSite::Claim).origin
-            {
-                type_spans.insert(name, terminal.span);
-            }
+            type_spans.insert(
+                lowering::terminal_site(index, lowering::TerminalSite::Claim),
+                terminal.span,
+            );
             let location = lowering::terminal_location(index, lowering::TerminalSite::Predicate);
-            if let (
-                Origin::TypeDeclaration { name },
-                terminal::TerminalClauseKind::When { predicate, .. },
-            ) = (&location.origin, &terminal.kind)
+            if let terminal::TerminalClauseKind::When { predicate, .. } = &terminal.kind {
+                site_spans.insert(
+                    lowering::terminal_site(index, lowering::TerminalSite::Predicate),
+                    predicate.spans.clone(),
+                );
+            }
+            // STD-492: `terminal any` names no object type to hang its model
+            // node on when the model declares none, so S4 would have no node
+            // to write. Refused here until QSpec settles the node.
+            if matches!(terminal.kind, terminal::TerminalClauseKind::Any)
+                && !models.iter().any(|model| {
+                    model.alias() == Some(terminal.model.as_str())
+                        && model.terminal_object().is_some()
+                })
             {
-                site_spans.insert(name.clone(), predicate.spans.clone());
+                refusals.push(CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::TerminalWithoutObjectType {
+                        name: terminal.name.clone(),
+                        span: terminal.span,
+                    },
+                });
+                continue;
             }
             let declarations = state_clause::ClauseDeclarations {
                 scope: &scope,
@@ -2296,6 +2312,7 @@ impl PackageDeclarations {
                         model: terminal.model.clone(),
                         name: Some(terminal.name.clone()),
                         declaration,
+                        occurrence: None,
                     });
                 }
                 Err(refusal) => {
@@ -2316,6 +2333,7 @@ impl PackageDeclarations {
                     model: alias.clone(),
                     name: None,
                     declaration: TerminalDeclaration::None,
+                    occurrence: None,
                 });
             }
         }
@@ -3961,6 +3979,7 @@ impl PackageDeclarations {
         }
         // FR-411, QSpec FR-476: each checked `terminal` declaration, after
         // every function its predicate may call.
+        let mut lowered_terminals = Vec::with_capacity(terminals.len());
         for (index, declaration) in self.terminals.iter().enumerate() {
             let Some(checked) = terminals
                 .iter()
@@ -3968,12 +3987,13 @@ impl PackageDeclarations {
             else {
                 continue;
             };
-            if let Err(refusal) = lowering.terminal(&lowering::TerminalInput {
+            match lowering.terminal(&lowering::TerminalInput {
                 index,
                 model: &declaration.model,
                 declaration: &checked.declaration,
             }) {
-                refusals.push(refusal);
+                Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),
+                Err(refusal) => refusals.push(refusal),
             }
         }
         for composite in scope.types().composites() {
@@ -4263,6 +4283,24 @@ impl PackageDeclarations {
                 for slot in 0..conjunct.slots().len() {
                     type_spans.insert(hyper_site(index, make(at, slot)), conjunct.span());
                 }
+            }
+        }
+        // FR-411: each terminal node's `claim` occurrence, the key a reader of
+        // the emitted package finds the declaration's node by.
+        for (index, model, key) in &lowered_terminals {
+            let location = lowering::terminal_location(*index, lowering::TerminalSite::Claim);
+            let claim = occurrences
+                .iter_role(family::OccurrenceRole::Claim)
+                .find(|(node, _, at)| *node == *key && **at == location)
+                .map(|(_, origin, _)| origin)
+                .ok_or_else(|| {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                })?;
+            if let Some(checked) = terminals.iter_mut().find(|checked| checked.model == *model) {
+                checked.occurrence = Some(OccurrenceKey::new(claims::wire(*key), claim.clone()));
             }
         }
         let hyper_nodes = checked_hyper

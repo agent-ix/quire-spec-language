@@ -250,9 +250,7 @@ fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations 
     .expect("the unit assembles")
 }
 
-/// The checked package of `body` over `document`. A `terminal` declaration
-/// is checked into the S3 graph the subject reads, though no S4 emission
-/// writes it yet.
+/// The checked package of `body` over `document`.
 pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     let graph = declarations(document, body)
         .check(CheckingLimits::default())

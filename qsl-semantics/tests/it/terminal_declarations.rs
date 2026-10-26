@@ -192,3 +192,35 @@ fn a_when_predicate_needs_exactly_one_state_object_type() {
         );
     }
 }
+
+/// STD-492: `terminal any` on a model that declares no object type names no
+/// model node for S4 to write, so S3 refuses it `unsupported_construct`/
+/// `declaration-form` at the declaration, never a fault from S4.
+#[test]
+fn terminal_any_on_a_model_with_no_object_type_is_refused_at_the_declaration() {
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document()).expect("JSON");
+    envelope["populations"] = json!([]);
+    envelope["types"]
+        .as_array_mut()
+        .expect("types")
+        .retain(|node| node["kind"]["name"] != "object_type");
+    let bare = serde_json::to_vec(&envelope).expect("JSON");
+    let declarations = admit_and_assemble_with_body(&bare, ANY).expect("the unit assembles");
+    let regions = declarations.regions();
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("a terminal declaration with no model node is refused");
+    assert_eq!(
+        code_and_cause(&refusals),
+        [(Code::UnsupportedConstruct, Some("declaration-form"))]
+    );
+    let (text, _) = config_unit_with_body(&bare, ANY);
+    let region = regions
+        .refusal_region(&refusals[0])
+        .expect("the refusal names a region");
+    let declaration = span_of(&text, ANY.trim_end());
+    assert_eq!(
+        (region.start(), region.end()),
+        (declaration.start as u64, declaration.end as u64)
+    );
+}

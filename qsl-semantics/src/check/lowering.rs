@@ -117,7 +117,7 @@ pub(crate) use state::{
 };
 pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
-pub(crate) use terminal::{terminal_location, TerminalInput, TerminalSite};
+pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no

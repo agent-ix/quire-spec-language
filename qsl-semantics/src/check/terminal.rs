@@ -17,6 +17,7 @@
 
 use qsl_forms::{ExpressionForm, StateClauseKind};
 use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, ValueType};
 
@@ -102,6 +103,10 @@ pub struct CheckedTerminal {
     pub(crate) model: String,
     pub(crate) name: Option<String>,
     pub(crate) declaration: TerminalDeclaration,
+    /// The `claim` occurrence `[node, "claim", ordinal]` of the declaration's
+    /// `temporal`/`terminal` node, set when a package is built; `None` for a
+    /// model with no declaration.
+    pub(crate) occurrence: Option<OccurrenceKey>,
 }
 
 impl CheckedTerminal {
@@ -113,6 +118,12 @@ impl CheckedTerminal {
     /// The declared name; `None` when the model declares none.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    /// The occurrence of the declaration's emitted node (FR-411): how a
+    /// reader of the emitted package finds the declaration.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
     }
 
     /// The model's intended terminal states.

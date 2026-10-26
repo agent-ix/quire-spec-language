@@ -11,7 +11,8 @@
 //! conforms to `P`'s `self`. The state graph alone decides; no fairness
 //! constraint is read.
 
-use qsl_semantics::check::{CheckedTerminalPredicate, TerminalDeclaration};
+use qsl_package::PackageTerminalDeclaration;
+use qsl_semantics::check::CheckedTerminalPredicate;
 use quire_exact::{Meter, ValueType};
 
 use super::contracts::{verdict, Verdict};
@@ -76,22 +77,21 @@ impl ModelSystem<'_> {
         if has_successor {
             return Ok(TerminalClass::NotTerminal);
         }
-        for terminal in self.package.graph().terminals() {
-            match terminal.declaration() {
-                TerminalDeclaration::None => {}
-                TerminalDeclaration::Any => return Ok(TerminalClass::Intended),
-                TerminalDeclaration::When(predicate) => match self.read(state, predicate)? {
+        for terminal in &self.terminals {
+            match terminal.declaration {
+                PackageTerminalDeclaration::Any => return Ok(TerminalClass::Intended),
+                PackageTerminalDeclaration::When(predicate) => match self.read(state, predicate)? {
                     Reading::True => return Ok(TerminalClass::Intended),
                     Reading::False => {}
                     Reading::Undefined(cause) => {
                         return Ok(TerminalClass::Undefined {
-                            model: terminal.model().to_owned(),
+                            model: terminal.model.to_owned(),
                             cause,
                         })
                     }
                     Reading::Refused => {
                         return Ok(TerminalClass::Undecided {
-                            model: terminal.model().to_owned(),
+                            model: terminal.model.to_owned(),
                         })
                     }
                 },

@@ -118,9 +118,14 @@ fn read_node(node: &CheckedSemanticNodeV2) -> Result<ReadTerminal, InternalFault
 /// [`InternalFault`] when an admitted node has a shape IR's reader admits and
 /// this read does not expect.
 pub fn read_terminals(package: &CheckedPackageV2) -> Result<Vec<ReadTerminal>, InternalFault> {
-    package
-        .graph()
-        .nodes
+    read_nodes(&package.graph().nodes)
+}
+
+/// Every `terminal` node among `nodes`, in order.
+pub(crate) fn read_nodes(
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<Vec<ReadTerminal>, InternalFault> {
+    nodes
         .iter()
         .filter(|node| is_terminal(node))
         .map(read_node)
@@ -144,4 +149,117 @@ pub fn read_terminal(
         .map_or(ReadTerminalDeclaration::None, |terminal| {
             terminal.declaration
         }))
+}
+
+/// One `terminal` declaration of a checked package as the package's emitted
+/// node gives it: the mode comes from the node, and a `when` declaration's
+/// checked predicate is the one the node's occurrence names.
+#[derive(Clone, Copy, Debug)]
+pub struct PackageTerminal<'p> {
+    /// The model alias the declaration is on.
+    pub model: &'p str,
+    /// The declared name.
+    pub name: &'p str,
+    /// The declaration.
+    pub declaration: PackageTerminalDeclaration<'p>,
+}
+
+/// A [`PackageTerminal`]'s declaration.
+#[derive(Clone, Copy, Debug)]
+pub enum PackageTerminalDeclaration<'p> {
+    /// Every terminal state is intended.
+    Any,
+    /// A terminal state is intended when the predicate holds at it.
+    When(&'p qsl_semantics::check::CheckedTerminalPredicate),
+}
+
+/// Why a package's terminal declarations could not be resolved through its
+/// emitted nodes.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TerminalResolveRefusal {
+    /// The package did not emit.
+    #[error("the package did not emit: {0}")]
+    Emit(String),
+    /// The emitted bytes are not a graph this read follows.
+    #[error("the emitted package's terminal nodes did not read: {0}")]
+    Read(String),
+    /// A checked declaration has no emitted node of its occurrence, or the
+    /// node's mode is not the declaration's, or a terminal node has no
+    /// checked declaration.
+    #[error("the emitted terminal nodes disagree with the checked declaration of model {model}")]
+    Disagrees {
+        /// The model alias.
+        model: String,
+    },
+}
+
+/// The `terminal` declarations of `package`, resolved through the
+/// `temporal`/`terminal` nodes of its emitted package (FR-411, QSpec
+/// FR-476: the node is the only carrier of the declaration). A declaration
+/// is present exactly when the package holds its node, in model-alias order,
+/// and its mode is the node's.
+///
+/// # Errors
+///
+/// [`TerminalResolveRefusal`] when the package does not emit, its terminal
+/// nodes do not read, or they do not match the checked declarations.
+pub fn resolve_terminals(
+    package: &crate::CheckedPackage,
+) -> Result<Vec<PackageTerminal<'_>>, TerminalResolveRefusal> {
+    use qsl_semantics::check::TerminalDeclaration;
+
+    let emission = crate::emit::emit_checked(package)
+        .map_err(|refusal| TerminalResolveRefusal::Emit(refusal.to_string()))?;
+    let wire: serde_json::Value = serde_json::from_slice(emission.package().bytes())
+        .map_err(|error| TerminalResolveRefusal::Read(error.to_string()))?;
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|node| node["node_tag"] == "temporal" && node["semantic_form"] == "terminal")
+        .map(|node| serde_json::from_value::<CheckedSemanticNodeV2>(node.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| TerminalResolveRefusal::Read(error.to_string()))?;
+    let read =
+        read_nodes(&nodes).map_err(|fault| TerminalResolveRefusal::Read(format!("{fault:?}")))?;
+
+    let mut resolved = Vec::new();
+    let mut matched = 0;
+    for checked in package.graph().terminals() {
+        let Some(occurrence) = checked.occurrence() else {
+            if matches!(checked.declaration(), TerminalDeclaration::None) {
+                continue;
+            }
+            return Err(disagrees(checked.model()));
+        };
+        let node = read
+            .iter()
+            .find(|terminal| terminal.node == occurrence.node())
+            .ok_or_else(|| disagrees(checked.model()))?;
+        matched += 1;
+        let declaration = match (node.declaration, checked.declaration()) {
+            (ReadTerminalDeclaration::Any, TerminalDeclaration::Any) => {
+                PackageTerminalDeclaration::Any
+            }
+            (ReadTerminalDeclaration::When { .. }, TerminalDeclaration::When(predicate)) => {
+                PackageTerminalDeclaration::When(predicate)
+            }
+            _ => return Err(disagrees(checked.model())),
+        };
+        resolved.push(PackageTerminal {
+            model: checked.model(),
+            name: checked.name().unwrap_or("terminal"),
+            declaration,
+        });
+    }
+    if matched != read.len() {
+        return Err(disagrees(""));
+    }
+    Ok(resolved)
+}
+
+fn disagrees(model: &str) -> TerminalResolveRefusal {
+    TerminalResolveRefusal::Disagrees {
+        model: model.to_owned(),
+    }
 }

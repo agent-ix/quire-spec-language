@@ -1997,6 +1997,15 @@ pub enum CheckCause {
     /// A `terminal when` predicate's checking refused (FR-124), with the
     /// declaration it is about.
     Terminal(Box<super::terminal::TerminalRefusal>),
+    /// A `terminal any` on a model that declares no object type (STD-492):
+    /// QSpec FR-476 names no node to write for it. Located at the
+    /// declaration.
+    TerminalWithoutObjectType {
+        /// The declared name.
+        name: String,
+        /// The span of the whole declaration.
+        span: Span,
+    },
     /// An `abstraction` declaration's name or binding refused (FR-304).
     Abstraction(Box<super::abstraction::AbstractionRefusal>),
     /// A refinement declaration's checking refused (FR-135 to FR-137).
@@ -2550,9 +2559,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
-            Self::RefinementNotEmitted { .. } | Self::TimedNotChecked { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::TerminalWithoutObjectType { .. }
+            | Self::RefinementNotEmitted { .. }
+            | Self::TimedNotChecked { .. } => Code::UnsupportedConstruct,
             Self::Refinement(cause) => cause.cause.code(),
             Self::Abstraction(cause) => cause.code(),
             Self::Probabilistic(cause) => cause.code(),
@@ -2619,6 +2628,7 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
+            Self::TerminalWithoutObjectType { .. } => Some("declaration-form"),
             Self::RefinementNotEmitted { .. } | Self::TimedNotChecked { .. } => {
                 Some("not-yet-implemented")
             }

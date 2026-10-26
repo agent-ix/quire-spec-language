@@ -25,14 +25,21 @@ pub(crate) enum TerminalSite {
     Predicate,
 }
 
-/// The declaration-site location of `site` of the `terminal` declaration at
-/// `index`, its index among the unit's `terminal` declarations.
-pub(crate) fn terminal_location(index: usize, site: TerminalSite) -> Location {
-    let name = match site {
+/// The `Origin::TypeDeclaration` name of `site` of the `terminal` declaration
+/// at `index`, its index among the unit's `terminal` declarations. Spaced, so
+/// it names no declared type.
+pub(crate) fn terminal_site(index: usize, site: TerminalSite) -> String {
+    match site {
         TerminalSite::Claim => format!("terminal {index}"),
         TerminalSite::Predicate => format!("terminal {index} predicate"),
-    };
-    Location::root(Origin::TypeDeclaration { name })
+    }
+}
+
+/// The root location of [`terminal_site`].
+pub(crate) fn terminal_location(index: usize, site: TerminalSite) -> Location {
+    Location::root(Origin::TypeDeclaration {
+        name: terminal_site(index, site),
+    })
 }
 
 /// One checked `terminal` declaration, as lowering reads it.
