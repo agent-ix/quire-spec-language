@@ -328,7 +328,6 @@ impl World {
     ) -> Result<Vec<String>, ModelCheckRefusal> {
         let body = format!("possible Reach using v over (x: M::{over}) {{ true }}\n");
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .with_unwritten_state_graph_claims()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);

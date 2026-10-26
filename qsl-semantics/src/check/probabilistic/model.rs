@@ -14,7 +14,10 @@
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ClauseKind, ExpressionForm, NameForm, RandomForm, RewardForm, WorkloadForm};
+use qsl_forms::{
+    ClauseKind, DelayDistributionForm, DelayForm, ExpressionForm, NameForm, QuantityForm,
+    RandomForm, RewardForm, WorkloadForm,
+};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, Rational, Value, ValueType};
@@ -26,9 +29,13 @@ use super::super::facts::Definedness;
 use super::super::ir::{CheckedBody, CheckedLiteral, CheckedNode, DispatchTable, NodeKind};
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::super::state_clause::ClauseOperation;
+use super::super::temporal_clause::{ModelTimeSource, TimeSourceKind};
+use super::super::time_units::TimeUnits;
 use super::super::AdmittedModel;
 use super::claim::CheckedProbabilisticClaim;
-use super::{exact, refusal, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner};
+use super::{
+    exact, refusal, DelayFault, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner,
+};
 use crate::family::CheckContext;
 use crate::model::operation::{OperationDeclaration, OperationLookup};
 use quire_checked::key::DeclarationKey;
@@ -195,6 +202,52 @@ impl Reward {
     }
 }
 
+/// A delay distribution (FR-253 "Outputs"): exact, in the unit of the model's
+/// time source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DelayDistribution {
+    /// `uniform`: uniform over the identity's window.
+    Uniform,
+    /// `uniform[a, b]`, with `0 <= a <= b`.
+    UniformRange {
+        /// The lower end.
+        a: Rational,
+        /// The upper end.
+        b: Rational,
+    },
+    /// `exponential(rate)`, with a positive rate.
+    Exponential {
+        /// The rate, per model time unit.
+        rate: Rational,
+    },
+    /// `discrete { d: w, ... }`: distinct non-negative delays with positive
+    /// weights, in declared order, not normalized.
+    Discrete(Vec<(Rational, Rational)>),
+}
+
+/// A checked `delay` declaration: the distribution an operation's delay is
+/// drawn from (FR-253). An operation with no such record has a free delay
+/// (`None`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Delay {
+    /// The declaration's source order, as [`RandomParameter`]'s.
+    declared: usize,
+    operation: ProbabilisticOperation,
+    distribution: DelayDistribution,
+}
+
+impl Delay {
+    /// The operation the delay is declared on.
+    pub fn operation(&self) -> &ProbabilisticOperation {
+        &self.operation
+    }
+
+    /// The distribution.
+    pub fn distribution(&self) -> &DelayDistribution {
+        &self.distribution
+    }
+}
+
 /// Every checked `random`, `reward` and `workload` declaration of a package,
 /// each in declaration order (FR-185 "Outputs").
 #[derive(Debug, Default)]
@@ -202,6 +255,7 @@ pub struct CheckedProbabilisticModel {
     random_parameters: Vec<RandomParameter>,
     pub(super) rewards: Vec<Reward>,
     workloads: Vec<Workload>,
+    delays: Vec<Delay>,
     pub(super) claims: Vec<CheckedProbabilisticClaim>,
 }
 
@@ -225,6 +279,20 @@ impl CheckedProbabilisticModel {
     /// Every reward.
     pub fn rewards(&self) -> &[Reward] {
         &self.rewards
+    }
+
+    /// Every checked delay distribution, in declaration order.
+    pub fn delays(&self) -> &[Delay] {
+        &self.delays
+    }
+
+    /// The delay distribution of the operation `operation`: `None` for a free
+    /// delay, an operation with no `delay` declaration (FR-253).
+    pub fn delay(&self, operation: &DeclarationKey) -> Option<&DelayDistribution> {
+        self.delays
+            .iter()
+            .find(|delay| delay.operation.key == *operation)
+            .map(|delay| &delay.distribution)
     }
 
     /// Every workload.
@@ -254,6 +322,7 @@ impl CheckedProbabilisticModel {
         self.random_parameters.is_empty()
             && self.rewards.is_empty()
             && self.workloads.is_empty()
+            && self.delays.is_empty()
             && self.claims.is_empty()
     }
 
@@ -283,6 +352,13 @@ impl CheckedProbabilisticModel {
                 workload.name.clone(),
             )
         });
+        let delays = self.delays.iter().map(|delay| {
+            (
+                delay.declared,
+                ProbabilisticFeature::Delay,
+                delay.operation.name.clone(),
+            )
+        });
         let claims = self.claims.iter().map(|claim| {
             (
                 claim.declared,
@@ -293,6 +369,7 @@ impl CheckedProbabilisticModel {
         random
             .chain(rewards)
             .chain(workloads)
+            .chain(delays)
             .chain(claims)
             .min_by_key(|(declared, _, _)| *declared)
             .map(|(_, feature, name)| (feature, name))
@@ -309,6 +386,8 @@ pub enum ProbabilisticFeature {
     Workload,
     /// A `reward` declaration: `reward`.
     Reward,
+    /// A `delay` declaration: `delay`.
+    Delay,
     /// A `probabilistic` claim: `probabilistic-claim`.
     Claim,
 }
@@ -320,6 +399,7 @@ impl ProbabilisticFeature {
             Self::RandomParameter => "random-parameter",
             Self::Workload => "workload",
             Self::Reward => "reward",
+            Self::Delay => "delay",
             Self::Claim => "probabilistic-claim",
         }
     }
@@ -449,6 +529,9 @@ pub(crate) fn site_spans(
                 ProbabilisticDeclaration::Reward(form) => {
                     sites.push((Site::Reward, Some(form.expression.spans.clone())));
                 }
+                ProbabilisticDeclaration::Delay(form) => {
+                    sites.push((Site::Declaration, spanned(form.span)));
+                }
                 ProbabilisticDeclaration::Workload(form) => {
                     for (weight, written) in form.weights.iter().enumerate() {
                         sites.push((Site::Weight(weight), spanned(written.weight.span)));
@@ -499,6 +582,10 @@ pub(crate) struct ProbabilisticInput<'a> {
     pub(crate) model_objects: &'a BTreeMap<String, BTreeMap<Identifier, DeclarationKey>>,
     /// Each object type's effective identity, by its declaration key.
     pub(crate) object_types: &'a BTreeMap<DeclarationKey, EffectiveId>,
+    /// The checked time source of each timed model.
+    pub(crate) time_sources: &'a [ModelTimeSource],
+    /// The time units of the unit graph.
+    pub(crate) time_units: &'a TimeUnits,
     /// Every read of an operation parameter by a checked precondition.
     pub(crate) preconditions: &'a [PreconditionRead],
     /// Every header profile selection of the unit.
@@ -701,12 +788,14 @@ pub(crate) fn check(
         distributions: Vec::new(),
         rewards: Vec::new(),
         workloads: Vec::new(),
+        delays: Vec::new(),
         refusals: Vec::new(),
     };
     for (index, declaration) in declarations.iter().enumerate() {
         match declaration {
             ProbabilisticDeclaration::Random(form) => pass.random(index, form, cx, nodes),
             ProbabilisticDeclaration::Reward(form) => pass.reward(index, form, cx, nodes),
+            ProbabilisticDeclaration::Delay(form) => pass.delay(index, form),
             ProbabilisticDeclaration::Workload(form) => pass.workload(index, form),
             ProbabilisticDeclaration::Claim(_) => {}
         }
@@ -736,6 +825,9 @@ pub(super) struct Pass<'i, 'a> {
     rewards: Vec<(DeclarationKey, String)>,
     /// Each workload name declared so far, with its name span.
     workloads: Vec<(String, Span)>,
+    /// Each operation a `delay` declaration resolved to on a `time dense`
+    /// model.
+    delays: Vec<DeclarationKey>,
     pub(super) refusals: Vec<CheckRefusal>,
 }
 
@@ -980,6 +1072,126 @@ impl Pass<'_, '_> {
         )
         .check(body.root())?;
         Ok((body, slots))
+    }
+
+    /// FR-253: a `delay` declaration, admitted on an operation of a `time
+    /// dense` model only, with an exact distribution in the model's unit.
+    fn delay(&mut self, index: usize, form: &DelayForm) {
+        let (operation, _) = match self.input.operation(&form.operation, None) {
+            Ok(resolved) => resolved,
+            Err(fault) => return self.refuse(unresolved(fault, &form.operation)),
+        };
+        let name = form.operation.name.as_str();
+        let Some(source) = self.input.time_sources.iter().find(|source| {
+            source.model == operation.model && matches!(source.source, TimeSourceKind::Dense)
+        }) else {
+            return self.refuse(ProbabilisticCause::DelayOnUntimedModel {
+                operation: name.to_owned(),
+                span: form.span,
+            });
+        };
+        let malformed = |fault: DelayFault, span: Span| {
+            refusal(ProbabilisticCause::InvalidDelay {
+                operation: name.to_owned(),
+                fault,
+                span,
+            })
+        };
+        if self.delays.contains(&operation.key) {
+            return self
+                .refusals
+                .push(malformed(DelayFault::RepeatedDeclaration, form.span));
+        }
+        self.delays.push(operation.key.clone());
+        match self.distribution(index, form, source, &malformed) {
+            Ok(distribution) => self.model.delays.push(Delay {
+                declared: index,
+                operation,
+                distribution,
+            }),
+            Err(refused) => self.refusals.push(refused),
+        }
+    }
+
+    /// The exact distribution `form` writes, in `source`'s unit.
+    fn distribution(
+        &self,
+        index: usize,
+        form: &DelayForm,
+        source: &ModelTimeSource,
+        malformed: &dyn Fn(DelayFault, Span) -> CheckRefusal,
+    ) -> Result<DelayDistribution, CheckRefusal> {
+        let ceiling = self.input.limits.rational_bits();
+        let location = site_location(index, Site::Declaration);
+        let exact = |value: &qsl_forms::ExactValueForm| {
+            exact::value(value, ceiling)
+                .map_err(|fault| super::exact_refusal(fault, ceiling, value.span, location.clone()))
+        };
+        let units = self.input.time_units;
+        let target = units
+            .target(&source.unit)
+            .ok()
+            .flatten()
+            .ok_or_else(|| fault(location.clone(), "delay-time-source-unit-is-a-time-unit"))?;
+        let quantity = |written: &QuantityForm| -> Result<Rational, CheckRefusal> {
+            let magnitude = exact(&written.magnitude)?;
+            units
+                .convert(&magnitude, &written.unit.name, &target)
+                .map_err(|cause| CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::Temporal(Box::new(
+                        super::super::TemporalCause::TimeQuantity {
+                            cause: Box::new(cause),
+                            span: written.unit.span,
+                        },
+                    )),
+                })
+        };
+        let positive = |value: &Rational| !value.is_zero() && !value.numerator().is_negative();
+        match &form.distribution {
+            DelayDistributionForm::Uniform { range: None } => Ok(DelayDistribution::Uniform),
+            DelayDistributionForm::Uniform { range: Some(range) } => {
+                let (a, b) = (quantity(&range.0)?, quantity(&range.1)?);
+                if a.numerator().is_negative() || b.sub(&a).numerator().is_negative() {
+                    return Err(malformed(DelayFault::UniformRange, form.distribution_span));
+                }
+                Ok(DelayDistribution::UniformRange { a, b })
+            }
+            DelayDistributionForm::Exponential { rate: written } => {
+                let rate = exact(written)?;
+                if !positive(&rate) {
+                    return Err(malformed(DelayFault::NonPositiveRate, written.span));
+                }
+                Ok(DelayDistribution::Exponential { rate })
+            }
+            DelayDistributionForm::Discrete { delays } => {
+                let mut checked: Vec<(Rational, Rational)> = Vec::with_capacity(delays.len());
+                let mut first_fault = None;
+                for written in delays {
+                    let delay = quantity(&written.delay)?;
+                    let weight = exact(&written.weight)?;
+                    let fault = if delay.numerator().is_negative() {
+                        Some((DelayFault::NegativeDelay, written.delay.span))
+                    } else if checked.iter().any(|(earlier, _)| *earlier == delay) {
+                        Some((DelayFault::RepeatedDelay, written.delay.span))
+                    } else if !positive(&weight) {
+                        Some((DelayFault::NonPositiveWeight, written.weight.span))
+                    } else {
+                        None
+                    };
+                    match fault {
+                        Some(fault) => {
+                            first_fault.get_or_insert(fault);
+                        }
+                        None => checked.push((delay, weight)),
+                    }
+                }
+                match first_fault {
+                    Some((fault, span)) => Err(malformed(fault, span)),
+                    None => Ok(DelayDistribution::Discrete(checked)),
+                }
+            }
+        }
     }
 
     fn workload(&mut self, index: usize, form: &WorkloadForm) {

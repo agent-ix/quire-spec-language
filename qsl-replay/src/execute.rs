@@ -614,7 +614,9 @@ impl ReplayRefusal {
     }
 
     /// The RFC 6901 pointer of a refusal that names a request or observed
-    /// counterexample member.
+    /// counterexample member. The member names are the wire's, so this is a
+    /// string edge.
+    #[ix_trace_rs::string_edge]
     pub fn pointer(&self) -> Option<&'static str> {
         match self {
             Self::Request(refusal) => refusal.pointer(),

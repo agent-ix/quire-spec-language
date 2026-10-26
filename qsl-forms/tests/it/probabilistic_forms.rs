@@ -5,10 +5,11 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ActivationForm, BoundOp, ConfidenceKey, DeclarationForm, EventForm, ExactValueForm,
-    ExactValueKind, ExpectedQuantity, ExprNode, ExpressionForm, FairnessGranularity, FairnessKind,
-    HorizonForm, MeasureForm, ParsedUnit, ProbabilisticBody, ProbabilisticForm, RandomForm,
-    RewardForm, SchedulerForm, TemporalNodeForm, TemporalOperator, WorkloadForm,
+    build_unit, ActivationForm, BoundOp, ConfidenceKey, DeclarationForm, DelayDistributionForm,
+    DelayForm, EventForm, ExactValueForm, ExactValueKind, ExpectedQuantity, ExprNode,
+    ExpressionForm, FairnessGranularity, FairnessKind, HorizonForm, MeasureForm, ParsedUnit,
+    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, SchedulerForm, TemporalNodeForm,
+    TemporalOperator, WorkloadForm,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -669,4 +670,59 @@ fn the_claim_form_is_the_same_whether_or_not_the_unit_selects_the_complete_facet
         format!("{:?}", claim(&without)),
         format!("{:?}", claim(&with))
     );
+}
+
+/// TC-708: S2 keeps each `delay` family as written -- operation, bounds,
+/// rate and weighted delays -- and checks no sign, order or repeat.
+#[trace("TC-708")]
+#[test]
+fn delay_declarations_keep_each_family_as_written() {
+    let (text, unit) = build(concat!(
+        "delay Server::a ~ uniform;\n",
+        "delay Server::b ~ uniform[3 ms, 1 ms];\n",
+        "delay Server::c ~ exponential(0);\n",
+        "delay Server::d ~ discrete { 1 ms: 1, 1 ms: 2 };",
+    ));
+    let delays: Vec<&DelayForm> = unit
+        .forms()
+        .iter()
+        .map(|form| {
+            let DeclarationForm::Delay(delay) = form.form() else {
+                panic!("a delay declaration: {:?}", form.form());
+            };
+            &**delay
+        })
+        .collect();
+    let operations: Vec<&str> = delays
+        .iter()
+        .map(|delay| delay.operation.name.as_str())
+        .collect();
+    assert_eq!(
+        operations,
+        ["Server::a", "Server::b", "Server::c", "Server::d"]
+    );
+    assert_eq!(
+        delays[0].distribution,
+        DelayDistributionForm::Uniform { range: None }
+    );
+    let DelayDistributionForm::Uniform { range: Some(range) } = &delays[1].distribution else {
+        panic!("a uniform range: {:?}", delays[1].distribution);
+    };
+    // Written order is kept: the range 3 ms to 1 ms is not reordered.
+    assert_eq!(
+        (exact(&range.0.magnitude), exact(&range.1.magnitude)),
+        (natural(3), natural(1))
+    );
+    let DelayDistributionForm::Exponential { rate } = &delays[2].distribution else {
+        panic!("an exponential: {:?}", delays[2].distribution);
+    };
+    assert_eq!(exact(rate), natural(0));
+    let DelayDistributionForm::Discrete { delays: pairs } = &delays[3].distribution else {
+        panic!("a discrete: {:?}", delays[3].distribution);
+    };
+    let written: Vec<(&str, (ExactValueKind, String, String))> = pairs
+        .iter()
+        .map(|pair| (slice(&text, pair.span), exact(&pair.weight)))
+        .collect();
+    assert_eq!(written, [("1 ms: 1", natural(1)), ("1 ms: 2", natural(2))]);
 }

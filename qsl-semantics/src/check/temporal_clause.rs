@@ -271,6 +271,12 @@ pub struct CheckedFormula {
 }
 
 impl CheckedFormula {
+    /// Whether the formula is in the safety fragment (ADR-018 SM-6), whose
+    /// violations a finite prefix shows.
+    pub fn is_safety(&self) -> bool {
+        in_safety_fragment(self)
+    }
+
     /// The formula's root node.
     pub fn root(&self) -> FormulaNodeId {
         self.root
