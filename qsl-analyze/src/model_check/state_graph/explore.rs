@@ -320,6 +320,7 @@ impl Exploration<'_, '_, '_> {
             state_key: walk.graph.nodes[at].key,
             locus,
             transition,
+            time: None,
         };
         if let Some(contract) = undefined {
             return Ok(Ok(Some(DeadlockEvent::Violated(

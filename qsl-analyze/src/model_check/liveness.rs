@@ -1984,6 +1984,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                     state_key: self.digest(&model)?,
                     locus,
                     transition,
+                    time: None,
                 };
                 // The walk's own transitions are charged once it returns;
                 // until then they bound the concretisation here. `dead_phase`
@@ -2156,6 +2157,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             state_key: self.digest(&state.model)?,
             locus,
             transition,
+            time: None,
         })
     }
 

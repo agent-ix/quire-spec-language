@@ -290,5 +290,141 @@ impl Dbm {
     }
 }
 
+impl Dbm {
+    /// The zone of every valuation: each clock at least 0, nothing else.
+    pub fn universe(dim: usize) -> Self {
+        let mut bounds = vec![Bound::Infinite; dim * dim];
+        for k in 0..dim {
+            bounds[k * dim + k] = Bound::zero_le();
+            bounds[k] = Bound::zero_le();
+        }
+        Self { dim, bounds }
+    }
+
+    /// Every finite bound multiplied by `factor > 0`: the same zone in units
+    /// `factor` times finer.
+    pub fn scale_by(&mut self, factor: &BigInt) {
+        for bound in &mut self.bounds {
+            if let Bound::Finite { value, .. } = bound {
+                *value *= factor;
+            }
+        }
+    }
+
+    /// This zone with one more clock, the last, equal to 0.
+    #[must_use]
+    pub fn with_clock_at_zero(&self) -> Self {
+        let dim = self.dim + 1;
+        let mut bounds = vec![Bound::zero_le(); dim * dim];
+        for i in 0..dim {
+            for j in 0..dim {
+                // The new clock reads as the reference clock.
+                let at = |k: usize| if k == self.dim { 0 } else { k };
+                bounds[i * dim + j] = self.at(at(i), at(j)).clone();
+            }
+        }
+        Self { dim, bounds }
+    }
+
+    /// Free `clock`: drop every constraint on it but `clock >= 0`, the
+    /// inverse image of a reset once the reset value is constrained.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::ClockOutOfRange`] or [`DbmError::ResetReferenceClock`].
+    pub fn free(&mut self, clock: usize) -> Result<(), DbmError> {
+        self.in_range(clock)?;
+        if clock == 0 {
+            return Err(DbmError::ResetReferenceClock);
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        for k in (0..self.dim).filter(|&k| k != clock) {
+            self.set(clock, k, Bound::Infinite);
+            let lower = self.at(k, 0).clone();
+            self.set(k, clock, lower);
+        }
+        self.set(0, clock, Bound::zero_le());
+        Ok(())
+    }
+
+    /// The time predecessors: every valuation from which a delay reaches
+    /// the zone. Each clock's lower bound against the reference clock is
+    /// relaxed to the tightest one other clocks still imply.
+    pub fn down(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        for i in 1..self.dim {
+            let mut lower = Bound::zero_le();
+            for j in 1..self.dim {
+                if *self.at(j, i) < lower {
+                    lower = self.at(j, i).clone();
+                }
+            }
+            self.set(0, i, lower);
+        }
+    }
+
+    /// Whether this zone is covered by `target` under the aLU simulation:
+    /// `self ⊆ aLU(target)` (Herbreteau, Srivathsan and Walukiewicz). `lower`
+    /// and `upper` give each clock's `L` and `U`, `None` for `-∞`. It fails
+    /// exactly when some clocks `x != y` have `self[0][x] >= (-U_x, <=)`,
+    /// `target[y][x] < self[y][x]` and `target[y][x] + (-L_y, <) <
+    /// self[0][x]`.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::DimensionMismatch`] when the matrices or the bounds do not
+    /// have one clock count.
+    pub fn alu_covered_by(
+        &self,
+        target: &Self,
+        lower: &[Option<BigInt>],
+        upper: &[Option<BigInt>],
+    ) -> Result<bool, DbmError> {
+        let clocks = self.dim.saturating_sub(1);
+        if self.dim != target.dim || lower.len() != clocks || upper.len() != clocks {
+            return Err(DbmError::DimensionMismatch {
+                left: self.dim,
+                right: target.dim,
+            });
+        }
+        if self.is_empty() {
+            return Ok(true);
+        }
+        if target.is_empty() {
+            return Ok(false);
+        }
+        // `(-c, ≺)` for clock `k`'s bound `c`, `∞` for `-∞`; the reference
+        // clock's bound is 0.
+        let negated = |bounds: &[Option<BigInt>], k: usize, strict: bool| -> Bound {
+            let value = if k == 0 {
+                Some(BigInt::zero())
+            } else {
+                bounds[k - 1].as_ref().map(|c| -c)
+            };
+            match value {
+                Some(value) => Bound::Finite { value, strict },
+                None => Bound::Infinite,
+            }
+        };
+        for x in 0..self.dim {
+            if *self.at(0, x) < negated(upper, x, false) {
+                continue;
+            }
+            for y in (0..self.dim).filter(|&y| y != x) {
+                if *target.at(y, x) < *self.at(y, x)
+                    && target.at(y, x).sum(&negated(lower, y, true)) < *self.at(0, x)
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests;
