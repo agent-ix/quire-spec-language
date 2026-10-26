@@ -1438,7 +1438,7 @@ fn bounded_translations(instances: &[Instance]) -> Vec<BoundedTranslation> {
         .iter()
         .filter_map(|instance| match &instance.translation {
             Translation::Bounded(translation) => Some(translation.clone()),
-            Translation::Safety(_) => None,
+            Translation::Safety(_) | Translation::Liveness(_) => None,
         })
         .collect()
 }
@@ -1592,6 +1592,11 @@ impl<S: SubjectSystem> Run<'_, S> {
                         automaton_state: key.clone(),
                     }));
                 }
+                // The producer refuses liveness clauses before instancing; only
+                // the closure checker builds this variant.
+                Translation::Liveness(_) => {
+                    return Err(fault("a-producer-run-has-no-liveness-translation"))
+                }
                 Translation::Bounded(translation) => {
                     for (node, canonical) in self.nodes.iter().zip(&self.canonical) {
                         let state = canonical
@@ -1640,6 +1645,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             AutomatonError::AtomOutOfRange { .. }
             | AutomatonError::UnknownState { .. }
             | AutomatonError::NotSafetyAutomaton { .. }
+            | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
             | AutomatonError::ProfileNotTranslated { .. }
