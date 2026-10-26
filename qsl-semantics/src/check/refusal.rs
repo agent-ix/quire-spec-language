@@ -1810,14 +1810,6 @@ pub enum CheckCause {
     /// A `terminal when` predicate's checking refused (FR-124), with the
     /// declaration it is about.
     Terminal(Box<super::terminal::TerminalRefusal>),
-    /// A `terminal` declaration that checks but that no S4 emission writes
-    /// yet (FR-124): refused rather than compiled and silently missing.
-    TerminalNotEmitted {
-        /// The declared name.
-        name: String,
-        /// The span of the whole declaration.
-        span: Span,
-    },
     /// An `abstraction` declaration's name or binding refused (FR-304).
     Abstraction(Box<super::abstraction::AbstractionRefusal>),
     /// A refinement declaration's checking refused (FR-135 to FR-137).
@@ -2371,9 +2363,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
-            Self::TerminalNotEmitted { .. }
-            | Self::RefinementNotEmitted { .. }
-            | Self::TimedNotChecked { .. } => Code::UnsupportedConstruct,
+            Self::RefinementNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::Refinement(cause) => cause.cause.code(),
             Self::Abstraction(cause) => cause.code(),
             Self::Probabilistic(cause) => cause.code(),
@@ -2440,9 +2432,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
-            Self::TerminalNotEmitted { .. }
-            | Self::RefinementNotEmitted { .. }
-            | Self::TimedNotChecked { .. } => Some("not-yet-implemented"),
+            Self::RefinementNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::Refinement(cause) => cause.cause.cause(),
             Self::Abstraction(cause) => Some(cause.cause()),
             Self::Probabilistic(cause) => Some(cause.tag()),

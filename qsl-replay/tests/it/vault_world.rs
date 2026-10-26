@@ -455,7 +455,6 @@ impl World {
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
         let text = unit_text(&document, other, build, &format!("{declaration}\n"));
         let graph = declarations(&documents, &text)
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);

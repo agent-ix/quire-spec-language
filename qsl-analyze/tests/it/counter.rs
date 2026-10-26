@@ -255,7 +255,6 @@ fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations 
 /// writes it yet.
 pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     let graph = declarations(document, body)
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
@@ -283,7 +282,6 @@ pub(crate) fn package_with_clauses(
             text + &clause_text(name, fairness, formula)
         });
     let graph = declarations(document, &body)
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     let clauses = graph
@@ -509,7 +507,6 @@ pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .with_unwritten_terminals()
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)

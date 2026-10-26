@@ -35,7 +35,6 @@ fn checked(body: &str) -> CheckedGraph {
     let declarations = admit_and_assemble_with_body(&document(), body)
         .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     declarations
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"))
 }

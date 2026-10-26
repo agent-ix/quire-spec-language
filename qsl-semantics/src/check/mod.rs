@@ -1680,7 +1680,7 @@ impl PackageDeclarations {
                 type_spans.insert(time_operation_origin(index), span);
             }
         }
-        let site_spans = self.declared_site_spans;
+        let mut site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
@@ -2193,7 +2193,21 @@ impl PackageDeclarations {
         // to `TerminalDeclaration::None`.
         let mut terminals = Vec::new();
         for (index, terminal) in self.terminals.iter().enumerate() {
-            let location = Location::root(Origin::Expression);
+            // FR-411: the declaration and its predicate are located at
+            // declaration sites, so the emitted node's occurrences resolve.
+            if let Origin::TypeDeclaration { name } =
+                lowering::terminal_location(index, lowering::TerminalSite::Claim).origin
+            {
+                type_spans.insert(name, terminal.span);
+            }
+            let location = lowering::terminal_location(index, lowering::TerminalSite::Predicate);
+            if let (
+                Origin::TypeDeclaration { name },
+                terminal::TerminalClauseKind::When { predicate, .. },
+            ) = (&location.origin, &terminal.kind)
+            {
+                site_spans.insert(name.clone(), predicate.spans.clone());
+            }
             let declarations = state_clause::ClauseDeclarations {
                 scope: &scope,
                 signatures: &signatures,
@@ -3821,6 +3835,23 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-411, QSpec FR-476: each checked `terminal` declaration, after
+        // every function its predicate may call.
+        for (index, declaration) in self.terminals.iter().enumerate() {
+            let Some(checked) = terminals
+                .iter()
+                .find(|checked| checked.model == declaration.model)
+            else {
+                continue;
+            };
+            if let Err(refusal) = lowering.terminal(&lowering::TerminalInput {
+                index,
+                model: &declaration.model,
+                declaration: &checked.declaration,
+            }) {
+                refusals.push(refusal);
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -4481,18 +4512,7 @@ impl PackageDeclarations {
                 })
                 .collect(),
         );
-        // FR-124, FR-382: no S4 emission writes a `terminal` declaration yet,
-        // so a package that checks with one is refused rather than compiled
-        // with an identity equal to the same package without it
-        // (`terminal::not_emitted`).
         let mut unwritten = Vec::new();
-        if !self.emit_unwritten_terminals {
-            unwritten.extend(
-                self.terminals
-                    .iter()
-                    .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span)),
-            );
-        }
         if !self.emit_unwritten_refinements {
             unwritten.extend(self.refinements.iter().map(|refinement| {
                 refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
