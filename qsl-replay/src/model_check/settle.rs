@@ -51,6 +51,9 @@ use quire_semantic_value::model_transition::ModelTransition;
 /// The settlement method every EN-1 record states (FR-127).
 pub const EXPLICIT_STATE: &str = "explicit-state";
 
+/// The settlement method of an EN-3 induction record (FR-182).
+pub const K_INDUCTION: &str = "k-induction";
+
 /// QSpec FR-360's result label.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResultLabel {
