@@ -68,7 +68,7 @@
 //! a quire-specification checkout). QSpec is not public yet, so nothing of it
 //! is copied here; the test reads the vectors at run time.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use qsl_foundation::ByteDigest;
 use quire_canonical::{Encode, FixedShape, Sink, Writer};
@@ -1802,13 +1802,10 @@ pub(crate) fn group_keys(
     // 3-4. One refinement pass per kind of shape, then the order.
     let anonymous = refine(&anonymous_shapes, &targets, work, identity, charge)?;
     let full = refine(&full_shapes, &targets, work, identity, charge)?;
-    let mut order: Vec<usize> = (0..count).collect();
-    order.sort_by(|left, right| {
-        (&anonymous[*left], &full[*left]).cmp(&(&anonymous[*right], &full[*right]))
-    });
+    let order = group_order(&anonymous, &full);
     // 5. Equal full signatures are one class; a class's ordinal is its rank,
     // and its first member in the order represents it.
-    let mut classes: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut classes: HashMap<&str, usize> = HashMap::new();
     let mut representatives = Vec::new();
     let mut ordinals = vec![0; count];
     for member in order {
@@ -1865,6 +1862,38 @@ pub(crate) fn group_keys(
     })
 }
 
+/// Canonical member order, ascending by `(anonymous, full)` signature.
+/// The signatures are fixed-width lowercase SHA-256 hex, so stable byte
+/// radix passes keep this ordering deterministic in O(nodes) time.
+fn group_order(anonymous: &[String], full: &[String]) -> Vec<usize> {
+    const SIGNATURE_BYTES: usize = 64;
+    let mut order: Vec<usize> = (0..anonymous.len()).collect();
+    let mut scratch = vec![0; order.len()];
+    for signatures in [full, anonymous] {
+        for offset in (0..SIGNATURE_BYTES).rev() {
+            let mut offsets = [0_usize; 256];
+            for member in &order {
+                let byte = signatures[*member].as_bytes()[offset];
+                offsets[usize::from(byte)] += 1;
+            }
+            let mut start = 0;
+            for count in &mut offsets {
+                let members = *count;
+                *count = start;
+                start += members;
+            }
+            for &member in &order {
+                let byte = signatures[member].as_bytes()[offset];
+                let position = &mut offsets[usize::from(byte)];
+                scratch[*position] = member;
+                *position += 1;
+            }
+            std::mem::swap(&mut order, &mut scratch);
+        }
+    }
+    order
+}
+
 /// A refinement pass (FR-092 "The group order", step 3): each member's
 /// signature over `shapes`, lowercase hex. Each round charges `work`, the
 /// member count.
@@ -1880,7 +1909,7 @@ fn refine(
         .iter()
         .map(|shape| hex(&ByteDigest::of(shape.as_bytes()).as_bytes()))
         .collect();
-    let distinct = |signatures: &[String]| signatures.iter().collect::<BTreeSet<_>>().len();
+    let distinct = |signatures: &[String]| signatures.iter().collect::<HashSet<_>>().len();
     let mut previous = initial.clone();
     // Each round before the last adds a distinct value, so at most one
     // round per member runs.

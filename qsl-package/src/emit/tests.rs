@@ -42,6 +42,7 @@ mod golden;
 mod hybrid;
 mod hyper_clause;
 mod identity_depth;
+mod large_cycle;
 mod navigation;
 mod owners;
 mod population_bound;
