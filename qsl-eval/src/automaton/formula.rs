@@ -633,10 +633,14 @@ pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, A
         .copied()
         .flatten()
         .ok_or_else(|| invariant("root-has-pair"))?;
-    let (positive_occurrences, positive_past_occurrences) =
-        occurrence_nodes(formula, &pairs, &ir, false)?;
-    let (negative_occurrences, negative_past_occurrences) =
-        occurrence_nodes(formula, &pairs, &ir, true)?;
+    let OccurrenceNodes {
+        nodes: positive_occurrences,
+        past: positive_past_occurrences,
+    } = occurrence_nodes(formula, &pairs, &ir, false)?;
+    let OccurrenceNodes {
+        nodes: negative_occurrences,
+        past: negative_past_occurrences,
+    } = occurrence_nodes(formula, &pairs, &ir, true)?;
     let positive_nested_intervals = nested_intervals(formula, &pairs, &ir, false)?;
     let negative_nested_intervals = nested_intervals(formula, &pairs, &ir, true)?;
     Ok(Lowered {
@@ -718,18 +722,17 @@ fn nested_intervals(
 /// Resolve each occurrence path in the checked formula to the node its
 /// polarity selects in the NNF arena. The path, not the arena's materialized
 /// node index, is the stable identity used by FR-338.
+struct OccurrenceNodes {
+    nodes: BTreeMap<NodeId, Vec<Occurrence>>,
+    past: BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
+}
+
 fn occurrence_nodes(
     formula: &CheckedFormula,
     pairs: &[Option<(NodeId, NodeId)>],
     ir: &Ir,
     root_negative: bool,
-) -> Result<
-    (
-        BTreeMap<NodeId, Vec<Occurrence>>,
-        BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
-    ),
-    AutomatonError,
-> {
+) -> Result<OccurrenceNodes, AutomatonError> {
     struct Entry {
         path: Vec<u64>,
         node: usize,
@@ -835,7 +838,10 @@ fn occurrence_nodes(
         values.sort_by(|left, right| left.0.cmp(&right.0));
         values.dedup();
     }
-    Ok((origins, past_origins))
+    Ok(OccurrenceNodes {
+        nodes: origins,
+        past: past_origins,
+    })
 }
 
 impl Ir {

@@ -97,7 +97,7 @@ pub(crate) struct ClosureInstance {
 pub(crate) enum ClosureTranslation {
     Safety(SafetyTranslation),
     Bounded(BoundedTranslation),
-    Liveness(LivenessTranslation),
+    Liveness(Box<LivenessTranslation>),
 }
 
 impl ClosureTranslation {
@@ -272,10 +272,10 @@ impl ModelCheckItem<'_> {
                             }
                             .map_err(ItemRefusal::Automaton)?;
                             if automaton.kind() == AutomatonKind::Liveness {
-                                ClosureTranslation::Liveness(LivenessTranslation {
+                                ClosureTranslation::Liveness(Box::new(LivenessTranslation {
                                     automaton,
                                     keys,
-                                })
+                                }))
                             } else {
                                 // Counted protocol progress can lower an
                                 // infinite-profile formula into the safety
