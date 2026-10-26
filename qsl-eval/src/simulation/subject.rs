@@ -15,7 +15,9 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use crate::simulation::progress::ZeroProgressError;
-use crate::simulation::protocol::{BlockedThread, ProtocolFairness, ProtocolTransition};
+use crate::simulation::protocol::{
+    AccessRecord, BlockedThread, DataRace, ProtocolFairness, ProtocolTransition,
+};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -41,6 +43,18 @@ pub type Bounded<T, S> = (Expansion<T, S, ModelFinding>, Cut);
 pub trait SubjectTransition: Clone + Eq + std::fmt::Debug {
     /// One member of a fairness set over the subject.
     type Fairness: Clone + Eq + std::fmt::Debug;
+
+    /// The shared-location access the step makes, when it makes one under a
+    /// weak memory model (ADR-025 DR-3).
+    fn access(&self) -> Option<&AccessRecord> {
+        None
+    }
+
+    /// The data race the step completes, when it completes one (ADR-025
+    /// DR-4).
+    fn race(&self) -> Option<&DataRace> {
+        None
+    }
 }
 
 impl SubjectTransition for ModelTransition {
@@ -49,6 +63,14 @@ impl SubjectTransition for ModelTransition {
 
 impl SubjectTransition for ProtocolTransition {
     type Fairness = ProtocolFairness;
+
+    fn access(&self) -> Option<&AccessRecord> {
+        ProtocolTransition::access(self)
+    }
+
+    fn race(&self) -> Option<&DataRace> {
+        ProtocolTransition::race(self)
+    }
 }
 
 /// A subject's transition system as EN-1 and replay read it.

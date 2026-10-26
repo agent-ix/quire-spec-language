@@ -98,6 +98,11 @@ pub enum Refusal {
     /// `item-form`: the clause's property-automaton translation refused.
     #[error("the property automaton does not build: {0}")]
     ItemTranslation(#[from] AutomatonError),
+    /// `invalid-value`: the race-freedom item (FR-224) names a model subject,
+    /// which has no memory model and so no data race; EN-1 refuses the same
+    /// request `invalid_runtime_input`/`invalid-value`.
+    #[error("the race-freedom item is decided over a protocol subject only")]
+    RaceOverModel,
     /// `profile`: the clause binds a profile with no proof query.
     #[error("the clause binds a profile with no proof query")]
     Profile,
@@ -254,6 +259,7 @@ impl Refusal {
     pub const fn code(&self) -> &'static str {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => "item-form",
+            Self::RaceOverModel => "invalid-value",
             Self::Profile => "profile",
             Self::QueryKind { .. } => "query-kind",
             Self::SubjectAdmission(_) => "subject-admission",
@@ -285,6 +291,7 @@ impl Refusal {
     pub const fn row(&self) -> u8 {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => 1,
+            Self::RaceOverModel => 1,
             Self::Profile => 2,
             Self::QueryKind { .. } => 3,
             Self::SubjectAdmission(_) => 4,

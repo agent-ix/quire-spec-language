@@ -74,11 +74,12 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, undefined_finding, CounterexampleKind, Lasso, TemporalCounterexample,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, race_freedom_clause, undefined_finding, CounterexampleKind, Lasso,
+    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::model_check::limits::ReachedLimit;
+use crate::model_check::race_replay::reproduces;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::WitnessEnvelope;
@@ -141,8 +142,9 @@ pub enum ModelTraceRefusal {
         count: usize,
     },
     /// The envelope's clause identity is not the one its payload's item
-    /// has: a deadlock-freedom payload under any identity but the derived
-    /// item's, or an authored clause's payload under the derived item's.
+    /// has: a deadlock-freedom or race-freedom payload under any identity
+    /// but its derived item's, or an authored clause's payload under a
+    /// derived item's.
     #[error("stale_dependency/content-mismatch: the envelope names clause {clause_node} at {occurrence_key}; the payload's item is {expected_node} at {expected_key}")]
     ItemIdentity {
         /// The envelope's clause node.
@@ -162,6 +164,10 @@ pub enum ModelTraceRefusal {
         /// The recompiled clause's fairness set.
         recompiled: Vec<FairnessConstraint>,
     },
+    /// A race counterexample over a model subject, which has no memory model
+    /// and so no data race (FR-224).
+    #[error("invalid_runtime_input/invalid-value: a race counterexample names a model subject")]
+    RaceOverModel,
     /// A formula counterexample names no instance of the clause's `over`
     /// parameter.
     #[error(
@@ -357,6 +363,7 @@ impl ModelTraceRefusal {
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
             | Self::OverBinding
+            | Self::RaceOverModel
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
@@ -391,6 +398,7 @@ impl ModelTraceRefusal {
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
             | Self::OverBinding
+            | Self::RaceOverModel
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
@@ -713,6 +721,16 @@ impl ProtocolReplay<'_> {
         }
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
+            (CounterexampleKind::Race(race), _) => {
+                if reproduces(&steps, race) {
+                    ModelTraceSettlement::Reproduced {
+                        value: ModelTraceValue::Truth(false),
+                        trace_position: payload.trace_position(),
+                    }
+                } else {
+                    disagrees(Category::Success)
+                }
+            }
             (CounterexampleKind::UndefinedEvaluation(claimed), clause) => {
                 let reads = match clause {
                     Some(clause) => {
@@ -822,15 +840,15 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 
 /// FR-128: resolve the envelope's item by its `clause_node` and
 /// `occurrence_key` against the recompiled package `package_id`. The
-/// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`];
-/// its payload must be one only that item has, and a payload of that shape
-/// under any other identity, or an authored payload under the derived
-/// identity, refuses [`ModelTraceRefusal::ItemIdentity`]. Any other identity
-/// names an authored clause: the package's temporal clause node of that
-/// `clause_node`, whose `claim` occurrence the envelope must carry; the
-/// caller's `check_fairness` compares the payload's fairness set with the
-/// subject's before the clause's own refusals. A package with no such node
-/// refuses
+/// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`]
+/// and the derived race-freedom item's [`race_freedom_clause`]; the payload
+/// must be one only that item has, and a payload of that shape under any
+/// other identity, or an authored payload under a derived identity, refuses
+/// [`ModelTraceRefusal::ItemIdentity`]. Any other identity names an authored
+/// clause: the package's temporal clause node of that `clause_node`, whose
+/// `claim` occurrence the envelope must carry; the caller's
+/// `check_fairness` compares the payload's fairness set with the subject's
+/// before the clause's own refusals. A package with no such node refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
@@ -838,10 +856,15 @@ fn resolve_item<'p, T: SubjectTransition>(
     package_id: &DigestRecord,
     check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
-    let (node, occurrence) = deadlock_freedom_clause(package_id);
-    let derived = envelope.clause_node() == node && *envelope.occurrence_key() == occurrence;
-    let deadlock_payload = names_deadlock_item(envelope.family_payload());
-    if derived && deadlock_payload {
+    let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
+    let (race_node, race_key) = race_freedom_clause(package_id);
+    let names = |node: WireNodeId, key: &OccurrenceKey| {
+        envelope.clause_node() == node && envelope.occurrence_key() == key
+    };
+    let on_deadlock = names(deadlock_node, &deadlock_key);
+    let on_race = names(race_node, &race_key);
+    let (for_deadlock, for_race) = derived_items(envelope.family_payload());
+    if (on_deadlock && for_deadlock) || (on_race && for_race) {
         return Ok(None);
     }
     let identity_mismatch = |expected_node, expected_key| {
@@ -852,10 +875,13 @@ fn resolve_item<'p, T: SubjectTransition>(
             expected_key: Box::new(expected_key),
         })
     };
-    if derived != deadlock_payload && deadlock_payload {
-        return Err(identity_mismatch(node, occurrence));
+    if for_deadlock {
+        return Err(identity_mismatch(deadlock_node, deadlock_key));
     }
-    if derived {
+    if for_race {
+        return Err(identity_mismatch(race_node, race_key));
+    }
+    if on_deadlock || on_race {
         return Err(identity_mismatch(
             envelope.clause_node(),
             envelope.occurrence_key().clone(),
@@ -878,16 +904,20 @@ fn resolve_item<'p, T: SubjectTransition>(
     Ok(Some(clause))
 }
 
-/// Whether the payload's shape is one only the deadlock-freedom item has: a
-/// deadlock, or an undefined model-side expression with no `over` binding.
-fn names_deadlock_item<T: SubjectTransition>(payload: &TemporalCounterexample<T>) -> bool {
+/// Which derived items the payload's shape belongs to, as (deadlock-freedom,
+/// race-freedom): a deadlock to the first, a race to the second, and an
+/// undefined model-side expression with no `over` binding to both; no
+/// authored clause's payload has that shape.
+fn derived_items<T: SubjectTransition>(payload: &TemporalCounterexample<T>) -> (bool, bool) {
     match &payload.kind {
-        CounterexampleKind::Deadlock => true,
+        CounterexampleKind::Deadlock => (true, false),
+        CounterexampleKind::Race(_) => (false, true),
         CounterexampleKind::UndefinedEvaluation(evaluation) => {
-            payload.over_binding.is_none()
-                && !matches!(evaluation.site.locus, UndefinedLocus::Atom(_))
+            let derived = payload.over_binding.is_none()
+                && !matches!(evaluation.site.locus, UndefinedLocus::Atom(_));
+            (derived, derived)
         }
-        CounterexampleKind::Formula => false,
+        CounterexampleKind::Formula => (false, false),
     }
 }
 
@@ -1020,6 +1050,7 @@ fn settle(
         close_loop(system, &positions, lasso)?;
     }
     match (&payload.kind, formula) {
+        (CounterexampleKind::Race(_), _) => Err(refused(ModelTraceRefusal::RaceOverModel)),
         (CounterexampleKind::Deadlock, _) => {
             deadlock(system, payload, &positions, &steps).map(|settlement| (settlement, Vec::new()))
         }
