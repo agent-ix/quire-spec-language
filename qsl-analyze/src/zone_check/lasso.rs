@@ -27,10 +27,6 @@ use quire_exact::{Integer, Rational};
 use super::concretise::NotConcretised;
 use super::{Bound, Dbm};
 
-/// The most constraints the elimination keeps before it gives up: the loop
-/// then has no concretisation this engine finds.
-const MAX_CONSTRAINTS: usize = 1 << 14;
-
 /// One position of a loop, with the members its delay and step obey.
 #[derive(Clone, Debug)]
 pub(super) struct LoopStage {
@@ -274,11 +270,13 @@ impl System<'_> {
 /// units; zone bounds in pieces are in units of `1 / scale`. The loop's
 /// total delay must be positive under a dense source (`dense`); under a
 /// tick source no time elapses between positions and its ticks advance
-/// time.
+/// time. The elimination keeps at most `cap` constraints at once, and
+/// past it returns [`NotConcretised::Exhausted`].
 pub(super) fn solve_loop(
     stages: &[LoopStage],
     scale: &BigInt,
     dense: bool,
+    cap: u64,
 ) -> Result<Vec<Rational>, NotConcretised> {
     let m = stages.len();
     if m == 0 {
@@ -315,7 +313,7 @@ pub(super) fn solve_loop(
     if system.infeasible {
         return Err(NotConcretised::Infeasible);
     }
-    let prefixes = solve(system.inequalities, m)?;
+    let prefixes = solve(system.inequalities, m, cap)?;
     let mut delays = Vec::with_capacity(m);
     let mut previous = zero();
     for prefix in prefixes {
@@ -327,7 +325,11 @@ pub(super) fn solve_loop(
 
 /// Solve `inequalities` over `m` variables: eliminate the last variable
 /// first, then fix the first variable first, each by FR-241's rule.
-fn solve(inequalities: Vec<Inequality>, m: usize) -> Result<Vec<Rational>, NotConcretised> {
+fn solve(
+    inequalities: Vec<Inequality>,
+    m: usize,
+    cap: u64,
+) -> Result<Vec<Rational>, NotConcretised> {
     // `levels[k]` holds the constraints over the variables `0..=k`.
     let mut levels: Vec<Vec<Inequality>> = vec![Vec::new(); m];
     let mut current = inequalities;
@@ -349,8 +351,8 @@ fn solve(inequalities: Vec<Inequality>, m: usize) -> Result<Vec<Rational>, NotCo
                     form,
                     strict: upper.strict || lower.strict,
                 });
-                if next.len() > MAX_CONSTRAINTS {
-                    return Err(NotConcretised::Infeasible);
+                if u64::try_from(next.len()).unwrap_or(u64::MAX) > cap {
+                    return Err(NotConcretised::Exhausted);
                 }
             }
         }
@@ -453,7 +455,7 @@ mod tests {
             vec![(0, exact(0, 1))],
         )];
         assert!(matches!(
-            solve_loop(&loop_, &BigInt::from(1), true),
+            solve_loop(&loop_, &BigInt::from(1), true, u64::MAX),
             Err(NotConcretised::Infeasible)
         ));
     }
@@ -473,7 +475,7 @@ mod tests {
             vec![(0, exact(0, 1))],
         )];
         assert_eq!(
-            solve_loop(&closed, &BigInt::from(1), true).expect("solved"),
+            solve_loop(&closed, &BigInt::from(1), true, u64::MAX).expect("solved"),
             [exact(1, 1)]
         );
         let open = [stage(
@@ -484,13 +486,30 @@ mod tests {
             vec![(0, exact(0, 1))],
         )];
         assert_eq!(
-            solve_loop(&open, &BigInt::from(1), true).expect("solved"),
+            solve_loop(&open, &BigInt::from(1), true, u64::MAX).expect("solved"),
             [exact(3, 2)]
         );
         let never = [stage(
             vec![PlaceConstraint::new(0, ClockOp::LessOrEqual, exact(5, 1))],
             Vec::new(),
         )];
-        assert!(solve_loop(&never, &BigInt::from(1), true).is_err());
+        assert!(solve_loop(&never, &BigInt::from(1), true, u64::MAX).is_err());
+    }
+
+    /// SR-1643001 FND-003: an elimination that needs more constraints than
+    /// its cap is a budget stop, never an unsatisfiable loop.
+    #[test]
+    fn an_elimination_past_its_cap_is_exhausted_not_infeasible() {
+        let open = [stage(
+            vec![
+                PlaceConstraint::new(0, ClockOp::Greater, exact(1, 1)),
+                PlaceConstraint::new(0, ClockOp::Less, exact(2, 1)),
+            ],
+            vec![(0, exact(0, 1))],
+        )];
+        assert!(matches!(
+            solve_loop(&open, &BigInt::from(1), true, 0),
+            Err(NotConcretised::Exhausted)
+        ));
     }
 }

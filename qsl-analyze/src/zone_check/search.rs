@@ -955,6 +955,13 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         Ok(())
     }
 
+    /// The symbolic transitions `max_symbolic_transitions` leaves, which
+    /// FR-241's loop elimination may keep as constraints at once.
+    pub(super) fn transitions_left(&self) -> u64 {
+        let used = widen(self.edges.len()).saturating_add(self.escape_edges);
+        self.limits.max_symbolic_transitions.saturating_sub(used)
+    }
+
     /// Count a state a divergence check stored, once charged.
     pub(super) fn escape_state(&mut self) {
         self.escape_states += 1;
@@ -1353,34 +1360,46 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     pub(super) fn enabled(&mut self, node: usize, dim: usize) -> Result<Vec<Dbm>, Halt> {
         let mut enabled = Vec::new();
         for step in self.steps_of(node)? {
-            let target = self.timed(self.timed.invariants(step.post()))?;
-            // A reset clock's bound is constant over delays; a false one
-            // disables the step.
-            let reset_breaks = target.iter().any(|bound| {
-                step.resets()
-                    .iter()
-                    .rev()
-                    .find(|(place, _)| *place == bound.place())
-                    .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-            });
-            if reset_breaks {
-                continue;
-            }
-            let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
-            let unreset: Vec<PlaceConstraint> = target
-                .into_iter()
-                .filter(|bound| !reset.contains(&bound.place()))
-                .collect();
-            for part in step.parts() {
+            for part in self.enabling_parts(&step)? {
                 let mut zone = Dbm::universe(dim);
-                self.constrain(&mut zone, part)?;
-                self.constrain(&mut zone, &unreset)?;
+                self.constrain(&mut zone, &part)?;
                 if !zone.is_empty() {
                     enabled.push(zone);
                 }
             }
         }
         Ok(enabled)
+    }
+
+    /// FR-232's enabledness of `step` over clocks: each convex part of its
+    /// guard with the target's time invariants on the clocks the step does
+    /// not reset; none when a reset value breaks a target bound, a bound
+    /// that is then constant over delays.
+    pub(super) fn enabling_parts(
+        &self,
+        step: &GuardedStep,
+    ) -> Result<Vec<Vec<PlaceConstraint>>, Halt> {
+        let target = self.timed(self.timed.invariants(step.post()))?;
+        let reset_breaks = target.iter().any(|bound| {
+            step.resets()
+                .iter()
+                .rev()
+                .find(|(place, _)| *place == bound.place())
+                .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
+        });
+        if reset_breaks {
+            return Ok(Vec::new());
+        }
+        let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
+        let unreset: Vec<PlaceConstraint> = target
+            .into_iter()
+            .filter(|bound| !reset.contains(&bound.place()))
+            .collect();
+        Ok(step
+            .parts()
+            .iter()
+            .map(|part| part.iter().chain(&unreset).cloned().collect())
+            .collect())
     }
 
     /// The node whose real edge created `node`; `None` for an initial one.

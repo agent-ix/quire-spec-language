@@ -61,20 +61,21 @@ fn response(t: u32, extra: &str) -> World {
 }
 
 /// FR-240-AC-1: over `Rpc` with `T = 4 ms` every request is answered:
-/// the server's deadline forces `reply` before the client's. A variant in
-/// which a waiting call may also `echo`, guarded `x < 1 ms` and changing
-/// nothing, has a lasso of `echo` steps that never answers, but its total
-/// delay is bounded, so it is Zeno and not reported: still `Holds`.
+/// the server's deadline forces `reply` before the client's. In a variant
+/// where `reply` may also loop on itself with no reset, a lasso of `reply`
+/// steps never answers, but `x` is never reset under the server's deadline
+/// `x <= 3 ms`, so its total delay is bounded: it is Zeno and not reported,
+/// and the result is still `Holds`.
 #[trace("TC-695", "FR-240-AC-1")]
 #[test]
 fn a_response_claim_holds_and_a_zeno_loop_is_not_reported() {
     assert!(holds(&decide(&response(4, ""))));
-    let echoing = rpc_echo(false);
-    let outcome = decide(&echoing);
+    let looping = rpc_reply_loop();
+    let outcome = decide(&looping);
     assert!(holds(&outcome), "{outcome:?}");
     // An `echo` that resets `x` repeats with positive delays forever: the
     // claim is violated by that loop.
-    let resetting = rpc_echo(true);
+    let resetting = rpc_echo();
     let counterexample = reproduced_lasso(&resetting, decide(&resetting));
     let entry = counterexample.lasso.expect("a lasso").entry;
     assert!(names(&counterexample, entry)
@@ -82,28 +83,53 @@ fn a_response_claim_holds_and_a_zeno_loop_is_not_reported() {
         .all(|name| name == "echo"));
 }
 
+/// FR-240-AC-1's variant of [`response`] over `Rpc` with `T = 4 ms`, where
+/// `reply` may also loop on itself, changing nothing and resetting no
+/// clock. An operation has one guard, not one per outcome of its post, so
+/// `reply` is guarded by `self.inflight` alone: the loop is enabled at
+/// `x < 1 ms`, as the AC names, and at every later `x` the server's
+/// deadline allows, which bounds its total delay just the same.
+fn rpc_reply_loop() -> World {
+    world(
+        &crate::zone_search::rpc_document(),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
+             post Send using v on M::Call::send {{ \
+                 self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }}\n\
+             pre Reply using v on M::Call::reply {{ self.inflight }}\n\
+             post Replied using v on M::Call::reply {{ \
+                 (self.inflight and self.phase = pre(self.phase) and \
+                     self.late = pre(self.late)) or \
+                 (not self.inflight and self.late = (pre(self.phase) = 3) and \
+                     (pre(self.phase) = 1 implies self.phase = 2) and \
+                     (pre(self.phase) != 1 implies self.phase = pre(self.phase))) }}\n\
+             pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x >= 4 ms }}\n\
+             post TimedOut using v on M::Call::timeout {{ self.phase = 3 }}\n\
+             pre Reset using v on M::Call::reset {{ \
+                 not self.inflight and (self.phase = 2 or self.phase = 3) }}\n\
+             post ResetIdle using v on M::Call::reset {{ self.phase = 0 }}\n\
+             time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
+             time invariant ClientDeadline when {{ self.phase = 1 }} {{ self.x <= 4 ms }}\n\
+             temporal Answered using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ always (holds(c.phase = 1) implies eventually holds(c.phase = 2)) }}\n"
+        ),
+    )
+}
+
 /// [`response`] over `Rpc` with an `echo` step at a waiting call, guarded
-/// `x < 1 ms`, that changes nothing, or only resets `x` when `resets`.
-fn rpc_echo(resets: bool) -> World {
-    let (modifies, post): (&[&str], &str) = if resets {
-        (
-            &["x"],
-            "post Echoed using v on M::Call::echo { self.x = 0 ms }\n",
-        )
-    } else {
-        (&[], "")
-    };
-    let document = crate::zone_search::rpc_document_with(&[("echo", modifies)]);
+/// `x < 1 ms`, that only resets `x`.
+fn rpc_echo() -> World {
+    let document = crate::zone_search::rpc_document_with(&[("echo", &["x"])]);
     crate::zone_search::rpc_world(
         &document,
         4,
         INFINITE,
-        &format!(
-            "pre Echo using v on M::Call::echo {{ self.phase = 1 and self.x < 1 ms }}\n\
-             {post}\
-             temporal Answered using inf over (c: M::Call) clock \"model-steps\" on origin \
-             {{ always (holds(c.phase = 1) implies eventually holds(c.phase = 2)) }}\n"
-        ),
+        "pre Echo using v on M::Call::echo { self.phase = 1 and self.x < 1 ms }\n\
+         post Echoed using v on M::Call::echo { self.x = 0 ms }\n\
+         temporal Answered using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always (holds(c.phase = 1) implies eventually holds(c.phase = 2)) }\n",
     )
 }
 
@@ -301,8 +327,8 @@ fn a_timed_interval_outside_a_window_is_refused() {
 }
 
 /// FR-240 "Vacuity" under fairness: `ping` resets `x` under `x <= 1 ms`
-/// at phase 0, and `serve`, always enabled there, leads to phase 1, a
-/// time-lock at `x = 0`. Every time-divergent behaviour pings forever with
+/// at phase 0, and `serve`, always enabled there, resets `x` and leads to
+/// phase 1, a time-lock at `x = 0`. Every time-divergent behaviour pings forever with
 /// `serve` enabled at every instant, so under `fair weak serve` none is
 /// fair and no state is quiescent: `always eventually holds(true)` is
 /// `Undecided(NoAdmittedBehaviour)`. With no fairness it holds.
@@ -311,14 +337,14 @@ fn a_timed_interval_outside_a_window_is_refused() {
 fn a_subject_with_no_fair_divergent_behaviour_admits_none() {
     let model = |fairness: &str| {
         world(
-            &document(&["x"], &[("ping", &["x"]), ("serve", &["phase"])]),
+            &document(&["x"], &[("ping", &["x"]), ("serve", &["phase", "x"])]),
             INFINITE,
             &format!(
                 "{DENSE}\
                  pre Ping using v on M::Call::ping {{ self.phase = 0 }}\n\
                  post Pinged using v on M::Call::ping {{ self.x = 0 ms }}\n\
                  pre Serve using v on M::Call::serve {{ self.phase = 0 }}\n\
-                 post Served using v on M::Call::serve {{ self.phase = 1 }}\n\
+                 post Served using v on M::Call::serve {{ self.phase = 1 and self.x = 0 ms }}\n\
                  time invariant Busy when {{ self.phase = 0 }} {{ self.x <= 1 ms }}\n\
                  time invariant Done when {{ self.phase = 1 }} {{ self.x <= 0 ms }}\n\
                  temporal Live using inf over (c: M::Call) clock \"model-steps\" on origin \
@@ -334,4 +360,64 @@ fn a_subject_with_no_fair_divergent_behaviour_admits_none() {
             ..
         }
     ));
+}
+
+/// A model where `serve` moves phase 0 to phase 1 and sets `retried`, and
+/// phase 1 holds `x <= 1 ms` with `x` never reset, so `serve` is enabled
+/// only while `x <= 1` (FR-232: its target's time invariants must hold).
+/// With `looping`, phase 0 holds `y <= 1 ms` and `ping`, guarded `y >=
+/// 1 ms`, resets `y`; otherwise phase 0 is quiescent. The claim is
+/// `eventually holds(c.retried)` under `fairness`.
+fn late_serve(looping: bool, fairness: &str) -> World {
+    let serve: (&str, &[&str]) = ("serve", &["phase", "retried"]);
+    let ping: (&str, &[&str]) = ("ping", &["y"]);
+    let document = if looping {
+        document(&["x", "y"], &[serve, ping])
+    } else {
+        document(&["x"], &[serve])
+    };
+    let model = if looping {
+        "pre Ping using v on M::Call::ping { self.phase = 0 and self.y >= 1 ms }\n\
+         post Pinged using v on M::Call::ping { self.y = 0 ms }\n\
+         time invariant Pinging when { self.phase = 0 } { self.y <= 1 ms }\n"
+    } else {
+        ""
+    };
+    world(
+        &document,
+        INFINITE,
+        &format!(
+            "{DENSE}{model}\
+             pre Serve using v on M::Call::serve {{ self.phase = 0 }}\n\
+             post Served using v on M::Call::serve {{ self.phase = 1 and self.retried }}\n\
+             time invariant Served when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+             temporal Retries using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ {fairness} eventually holds(c.retried) }}\n"
+        ),
+    )
+}
+
+/// SR-1643001 FND-001: FR-232 reads a step as enabled only where its
+/// target's time invariants hold, so once `x > 1` `serve` is disabled and a
+/// behaviour that never serves is fair under `fair weak serve` and `fair
+/// strong serve`. At a quiescent phase 0 its idle tail refutes `eventually
+/// holds(c.retried)`; where phase 0 must `ping`, the `ping` loop does. Each
+/// counterexample replays under the clause's fairness.
+#[trace("TC-695")]
+#[test]
+fn enabledness_reads_the_target_time_invariants() {
+    for fairness in ["fair weak M::Call::serve;", "fair strong M::Call::serve;"] {
+        let idle = late_serve(false, fairness);
+        let counterexample = reproduced_lasso(&idle, decide(&idle));
+        assert!(counterexample.lasso.expect("a lasso").terminal_stutter);
+        let looping = late_serve(true, fairness);
+        let counterexample = reproduced_lasso(&looping, decide(&looping));
+        let entry = counterexample.lasso.expect("a lasso").entry;
+        assert!(
+            names(&counterexample, entry)
+                .iter()
+                .all(|name| name == "ping"),
+            "{fairness}"
+        );
+    }
 }

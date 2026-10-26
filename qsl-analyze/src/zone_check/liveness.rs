@@ -44,7 +44,7 @@ use qsl_semantics::check::CaptureSite;
 use quire_exact::{Integer, Meter, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::concretise::{concretise, Stage, Target};
+use super::concretise::{concretise, NotConcretised, Stage, Target};
 use super::lasso::{solve_loop, LoopStage};
 use super::search::{
     constrain_at, scaled, Badness, Halt, Run, ZoneCheckLimit, ZoneStop, ZoneUndecided,
@@ -310,6 +310,11 @@ impl Run<'_, '_, '_> {
 
     /// Whether the subject, read by `live`'s universal automaton, reaches a
     /// quiescent state (an idle tail) or a fair time-divergent cycle.
+    ///
+    /// A reached quiescent state admits the subject even when its idle
+    /// tail is unfair: FR-240 "Vacuity" bars a proof only when the initial
+    /// state "reaches no fair time-divergent cycle and no quiescent state"
+    /// (spec gap STD-493, comment fd83efcd, item 3).
     fn admits_fair(&mut self, live: &mut Live<'_>) -> Result<bool, Halt> {
         self.build(live)?;
         if live
@@ -506,8 +511,10 @@ impl Run<'_, '_, '_> {
         Ok((FairModel { graph, constraints }, all))
     }
 
-    /// Whether `step` is enabled at the instants of `vertex`: at every one,
-    /// for a fairness-constrained step, whose guard its cell decides.
+    /// Whether `step` is enabled at the instants of `vertex` (FR-232: a
+    /// convex part of its guard holds and its target's time invariants
+    /// would): at every one, for a fairness-constrained step, whose
+    /// enabledness its cell decides.
     fn enabled_at(
         &mut self,
         live: &Live<'_>,
@@ -533,9 +540,9 @@ impl Run<'_, '_, '_> {
                 zone
             }
         };
-        for part in step.parts() {
+        for part in self.enabling_parts(step)? {
             let mut at = zone.clone();
-            constrain_at(&mut at, part, &self.scale)?;
+            constrain_at(&mut at, &part, &self.scale)?;
             if !at.is_empty() {
                 return Ok(true);
             }
@@ -827,7 +834,9 @@ impl Run<'_, '_, '_> {
     }
 
     /// The cell atoms of `state`: each clock constraint of a
-    /// fairness-constrained step's guard there, computed once.
+    /// fairness-constrained step's enabledness there (FR-232: its guard and
+    /// its target's time invariants on the clocks it does not reset),
+    /// computed once.
     fn atoms_of(
         &mut self,
         live: &mut Live<'_>,
@@ -842,8 +851,8 @@ impl Run<'_, '_, '_> {
             if !live.constrained.contains(step.operation()) {
                 continue;
             }
-            for part in step.parts() {
-                for constraint in part {
+            for part in self.enabling_parts(&step)? {
+                for constraint in &part {
                     atoms.insert((
                         constraint.place() + 1,
                         scaled(constraint.bound(), &self.scale),
@@ -1229,8 +1238,14 @@ impl Run<'_, '_, '_> {
                 piece: stage.piece,
             });
         }
-        let Ok(delays) = solve_loop(&loop_stages, &self.scale, dense) else {
-            return Ok(None);
+        let delays = match solve_loop(&loop_stages, &self.scale, dense, self.transitions_left()) {
+            Ok(delays) => delays,
+            Err(NotConcretised::Exhausted) => {
+                return Err(self.stop(ZoneStop::LimitReached(
+                    ZoneCheckLimit::MaxSymbolicTransitions(self.limits.max_symbolic_transitions),
+                )))
+            }
+            Err(_) => return Ok(None),
         };
         // A scale at which every loop delay is whole.
         let factor = delays.iter().fold(BigInt::from(1), |factor, delay| {

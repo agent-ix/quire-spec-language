@@ -86,6 +86,9 @@ pub(super) enum NotConcretised {
     Dbm,
     /// A timed state did not encode.
     Digest,
+    /// A lasso's loop needed more constraints than the run's budget allows
+    /// (FR-241's elimination, charged to `max_symbolic_transitions`).
+    Exhausted,
 }
 
 impl From<DbmError> for NotConcretised {
