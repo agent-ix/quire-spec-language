@@ -26,13 +26,14 @@ use crate::model_check::hyper_smt_query::{HyperProductIdentity, HyperQueryReques
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::replay::ModelTraceSettlement;
 use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE, K_INDUCTION};
-use qsl_eval::simulation::explore::TransitionSystem;
 use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::smt::SmtEncodingRefusal;
 use qsl_semantics::check::HyperForm;
 
 use crate::proof_result::{
-    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue, UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// Whether a limit's value came from the request or from its published
