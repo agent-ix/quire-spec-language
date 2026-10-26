@@ -51,3 +51,15 @@ Round 1, against #1599 fix commit 1c963df6f (head; 69990aada..fb3b8137f are `=` 
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Spec defect, not a checker defect. FR-239-AC-5's atom `2 / (2 - t.n) >= 1` divides two Integers, and QSL types integer `/` only against an expected `Rational` type (FR-091 'integer-to-rational promotion for rational `/` with an expected rational type'; FR-100-AC-5 requires `1 / x > 0` to refuse `ill_typed`). Reproduced on c158dd83a in the Ticker fixture: the atom, and the variants `>= 1/1` and `>= rational(1, 1)`, all refuse `ill_typed`/`AmbiguousLiteral` from `arithmetic()`'s Integer/Integer Divide arm (qsl-semantics/src/check/check.rs:2832-2856). The coder's measurement is right. My round-1 `ProfileProhibitedOperator(Divide)` came from a fixture with no model clauses, where the clause was checked without the complete-value layer. Restate FR-239-AC-5 (and FR-235-AC-5 and FR-237-AC-5, which cite it) with an atom QSL types, for example integer `div`, which the test's `6 mod` already shows typed, or a rational operand with an expected domain. | spec/functional/FR-239-check-a-timed-claim-by-symbolic-zone-search.md:AC table, FR-239-AC-5 |
+
+Round 2, against round-2 commit c158dd83a (head).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | - |

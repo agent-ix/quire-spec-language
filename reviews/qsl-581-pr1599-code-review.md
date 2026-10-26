@@ -58,3 +58,10 @@ Round 1, against #1599 fix commit 1c963df6f (head; 69990aada..fb3b8137f are `=` 
 | FND-005 | deferred | Half fixed, half deferred: `DivergenceUnknown` is gone with FND-003. `DeadlockAfterDelay` stays, citing STD-493 (Backlog), because FR-236 and QSpec FR-417 give `final_delay` to time-lock counterexamples only. It needs an FR-235 row or a spec'd counterexample form from STD-493. |
 | FND-006 | fixed | - |
 | FND-007 | fixed | - |
+
+Round 2, against round-2 commit c158dd83a (head).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
