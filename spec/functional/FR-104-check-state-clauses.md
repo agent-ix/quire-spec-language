@@ -37,13 +37,13 @@ relationships:
 ## Description
 
 When S2 admits a `StateClauseForm` (FR-102), the FR-091 assembler SHALL
-resolve its profile alias, its context type, for a `pre` or `post` clause its
-operation, and its population domain(s), refusing an unresolved or ambiguous
-name at its span (see "Resolution"). The `ProtocolClause` family `check` then
-SHALL type the body as a Boolean under its clause kind, with `self`, `result`,
-the operation's parameters and `pre(e)` bound as QSpec's state contract states
-and every model read qualified by its observation; and SHALL produce one
-checked state clause with its identity, or a refusal with a catalog code. Its
+resolve its profile alias, context type, operation for a `pre` or `post`
+clause, and population domains. It SHALL refuse an unresolved or ambiguous
+name at its span (see "Resolution"). The `ProtocolClause` family SHALL type
+the body as a Boolean under its clause kind. It SHALL bind `self`, `result`,
+the operation's parameters and `pre(e)` as QSpec's state contract states, and
+qualify every model read by its observation. It SHALL produce one checked
+state clause with its identity or a refusal with a catalog code. Its
 `requirements` hook SHALL return one `operation-contract` record per clause
 and per frame (ADR-012 §2, §15.7; FR-057).
 
@@ -120,6 +120,11 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   selection namespace (FR-109).
 
 ### Typing
+
+- When the `ProtocolClause` checker checks a protocol control slot, it SHALL
+  type the slot against [FR-218](./FR-218-check-every-protocol-control-construct-at-s3.md)'s
+  compiled binder scope, including the repeat body's completed-iteration
+  binders at that repeat's `visible` and guard slots.
 
 - The checker SHALL check the body against `Boolean`. If the body has another
   type, then the checker SHALL refuse `ill_typed`/`non-boolean-root` at the
@@ -340,6 +345,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
 | FR-104-AC-12 | Extend TC-459 step 7's fixture package with an object type `Counter { tally: Int[0,3]; next: Int[0,3]; }` and an operation `bump` declared on it. `self.tally < 3 and self.next = self.tally + 1` checks as `pre G using v on Config::Counter::bump` and as `invariant I using v on Config::Counter at current`; with `record Pair { tally: Int[0,3]; }`, `function f using v(earlier: Pair, later: Pair, n: Integer): Boolean pure { ... }` with body `earlier.tally < 3 and later.tally = earlier.tally + 1` checks. With `self.tally < 3 and` or `earlier.tally < 3 and` removed, each refuses `undefined_expression`/`unproved-range` at the sum. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
 | FR-104-AC-13 | With `type P = Decimal[-99, 99; 2, 2; nearest-even];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function c using v(a: P, b: P): Boolean pure { a + b = b + a }` checks with each sum typed `P`, as do the bodies `a * b = b * a`, `a - b = a - b` and `a + decimal(1, 2) = b`, the last with the literal typed `P`. With `b: R`, `a + b = b + a` refuses `ill_typed`/`type-mismatch` at the first `a + b`. `let s = decimal(1, 2) + decimal(2, 2) in s = a` refuses `ill_typed`/`ambiguous-literal` at the sum. Evaluating `c` with `a = decimal(1, 2)`, `b = decimal(2, 2)` returns `true`, and with `a = decimal(99, 2)`, `b = decimal(1, 2)` it is refused `decimal_out_of_domain`/`outside-domain`. With `type W = Decimal[-198, 198; 2, 2; nearest-even];`, `function w using v(a: P, b: P): W pure { convert<W>(a) + convert<W>(b) }` evaluated at `a = decimal(99, 2)`, `b = decimal(1, 2)` returns `decimal(100, 2)`, while the body `convert<W>(a + b)` at the same values is refused `decimal_out_of_domain`/`outside-domain`. `function d using v(a: P, b: P): P pure { a / b }` checks with `a / b` typed `P`; evaluated at `a = decimal(1, 2)`, `b = decimal(8, 2)` (exactly 0.125, a tie at scale 2) it returns `decimal(12, 2)` under `nearest-even`, and at `a = decimal(5, 2)`, `b = decimal(2, 2)` (2.50) it is refused `decimal_out_of_domain`/`outside-domain`. The body `-a = b` checks with `-a` typed `P`, and with `b: R` the body `a / b = a` refuses `ill_typed`/`type-mismatch` at `a / b`. | Test (TC-1084) |
+| FR-104-AC-14 | A protocol repeat's `visible` and guard slots type an eligible body-produced attempt binder in the scope FR-218 supplies, using its most recently completed iteration value and retaining the producing role. | Test (TC-1268) |
 
 ## Dependencies
 
