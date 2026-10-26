@@ -646,6 +646,11 @@ impl<'a> ModelSystem<'a> {
         Ok((key.as_bytes().to_vec(), digest))
     }
 
+    /// The evaluation meter limits each reading of the system starts from.
+    pub fn meter_limits(&self) -> ScalarLimits {
+        self.meter
+    }
+
     /// FR-101's canonical bytes of `transition`, which order successors.
     ///
     /// # Errors
