@@ -1047,6 +1047,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::DuplicateReward {
                     reward, operation, ..
                 } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::InvalidDelay {
+                    operation, fault, ..
+                } => format!("{message}: the delay of `{operation}` is malformed ({fault:?})"),
+                ProbabilisticCause::DelayOnUntimedModel { operation, .. } => format!(
+                    "{message}: `{operation}` has a delay, but its model is not `time dense`"
+                ),
                 ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
                     "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
                 ),

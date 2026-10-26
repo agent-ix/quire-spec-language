@@ -865,6 +865,9 @@ impl Unit {
                 DeclarationForm::Reward(reward) => unit
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Delay(delay) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Delay(delay)),
                 DeclarationForm::Workload(workload) => unit
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Workload(workload)),

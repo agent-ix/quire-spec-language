@@ -271,3 +271,35 @@ fn a_quantity_literal_is_an_expression_and_a_bare_decimal_is_not() {
     assert!(!parsed.is_admissible());
     assert_eq!(parsed.diagnostics()[0].code, CompleteCode::InvalidSyntax);
 }
+
+/// TC-708: a `delay` declaration parses each of QSpec's `delay-dist`
+/// families to its productions, and `delay`, `uniform`, `exponential` and
+/// `discrete` reserve no word: each stays an identifier elsewhere.
+#[trace("TC-708")]
+#[test]
+fn delay_declarations_parse_each_family_and_reserve_no_word() {
+    let delays = [
+        "delay Server::attempt ~ uniform;",
+        "delay Server::attempt ~ uniform[1 ms, 3 ms];",
+        "delay Server::reset ~ exponential(0.001);",
+        "delay Server::request ~ discrete { 1 ms: 9, 3 ms: 1, };",
+    ];
+    let words = "enum Words { delay, uniform, exponential, discrete }";
+    let text = source(&format!("{}\n{words}", delays.join("\n")));
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(texts(&parsed, &text, Production::DelayDeclaration), delays);
+    assert_eq!(
+        texts(&parsed, &text, Production::DelayDistribution),
+        [
+            "uniform",
+            "uniform[1 ms, 3 ms]",
+            "exponential(0.001)",
+            "discrete { 1 ms: 9, 3 ms: 1, }"
+        ]
+    );
+    assert_eq!(
+        texts(&parsed, &text, Production::WeightedDelay),
+        ["1 ms: 9", "3 ms: 1"]
+    );
+}
