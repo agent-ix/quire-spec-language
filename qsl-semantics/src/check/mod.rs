@@ -5888,6 +5888,18 @@ fn register_protocol_sites(
             role.name.span,
         );
     }
+    for channel in &protocol.channels {
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Channel(&channel.name.name)),
+            channel.span,
+        );
+        if let qsl_forms::ChannelOrdering::Fifo { key, .. } = &channel.ordering.value {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::ChannelKey(&channel.name.name)),
+                key.spans.clone(),
+            );
+        }
+    }
     for control in &checked.controls.controls {
         if let Some(declaration) = protocol.declarations.get(control.node.0) {
             type_spans.insert(

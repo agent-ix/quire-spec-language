@@ -25,8 +25,11 @@
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ActivationForm, ProtocolDeclarationForm, ProtocolNodeKind};
-use quire_exact::{Identifier, NodeKey, ValueType};
+use qsl_forms::{
+    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
+    ProtocolDeclarationForm, ProtocolNodeKind,
+};
+use quire_exact::{Identifier, Integer, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
@@ -37,6 +40,7 @@ use crate::check::node_key::{
     NodeTag, Operation, OperationLaw, Operator, TupleTerm,
 };
 use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
+use crate::check::protocol_controls::CheckedOrdering;
 use crate::check::protocol_obligation::CheckedActivation;
 use crate::check::protocol_slots::{CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember};
 use crate::check::refusal::{
@@ -71,6 +75,10 @@ pub(crate) enum ProtocolSite<'a> {
     Finish(&'a str),
     /// The `finish` constraint's expression tree.
     FinishBody(&'a str),
+    /// A channel node and its generated queue.
+    Channel(&'a str),
+    /// A channel's FIFO key expression tree.
+    ChannelKey(&'a str),
     /// The role of this name: its `declaration` occurrence.
     Role(&'a str),
     /// The control at this path from the `run` root, the root's name first:
@@ -86,6 +94,8 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::Finish(name) => format!("protocol {protocol} finish {name}"),
         ProtocolSite::Role(role) => format!("protocol {protocol} role {role}"),
         ProtocolSite::FinishBody(name) => format!("protocol {protocol} finish {name} body"),
+        ProtocolSite::Channel(channel) => format!("protocol {protocol} channel {channel}"),
+        ProtocolSite::ChannelKey(channel) => format!("protocol {protocol} channel {channel} key"),
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
     }
 }
@@ -128,9 +138,6 @@ impl ProtocolInput<'_> {
             .any(|role| !role.replicated && role.context.is_none())
         {
             unemitted.push(ProtocolConstruct::WholeModelRole);
-        }
-        if !form.channels.is_empty() {
-            unemitted.push(ProtocolConstruct::Channels);
         }
         if !form.relationships.is_empty() {
             unemitted.push(ProtocolConstruct::Relationships);
@@ -359,7 +366,17 @@ impl Lowering<'_> {
         };
         let readable: Vec<Binder> = [Some(over), trigger].into_iter().flatten().collect();
 
-        let roles = self.role_nodes(protocol, &operation("role")?, boolean)?;
+        let role_nodes = self.role_nodes(protocol, &operation("role")?, boolean)?;
+        let mut roles: Vec<NodeKey> = role_nodes.values().copied().collect();
+        roles.sort();
+        let (channels, queues) = self.channel_nodes(
+            protocol,
+            &operation("channel")?,
+            &operation("queue")?,
+            boolean,
+            &role_nodes,
+            readable.len(),
+        )?;
         let finish = self.finish_node(protocol, &operation("finish")?, &readable, boolean)?;
         let run = self.run_nodes(protocol, &operation("sequence")?, boolean)?;
 
@@ -396,8 +413,14 @@ impl Lowering<'_> {
                     ),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
                     MemberTerm::binding("relationships", empty_group()),
-                    MemberTerm::binding("channels", empty_group()),
-                    MemberTerm::binding("queues", empty_group()),
+                    MemberTerm::binding(
+                        "channels",
+                        BindingValue::Group(GroupTerm::references(channels)),
+                    ),
+                    MemberTerm::binding(
+                        "queues",
+                        BindingValue::Group(GroupTerm::references(queues)),
+                    ),
                     MemberTerm::binding("requirements", empty_group()),
                     MemberTerm::binding("compensations", empty_group()),
                     MemberTerm::binding("terminal", empty_group()),
@@ -418,9 +441,9 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         operation: &Operation,
         boolean: NodeKey,
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+    ) -> Result<BTreeMap<String, NodeKey>, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
-        let mut keys = Vec::with_capacity(protocol.checked.roles.len());
+        let mut keys = BTreeMap::new();
         for role in &protocol.checked.roles {
             let location = protocol_location(name, ProtocolSite::Role(&role.name));
             let context = role
@@ -432,7 +455,7 @@ impl Lowering<'_> {
                 identifier("role", &location)?,
                 identifier(&role.name, &location)?,
             ];
-            keys.push(self.protocol_member(
+            let key = self.protocol_member(
                 &location,
                 "role",
                 boolean,
@@ -446,10 +469,147 @@ impl Lowering<'_> {
                         MemberTerm::binding("replication", empty_group()),
                     ],
                 ),
-            )?);
+            )?;
+            keys.insert(role.name.clone(), key);
         }
-        keys.sort();
         Ok(keys)
+    }
+
+    /// The channel and generated queue nodes of `protocol` (FR-465),
+    /// independently digest-sorted for their respective clause sets.
+    fn channel_nodes(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        channel_operation: &Operation,
+        queue_operation: &Operation,
+        boolean: NodeKey,
+        roles: &BTreeMap<String, NodeKey>,
+        entry_level: usize,
+    ) -> Result<(Vec<NodeKey>, Vec<NodeKey>), CheckRefusal> {
+        let protocol_name = protocol.form.name.name.as_str();
+        let mut channel_keys = Vec::with_capacity(protocol.checked.channels.len());
+        let mut queue_keys = Vec::with_capacity(protocol.checked.channels.len());
+        for channel in &protocol.checked.channels {
+            let location = protocol_location(protocol_name, ProtocolSite::Channel(&channel.name));
+            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
+            let from = roles.get(&channel.from).copied().ok_or_else(unchecked)?;
+            let to = roles.get(&channel.to).copied().ok_or_else(unchecked)?;
+            let carries = self.type_node(&channel.carries, &location)?;
+            let ordering = match &channel.ordering {
+                CheckedOrdering::Unordered => GroupTerm::new(vec![member(
+                    "kind",
+                    self.text_literal("unordered", &location)?,
+                )]),
+                CheckedOrdering::Fifo { binder, key } => {
+                    let key_location =
+                        protocol_location(protocol_name, ProtocolSite::ChannelKey(&channel.name));
+                    let binder_type = self.type_node(&binder.value_type, &key_location)?;
+                    let parameter =
+                        self.parameter(&binder.name, entry_level, binder_type, &key_location)?;
+                    let scope = [Binder {
+                        slot: 0,
+                        parameter,
+                        semantic_type: binder_type,
+                    }];
+                    let slot_names = [binder.name.clone()];
+                    let mut binders = Binders::new(&slot_names, &scope);
+                    let key = self.expression(key.root(), &mut binders)?;
+                    GroupTerm::new(vec![
+                        member("kind", self.text_literal("fifo", &location)?),
+                        member("binder", LeafTerm::reference(parameter)),
+                        member("key", key),
+                    ])
+                }
+            };
+            let delivery = match channel.delivery {
+                ChannelDelivery::Unknown => "unknown",
+                ChannelDelivery::AtMostOnce => "at-most-once",
+                ChannelDelivery::AtLeastOnce => "at-least-once",
+                ChannelDelivery::ExactlyOncePremise => "exactly-once-premise",
+            };
+            let delivery = self.text_literal(delivery, &location)?;
+            let channel_key = self.protocol_member(
+                &location,
+                "channel",
+                boolean,
+                vec![
+                    identifier(protocol_name, &location)?,
+                    identifier("channel", &location)?,
+                    identifier(&channel.name, &location)?,
+                ],
+                BodyTerm::application(
+                    Operator::ProtocolControl,
+                    channel_operation.clone(),
+                    boolean,
+                    vec![
+                        MemberTerm::bound("from", LeafTerm::reference(from)),
+                        MemberTerm::bound("to", LeafTerm::reference(to)),
+                        MemberTerm::bound("carries", LeafTerm::reference(carries)),
+                        MemberTerm::binding("ordering", BindingValue::Group(ordering)),
+                        MemberTerm::bound("delivery", delivery),
+                    ],
+                ),
+            )?;
+
+            let capacity = match &channel.capacity {
+                ChannelCapacity::Literal(value) => GroupTerm::new(vec![
+                    member("kind", self.text_literal("literal", &location)?),
+                    member(
+                        "value",
+                        self.integer_literal(Integer::from(*value), &location)?,
+                    ),
+                ]),
+                ChannelCapacity::Symbolic(name) => GroupTerm::new(vec![
+                    member("kind", self.text_literal("symbolic", &location)?),
+                    member("name", self.text_literal(name, &location)?),
+                ]),
+            };
+            let (overflow, loss) = match channel.overflow {
+                ChannelOverflow::Reject => ("reject", empty_group()),
+                ChannelOverflow::Block => ("block", empty_group()),
+                ChannelOverflow::Loss(selector) => (
+                    "loss",
+                    BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(
+                        self.text_literal(
+                            match selector {
+                                LossSelector::Head => "head",
+                                LossSelector::Tail => "tail",
+                                LossSelector::New => "new",
+                            },
+                            &location,
+                        )?,
+                    )])),
+                ),
+            };
+            let overflow = self.text_literal(overflow, &location)?;
+            let queue_key = self.insert_node(
+                &location,
+                NodeContent {
+                    node_tag: NodeTag::Protocol,
+                    semantic_form: "queue",
+                    semantic_type: Some(boolean),
+                    declaration: None,
+                    owner: None,
+                    body: BodyTerm::application(
+                        Operator::ProtocolControl,
+                        queue_operation.clone(),
+                        boolean,
+                        vec![
+                            MemberTerm::bound("channel", LeafTerm::reference(channel_key)),
+                            MemberTerm::binding("capacity", BindingValue::Group(capacity)),
+                            MemberTerm::bound("overflow", overflow),
+                            MemberTerm::binding("loss", loss),
+                        ],
+                    ),
+                },
+            )?;
+            self.record(queue_key, OccurrenceRole::Generated, location);
+            channel_keys.push(channel_key);
+            queue_keys.push(queue_key);
+        }
+        channel_keys.sort();
+        queue_keys.sort();
+        Ok((channel_keys, queue_keys))
     }
 
     /// The `finish` obligation node of `protocol` (FR-465 "Finish"): its
@@ -556,10 +716,12 @@ impl Lowering<'_> {
             )?;
             keys.insert(control.node, key);
         }
-        tree.root()
+        let root = tree
+            .root()
             .and_then(|root| keys.get(&root.node))
             .copied()
-            .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))
+            .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))?;
+        Ok(root)
     }
 
     /// The carrier of a reference to the `protocol`-th declaration: a

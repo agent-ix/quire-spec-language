@@ -123,7 +123,6 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
         (ProtocolConstruct::ReplicatedRoles, "QSL-1125"),
-        (ProtocolConstruct::Channels, "QSL-1125"),
         (ProtocolConstruct::Relationships, "QSL-1125"),
         (ProtocolConstruct::Control("attempt"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
@@ -401,6 +400,165 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
     let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
     let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
     assert_eq!(&text[start..end], "protocol Fill");
+}
+
+/// A channel emits its named node and one generated queue, both admitted by
+/// the real I2 reader, with the queue-set order independent of channel order.
+#[trace("FR-383-AC-4", "TC-1061")]
+#[test]
+fn a_channel_emits_its_channel_and_generated_queue_nodes() {
+    let declarations = protocol("Fill").replace(
+        "run sequence",
+        "channel C from R to R carries Boolean ordering unordered delivery unknown \
+         capacity 2 overflow loss tail;\nrun sequence",
+    );
+    let text = selecting(&declarations);
+    let (emission, wire, _, read) = emit_model_unit(&text, None);
+    assert_eq!(emission.omitted, []);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+
+    let clause = node_of(&wire, "protocol", "protocol_clause");
+    let channel = node_of(&wire, "protocol", "channel");
+    let queue = node_of(&wire, "protocol", "queue");
+    let [channel_ref] = clause_argument(clause, "channels")["members"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one channel: {}", clause_argument(clause, "channels"));
+    };
+    let [queue_ref] = clause_argument(clause, "queues")["members"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one queue: {}", clause_argument(clause, "queues"));
+    };
+    assert_eq!(channel_ref["target"], channel["node_id"]);
+    assert_eq!(queue_ref["target"], queue["node_id"]);
+    assert_eq!(
+        channel["declaration"]["qualified_name"],
+        json!(["Fill", "channel", "C"])
+    );
+    assert_eq!(
+        channel["body"]["operation"]["member"]["operator"],
+        "channel"
+    );
+    assert_eq!(queue["body"]["operation"]["member"]["operator"], "queue");
+    assert_eq!(
+        queue["body"]["arguments"][3]["value"]["members"][0]["value"],
+        "tail"
+    );
+    assert_eq!(
+        channel["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    assert_eq!(
+        queue["occurrences"],
+        json!([{"role": "generated", "ordinal": 0}])
+    );
+}
+
+/// Channels preserve each checked ordering, delivery, capacity and overflow
+/// premise, while independently digest-sorting the channel and queue sets.
+#[trace("FR-383-AC-4", "FR-383-AC-12", "TC-1061", "TC-1062")]
+#[test]
+fn channels_encode_all_premises_and_fifo_binders() {
+    let declarations = protocol("Fill").replace(
+        "run sequence",
+        "channel A from R to R carries Boolean ordering unordered delivery unknown \
+         capacity 2 overflow reject;\n\
+         channel B from R to R carries Boolean ordering fifo by (message: Boolean) \
+         { message } delivery at-most-once capacity symbolic(Bound) overflow loss head;\n\
+         channel C from R to R carries Boolean ordering unordered delivery at-least-once \
+         capacity 3 overflow block;\n\
+         channel D from R to R carries Boolean ordering fifo by (message: Boolean) \
+         { message } delivery exactly-once-premise capacity 4 overflow loss new;\n\
+         run sequence",
+    );
+    let text = selecting(&declarations);
+    let (emission, wire, _, read) = emit_model_unit(&text, None);
+    assert_eq!(emission.omitted, []);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+
+    let named_node = |form: &str, name: &str| {
+        nodes(&wire)
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == form && node["declaration"]["qualified_name"][2] == name
+            })
+            .unwrap_or_else(|| panic!("no {form} node declared as {name}"))
+    };
+    let channel_a = named_node("channel", "A");
+    let channel_b = named_node("channel", "B");
+    let channel_c = named_node("channel", "C");
+    let channel_d = named_node("channel", "D");
+    assert_eq!(
+        channel_a["body"]["arguments"][3]["value"]["members"][0]["value"]["value"],
+        "unordered"
+    );
+    assert_eq!(
+        channel_a["body"]["arguments"][4]["value"]["value"],
+        "unknown"
+    );
+    assert_eq!(
+        channel_b["body"]["arguments"][3]["value"]["members"][0]["value"]["value"],
+        "fifo"
+    );
+    assert_eq!(
+        channel_b["body"]["arguments"][3]["value"]["members"][1]["name"],
+        "binder"
+    );
+    assert_eq!(
+        channel_b["body"]["arguments"][3]["value"]["members"][2]["name"],
+        "key"
+    );
+    assert_eq!(
+        channel_b["body"]["arguments"][4]["value"]["value"],
+        "at-most-once"
+    );
+    assert_eq!(
+        channel_c["body"]["arguments"][4]["value"]["value"],
+        "at-least-once"
+    );
+    assert_eq!(
+        channel_d["body"]["arguments"][4]["value"]["value"],
+        "exactly-once-premise"
+    );
+
+    let queue_for = |channel: &Value| {
+        let channel_key = &channel["node_id"];
+        nodes(&wire)
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "queue"
+                    && node["body"]["arguments"][0]["value"]["target"] == *channel_key
+            })
+            .unwrap_or_else(|| panic!("no queue for {}", channel["node_id"]))
+    };
+    let queue_a = queue_for(channel_a);
+    let queue_b = queue_for(channel_b);
+    let queue_c = queue_for(channel_c);
+    let queue_d = queue_for(channel_d);
+    assert_eq!(
+        queue_a["body"]["arguments"][1]["value"]["members"][0]["value"]["value"],
+        "literal"
+    );
+    assert_eq!(queue_a["body"]["arguments"][2]["value"]["value"], "reject");
+    assert_eq!(
+        queue_b["body"]["arguments"][1]["value"]["members"][0]["value"]["value"],
+        "symbolic"
+    );
+    assert_eq!(queue_b["body"]["arguments"][2]["value"]["value"], "loss");
+    assert_eq!(
+        queue_b["body"]["arguments"][3]["value"]["members"][0]["value"],
+        "head"
+    );
+    assert_eq!(queue_c["body"]["arguments"][2]["value"]["value"], "block");
+    assert_eq!(
+        queue_d["body"]["arguments"][3]["value"]["members"][0]["value"],
+        "new"
+    );
 }
 
 /// FR-092-AC-16, FR-092-AC-18: an `each` trigger, a nested `run` tree, two
