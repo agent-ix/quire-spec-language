@@ -679,13 +679,12 @@ impl MemoryModel for Tso {
         }
     }
 
-    fn carried_race_key(
+    fn carried_choice_key(
         &self,
         component: &TsoComponent,
         carried: &CarriedView,
     ) -> Option<CarriedKey> {
-        (!component.race.summaries.is_empty())
-            .then(|| CarriedKey(component.race.map_enc(carried.race())))
+        (!component.race.summaries.is_empty()).then(|| self.carried_key(component, carried))
     }
 
     fn carried_key(&self, component: &TsoComponent, carried: &CarriedView) -> CarriedKey {

@@ -803,6 +803,59 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store() {
     );
 }
 
+/// FND-012 of QSL-932, under `tso`: queued entries of equal bytes but different carried
+/// views are different choices. `s` sends one payload twice from a `repeat`
+/// and, after each send, receives an ack that `w` sends after storing `data`,
+/// so its first entry does not carry the store and its second does. `r1`
+/// receives, then sets a `relaxed` flag; `r2` receives only after reading
+/// that flag as 1, which orders nothing, and is the only reader of `data`.
+/// The engine must also give `r1` the later entry and `r2` the earlier one,
+/// where `r2` races with the store; the item refutes with a race that
+/// replays. It asserts no acceptance criterion.
+#[test]
+fn a_second_receiver_of_an_older_equal_entry_races_with_the_store_under_tso() {
+    let sender = "sequence S { repeat Loop by w visible () max 2 while { true } \
+         sequence Body { send Tx via ch as (tx: Boolean) { tx }; \
+         receive Ak via ch2 of w::W::Acks::Ack as (ak: Boolean) { true }; } \
+         exhausted sequence Out { } }";
+    let writer = format!(
+        "sequence W {{ {} repeat Acks by w visible () max 2 while {{ true }} \
+         send Ack via ch2 as (ack: Boolean) {{ ack }}; exhausted sequence OutW {{ }} }}",
+        put("Sx", "x", ""),
+    );
+    let first = format!(
+        "sequence R1 {{ receive Ra via ch of s::S::Loop::Body::Tx as (ra: Boolean) \
+         {{ true }}; {} }}",
+        put("Sy", "y", "relaxed"),
+    );
+    let second = format!(
+        "sequence R2 {{ {} choice Pick2 by c visible (bLy) {{ case yes when {{ bLy }} \
+         sequence Y {{ receive Rb via ch of s::S::Loop::Body::Tx as (rb: Boolean) \
+         {{ true }}; {} }} case no when {{ not bLy }} sequence Skip2 {{ }} }} }}",
+        attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch w {writer} branch s {sender} \
+         branch r1 {first} branch r2 {second} }} join all [w, s, r1, r2]; }}"
+    );
+    let channels = "channel ch from w to w carries Boolean ordering unordered \
+                    delivery exactly-once-premise capacity 2 overflow block; \
+                    channel ch2 from w to w carries Boolean ordering unordered \
+                    delivery exactly-once-premise capacity 2 overflow block;";
+    let case = Case::with_letters(
+        &(contracts() + &protocol_with("SB", channels, &run) + NO_BOTH_ZERO),
+        &MP,
+    );
+    let counterexample = violated(case.check(&tso(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = case.replay_race(&tso(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
 /// FR-224-AC-1 (TC-669), the `tso` half: ADR-025 §10's message-passing shape
 /// with `data` non-atomic and a `release` flag store and `acquire` flag load
 /// carries one `RaceFreedom` item under `tso`, which settles `proved`.
