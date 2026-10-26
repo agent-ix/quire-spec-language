@@ -333,6 +333,9 @@ fn source_and_types(g: &mut Grammar) {
         r(P::TimeInvariant),
         r(P::TimeDeclaration),
         r(P::UrgentDeclaration),
+        r(P::TasksetDeclaration),
+        r(P::SchedulableDeclaration),
+        r(P::ResponseDeclaration),
         r(P::RandomDeclaration),
         r(P::RewardDeclaration),
         r(P::DelayDeclaration),
@@ -1453,6 +1456,83 @@ fn temporal(g: &mut Grammar) {
             literal("urgent"),
             ident(),
             c(vec![s(vec![x("when"), r(P::Block)]), r(P::QualifiedName)]),
+            x(";"),
+        ]),
+    );
+    // `taskset-decl`, `task`, `signed-quantity` and `schedulability-clause`
+    // (QSpec FR-419). Every word they introduce is contextual, so no keyword
+    // is reserved; `on` is the one reserved word they use.
+    g.insert(
+        P::TasksetDeclaration,
+        s(vec![
+            literal("taskset"),
+            ident(),
+            x("{"),
+            star(r(P::Task)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::Task,
+        s(vec![
+            literal("task"),
+            ident(),
+            c(vec![literal("periodic"), literal("sporadic")]),
+            r(P::SignedQuantity),
+            literal("deadline"),
+            r(P::SignedQuantity),
+            literal("wcet"),
+            r(P::SignedQuantity),
+            opt(s(vec![literal("priority"), uint()])),
+            opt(s(vec![literal("jitter"), r(P::SignedQuantity)])),
+            opt(s(vec![literal("blocking"), r(P::SignedQuantity)])),
+            c(vec![
+                s(vec![
+                    literal("lo"),
+                    opt(s(vec![literal("wcet_hi"), r(P::SignedQuantity)])),
+                ]),
+                s(vec![
+                    literal("hi"),
+                    literal("wcet_hi"),
+                    r(P::SignedQuantity),
+                ]),
+            ]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::SignedQuantity,
+        s(vec![opt(x("-")), r(P::QuantityLiteral)]),
+    );
+    g.insert(
+        P::SchedulableDeclaration,
+        s(vec![
+            literal("schedulable"),
+            ident(),
+            x("on"),
+            ident(),
+            literal("under"),
+            c(vec![
+                literal("fixed_priority"),
+                literal("edf"),
+                literal("amc"),
+            ]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ResponseDeclaration,
+        s(vec![
+            literal("response"),
+            ident(),
+            x("on"),
+            ident(),
+            x("."),
+            ident(),
+            x("<="),
+            r(P::QuantityLiteral),
+            literal("under"),
+            literal("fixed_priority"),
             x(";"),
         ]),
     );

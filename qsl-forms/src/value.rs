@@ -1202,6 +1202,11 @@ impl<'c> Mapping<'c> {
             | Production::TimeInvariant
             | Production::ClockBound
             | Production::UrgentDeclaration
+            | Production::TasksetDeclaration
+            | Production::Task
+            | Production::SignedQuantity
+            | Production::SchedulableDeclaration
+            | Production::ResponseDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction
@@ -1878,6 +1883,11 @@ impl<'c> Mapping<'c> {
             | Production::TimeInvariant
             | Production::ClockBound
             | Production::UrgentDeclaration
+            | Production::TasksetDeclaration
+            | Production::Task
+            | Production::SignedQuantity
+            | Production::SchedulableDeclaration
+            | Production::ResponseDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction

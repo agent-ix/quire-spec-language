@@ -145,6 +145,16 @@ productions! {
     ClockBound,
     #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
     UrgentDeclaration,
+    #[doc = "`taskset <identifier> { <task>* }`: a task set for one preemptive uniprocessor (QSpec FR-419)."]
+    TasksetDeclaration,
+    #[doc = "`task <identifier> (periodic | sporadic) <signed-quantity> deadline <signed-quantity> wcet <signed-quantity> [priority <uint>] [jitter <signed-quantity>] [blocking <signed-quantity>] (lo [wcet_hi <signed-quantity>] | hi wcet_hi <signed-quantity>) ;`: one task of a task set."]
+    Task,
+    #[doc = "`[-] <quantity-literal>`: a time value a task states, whose sign S3 checks."]
+    SignedQuantity,
+    #[doc = "`schedulable <identifier> on <identifier> under <policy> ;`: a schedulability claim over a task set."]
+    SchedulableDeclaration,
+    #[doc = "`response <identifier> on <identifier> . <identifier> <= <quantity-literal> under fixed_priority ;`: a response-time claim over one task of a task set."]
+    ResponseDeclaration,
     TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     AggregateAtom, AggregateTerm, AggregateKind, PastWindow,
