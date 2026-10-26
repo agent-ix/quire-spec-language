@@ -1410,6 +1410,11 @@ fn cattempt_and_the_commit_step_cover_the_attempt_record() {
             assert!(footprint.reads.contains(&ctl(&compensation(0))));
             assert!(footprint.writes.contains(&ctl(&compensation(0))));
             assert!(footprint.reads.contains(&registrations()));
+            // `RefundAttempt` holds no reference: no population is read.
+            let cells = Location::AnyMembership {
+                population: key("cells"),
+            };
+            assert!(!footprint.reads.contains(&cells), "{footprint:?}");
 
             let mut with_record = false;
             let mut checked = 0;
