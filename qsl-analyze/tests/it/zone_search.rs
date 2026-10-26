@@ -140,9 +140,12 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
 /// `Rpc` with `T = 4 ms` and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
 /// `0`, `3`, `0`; the deadlock-freedom item holds under both. Not covered:
-/// the `Holds` certificate, which FR-244 builds.
+/// the `Holds` certificate, which FR-244 builds. With `qsl-eval`'s
+/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, which
+/// checks each step's post-state digest, this is FR-236-AC-1.
 #[trace("TC-694")]
 #[trace("TC-696", "FR-241-AC-1")]
+#[trace("TC-691", "FR-236-AC-1")]
 #[test]
 fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     let four = rpc(4);
