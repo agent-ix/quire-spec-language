@@ -814,7 +814,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 13] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 12] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
@@ -867,12 +867,6 @@ mod tests {
             "qsl-replay/src/spine/lifecycle.rs",
             Some("Resolution"),
             "finish_unit",
-        ),
-        // The retained closure takes the unit's checked package back out.
-        (
-            "qsl-replay/src/spine/lifecycle.rs",
-            Some("CheckedUnit"),
-            "into_package",
         ),
         // Lane-private: the native-v1 emitter's own `EmittedPackage`.
         ("src/protocol_artifact/native/mod.rs", None, "emit"),
