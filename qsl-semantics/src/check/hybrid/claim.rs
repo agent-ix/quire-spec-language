@@ -640,6 +640,10 @@ fn formula(
                     typed(condition, Kind::Boolean, env, meter, stops).map(HybridFormula::Holds)
                 }
             }
+            TemporalNodeForm::AggregateAtom(atom) => {
+                stops.push(cause(HybridCause::HyperExpression { span: atom.span }));
+                None
+            }
             TemporalNodeForm::Operator(operator) => {
                 let mut operands = Vec::with_capacity(operator.operands.len());
                 for operand in &operator.operands {

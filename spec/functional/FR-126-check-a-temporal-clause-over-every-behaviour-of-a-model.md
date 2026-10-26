@@ -479,7 +479,9 @@ automaton states and the depth reached.
   state, and the second phase's SCCs in topological order, each with the
   first witness that holds for it in the order `Trivial`,
   `MissingAcceptance{set}` (the lowest such set), `UnfairWeak{constraint}`
-  (the first such constraint of the fairness set), `UnfairStrong{constraints, sub}`
+  (the first such constraint in FR-339's resolved-constraint order: FR-123's
+  order over a model subject, FR-339 "Protocol subjects" over a protocol
+  subject), `UnfairStrong{constraints, sub}`
   (FR-130), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2), whose `constraints` index the visibility pairs resolved per (thread, location) (FR-339) (ADR-018 PC-4).
   When strong constraints and visibility pairs both fail on one component,
   its witness is the `UnfairStrong`, and the failing pairs that still load

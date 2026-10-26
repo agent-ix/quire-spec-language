@@ -142,6 +142,7 @@ mod state_graph_claim;
 mod state_model;
 mod step_simulation;
 mod sum_case;
+mod task_set;
 mod temporal_clause;
 mod terminal;
 mod time_units;
@@ -155,6 +156,10 @@ pub use probabilistic::{
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
+pub use task_set::{
+    Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, ScheduleClaim, SchedulingPolicy,
+    Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
@@ -379,7 +384,8 @@ pub use refusal::{
     InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
-    SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimeUnitCause, TimedConstruct,
+    SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause,
+    TimeUnitCause, TimedConstruct,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -591,6 +597,8 @@ pub struct CheckedGraph {
     hybrid_claims: Vec<CheckedHybridClaim>,
     /// FR-185: every checked random parameter, reward and workload.
     probabilistic: CheckedProbabilisticModel,
+    /// QSL FR-246: every checked task set and the claims over them.
+    task_sets: CheckedTaskSets,
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
@@ -1324,6 +1332,60 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
+        // QSL FR-246: the task sets and the claims over them. They are timed
+        // forms, so FR-230's facet gate admits them; every defect is reported.
+        let mut checked_task_sets = CheckedTaskSets::default();
+        if !self.task_set_forms.is_empty() {
+            let required = crate::value::layer::HeaderLayer::TemporalComplete;
+            let selected = self.header_layers.clone();
+            let admitted = crate::value::definition::DefinitionLock::pinned()
+                .closure(&selected)
+                .contains(&required);
+            if admitted {
+                let units = time_units::TimeUnits::new(
+                    &self.units,
+                    self.nominal_spans.keys().copied(),
+                    &self.models,
+                    self.identity,
+                );
+                let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
+                for finding in checked.findings {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: match finding {
+                            task_set::Finding::Cause(cause) => {
+                                CheckCause::Temporal(Box::new(cause))
+                            }
+                            task_set::Finding::RationalBits { span, bits } => {
+                                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                                    stage: CheckingStage::Typing,
+                                    kind: CheckingLimitKind::RationalBits,
+                                    limit: limits.rational_bits(),
+                                    actual: u128::from(bits),
+                                    region: region::region(
+                                        &self.source,
+                                        self.embedding.as_deref(),
+                                        span,
+                                    ),
+                                }))
+                            }
+                        },
+                    });
+                }
+                checked_task_sets = checked.model;
+            } else {
+                refusals.extend(self.task_set_forms.iter().map(|form| CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
+                        construct: form.construct(),
+                        owner: form.owner(),
+                        selected: selected.clone(),
+                        required,
+                        span: form.span(),
+                    })),
+                }));
+            }
+        }
         // One pass groups every declaration by name, so the
         // duplicate check is a map lookup per declaration, not a pairwise
         // comparison. Each group's declarations stay in declaration order,
@@ -2937,7 +2999,46 @@ impl PackageDeclarations {
             }
             match outcome {
                 Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
-                    refusals.push(temporal_clause::not_emitted(&staged.into_value()));
+                    let checked = staged.into_value();
+                    if checked.has_aggregate {
+                        let location =
+                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                        let condition_declarations = state_clause::ClauseDeclarations {
+                            scope: &scope,
+                            signatures: &signatures,
+                            dispatch_tables: &dispatch_tables,
+                            models: &models,
+                            checking_limits: limits,
+                            location: &location,
+                            nodes_used,
+                            cancel: Some(cancel),
+                            staged: None,
+                        };
+                        let mut condition_cx = crate::family::CheckContext::new(
+                            &condition_declarations,
+                            contract_limits,
+                            &mut contract_meter,
+                            &mut contract_diagnostics,
+                            &mut contract_scopes,
+                        );
+                        match temporal_clause::condition::check_conditions(
+                            index,
+                            &clause.form,
+                            &checked,
+                            &condition_declarations,
+                            &mut condition_cx.reborrow(&scope),
+                        ) {
+                            Ok((_, used)) => nodes_used = used,
+                            Err(refusal) => {
+                                refusals.push(refusal);
+                                if cancel.tripped().is_some() {
+                                    return Err(refusals);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    refusals.push(temporal_clause::not_emitted(&checked));
                 }
                 Ok(staged) => {
                     let checked = staged.into_value();
@@ -4558,6 +4659,7 @@ impl PackageDeclarations {
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
             probabilistic: probabilistic_model,
+            task_sets: checked_task_sets,
             operation_frames,
             model_objects,
             model_owners,
@@ -5110,6 +5212,12 @@ impl CheckedGraph {
     /// workloads.
     pub fn probabilistic_model(&self) -> &CheckedProbabilisticModel {
         &self.probabilistic
+    }
+
+    /// QSL FR-246: the package's checked task sets and the schedulability
+    /// and response claims over them.
+    pub fn task_sets(&self) -> &CheckedTaskSets {
+        &self.task_sets
     }
 
     /// FR-366: every checked type-level invariant.
