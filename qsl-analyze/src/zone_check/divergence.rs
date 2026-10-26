@@ -247,9 +247,12 @@ impl Run<'_, '_, '_> {
             })
         } else if let Some((from, edge)) = accepting {
             let component = component_of[from];
+            // The cycle leaves `from` by the accepting edge and returns to
+            // it inside the component.
             let back = moves_within(&out, &component_of, component, edge.to, from);
-            back.map(|mut cycle| {
-                cycle.push(edge.step);
+            back.map(|back| {
+                let mut cycle = vec![edge.step];
+                cycle.extend(back);
                 EscapeWitness {
                     path: moves_to(from),
                     target: EscapeTarget::Cycle(cycle),

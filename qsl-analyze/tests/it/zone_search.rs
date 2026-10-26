@@ -617,7 +617,7 @@ fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
 fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'static str {
     let operation = certificate.edges[edge].transition.operation();
     [
-        "send", "reply", "timeout", "reset", "go", "ping", "tock", "back", "tick", "work",
+        "send", "reply", "timeout", "reset", "go", "ping", "tock", "back", "tick", "work", "alpha",
     ]
     .into_iter()
     .find(|name| operation.contains(&format!("Call/{name}\"")))
@@ -906,66 +906,74 @@ fn a_zeno_loop_is_never_the_admitted_witness() {
     );
 }
 
-/// SR-1627001 FND-002: phase 0 is urgent with a zero-delay `ping`
-/// self-loop; `go` moves to phase 1, which is quiescent, and `back`
-/// returns. The claim holds, admitted by the quiescent phase 1.
+/// SR-1627001 FND-002: phase 0 admits no delay (`x <= 0 ms`) and has a
+/// zero-delay `ping` self-loop; `go` moves to phase 1, which bounds `x` by
+/// 2 ms, and `back`, after `x >= 1 ms`, resets `x` and returns. No state is
+/// quiescent, and the claim holds, admitted by the divergent `go`/`back`
+/// cycle, never by the Zeno `ping` loop.
 #[trace("TC-699")]
 #[test]
 fn an_urgent_zero_delay_loop_does_not_hide_the_divergent_one() {
     let world = quiet(
         &["x"],
-        &[("ping", &[]), ("go", &["phase"]), ("back", &["phase"])],
+        &[("ping", &[]), ("go", &["phase"]), ("back", &["phase", "x"])],
         "",
         DENSE,
         "pre Ping using v on M::Call::ping { self.phase = 0 }\n\
          pre Go using v on M::Call::go { self.phase = 0 }\n\
          post Gone using v on M::Call::go { self.phase = 1 }\n\
-         pre Back using v on M::Call::back { self.phase = 1 }\n\
-         post Returned using v on M::Call::back { self.phase = 0 }\n\
-         urgent Hurry when { self.phase = 0 };\n",
+         pre Back using v on M::Call::back { self.phase = 1 and self.x >= 1 ms }\n\
+         post Returned using v on M::Call::back { self.phase = 0 and self.x = 0 ms }\n\
+         time invariant Urgent when { self.phase = 0 } { self.x <= 0 ms }\n\
+         time invariant Bounded when { self.phase = 1 } { self.x <= 2 ms }\n",
     );
     let certificate = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
     assert_edges_cover(&world, &certificate);
-    let admitted = &certificate.admitted;
-    let DivergentTarget::Quiescent(node) = admitted.target else {
-        panic!("a quiescent witness: {admitted:?}");
-    };
-    assert_ne!(node, 0, "phase 0 is urgent");
-    assert_eq!(
-        admitted
-            .path
-            .iter()
-            .map(|&edge| operation(&certificate, edge))
-            .collect::<Vec<_>>(),
-        ["go"]
+    let cycle = witness_cycle(&certificate);
+    assert!(
+        cycle.contains(&"go") && cycle.contains(&"back"),
+        "{cycle:?}"
     );
+    assert!(!cycle.contains(&"ping"), "{cycle:?}");
 }
 
-/// SR-1627001 FND-003: under a tick source, phase 0 has only `work` and
-/// `go`, and `tick` is enabled only in phase 1. Staying in phase 0 never
-/// ticks, so the witness is a cycle through phase 1 that takes `tick`.
+/// SR-1627001 FND-003 and FND-008: under a tick source, phase 0 enables
+/// `alpha`, which changes nothing, and `go` to phase 1, and phase 1
+/// enables only `tick`, back to phase 0. Staying in phase 0 never ticks,
+/// so the witness is the cycle `go`, `tick`, which leaves its start by the
+/// tick edge's own state change. The claim and the deadlock-freedom item
+/// are both proved, each admitted by that cycle.
 #[trace("TC-699")]
 #[test]
 fn a_tick_source_admits_by_a_tick() {
     let world = quiet(
         &[],
-        &[("work", &[]), ("go", &["phase"]), ("tick", &[])],
+        &[("alpha", &[]), ("go", &["phase"]), ("tick", &["phase"])],
         "",
         "dimension Time;\nunit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\
          time M tick M::Call::tick period 5 ms unit ms;\n",
-        "pre Work using v on M::Call::work { self.phase = 0 }\n\
+        "pre Alpha using v on M::Call::alpha { self.phase = 0 }\n\
          pre Go using v on M::Call::go { self.phase = 0 }\n\
          post Gone using v on M::Call::go { self.phase = 1 }\n\
-         pre Tick using v on M::Call::tick { self.phase = 1 }\n",
+         pre Tick using v on M::Call::tick { self.phase = 1 }\n\
+         post Ticked using v on M::Call::tick { self.phase = 0 }\n",
     );
-    let certificate = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
-    let admitted = &certificate.admitted;
-    assert!(
-        !matches!(admitted.target, DivergentTarget::Quiescent(_)),
-        "a tick source has no quiescent witness: {admitted:?}"
-    );
-    assert!(witness_cycle(&certificate).contains(&"tick"));
+    for certificate in [
+        proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new())),
+        proved(deadlock(&world)),
+    ] {
+        let admitted = &certificate.admitted;
+        assert!(
+            !matches!(admitted.target, DivergentTarget::Quiescent(_)),
+            "a tick source has no quiescent witness: {admitted:?}"
+        );
+        let cycle = witness_cycle(&certificate);
+        assert!(
+            cycle.contains(&"tick") && cycle.contains(&"go"),
+            "{cycle:?}"
+        );
+    }
 }
 
 /// FR-244: a certificate names its item's obligation, so a request whose
