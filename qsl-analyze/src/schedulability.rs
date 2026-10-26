@@ -15,6 +15,7 @@ mod arith;
 mod busy_period;
 mod edf;
 mod fixed_priority;
+pub mod manifest;
 
 use qsl_replay::{
     ClosedFormOutcome, IncompleteCause, ScheduleClaim, ScheduleLimit, ScheduleSubject,

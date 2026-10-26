@@ -3358,6 +3358,81 @@ pub struct TemporalOperatorForm {
     pub operator_span: Span,
 }
 
+/// One aggregate kind used by a temporal window atom (FR-194).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AggregateKindForm {
+    /// Number of positions admitted by the optional filter.
+    Count,
+    /// Exact sum of the values admitted by the optional filter.
+    Sum,
+    /// Least admitted value.
+    Min,
+    /// Greatest admitted value.
+    Max,
+    /// Share of admitted positions where the predicate holds.
+    Fraction(ExpressionForm),
+    /// Nearest-rank quantile level, as authored.
+    Quantile(ExactValueForm),
+}
+
+/// A `past[a, b]` window, with each bound's written kind retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PastWindowForm {
+    /// Nearest age or offset.
+    pub lower: HorizonForm,
+    /// Farthest age or offset.
+    pub upper: HorizonForm,
+    /// The whole window span.
+    pub span: Span,
+}
+
+/// One aggregate term before profile, type, unit or range checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateTermForm {
+    /// The aggregate kind and any kind-specific authored expression.
+    pub kind: AggregateKindForm,
+    /// The optional `of` expression.
+    pub value: Option<ExpressionForm>,
+    /// The optional `where holds(...)` filter.
+    pub filter: Option<ExpressionForm>,
+    /// The past window.
+    pub window: PastWindowForm,
+    /// The optional `min_count` literal.
+    pub min_count: Option<Spanned<u64>>,
+    /// The complete term span.
+    pub span: Span,
+}
+
+/// The comparison following a temporal aggregate term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AggregateComparison {
+    /// `<`.
+    Less,
+    /// `<=`.
+    LessEqual,
+    /// `=`.
+    Equal,
+    /// `>=`.
+    GreaterEqual,
+    /// `>`.
+    Greater,
+}
+
+/// An aggregate term compared with its threshold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateAtomForm {
+    /// The aggregate term.
+    pub term: AggregateTermForm,
+    /// The comparison operator.
+    pub comparison: AggregateComparison,
+    /// The threshold expression.
+    pub threshold: ExpressionForm,
+    /// The complete atom span.
+    pub span: Span,
+    /// The comparison token span.
+    pub comparison_span: Span,
+}
+
 /// One node of a temporal formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TemporalNodeForm {
@@ -3375,6 +3450,8 @@ pub enum TemporalNodeForm {
         /// The span of the whole `holds(e)`.
         span: Span,
     },
+    /// A window aggregate atom.
+    AggregateAtom(Box<AggregateAtomForm>),
     /// An operator applied to its operands.
     Operator(TemporalOperatorForm),
 }
@@ -4071,6 +4148,126 @@ pub struct UrgentForm {
     pub span: Span,
 }
 
+/// A `signed-quantity` as written: an optional `-` and a `quantity-literal`.
+/// S2 resolves neither the sign's admissibility nor the unit (QSpec FR-419).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignedQuantityForm {
+    /// Whether a `-` precedes the quantity.
+    pub negative: bool,
+    /// The quantity.
+    pub quantity: QuantityForm,
+    /// The span of the whole value, the `-` included.
+    pub span: Span,
+}
+
+/// How a task arrives (QSpec FR-419).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArrivalForm {
+    /// `periodic`: the value is the period.
+    Periodic,
+    /// `sporadic`: the value is the minimum inter-arrival time.
+    Sporadic,
+}
+
+/// A task's criticality word (QSpec FR-419).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CriticalityForm {
+    /// `lo`.
+    Lo,
+    /// `hi`.
+    Hi,
+}
+
+/// A task's `priority` as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriorityForm {
+    /// The natural number.
+    pub value: Integer,
+    /// The span of the number.
+    pub span: Span,
+}
+
+/// One `task` of a task set, every member as written and in the grammar's
+/// fixed order (QSpec FR-419). A body the checker refuses, such as a `lo` task
+/// with a `wcet_hi`, still builds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskForm {
+    /// The task's name.
+    pub name: DeclaredName,
+    /// `periodic` or `sporadic`.
+    pub arrival: ArrivalForm,
+    /// The period or minimum inter-arrival time.
+    pub interval: SignedQuantityForm,
+    /// `deadline`.
+    pub deadline: SignedQuantityForm,
+    /// `wcet`: `C`, or `C(LO)` for a `hi` task.
+    pub wcet: SignedQuantityForm,
+    /// `priority`, when written.
+    pub priority: Option<PriorityForm>,
+    /// `jitter`, when written.
+    pub jitter: Option<SignedQuantityForm>,
+    /// `blocking`, when written.
+    pub blocking: Option<SignedQuantityForm>,
+    /// `lo` or `hi`.
+    pub criticality: CriticalityForm,
+    /// `wcet_hi`, when written.
+    pub wcet_hi: Option<SignedQuantityForm>,
+    /// The span of the whole task, `;` included.
+    pub span: Span,
+}
+
+/// `taskset Name { task* }` (QSpec FR-419): the tasks in source order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TasksetForm {
+    /// The task set's name.
+    pub name: DeclaredName,
+    /// The tasks, in source order.
+    pub tasks: Vec<TaskForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// The policy word of a `schedulable` claim, as written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyForm {
+    /// `fixed_priority`.
+    FixedPriority,
+    /// `edf`.
+    Edf,
+    /// `amc`.
+    Amc,
+}
+
+/// `schedulable Name on TaskSet under policy;` (QSpec FR-419).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchedulableForm {
+    /// The claim's name.
+    pub name: DeclaredName,
+    /// The task set, spelled.
+    pub task_set: DeclaredName,
+    /// The policy.
+    pub policy: PolicyForm,
+    /// The span of the policy word.
+    pub policy_span: Span,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// `response Name on TaskSet.task <= d under fixed_priority;` (QSpec FR-419).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResponseForm {
+    /// The claim's name.
+    pub name: DeclaredName,
+    /// The task set, spelled.
+    pub task_set: DeclaredName,
+    /// The task, spelled.
+    pub task: DeclaredName,
+    /// The bound `d`.
+    pub bound: QuantityForm,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// `hybrid Name using p { [initial { entry+ }] mode+ }` (FR-447, QSpec FR-193
 /// "Source form and the clock line"). S2 resolves nothing: the `using`
 /// alias, the mode and transition names and every equation's left side stay
@@ -4220,6 +4417,12 @@ pub enum DeclarationForm {
     TimeInvariant(Box<TimeInvariantForm>),
     /// An `urgent` declaration (FR-393).
     Urgent(Box<UrgentForm>),
+    /// A `taskset` declaration (QSpec FR-419).
+    Taskset(Box<TasksetForm>),
+    /// A `schedulable` claim (QSpec FR-419).
+    Schedulable(Box<SchedulableForm>),
+    /// A `response` claim (QSpec FR-419).
+    Response(Box<ResponseForm>),
     /// A `hybrid` declaration (FR-447), boxed for the same reason as
     /// [`Self::Function`].
     Hybrid(Box<HybridForm>),

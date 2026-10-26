@@ -466,6 +466,9 @@ pub struct PackageDeclarations {
     /// The complete timed declaration forms S2 built, in source order for
     /// FR-230's S3 check and located refusals.
     pub timed_forms: Vec<super::assemble::TimedDeclaration>,
+    /// The `taskset`, `schedulable` and `response` forms S2 built, in source
+    /// order, for QSL FR-246's S3 check.
+    pub task_set_forms: Vec<super::task_set::TaskSetDeclaration>,
     /// FR-230, FR-233: the time source of each timed model, which a
     /// `model-time` clause binds (FR-234). The assembler starts this empty;
     /// S3 checks source `time` members into it. A caller that already holds
@@ -640,6 +643,7 @@ impl PackageDeclarations {
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             timed_forms: Vec::new(),
+            task_set_forms: Vec::new(),
             time_sources: Vec::new(),
             profile_selections: Vec::new(),
             hyper_clauses: Vec::new(),

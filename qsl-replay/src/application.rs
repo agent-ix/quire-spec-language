@@ -224,7 +224,7 @@ pub fn acquire_checked_closure<'a>(
         package: CompiledPackage::new(compiled.emitted),
         context,
         handle: CheckedClosureHandle {
-            package: Arc::new(compiled.checked.into_package()),
+            package: Arc::clone(compiled.checked.shared_package()),
             package_id: package_id.record(),
             acquisition: Arc::new(()),
         },

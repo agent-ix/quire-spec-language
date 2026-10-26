@@ -14,15 +14,16 @@ use qsl_foundation::Span;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    ActivationForm, CaptureForm, ClockForm, DeclarationForm, ExpressionForm,
-    FairnessConstraintForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
-    OperatorInterval, ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    ActivationForm, AggregateAtomForm, AggregateComparison, AggregateKindForm, AggregateTermForm,
+    CaptureForm, ClockForm, DeclarationForm, ExpressionForm, FairnessConstraintForm,
+    FairnessGranularity, FairnessKind, HorizonForm, IntervalForm, IntervalUpper, OperatorInterval,
+    ParameterForm, PastWindowForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
     TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, TimedUpper,
     UsingAlias,
 };
 use super::value::{
-    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node,
-    quantity_form, text, tokens_of, type_form, unexpected, unrepresented, Item,
+    declared_name, exact_value, expression, has_token, items, name_form, nodes_of, only,
+    production_node, quantity_form, text, tokens_of, type_form, unexpected, unrepresented, Item,
 };
 
 /// `temporal Name using p over (x: T) clock "c" activation { fairness*
@@ -495,6 +496,15 @@ impl<'c> Formula<'c> {
                 self.pass(task, inner);
                 Ok(())
             }
+            [Item::Node(aggregate)] if aggregate.production() == Production::AggregateAtom => {
+                self.add(
+                    TemporalNodeForm::AggregateAtom(Box::new(aggregate_atom_form(
+                        self.cst, aggregate,
+                    )?)),
+                    task.parent,
+                );
+                Ok(())
+            }
             [Item::Token(holds), Item::Token(_), Item::Node(condition), Item::Token(_)]
                 if holds.spelling() == b"holds" =>
             {
@@ -513,6 +523,144 @@ impl<'c> Formula<'c> {
             }
             _ => Err(unexpected(node)),
         }
+    }
+}
+
+fn aggregate_atom_form(
+    cst: &LosslessCst,
+    atom: &CstNode,
+) -> Result<AggregateAtomForm, FormsRefusal> {
+    let atom_items = items(cst, atom);
+    let term = only(&atom_items, Production::AggregateTerm, atom)?;
+    let comparison = atom_items
+        .iter()
+        .find_map(|item| match item {
+            Item::Token(token) => Some(*token),
+            Item::Node(_) => None,
+        })
+        .ok_or_else(|| unexpected(atom))?;
+    let comparison = match comparison.spelling() {
+        b"<" => AggregateComparison::Less,
+        b"<=" => AggregateComparison::LessEqual,
+        b"=" => AggregateComparison::Equal,
+        b">=" => AggregateComparison::GreaterEqual,
+        b">" => AggregateComparison::Greater,
+        _ => return Err(unexpected(atom)),
+    };
+    let threshold = expression_form(cst, only(&atom_items, Production::Expression, atom)?)?;
+    Ok(AggregateAtomForm {
+        term: aggregate_term_form(cst, term)?,
+        comparison,
+        threshold,
+        span: atom.span(),
+        comparison_span: atom_items
+            .iter()
+            .find_map(|item| match item {
+                Item::Token(token)
+                    if matches!(token.spelling(), b"<" | b"<=" | b"=" | b">=" | b">") =>
+                {
+                    Some(token.span())
+                }
+                _ => None,
+            })
+            .ok_or_else(|| unexpected(atom))?,
+    })
+}
+
+fn aggregate_term_form(
+    cst: &LosslessCst,
+    term: &CstNode,
+) -> Result<AggregateTermForm, FormsRefusal> {
+    let term_items = items(cst, term);
+    let kind_node = only(&term_items, Production::AggregateKind, term)?;
+    let kind_items = items(cst, kind_node);
+    let head = kind_items
+        .iter()
+        .find_map(|item| match item {
+            Item::Token(token) => Some(*token),
+            Item::Node(_) => None,
+        })
+        .ok_or_else(|| unexpected(kind_node))?;
+    let kind = match head.spelling() {
+        b"count" => AggregateKindForm::Count,
+        b"sum" => AggregateKindForm::Sum,
+        b"min" => AggregateKindForm::Min,
+        b"max" => AggregateKindForm::Max,
+        b"fraction" => AggregateKindForm::Fraction(expression_form(
+            cst,
+            only(&kind_items, Production::Expression, kind_node)?,
+        )?),
+        b"quantile" => AggregateKindForm::Quantile(exact_value(
+            cst,
+            only(&kind_items, Production::ExactValue, kind_node)?,
+        )?),
+        _ => return Err(unexpected(kind_node)),
+    };
+    let mut value_node = None;
+    let mut filter_node = None;
+    let mut marker = None;
+    for item in &term_items {
+        match item {
+            Item::Token(token) if token.spelling() == b"of" => marker = Some(false),
+            Item::Token(token) if token.spelling() == b"where" => marker = Some(true),
+            Item::Node(node) if node.production() == Production::Expression => {
+                match marker.take() {
+                    Some(false) => value_node = Some(*node),
+                    Some(true) => filter_node = Some(*node),
+                    None => return Err(unexpected(term)),
+                }
+            }
+            _ => {}
+        }
+    }
+    let window = only(&term_items, Production::PastWindow, term)?;
+    let bounds = nodes_of(&items(cst, window), Production::Horizon);
+    let [lower, upper] = bounds.as_slice() else {
+        return Err(unexpected(window));
+    };
+    let min_count = match tokens_of(&term_items, TokenKind::Integer).as_slice() {
+        [] => None,
+        [value] => Some(qsl_foundation::Spanned {
+            value: text(value, term)?
+                .parse::<u64>()
+                .map_err(|_| unexpected(term))?,
+            span: value.span(),
+        }),
+        _ => return Err(unexpected(term)),
+    };
+    Ok(AggregateTermForm {
+        kind,
+        value: value_node
+            .map(|node| expression_form(cst, node))
+            .transpose()?,
+        filter: filter_node
+            .map(|node| expression_form(cst, node))
+            .transpose()?,
+        window: PastWindowForm {
+            lower: horizon_form(cst, lower)?,
+            upper: horizon_form(cst, upper)?,
+            span: window.span(),
+        },
+        min_count,
+        span: term.span(),
+    })
+}
+
+fn horizon_form(cst: &LosslessCst, horizon: &CstNode) -> Result<HorizonForm, FormsRefusal> {
+    match items(cst, horizon)[..] {
+        [Item::Node(quantity)] if quantity.production() == Production::QuantityLiteral => {
+            Ok(HorizonForm::Quantity(quantity_form(cst, quantity)?))
+        }
+        [Item::Token(count)] if count.kind() == TokenKind::Integer => {
+            let value = text(count, horizon)?
+                .parse::<u64>()
+                .map_err(|_| unexpected(horizon))?;
+            Ok(HorizonForm::Steps(qsl_foundation::Spanned {
+                value,
+                span: count.span(),
+            }))
+        }
+        _ => Err(unexpected(horizon)),
     }
 }
 

@@ -89,6 +89,8 @@ mod strong_fairness;
 #[cfg(feature = "test-support")]
 mod symmetric_population;
 #[cfg(feature = "test-support")]
+mod task_sets;
+#[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod temporal_fairness;
