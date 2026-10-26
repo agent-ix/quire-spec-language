@@ -75,8 +75,9 @@ use qsl_eval::simulation::{
     Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
     ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
-use qsl_eval::temporal::AtomReading;
+use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::catalog::InternalFault;
@@ -90,6 +91,7 @@ use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
+use qsl_eval::smt::SmtEncodingLimits;
 
 /// One product state of a certificate: its model state's
 /// `quire.simulation.state-key/v1` digest and its automaton state's
@@ -133,8 +135,10 @@ impl DigestWire {
 }
 
 /// FR-338's closure certificate: the product states EN-1 explored.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClosureCertificate {
+    /// The package EN-1 explored (FR-282).
+    pub package_id: PackageId,
     /// The product states, in any order.
     pub states: Vec<ProductStateRef>,
 }
@@ -156,6 +160,13 @@ pub enum TemporalCertificateCheck {
     Accepted,
     /// A certificate rule failed.
     Rejected(CertificateRejection),
+    /// The certificate belongs to a different checked package (FR-282).
+    PackageMismatch {
+        /// The package identity carried by the certificate.
+        certificate: PackageId,
+        /// The package identity recompiled from the request.
+        recompiled: PackageId,
+    },
     /// A budget or a cancellation stopped the check before it completed:
     /// `LimitReached{limit, value}` or `Cancelled{source}`.
     Stopped(IncompleteCause),
@@ -187,6 +198,9 @@ pub struct CertificateRequest<'a> {
     pub subject: ModelSubject<'a>,
     /// The item.
     pub item: ModelCheckItem<'a>,
+    /// The encoding limits used by the backend for this item's queries
+    /// (FR-315); certificate checks rebuild queries under these same limits.
+    pub smt_encoding: SmtEncodingLimits,
 }
 
 /// Why [`check_closure`] checked nothing: the request, not the certificate,
@@ -239,6 +253,17 @@ impl From<EncodingRefusal> for ClosureRefusal {
     }
 }
 
+fn checked_package_id(package: &qsl_package::CheckedPackage) -> Result<PackageId, ClosureRefusal> {
+    package
+        .emitted_package_id()
+        .or_else(|| {
+            qsl_package::emit_checked(package)
+                .ok()
+                .map(|emission| emission.package().package_id())
+        })
+        .ok_or_else(|| fault("the-certificate-package-has-an-emitted-identity"))
+}
+
 /// FR-338: check `certificate` for `request`'s item, under `limits` and the
 /// subject's own evaluation meter and candidate bound, polling `cancel` at
 /// every charge.
@@ -254,6 +279,13 @@ pub fn check_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    let recompiled = checked_package_id(request.subject.simulation.package)?;
+    if certificate.package_id != recompiled {
+        return Ok(TemporalCertificateCheck::PackageMismatch {
+            certificate: certificate.package_id,
+            recompiled,
+        });
+    }
     let simulation = request.subject.simulation.clone();
     let system = admit(simulation)?;
     check_system(
@@ -301,6 +333,13 @@ pub fn check_protocol_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    let recompiled = checked_package_id(request.subject.model.simulation.package)?;
+    if certificate.package_id != recompiled {
+        return Ok(TemporalCertificateCheck::PackageMismatch {
+            certificate: certificate.package_id,
+            recompiled,
+        });
+    }
     let model = admit(request.subject.model.simulation.clone())?;
     let protocol = request
         .subject
@@ -877,6 +916,19 @@ impl<S: SubjectSystem> Check<'_, S> {
         // A position past the horizon is never read (ADR-018 UE-1), and a
         // step that counts out of the window closes it before its letter.
         let holds = if distance <= horizon {
+            if !self.captured(
+                run.letters,
+                run.binding,
+                &self.system.atom_state(&state),
+                before.is_none(),
+            )? {
+                let key = run
+                    .translation
+                    .key(BoundedState::Reject)
+                    .map_err(|_| ClosureRefusal::Encoding)?;
+                let at = self.product_of(digest, key)?;
+                return Err(Self::reject(CertificateRule::BadState, at));
+            }
             let reading = match run.readings.get(&digest) {
                 Some(reading) => *reading,
                 None => {
@@ -994,6 +1046,15 @@ impl<S: SubjectSystem> Check<'_, S> {
                     .binding
                     .as_ref()
                     .ok_or_else(|| fault("clause-instance-binding"))?;
+                if !self.captured(
+                    *letters,
+                    bound,
+                    &self.system.atom_state(&state),
+                    before.is_none(),
+                )? {
+                    let at = self.product(translation, digest, SafetyState::Rejected)?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                }
                 match self.atom(*letters, atom, bound, &self.system.atom_state(&state))? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
@@ -1134,6 +1195,44 @@ impl<S: SubjectSystem> Check<'_, S> {
             Ok(AtomReading::True) => Ok(Some(true)),
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),
+            Err(AtomStop::Incomplete(incomplete)) => Err(stopped(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
+                crate::meter_bound(&self.meter, incomplete.limit_kind),
+            )),
+            Err(AtomStop::Fault(internal)) => Err(ClosureRefusal::Fault(internal).into()),
+            Err(AtomStop::Refused(outcome)) => Err(fault(refused_invariant(&outcome)).into()),
+            Err(AtomStop::Unobservable(stop)) => Err(self.expansion_stop(stop)),
+        }
+    }
+
+    /// FR-337 "Capture observation": whether the clause's captures have a
+    /// value at `state`, where the clause fixes them: position 0 of an `on
+    /// origin` clause (`initial`), each position of an `on each` clause. A
+    /// capture with no value is a bad state, as an undefined atom is.
+    fn captured(
+        &self,
+        letters: &dyn ModelLetters,
+        instance: &qsl_eval::model_subject::ModelInstance,
+        state: &ModelSimState,
+        initial: bool,
+    ) -> Step<bool> {
+        let ModelCheckItem::Clause { clause, .. } = self.item else {
+            return Ok(true);
+        };
+        let fixes = match clause.activation() {
+            qsl_semantics::check::Activation::Origin => initial,
+            qsl_semantics::check::Activation::Each { .. } => true,
+        };
+        if !fixes || clause.captures().len() == 0 {
+            return Ok(true);
+        }
+        self.poll()?;
+        let mut meter = Meter::new(self.meter);
+        match letters.captures(instance, state, &mut meter) {
+            Ok(CaptureReading::Fixed) => Ok(true),
+            Ok(CaptureReading::Undefined { .. }) => Ok(false),
             Err(AtomStop::Incomplete(incomplete)) => Err(stopped(
                 ModelCheckLimit::EvaluationMeter {
                     counter: incomplete.limit_kind,

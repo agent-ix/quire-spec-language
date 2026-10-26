@@ -40,13 +40,13 @@ pub use claim::{
 };
 pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
 pub use model::{
-    CheckedProbabilisticModel, PreconditionSite, ProbabilisticFeature, ProbabilisticOperation,
-    RandomParameter, Reward, SupportValue, Workload,
+    CheckedProbabilisticModel, Delay, DelayDistribution, PreconditionSite, ProbabilisticFeature,
+    ProbabilisticOperation, RandomParameter, Reward, SupportValue, Workload,
 };
 
 use qsl_forms::{
-    ConfidenceItemForm, ConfidenceKey, ExactValueForm, ExactValueKind, ExprNode, MeasureForm,
-    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
+    ConfidenceItemForm, ConfidenceKey, DelayForm, ExactValueForm, ExactValueKind, ExprNode,
+    MeasureForm, ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
@@ -70,6 +70,8 @@ pub enum ProbabilisticDeclaration {
     Random(Box<RandomForm>),
     /// A `reward` declaration.
     Reward(Box<RewardForm>),
+    /// A `delay` declaration (FR-253).
+    Delay(Box<DelayForm>),
     /// A `workload` declaration.
     Workload(Box<WorkloadForm>),
     /// A `probabilistic` claim.
@@ -93,6 +95,24 @@ pub enum WeightOwner {
         /// The operation, as written.
         operation: String,
     },
+}
+
+/// How a `delay` declaration is malformed (FR-253 "Behavior").
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DelayFault {
+    /// An `exponential` rate that is not positive.
+    NonPositiveRate,
+    /// A `uniform[a, b]` that does not have `0 <= a <= b`.
+    UniformRange,
+    /// A `discrete` delay that is negative.
+    NegativeDelay,
+    /// A `discrete` delay listed twice.
+    RepeatedDelay,
+    /// A `discrete` weight that is not positive.
+    NonPositiveWeight,
+    /// A second `delay` declaration of one operation (QSpec FR-405: an
+    /// operation declares at most one).
+    RepeatedDeclaration,
 }
 
 /// How a confidence clause breaks the all-or-none rule of QSpec FR-407.
@@ -151,6 +171,25 @@ pub enum ProbabilisticCause {
         /// The operation, as written.
         operation: String,
         /// The second weight's span.
+        span: Span,
+    },
+    /// A `delay` declaration whose distribution is malformed.
+    /// `invalid_model_binding`/`malformed-declaration` (FR-253).
+    InvalidDelay {
+        /// The operation, as written.
+        operation: String,
+        /// What the declaration got wrong.
+        fault: DelayFault,
+        /// The offending value's span, or the declaration's.
+        span: Span,
+    },
+    /// A `delay` declaration on an operation of a model that is not `time
+    /// dense`. `invalid_probabilistic_model`/`delay-on-untimed-model`
+    /// (QSpec FR-405).
+    DelayOnUntimedModel {
+        /// The operation, as written.
+        operation: String,
+        /// The declaration's span.
         span: Span,
     },
     /// A second reward of one name on one operation.
@@ -492,6 +531,8 @@ impl ProbabilisticCause {
             | Self::DuplicateDistribution { span, .. }
             | Self::DuplicateWeight { span, .. }
             | Self::DuplicateReward { span, .. }
+            | Self::InvalidDelay { span, .. }
+            | Self::DelayOnUntimedModel { span, .. }
             | Self::QuantileOverFraction { span, .. }
             | Self::StateReadInReward { span, .. }
             | Self::QualitativeThreshold { span, .. }
@@ -551,6 +592,7 @@ impl ProbabilisticCause {
             | Self::InvalidConfidence { .. }
             | Self::ValueOutsideType { .. }
             | Self::RandomReadInPrecondition { .. }
+            | Self::DelayOnUntimedModel { .. }
             | Self::IncompleteWorkload { .. }
             | Self::UnknownOperation { .. }
             | Self::RewardType { .. }
@@ -562,6 +604,7 @@ impl ProbabilisticCause {
             | Self::FractionBound { .. }
             | Self::OverNotObjectType { .. }
             | Self::NotStatePredicate { .. } => Code::InvalidProbabilisticModel,
+            Self::InvalidDelay { .. } => Code::InvalidModelBinding,
             Self::UnitMismatch { .. } | Self::ThresholdNotLiteral { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::UnresolvedOperation { .. }
@@ -588,6 +631,8 @@ impl ProbabilisticCause {
             Self::DuplicateDistribution { .. } => "duplicate-distribution",
             Self::DuplicateWeight { .. } => "duplicate-weight",
             Self::DuplicateReward { .. } => "duplicate-reward",
+            Self::InvalidDelay { .. } => "malformed-declaration",
+            Self::DelayOnUntimedModel { .. } => "delay-on-untimed-model",
             Self::QuantileOverFraction { .. } => "quantile-over-fraction",
             Self::StateReadInReward { .. } => "state-read-in-reward",
             Self::QualitativeThreshold { .. } => "qualitative-threshold",

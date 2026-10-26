@@ -43,12 +43,10 @@
 //! `model-time`, its timed intervals are checked in exact rational time,
 //! and it is classified into one `TimedPropertyForm`.
 //!
-//! A `holds` condition is typed by [`condition::check_conditions`] once the
+//! The activation's `when` guard, each capture's initializer and each
+//! `holds` condition are typed by [`condition::check_conditions`] once the
 //! package's signatures are known, and the clause is emitted as FR-337's
-//! v2 temporal clause node. The activation's `when` and a capture's value
-//! are not checked: [`not_emitted`] refuses a clause that activates `on
-//! each` or declares a capture, so it is never compiled into a package
-//! that silently lacks them.
+//! v2 temporal clause node.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -67,7 +65,7 @@ use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{Setting, Span};
-use quire_exact::ValueType;
+use quire_exact::{Integer, Rational, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
@@ -77,7 +75,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
-use super::state_clause::{populations_covering, PopulationDomain};
+use super::state_clause::{populations_overlapping, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
@@ -219,6 +217,12 @@ pub enum FormulaNode {
         /// The span of the whole `holds(e)`.
         span: Span,
     },
+    /// A parsed and S3-checked aggregate atom. S4 currently refuses the
+    /// enclosing clause until the FR-370 wire proposal is confirmed.
+    Aggregate {
+        /// The complete aggregate atom's source span.
+        span: Span,
+    },
     /// `not`.
     Not(FormulaNodeId),
     /// `and`.
@@ -253,7 +257,7 @@ impl FormulaNode {
     /// The node's operands in source order.
     pub fn operands(&self) -> impl Iterator<Item = FormulaNodeId> {
         let (first, second) = match self {
-            Self::Constant(_) | Self::Holds { .. } => (None, None),
+            Self::Constant(_) | Self::Holds { .. } | Self::Aggregate { .. } => (None, None),
             Self::Not(only) | Self::Unary { operand: only, .. } => (Some(*only), None),
             Self::And(left, right)
             | Self::Or(left, right)
@@ -273,6 +277,12 @@ pub struct CheckedFormula {
 }
 
 impl CheckedFormula {
+    /// Whether the formula is in the safety fragment (ADR-018 SM-6), whose
+    /// violations a finite prefix shows.
+    pub fn is_safety(&self) -> bool {
+        in_safety_fragment(self)
+    }
+
     /// The formula's root node.
     pub fn root(&self) -> FormulaNodeId {
         self.root
@@ -287,6 +297,17 @@ impl CheckedFormula {
     pub fn node_id(&self, index: usize) -> Option<FormulaNodeId> {
         (index < self.nodes.len()).then_some(FormulaNodeId(index))
     }
+}
+
+/// Where a clause fixes its captures (FR-337 "Capture observation").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureSite {
+    /// The clause declares no capture.
+    Never,
+    /// An `on origin` clause: at position 0.
+    Origin,
+    /// An `on each` clause: at each position its guard admits.
+    Activations,
 }
 
 /// How a clause activates (FR-325 "Outputs").
@@ -444,6 +465,9 @@ pub struct CheckedTemporalClause {
     /// An `on each` activation's trigger binder: its name and resolved type,
     /// which is the `over` parameter's type (FR-337).
     trigger: Option<(String, ValueType)>,
+    /// The clause's captures in source order: each name and resolved
+    /// declared type (FR-337 "Captures at S3").
+    captures: Vec<(String, ValueType)>,
     fairness: Vec<FairnessConstraint>,
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
@@ -452,6 +476,9 @@ pub struct CheckedTemporalClause {
     /// order of first occurrence (FR-212 "Targets at S3"), each with the
     /// span of its first occurrence's name.
     protocol_fairness: Vec<(CheckedProtocolFairness, Span)>,
+    /// Whether the clause contains an aggregate whose emission wire is still
+    /// provisional in QSpec FR-370.
+    pub(crate) has_aggregate: bool,
     property_form: Option<PropertyForm>,
     /// Under the timed profile: the clause's `model-time` binding.
     time_binding: Option<ModelTimeBinding>,
@@ -557,6 +584,31 @@ impl CheckedTemporalClause {
         self.trigger
             .as_ref()
             .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// The clause's captures in source order, each by name and declared type
+    /// (FR-337 "Captures at S3").
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (&str, &ValueType)> {
+        self.captures
+            .iter()
+            .map(|(name, value_type)| (name.as_str(), value_type))
+    }
+
+    /// Where the clause fixes its captures (FR-337 "Capture observation").
+    pub fn capture_site(&self) -> CaptureSite {
+        if self.captures.is_empty() {
+            CaptureSite::Never
+        } else if matches!(self.activation, Activation::Origin) {
+            CaptureSite::Origin
+        } else {
+            CaptureSite::Activations
+        }
+    }
+
+    /// Whether the activation reads the state beyond the trigger: it has a
+    /// `when` guard or the clause declares a capture (FR-337).
+    pub fn reads_at_activation(&self) -> bool {
+        matches!(self.activation, Activation::Each { guarded: true }) || !self.captures.is_empty()
     }
 
     /// The clause's fairness set, each constraint once, in source order of
@@ -837,6 +889,40 @@ fn parameters(form: &TemporalClauseForm) -> Vec<&ParameterForm> {
     parameters
 }
 
+/// A timestamped-event aggregate bound converted exactly into the lower
+/// bound's time unit, with `s3.rational_bits` charged before conversion.
+fn aggregate_duration_bound(
+    quantity: &qsl_forms::QuantityForm,
+    target: &super::time_units::TimeScale,
+    declarations: &TemporalDeclarations<'_>,
+) -> Result<Rational, StageFailure<CheckRefusal>> {
+    let ceiling = declarations.timed.rational_bits;
+    let magnitude = super::probabilistic::exact_value(&quantity.magnitude, ceiling).map_err(
+        |fault| match fault {
+            super::probabilistic::ExactFault::ZeroDenominator => {
+                refuse(TemporalCause::ZeroDenominator {
+                    span: quantity.magnitude.span,
+                })
+            }
+            super::probabilistic::ExactFault::AboveCeiling { bits } => located(
+                LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits)),
+                declarations,
+                quantity.magnitude.span,
+            ),
+        },
+    )?;
+    declarations
+        .timed
+        .units
+        .convert(&magnitude, &quantity.unit.name, target)
+        .map_err(|cause| {
+            refuse(TemporalCause::TimeQuantity {
+                cause: Box::new(cause),
+                span: quantity.unit.span,
+            })
+        })
+}
+
 /// The region of `span` as a located stage limit.
 pub(crate) fn located(
     limit: LimitExceeded,
@@ -873,8 +959,18 @@ fn check_clause(
         DefinitionRef::new(super::profile::CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| fault("profile-identity-valid"))?;
 
-    let mut types = Vec::new();
-    for parameter in parameters(form) {
+    let mut types: Vec<ValueType> = Vec::new();
+    let mut trigger = None;
+    let mut captures = Vec::with_capacity(form.captures.len());
+    // The parameters before the first capture: `over`, and the trigger
+    // binder of an `on each` activation.
+    let binders = 1 + usize::from(matches!(form.activation, ActivationForm::Each { .. }));
+    // Every parameter's type is resolved in this pass, before any initializer
+    // is typed, because `types` is the extent every later stage binds. A
+    // capture whose declared type does not resolve is therefore reported
+    // before an earlier capture's ill-typed initializer; both are single
+    // refusals with their own code, and AC-8's vectors hold.
+    for (position, parameter) in parameters(form).into_iter().enumerate() {
         let resolved = super::type_form::resolve_form(declarations.scope, &parameter.value_type)
             .map_err(|error| {
                 refuse(TemporalCause::ParameterType {
@@ -883,13 +979,13 @@ fn check_clause(
                     span: error.span,
                 })
             })?;
-        types.push(resolved);
-    }
-    // FR-337 "`on each` activation at S3": the trigger binder is typed as the
-    // `over` parameter is, and is named otherwise.
-    let trigger = match (&form.activation, types.as_slice()) {
-        (ActivationForm::Each { parameter, .. }, [over, trigger, ..]) => {
-            if trigger != over {
+        // FR-337 "`on each` activation at S3": the activation is checked
+        // before the captures, its binder typed as the `over` parameter is
+        // and named otherwise.
+        if let (1, ActivationForm::Each { .. }, Some(over)) =
+            (position, &form.activation, types.first())
+        {
+            if &resolved != over {
                 return Err(refuse(TemporalCause::TriggerType {
                     parameter: parameter.name.name.clone(),
                     span: parameter.value_type.span,
@@ -902,11 +998,25 @@ fn check_clause(
                     span: parameter.name.span,
                 }));
             }
-            Some((parameter.name.name.clone(), trigger.clone()))
+            trigger = Some((parameter.name.name.clone(), resolved.clone()));
+        } else if position >= binders {
+            // FR-337 "Captures at S3": a capture's name is new among the
+            // `over` parameter, the trigger binder and the earlier captures.
+            let first = parameters(form)
+                .into_iter()
+                .take(position)
+                .find(|earlier| earlier.name.name == parameter.name.name);
+            if let Some(first) = first {
+                return Err(refuse(TemporalCause::DuplicateCapture {
+                    name: parameter.name.name.clone(),
+                    first: first.name.span,
+                    span: parameter.name.span,
+                }));
+            }
+            captures.push((parameter.name.name.clone(), resolved.clone()));
         }
-        _ => None,
-    };
-
+        types.push(resolved);
+    }
     let bounded = profile.is_bounded();
     // FR-234: the timed profile reads its intervals in the clause's
     // `model-time` binding's unit, so the binding comes first.
@@ -938,8 +1048,137 @@ fn check_clause(
     };
     let mut refusals: Vec<TemporalCause> = Vec::new();
     let (operators, punctual) = checked_operators(&form.formula, &reading, &mut refusals)?;
+    let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
+    for node in form.formula.nodes() {
+        let TemporalNodeForm::AggregateAtom(atom) = node else {
+            continue;
+        };
+        if model_subject {
+            refusals.push(TemporalCause::AggregateModelSubject {
+                span: atom.term.span,
+            });
+        } else {
+            let expected_steps = match profile {
+                TemporalProfile::EventPositionFalseExtension => Some(true),
+                TemporalProfile::TimestampedEventFiniteWindow => Some(false),
+                _ => None,
+            };
+            match expected_steps {
+                None => refusals.push(TemporalCause::AggregateProfileUnsupported {
+                    span: atom.term.span,
+                }),
+                Some(steps) => {
+                    let bounds = [&atom.term.window.lower, &atom.term.window.upper];
+                    if let Some(bound) = bounds
+                        .iter()
+                        .find(|bound| matches!(bound, qsl_forms::HorizonForm::Steps(_)) != steps)
+                    {
+                        let span = match bound {
+                            qsl_forms::HorizonForm::Steps(value) => value.span,
+                            qsl_forms::HorizonForm::Quantity(value) => value.span,
+                        };
+                        refusals.push(TemporalCause::AggregateWindowKindMismatch { span });
+                    } else if steps {
+                        let (
+                            qsl_forms::HorizonForm::Steps(lower),
+                            qsl_forms::HorizonForm::Steps(upper),
+                        ) = (&atom.term.window.lower, &atom.term.window.upper)
+                        else {
+                            return Err(fault("aggregate-step-window-bounds"));
+                        };
+                        if lower.value > upper.value {
+                            refusals.push(TemporalCause::InvalidAggregateWindow {
+                                span: atom.term.window.span,
+                            });
+                        }
+                    } else {
+                        let (
+                            qsl_forms::HorizonForm::Quantity(lower),
+                            qsl_forms::HorizonForm::Quantity(upper),
+                        ) = (&atom.term.window.lower, &atom.term.window.upper)
+                        else {
+                            return Err(fault("aggregate-duration-window-bounds"));
+                        };
+                        let target = declarations
+                            .timed
+                            .units
+                            .target(&lower.unit.name)
+                            .map_err(|cause| {
+                                refuse(TemporalCause::TimeQuantity {
+                                    cause: Box::new(cause),
+                                    span: lower.unit.span,
+                                })
+                            })?
+                            .ok_or_else(|| fault("aggregate-time-unit-scale-nonzero"))?;
+                        let lower_value = aggregate_duration_bound(lower, &target, declarations)?;
+                        let upper_value = aggregate_duration_bound(upper, &target, declarations)?;
+                        if lower_value > upper_value {
+                            refusals.push(TemporalCause::InvalidAggregateWindow {
+                                span: atom.term.window.span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(min_count) = &atom.term.min_count {
+            if min_count.value == 0
+                && !matches!(
+                    atom.term.kind,
+                    qsl_forms::AggregateKindForm::Count | qsl_forms::AggregateKindForm::Sum
+                )
+            {
+                refusals.push(TemporalCause::InvalidAggregateValue {
+                    span: min_count.span,
+                });
+            }
+        }
+        let needs_value = matches!(
+            atom.term.kind,
+            qsl_forms::AggregateKindForm::Sum
+                | qsl_forms::AggregateKindForm::Min
+                | qsl_forms::AggregateKindForm::Max
+                | qsl_forms::AggregateKindForm::Quantile(_)
+        );
+        if atom.term.value.is_some() != needs_value {
+            refusals.push(TemporalCause::InvalidAggregateValue {
+                span: atom.term.span,
+            });
+        }
+        if let qsl_forms::AggregateKindForm::Quantile(level) = &atom.term.kind {
+            match super::probabilistic::exact_value(level, declarations.timed.rational_bits) {
+                Ok(value)
+                    if value > Rational::from_integer(Integer::zero())
+                        && value < Rational::from_integer(Integer::one()) => {}
+                Ok(_) | Err(super::probabilistic::ExactFault::ZeroDenominator) => {
+                    refusals.push(TemporalCause::InvalidAggregateValue { span: level.span });
+                }
+                Err(super::probabilistic::ExactFault::AboveCeiling { bits }) => {
+                    return Err(located(
+                        LimitExceeded::new(
+                            Setting::S3RationalBits,
+                            declarations.timed.rational_bits,
+                            u128::from(bits),
+                        ),
+                        declarations,
+                        level.span,
+                    ));
+                }
+            }
+        }
+    }
     let (fairness, fairness_sources, protocol_fairness) =
         checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
+    if refusals.len() > 1
+        && form
+            .formula
+            .nodes()
+            .iter()
+            .any(|node| matches!(node, TemporalNodeForm::AggregateAtom(_)))
+    {
+        refusals.sort_by_key(|cause| cause.span().start);
+        return Err(refuse(TemporalCause::Multiple { causes: refusals }));
+    }
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
     }
@@ -966,10 +1205,9 @@ fn check_clause(
         .map(|operator| (operator.node, operator.interval.clone()))
         .collect();
     let formula = build_formula(&form.formula, &intervals)?;
-    let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
     let populations: Vec<PopulationDomain> = match types.first() {
         Some(ValueType::Reference(object)) => {
-            populations_covering(declarations.models, *object, declarations.scope.types())
+            populations_overlapping(declarations.models, *object, declarations.scope.types())
                 .into_iter()
                 .filter(|domain| domain.maximum.is_none())
                 .collect()
@@ -1016,9 +1254,15 @@ fn check_clause(
         formula,
         activation,
         trigger,
+        captures,
         fairness,
         fairness_sources,
         protocol_fairness,
+        has_aggregate: form
+            .formula
+            .nodes()
+            .iter()
+            .any(|node| matches!(node, TemporalNodeForm::AggregateAtom(_))),
         property_form,
         time_binding,
         timed_form,
@@ -1290,6 +1534,7 @@ fn is_temporal_node(node: &FormulaNode) -> bool {
         FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => true,
         FormulaNode::Constant(_)
         | FormulaNode::Holds { .. }
+        | FormulaNode::Aggregate { .. }
         | FormulaNode::Not(_)
         | FormulaNode::And(..)
         | FormulaNode::Or(..)
@@ -1313,6 +1558,7 @@ pub(crate) fn in_safety_fragment(formula: &CheckedFormula) -> bool {
         let (admitted, first, second) = match node {
             FormulaNode::Constant(_)
             | FormulaNode::Holds { .. }
+            | FormulaNode::Aggregate { .. }
             | FormulaNode::And(..)
             | FormulaNode::Or(..) => (true, here, here),
             FormulaNode::Not(_) | FormulaNode::Implies(..) => (true, !here, here),
@@ -1361,6 +1607,7 @@ pub(crate) fn build_formula(
         let checked = match written {
             TemporalNodeForm::Constant { value, .. } => FormulaNode::Constant(*value),
             TemporalNodeForm::Holds { span, .. } => FormulaNode::Holds { span: *span },
+            TemporalNodeForm::AggregateAtom(atom) => FormulaNode::Aggregate { span: atom.span },
             TemporalNodeForm::Operator(operator) => {
                 let interval = intervals
                     .get(&id)
@@ -1544,15 +1791,24 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
-/// that declares no capture, names no protocol target and is not under the
-/// timed profile. S4 writes no capture, no emitted member names a protocol
-/// target, and S4 writes no timed interval (QSpec FR-370's timed form), so a
-/// clause with any of them is [`not_emitted`].
-pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
-    form.captures.is_empty()
-        && checked.protocol_fairness.is_empty()
-        && checked.time_binding.is_none()
+/// Whether S4 emits `checked` (FR-337, FR-212): one that names no protocol
+/// target. QSpec FR-370 defines the timed interval form, which S4 lowers with
+/// the same temporal formula topology as integer intervals.
+pub(crate) fn is_emitted(checked: &CheckedTemporalClause) -> bool {
+    checked.protocol_fairness.is_empty() && !checked.has_aggregate
+}
+
+/// Whether `refusal` of the clause `form` is located after its `on each`
+/// activation's binder, in the guard or the body, so that the guard is checked
+/// first (FR-337 "`on each` activation at S3").
+pub(crate) fn refuses_after_activation(form: &TemporalClauseForm, refusal: &CheckRefusal) -> bool {
+    let ActivationForm::Each { parameter, .. } = &form.activation else {
+        return false;
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        return false;
+    };
+    cause.span().start > parameter.name.span.end
 }
 
 /// The refusal for a clause that checked but that no S4 emission writes

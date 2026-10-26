@@ -28,13 +28,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, TemporalProfile};
+use qsl_semantics::check::{
+    Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, TemporalProfile,
+};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::input::TemporalTrace;
-use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+use super::letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 use super::outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
 };
@@ -288,6 +290,7 @@ pub(super) struct Subject<'a> {
     pub(super) profile: TemporalProfile,
     pub(super) activation: Activation,
     pub(super) horizon: Option<u64>,
+    pub(super) captures: CaptureSite,
     pub(super) fairness: &'a [FairnessConstraint],
 }
 
@@ -299,6 +302,7 @@ impl<'a> Subject<'a> {
             profile: clause.profile(),
             activation: clause.activation(),
             horizon: clause.horizon(),
+            captures: clause.capture_site(),
             fairness: clause.fairness(),
         }
     }
@@ -574,6 +578,7 @@ impl<'a> Evaluator<'a> {
         source: &mut L,
         read: u64,
         guarded: bool,
+        captured: CaptureSite,
         whens: &mut HashMap<u64, bool>,
     ) -> Result<
         (
@@ -585,6 +590,7 @@ impl<'a> Evaluator<'a> {
         let mut insufficient = None;
         for position in 0..read {
             let at = TemporalPosition::new(position);
+            let mut activates = true;
             if guarded {
                 match source.activation(at, &mut *self.meter)? {
                     AtomReading::True => {
@@ -592,10 +598,26 @@ impl<'a> Evaluator<'a> {
                     }
                     AtomReading::False => {
                         whens.insert(position, false);
+                        activates = false;
                     }
                     AtomReading::Undefined(cause) => {
                         return Ok((Some(Self::undefined(position, cause)), insufficient))
                     }
+                }
+            }
+            // FR-337 "Capture observation": the captures are fixed once, at
+            // an activation: position 0 of an `on origin` clause, each
+            // position an `on each` clause's guard admits.
+            let activation_position = match captured {
+                CaptureSite::Never => false,
+                CaptureSite::Origin => position == 0,
+                CaptureSite::Activations => true,
+            };
+            if activates && activation_position {
+                if let CaptureReading::Undefined { cause, .. } =
+                    source.captures(at, &mut *self.meter)?
+                {
+                    return Ok((Some(Self::undefined(position, cause)), insufficient));
                 }
             }
             let mut undefined_at_position = None;
@@ -650,7 +672,13 @@ impl<'a> Evaluator<'a> {
         };
         let guarded = clause_goal && matches!(activation, Activation::Each { guarded: true });
         let mut whens = HashMap::new();
-        let (undefined, insufficient) = self.read_letters(source, read, guarded, &mut whens)?;
+        let captured = if clause_goal {
+            clause.captures
+        } else {
+            CaptureSite::Never
+        };
+        let (undefined, insufficient) =
+            self.read_letters(source, read, guarded, captured, &mut whens)?;
         self.unknown_from = undefined.as_ref().map(|undefined| undefined.at.index());
         let safety = self.plan.is_safety()?;
         // A prefix decides a violation only for a safety formula whose bad

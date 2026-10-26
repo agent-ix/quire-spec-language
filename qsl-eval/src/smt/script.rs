@@ -368,6 +368,7 @@ pub const MAX_SCRIPT_BYTES: usize = 1 << 28;
 pub struct Script {
     text: String,
     declared: usize,
+    max_bytes: u64,
     exceeded: bool,
 }
 
@@ -380,15 +381,23 @@ impl Default for Script {
 impl Script {
     /// A script with its `(set-logic QF_LIA)` command.
     pub fn new() -> Self {
+        Self::with_max_bytes(MAX_SCRIPT_BYTES as u64)
+    }
+
+    /// A script with the caller's byte limit and its `(set-logic QF_LIA)` command.
+    pub fn with_max_bytes(max_bytes: u64) -> Self {
+        let text = String::from("(set-logic QF_LIA)\n");
         Self {
-            text: String::from("(set-logic QF_LIA)\n"),
+            exceeded: u64::try_from(text.len()).unwrap_or(u64::MAX) > max_bytes,
+            text,
             declared: 0,
-            exceeded: false,
+            max_bytes,
         }
     }
 
     fn push(&mut self, command: &str) {
-        if self.text.len().saturating_add(command.len()) > MAX_SCRIPT_BYTES {
+        let next = self.text.len().saturating_add(command.len());
+        if u64::try_from(next).unwrap_or(u64::MAX) > self.max_bytes {
             self.exceeded = true;
         } else {
             self.text.push_str(command);
@@ -423,6 +432,14 @@ impl Script {
     /// Whether a command would have passed [`MAX_SCRIPT_BYTES`].
     pub const fn exceeded(&self) -> bool {
         self.exceeded
+    }
+
+    /// Whether the canonical closing command would exceed the byte limit.
+    pub fn closing_command_exceeded(&self) -> bool {
+        self.exceeded
+            || u64::try_from(self.text.len().saturating_add("(check-sat)\n".len()))
+                .unwrap_or(u64::MAX)
+                > self.max_bytes
     }
 
     /// The canonical printing: `(set-logic QF_LIA)`, the declarations in the

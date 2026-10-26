@@ -115,7 +115,10 @@ FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelSubject` (FR-125).
 
 `ModelCheckRefusal` holds FR-106's `AdmissionFailure` from building the
-subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
+subject's `ModelSystem`, FR-101's `NotSimulated::RequiresBound`, or
+`CaptureRead { clause, capture }` (FR-337 "Capture observation"), the
+clause's checked `holds` condition reading a capture, which the engine does
+not yet decide.
 
 ## Outputs
 
@@ -164,6 +167,13 @@ automaton states and the depth reached.
   unbounded, then the engine SHALL return
   `ModelCheckRefusal::RequiresBound` with FR-101's `RequiresBound` and
   explore no state.
+- After that classification and before any expansion, the engine SHALL
+  return `ModelCheckRefusal::CaptureRead` for a clause some `holds`
+  condition of which reads a capture, under every profile, property form and
+  activation (`on origin` included), exploring no state, and naming the first
+  capture in source order that a `holds` condition reads. An admission
+  failure or `RequiresBound` is returned instead when it applies, because the
+  system is built, and the domains classified, first.
 
 ### Property automaton
 
@@ -469,7 +479,9 @@ automaton states and the depth reached.
   state, and the second phase's SCCs in topological order, each with the
   first witness that holds for it in the order `Trivial`,
   `MissingAcceptance{set}` (the lowest such set), `UnfairWeak{constraint}`
-  (the first such constraint of the fairness set), `UnfairStrong{constraints, sub}`
+  (the first such constraint in FR-339's resolved-constraint order: FR-123's
+  order over a model subject, FR-339 "Protocol subjects" over a protocol
+  subject), `UnfairStrong{constraints, sub}`
   (FR-130), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2), whose `constraints` index the visibility pairs resolved per (thread, location) (FR-339) (ADR-018 PC-4).
   When strong constraints and visibility pairs both fail on one component,
   its witness is the `UnfairStrong`, and the failing pairs that still load

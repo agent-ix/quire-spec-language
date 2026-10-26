@@ -23,6 +23,7 @@ use crate::certificate::state_graph::{
     check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
 };
 use crate::execute::ReplayRefusal;
+use crate::model_check::identity::{ClauseRootRefusal, StateGraphIdentity};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE};
 use crate::model_check::state_graph::{
@@ -124,6 +125,26 @@ pub fn settle_state_graph(
     replay: impl FnOnce(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> StateGraphRecord {
     let initial = subject.simulation.initial.len();
+    // FR-410 "Behavior": a claim the request's recompiled package gives no
+    // root is a fault of the request. The item settles `Failed` (or
+    // `Incomplete` when `cancel` stopped the emission) before any
+    // certificate is checked or evidence replayed.
+    if let Err(refusal) = StateGraphIdentity::resolve(
+        subject.simulation.package,
+        subject.simulation.packages,
+        claim,
+        cancel,
+    ) {
+        let row = match refusal {
+            ClauseRootRefusal::Cancelled(source) => {
+                Row::incomplete(IncompleteCause::Cancelled { source }, None)
+            }
+            ClauseRootRefusal::Undeclared { .. }
+            | ClauseRootRefusal::Unresolved(_)
+            | ClauseRootRefusal::Package(_) => Row::failed(),
+        };
+        return record_of(row, instance, method, None, None);
+    }
     let check = Certified {
         request: StateGraphCertificateRequest {
             subject,
@@ -215,6 +236,17 @@ pub fn settle_state_graph(
         StateGraphOutcome::NoInitialState => Row::inconclusive(InconclusiveCause::NoInitialState),
         StateGraphOutcome::NoInstance => Row::inconclusive(InconclusiveCause::NoInstance),
     };
+    record_of(row, instance, method, end, undefined)
+}
+
+/// `row` as the terminal record of `instance` under `method`.
+fn record_of(
+    row: Row,
+    instance: &StateGraphInstanceOutcome,
+    method: &StateGraphMethod,
+    end: Option<RunEnd>,
+    undefined: Option<GraphUndefined>,
+) -> StateGraphRecord {
     StateGraphRecord {
         value: row.value,
         label: row.label,

@@ -1048,6 +1048,11 @@ impl ProtocolAnchorCause {
 /// no expression tree for a `Location` path to walk.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TemporalCause {
+    /// Several temporal faults retained in source order (FR-194-AC-8).
+    Multiple {
+        /// The individually located causes in source order.
+        causes: Vec<TemporalCause>,
+    },
     /// FR-230: a timed declaration requires the temporal facet selected by
     /// the unit header. Located at the declaration itself.
     TimedFacetRequired {
@@ -1179,6 +1184,18 @@ pub enum TemporalCause {
         /// The `on each` binder name's span.
         span: Span,
     },
+    /// FR-337 "Captures at S3": a capture is named as the `over` parameter,
+    /// the trigger binder or an earlier capture is.
+    /// `conflicting_declaration`/`duplicate-declaration`, located at the
+    /// capture's name.
+    DuplicateCapture {
+        /// The repeated name.
+        name: String,
+        /// The first declaration's name span.
+        first: Span,
+        /// The capture name's span.
+        span: Span,
+    },
     /// FR-123 "Fairness constraints": a fairness constraint names no
     /// operation of an admitted model. Located at the operation's name.
     UnresolvedFairnessOperation {
@@ -1200,6 +1217,32 @@ pub enum TemporalCause {
     /// whose unit selects a bounded profile. Located at the constraint.
     FairnessUnderBoundedProfile {
         /// The constraint's span.
+        span: Span,
+    },
+    /// FR-194: aggregate terms apply to trace subjects, not model subjects.
+    AggregateModelSubject {
+        /// The aggregate term's span.
+        span: Span,
+    },
+    /// FR-194: an aggregate literal violates its authored-value constraint.
+    InvalidAggregateValue {
+        /// The literal's span.
+        span: Span,
+    },
+    /// FR-194: the window bounds are not ordered.
+    InvalidAggregateWindow {
+        /// The complete `past[a, b]` span.
+        span: Span,
+    },
+    /// FR-194: a window bound has the wrong kind for the selected profile.
+    AggregateWindowKindMismatch {
+        /// The first bound with the wrong kind.
+        span: Span,
+    },
+    /// FR-194: aggregate windows are admitted only by event-position and
+    /// timestamped-event profiles.
+    AggregateProfileUnsupported {
+        /// The aggregate term's span.
         span: Span,
     },
     /// A timed interval (FR-393) under a profile other than the timed
@@ -1328,6 +1371,9 @@ impl TemporalCause {
     /// `Location`'s path).
     pub fn span(&self) -> Span {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Span { start: 0, end: 0 }, TemporalCause::span),
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
@@ -1344,9 +1390,15 @@ impl TemporalCause {
             | Self::ParameterType { span, .. }
             | Self::TriggerType { span, .. }
             | Self::DuplicateTrigger { span, .. }
+            | Self::DuplicateCapture { span, .. }
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
+            | Self::AggregateModelSubject { span }
+            | Self::InvalidAggregateValue { span }
+            | Self::InvalidAggregateWindow { span }
+            | Self::AggregateWindowKindMismatch { span }
+            | Self::AggregateProfileUnsupported { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
             | Self::ProtocolFairnessNotEmitted { span, .. }
@@ -1364,7 +1416,14 @@ impl TemporalCause {
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
+            Self::Multiple { causes } => causes
+                .first()
+                .map_or(Code::InvalidPackage, TemporalCause::code),
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
+            Self::InvalidAggregateValue { .. } => Code::InvalidPackage,
+            Self::InvalidAggregateWindow { .. } => Code::InvalidPackage,
+            Self::AggregateWindowKindMismatch { .. } => Code::IllTyped,
+            Self::AggregateProfileUnsupported { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
@@ -1378,6 +1437,7 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
+            | Self::AggregateModelSubject { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
@@ -1400,7 +1460,9 @@ impl TemporalCause {
             },
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
-            Self::DuplicateTrigger { .. } => Code::ConflictingDeclaration,
+            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
+                Code::ConflictingDeclaration
+            }
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
     }
@@ -1408,6 +1470,7 @@ impl TemporalCause {
     /// This cause's catalog tag.
     pub fn tag(&self) -> &'static str {
         match self {
+            Self::Multiple { causes } => causes.first().map_or("invalid-value", TemporalCause::tag),
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
@@ -1422,10 +1485,17 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
+            Self::AggregateModelSubject { .. } => "expression-form",
+            Self::InvalidAggregateValue { .. } => "invalid-value",
+            Self::InvalidAggregateWindow { .. } => "invalid-value",
+            Self::AggregateWindowKindMismatch { .. } => "unit-mismatch",
+            Self::AggregateProfileUnsupported { .. } => "expression-form",
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => "type-mismatch",
-            Self::DuplicateTrigger { .. } => "duplicate-declaration",
+            Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
+                "duplicate-declaration"
+            }
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
@@ -1473,15 +1543,6 @@ pub enum StateGraphCause {
         /// The constraint's span.
         span: Span,
     },
-    /// A claim whose parts all check, but that no S4 emission writes yet:
-    /// refused rather than compiled and silently missing from the package.
-    /// Located at the claim.
-    NotEmitted {
-        /// The declared claim name.
-        name: String,
-        /// The claim's span.
-        span: Span,
-    },
     /// The state clause checker refused a predicate, as it refuses an
     /// invariant body.
     Predicate {
@@ -1513,7 +1574,6 @@ impl StateGraphCause {
             Self::ReadsBeyondState { span }
             | Self::TemporalOperator { span }
             | Self::Fairness { span }
-            | Self::NotEmitted { span, .. }
             | Self::Predicate { span, .. } => Some(*span),
         }
     }
@@ -1523,8 +1583,7 @@ impl StateGraphCause {
         match self {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
-            | Self::Fairness { .. }
-            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            | Self::Fairness { .. } => Code::UnsupportedConstruct,
             Self::Predicate { cause, .. } => cause.code(),
         }
     }
@@ -1535,7 +1594,6 @@ impl StateGraphCause {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
             | Self::Fairness { .. } => Some("expression-form"),
-            Self::NotEmitted { .. } => Some("not-yet-implemented"),
             Self::Predicate { cause, .. } => cause.cause(),
         }
     }

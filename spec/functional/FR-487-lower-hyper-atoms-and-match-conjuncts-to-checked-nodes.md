@@ -345,12 +345,18 @@ evaluator.
       Fails,                                                // the first conjunct not `true` completed `false`
       Undefined { conjunct: usize, cause: UndefinedCause }, // the first such conjunct had no value
       Refused { conjunct: usize, outcome: ClauseOutcome },  // the first such conjunct was refused
+      Fault(InternalFault),                                 // `evaluate_step_predicate` returned a fault
   }
   pub struct MatchIncomplete { pub conjunct: usize, pub incomplete: Incomplete }
   ```
 
   For a clause with no conjunct in a part, the reading of that part SHALL be
   `Holds`, with nothing charged.
+- `Fault(f)` SHALL carry the `CallFailure::Fault(f)` that
+  `evaluate_step_predicate` returned for a conjunct, and ends the reading. The
+  products read it as a fault of their own run. FR-315's `encode_hyper_query`
+  returns `SmtEncodingRefusal::Fault` for it (FR-315 "Refusals", the Faults
+  bullet, and "Internal faults").
 - The products SHALL read `Refused { .. }` and `Err(MatchIncomplete { .. })`
   as they read `Refused` and `Err(Incomplete)` today: FR-176
   `MatchUndetermined`, and the matching findings of FR-177 and FR-178. This
@@ -413,7 +419,9 @@ evaluator seam is added to `HyperQueryRequest`.
   HP-1). FR-172 notes that its lowering remains.
 - Writing these nodes into the clause's checked-package v2 `hyperproperty`
   node (QSpec FR-402) and exposing its occurrence on `CheckedHyperClause`.
-  That is Linear QSL-1071. The emitter lowers each condition as
+  That is Linear QSL-1071, specified by
+  [FR-488](FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md).
+  The emitter lowers each condition as
   [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
   lowers a Boolean expression, with the slots becoming its parameter nodes.
 - SMT encoding of `μ_E`: FR-315 encodes HP-2 only.
@@ -480,6 +488,8 @@ holds(B) }`, its body atom `B` varying by criterion, read at the instance `n1`.
   [FR-183](FR-183-replay-a-hyper-counterexample.md) read the seams.
   [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) defines the
   hyper queries.
+- [FR-488](FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md)
+  writes the lowered nodes into the `hyperproperty` node.
 - ADR-023 HS-3, HS-4, HS-5, HM-3, HM-4, HV-7 and HV-8; QSpec FR-395 ("Step
   labels"); QSpec FR-402 (the `hyperproperty` node that QSL-1071 emits).
 

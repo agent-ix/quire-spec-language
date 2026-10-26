@@ -62,8 +62,8 @@
 //! closure certificate, which the core checker cannot admit, so it never
 //! settles `proved`. A liveness clause (TP-4) is decided by `liveness`,
 //! which adds the second phase; an `on each` activation with a `when`
-//! condition is refused before any state is explored, as [`ModelLetters`]
-//! does not read it. A clause with no instance is `Undecided(NoInstance)`
+//! condition is read through [`ModelLetters::activation`] at each position
+//! the clause reads. A clause with no instance is `Undecided(NoInstance)`
 //! before any state is explored (FR-125).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -89,18 +89,18 @@ use qsl_eval::simulation::{
     NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup,
     TransitionSystem, ZeroProgress, ZeroProgressError,
 };
-use qsl_eval::temporal::AtomReading;
+use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
-    ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, SymmetryRefusal,
-    TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    ProductStateRef, ProofCertificate, Proviso, ReachedLimit, ReductionCause, RunStats,
+    SymmetryRefusal, TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
-use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
+use qsl_semantics::check::{Activation, CaptureSite, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Incomplete, Meter};
@@ -159,12 +159,16 @@ pub enum ModelCheckRefusal {
         /// The clause's property form.
         form: Option<PropertyForm>,
     },
-    /// A liveness clause (TP-4) with a guarded `on each` activation: the
-    /// liveness engine does not read the `when` condition yet
-    /// (`unsupported_construct/not-yet-implemented`, FR-126 "Unsupported
-    /// liveness clauses").
-    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause with a guarded `on each` activation yet")]
-    GuardedActivation,
+    /// A `holds` condition of the clause reads a capture (FR-337 "Capture
+    /// observation"); what a read of a capture means is undecided (QSL-1092),
+    /// so no state is explored.
+    #[error("a `holds` condition of clause `{clause}` reads the capture `{capture}`")]
+    CaptureRead {
+        /// The clause's name.
+        clause: String,
+        /// The first capture, in source order, that a `holds` condition reads.
+        capture: String,
+    },
     /// The clause has no property automaton: a past operator over a future
     /// one, or more atoms than a letter holds.
     #[error("the clause has no property automaton: {0}")]
@@ -250,6 +254,9 @@ enum Item<'a> {
         /// The atom true where a guarded `on each` clause's `when`
         /// condition holds.
         when: Option<Atom>,
+        /// Where the clause fixes its captures (FR-337 "Capture
+        /// observation").
+        captured: CaptureSite,
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
@@ -432,6 +439,26 @@ enum Counting {
     ByKind,
 }
 
+/// FR-337 "Capture observation": refuse a clause whose `holds` condition
+/// reads a capture, before any state is explored or charged.
+pub(super) fn refuse_capture_read(item: ModelCheckItem<'_>) -> Result<(), ModelCheckRefusal> {
+    let ModelCheckItem::Clause { clause, letters } = item else {
+        return Ok(());
+    };
+    let Some(index) = letters.captured_read() else {
+        return Ok(());
+    };
+    let capture = clause
+        .captures()
+        .nth(index)
+        .map(|(name, _)| name.to_owned())
+        .ok_or_else(|| fault("a-read-capture-is-declared"))?;
+    Err(ModelCheckRefusal::CaptureRead {
+        clause: clause.name().to_owned(),
+        capture,
+    })
+}
+
 /// FR-126: decide `request`'s item over every behaviour of its subject,
 /// polling `cancel` before every expansion and every atom evaluation.
 ///
@@ -512,8 +539,10 @@ pub fn check_model(
             system.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
+    refuse_capture_read(request.item)?;
     let mut run = Run {
         system: &system,
+        package: request.subject.simulation.package,
         fairness: item.fairness(),
         reducer: Some(&system),
         item: &item,
@@ -679,8 +708,10 @@ pub fn check_protocol(
             model.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
+    refuse_capture_read(request.item)?;
     let protocol_run = ProtocolRun {
         item: &item,
+        package: subject.model.simulation.package,
         instances: &instances,
         root_cancelled,
         no_initial,
@@ -828,6 +859,7 @@ fn check_protocol_liveness(
 /// model the subject's resolved models need.
 struct ProtocolRun<'r> {
     item: &'r Item<'r>,
+    package: &'r qsl_package::CheckedPackage,
     instances: &'r [Instance],
     root_cancelled: Option<quire_exact::CancelCause>,
     no_initial: bool,
@@ -858,6 +890,7 @@ impl ProtocolRun<'_> {
         };
         let mut run = Run {
             system,
+            package: self.package,
             fairness: &fairness,
             reducer: None,
             item: self.item,
@@ -1000,6 +1033,7 @@ fn check_reduced(
             orbit: Vec::new(),
         }],
     };
+    refuse_capture_read(request.item)?;
     let mut total = RunStats::default();
     let mut boundary: usize = 0;
     let mut horizon = false;
@@ -1017,6 +1051,7 @@ fn check_reduced(
         };
         let mut run = Run {
             system: &system,
+            package: request.subject.simulation.package,
             fairness: item.fairness(),
             reducer: Some(&system),
             item: &item,
@@ -1207,13 +1242,14 @@ fn ample_of<'r, 'a>(
             fairness,
             atoms,
             when,
+            captured,
             ..
         } => Por::new(
             system,
             Some(Atoms {
                 letters: *letters,
                 nodes: atoms,
-                guarded: when.is_some(),
+                guarded: when.is_some() || *captured != CaptureSite::Never,
             }),
             bindings,
             fairness,
@@ -1335,6 +1371,7 @@ fn prepare(
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
         when: automaton.when(),
+        captured: clause.capture_site(),
         live: automaton.live(),
         uncounted: automaton.uncounted(),
         counting,
@@ -1403,6 +1440,7 @@ impl Reducer<ModelSimState> for ModelSystem<'_> {
 
 struct Run<'r, S: SubjectSystem> {
     system: &'r S,
+    package: &'r qsl_package::CheckedPackage,
     /// The item's fairness set over the subject, which every counterexample
     /// carries: empty for the deadlock-freedom item (FR-123, FR-212).
     fairness: &'r [<S::TransitionId as SubjectTransition>::Fairness],
@@ -1463,6 +1501,19 @@ struct Run<'r, S: SubjectSystem> {
     instance_limited: BTreeSet<DigestRecord>,
 }
 
+fn certificate_package_id(
+    package: &qsl_package::CheckedPackage,
+) -> Result<qsl_semantics::library::PackageId, ModelCheckRefusal> {
+    package
+        .emitted_package_id()
+        .or_else(|| {
+            qsl_package::emit_checked(package)
+                .ok()
+                .map(|emission| emission.package().package_id())
+        })
+        .ok_or_else(|| fault("a-model-check-certificate-has-an-emitted-package-id"))
+}
+
 impl<S: SubjectSystem> Run<'_, S> {
     fn stats(&self) -> RunStats {
         RunStats {
@@ -1510,7 +1561,10 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         states.sort();
         states.dedup();
-        Ok(ClosureCertificate { states })
+        Ok(ClosureCertificate {
+            package_id: certificate_package_id(self.package)?,
+            states,
+        })
     }
 
     fn poll(&self) -> Result<(), Finish> {
@@ -1587,7 +1641,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     outcome
                 } else {
                     ModelCheckOutcome::Holds {
-                        certificate: self.certificate(instances)?,
+                        certificate: ProofCertificate::Closure(self.certificate(instances)?),
                         stats: self.stats(),
                     }
                 },
@@ -2297,6 +2351,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             letters,
             atoms,
             when,
+            captured,
             live,
             uncounted,
             last_read,
@@ -2320,13 +2375,15 @@ impl<S: SubjectSystem> Run<'_, S> {
             let mut meter = Meter::new(self.meter);
             let reading = letters
                 .activation(binding, &self.system.atom_state(&node.state), &mut meter)
-                .map_err(|incomplete| {
-                    Self::stopped(
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => Halt::Refusal(refusal),
+                    Err(incomplete) => Self::stopped(
                         ModelCheckLimit::EvaluationMeter {
                             counter: incomplete.limit_kind,
                         },
                         incomplete.limit,
                     )
+                    .into(),
                 })?;
             match reading {
                 AtomReading::True => letter = letter.with(when),
@@ -2339,6 +2396,36 @@ impl<S: SubjectSystem> Run<'_, S> {
                     });
                     return Ok((from, Some(kind), None));
                 }
+            }
+        }
+        // FR-337: the captures are fixed once, at an activation: position 0 of
+        // an `on origin` clause, each position an `on each` guard admits.
+        let activates = (*when).is_none_or(|when| letter.holds(when));
+        let capturing = match captured {
+            CaptureSite::Never => false,
+            CaptureSite::Origin => node.depth == 0,
+            CaptureSite::Activations => activates,
+        };
+        if capturing && reads_position {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            let reading = letters
+                .captures(binding, &self.system.atom_state(&node.state), &mut meter)
+                .map_err(|stop| match atom_refusal(stop) {
+                    Ok(refusal) => Halt::Refusal(refusal),
+                    Err(incomplete) => Self::stopped(
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
+                        incomplete.limit,
+                    )
+                    .into(),
+                })?;
+            if let CaptureReading::Undefined { capture, cause } = reading {
+                let site = Self::site(node, UndefinedLocus::Capture(capture), None);
+                let kind =
+                    CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause });
+                return Ok((from, Some(kind), None));
             }
         }
         // The first atom's reading, the one atom a canonical bounded clause

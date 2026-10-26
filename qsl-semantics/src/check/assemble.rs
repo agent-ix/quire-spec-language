@@ -865,6 +865,9 @@ impl Unit {
                 DeclarationForm::Reward(reward) => unit
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Delay(delay) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Delay(delay)),
                 DeclarationForm::Workload(workload) => unit
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Workload(workload)),
@@ -3578,6 +3581,16 @@ impl PackageDeclarations {
                     );
                 }
             }
+            for (capture, written) in form.captures.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Capture(capture)),
+                    written.parameter.name.span,
+                );
+                declared_site_spans.insert(
+                    temporal_site(index, TemporalSite::CaptureValue(capture)),
+                    written.value.spans.clone(),
+                );
+            }
             for (id, node) in form.formula.iter() {
                 let span = match node {
                     qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
@@ -3589,6 +3602,7 @@ impl PackageDeclarations {
                         *span
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
                 };
                 declared_type_spans
                     .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
@@ -3602,20 +3616,43 @@ impl PackageDeclarations {
         }
         // FR-487: a `hyper` clause over `behaviours` locates each `holds`
         // atom at its condition's expression tree and each `match` conjunct
-        // (match conjuncts refuse at their own spans), indexed as the family checks them.
+        // (a conjunct refuses at its own span), indexed as the family checks them.
         let mut behaviours = 0;
         for declaration in &unit.hyper_clauses {
             let super::hyper_clause::HyperDeclaration::Behaviours(form) = declaration else {
                 continue;
             };
             use super::hyper_clause::lowering::{hyper_site, Site};
+            declared_type_spans.insert(hyper_site(behaviours, Site::Claim), form.name.span);
+            declared_type_spans.insert(hyper_site(behaviours, Site::Body), form.span);
             for (id, node) in form.body.iter() {
-                if let qsl_forms::TemporalNodeForm::Holds { condition, .. } = node {
-                    declared_site_spans.insert(
-                        hyper_site(behaviours, Site::Atom(id.index())),
-                        condition.spans.clone(),
-                    );
-                }
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            hyper_site(behaviours, Site::Atom(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => atom.span,
+                };
+                declared_type_spans.insert(hyper_site(behaviours, Site::Node(id.index())), span);
+            }
+            let (universal_trees, existential_trees) = super::hyper_clause::conjunct_trees(form);
+            for (k, tree) in universal_trees.into_iter().enumerate() {
+                declared_site_spans.insert(hyper_site(behaviours, Site::Universal(k)), tree);
+            }
+            for (k, tree) in existential_trees.into_iter().enumerate() {
+                declared_site_spans.insert(hyper_site(behaviours, Site::Existential(k)), tree);
+            }
+            let (universal, existential) = super::hyper_clause::conjunct_spans(form);
+            for (k, span) in universal.into_iter().enumerate() {
+                declared_type_spans.insert(hyper_site(behaviours, Site::Universal(k)), span);
+            }
+            for (k, span) in existential.into_iter().enumerate() {
+                declared_type_spans.insert(hyper_site(behaviours, Site::Existential(k)), span);
             }
             behaviours += 1;
         }
@@ -3642,6 +3679,25 @@ impl PackageDeclarations {
             let form = &declaration.form;
             declared_type_spans.insert(hybrid_site(HybridSite::Claim(claim)), form.name.span);
             declared_type_spans.insert(hybrid_site(HybridSite::Over(claim)), form.over.name.span);
+        }
+        // FR-410: a state-graph claim's nodes are located at its declared
+        // name, its `over` parameter's name and each predicate's expression
+        // tree; the constant `true` an omitted `from` stands for is located
+        // at the claim.
+        for (index, declaration) in package.state_graph_claims.iter().enumerate() {
+            use super::state_graph_claim::{state_graph_site, Site};
+            let form = &declaration.form;
+            declared_type_spans.insert(state_graph_site(index, Site::Claim), form.name.span);
+            if let Some(over) = &form.over {
+                declared_type_spans.insert(state_graph_site(index, Site::Over), over.name.span);
+            }
+            declared_type_spans.insert(state_graph_site(index, Site::From), form.span);
+            for (role, predicate) in super::state_graph_claim::predicates(&form.kind) {
+                if let Some(operand) = predicate.operands.first() {
+                    declared_site_spans
+                        .insert(state_graph_site(index, role.site()), operand.spans.clone());
+                }
+            }
         }
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
@@ -4092,6 +4148,7 @@ fn state_graph_claims(
             continue;
         };
         claims.push(StateGraphDeclaration {
+            index: claims.len(),
             form,
             selection,
             context,

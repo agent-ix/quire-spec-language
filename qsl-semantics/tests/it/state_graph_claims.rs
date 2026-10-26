@@ -45,8 +45,7 @@ fn check_under(
     let document = document();
     let (unit, _) = config_unit_with_body(&document, body);
     let declarations = admit_and_assemble_with_body(&document, body)
-        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"))
-        .with_unwritten_state_graph_claims();
+        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let regions = declarations.regions();
     declarations.check(limits).map_err(|refusals| {
         refusals
@@ -120,7 +119,7 @@ fn reference(predicate: &str) -> Vec<String> {
 /// The form part of the first criterion (per-object instances and node identity are deferred):
 /// `possible` checks to `Possible` with its target checked as a Boolean state
 /// body over the `over` parameter.
-#[trace("TC-590")]
+#[trace("TC-590", "FR-165-AC-1")]
 #[test]
 fn possible_checks_to_the_possible_form() {
     let graph = check(&format!("{REACHES_TWO}{REACHES_THREE}")).expect("both claims check");
@@ -149,7 +148,7 @@ fn possible_checks_to_the_possible_form() {
 
 /// TC-590, the form part of FR-165 (instances and node identity are deferred): an `always possible` claim without `from` checks with `from`
 /// the constant `true`; with `from` it checks that predicate.
-#[trace("TC-590")]
+#[trace("TC-590", "FR-165-AC-1")]
 #[test]
 fn always_possible_checks_with_the_constant_true_or_the_written_from() {
     let graph = check(&format!("{STILL_TWO}{GUARDED}")).expect("both claims check");
@@ -177,7 +176,7 @@ fn always_possible_checks_with_the_constant_true_or_the_written_from() {
 }
 
 /// TC-590, the form part of FR-165 (instances and node identity are deferred): `unique path` checks to `UniquePath` with `from` and `to`.
-#[trace("TC-590")]
+#[trace("TC-590", "FR-165-AC-1")]
 #[test]
 fn unique_path_checks_to_the_unique_path_form() {
     let graph = check(UNIQUE).expect("the claim checks");
@@ -195,7 +194,7 @@ fn unique_path_checks_to_the_unique_path_form() {
 
 /// TC-590, the form part of FR-165 (instances and node identity are deferred): `possible P` and `always possible P` over one `P` record
 /// different forms.
-#[trace("TC-590")]
+#[trace("TC-590", "FR-165-AC-1")]
 #[test]
 fn possible_and_always_possible_over_one_predicate_differ_in_form() {
     let graph = check(&format!("{REACHES_TWO}{STILL_TWO}")).expect("both claims check");
@@ -355,32 +354,20 @@ fn a_temporal_operator_inside_a_connective_negation_or_parentheses_refuses_at_th
     }
 }
 
-/// FR-165 "Requirement record": a claim that checks is refused as not
-/// emitted unless the caller asks to see the checked claim, so a compiled
-/// package never silently lacks it.
-#[trace("TC-590")]
+/// FR-165-AC-1, FR-410: `possible P` and `always possible P` over the same
+/// `P` check and emit as two claim nodes with different node identities, each
+/// carrying its `claim` occurrence.
+#[trace("TC-590", "FR-165-AC-1")]
 #[test]
-fn a_checked_claim_is_refused_as_not_emitted_by_default() {
-    let document = document();
-    let (unit, _) = config_unit_with_body(&document, REACHES_TWO);
-    let declarations =
-        admit_and_assemble_with_body(&document, REACHES_TWO).expect("the unit assembles");
-    let regions = declarations.regions();
-    let Err(refusals) = declarations.check(CheckingLimits::default()) else {
-        panic!("a state-graph claim is not emitted yet");
+fn possible_and_always_possible_over_one_predicate_have_different_node_identities() {
+    let graph = check(&format!("{REACHES_TWO}{STILL_TWO}")).expect("both claims check");
+    let identity = |name| {
+        claim(&graph, name)
+            .occurrence()
+            .unwrap_or_else(|| panic!("{name} is assembled"))
+            .node()
     };
-    let [refusal] = refusals.as_slice() else {
-        panic!("one refusal: {refusals:?}");
-    };
-    assert_eq!(refusal.cause.code(), Code::UnsupportedConstruct);
-    assert_eq!(refusal.cause.cause(), Some("not-yet-implemented"));
-    let region = regions
-        .refusal_region(refusal)
-        .expect("located at the claim");
-    assert_eq!(
-        unit[region.start() as usize..region.end() as usize].trim_end(),
-        REACHES_TWO.trim_end()
-    );
+    assert_ne!(identity("ReachesTwo"), identity("StillTwo"));
 }
 
 /// Two claims named alike refuse at the second, so a name keys one claim.
@@ -506,9 +493,7 @@ fn an_operation_parameter_read_refuses_as_a_missing_name() {
     let (document, _) = tc464_integer_argument_source();
     let body = "possible P using v over (c: Config::ConfigVersion) { c.versionNumber = amount }\n";
     let (unit, _) = config_unit_with_body(&document, body);
-    let declarations = admit_and_assemble_with_body(&document, body)
-        .expect("the unit assembles")
-        .with_unwritten_state_graph_claims();
+    let declarations = admit_and_assemble_with_body(&document, body).expect("the unit assembles");
     let regions = declarations.regions();
     let refusals = declarations
         .check(CheckingLimits::default())

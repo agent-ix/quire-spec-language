@@ -22,11 +22,14 @@
 //! parameter's name, each formula node's span, each fairness constraint's
 //! span, and each `holds` condition's own expression tree.
 
+use std::collections::BTreeMap;
+
 use quire_exact::{Identifier, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{fault, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
+use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm, NodeTag, Operation,
     OperationLaw, Operator,
@@ -34,10 +37,10 @@ use crate::check::node_key::{
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
-    UnaryTemporal,
+    BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
+    FormulaNodeId, UnaryTemporal,
 };
-use crate::value::member::Member;
+use crate::value::member::{Member, TimedMember};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "lowering.temporal";
@@ -53,6 +56,10 @@ pub(crate) enum TemporalSite {
     Trigger,
     /// The `on each` activation's `when` guard: its expression tree.
     Guard,
+    /// The capture at this index: its declared name.
+    Capture(usize),
+    /// The initializer of the capture at this index: its expression tree.
+    CaptureValue(usize),
     /// The formula node at this arena index: its span.
     Node(usize),
     /// The condition of the `holds` atom at this formula arena index: its
@@ -71,6 +78,8 @@ pub(crate) fn temporal_site(clause: usize, site: TemporalSite) -> String {
         TemporalSite::Over => format!("temporal {clause} over"),
         TemporalSite::Trigger => format!("temporal {clause} trigger"),
         TemporalSite::Guard => format!("temporal {clause} guard"),
+        TemporalSite::Capture(index) => format!("temporal {clause} capture {index}"),
+        TemporalSite::CaptureValue(index) => format!("temporal {clause} capture {index} value"),
         TemporalSite::Node(node) => format!("temporal {clause} node {node}"),
         TemporalSite::Condition(node) => format!("temporal {clause} holds {node}"),
         TemporalSite::Fairness(index) => format!("temporal {clause} fair {index}"),
@@ -95,13 +104,40 @@ pub(crate) struct TemporalClauseInput<'a> {
     pub(crate) conditions: &'a TypedConditions,
 }
 
+/// A `holds` atom's checked condition and the name each of its slots was
+/// bound under.
+pub(super) struct FormulaCondition<'c> {
+    /// The checked Boolean condition.
+    pub(super) root: CheckedNode<'c>,
+    /// The name each slot of the condition was bound under.
+    pub(super) slot_names: &'c [String],
+}
+
+/// A temporal formula to key (FR-337, FR-488 "The body"): the formula, the
+/// site each node is located at, and the typed condition of each `holds`
+/// atom by its arena index.
+pub(super) struct FormulaInput<'a, 'c> {
+    /// The checked formula.
+    pub(super) formula: &'a CheckedFormula,
+    /// The site of the formula node at an arena index.
+    pub(super) node_site: &'a dyn Fn(usize) -> Location,
+    /// Each `holds` atom's condition, by arena index.
+    pub(super) conditions: &'a BTreeMap<usize, FormulaCondition<'c>>,
+    /// Where a fault of the formula as a whole is located.
+    pub(super) root_site: &'a Location,
+}
+
 /// A lowered temporal clause's keys.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LoweredTemporalClause {
     /// The `temporal`/`temporal_clause` node: the clause's identity.
     pub(crate) key: NodeKey,
     /// The `over` parameter's `value`/`parameter` node.
     pub(crate) over: NodeKey,
+    /// Every parameter node of the clause in the order of its parameters:
+    /// `over`, the trigger binder of an `on each` activation, then each
+    /// capture.
+    pub(crate) parameters: Vec<NodeKey>,
     /// The `Boolean` scalar type node: the clause's semantic type.
     pub(crate) boolean: NodeKey,
 }
@@ -130,7 +166,75 @@ impl Lowering<'_> {
             semantic_type: over_type,
         }];
 
-        let formula = self.temporal_formula(input, boolean, &scope)?;
+        // FR-337 "`on each` activation at S4" and "Captures at S4": the
+        // trigger binder is the level-1 parameter node typed as `over` is,
+        // and each capture the next level, typed by its declared type.
+        let mut parameters = vec![over];
+        let mut scope = scope.to_vec();
+        let trigger = match clause.trigger() {
+            None => None,
+            Some((trigger_name, _)) => {
+                let trigger_at = at(TemporalSite::Trigger);
+                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
+                self.record(over_type, OccurrenceRole::Type, trigger_at);
+                parameters.push(trigger);
+                scope.push(Binder {
+                    slot: 1,
+                    parameter: trigger,
+                    semantic_type: over_type,
+                });
+                Some(trigger)
+            }
+        };
+        let guard_scope = scope.clone();
+        let first_capture = scope.len();
+        let mut capture_terms = Vec::with_capacity(clause.captures().len());
+        for (index, (name, declared)) in clause.captures().enumerate() {
+            let at_name = at(TemporalSite::Capture(index));
+            let initializer = input
+                .conditions
+                .captures
+                .get(index)
+                .ok_or_else(|| stage_fault(&at_name, "capture-initializer-typed"))?;
+            let mut binders = Binders::new(&initializer.slot_names, &scope);
+            let term = self.expression(initializer.body.root(), &mut binders)?;
+            let declared = self.binder_type(declared, None, &at_name)?;
+            let level = first_capture + index;
+            let capture = self.parameter(name, level, declared, &at_name)?;
+            self.record(declared, OccurrenceRole::Type, at_name);
+            capture_terms.push(GroupMember::Binding(Binding::new(name, term)));
+            parameters.push(capture);
+            scope.push(Binder {
+                slot: level,
+                parameter: capture,
+                semantic_type: declared,
+            });
+        }
+
+        let conditions: BTreeMap<usize, FormulaCondition<'_>> = input
+            .conditions
+            .holds
+            .iter()
+            .map(|(index, condition)| {
+                (
+                    *index,
+                    FormulaCondition {
+                        root: condition.body.root(),
+                        slot_names: &condition.slot_names,
+                    },
+                )
+            })
+            .collect();
+        let formula = self.temporal_formula(
+            &FormulaInput {
+                formula: clause.formula(),
+                node_site: &|node| temporal_location(input.index, TemporalSite::Node(node)),
+                conditions: &conditions,
+                root_site: &claim,
+            },
+            boolean,
+            &scope,
+        )?;
 
         if clause.fairness().len() != clause.fairness_sources().len() {
             return Err(stage_fault(&claim, "fairness-member-has-a-source"));
@@ -172,35 +276,20 @@ impl Lowering<'_> {
             definition: clause.profile().definition(),
         };
         let mut activation = Vec::new();
-        match clause.trigger() {
+        match trigger {
             None => {
                 let kind = self.text_literal("origin", &claim)?;
                 activation.push(GroupMember::Binding(Binding::new("kind", kind)));
             }
-            Some((trigger_name, _)) => {
-                // FR-337 "`on each` activation at S4": the trigger is the
-                // binder's own level-1 parameter node, typed as `over` is.
+            Some(trigger) => {
                 let kind = self.text_literal("each", &claim)?;
                 activation.push(GroupMember::Binding(Binding::new("kind", kind)));
-                let trigger_at = at(TemporalSite::Trigger);
-                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
-                self.record(over_type, OccurrenceRole::Type, trigger_at);
                 activation.push(GroupMember::Binding(Binding::new(
                     "trigger",
                     LeafTerm::reference(trigger),
                 )));
                 if let Some(guard) = &input.conditions.guard {
-                    let mut binders = Binders::new(
-                        &guard.slot_names,
-                        &[
-                            scope[0],
-                            Binder {
-                                slot: 1,
-                                parameter: trigger,
-                                semantic_type: over_type,
-                            },
-                        ],
-                    );
+                    let mut binders = Binders::new(&guard.slot_names, &guard_scope);
                     let term = self.expression(guard.body.root(), &mut binders)?;
                     activation.push(GroupMember::Binding(Binding::new("guard", term)));
                 }
@@ -209,7 +298,7 @@ impl Lowering<'_> {
         let clock = self.text_literal(clause.clock(), &claim)?;
         // QSpec FR-370: over, clock, activation, captures, fairness and
         // formula, in that order. An `on origin` activation binds `kind`
-        // only, and an emitted clause declares no capture (`is_emitted`).
+        // only, and a clause with no capture binds the empty aggregate.
         let key = self.insert(
             &claim,
             NodeTag::Temporal,
@@ -227,29 +316,34 @@ impl Lowering<'_> {
                     MemberTerm::reference(over),
                     MemberTerm::Leaf(clock),
                     MemberTerm::Group(GroupTerm::new(activation)),
-                    MemberTerm::Group(GroupTerm::new(Vec::new())),
+                    MemberTerm::Group(GroupTerm::new(capture_terms)),
                     MemberTerm::Group(GroupTerm::references(fairness)),
                     MemberTerm::reference(formula),
                 ],
             ),
         )?;
         self.record(key, OccurrenceRole::Claim, claim);
-        Ok(LoweredTemporalClause { key, over, boolean })
+        Ok(LoweredTemporalClause {
+            key,
+            over,
+            parameters,
+            boolean,
+        })
     }
 
     /// Key every node of `input`'s formula, each operand before its
     /// operator, and return the root's key. The arena puts an operator
     /// before its operands, so one reverse pass keys every operand first.
-    fn temporal_formula(
+    pub(super) fn temporal_formula(
         &mut self,
-        input: &TemporalClauseInput<'_>,
+        input: &FormulaInput<'_, '_>,
         boolean: NodeKey,
         scope: &[Binder],
     ) -> Result<NodeKey, CheckRefusal> {
-        let formula = input.clause.formula();
+        let formula = input.formula;
         let mut keys: Vec<Option<NodeKey>> = vec![None; formula.nodes().len()];
         for (index, node) in formula.nodes().iter().enumerate().rev() {
-            let location = temporal_location(input.index, TemporalSite::Node(index));
+            let location = (input.node_site)(index);
             let operand = |id: FormulaNodeId| -> Result<MemberTerm, CheckRefusal> {
                 keys.get(id.index())
                     .copied()
@@ -263,16 +357,18 @@ impl Lowering<'_> {
                 FormulaNode::Holds { .. } => {
                     let condition = input
                         .conditions
-                        .holds
                         .get(&index)
                         .ok_or_else(|| stage_fault(&location, "holds-condition-typed"))?;
-                    let mut binders = Binders::new(&condition.slot_names, scope);
-                    let operand = self.expression(condition.body.root(), &mut binders)?;
+                    let mut binders = Binders::new(condition.slot_names, scope);
+                    let operand = self.expression(condition.root, &mut binders)?;
                     (
                         "quire.op.temporal.holds",
                         None,
                         vec![MemberTerm::Leaf(operand)],
                     )
+                }
+                FormulaNode::Aggregate { .. } => {
+                    return Err(stage_fault(&location, "aggregate-not-emitted"));
                 }
                 FormulaNode::Not(only) => ("quire.op.temporal.not", None, vec![operand(*only)?]),
                 FormulaNode::And(left, right) => (
@@ -296,9 +392,7 @@ impl Lowering<'_> {
                     operand: only,
                 } => (
                     unary_identity(*operator),
-                    Some(Member::TemporalInterval {
-                        interval: step_interval(interval.as_ref(), &location)?,
-                    }),
+                    Some(temporal_interval(interval.as_ref())),
                     vec![operand(*only)?],
                 ),
                 FormulaNode::Binary {
@@ -308,9 +402,7 @@ impl Lowering<'_> {
                     right,
                 } => (
                     binary_identity(*operator),
-                    Some(Member::TemporalInterval {
-                        interval: step_interval(interval.as_ref(), &location)?,
-                    }),
+                    Some(temporal_interval(interval.as_ref())),
                     vec![operand(*left)?, operand(*right)?],
                 ),
             };
@@ -338,12 +430,7 @@ impl Lowering<'_> {
         keys.get(formula.root().index())
             .copied()
             .flatten()
-            .ok_or_else(|| {
-                stage_fault(
-                    &temporal_location(input.index, TemporalSite::Claim),
-                    "formula-root-keyed",
-                )
-            })
+            .ok_or_else(|| stage_fault(input.root_site, "formula-root-keyed"))
     }
 }
 
@@ -368,7 +455,7 @@ const fn binary_identity(operator: BinaryTemporal) -> &'static str {
 }
 
 /// A broken invariant of this lowering, never a refusal of the input.
-fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+pub(super) fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     fault(
         location,
         KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
@@ -377,16 +464,18 @@ fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     )
 }
 
-/// A checked operator's step interval as S4 writes it. A timed interval
-/// never reaches S4: `temporal_clause::is_emitted` refuses a
-/// clause under the timed profile before lowering.
-fn step_interval(
-    interval: Option<&CheckedInterval>,
-    location: &Location,
-) -> Result<Option<qsl_foundation::bound::TemporalInterval>, CheckRefusal> {
+/// A checked operator's interval in the FR-370 wire form.
+fn temporal_interval(interval: Option<&CheckedInterval>) -> Member {
     match interval {
-        None => Ok(None),
-        Some(CheckedInterval::Steps(interval)) => Ok(Some(*interval)),
-        Some(CheckedInterval::Timed(_)) => Err(stage_fault(location, "timed-clause-not-lowered")),
+        None => Member::TemporalInterval { interval: None },
+        Some(CheckedInterval::Steps(interval)) => Member::TemporalInterval {
+            interval: Some(*interval),
+        },
+        Some(CheckedInterval::Timed(interval)) => Member::TimedInterval(Box::new(TimedMember {
+            lower: interval.lower().clone(),
+            lower_closed: interval.lower_closed(),
+            upper: Some(interval.upper().clone()),
+            upper_closed: interval.upper_closed(),
+        })),
     }
 }

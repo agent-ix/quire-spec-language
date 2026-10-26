@@ -41,6 +41,9 @@ enum Unit {
     /// `Undefined`, under the bounded profile, with integer modulo by zero
     /// at position 2 (FR-330-AC-5).
     Undefined,
+    /// `Guarded`, under the bounded profile: an `on each` clause activated
+    /// where the counter's value is 1 (FR-337, FR-330).
+    Guarded,
 }
 
 impl Unit {
@@ -48,7 +51,7 @@ impl Unit {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
-            Self::Undefined => {
+            Self::Undefined | Self::Guarded => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
         }
@@ -70,6 +73,11 @@ impl Unit {
             Self::Undefined => {
                 "temporal Undefined using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always[0,2] holds(3 mod (2 - c.value) >= 0) }\n"
+            }
+            Self::Guarded => {
+                "temporal Guarded using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) when (q.value = 1) \
+                 { eventually[0,1] holds(c.value = 2) }\n"
             }
         }
     }
@@ -965,4 +973,22 @@ fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
         )),
         Category::InternalFailure
     );
+}
+
+/// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace
+/// evaluates its guard on the observed trace (no evaluator fault): over the
+/// values 0, 1, 2 the guard holds at position 1 alone, where the property
+/// holds; over 0, 1, 1 the property is violated at that position.
+#[trace("TC-840", "FR-330-AC-1")]
+#[test]
+fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
+    let report = report(finite(Unit::Guarded, "Guarded", &[0, 1, 2]));
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+    assert!(
+        !matches!(outcome(&report), TemporalVerdict::Violated { .. }),
+        "{:?}",
+        report.disposition
+    );
+    let report = self::report(finite(Unit::Guarded, "Guarded", &[0, 1, 1]));
+    assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 1 });
 }

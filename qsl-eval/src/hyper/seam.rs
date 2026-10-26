@@ -10,6 +10,7 @@
 //! lowered (FR-487).
 
 use quire_exact::{Incomplete, Meter, ObjectReference};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::FormulaNodeId;
@@ -82,6 +83,9 @@ pub enum MatchReading {
         /// How the evaluation was refused.
         outcome: ClauseOutcome,
     },
+    /// The evaluator broke an invariant while reading a conjunct: the labels
+    /// or the conjunct are not the product's own. The run stops as a fault.
+    Fault(InternalFault),
 }
 
 /// A conjunct whose evaluation exhausted the meter (FR-487).
@@ -110,13 +114,7 @@ pub enum HyperSlot {
 }
 
 /// Which part of a `match` block a conjunct belongs to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MatchPart {
-    /// `mu_U`: the conjuncts that read universal variables only.
-    Universal,
-    /// `mu_E`: the conjuncts that read an existential variable.
-    Existential,
-}
+pub use qsl_semantics::check::MatchPart;
 
 /// Reads a hyper clause's `match` block over a joint step: its universal part
 /// `μ_U` (ADR-023 HC-1) and, for an HP-3 clause, its existential part `μ_E`

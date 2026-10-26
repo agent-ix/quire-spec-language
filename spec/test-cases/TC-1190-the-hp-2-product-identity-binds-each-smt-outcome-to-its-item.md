@@ -23,7 +23,7 @@ deserialize it, that its refusals come in their stated order, that
 `settle_hyper_smt` settles an HP-2 SMT outcome only for the item and
 instance its identity names, checking any witness itself.
 
-Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
+Scope: FR-315-AC-12 to FR-315-AC-14, FR-315-AC-49, FR-315-AC-51, FR-315-AC-52, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
 
 ## Test Procedure
 
@@ -47,7 +47,11 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    FR-176-AC-3's liveness clause with an empty `instance`. Call
    `HyperProductIdentity::of` for `NonInterference` with a `match` conjunct
    whose evaluation exhausts the request's `meter`, and read the meter's
-   consumed counters.
+   consumed counters. Call both for `NonInterference` as S3 checked it,
+   before any package assembled it; for `NonInterference` over a subject
+   whose `snapshots` provision lacks an initial state's document; and,
+   inside `qsl-replay`'s tests, for the clause altered after S3 so that its
+   parameter names an alias the clause does not hold.
 4. Build a test crate whose only QSL dependency is `qsl-replay`, whose
    `replay` module names `HyperProductIdentity`, `HyperQuery`,
    `HyperQueryRequest`, `SubjectIdentity` and `HyperSmtOutcome` and calls
@@ -93,15 +97,19 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   node's `claim` occurrence, `subjects()` holds the one `SubjectIdentity`,
   and `instance()` is the one pair binding the parameter to `v`.
 - Step 2: instance `w` differs only in `instance()`; the fair clause gives
-  byte-equal scripts and differs only in `clause()`; the proof-bound
+  byte-equal scripts and an identity that differs in `clause()` and in the
+  checked package of `subjects()`, not in `instance()`; the proof-bound
   subject differs only in `subjects()`; the other meter budget gives an
   equal identity.
 - Step 3: from both calls, with no identity and no script:
   `instance-binding` at the parameter for the empty instance and for `x`;
   `subject-binding` at alias `N`; `product-identity` at the clause;
   `hyper-form`; `instance-binding`, not `hyper-body`, for the liveness
-  clause. The `match`-conjunct request returns its identity with every
-  consumed counter at zero.
+  clause; `product-identity` at the clause for the unassembled clause,
+  with the meter's counters at zero. The `match`-conjunct request returns
+  its identity with every consumed counter at zero. The non-admitting
+  subject gets its identity from `of` and `subject-binding` at alias `V` from
+  `encode_hyper_query`; the altered clause gets the same `Fault` from both.
 - Step 4: the crate compiles; all three compile-fail cases fail to compile.
 - Step 5: the two identities are equal; the reversed listings give an
   equal identity with an equal hash; the subject with no emission is

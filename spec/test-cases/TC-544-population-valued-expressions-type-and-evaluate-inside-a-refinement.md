@@ -29,8 +29,9 @@ Fixture: `RingIsQueue` with universes `rings = {r}`, `slots = {s0, s1}`.
 4. Evaluate the two `only` variants of FR-139-AC-4.
 5. Check FR-139-AC-5's `count` row at S3, then admit subjects with
    `slots = {s0, s1}` and `slots = {s0, s1, s2}`.
-6. Check FR-139-AC-6's `sum` row against `Int[0, 4]` and `Int[2, 4]`; evaluate
-   it where no slot satisfies the condition.
+6. Check FR-139-AC-6's `sum` row at S3 with symbolic `n`, recording `[0, 2n]`;
+   then admit it against `Int[0, 4]` and `Int[2, 4]` with `n = 2`. Evaluate it
+   where no slot satisfies the condition.
 7. Read the `UndefinedRecord` of step 4's two results.
 
 Tag the tests `#[trace("TC-544", "FR-139-AC-n")]`.
@@ -45,6 +46,7 @@ Tag the tests `#[trace("TC-544", "FR-139-AC-n")]`.
 - Step 4: undefined; undefined.
 - Step 5: checks; admitted; `ill_typed`/`type-mismatch` naming the row,
   `R::slots` and 3.
-- Step 6: admitted; `ill_typed`/`type-mismatch` naming the row, `R::slots` and 2;
-  0.
+- Step 6: S3 records `[0, 2n]` without refusing; at admission, `Int[0, 4]` is
+  admitted and `Int[2, 4]` refuses `ill_typed`/`type-mismatch` naming the row,
+  `R::slots` and universe size 2; the empty sum evaluates to 0.
 - Step 7: reason `only-not-one` for both.

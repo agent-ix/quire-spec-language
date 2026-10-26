@@ -401,7 +401,7 @@ impl AdmittedModels {
 /// sources it was compiled from.
 #[derive(Debug)]
 pub struct CheckedUnit {
-    package: pkg::CheckedPackage,
+    package: Arc<pkg::CheckedPackage>,
     source: Source,
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
@@ -409,9 +409,14 @@ pub struct CheckedUnit {
 }
 
 impl CheckedUnit {
+    /// The shared checked package used by the evaluator's retained closure.
+    pub(crate) fn shared_package(&self) -> &Arc<pkg::CheckedPackage> {
+        &self.package
+    }
+
     /// The S4 in-process package.
     pub fn package(&self) -> &pkg::CheckedPackage {
-        &self.package
+        self.package.as_ref()
     }
 
     /// The unit's own source, exactly as S1 read it (FND-016: a caller
@@ -559,7 +564,7 @@ pub fn check(
             .map(|(name, library)| (name, library.source.clone()))
             .unzip();
         Ok(CheckedUnit {
-            package,
+            package: Arc::new(package),
             source: parsed.source().clone(),
             libraries,
             library_names,
@@ -752,7 +757,7 @@ fn emit_unit(
 #[derive(Debug)]
 pub(crate) struct ComposedUnit {
     /// The S4 in-process package.
-    pub(crate) package: pkg::CheckedPackage,
+    pub(crate) package: Arc<pkg::CheckedPackage>,
     /// The emitted wire bytes with their `package_id`.
     pub(crate) emitted: pkg::EmittedPackage,
     /// The unit's own source.

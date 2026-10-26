@@ -1781,7 +1781,7 @@ mod cargo_deny_bans_the_three_registry_crates {
             tempfile::tempdir().expect("create a scratch directory for the throwaway manifest");
         let deps: String = DENIED_CRATES
             .iter()
-            .map(|name| format!("{name} = \"*\"\n"))
+            .map(|name| format!("{name} = {{ path = \"stubs/{name}\" }}\n"))
             .collect();
         std::fs::write(
             scratch.path().join("Cargo.toml"),
@@ -1799,18 +1799,33 @@ mod cargo_deny_bans_the_three_registry_crates {
         .expect("write the throwaway manifest");
         std::fs::create_dir_all(scratch.path().join("src")).expect("create src/");
         std::fs::write(scratch.path().join("src/lib.rs"), "").expect("write an empty lib.rs");
+        for name in DENIED_CRATES {
+            let stub = scratch.path().join("stubs").join(name);
+            std::fs::create_dir_all(stub.join("src")).expect("create the local banned crate");
+            std::fs::write(
+                stub.join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            )
+            .expect("write the local banned crate manifest");
+            std::fs::write(stub.join("src/lib.rs"), "").expect("write its empty library");
+        }
 
         // The workspace's own `deny.toml`, one level above this crate.
         let deny_toml = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("qsl-route lives one level below the workspace root")
             .join("deny.toml");
+        // `--config` moved from `check` to the top level between cargo-deny
+        // 0.19 and 0.20, so no version accepts one placement. Both read
+        // `<cwd>/deny.toml` by default; copy the workspace's file there and
+        // run from the scratch directory.
+        std::fs::copy(&deny_toml, scratch.path().join("deny.toml"))
+            .expect("copy the workspace deny.toml next to the throwaway manifest");
         let output = Command::new("cargo-deny")
+            .current_dir(scratch.path())
             .arg("--manifest-path")
             .arg(scratch.path().join("Cargo.toml"))
             .arg("check")
-            .arg("--config")
-            .arg(&deny_toml)
             .arg("bans")
             .output()
             .expect("run cargo-deny against the throwaway manifest");

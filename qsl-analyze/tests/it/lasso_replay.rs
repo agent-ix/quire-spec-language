@@ -374,6 +374,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 clause: &fixture.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |counterexample| {
@@ -417,6 +418,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 clause: &fixture.clauses[0],
                 letters: &letters,
             },
+            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
         },
         &Cancel::new(),
         |counterexample| {
@@ -638,5 +640,82 @@ fn a_violation_on_the_stutter_step_carries_the_stutter_marker() {
     assert_eq!(
         reproduced(replay_with(&fixture, payload, is_three)),
         Some(0)
+    );
+}
+
+/// FR-337-AC-13: a counterexample of a clause with a capture replays through
+/// the production letters, which fix the capture at the origin on the
+/// replayed trace, to `reproduced-with-evaluated-witness`.
+#[trace("TC-1267", "FR-337-AC-13")]
+#[test]
+fn a_clause_with_a_capture_replays_through_the_production_letters() {
+    use qsl_eval::simulation::model::ModelSystem;
+
+    let fixture = counter(
+        document(false),
+        "",
+        "capture n: Int[0, 3] = c.value; always holds(c.value < 2)",
+    );
+    let system = ModelSystem::new(
+        subject(
+            &fixture.package,
+            &fixture.documents,
+            fixture.initial.clone(),
+            &fixture.keys,
+            UNLIMITED,
+        )
+        .simulation,
+    )
+    .expect("the subject admits");
+    let node = &fixture.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("the clause has letters");
+    let outcome = qsl_analyze::model_check::check_model(
+        qsl_analyze::model_check::ModelCheckRequest {
+            subject: subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("checked");
+    let ModelCheckOutcome::Violated { counterexample, .. } = outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    let id = package_id(&fixture);
+    let (clause_node, occurrence) = clause_identity(&fixture);
+    let result = replay_model_trace(
+        request(
+            &fixture.documents.document,
+            fixture.documents.snapshot_bytes(),
+            &fixture.unit,
+            id,
+        ),
+        &subject_of(&fixture),
+        &envelope_at(&fixture.unit, id, *counterexample, clause_node, occurrence),
+        &letters,
+        ReplayLimits::default(),
+    )
+    .expect("replays");
+    assert!(
+        matches!(
+            result.settlement,
+            ModelTraceSettlement::Reproduced {
+                value: ModelTraceValue::Truth(false),
+                trace_position: Some(2),
+            }
+        ),
+        "{:?}",
+        result.settlement
     );
 }

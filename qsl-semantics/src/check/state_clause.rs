@@ -44,7 +44,7 @@ use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
@@ -291,37 +291,152 @@ impl ClauseView<'_> {
     }
 }
 
-/// Whether a value of `value_type` is, or contains, a reference to an object
-/// or a population: the values a callee reads objects through.
-fn holds_reference(types: &TypeEnvironment, value_type: &ValueType) -> bool {
-    let mut pending = vec![value_type.clone()];
-    let mut visited = BTreeSet::new();
-    while let Some(current) = pending.pop() {
-        match &current {
-            ValueType::Reference(_) | ValueType::Population(_) => return true,
-            ValueType::Option(payload) => pending.push((**payload).clone()),
-            ValueType::Collection(collection) => {
-                pending.push(collection.element().clone());
+#[derive(Clone, Copy)]
+enum FunctionGraph<'a> {
+    Local {
+        scope: &'a Scope,
+        functions: &'a [&'a CheckedBody],
+    },
+    Imported {
+        graph: &'a super::CheckedGraph,
+        package: crate::library::PackageId,
+    },
+}
+
+impl<'a> FunctionGraph<'a> {
+    fn imported(self, package: crate::library::PackageId) -> Option<&'a super::CheckedGraph> {
+        match self {
+            Self::Local { scope, .. } => scope.imported_graph(package),
+            Self::Imported { graph, .. } => graph.scope.imported_graph(package),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FunctionTarget<'a> {
+    Local {
+        functions: &'a [&'a CheckedBody],
+        index: usize,
+    },
+    Imported {
+        graph: &'a super::CheckedGraph,
+        package: crate::library::PackageId,
+        index: usize,
+    },
+}
+
+impl<'a> FunctionGraph<'a> {
+    fn local_target(self, index: usize) -> FunctionTarget<'a> {
+        match self {
+            Self::Local { functions, .. } => FunctionTarget::Local { functions, index },
+            Self::Imported { graph, package } => FunctionTarget::Imported {
+                graph,
+                package,
+                index,
+            },
+        }
+    }
+}
+
+fn enqueue_calls<'a>(
+    body: super::ir::CheckedNode<'a>,
+    graph: FunctionGraph<'a>,
+    pending: &mut Vec<(FunctionGraph<'a>, FunctionTarget<'a>)>,
+) {
+    for node in body.descendants() {
+        match node.kind() {
+            NodeKind::Call { function, .. } => {
+                pending.push((graph, graph.local_target(*function)));
             }
-            ValueType::Composite(key) => {
-                let key = *key;
-                if !visited.insert(key) {
-                    continue;
-                }
-                match types.composite(key).map(|declaration| declaration.shape()) {
-                    Some(CompositeShape::Record(fields)) => {
-                        pending.extend(fields.iter().map(|field| field.value_type().clone()));
-                    }
-                    Some(CompositeShape::Tuple(positions)) => {
-                        pending.extend(positions.iter().cloned());
-                    }
-                    // A union's members are not walked: a conservative
-                    // refusal would reject every union argument.
-                    Some(CompositeShape::Union(_)) | None => {}
+            NodeKind::ImportedCall {
+                callee, function, ..
+            } => {
+                if let Some(imported) = graph.imported(callee.package) {
+                    let imported_graph = FunctionGraph::Imported {
+                        graph: imported,
+                        package: callee.package,
+                    };
+                    pending.push((
+                        imported_graph,
+                        FunctionTarget::Imported {
+                            graph: imported,
+                            package: callee.package,
+                            index: *function,
+                        },
+                    ));
+                } else {
+                    // A checked call with no reachable graph is an
+                    // inconsistent checked package; refuse conservatively.
+                    pending.push((graph, graph.local_target(usize::MAX)));
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// Whether a checked expression or any function it calls reads an object.
+/// The worklist follows each reachable function once, across local and
+/// imported checked graphs, so forwarding a reference alone does not count.
+fn reads_object_through_calls(
+    root: super::ir::CheckedNode<'_>,
+    scope: &Scope,
+    functions: &[&CheckedBody],
+) -> bool {
+    fn has_object_read(root: super::ir::CheckedNode<'_>) -> bool {
+        root.descendants().into_iter().any(|node| {
+            matches!(
+                node.kind(),
+                NodeKind::Attribute { .. }
+                    | NodeKind::Navigate { .. }
+                    | NodeKind::AllInstances { .. }
+                    | NodeKind::Lookup { .. }
+                    | NodeKind::Reaches { .. }
+                    | NodeKind::ReachesEnd { .. }
+                    | NodeKind::Dispatch { .. }
+            )
+        })
+    }
+
+    let local = FunctionGraph::Local { scope, functions };
+    let mut pending = Vec::<(FunctionGraph<'_>, FunctionTarget<'_>)>::new();
+
+    if has_object_read(root) {
+        return true;
+    }
+    enqueue_calls(root, local, &mut pending);
+
+    let mut visited = BTreeSet::new();
+    while let Some((graph, target)) = pending.pop() {
+        let (identity, body) = match (graph, target) {
+            (FunctionGraph::Local { .. }, FunctionTarget::Local { functions, index }) => {
+                let Some(body) = functions.get(index).copied() else {
+                    return true;
+                };
+                ((None, index.to_string()), body.root())
+            }
+            (
+                FunctionGraph::Imported { graph, package },
+                FunctionTarget::Imported {
+                    graph: target_graph,
+                    package: target_package,
+                    index,
+                },
+            ) if std::ptr::eq(graph, target_graph) && package == target_package => {
+                let Some(function) = graph.function_state(index) else {
+                    return true;
+                };
+                ((Some(package), function.name.to_owned()), function.body)
+            }
+            _ => return true,
+        };
+        if !visited.insert(identity) {
+            continue;
+        }
+        if has_object_read(body) {
+            return true;
+        }
+        enqueue_calls(body, graph, &mut pending);
     }
     false
 }
@@ -332,6 +447,7 @@ fn holds_reference(types: &TypeEnvironment, value_type: &ValueType) -> bool {
 pub(crate) fn check_type_invariant<'a>(
     invariant: &super::type_invariant::TypeInvariantDeclaration,
     declarations: &ClauseDeclarations<'a>,
+    functions: &[&CheckedBody],
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
 ) -> Result<(super::type_invariant::CheckedTypeInvariant, u64), CheckRefusal> {
     let typed = check_clause(
@@ -343,37 +459,13 @@ pub(crate) fn check_type_invariant<'a>(
     // A record or event value is evaluated with no object universe (FR-366
     // "Evaluation per reachable value"), so a read of an object, a
     // relationship or a population has nothing to observe.
-    if matches!(invariant.self_type, ValueType::Composite(_)) {
-        let types = declarations.scope.types();
-        let reads_objects =
-            typed
-                .body
-                .root()
-                .descendants()
-                .into_iter()
-                .any(|node| match node.kind() {
-                    NodeKind::Attribute { .. }
-                    | NodeKind::Navigate { .. }
-                    | NodeKind::AllInstances { .. }
-                    | NodeKind::Lookup { .. }
-                    | NodeKind::Reaches { .. }
-                    | NodeKind::ReachesEnd { .. }
-                    | NodeKind::Dispatch { .. } => true,
-                    // The callee's body is not entered, so a call that hands it a
-                    // reference or a population may read objects through it.
-                    NodeKind::Call { arguments, .. } | NodeKind::ImportedCall { arguments, .. } => {
-                        arguments
-                            .iter()
-                            .any(|argument| holds_reference(types, node.at(*argument).value_type()))
-                    }
-                    _ => false,
-                });
-        if reads_objects {
-            return Err(invariant.refusal(CheckRefusal {
-                location: declarations.location.clone(),
-                cause: CheckCause::ObjectReadInValueInvariant,
-            }));
-        }
+    if matches!(invariant.self_type, ValueType::Composite(_))
+        && reads_object_through_calls(typed.body.root(), declarations.scope, functions)
+    {
+        return Err(invariant.refusal(CheckRefusal {
+            location: declarations.location.clone(),
+            cause: CheckCause::ObjectReadInValueInvariant,
+        }));
     }
     Ok((
         super::type_invariant::CheckedTypeInvariant {
@@ -533,18 +625,20 @@ pub(crate) fn population_of(
     }
 }
 
-/// Every population that covers `object`, by conformance, in ascending
-/// `DeclarationKey` order: what a clause `over (x: object)` of a model subject
-/// ranges over (FR-125 Instancing admits several, whose universes the subject
-/// lists together).
-pub(crate) fn populations_covering(
+/// Every population whose member type overlaps `object` by subtyping, in
+/// ascending declaration-key order. Temporal requirement records use this
+/// relation (FR-336); other population lookups retain their own coverage
+/// rules.
+pub(crate) fn populations_overlapping(
     models: &[AdmittedModel],
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Vec<PopulationDomain> {
     let mut found: Vec<(&DeclarationKey, PopulationDomain)> = models
         .iter()
-        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .flat_map(|model| {
+            model.populations_overlapping(object, |sub, sup| types.conforms(sub, sup))
+        })
         .map(|(ordinal, key, member, bound)| {
             (
                 key,
@@ -556,7 +650,7 @@ pub(crate) fn populations_covering(
             )
         })
         .collect();
-    found.sort_by_key(|(left, _)| *left);
+    found.sort_by_key(|(key, _)| *key);
     found.into_iter().map(|(_, domain)| domain).collect()
 }
 

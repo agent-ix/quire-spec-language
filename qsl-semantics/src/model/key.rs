@@ -111,6 +111,14 @@ pub(super) fn declaration_key_wire(key: &DeclarationKey) -> DeclarationKeyWire<'
     }
 }
 
+/// The RFC 8785 text of `key`'s preimage (FR-120 "Identities"), the identity
+/// text a model transition carries for the declaration `key` names.
+pub fn declaration_identity_text(key: &DeclarationKey) -> String {
+    let bytes = quire_canonical::to_vec(&declaration_key_wire(key), LIMITS)
+        .unwrap_or_else(|error| panic!("a declaration key encodes: {error}"));
+    String::from_utf8(bytes).unwrap_or_else(|error| panic!("RFC 8785 text is UTF-8: {error}"))
+}
+
 /// A [`DeclarationKey`]'s preimage form: `{package, node, digest_domain}`.
 #[derive(Serialize, FixedShape)]
 pub(super) struct DeclarationKeyWire<'a> {

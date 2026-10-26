@@ -28,6 +28,7 @@ use qsl_forms::{
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -53,6 +54,7 @@ use crate::family::requirements::{classify_domains, ClaimExtent, ClassifyFailure
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
 
+pub(crate) mod emission;
 pub(crate) mod lowering;
 
 pub use lowering::{operation_text, AtomSlot, STUTTER_TEXT};
@@ -279,6 +281,11 @@ impl CheckedStepPredicate {
     pub fn condition(&self) -> (CheckedNode<'_>, usize) {
         (self.condition.body.root(), self.condition.slots)
     }
+
+    /// The conjunct's lowered condition with the names of its slots.
+    pub(crate) fn lowered(&self) -> &lowering::ConjunctCondition {
+        &self.condition
+    }
 }
 
 /// The form ADR-023 section 3 classifies a clause into.
@@ -299,6 +306,21 @@ pub enum HyperForm {
     SingleExistential,
     /// HP-6: every quantifier universal, aligned on a projection.
     ProjectionAligned,
+}
+
+impl HyperForm {
+    /// The HP-4 classification reason, if this form is unsupported by every
+    /// negotiation arm (FR-396, FR-399).
+    pub const fn unsupported_reason(&self) -> Option<HyperUnsupported> {
+        match self {
+            Self::Other { reason } => Some(*reason),
+            Self::StepRelation
+            | Self::Universal
+            | Self::ForallExistsSafety
+            | Self::SingleExistential
+            | Self::ProjectionAligned => None,
+        }
+    }
 }
 
 /// Which rule of ADR-023 section 3 places a clause in HP-4.
@@ -375,6 +397,30 @@ pub struct CheckedHyperClause {
     identity: HyperIdentity,
     atom_slots: Vec<AtomSlot>,
     atoms: BTreeMap<usize, lowering::AtomCondition>,
+    /// The object type each object parameter declares, in source order.
+    parameter_objects: Vec<EffectiveId>,
+    /// The span of each quantifier's written constraint that resolved to
+    /// each member of its fairness set, in fairness-set order.
+    fairness_spans: Vec<Vec<Span>>,
+    /// The `claim` occurrence of the clause's `hyperproperty` node, set when
+    /// the package is assembled (FR-488 "Outputs").
+    occurrence: OccurrenceKey,
+    /// Whether a package assembled the clause at [`Self::occurrence`].
+    assembled: bool,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl CheckedHyperClause {
+    /// The clause with every object parameter bound to the model alias
+    /// `alias` after S3 (test-support only): a clause no well-formed request
+    /// carries when `alias` is no alias of the clause.
+    #[must_use]
+    pub fn with_parameter_alias_after_s3(mut self, alias: &str) -> Self {
+        for parameter in &mut self.parameters {
+            parameter.alias = ModelAlias(alias.to_owned());
+        }
+        self
+    }
 }
 
 impl CheckedHyperClause {
@@ -486,6 +532,102 @@ impl CheckedHyperClause {
     pub fn component_reads(&self, atom: FormulaNodeId) -> Option<&BTreeMap<Location, usize>> {
         self.atoms.get(&atom.index()).map(|atom| &atom.components)
     }
+
+    /// Both parts' `match` conjuncts in source order, as `(part, index in
+    /// that part)`, ordered by [`CheckedStepPredicate::span`] start (FR-488
+    /// "Inputs"). The package keeps no part or index, so the split between
+    /// `mu_U` and `mu_E` is recomputed from the checked clause.
+    pub fn conjuncts(&self) -> Vec<(MatchPart, usize)> {
+        let mut ordered: Vec<(usize, MatchPart, usize)> = self
+            .mu_universal
+            .iter()
+            .enumerate()
+            .map(|(index, conjunct)| (conjunct.span.start, MatchPart::Universal, index))
+            .chain(
+                self.mu_existential
+                    .iter()
+                    .enumerate()
+                    .map(|(index, conjunct)| (conjunct.span.start, MatchPart::Existential, index)),
+            )
+            .collect();
+        ordered.sort_by_key(|(start, _, _)| *start);
+        ordered
+            .into_iter()
+            .map(|(_, part, index)| (part, index))
+            .collect()
+    }
+
+    /// The `claim` occurrence `[node, "claim", ordinal]` (ADR-013 O-07) of
+    /// the clause's `hyperproperty` node: the `clause` member of FR-315's
+    /// `HyperProductIdentity`. The emitter assigns it when the package is
+    /// assembled, so a clause that was checked and not assembled has none
+    /// ([`Self::assembled_occurrence`]) and this returns the zero
+    /// occurrence, which names no node.
+    /// A consumer reads clauses from `CheckedGraph::hyper_clauses()`, which
+    /// are all assembled, never from `HyperTraceFamily::check`.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// [`Self::occurrence`], or `None` for a clause no package assembled.
+    pub fn assembled_occurrence(&self) -> Option<&OccurrenceKey> {
+        self.assembled.then_some(&self.occurrence)
+    }
+
+    /// The same clause, assembled into a package at `occurrence`.
+    pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
+        self.occurrence = occurrence;
+        self.assembled = true;
+        self
+    }
+
+    /// The object type each object parameter declares (`v: V::T`), in
+    /// source order.
+    pub(crate) fn parameter_objects(&self) -> &[EffectiveId] {
+        &self.parameter_objects
+    }
+
+    /// The span of each quantifier's written fairness constraints, one per
+    /// member of its fairness set.
+    pub(crate) fn fairness_spans(&self) -> &[Vec<Span>] {
+        &self.fairness_spans
+    }
+
+    /// The checked condition of each `holds` atom, by arena index.
+    pub(crate) fn atom_conditions(&self) -> &BTreeMap<usize, lowering::AtomCondition> {
+        &self.atoms
+    }
+
+    /// Hand the compound units typing formed to lowering, which keys them.
+    pub(crate) fn take_formed_units(&mut self) -> Vec<quire_semantic_value::quantity::UnitTable> {
+        let mut units = Vec::new();
+        for atom in self.atoms.values_mut() {
+            units.push(std::mem::take(&mut atom.formed_units));
+        }
+        for conjunct in self.mu_universal.iter_mut().chain(&mut self.mu_existential) {
+            units.push(std::mem::take(&mut conjunct.condition.formed_units));
+        }
+        units
+    }
+}
+
+/// Which part of a `match` block a conjunct belongs to (FR-172, ADR-023
+/// HM-3).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MatchPart {
+    /// `mu_U`: the conjuncts that read universal variables only.
+    Universal,
+    /// `mu_E`: the conjuncts that read an existential variable.
+    Existential,
+}
+
+/// The occurrence of a clause no package assembled: node zero, `claim`
+/// ordinal zero. No package holds a node with the zero id.
+fn unassembled() -> OccurrenceKey {
+    OccurrenceKey::new(
+        WireNodeId::from_digest([0; 32]),
+        quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
+    )
 }
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
@@ -1020,7 +1162,7 @@ fn check_behaviours<'a>(
     };
     let mut found: Vec<Found> = Vec::new();
 
-    let quantifiers = checked_quantifiers(form, declarations, &mut found)?;
+    let (quantifiers, fairness_spans) = checked_quantifiers(form, declarations, &mut found)?;
     let aliases = distinct_aliases(&quantifiers);
     let variables = Variables {
         by_name: quantifiers
@@ -1102,7 +1244,7 @@ fn check_behaviours<'a>(
                 scope,
                 signatures: declarations.signatures,
                 roots: atom_roots(),
-                site: Site::Body,
+                site: Site::Atom,
                 label: &no_label,
             };
             found.extend(
@@ -1252,6 +1394,8 @@ fn check_behaviours<'a>(
         _ => CopyGroup::default(),
     };
 
+    let parameter_objects: Vec<EffectiveId> =
+        parameters.iter().map(|(_, object)| *object).collect();
     let roots: Vec<ValueType> = parameters
         .iter()
         .map(|(_, object)| ValueType::Reference(*object))
@@ -1302,6 +1446,10 @@ fn check_behaviours<'a>(
         identity,
         atom_slots: slots.slots().to_vec(),
         atoms,
+        parameter_objects,
+        fairness_spans,
+        occurrence: unassembled(),
+        assembled: false,
     })
 }
 
@@ -1324,12 +1472,17 @@ fn model_of<'m>(models: &'m [AdmittedModel], alias: &str) -> Option<&'m Admitted
 /// The quantifiers, each bound to its alias and its fairness set. A quantifier
 /// with no alias, one naming no model and a constraint naming an operation of
 /// another model push their refusals onto `found`.
+/// The checked quantifiers and, per quantifier, the span of each written
+/// fairness constraint that resolved.
+type QuantifiersWithSpans = (Vec<CheckedQuantifier>, Vec<Vec<Span>>);
+
 fn checked_quantifiers(
     form: &HyperBehavioursForm,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Result<Vec<CheckedQuantifier>, StageFailure<CheckRefusal>> {
+) -> Result<QuantifiersWithSpans, StageFailure<CheckRefusal>> {
     let mut checked = Vec::with_capacity(form.quantifiers.len());
+    let mut spans = Vec::with_capacity(form.quantifiers.len());
     let mut seen: Vec<&str> = Vec::new();
     for quantifier in &form.quantifiers {
         if seen.contains(&quantifier.variable.name.as_str()) {
@@ -1353,14 +1506,17 @@ fn checked_quantifiers(
             }));
             continue;
         }
+        let (fairness, fairness_spans) =
+            checked_fairness(quantifier, &alias.name, declarations, found);
         checked.push(CheckedQuantifier {
             kind: quantifier.kind,
             variable: quantifier.variable.name.clone(),
             alias: ModelAlias(alias.name.clone()),
-            fairness: checked_fairness(quantifier, &alias.name, declarations, found),
+            fairness,
         });
+        spans.push(fairness_spans);
     }
-    Ok(checked)
+    Ok((checked, spans))
 }
 
 /// A quantifier's fairness set (FR-172 "Fairness and profile"): each
@@ -1370,20 +1526,22 @@ fn checked_fairness(
     alias: &str,
     declarations: &HyperDeclarations<'_>,
     found: &mut Vec<Found>,
-) -> Vec<FairnessConstraint> {
+) -> (Vec<FairnessConstraint>, Vec<Span>) {
     let mut set: Vec<FairnessConstraint> = Vec::new();
+    let mut spans: Vec<Span> = Vec::new();
     for written in &quantifier.fairness {
         match resolve_operation(declarations, alias, &written.operation) {
             Ok((operation, _)) => {
                 let constraint = checked_constraint(written, operation);
                 if !set.contains(&constraint) {
                     set.push(constraint);
+                    spans.push(written.span);
                 }
             }
             Err(cause) => found.push(Found::Temporal(cause)),
         }
     }
-    set
+    (set, spans)
 }
 
 /// The operation `name` (`Alias::Type::operation`) names in the model of
@@ -1746,19 +1904,12 @@ fn qualify(declarations: &HyperDeclarations<'_>, name: &NameForm) -> Qualified {
     }
 }
 
-/// FR-172 "Match": `mu` reads step labels only, and splits into its top-level
-/// conjuncts (ADR-023 HM-3): the ones that read universal variables only, and
-/// the ones that read an existential variable.
-#[allow(clippy::type_complexity)]
-fn check_match(
-    block: &qsl_forms::ExpressionForm,
-    variables: &Variables<'_>,
-    declarations: &HyperDeclarations<'_>,
-    found: &mut Vec<Found>,
-) -> Result<(Vec<ConjunctDraft>, Vec<ConjunctDraft>), StageFailure<CheckRefusal>> {
-    let expression = &block.expression;
-    let mut conjuncts: Vec<(ExprRef<'_>, Option<SpanId>)> = Vec::new();
-    let mut pending = vec![(expression.root(), Some(block.spans.root()))];
+/// The top-level conjuncts of a `match` block, left to right, each with the
+/// span node that locates it: the one split `check_match` and
+/// [`conjunct_spans`] share.
+fn split_conjuncts(block: &qsl_forms::ExpressionForm) -> Vec<(ExprRef<'_>, Option<SpanId>)> {
+    let mut conjuncts = Vec::new();
+    let mut pending = vec![(block.expression.root(), Some(block.spans.root()))];
     while let Some((node, located)) = pending.pop() {
         match node.node() {
             ExprNode::Binary {
@@ -1778,6 +1929,94 @@ fn check_match(
             _ => conjuncts.push((node, located)),
         }
     }
+    conjuncts
+}
+
+/// Whether the conjunct rooted at `node` reads the step of a trace variable
+/// for which `existential` holds (ADR-023 HM-3): the one classification that
+/// splits `mu` into `mu_U` and `mu_E`.
+fn reads_existential(node: ExprRef<'_>, existential: impl Fn(&str) -> bool) -> bool {
+    let mut subtree = vec![node];
+    while let Some(current) = subtree.pop() {
+        if let ExprNode::StepLabel { trace, .. } = current.node() {
+            if existential(trace) {
+                return true;
+            }
+        }
+        subtree.extend(current.children());
+    }
+    false
+}
+
+/// The spans of the `match` conjuncts of `form`: the universal ones and the
+/// existential ones, each in source order, split and classified as
+/// [`check_match`] does.
+pub(crate) fn conjunct_spans(form: &qsl_forms::HyperBehavioursForm) -> (Vec<Span>, Vec<Span>) {
+    let Some(block) = &form.match_block else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut universal, mut existential) = (Vec::new(), Vec::new());
+    for (node, located) in split_conjuncts(block) {
+        let Some(span) = located.and_then(|id| block.spans.span(id)) else {
+            continue;
+        };
+        let exists = reads_existential(node, |name| {
+            form.quantifiers.iter().any(|quantifier| {
+                quantifier.kind == QuantifierKind::Exists && quantifier.variable.name == name
+            })
+        });
+        if exists {
+            existential.push(span);
+        } else {
+            universal.push(span);
+        }
+    }
+    (universal, existential)
+}
+
+/// The expression span trees of the `match` conjuncts of `form`, rooted at
+/// each conjunct and classified as [`conjunct_spans`] does: the universal
+/// ones and the existential ones, each in source order.
+pub(crate) fn conjunct_trees(
+    form: &qsl_forms::HyperBehavioursForm,
+) -> (
+    Vec<qsl_forms::ExpressionSpans>,
+    Vec<qsl_forms::ExpressionSpans>,
+) {
+    let Some(block) = &form.match_block else {
+        return (Vec::new(), Vec::new());
+    };
+    let (mut universal, mut existential) = (Vec::new(), Vec::new());
+    for (node, located) in split_conjuncts(block) {
+        let Some(tree) = located.and_then(|id| block.spans.subtree(id)) else {
+            continue;
+        };
+        let exists = reads_existential(node, |name| {
+            form.quantifiers.iter().any(|quantifier| {
+                quantifier.kind == QuantifierKind::Exists && quantifier.variable.name == name
+            })
+        });
+        if exists {
+            existential.push(tree);
+        } else {
+            universal.push(tree);
+        }
+    }
+    (universal, existential)
+}
+
+/// FR-172 "Match": `mu` reads step labels only, and splits into its top-level
+/// conjuncts (ADR-023 HM-3): the ones that read universal variables only, and
+/// the ones that read an existential variable.
+#[allow(clippy::type_complexity)]
+fn check_match(
+    block: &qsl_forms::ExpressionForm,
+    variables: &Variables<'_>,
+    declarations: &HyperDeclarations<'_>,
+    found: &mut Vec<Found>,
+) -> Result<(Vec<ConjunctDraft>, Vec<ConjunctDraft>), StageFailure<CheckRefusal>> {
+    let expression = &block.expression;
+    let conjuncts = split_conjuncts(block);
     let mut parents: Vec<Option<ExprId>> = vec![None; expression.len()];
     for node in expression.iter() {
         for child in node.node().children() {
@@ -1891,9 +2130,9 @@ fn check_match(
                 keep
             });
         }
-        let existential_conjunct = variable_names
-            .iter()
-            .any(|name| variables.kind_of(name) == Some(QuantifierKind::Exists));
+        let existential_conjunct = reads_existential(conjunct, |name| {
+            variables.kind_of(name) == Some(QuantifierKind::Exists)
+        });
         let mut slots: Vec<StepRead> = Vec::new();
         for read in &reads {
             if !matches!(read, StepRead::Stutter) && !slots.contains(read) {
@@ -2036,6 +2275,9 @@ fn step_read(
                 .position(|(declared, _)| declared == parameter)
                 .ok_or_else(unresolved)?;
             let (_, value_type) = &declaration.parameters()[index];
+            if !decodable_argument(value_type) {
+                return Err(HyperCause::BodyUnsupported { span });
+            }
             Ok(StepRead::Argument(Box::new(ArgumentRead {
                 trace: trace.to_owned(),
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
@@ -2046,6 +2288,23 @@ fn step_read(
                 parameter_type: value_type.clone(),
             })))
         }
+    }
+}
+
+/// Whether the evaluator decodes a step argument of type `value_type` from
+/// the step's canonical argument text (FR-181): Booleans, integers, strings,
+/// references and options of them. The one statement of that list: S3 refuses
+/// a conjunct reading any other type, and the evaluator's decoder admits
+/// exactly these types.
+pub fn decodable_argument(value_type: &ValueType) -> bool {
+    match value_type {
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::String
+        | ValueType::Reference(_) => true,
+        ValueType::Option(payload) => decodable_argument(payload),
+        _ => false,
     }
 }
 
@@ -2510,6 +2769,19 @@ fn encode_formula(formula: &TemporalFormulaForm, swap: Swap<'_>) -> (Vec<u8>, bo
                 opaque_mention |= encodings.opaque_mention;
                 Encoded::Plain(node_bytes(b"holds", &[encodings.root]))
             }
+            TemporalNodeForm::AggregateAtom(atom) => {
+                // This encoder is used for relation identity, not aggregate
+                // checking. Preserve distinct authored sites conservatively;
+                // FR-194's monitor checker owns aggregate semantics.
+                opaque_mention = true;
+                Encoded::Plain(node_bytes(
+                    b"aggregate-unchecked",
+                    &[
+                        atom.span.start.to_be_bytes().to_vec(),
+                        atom.span.end.to_be_bytes().to_vec(),
+                    ],
+                ))
+            }
             TemporalNodeForm::Operator(operator) => {
                 let operands: Vec<Encoded> = operator
                     .operands
@@ -2971,4 +3243,25 @@ pub fn check_hyper_clauses(
             HyperTraceFamily::check(clause, &mut cx).map(Staged::into_value)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A step argument is decoded for the types the evaluator decodes, and
+    /// the conjunct that reads any other is refused at S3.
+    #[test]
+    fn only_the_types_the_evaluator_decodes_are_readable_arguments() {
+        assert!(decodable_argument(&ValueType::Boolean));
+        assert!(decodable_argument(&ValueType::String));
+        assert!(decodable_argument(&ValueType::Integer));
+        assert!(!decodable_argument(&ValueType::Uuid));
+        assert!(decodable_argument(&ValueType::Option(std::sync::Arc::new(
+            ValueType::Boolean
+        ))));
+        assert!(!decodable_argument(&ValueType::Option(
+            std::sync::Arc::new(ValueType::Timestamp)
+        )));
+    }
 }

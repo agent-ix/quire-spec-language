@@ -5,12 +5,11 @@
 //!
 //! Every expected path is computed from the subject's own arithmetic and
 //! read back by re-executing the counterexample's steps. A clause's `holds`
-//! atoms are read through the test's own letters (S3 checks no `holds`
-//! condition yet, as `crate::model_check` notes), each atom by a predicate
+//! atoms are read through the test's own letters, each atom by a predicate
 //! that computes the condition its source text spells. A guarded `on each`
-//! clause is the exception: S3 does not type its `when` condition, so the
-//! source writes the placeholder `when (true)` and the guard's reading is the
-//! test's own (FR-126-AC-16), given to the engine directly.
+//! clause's `when` condition is read the same way: the source writes the
+//! placeholder `when (true)` and the guard's reading is the test's own
+//! (FR-126-AC-16), given to the engine directly.
 //!
 //! Not covered here: FR-126-AC-1, AC-3 to AC-5, AC-7 and AC-8 rest on TP-4
 //! claims (QSL-530); AC-9's TP-4 row has no fixture in this module. AC-6's
@@ -19,8 +18,8 @@
 //! dispatch-family fixture whose `family_steps` or `ancestor_steps` ceiling refuses a dispatched
 //! call, and the dispatch fixtures live in `qsl-eval`'s tests (Remaining
 //! work: QSL-898). Replay's reading of a guarded condition
-//! (`ReplayedLetters::activation`) is untested too: replay recompiles the
-//! unit, and S4 emits no `on each` clause (Remaining work: QSL-898).
+//! (`ReplayedLetters::activation`) is untested here: replay recompiles the
+//! unit and reads the guard through the production letters.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
@@ -457,15 +456,84 @@ fn a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon() {
     assert_eq!(undefined(&world, &outcome), (2, vec![0, 1, 2]));
 }
 
-/// A TP-4 clause is decided by the liveness engine (here its proof waits for
-/// FR-339's component certificate), but the liveness engine does not read an
-/// `on each` activation's `when` condition, so a guarded TP-4 clause is
-/// refused before any state is explored (FR-126 "Unsupported liveness
-/// clauses").
+/// FR-125-AC-18 for the `Counter` unit through its production letters: the
+/// guard `q.value >= 1` of `on each (q: Counter)` is read from the state at
+/// each position, its footprint is the `Counter.value` read through the
+/// receiver (the trigger aliases the clause's `over`), and a run under it
+/// violates only where the guard holds while `when (false)` holds vacuously.
+#[trace("TC-520", "FR-125-AC-18")]
 #[test]
-fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
+fn the_production_letters_read_the_counter_guard_and_its_footprint() {
+    use qsl_eval::simulation::model::ModelSystem;
+    use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
+
+    let run = |guard: &str| {
+        let activation = format!("{} when ({guard})", each("Counter"));
+        let world = counter_world(
+            INFINITE,
+            &[Clause {
+                activation: &activation,
+                formula: "always holds(c.value <= 2)",
+            }],
+        );
+        let system = ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation)
+            .expect("the subject admits");
+        let node = &world.package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("the clause has letters");
+        let instance = ModelInstance {
+            population: world.domain.key(world.domain.population),
+            key: "c".to_owned(),
+        };
+        let start = system.initial_states()[0].clone();
+        let reading = letters
+            .activation(&instance, &start, &mut Meter::new(UNLIMITED))
+            .expect("the guard reads");
+        let reads = letters
+            .activation_reads()
+            .expect("the guard has a footprint");
+        let outcome = check_model(
+            ModelCheckRequest {
+                subject: world.subject(&["c"], UNLIMITED),
+                item: ModelCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("checked");
+        (reading, reads, outcome, world.domain.key("Counter/value"))
+    };
+    let (reading, reads, outcome, value_key) = run("q.value >= 1");
+    // The initial value is 0, so the guard is false there.
+    assert_eq!(reading, AtomReading::False);
+    assert_eq!(
+        reads.into_iter().collect::<Vec<_>>(),
+        [SymbolicLocation::Field {
+            object: FootprintObject::Receiver,
+            field: value_key,
+        }]
+    );
+    assert_eq!(violated(&outcome).kind, CounterexampleKind::Formula);
+
+    let (reading, reads, outcome, _) = run("false");
+    assert_eq!(reading, AtomReading::False);
+    assert!(reads.is_empty());
+    holds(&outcome);
+}
+
+/// A TP-4 clause is decided by the liveness engine (here its proof waits for
+/// FR-339's component certificate), and a guarded `on each` activation is
+/// no reason to refuse it: the engine reads the `when` condition through the
+/// letters (FR-126-AC-16).
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn a_liveness_clause_is_decided_with_or_without_a_guarded_activation() {
     let guarded = format!("{} when (true)", each("Counter"));
-    let refused = |profile, activation: &str, formula| {
+    let refused = |profile, activation: &str, formula, guarded: bool| {
         let world = counter_world(
             profile,
             &[Clause {
@@ -473,16 +541,21 @@ fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
                 formula,
             }],
         );
-        run(
-            &world,
-            0,
-            &["c"],
-            vec![value(|v| Some(v == 3))],
-            ModelCheckLimits::default(),
-        )
-        .expect_err("refused before exploring")
+        let letters = Letters::new(&world.clauses[0], vec![value(|v| Some(v == 3))]);
+        let letters = if guarded {
+            letters.guarded(value(|_| Some(true)), crate::units::unread())
+        } else {
+            letters
+        };
+        run_letters(&world, 0, &["c"], &letters, ModelCheckLimits::default())
+            .expect_err("its proof waits for the component certificate")
     };
-    let refusal = refused(INFINITE, ORIGIN, "always eventually holds(c.value = 3)");
+    let refusal = refused(
+        INFINITE,
+        ORIGIN,
+        "always eventually holds(c.value = 3)",
+        false,
+    );
     assert!(
         matches!(
             refusal,
@@ -492,9 +565,19 @@ fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
         ),
         "{refusal:?}"
     );
-    let refusal = refused(INFINITE, &guarded, "always eventually holds(c.value = 3)");
+    let refusal = refused(
+        INFINITE,
+        &guarded,
+        "always eventually holds(c.value = 3)",
+        true,
+    );
     assert!(
-        matches!(refusal, ModelCheckRefusal::GuardedActivation),
+        matches!(
+            refusal,
+            ModelCheckRefusal::Liveness(
+                qsl_analyze::model_check::LivenessRefusal::ComponentCertificateNotBuilt { .. }
+            )
+        ),
         "{refusal:?}"
     );
 }
@@ -602,9 +685,9 @@ impl ModelLetters for MeteredLetters<'_> {
         instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, AtomStop> {
         if self.charge_activation {
-            self.charge(meter)?;
+            self.charge(meter).map_err(AtomStop::Incomplete)?;
         }
         self.inner.activation(instance, state, meter)
     }
@@ -738,6 +821,7 @@ fn a_guarded_invariant_clause_is_read_from_its_activating_positions() {
     let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
+    let qsl_replay::ProofCertificate::Closure(certificate) = certificate;
     assert!(certificate.states.is_empty(), "{certificate:?}");
 }
 
@@ -784,7 +868,7 @@ fn a_partial_order_run_reads_the_guards_footprint() {
         INFINITE,
         &[Clause {
             activation: &activation,
-            formula: "always holds(c.value = 9)",
+            formula: "always holds(c.value <= 2)",
         }],
     );
     let run = |partial_order: bool, reads: crate::units::Reads| {

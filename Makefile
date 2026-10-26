@@ -86,7 +86,7 @@ refinement-versioning:
 # what actually enforces the check locally.
 cargo-deny-bans:
 	@if command -v cargo-deny >/dev/null 2>&1; then \
-		cargo deny --workspace check bans --config deny.toml; \
+		cargo deny --workspace check bans; \
 	else \
 		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked\` to install it" >&2; \
 		exit 1; \
@@ -310,6 +310,17 @@ CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
+# Incremental compilation metadata is a multi-gigabyte part of this workspace's
+# local CI target tree, while the gate runs complete, fingerprinted checks
+# rather than edit/compile cycles. Disable that metadata and dev/test debug
+# symbols for the entire aggregate, including the xtask wrapper and its child
+# Cargo commands; Cargo still reuses complete artifacts when inputs are
+# unchanged. `debug = 0` leaves debug assertions enabled.
+ci: export CARGO_INCREMENTAL := 0
+ci: export CARGO_PROFILE_DEV_DEBUG := 0
+ci: export CARGO_PROFILE_TEST_DEBUG := 0
+ci: export CARGO_PROFILE_DEV_DEBUG_ASSERTIONS := true
+ci: export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS := true
 ci: check-spec-validation
 	@$(CONFORMANCE_XTASK) ci
 

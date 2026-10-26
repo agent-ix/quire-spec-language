@@ -9,6 +9,7 @@
 //! over the components' observations, as it did before the lowering.
 
 use ix_trace_rs::trace;
+use qsl_eval::smt::{MonitorTable, SmtEncodingLimits};
 use qsl_eval::temporal::{
     evaluate_projected_prefix, evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace,
     LetterStop, TemporalOutcome, TemporalPosition, TemporalRefusal, TupleLetters, UndefinedCause,
@@ -707,4 +708,33 @@ fn a_clause_without_align_skip_is_refused_a_projected_prefix() {
         refusal.catalog_code(),
         quire_semantic_value::catalog::CatalogCode::new("unsupported_construct", "expression-form")
     );
+}
+
+/// FR-315-AC-50: the constructor over a hyper body's `CheckedFormula` and
+/// profile gives the table of a safety body that is not `always` over a state
+/// predicate, with the state count, initial state, rejecting state and
+/// numbered moves of the TP-3 item of the same shape.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn a_hyper_body_is_tabulated_through_the_formula_constructor() {
+    let fixture = fixture(
+        "always (holds(c.value @ a = c.value @ b) implies always holds(c.label @ a = c.label @ b))",
+    );
+    let limits = SmtEncodingLimits::default();
+    let table = MonitorTable::over(
+        fixture.clause.body(),
+        fixture.clause.profile(),
+        limits.max_monitor_atoms,
+        limits.max_monitor_states,
+    )
+    .expect("the body tabulates");
+    assert_eq!(table.atoms().len(), 2);
+    assert_eq!((table.states(), table.initial()), (3, 0));
+    assert!(table.rejecting().is_some());
+    let moves: Vec<(usize, u64, usize)> = table
+        .moves()
+        .iter()
+        .map(|step| (step.from, step.letter, step.to))
+        .collect();
+    assert_eq!(moves, crate::smt_query::IMPLIES_ALWAYS_MOVES);
 }

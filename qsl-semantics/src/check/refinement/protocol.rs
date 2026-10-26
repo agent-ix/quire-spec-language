@@ -31,11 +31,12 @@ use crate::check::check::ScopedHistory;
 use crate::check::lowering::AdmittedModel;
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_obligation::CheckedActivation;
-use crate::check::refusal::{CheckCause, CheckRefusal};
+use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseDeclarations;
 use crate::family::CheckContext;
 use crate::model::operation::OperationDeclaration;
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::location::{Location, Origin};
 
 /// A step of a protocol node (ADR-027 ST-2 to ST-9) that has no operation
 /// and so needs a row of its own.
@@ -632,6 +633,7 @@ impl ProtocolRefinement<'_> {
     pub(crate) fn complete<'a>(
         self,
         clause: Option<&ProtocolClause<'_>>,
+        protocol_views: &[super::ProtocolView<'_>],
         declarations: &ClauseDeclarations<'a>,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> (
@@ -671,6 +673,27 @@ impl ProtocolRefinement<'_> {
             findings.fault("the-models-of-a-refinement-are-admitted");
             return (Err(findings.refusals), nodes);
         };
+        let class_catalog = match super::catalog::build(super::catalog::CatalogBuildInput {
+            concrete_alias: &concrete_alias,
+            concrete_model: concrete_side.model,
+            abstract_alias: &abstract_alias,
+            abstract_model: abstract_side.model,
+            abstract_classes: typing.abstract_classes.as_ref(),
+            declarations,
+            protocols: protocol_views,
+            has_abstract_protocol: typing.protocol_subject && typing.abstract_classes.is_some(),
+        }) {
+            Ok(catalog) => catalog,
+            Err(fault) => {
+                return (
+                    Err(vec![CheckRefusal {
+                        location: Location::root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    }]),
+                    nodes,
+                );
+            }
+        };
         let mut checker = Checker {
             declarations,
             protocols: &[],
@@ -705,6 +728,7 @@ impl ProtocolRefinement<'_> {
         let refusals = checker.findings.refusals;
         let result = match outcome {
             Some(selected) if refusals.is_empty() => {
+                checked.class_catalog = class_catalog;
                 checked
                     .concrete_fairness
                     .extend(scheduler_fairness(clause.checked));

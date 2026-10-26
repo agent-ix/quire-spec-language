@@ -105,7 +105,15 @@ fn root(node: WireNodeId, occurrence: &CheckedOccurrence, over: Option<WireNodeI
 /// occurrence order.
 pub fn clause_roots(package: &CheckedPackageV2) -> Result<Vec<ClauseRoot>, InternalFault> {
     let mut roots = Vec::new();
-    for node in package.graph().nodes.iter().filter(|node| is_clause(node)) {
+    // A hyper clause's body wrapper is a `temporal_clause` node that is no
+    // clause root of its own (FR-488 "Outputs").
+    let wrappers = super::hyper_root::wrappers(package);
+    for node in package
+        .graph()
+        .nodes
+        .iter()
+        .filter(|node| is_clause(node) && !wrappers.contains(&*node.node_id.digest))
+    {
         let id = WireNodeId::from_hex(&node.node_id.digest).ok_or(NODE_ID_FAULT)?;
         let over = over_of(node);
         roots.extend(
@@ -135,6 +143,9 @@ pub fn resolve_clause_root(
         .find(|node| *node.node_id.digest == *digest)
         .filter(|node| is_clause(node))
         .ok_or_else(unresolved)?;
+    if super::hyper_root::wrappers(package).contains(&*node.node_id.digest) {
+        return Err(unresolved());
+    }
     if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
     {
         return Err(unresolved());

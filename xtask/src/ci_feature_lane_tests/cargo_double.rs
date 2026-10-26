@@ -5,6 +5,23 @@
 use std::io::Write;
 
 fn main() {
+    let incremental_log = std::env::var_os("FEATURE_LANE_INCREMENTAL_LOG")
+        .expect("incremental mode log");
+    let cargo_settings = [
+        "CARGO_INCREMENTAL",
+        "CARGO_PROFILE_DEV_DEBUG",
+        "CARGO_PROFILE_TEST_DEBUG",
+        "CARGO_PROFILE_DEV_DEBUG_ASSERTIONS",
+        "CARGO_PROFILE_TEST_DEBUG_ASSERTIONS",
+    ]
+    .map(|name| {
+        let value = std::env::var(name).unwrap_or_else(|_| "<unset>".to_owned());
+        format!("{name}={value}")
+    })
+    .join("\n");
+    std::fs::write(incremental_log, format!("{cargo_settings}\n"))
+        .expect("record Cargo build settings");
+
     let mut log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

@@ -35,13 +35,10 @@ use crate::smt::layout::{StateCopy, StateLayout, StateRef};
 use crate::smt::monitor::MonitorTable;
 use crate::smt::relation::{
     applications, check_domains, count_applications, Application, CopyFacts, StepRelation,
-    MAX_APPLICATIONS,
 };
-use crate::smt::script::{Script, Sort, Term, MAX_SCRIPT_BYTES};
+use crate::smt::script::{Script, Sort, Term};
+use crate::smt::SmtEncodingLimits;
 use crate::smt::{Measure, Refusal, SmtEncodingRefusal, SmtQueryKind};
-
-/// The most constants a script declares.
-pub const MAX_CONSTANTS: u64 = 1 << 20;
 
 /// What a proof query is about (FR-315 Inputs).
 #[derive(Clone, Copy)]
@@ -100,28 +97,25 @@ impl Atoms<'_, '_> {
     }
 }
 
-fn fault(invariant: &'static str) -> SmtEncodingRefusal {
+pub(super) fn fault(invariant: &'static str) -> SmtEncodingRefusal {
     SmtEncodingRefusal::fault(invariant)
 }
 
-fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
+pub(super) fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
     Refusal::TooLarge {
         measure,
         value,
         limit,
+        setting: measure.setting(),
     }
     .into()
 }
 
-fn script_bytes() -> SmtEncodingRefusal {
-    too_large(
-        Measure::ScriptBytes,
-        MAX_SCRIPT_BYTES as u64 + 1,
-        MAX_SCRIPT_BYTES as u64,
-    )
+pub(super) fn script_bytes(value: u64, limit: u64) -> SmtEncodingRefusal {
+    too_large(Measure::ScriptBytes, value, limit)
 }
 
-fn monitor_constant(position: u64) -> Term {
+pub(super) fn monitor_constant(position: u64) -> Term {
     Term::constant(format!("m{position}"))
 }
 
@@ -131,7 +125,7 @@ fn ended_constant(position: u64) -> Term {
 
 /// The literals of `letter` over `terms`: each atom's term when its bit is
 /// set, its negation otherwise.
-fn letter_term(letter: u64, terms: &[Term]) -> Term {
+pub(super) fn letter_term(letter: u64, terms: &[Term]) -> Term {
     Term::all(terms.iter().enumerate().map(|(index, term)| {
         if letter >> index & 1 == 1 {
             term.clone()
@@ -143,7 +137,7 @@ fn letter_term(letter: u64, terms: &[Term]) -> Term {
 
 /// The printed disjunctions and conjunctions of FR-315 "Canonical printing":
 /// one operand prints as itself and none as the constant.
-fn joined(head: &str, parts: &[String], empty: &str) -> String {
+pub(super) fn joined(head: &str, parts: &[String], empty: &str) -> String {
     match parts {
         [] => empty.to_owned(),
         [only] => only.clone(),
@@ -153,22 +147,24 @@ fn joined(head: &str, parts: &[String], empty: &str) -> String {
 
 /// The printed disjuncts of one disjunction, each equal to an earlier one
 /// printed once, stopping at the first byte past the script limit.
-struct Disjuncts {
-    parts: Vec<String>,
+pub(super) struct Disjuncts {
+    pub(super) parts: Vec<String>,
     seen: HashSet<String>,
     bytes: usize,
+    max_bytes: u64,
 }
 
 impl Disjuncts {
-    fn new() -> Self {
+    pub(super) fn new(max_bytes: u64) -> Self {
         Self {
             parts: Vec::new(),
             seen: HashSet::new(),
             bytes: 0,
+            max_bytes,
         }
     }
 
-    fn push(&mut self, term: &Term) -> Result<(), SmtEncodingRefusal> {
+    pub(super) fn push(&mut self, term: &Term) -> Result<(), SmtEncodingRefusal> {
         // A construct that cannot fail contributes no term.
         if term.is_truth(false) {
             return Ok(());
@@ -178,8 +174,11 @@ impl Disjuncts {
             return Ok(());
         }
         self.bytes = self.bytes.saturating_add(text.len() + 1);
-        if self.bytes > MAX_SCRIPT_BYTES {
-            return Err(script_bytes());
+        if u64::try_from(self.bytes).unwrap_or(u64::MAX) > self.max_bytes {
+            return Err(script_bytes(
+                self.max_bytes.saturating_add(1),
+                self.max_bytes,
+            ));
         }
         self.seen.insert(text.clone());
         self.parts.push(text);
@@ -198,6 +197,7 @@ pub fn encode_smt_query(
     subject: &ModelSubject<'_>,
     item: SmtItem<'_>,
     kind: SmtQueryKind,
+    limits: &SmtEncodingLimits,
 ) -> Result<Vec<u8>, SmtEncodingRefusal> {
     let clause = match item {
         SmtItem::Clause(clause) => Some(clause),
@@ -245,7 +245,8 @@ pub fn encode_smt_query(
                 return Err(SmtEncodingRefusal::fault("a TP-1 item holds its one atom"));
             }
             if invariant_atom(clause).is_none() {
-                let table = MonitorTable::of(clause);
+                let table =
+                    MonitorTable::of(clause, limits.max_monitor_atoms, limits.max_monitor_states);
                 if let Err(refusal @ SmtEncodingRefusal::Refused(Refusal::ItemTranslation(_))) =
                     &table
                 {
@@ -297,9 +298,16 @@ pub fn encode_smt_query(
     let expands = !infinite || clause.is_none();
     let mut apps = None;
     let mut first = None;
-    if count_applications(&symbolic) <= MAX_APPLICATIONS {
-        let built = applications(&symbolic)?;
-        let read = CopyFacts::read(&symbolic, &layout, &built, &StateCopy::at(0), expands);
+    if count_applications(&symbolic) <= limits.max_applications {
+        let built = applications(&symbolic, limits.max_applications)?;
+        let read = CopyFacts::read(
+            &symbolic,
+            &layout,
+            &built,
+            &StateCopy::at(0),
+            expands,
+            limits.max_candidates,
+        );
         if let Err(refusal @ SmtEncodingRefusal::Refused(Refusal::FieldDomain { .. })) = &read {
             return Err(refusal.clone());
         }
@@ -368,15 +376,19 @@ pub fn encode_smt_query(
         + u64::from(monitor.is_some())
         + u64::from(!infinite);
     let constants = depth.saturating_add(1).saturating_mul(per_position);
-    if constants > MAX_CONSTANTS {
-        return Err(too_large(Measure::Constants, constants, MAX_CONSTANTS));
+    if constants > limits.max_constants {
+        return Err(too_large(
+            Measure::Constants,
+            constants,
+            limits.max_constants,
+        ));
     }
     let applications_count = count_applications(&symbolic);
-    if applications_count > MAX_APPLICATIONS {
+    if applications_count > limits.max_applications {
         return Err(too_large(
             Measure::Applications,
             applications_count,
-            MAX_APPLICATIONS,
+            limits.max_applications,
         ));
     }
     let property = match (clause, monitor) {
@@ -408,6 +420,7 @@ pub fn encode_smt_query(
         property,
         infinite,
         first,
+        limits,
     }
     .script()
     .map(Script::render)
@@ -426,6 +439,7 @@ struct Query<'q, 'a> {
     infinite: bool,
     /// The facts of copy 0, read before the instances were checked.
     first: CopyFacts,
+    limits: &'q SmtEncodingLimits,
 }
 
 impl Query<'_, '_> {
@@ -470,6 +484,7 @@ impl Query<'_, '_> {
             &self.apps,
             &StateCopy::at(position),
             !self.infinite || matches!(self.property, Property::Deadlock),
+            self.limits.max_candidates,
         )
     }
 
@@ -500,17 +515,23 @@ impl Query<'_, '_> {
 
     /// Every distinctness assertion is at least `(assert (not x))\n`, so the
     /// pairs alone can pass the limit long before any is built.
-    fn check_pairs(depth: u64) -> Result<(), SmtEncodingRefusal> {
+    fn check_pairs(&self, depth: u64) -> Result<(), SmtEncodingRefusal> {
         let pairs = u128::from(depth) * u128::from(depth.saturating_add(1)) / 2;
-        if pairs.saturating_mul(16) > MAX_SCRIPT_BYTES as u128 {
-            return Err(script_bytes());
+        if pairs.saturating_mul(16) > u128::from(self.limits.max_script_bytes) {
+            return Err(script_bytes(
+                self.limits.max_script_bytes.saturating_add(1),
+                self.limits.max_script_bytes,
+            ));
         }
         Ok(())
     }
 
-    fn check_size(script: &Script) -> Result<(), SmtEncodingRefusal> {
+    fn check_size(&self, script: &Script) -> Result<(), SmtEncodingRefusal> {
         if script.exceeded() {
-            Err(script_bytes())
+            Err(script_bytes(
+                self.limits.max_script_bytes.saturating_add(1),
+                self.limits.max_script_bytes,
+            ))
         } else {
             Ok(())
         }
@@ -518,7 +539,7 @@ impl Query<'_, '_> {
 
     fn script(&self) -> Result<Script, SmtEncodingRefusal> {
         let depth = self.kind.depth();
-        let mut script = Script::new();
+        let mut script = Script::with_max_bytes(self.limits.max_script_bytes);
         for position in 0..=depth {
             let copy = StateCopy::at(position);
             self.layout.declare(&copy, &mut script);
@@ -528,7 +549,7 @@ impl Query<'_, '_> {
             if !self.infinite {
                 script.declare(&format!("h{position}"), Sort::Bool);
             }
-            Self::check_size(&script)?;
+            self.check_size(&script)?;
         }
         for position in 0..=depth {
             for range in self.layout.ranges(&StateCopy::at(position)) {
@@ -540,7 +561,7 @@ impl Query<'_, '_> {
                     &Integer::from(table.states().saturating_sub(1)),
                 ));
             }
-            Self::check_size(&script)?;
+            self.check_size(&script)?;
         }
         if self.kind.starts_initial() {
             script.assert(&self.layout.initial(&StateCopy::at(0), self.subject)?);
@@ -562,7 +583,7 @@ impl Query<'_, '_> {
             )?;
             let facts = self.facts(0)?;
             self.disjuncts_at(0, &facts)?;
-            Self::check_pairs(depth)?;
+            self.check_pairs(depth)?;
         }
         for step in 0..depth {
             let relation = StepRelation::build(
@@ -574,7 +595,7 @@ impl Query<'_, '_> {
                 self.infinite,
             )?;
             script.assert(&self.step(step, &relation)?);
-            Self::check_size(&script)?;
+            self.check_size(&script)?;
         }
         if let Some(table) = self.monitor() {
             self.assert_monitor(table, &mut script)?;
@@ -583,18 +604,24 @@ impl Query<'_, '_> {
             self.assert_distinct(&mut script)?;
             for position in 0..depth {
                 let facts = self.facts(position)?;
-                let mut parts = Disjuncts::new();
+                let mut parts = Disjuncts::new(self.limits.max_script_bytes);
                 for disjunct in self.disjuncts_at(position, &facts)? {
                     if !disjunct.is_truth(false) {
                         parts.push(&disjunct.not())?;
                     }
                 }
                 script.assert_text(&joined("and", &parts.parts, "true"));
-                Self::check_size(&script)?;
+                self.check_size(&script)?;
             }
         }
         self.assert_negated(&mut script)?;
-        Self::check_size(&script)?;
+        self.check_size(&script)?;
+        if script.closing_command_exceeded() {
+            return Err(script_bytes(
+                self.limits.max_script_bytes.saturating_add(1),
+                self.limits.max_script_bytes,
+            ));
+        }
         Ok(script)
     }
 
@@ -644,7 +671,7 @@ impl Query<'_, '_> {
                 };
                 script.assert(&condition.implies(reached));
             }
-            Self::check_size(script)?;
+            self.check_size(script)?;
         }
         Ok(())
     }
@@ -654,7 +681,7 @@ impl Query<'_, '_> {
     /// field equalities of copy `k` with copy `j`, then the monitor states'.
     fn assert_distinct(&self, script: &mut Script) -> Result<(), SmtEncodingRefusal> {
         let depth = self.kind.depth();
-        Self::check_pairs(depth)?;
+        self.check_pairs(depth)?;
         for left in 0..=depth {
             for right in left + 1..=depth {
                 let mut agreements = self
@@ -664,7 +691,7 @@ impl Query<'_, '_> {
                     agreements.push(monitor_constant(right).equal(monitor_constant(left)));
                 }
                 script.assert(&Term::all(agreements).not());
-                Self::check_size(script)?;
+                self.check_size(script)?;
             }
         }
         Ok(())
@@ -811,7 +838,7 @@ impl Query<'_, '_> {
         } else {
             0..=depth
         };
-        let mut parts = Disjuncts::new();
+        let mut parts = Disjuncts::new(self.limits.max_script_bytes);
         if let Property::Bounded(BoundedKind::Eventually, _, atom) = &self.property {
             // Per instance, the atom is false or past the end at every
             // position of the horizon.

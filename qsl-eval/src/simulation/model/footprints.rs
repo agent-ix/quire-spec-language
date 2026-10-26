@@ -14,9 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
-    derive_atom_reads, derive_constraint_reads, derive_footprint, derive_node_reads,
-    derive_selected_footprint, derive_slot_reads, FootprintObject, FootprintRefusal,
-    SymbolicFootprint, SymbolicLocation,
+    derive_atom_reads, derive_constraint_reads, derive_footprint, derive_guard_reads,
+    derive_node_reads, derive_selected_footprint, derive_slot_reads, FootprintObject,
+    FootprintRefusal, SymbolicFootprint, SymbolicLocation,
 };
 use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
@@ -672,6 +672,24 @@ impl<'a> ModelSystem<'a> {
         condition: CheckedNode<'_>,
     ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
         derive_atom_reads(self.package.graph(), &self.model, over, condition)
+    }
+
+    /// FR-125-AC-18, FR-337: the symbolic locations the activation's
+    /// expression `condition` (the `when` guard of an `on each` activation,
+    /// or a capture's initializer) reads, with the `over` parameter first of
+    /// `binders` as the receiver, then the trigger binder and the earlier
+    /// captures in slot order.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintRefusal`] when the expression reads through a form QSpec
+    /// FR-383 gives no footprint rule.
+    pub fn guard_reads(
+        &self,
+        condition: CheckedNode<'_>,
+        binders: &[(String, ValueType)],
+    ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+        derive_guard_reads(self.package.graph(), &self.model, binders, condition)
     }
 
     /// FR-156 "Atom footprints": the locations an atom reads for `instance`

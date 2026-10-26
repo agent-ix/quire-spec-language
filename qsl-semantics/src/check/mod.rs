@@ -147,10 +147,11 @@ mod terminal;
 mod time_units;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
-    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Event, FractionMeasure,
-    ModelSubjectRef, OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
-    ReachTarget, Reward, SupportValue, WeightOwner, Workload,
+    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Delay, DelayDistribution,
+    DelayFault, Event, FractionMeasure, ModelSubjectRef, OverBinding, PreconditionSite, ProbForm,
+    ProbScheduler, ProbabilisticCause, ProbabilisticDeclaration, ProbabilisticFeature,
+    ProbabilisticOperation, RandomParameter, ReachTarget, Reward, SupportValue, WeightOwner,
+    Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -161,8 +162,9 @@ pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
     ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
-    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementFairness,
-    RefinementFairnessOrigin, RefinementRefusal, RefinementSupport, RefinementThreadTarget,
+    ProtocolStepKind, RefinementCatalogClass, RefinementCatalogNode, RefinementCause,
+    RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
+    RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
     RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
     UnsupportedFeature,
 };
@@ -329,10 +331,11 @@ pub use hybrid::{
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
-    operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause, CheckedModelRelation,
-    CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause,
-    HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
-    HyperUnsupported, ModelAlias, ObjectParameter, OperationContractClaim, StepRead, STUTTER_TEXT,
+    decodable_argument, operation_text, ArgumentRead, AtomSlot, CheckedHyper, CheckedHyperClause,
+    CheckedModelRelation, CheckedQuantifier, CheckedStepPredicate, CopyGenerator, CopyGroup,
+    HyperCause, HyperDeclaration, HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily,
+    HyperUnsupported, MatchPart, ModelAlias, ObjectParameter, OperationContractClaim, StepRead,
+    STUTTER_TEXT,
 };
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CompositeForm,
@@ -386,7 +389,7 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedOperator,
+    Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
     TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
@@ -552,6 +555,8 @@ pub struct CheckedGraph {
     header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
+    /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
+    time_units: time_units::TimeUnits,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
     /// FR-366: every checked type-level invariant, in declaration order of
@@ -575,6 +580,9 @@ pub struct CheckedGraph {
     protocols: Vec<CheckedProtocol>,
     /// FR-337: every emitted temporal clause, in declaration order.
     temporal_clauses: Vec<TemporalClauseNode>,
+    /// FR-488: every emitted hyper clause over `behaviours`, in declaration
+    /// order, each carrying its `claim` occurrence.
+    hyper_nodes: Vec<hyper_clause::CheckedHyperClause>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-447: every checked hybrid model, in declaration order.
@@ -649,6 +657,9 @@ pub struct TemporalClauseNode {
     /// An `on each ... when (g)` activation's checked guard and its slot
     /// count.
     guard: Option<(CheckedBody, usize)>,
+    /// Each capture's checked initializer and its slot count, in source
+    /// order.
+    captures: Vec<(CheckedBody, usize)>,
 }
 
 impl TemporalClauseNode {
@@ -693,8 +704,37 @@ impl TemporalClauseNode {
             .map(|(body, slots)| (body.root(), *slots))
     }
 
+    /// The checked initializer of the clause's `index`th capture and its
+    /// evaluation slot count (FR-337 "Captures at S3"): the number of
+    /// binders in scope for it, `over`, the trigger binder of an `on each`
+    /// activation and the earlier captures. `None` past the last capture.
+    pub fn capture(&self, index: usize) -> Option<(CheckedNode<'_>, usize)> {
+        self.captures
+            .get(index)
+            .map(|(body, slots)| (body.root(), *slots))
+    }
+
+    /// The first capture, in source order, that a `holds` condition of the
+    /// clause reads (FR-337 "Capture observation"): its index among the
+    /// captures. A condition binds the `over` parameter, the trigger binder
+    /// of an `on each` activation and then the captures, so a read of the
+    /// local at slot `first + j` is a read of capture `j`; the locals a
+    /// condition binds itself follow them.
+    pub fn captured_read(&self) -> Option<usize> {
+        let first = 1 + usize::from(self.clause.trigger().is_some());
+        let count = self.clause.captures().len();
+        self.conditions
+            .values()
+            .flat_map(|(body, _)| body.root().descendants())
+            .filter_map(|node| match node.kind() {
+                NodeKind::Local(slot) => slot.checked_sub(first).filter(|capture| *capture < count),
+                _ => None,
+            })
+            .min()
+    }
+
     /// The declaration identities of the populations the clause's `holds`
-    /// atoms and guard name (FR-391), ascending and each once: each is required
+    /// atoms, guard and captures name (FR-391), ascending and each once: each is required
     /// (FR-106 check 7) in every snapshot of the trace the clause is read
     /// over.
     pub fn named_populations(&self) -> Vec<String> {
@@ -702,6 +742,7 @@ impl TemporalClauseNode {
             .conditions
             .values()
             .chain(self.guard.as_ref())
+            .chain(&self.captures)
             .flat_map(|(body, _)| body.root().descendants())
             .filter_map(|node| match node.kind() {
                 NodeKind::NamedPopulation { population, .. } => Some(population.node.clone()),
@@ -1377,11 +1418,152 @@ impl PackageDeclarations {
         let model_selected = crate::value::definition::DefinitionLock::pinned()
             .closure(&self.header_layers)
             .contains(&crate::value::layer::HeaderLayer::ModelComplete);
-        let model_function_bodies: Vec<bool> = self
+        let mut model_context_calls = Vec::new();
+        if model_selected {
+            for clause in &self.state_clauses {
+                model_context_calls.extend(layer::called_functions(&clause.body));
+            }
+            for clause in &self.operation_clauses {
+                model_context_calls.extend(layer::called_functions(&clause.clause.expression));
+            }
+            for temporal in &self.temporal_clauses {
+                add_temporal_model_calls(&temporal.form, &mut model_context_calls);
+            }
+            for claim in &self.state_graph_claims {
+                let mut include_predicate = |predicate: &qsl_forms::StateGraphPredicateForm| {
+                    for operand in &predicate.operands {
+                        model_context_calls.extend(layer::called_functions(&operand.expression));
+                    }
+                    for scope in &predicate.scopes {
+                        for (_, value) in scope {
+                            model_context_calls.extend(layer::called_functions(&value.expression));
+                        }
+                    }
+                };
+                match &claim.form.kind {
+                    qsl_forms::StateGraphClaimKind::Possible { target } => {
+                        include_predicate(target);
+                    }
+                    qsl_forms::StateGraphClaimKind::AlwaysPossible { from, target } => {
+                        if let Some(from) = from {
+                            include_predicate(from);
+                        }
+                        include_predicate(target);
+                    }
+                    qsl_forms::StateGraphClaimKind::UniquePath { from, to } => {
+                        include_predicate(from);
+                        include_predicate(to);
+                    }
+                }
+            }
+            for invariant in &self.type_invariants {
+                model_context_calls
+                    .extend(layer::called_functions(&invariant.invariant.expression));
+            }
+            for terminal in &self.terminals {
+                if let terminal::TerminalClauseKind::When { predicate, .. } = &terminal.kind {
+                    model_context_calls.extend(layer::called_functions(&predicate.expression));
+                }
+            }
+            for claim in &self.hybrid_claims {
+                add_temporal_model_calls(&claim.form, &mut model_context_calls);
+            }
+            for hybrid in &self.hybrids {
+                if let Some(initial) = &hybrid.form.initial {
+                    for entry in &initial.entries {
+                        model_context_calls
+                            .extend(layer::called_functions(&entry.condition.expression));
+                    }
+                }
+                for mode in &hybrid.form.modes {
+                    model_context_calls.extend(layer::called_functions(&mode.invariant.expression));
+                    for equation in &mode.equations {
+                        model_context_calls
+                            .extend(layer::called_functions(&equation.rate.expression));
+                    }
+                    for transition in &mode.transitions {
+                        model_context_calls
+                            .extend(layer::called_functions(&transition.guard.expression));
+                        model_context_calls
+                            .extend(layer::called_functions(&transition.reset.expression));
+                    }
+                }
+            }
+            for declaration in &self.probabilistic {
+                match declaration {
+                    ProbabilisticDeclaration::Random(random) => {
+                        for value in &random.support {
+                            model_context_calls
+                                .extend(layer::called_functions(&value.value.expression));
+                        }
+                    }
+                    ProbabilisticDeclaration::Reward(reward) => {
+                        model_context_calls
+                            .extend(layer::called_functions(&reward.expression.expression));
+                    }
+                    ProbabilisticDeclaration::Claim(claim) => {
+                        add_activation_model_calls(&claim.activation, &mut model_context_calls);
+                        add_probabilistic_body_model_calls(&claim.body, &mut model_context_calls);
+                    }
+                    ProbabilisticDeclaration::Delay(_) | ProbabilisticDeclaration::Workload(_) => {}
+                }
+            }
+            for hyper in &self.hyper_clauses {
+                match hyper {
+                    HyperDeclaration::Behaviours(form) => {
+                        if let Some(matched) = &form.match_block {
+                            model_context_calls
+                                .extend(layer::called_functions(&matched.expression));
+                        }
+                        add_temporal_formula_model_calls(&form.body, &mut model_context_calls);
+                    }
+                    HyperDeclaration::Finite(form) => {
+                        model_context_calls.extend(layer::called_functions(&form.body.expression));
+                    }
+                    HyperDeclaration::Relation(form) => {
+                        model_context_calls.extend(layer::called_functions(&form.body.expression));
+                    }
+                }
+            }
+            for refinement in &self.refinements {
+                for row in &refinement.form.rows {
+                    match row {
+                        qsl_forms::RefinementRowForm::Object(row) => {
+                            for field in &row.fields {
+                                model_context_calls
+                                    .extend(layer::called_functions(&field.value.expression));
+                            }
+                        }
+                        qsl_forms::RefinementRowForm::History(row) => {
+                            for update in &row.updates {
+                                model_context_calls
+                                    .extend(layer::called_functions(&update.value.expression));
+                            }
+                        }
+                        qsl_forms::RefinementRowForm::Population(_)
+                        | qsl_forms::RefinementRowForm::Step(_)
+                        | qsl_forms::RefinementRowForm::Fairness(_) => {}
+                    }
+                }
+            }
+        }
+        let function_indices: std::collections::BTreeMap<_, _> = self
             .functions
             .iter()
-            .map(|function| model_selected && layer::body_needs_model_family(&function.body))
+            .enumerate()
+            .map(|(index, function)| (function.name.as_str(), index))
             .collect();
+        let mut model_function_bodies = vec![false; self.functions.len()];
+        while let Some(name) = model_context_calls.pop() {
+            let Some(index) = function_indices.get(name.as_str()).copied() else {
+                continue;
+            };
+            if model_function_bodies[index] {
+                continue;
+            }
+            model_function_bodies[index] = true;
+            model_context_calls.extend(layer::called_functions(&self.functions[index].body));
+        }
         let model_scope = check::NamedScope::of(&self.models, &scope);
         let symmetric_objects = self
             .models
@@ -1771,14 +1953,10 @@ impl PackageDeclarations {
                     .copied()
                     .unwrap_or(false)
                     .then(|| model_scope.clone()),
-                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false)
-                    && self
-                        .function_selections
-                        .get(&index)
-                        .is_some_and(|selection| {
-                            crate::value::layer::HeaderLayer::from_identity(&selection.identity)
-                                == Some(crate::value::layer::HeaderLayer::ValueComplete)
-                        }),
+                // A model operation in the body selects the model family's
+                // typing for that body, whether the function's declared
+                // profile is value-complete or model-complete.
+                derived_model_family: model_function_bodies.get(index).copied().unwrap_or(false),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -1967,6 +2145,8 @@ impl PackageDeclarations {
         // declaration, claim or requirement record; its body is kept for
         // evaluation per value.
         let mut type_invariants = Vec::with_capacity(self.type_invariants.len());
+        let function_bodies: Vec<&CheckedBody> =
+            drafts.iter().map(|(_, body, _)| &body.body).collect();
         for invariant in &self.type_invariants {
             let location = invariant.location();
             let declarations = state_clause::ClauseDeclarations {
@@ -1987,7 +2167,12 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match state_clause::check_type_invariant(invariant, &declarations, &mut contract_cx) {
+            match state_clause::check_type_invariant(
+                invariant,
+                &declarations,
+                &function_bodies,
+                &mut contract_cx,
+            ) {
                 Ok((checked, used)) => {
                     nodes_used = used;
                     type_invariants.push(checked);
@@ -2487,6 +2672,8 @@ impl PackageDeclarations {
                         &checked,
                         &slot_declarations,
                         &mut slot_cx,
+                        &regions,
+                        protocol_profile.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = slots;
@@ -2590,6 +2777,24 @@ impl PackageDeclarations {
             std::iter::repeat_with(|| None)
                 .take(refinement_slots.len())
                 .collect();
+        let protocol_views: Vec<refinement::ProtocolView<'_>> = self
+            .protocols
+            .iter()
+            .map(|form| {
+                let place = checked_protocols
+                    .iter()
+                    .position(|checked| checked.name == form.name.name.as_str());
+                refinement::ProtocolView {
+                    form,
+                    checked: place
+                        .and_then(|place| checked_protocols.get(place))
+                        .filter(|_| !refused_protocols.contains(form.name.name.as_str())),
+                    attempts: place
+                        .and_then(|place| protocol_bindings.get(place))
+                        .map_or(&[], Vec::as_slice),
+                }
+            })
+            .collect();
         for (slot, pending) in protocol_refinements {
             let index = pending.protocol();
             let place = protocol_places.get(index).copied().flatten();
@@ -2631,8 +2836,12 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            let (completed, used) =
-                pending.complete(clause.as_ref(), &declarations, &mut contract_cx);
+            let (completed, used) = pending.complete(
+                clause.as_ref(),
+                &protocol_views,
+                &declarations,
+                &mut contract_cx,
+            );
             nodes_used = used;
             match completed {
                 Ok((checked, selected)) => {
@@ -2651,9 +2860,9 @@ impl PackageDeclarations {
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
         // `over` parameter, now that every function signature is known. A
-        // clause S4 does not emit (a capture) is refused rather
-        // than compiled and silently missing from the package
-        // (`temporal_clause::not_emitted`).
+        // clause S4 does not emit (a protocol fairness target, the timed
+        // profile) is refused rather than compiled and silently missing from
+        // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
             self.nominal_spans.keys().copied(),
@@ -2683,9 +2892,91 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
-                    refusals.push(temporal_clause::not_emitted(&staged.into_value()));
+            let outcome = temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx);
+            // FR-337: the activation precedes the body in source, so a defect
+            // of an `on each` guard refuses ahead of a refusal of the body.
+            let body_refused = match &outcome {
+                Ok(staged) => !temporal_clause::is_emitted(staged.value()),
+                Err(StageFailure::Refused(refusal)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
+                Err(_) => false,
+            };
+            if body_refused {
+                let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                let condition_declarations = state_clause::ClauseDeclarations {
+                    scope: &scope,
+                    signatures: &signatures,
+                    dispatch_tables: &dispatch_tables,
+                    models: &models,
+                    checking_limits: limits,
+                    location: &location,
+                    nodes_used,
+                    cancel: Some(cancel),
+                    staged: None,
+                };
+                let mut condition_cx = crate::family::CheckContext::new(
+                    &condition_declarations,
+                    contract_limits,
+                    &mut contract_meter,
+                    &mut contract_diagnostics,
+                    &mut contract_scopes,
+                );
+                if let Some(refusal) = temporal_clause::condition::guard_refusal(
+                    index,
+                    &clause.form,
+                    &condition_declarations,
+                    &mut condition_cx.reborrow(&scope),
+                ) {
+                    refusals.push(refusal);
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                    continue;
+                }
+            }
+            match outcome {
+                Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
+                    let checked = staged.into_value();
+                    if checked.has_aggregate {
+                        let location =
+                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                        let condition_declarations = state_clause::ClauseDeclarations {
+                            scope: &scope,
+                            signatures: &signatures,
+                            dispatch_tables: &dispatch_tables,
+                            models: &models,
+                            checking_limits: limits,
+                            location: &location,
+                            nodes_used,
+                            cancel: Some(cancel),
+                            staged: None,
+                        };
+                        let mut condition_cx = crate::family::CheckContext::new(
+                            &condition_declarations,
+                            contract_limits,
+                            &mut contract_meter,
+                            &mut contract_diagnostics,
+                            &mut contract_scopes,
+                        );
+                        match temporal_clause::condition::check_conditions(
+                            index,
+                            &clause.form,
+                            &checked,
+                            &condition_declarations,
+                            &mut condition_cx.reborrow(&scope),
+                        ) {
+                            Ok((_, used)) => nodes_used = used,
+                            Err(refusal) => {
+                                refusals.push(refusal);
+                                if cancel.tripped().is_some() {
+                                    return Err(refusals);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    refusals.push(temporal_clause::not_emitted(&checked));
                 }
                 Ok(staged) => {
                     let checked = staged.into_value();
@@ -2758,6 +3049,8 @@ impl PackageDeclarations {
             models: &models,
             model_objects: &model_objects,
             object_types: &object_types,
+            time_sources: &self.time_sources,
+            time_units: &time_units,
             preconditions: &precondition_reads,
             profiles: &self.profile_selections,
             limits,
@@ -2898,6 +3191,7 @@ impl PackageDeclarations {
             nodes_used: std::cell::Cell::new(nodes_used),
             behaviours_checked: std::cell::Cell::new(0),
         };
+        let mut checked_hyper: Vec<hyper_clause::CheckedHyperClause> = Vec::new();
         for clause in &self.hyper_clauses {
             let mut contract_cx = crate::family::CheckContext::new(
                 &hyper_declarations,
@@ -2907,10 +3201,20 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) => {
-                    let (name, span) = staged.into_value().name_and_span();
-                    refusals.push(hyper_clause::not_emitted(name, span));
-                }
+                Ok(staged) => match staged.into_value() {
+                    // FR-488: a clause over `behaviours` is emitted unless
+                    // it is one of the constructs S4 refuses.
+                    hyper_clause::CheckedHyper::Behaviours(checked) => {
+                        match hyper_clause::emission::unemitted(&checked, &models) {
+                            Some(refusal) => refusals.push(refusal),
+                            None => checked_hyper.push(*checked),
+                        }
+                    }
+                    relation => {
+                        let (name, span) = relation.name_and_span();
+                        refusals.push(hyper_clause::not_emitted(name, span));
+                    }
+                },
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -2931,6 +3235,9 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // The nodes the hyper conditions checked count against the package's
+        // ceiling beside every other declaration's.
+        nodes_used = hyper_declarations.nodes_used.get();
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -2989,6 +3296,16 @@ impl PackageDeclarations {
         for (_, _, conditions) in &mut checked_temporal {
             for condition in conditions.all_mut() {
                 units.append(std::mem::take(&mut condition.formed_units));
+            }
+        }
+        for clause in &mut checked_hyper {
+            for table in clause.take_formed_units() {
+                units.append(table);
+            }
+        }
+        for claim in &mut checked_state_graph_claims {
+            for table in claim.take_formed_units() {
+                units.append(table);
             }
         }
         let mut lowering = lowering::Lowering::new(
@@ -3132,6 +3449,47 @@ impl PackageDeclarations {
         // clause or protocol attempt in source order. The declaration span
         // start orders candidates; the reference location itself resolves to
         // the qualified operation name in that declaration.
+        // FR-488: each `align skip` operation of a hyper clause, resolved to
+        // its declaring type and operation, anchored like a clause's.
+        let hyper_skipped: Vec<(
+            usize,
+            usize,
+            quire_exact::EffectiveId,
+            crate::model::operation::OperationDeclaration,
+            Location,
+        )> = checked_hyper
+            .iter()
+            .enumerate()
+            .flat_map(|(clause_index, clause)| {
+                clause
+                    .align_skip()
+                    .iter()
+                    .enumerate()
+                    .filter_map({
+                        let models = &models;
+                        let scope = &scope;
+                        move |(skip_index, key)| {
+                            let declaring = models
+                                .iter()
+                                .find_map(|model| model.effective_id(&key.declaring))?;
+                            let operation = scope
+                                .operation_declaration(declaring, key.operation.as_str())?
+                                .clone();
+                            Some((
+                                clause_index,
+                                clause.span().start,
+                                declaring,
+                                operation,
+                                hyper_clause::lowering::hyper_location(
+                                    clause_index,
+                                    hyper_clause::lowering::Site::AlignSkip(skip_index),
+                                ),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let mut source_ordered_anchors: Vec<(usize, lowering::AnchorInput<'_>)> =
             state_clause_forms
                 .iter()
@@ -3172,6 +3530,17 @@ impl PackageDeclarations {
                     },
                 ));
             }
+        }
+        for (_, source_order, declaring, operation, location) in &hyper_skipped {
+            source_ordered_anchors.push((
+                *source_order,
+                lowering::AnchorInput {
+                    declaring: *declaring,
+                    operation,
+                    location,
+                    reference: location,
+                },
+            ));
         }
         source_ordered_anchors.sort_by_key(|(source_order, _)| *source_order);
         let mut anchors: Vec<lowering::AnchorInput<'_>> = source_ordered_anchors
@@ -3246,6 +3615,35 @@ impl PackageDeclarations {
             match lowering.time_source_anchor(&anchor) {
                 Ok(key) => self.time_sources[*index].tick_operation_anchor = Some(key),
                 Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-488: the `operation_anchor` of each `align skip` operation.
+        let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
+        for (clause_index, _, declaring, operation, location) in &hyper_skipped {
+            let anchor = lowering::AnchorInput {
+                declaring: *declaring,
+                operation,
+                location,
+                reference: location,
+            };
+            match lowering.align_skip_anchor(&anchor) {
+                Ok(key) => hyper_align[*clause_index].push(key),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // S3 resolves every listed operation, so a clause whose anchors fall
+        // short of its list is a broken invariant, never a silent drop.
+        for (clause, align) in checked_hyper.iter().zip(&hyper_align) {
+            if align.len() != clause.align_skip().len() && refusals.is_empty() {
+                refusals.push(CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                        quire_semantic_value::catalog::InternalFault::new(
+                            "S3",
+                            "align-skip-operation-resolves",
+                        ),
+                    ))),
+                });
             }
         }
         // FR-104: each state clause after every function it may call,
@@ -3422,6 +3820,32 @@ impl PackageDeclarations {
                 conditions,
             }) {
                 Ok(lowered) => lowered_temporal.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-488: each emitted hyper clause over `behaviours`, after every
+        // function its conditions may call.
+        let mut lowered_hyper = Vec::with_capacity(checked_hyper.len());
+        for (index, clause) in checked_hyper.iter().enumerate() {
+            let align = hyper_align.get(index).map_or(&[][..], Vec::as_slice);
+            if align.len() != clause.align_skip().len() {
+                continue;
+            }
+            match lowering.hyper_clause(&lowering::HyperClauseInput {
+                index,
+                clause,
+                align_skip: align,
+            }) {
+                Ok(lowered) => lowered_hyper.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-410: each checked state-graph claim, after every function its
+        // predicates may call.
+        let mut lowered_state_graph = Vec::with_capacity(checked_state_graph_claims.len());
+        for (index, claim) in checked_state_graph_claims.iter().enumerate() {
+            match lowering.state_graph_claim(&lowering::StateGraphClaimInput { index, claim }) {
+                Ok(lowered) => lowered_state_graph.push(lowered),
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -3715,6 +4139,107 @@ impl PackageDeclarations {
         if lowered_temporal.len() != checked_temporal.len() {
             return Err(unlowered());
         }
+        if lowered_hyper.len() != checked_hyper.len() {
+            return Err(unlowered());
+        }
+        if lowered_state_graph.len() != checked_state_graph_claims.len() {
+            return Err(unlowered());
+        }
+        // FR-488 "Outputs": each hyper clause carries its `claim`
+        // occurrence, the `clause` of FR-315's `HyperProductIdentity`.
+        // The sites no declared form spans (slots, conjunct slots, skipped
+        // operations) are located at their conjunct or clause.
+        for (index, clause) in checked_hyper.iter().enumerate() {
+            use hyper_clause::lowering::{hyper_site, Site};
+            for slot in 0..clause.atom_slots().len() {
+                type_spans.insert(hyper_site(index, Site::Slot(slot)), clause.span());
+            }
+            for skipped in 0..clause.align_skip().len() {
+                type_spans.insert(hyper_site(index, Site::AlignSkip(skipped)), clause.span());
+            }
+            for (part, at) in clause.conjuncts() {
+                let (conjunct, make): (_, fn(usize, usize) -> Site) = match part {
+                    hyper_clause::MatchPart::Universal => {
+                        (clause.mu_universal().get(at), Site::UniversalSlot)
+                    }
+                    hyper_clause::MatchPart::Existential => {
+                        (clause.mu_existential().get(at), Site::ExistentialSlot)
+                    }
+                };
+                let Some(conjunct) = conjunct else { continue };
+                for slot in 0..conjunct.slots().len() {
+                    type_spans.insert(hyper_site(index, make(at, slot)), conjunct.span());
+                }
+            }
+        }
+        let hyper_nodes = checked_hyper
+            .into_iter()
+            .zip(&lowered_hyper)
+            .enumerate()
+            .map(|(index, (checked, lowered))| {
+                let location = hyper_clause::lowering::hyper_location(
+                    index,
+                    hyper_clause::lowering::Site::Claim,
+                );
+                let claim = occurrences
+                    .iter_role(family::OccurrenceRole::Claim)
+                    .find(|(node, _, at)| *node == lowered.key && **at == location)
+                    .map(|(_, origin, _)| origin)
+                    .ok_or_else(|| {
+                        vec![CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(
+                                KeyFault::UnkeyableRequirements,
+                            )),
+                        }]
+                    })?;
+                Ok(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)))
+            })
+            .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-410 "Outputs": each state-graph claim carries its `claim`
+        // occurrence; FR-165 "Requirement record": its
+        // `temporal-satisfaction` record, keyed by that occurrence.
+        let mut state_graph_nodes = Vec::with_capacity(checked_state_graph_claims.len());
+        for (index, (checked, lowered)) in checked_state_graph_claims
+            .into_iter()
+            .zip(&lowered_state_graph)
+            .enumerate()
+        {
+            let location =
+                state_graph_claim::state_graph_location(index, state_graph_claim::Site::Claim);
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let claim = occurrences
+                .iter_role(family::OccurrenceRole::Claim)
+                .find(|(node, _, at)| *node == lowered.key && **at == location)
+                .map(|(_, origin, _)| origin)
+                .ok_or_else(unkeyable)?;
+            let (from, target) = checked.node_predicates();
+            let objects: std::collections::BTreeSet<_> = from
+                .into_iter()
+                .chain([target])
+                .filter_map(state_graph_claim::CheckedStatePredicate::body)
+                .flat_map(references::body_objects)
+                .collect();
+            let record = claims::RequirementRecord::unguarded(
+                checked.claim().requirements(claims::wire(lowered.key)),
+                ValueType::Boolean,
+                claims::wire(lowered.boolean),
+                references::ModelReferences::new(objects, [], None),
+            );
+            match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(record);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+            }
+            state_graph_nodes
+                .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
+        }
         let named_scope = NamedScope::of(&models, &scope);
         let temporal_clauses = checked_temporal
             .into_iter()
@@ -3762,7 +4287,12 @@ impl PackageDeclarations {
                         .and_then(|populations| {
                             claimed.requirements(
                                 claims::wire(lowered.key),
-                                &[claims::wire(lowered.over)],
+                                &lowered
+                                    .parameters
+                                    .iter()
+                                    .copied()
+                                    .map(claims::wire)
+                                    .collect::<Vec<_>>(),
                                 &populations,
                                 named_keys.as_ref().map_err(Clone::clone)?,
                             )
@@ -3798,6 +4328,11 @@ impl PackageDeclarations {
                     guard: conditions
                         .guard
                         .map(|condition| (condition.body, condition.slots)),
+                    captures: conditions
+                        .captures
+                        .into_iter()
+                        .map(|condition| (condition.body, condition.slots))
+                        .collect(),
                     conditions: conditions
                         .holds
                         .into_iter()
@@ -4028,13 +4563,6 @@ impl PackageDeclarations {
         if !unwritten.is_empty() {
             return Err(unwritten);
         }
-        // FR-165: likewise, no S4 emission writes a state-graph claim yet.
-        if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
-            return Err(checked_state_graph_claims
-                .iter()
-                .map(state_graph_claim::not_emitted)
-                .collect());
-        }
         let mut graph = CheckedGraph {
             source,
             scope,
@@ -4055,6 +4583,7 @@ impl PackageDeclarations {
             model_selections,
             header_layers,
             time_sources: self.time_sources,
+            time_units: time_units.clone(),
             state_clauses,
             type_invariants,
             terminals,
@@ -4063,7 +4592,8 @@ impl PackageDeclarations {
             model_names,
             protocols: checked_protocols,
             temporal_clauses,
-            state_graph_claims: checked_state_graph_claims,
+            hyper_nodes,
+            state_graph_claims: state_graph_nodes,
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
             probabilistic: probabilistic_model,
@@ -4101,6 +4631,88 @@ impl PackageDeclarations {
 }
 
 /// `found` with the refusals a protocol subject kept for its clause's check.
+/// Add the function calls written in a temporal model-context claim. A helper
+/// is typed through the StateModel family only when one of these calls (or a
+/// transitive helper call) reaches it.
+fn add_temporal_model_calls(form: &qsl_forms::TemporalClauseForm, calls: &mut Vec<String>) {
+    add_activation_model_calls(&form.activation, calls);
+    for capture in &form.captures {
+        calls.extend(layer::called_functions(&capture.value.expression));
+    }
+    add_temporal_formula_model_calls(&form.formula, calls);
+}
+
+fn add_activation_model_calls(activation: &qsl_forms::ActivationForm, calls: &mut Vec<String>) {
+    if let qsl_forms::ActivationForm::Each {
+        when: Some(when), ..
+    } = activation
+    {
+        calls.extend(layer::called_functions(&when.expression));
+    }
+}
+
+fn add_temporal_formula_model_calls(
+    formula: &qsl_forms::TemporalFormulaForm,
+    calls: &mut Vec<String>,
+) {
+    for (_, node) in formula.iter() {
+        if let qsl_forms::TemporalNodeForm::Holds { condition, .. } = node {
+            calls.extend(layer::called_functions(&condition.expression));
+        }
+    }
+}
+
+fn add_measure_model_calls(measure: &qsl_forms::MeasureForm, calls: &mut Vec<String>) {
+    match measure {
+        qsl_forms::MeasureForm::Accumulate { window, .. }
+        | qsl_forms::MeasureForm::Steps { window, .. }
+        | qsl_forms::MeasureForm::Elapsed { window, .. } => {
+            calls.extend(layer::called_functions(&window.from.expression));
+            calls.extend(layer::called_functions(&window.until.expression));
+        }
+        qsl_forms::MeasureForm::Fraction(fraction) => {
+            calls.extend(layer::called_functions(&fraction.predicate.expression));
+        }
+    }
+}
+
+fn add_probabilistic_body_model_calls(
+    body: &qsl_forms::ProbabilisticBody,
+    calls: &mut Vec<String>,
+) {
+    match body {
+        qsl_forms::ProbabilisticBody::Probability { event, .. } => match event {
+            qsl_forms::EventForm::Temporal(formula) => {
+                add_temporal_formula_model_calls(formula, calls);
+            }
+            qsl_forms::EventForm::Compare {
+                measure, threshold, ..
+            } => {
+                add_measure_model_calls(measure, calls);
+                calls.extend(layer::called_functions(&threshold.expression));
+            }
+        },
+        qsl_forms::ProbabilisticBody::Quantile {
+            measure, threshold, ..
+        } => {
+            add_measure_model_calls(measure, calls);
+            calls.extend(layer::called_functions(&threshold.expression));
+        }
+        qsl_forms::ProbabilisticBody::MeanOfFraction { fraction, .. } => {
+            calls.extend(layer::called_functions(&fraction.predicate.expression));
+        }
+        qsl_forms::ProbabilisticBody::LongRunFraction { predicate, .. } => {
+            calls.extend(layer::called_functions(&predicate.expression))
+        }
+        qsl_forms::ProbabilisticBody::ExpectedUntil {
+            target, threshold, ..
+        } => {
+            calls.extend(layer::called_functions(&target.expression));
+            calls.extend(layer::called_functions(&threshold.expression));
+        }
+    }
+}
+
 fn with_deferred(mut found: Vec<CheckRefusal>, deferred: &[CheckRefusal]) -> Vec<CheckRefusal> {
     found.extend_from_slice(deferred);
     found
@@ -4310,6 +4922,12 @@ impl CheckedGraph {
     /// Checked time sources of this package, in declaration order.
     pub fn time_sources(&self) -> &[ModelTimeSource] {
         &self.time_sources
+    }
+
+    /// FR-251: the exact scale of a checked time unit to seconds, or the
+    /// checked reason the name is not a linear time unit.
+    pub fn time_unit_scale(&self, unit: &str) -> Result<&quire_exact::Rational, TimeUnitCause> {
+        self.time_units.scale(unit)
     }
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
@@ -4560,6 +5178,12 @@ impl CheckedGraph {
     /// FR-113: every checked protocol declaration, in declaration order.
     pub fn protocols(&self) -> &[CheckedProtocol] {
         &self.protocols
+    }
+
+    /// FR-488: every emitted hyper clause over `behaviours`, in declaration
+    /// order, each with its `claim` occurrence.
+    pub fn hyper_clauses(&self) -> &[hyper_clause::CheckedHyperClause] {
+        &self.hyper_nodes
     }
 
     /// FR-337: every emitted temporal clause, in declaration order.

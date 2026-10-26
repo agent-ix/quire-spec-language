@@ -30,14 +30,14 @@
 //! exhaustive and exclusive over its visible entries, and every other
 //! Boolean subterm of a guard, as independent Booleans.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use qsl_forms::{
     ActivationForm, BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm,
     ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, ReplicatedRoleForm, RoleForm,
     RoleLifetime, TerminalForm,
 };
-use qsl_foundation::Span;
+use qsl_foundation::{diagnostic::Locus, Span};
 use quire_exact::ValueType;
 use quire_semantic_value::location::{Location, Origin};
 
@@ -611,72 +611,160 @@ fn push_children<'e>(
 /// `or` and `implies` are evaluated, and any other subterm is looked up in
 /// `atoms` too (the caller lists every one). `None` only for a subterm
 /// missing from `atoms`.
-fn evaluate(form: &ExpressionForm, atoms: &[ExprRef<'_>], valuation: u64) -> Option<bool> {
-    // Post-order on an explicit stack.
-    let mut values: Vec<(qsl_forms::ExprId, bool)> = Vec::new();
-    let value_of = |values: &[(qsl_forms::ExprId, bool)], id| {
-        values
-            .iter()
-            .rev()
-            .find(|(seen, _)| *seen == id)
-            .map(|(_, value)| *value)
-    };
-    let mut stack = vec![(form.expression.root(), false)];
-    while let Some((node, expanded)) = stack.pop() {
-        if let Some(atom) = atoms.iter().position(|atom| atom.same_tree(node)) {
-            values.push((node.id(), valuation >> atom & 1 == 1));
-            continue;
-        }
-        let connective = matches!(
-            node.node(),
-            ExprNode::Not(_)
-                | ExprNode::Binary {
-                    operator: BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies,
-                    ..
+fn evaluate<'a>(
+    form: &'a ExpressionForm,
+    atom_indices: &HashMap<qsl_forms::ExprId, usize>,
+    valuation: &[bool],
+    scratch: &mut EvaluationScratch<'a>,
+) -> Option<bool> {
+    // Use a reusable explicit stack and short-circuit Boolean connectives;
+    // one proof valuation must not allocate storage proportional to the
+    // checked guard tree or visit a decisive connective's unused operand.
+    scratch.values.clear();
+    scratch.stack.clear();
+    scratch
+        .stack
+        .push(EvaluationFrame::Visit(form.expression.root()));
+    while let Some(frame) = scratch.stack.pop() {
+        match frame {
+            EvaluationFrame::Visit(node) => {
+                if let Some(atom) = atom_indices.get(&node.id()) {
+                    scratch.values.push((node.id(), *valuation.get(*atom)?));
+                    continue;
                 }
-        );
-        if connective && !expanded {
-            stack.push((node, true));
-            for child in node.children() {
-                stack.push((child, false));
+                match node.node() {
+                    ExprNode::Boolean(value) => scratch.values.push((node.id(), *value)),
+                    ExprNode::Not(_) => {
+                        let operand = *node.children().first()?;
+                        scratch.stack.push(EvaluationFrame::AfterNot {
+                            parent: node.id(),
+                            operand: operand.id(),
+                        });
+                        scratch.stack.push(EvaluationFrame::Visit(operand));
+                    }
+                    ExprNode::Binary {
+                        operator:
+                            operator @ (BinaryOperator::And
+                            | BinaryOperator::Or
+                            | BinaryOperator::Implies),
+                        ..
+                    } => {
+                        let children = node.children();
+                        let left = *children.first()?;
+                        let right = *children.get(1)?;
+                        scratch.stack.push(EvaluationFrame::AfterLeft {
+                            parent: node.id(),
+                            operator: *operator,
+                            left: left.id(),
+                            right,
+                        });
+                        scratch.stack.push(EvaluationFrame::Visit(left));
+                    }
+                    _ => return None,
+                }
             }
-            continue;
-        }
-        let value = match node.node() {
-            ExprNode::Boolean(value) => *value,
-            ExprNode::Not(operand) => !value_of(&values, *operand)?,
-            ExprNode::Binary {
+            EvaluationFrame::AfterNot { parent, operand } => {
+                scratch
+                    .values
+                    .push((parent, !value_of(&scratch.values, operand)?));
+            }
+            EvaluationFrame::AfterLeft {
+                parent,
                 operator,
                 left,
                 right,
             } => {
-                let (left, right) = (value_of(&values, *left)?, value_of(&values, *right)?);
-                match operator {
+                let left_value = value_of(&scratch.values, left)?;
+                let short_circuit = match operator {
+                    BinaryOperator::And if !left_value => Some(false),
+                    BinaryOperator::Or if left_value => Some(true),
+                    BinaryOperator::Implies if !left_value => Some(true),
+                    _ => None,
+                };
+                if let Some(value) = short_circuit {
+                    scratch.values.push((parent, value));
+                } else {
+                    scratch.stack.push(EvaluationFrame::AfterRight {
+                        parent,
+                        operator,
+                        left: left_value,
+                        right: right.id(),
+                    });
+                    scratch.stack.push(EvaluationFrame::Visit(right));
+                }
+            }
+            EvaluationFrame::AfterRight {
+                parent,
+                operator,
+                left,
+                right,
+            } => {
+                let right = value_of(&scratch.values, right)?;
+                let value = match operator {
                     BinaryOperator::And => left && right,
                     BinaryOperator::Or => left || right,
                     BinaryOperator::Implies => !left || right,
                     _ => return None,
-                }
+                };
+                scratch.values.push((parent, value));
             }
-            _ => return None,
-        };
-        values.push((node.id(), value));
+        }
     }
-    value_of(&values, form.expression.root_id())
+    value_of(&scratch.values, form.expression.root_id())
 }
 
-/// The atoms of `guards` over `visible`: each `visible` entry, then each
-/// other maximal subterm of a guard that is not a Boolean literal or a
-/// connective, each once.
-fn atoms<'f>(visible: &'f [ExpressionForm], guards: &[&'f ExpressionForm]) -> Vec<ExprRef<'f>> {
-    let mut atoms: Vec<ExprRef<'f>> = visible
+enum EvaluationFrame<'a> {
+    Visit(ExprRef<'a>),
+    AfterNot {
+        parent: qsl_forms::ExprId,
+        operand: qsl_forms::ExprId,
+    },
+    AfterLeft {
+        parent: qsl_forms::ExprId,
+        operator: BinaryOperator,
+        left: qsl_forms::ExprId,
+        right: ExprRef<'a>,
+    },
+    AfterRight {
+        parent: qsl_forms::ExprId,
+        operator: BinaryOperator,
+        left: bool,
+        right: qsl_forms::ExprId,
+    },
+}
+
+fn value_of(values: &[(qsl_forms::ExprId, bool)], id: qsl_forms::ExprId) -> Option<bool> {
+    values
         .iter()
-        .map(|entry| entry.expression.root())
-        .collect();
+        .rev()
+        .find(|(seen, _)| *seen == id)
+        .map(|(_, value)| *value)
+}
+
+#[derive(Default)]
+struct EvaluationScratch<'a> {
+    values: Vec<(qsl_forms::ExprId, bool)>,
+    stack: Vec<EvaluationFrame<'a>>,
+}
+
+struct Atoms<'a> {
+    expressions: Vec<ExprRef<'a>>,
+}
+
+/// The conservative independent-atom set for these guards: each visible fact
+/// is an atom, followed by every other maximal non-connective guard subterm,
+/// each once in first source traversal order.
+fn atoms<'f>(visible: &'f [ExpressionForm], guards: &[&'f ExpressionForm]) -> Atoms<'f> {
+    let mut atoms = Atoms {
+        expressions: Vec::new(),
+    };
+    for entry in visible {
+        insert_atom(entry.expression.root(), &mut atoms);
+    }
     for guard in guards {
         let mut stack = vec![guard.expression.root()];
         while let Some(node) = stack.pop() {
-            if atoms.iter().any(|atom| atom.same_tree(node)) {
+            if atoms.expressions.iter().any(|atom| atom.same_tree(node)) {
                 continue;
             }
             match node.node() {
@@ -686,11 +774,45 @@ fn atoms<'f>(visible: &'f [ExpressionForm], guards: &[&'f ExpressionForm]) -> Ve
                     operator: BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies,
                     ..
                 } => stack.extend(node.children()),
-                _ => atoms.push(node),
+                _ => insert_atom(node, &mut atoms),
             }
         }
     }
     atoms
+}
+
+fn insert_atom<'a>(node: ExprRef<'a>, atoms: &mut Atoms<'a>) {
+    if !atoms.expressions.iter().any(|atom| atom.same_tree(node)) {
+        atoms.expressions.push(node);
+    }
+}
+
+fn atom_indices<'a>(
+    form: &'a ExpressionForm,
+    atoms: &Atoms<'a>,
+) -> HashMap<qsl_forms::ExprId, usize> {
+    let mut indices = HashMap::new();
+    let mut stack = vec![form.expression.root()];
+    while let Some(node) = stack.pop() {
+        if let Some(index) = atoms
+            .expressions
+            .iter()
+            .position(|atom| atom.same_tree(node))
+        {
+            indices.insert(node.id(), index);
+            continue;
+        }
+        match node.node() {
+            ExprNode::Boolean(_) => {}
+            ExprNode::Not(_)
+            | ExprNode::Binary {
+                operator: BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies,
+                ..
+            } => stack.extend(node.children()),
+            _ => {}
+        }
+    }
+    indices
 }
 
 /// Checks every slot of `protocol`'s `run` tree and `finish` over the
@@ -701,6 +823,8 @@ pub(crate) fn check(
     checked: &CheckedProtocol,
     declarations: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    regions: &crate::check::DeclarationRegions,
+    profile: Option<&str>,
 ) -> Slots {
     let scope = declarations.scope;
     let mut cx = cx.reborrow(scope);
@@ -982,7 +1106,7 @@ pub(crate) fn check(
         if !checker.facts(node, &choice.owner.name, &choice.visible, &guards) {
             continue;
         }
-        match partition(choice, &guards, &mut cx) {
+        match partition(choice, &guards, &mut cx, regions) {
             Ok(None) => {}
             Ok(Some(refused)) => {
                 checker.refusals.push((refused.span(), refusal(refused)));
@@ -1210,6 +1334,84 @@ pub(crate) fn check(
             .map_or(CheckedTerminalMember::None, CheckedTerminalMember::When),
     };
 
+    if checker.refusals.is_empty() {
+        let nested = nested_repeats(checked);
+        let mut false_feasible = BTreeMap::new();
+        for repeat in protocol
+            .repeats
+            .iter()
+            .filter(|repeat| nested.contains(&ProtocolNodeId(repeat.declaration)))
+        {
+            let repeat_atoms = atoms(&repeat.visible, &[&repeat.guard]);
+            let repeat_atom_indices = atom_indices(&repeat.guard, &repeat_atoms);
+            let mut valuation = vec![false; repeat_atoms.expressions.len()];
+            let mut scratch = EvaluationScratch::default();
+            let mut can_exit = false;
+            loop {
+                if let Err(incomplete) = cx.meter.charge(
+                    quire_exact::Charge::new(quire_exact::ChargePoint::DeclarationCheck)
+                        .work(quire_exact::Integer::from(1_u64)),
+                ) {
+                    checker.refusals.push((
+                        repeat.name.span,
+                        work_limit(
+                            incomplete.limit,
+                            incomplete.consumed,
+                            repeat.name.span,
+                            regions,
+                        ),
+                    ));
+                    break;
+                }
+                let Some(guard) = evaluate(
+                    &repeat.guard,
+                    &repeat_atom_indices,
+                    &valuation,
+                    &mut scratch,
+                ) else {
+                    checker.refusals.push((
+                        repeat.name.span,
+                        CheckRefusal {
+                            location: Location::root(Origin::Expression),
+                            cause: CheckCause::InternalFault(Box::new(
+                                super::refusal::KeyFault::StageFault(
+                                    quire_semantic_value::catalog::InternalFault::new(
+                                        "check.protocol",
+                                        "repeat-guard-atoms",
+                                    ),
+                                ),
+                            )),
+                        },
+                    ));
+                    break;
+                };
+                if !guard {
+                    can_exit = true;
+                    break;
+                }
+                let mut bit = 0;
+                while bit < valuation.len() && valuation[bit] {
+                    valuation[bit] = false;
+                    bit += 1;
+                }
+                if bit == valuation.len() {
+                    break;
+                }
+                valuation[bit] = true;
+            }
+            false_feasible.insert(ProtocolNodeId(repeat.declaration), can_exit);
+        }
+        if checker.refusals.is_empty() {
+            checker
+                .refusals
+                .extend(crate::check::protocol_clause::progress(
+                    protocol,
+                    checked,
+                    profile,
+                    &false_feasible,
+                ));
+        }
+    }
     if !checker.refusals.is_empty() {
         checker.refusals.sort_by_key(|(span, _)| span.start);
         return Slots::Refused(
@@ -1264,6 +1466,61 @@ pub(crate) fn check(
         })
         .collect();
     Slots::Checked(slots, checker.nodes)
+}
+
+fn nested_repeats(checked: &CheckedProtocol) -> BTreeSet<ProtocolNodeId> {
+    let mut nested = BTreeSet::new();
+    let mut stack = vec![(
+        checked
+            .controls
+            .controls
+            .first()
+            .map(|control| control.node),
+        false,
+    )];
+    let mut children: BTreeMap<ProtocolNodeId, Vec<ProtocolNodeId>> = BTreeMap::new();
+    for control in &checked.controls.controls {
+        children.insert(control.node, control.children.clone());
+    }
+    while let Some((Some(node), has_repeat_ancestor)) = stack.pop() {
+        let is_repeat = checked
+            .controls
+            .controls
+            .iter()
+            .find(|control| control.node == node)
+            .is_some_and(|control| control.kind == ProtocolNodeKind::Repeat);
+        if is_repeat && has_repeat_ancestor {
+            nested.insert(node);
+        }
+        if let Some(descendants) = children.get(&node) {
+            stack.extend(
+                descendants
+                    .iter()
+                    .copied()
+                    .map(|child| (Some(child), has_repeat_ancestor || is_repeat)),
+            );
+        }
+    }
+    nested
+}
+
+fn work_limit(
+    limit: u64,
+    consumed: u64,
+    span: Span,
+    regions: &crate::check::DeclarationRegions,
+) -> CheckRefusal {
+    CheckRefusal {
+        location: Location::root(Origin::Expression),
+        cause: super::limit_cause(
+            &qsl_foundation::diagnostic::LimitExceeded::new(
+                qsl_foundation::Setting::S3WorkUnits,
+                limit,
+                u128::from(consumed) + 1,
+            )
+            .at(regions.at_span(span).map(Locus::Region)),
+        ),
+    }
 }
 
 /// FR-218 "Scopes": the smallest control of `checked`'s `run` tree that
@@ -1397,42 +1654,42 @@ fn partition(
     choice: &qsl_forms::ChoiceForm,
     guards: &[&ExpressionForm],
     cx: &mut CheckContext<'_, Scope>,
+    regions: &crate::check::DeclarationRegions,
 ) -> Result<Option<ProtocolAnchorCause>, CheckRefusal> {
     let atoms = atoms(&choice.visible, guards);
-    let cases = u64::try_from(guards.len()).unwrap_or(u64::MAX);
-    // `2^atoms` valuations; past `u64` the work is not representable and is
-    // charged as the greatest amount.
-    let valuations = u32::try_from(atoms.len())
-        .ok()
-        .and_then(|count| 1u64.checked_shl(count));
-    let work = valuations.map_or(u64::MAX, |valuations| valuations.saturating_mul(cases));
-    let charged = cx.meter.charge(
-        quire_exact::Charge::new(quire_exact::ChargePoint::DeclarationCheck)
-            .work(quire_exact::Integer::from(work)),
-    );
+    let guard_atom_indices = guards
+        .iter()
+        .map(|guard| atom_indices(guard, &atoms))
+        .collect::<Vec<_>>();
     let too_large = |limit: u64, consumed: u64| CheckRefusal {
         location: Location::root(Origin::Expression),
-        cause: super::limit_cause(&qsl_foundation::diagnostic::LimitExceeded::new(
-            qsl_foundation::Setting::S3WorkUnits,
-            limit,
-            u128::from(consumed) + u128::from(work),
-        )),
-    };
-    if let Err(incomplete) = charged {
-        return Err(too_large(incomplete.limit, incomplete.consumed));
-    }
-    let Some(valuations) = valuations else {
-        return Err(too_large(u64::MAX, 0));
+        cause: super::limit_cause(
+            &qsl_foundation::diagnostic::LimitExceeded::new(
+                qsl_foundation::Setting::S3WorkUnits,
+                limit,
+                u128::from(consumed) + 1,
+            )
+            .at(regions.at_span(choice.name.span).map(Locus::Region)),
+        ),
     };
     let mut missing = false;
     let mut duplicate = false;
     let mut involved: BTreeSet<usize> = BTreeSet::new();
-    for valuation in 0..valuations {
+    let mut valuation = vec![false; atoms.expressions.len()];
+    let mut scratch = EvaluationScratch::default();
+    loop {
+        if let Err(incomplete) = cx.meter.charge(
+            quire_exact::Charge::new(quire_exact::ChargePoint::DeclarationCheck)
+                .work(quire_exact::Integer::from(1_u64)),
+        ) {
+            return Err(too_large(incomplete.limit, incomplete.consumed));
+        }
         let mut covering = Vec::new();
         for (index, guard) in guards.iter().enumerate() {
             // Every subterm of a guard is an atom, a Boolean literal or a
             // connective (`atoms`), so each guard has a value.
-            let Some(value) = evaluate(guard, &atoms, valuation) else {
+            let Some(value) = evaluate(guard, &guard_atom_indices[index], &valuation, &mut scratch)
+            else {
                 return Err(CheckRefusal {
                     location: Location::root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(
@@ -1460,6 +1717,15 @@ fn partition(
                 involved.extend(covering);
             }
         }
+        let mut bit = 0;
+        while bit < valuation.len() && valuation[bit] {
+            valuation[bit] = false;
+            bit += 1;
+        }
+        if bit == valuation.len() {
+            break;
+        }
+        valuation[bit] = true;
     }
     let failed: Vec<ArmFault> = [
         (missing, ArmFault::MissingArm),

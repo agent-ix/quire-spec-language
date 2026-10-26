@@ -10,10 +10,9 @@
 //! the replay.
 //!
 //! Not covered: a TP-1 clause's `holds` atom is read through the test's own
-//! [`crate::counter::Letters`], since S3 does not check a `holds` condition
-//! yet, so FR-107's evaluation of an authored atom is not exercised; and an
-//! authored clause's counterexample does not replay, since S4 emits no
-//! temporal clause node (FR-337).
+//! [`crate::counter::Letters`], so FR-107's evaluation of an authored atom is
+//! not exercised here; and a counterexample of those hand-built letters is
+//! not replayed through an authored clause node (FR-337).
 
 use std::collections::{BTreeMap, VecDeque};
 

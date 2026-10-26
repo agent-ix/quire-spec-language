@@ -3358,6 +3358,81 @@ pub struct TemporalOperatorForm {
     pub operator_span: Span,
 }
 
+/// One aggregate kind used by a temporal window atom (FR-194).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AggregateKindForm {
+    /// Number of positions admitted by the optional filter.
+    Count,
+    /// Exact sum of the values admitted by the optional filter.
+    Sum,
+    /// Least admitted value.
+    Min,
+    /// Greatest admitted value.
+    Max,
+    /// Share of admitted positions where the predicate holds.
+    Fraction(ExpressionForm),
+    /// Nearest-rank quantile level, as authored.
+    Quantile(ExactValueForm),
+}
+
+/// A `past[a, b]` window, with each bound's written kind retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PastWindowForm {
+    /// Nearest age or offset.
+    pub lower: HorizonForm,
+    /// Farthest age or offset.
+    pub upper: HorizonForm,
+    /// The whole window span.
+    pub span: Span,
+}
+
+/// One aggregate term before profile, type, unit or range checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateTermForm {
+    /// The aggregate kind and any kind-specific authored expression.
+    pub kind: AggregateKindForm,
+    /// The optional `of` expression.
+    pub value: Option<ExpressionForm>,
+    /// The optional `where holds(...)` filter.
+    pub filter: Option<ExpressionForm>,
+    /// The past window.
+    pub window: PastWindowForm,
+    /// The optional `min_count` literal.
+    pub min_count: Option<Spanned<u64>>,
+    /// The complete term span.
+    pub span: Span,
+}
+
+/// The comparison following a temporal aggregate term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AggregateComparison {
+    /// `<`.
+    Less,
+    /// `<=`.
+    LessEqual,
+    /// `=`.
+    Equal,
+    /// `>=`.
+    GreaterEqual,
+    /// `>`.
+    Greater,
+}
+
+/// An aggregate term compared with its threshold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateAtomForm {
+    /// The aggregate term.
+    pub term: AggregateTermForm,
+    /// The comparison operator.
+    pub comparison: AggregateComparison,
+    /// The threshold expression.
+    pub threshold: ExpressionForm,
+    /// The complete atom span.
+    pub span: Span,
+    /// The comparison token span.
+    pub comparison_span: Span,
+}
+
 /// One node of a temporal formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TemporalNodeForm {
@@ -3375,6 +3450,8 @@ pub enum TemporalNodeForm {
         /// The span of the whole `holds(e)`.
         span: Span,
     },
+    /// A window aggregate atom.
+    AggregateAtom(Box<AggregateAtomForm>),
     /// An operator applied to its operands.
     Operator(TemporalOperatorForm),
 }
@@ -3630,6 +3707,51 @@ pub struct RewardForm {
     pub operation: NameForm,
     /// The reward expression, as written.
     pub expression: ExpressionForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// One `quantity : exact-value` of a `discrete` delay distribution (FR-253).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedDelayForm {
+    /// The delay, as written.
+    pub delay: QuantityForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the pair.
+    pub span: Span,
+}
+
+/// The family of a `delay` declaration, as written (FR-253; QSpec
+/// `delay-dist`). S2 checks no sign, order, repeat or unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DelayDistributionForm {
+    /// `uniform`, or `uniform[a, b]` when both bounds are written.
+    Uniform {
+        /// The bounds, in written order, or `None` for a bare `uniform`.
+        range: Option<Box<(QuantityForm, QuantityForm)>>,
+    },
+    /// `exponential(rate)`.
+    Exponential {
+        /// The rate, as written.
+        rate: ExactValueForm,
+    },
+    /// `discrete { delay: weight, ... }`, in declared order.
+    Discrete {
+        /// The weighted delays.
+        delays: Vec<WeightedDelayForm>,
+    },
+}
+
+/// A `delay Op ~ D;` declaration (FR-253; QSpec `delay-decl`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelayForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The distribution, as written.
+    pub distribution: DelayDistributionForm,
+    /// The span of the distribution.
+    pub distribution_span: Span,
     /// The span of the whole declaration, `;` included.
     pub span: Span,
 }
@@ -4160,6 +4282,8 @@ pub enum DeclarationForm {
     Random(Box<RandomForm>),
     /// A `reward` declaration (FR-311), boxed for the same reason.
     Reward(Box<RewardForm>),
+    /// A `delay` declaration (FR-253), boxed for the same reason.
+    Delay(Box<DelayForm>),
     /// A `workload` declaration (FR-311), boxed for the same reason.
     Workload(Box<WorkloadForm>),
     /// A `probabilistic` claim (FR-392), boxed for the same reason.

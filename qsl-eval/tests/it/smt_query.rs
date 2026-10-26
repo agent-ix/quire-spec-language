@@ -9,7 +9,8 @@ use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_eval::smt::{
-    encode_smt_query, Measure, Refusal, SmtEncodingRefusal, SmtItem, SmtQueryKind,
+    encode_smt_query, Measure, MonitorTable, Refusal, SmtEncodingLimits, SmtEncodingRefusal,
+    SmtItem, SmtQueryKind,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -320,8 +321,23 @@ impl World {
     }
 
     fn query(&self, clause: usize, kind: SmtQueryKind) -> Result<String, SmtEncodingRefusal> {
+        self.query_with_limits(clause, kind, &SmtEncodingLimits::default())
+    }
+
+    fn query_with_limits(
+        &self,
+        clause: usize,
+        kind: SmtQueryKind,
+        limits: &SmtEncodingLimits,
+    ) -> Result<String, SmtEncodingRefusal> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        self.query_with(&keys, clause, kind)
+        encode_smt_query(
+            &self.subject(&keys),
+            SmtItem::Clause(&self.clauses[clause]),
+            kind,
+            limits,
+        )
+        .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
 
     fn without_initial_state(&self, keys: &[&str]) -> ModelSubject<'_> {
@@ -332,8 +348,13 @@ impl World {
 
     fn deadlock(&self, kind: SmtQueryKind) -> Result<String, SmtEncodingRefusal> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        encode_smt_query(&self.subject(&keys), SmtItem::DeadlockFreedom, kind)
-            .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
+        encode_smt_query(
+            &self.subject(&keys),
+            SmtItem::DeadlockFreedom,
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
 
     fn query_with(
@@ -346,9 +367,153 @@ impl World {
             &self.subject(keys),
             SmtItem::Clause(&self.clauses[clause]),
             kind,
+            &SmtEncodingLimits::default(),
         )
         .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
     }
+}
+
+/// FR-315-AC-44: temporal query encoding reads caller-supplied limits,
+/// including zero, exact and one-short boundaries.
+#[trace("TC-1250", "FR-315-AC-44")]
+#[test]
+fn encoding_limits_apply_at_zero_exact_and_one_short_values() {
+    let world = counter(BOUNDED, &["always[0,3] holds(c.value <= 3)"]);
+    let kind = SmtQueryKind::Unrolling { depth: 3 };
+    let default = world.query(0, kind).expect("default limits encode");
+    let mut limits = SmtEncodingLimits {
+        max_constants: 8,
+        ..SmtEncodingLimits::default()
+    };
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+
+    limits.max_applications = 1;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_applications = 0;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::Applications,
+            value: 1,
+            limit: 0,
+            setting: "smt_encoding.max_applications",
+        }))
+    ));
+
+    limits.max_applications = 1 << 16;
+    limits.max_candidates = 4;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_candidates = 3;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::Candidates,
+            value: 4,
+            limit: 3,
+            setting: "smt_encoding.max_candidates",
+        }))
+    ));
+
+    for max_constants in [7, 0] {
+        limits.max_constants = max_constants;
+        assert!(matches!(
+            world.query_with_limits(0, kind, &limits),
+            Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+                measure: Measure::Constants,
+                value: 8,
+                limit,
+                setting: "smt_encoding.max_constants",
+            })) if limit == max_constants
+        ));
+    }
+
+    let script_bytes = u64::try_from(default.len()).expect("script length fits u64");
+    limits = SmtEncodingLimits {
+        max_script_bytes: 0,
+        ..SmtEncodingLimits::default()
+    };
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::ScriptBytes,
+            value: 1,
+            limit: 0,
+            setting: "smt_encoding.max_script_bytes",
+        }))
+    ));
+    limits.max_script_bytes = script_bytes;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_script_bytes -= 1;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::ScriptBytes,
+            limit,
+            ..
+        })) if limit == script_bytes - 1
+    ));
+}
+
+/// FR-315-AC-44: monitor atom and state caps are supplied by the same request.
+#[trace("TC-1250", "FR-315-AC-44")]
+#[test]
+fn monitor_encoding_limits_accept_exact_and_reject_zero_or_one_short() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let kind = SmtQueryKind::Unrolling { depth: 1 };
+    let default = world.query(0, kind).expect("default monitor limits encode");
+    let mut limits = SmtEncodingLimits {
+        max_monitor_atoms: 2,
+        ..SmtEncodingLimits::default()
+    };
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    for max_monitor_atoms in [1, 0] {
+        limits.max_monitor_atoms = max_monitor_atoms;
+        assert!(matches!(
+            world.query_with_limits(0, kind, &limits),
+            Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+                measure: Measure::MonitorAtoms,
+                value: 2,
+                limit,
+                setting: "smt_encoding.max_monitor_atoms",
+            })) if limit == max_monitor_atoms
+        ));
+    }
+
+    let exact_states = 3;
+    limits.max_monitor_atoms = 2;
+    limits.max_monitor_states = exact_states;
+    assert_eq!(
+        world.query_with_limits(0, kind, &limits),
+        Ok(default.clone())
+    );
+    limits.max_monitor_states = exact_states - 1;
+    assert!(matches!(
+        world.query_with_limits(0, kind, &limits),
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
+            measure: Measure::MonitorStates,
+            limit,
+            setting: "smt_encoding.max_monitor_states",
+            ..
+        })) if limit == exact_states - 1
+    ));
 }
 
 /// `Counter`: `value: Int[0, 3]`, operation `inc` modifying it, guarded by
@@ -1504,9 +1669,15 @@ fn each_refusal_has_its_code() {
             measure,
             value,
             limit,
+            setting,
         })) => assert_eq!(
-            (measure, value, limit),
-            (Measure::Constants, 1_048_577, 1_048_576)
+            (measure, value, limit, setting),
+            (
+                Measure::Constants,
+                1_048_577,
+                1_048_576,
+                "smt_encoding.max_constants"
+            )
         ),
         other => panic!("expected too-large, got {other:?}"),
     }
@@ -1517,8 +1688,13 @@ fn each_refusal_has_its_code() {
     assert_eq!(code(nested.query(0, kind)), "item-form");
     let subject = counter_world.without_initial_state(&["c"]);
     assert_eq!(
-        encode_smt_query(&subject, SmtItem::Clause(&counter_world.clauses[2]), kind)
-            .map_err(|refusal| refusal.code()),
+        encode_smt_query(
+            &subject,
+            SmtItem::Clause(&counter_world.clauses[2]),
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map_err(|refusal| refusal.code()),
         Err(Some("no-initial-state"))
     );
     let none = world(
@@ -1702,8 +1878,13 @@ fn an_item_other_than_tp2_under_false_extension_is_a_fault() {
         let altered = clause
             .clone()
             .with_profile_after_s3(TemporalProfile::EventPositionFalseExtension);
-        let result = encode_smt_query(&world.subject(&["c"]), SmtItem::Clause(&altered), kind)
-            .map(|script| String::from_utf8(script).expect("UTF-8"));
+        let result = encode_smt_query(
+            &world.subject(&["c"]),
+            SmtItem::Clause(&altered),
+            kind,
+            &SmtEncodingLimits::default(),
+        )
+        .map(|script| String::from_utf8(script).expect("UTF-8"));
         assert_eq!(
             invariant_of(result),
             "a TP-1 or TP-3 item binds infinite-trace"
@@ -1727,6 +1908,7 @@ fn a_tp1_item_without_its_atom_is_a_fault_not_item_form() {
         &world.subject(&["c"]),
         SmtItem::Clause(&altered),
         SmtQueryKind::Unrolling { depth: 1 },
+        &SmtEncodingLimits::default(),
     )
     .map(|script| String::from_utf8(script).expect("UTF-8"));
     assert_eq!(invariant_of(result), "a TP-1 item holds its one atom");
@@ -1753,4 +1935,125 @@ fn the_always_violation_is_two_disjuncts_per_position() {
         expected.push(format!("(not (<= s{position}.c.value 3))"));
     }
     assert_eq!(negated, expected);
+}
+
+/// FR-315-AC-45 and FR-315-AC-50: the scripts of TP-3 items, which read a
+/// tabulated monitor, are byte-equal to the golden bytes recorded from `main`
+/// before the table was built through the `CheckedFormula` constructor.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn monitored_scripts_are_byte_equal_to_the_recorded_golden_bytes() {
+    let world = counter(
+        INFINITE,
+        &[
+            "always (holds(c.value = 3) implies always holds(c.value = 3))",
+            "always[0,1] holds(c.value <= 3)",
+        ],
+    );
+    let kinds = [
+        ("unrolling-2", SmtQueryKind::Unrolling { depth: 2 }),
+        ("base-1", SmtQueryKind::InductionBase { depth: 1 }),
+        ("step-2", SmtQueryKind::InductionStep { depth: 2 }),
+    ];
+    for (clause, name) in [(0, "implies-always"), (1, "bounded-always")] {
+        for (label, kind) in kinds {
+            let script = world.query(clause, kind).expect("encodes");
+            let path = format!(
+                "{}/tests/golden/smt_monitor/{name}-{label}.smt2",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let golden = std::fs::read(&path).expect("the golden file");
+            assert_eq!(script.as_bytes(), golden.as_slice(), "{name}-{label}");
+        }
+    }
+}
+
+/// FR-315-AC-50: the table of a TP-3 item is the one the constructor over the
+/// item's formula and profile gives, with the numbering of the golden scripts.
+#[trace("TC-1264", "FR-315-AC-50")]
+#[test]
+fn the_tp3_item_table_is_the_constructors_table() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let clause = &world.clauses[0];
+    let limits = SmtEncodingLimits::default();
+    let of = MonitorTable::of(clause, limits.max_monitor_atoms, limits.max_monitor_states)
+        .expect("tabulates");
+    let over = MonitorTable::over(
+        clause.formula(),
+        clause.profile(),
+        limits.max_monitor_atoms,
+        limits.max_monitor_states,
+    )
+    .expect("tabulates");
+    assert_eq!(of, over);
+    assert_eq!(of.atoms().len(), 2);
+    assert_eq!((of.states(), of.initial()), (3, 0));
+    assert!(of.rejecting().is_some());
+    let moves: Vec<(usize, u64, usize)> = of
+        .moves()
+        .iter()
+        .map(|step| (step.from, step.letter, step.to))
+        .collect();
+    assert_eq!(moves, IMPLIES_ALWAYS_MOVES);
+}
+
+/// The numbered moves of `always (A implies always B)` over two atoms:
+/// breadth-first numbering, initial state 0, letter bit `j` being atom `j`.
+pub(crate) const IMPLIES_ALWAYS_MOVES: [(usize, u64, usize); 12] = [
+    (0, 0, 0),
+    (0, 1, 1),
+    (0, 2, 0),
+    (0, 3, 2),
+    (1, 0, 1),
+    (1, 1, 1),
+    (1, 2, 1),
+    (1, 3, 1),
+    (2, 0, 1),
+    (2, 1, 1),
+    (2, 2, 2),
+    (2, 3, 2),
+];
+
+/// FR-315-AC-32: the hyper refusals are codes of the closed set, applied in
+/// the order FR-315 states them.
+#[trace("TC-900", "FR-315-AC-32")]
+#[test]
+fn the_hyper_refusals_are_closed_codes_in_their_stated_order() {
+    let clause = || "NonInterference".to_owned();
+    let refusals = [
+        Refusal::HyperForm {
+            clause: clause(),
+            form: "HP-3",
+        },
+        Refusal::SubjectBinding { alias: None },
+        Refusal::InstanceBinding {
+            parameter: "v".to_owned(),
+        },
+        Refusal::ProductIdentity { clause: clause() },
+        Refusal::HyperBody { clause: clause() },
+        Refusal::MatchConjunct {
+            clause: clause(),
+            conjunct: 2,
+            site: "hyper NonInterference match 2".to_owned(),
+            tuple: vec!["step(0)".to_owned(), "step(0)".to_owned()],
+        },
+    ];
+    let codes: Vec<&str> = refusals.iter().map(Refusal::code).collect();
+    assert_eq!(
+        codes,
+        [
+            "hyper-form",
+            "subject-binding",
+            "instance-binding",
+            "product-identity",
+            "hyper-body",
+            "match-conjunct"
+        ]
+    );
+    let rows: Vec<u8> = refusals.iter().map(Refusal::row).collect();
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{rows:?}");
+    assert!(rows[0] > 17);
 }

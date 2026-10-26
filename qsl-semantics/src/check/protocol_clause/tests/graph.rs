@@ -302,7 +302,7 @@ fn await_control(name: &str, after: &str) -> String {
 }
 
 /// FR-218-AC-7: a `repeat` whose body is a `choice` with an attempt in one
-/// case and a nested `repeat` around an attempt in the other refuses
+/// case and a nested repeat with a feasible skip around an attempt in the other refuses
 /// `unsupported_construct`/`declaration-form` at the outer `repeat`; a
 /// `repeat` whose body is one `await` with a `timeout` control, or one
 /// `parallel` with a `join`, checks.
@@ -315,7 +315,7 @@ fn a_skippable_nested_repeat_gives_no_progress() {
             "repeat Outer by R visible () while {{ true }} \
              choice Pick by R visible () {{ \
              case work when {{ true }} {} \
-             case more when {{ false }} repeat Inner by R visible () while {{ true }} {} }}",
+             case more when {{ false }} repeat Inner by R visible () while {{ false }} {} }}",
             attempt("Work"),
             attempt("More")
         ),

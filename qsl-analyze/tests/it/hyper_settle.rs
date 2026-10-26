@@ -16,8 +16,13 @@
 //! negotiation (CG) and qsl-route".
 
 use ix_trace_rs::trace;
+use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, Settlement};
 use qsl_analyze::model_check::{ModelCheckRefusal, Reductions};
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::bound::{DomainKey, DomainKind};
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     settle_hyper_check, settle_hyper_form, BoundCovers, Code, DisagreementCause, Execution,
     HyperCounterexample, HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause,
@@ -26,8 +31,11 @@ use qsl_replay::{
     ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth, UnavailabilityCause,
     UndecidedCause, EXPLICIT_STATE,
 };
-use qsl_semantics::check::{HyperForm, HyperUnsupported};
-use quire_exact::{Cancel, Undefined};
+use qsl_route::request::items_from_requirements;
+use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
+use qsl_semantics::check::{Capability, HyperForm, HyperUnsupported, RequirementRecord};
+use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
+use quire_exact::{Cancel, Origin, Role, Undefined};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
@@ -640,6 +648,87 @@ fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
     assert_eq!(
         settle_hyper_form(admitted.clause.form().expect("a form")),
         None
+    );
+}
+
+/// FR-396-AC-2: the HP-4 request goes through qsl-route, whose typed
+/// unsupported cause removes the registered EN-1 candidate. Negotiation then
+/// calls `settle_hyper_form` and analyze writes unsupported-requested-capability
+/// without running an engine.
+#[trace("QSpec-TC-342", "QSpec-FR-396-AC-2")]
+#[test]
+fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
+    let reason = HyperUnsupported::ExistentialBeforeUniversal;
+    let form = HyperForm::Other { reason };
+    let node = WireNodeId::from_digest([17; 32]);
+    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0));
+    let extent = ClaimExtent::from_domains(
+        [(
+            DomainKey::Node {
+                node,
+                path: Vec::new(),
+            },
+            DomainKind::InfiniteTrace,
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let requirements = Requirements::hyper_form(extent, &form);
+    assert_eq!(
+        requirements.unsupported(),
+        Some(&UnsupportedItem::HyperForm { reason })
+    );
+    let record = RequirementRecord::model_claim(requirements, WireNodeId::from_digest([18; 32]));
+    let records = [(occurrence, record)].into_iter().collect();
+    let mut registry = Registry::new();
+    registry
+        .register(
+            BackendDescriptor::new(
+                Candidate::new(BackendId::new("en1")),
+                ProviderOrigin::Linked,
+                ManifestDigest::from_digest([19; 32]),
+                [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                None,
+                None,
+            )
+            .expect("valid EN-1 descriptor"),
+        )
+        .expect("registered EN-1");
+    let items = items_from_requirements(&records, &registry, None);
+    let [item] = items.as_slice() else {
+        panic!("one routed hyper item");
+    };
+    assert_eq!(
+        item.unsupported(),
+        Some(&UnsupportedItem::HyperForm { reason })
+    );
+    assert!(matches!(
+        item.candidates(),
+        qsl_route::CandidateOutcome::Candidates(set) if set.candidates().is_empty()
+    ));
+
+    let analyze_item = hyper_form_item(item, &form).expect("HP-4 settles at negotiation");
+    let results = analyze(&Engines::default(), vec![analyze_item], &Cancel::new());
+    let [result] = results.as_slice() else {
+        panic!("one analysis result");
+    };
+    let Settlement::Disposed(disposed) = &result.settlement else {
+        panic!("HP-4 has a disposition, not an engine record");
+    };
+    assert_eq!(result.request_index, RequestIndex::new(0));
+    assert!(
+        result.model_check.is_none(),
+        "no engine record was produced"
+    );
+    assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert_eq!(
+        disposed
+            .diagnostic
+            .as_ref()
+            .expect("unsupported diagnostic")
+            .code
+            .to_string(),
+        "unsupported_projection/unsupported-requested-capability"
     );
 }
 

@@ -15,6 +15,7 @@
 //! label is a `String` there, `stutter` and a label constant are `String`
 //! literals.
 
+use quire_checked::key::DeclarationKey;
 use std::collections::BTreeMap;
 
 use qsl_forms::{ExprId, ExprNode, Expression, ExpressionSpans, StepLabelForm};
@@ -22,6 +23,7 @@ use qsl_foundation::Span;
 use quire_exact::{Cancel, EffectiveId, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::quantity::UnitTable;
 
 use crate::check::abstraction::OperationKey;
 use crate::check::check::{bind_parameters, HyperTyping, NamedScope, Scope, StateContext, Typer};
@@ -66,16 +68,14 @@ fn atom_slot_name(parameter: &str, trace: &str) -> String {
 /// operation declaration, which `node` of its declaring type extends with the
 /// operation's name.
 pub fn operation_text(operation: &OperationKey) -> String {
-    let quoted = |text: &str| serde_json::to_string(text).unwrap_or_default();
-    format!(
-        "{{\"digest_domain\":\"sha256-jcs\",\"node\":{},\"package\":{}}}",
-        quoted(&format!(
+    crate::model::key::declaration_identity_text(&DeclarationKey {
+        package: operation.declaring.package.clone(),
+        node: format!(
             "{}/{}",
             operation.declaring.node,
             operation.operation.as_str()
-        )),
-        quoted(&operation.declaring.package),
-    )
+        ),
+    })
 }
 
 /// One slot of every atom of a clause (FR-487 "Atom slots"): the object
@@ -93,6 +93,12 @@ pub struct AtomSlot {
 pub(crate) struct AtomCondition {
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
+    /// The name each slot of the condition was bound under.
+    pub(crate) slot_names: Vec<String>,
+    /// The compound units typing formed, which lowering keys.
+    pub(crate) formed_units: UnitTable,
+    /// The span of each model read of the condition, by the read's location.
+    pub(crate) read_spans: BTreeMap<Location, Span>,
     /// The component each model read of the condition reads, by the read's
     /// location.
     pub(crate) components: BTreeMap<Location, usize>,
@@ -109,6 +115,10 @@ impl AtomCondition {
 pub(crate) struct ConjunctCondition {
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
+    /// The name each slot of the condition was bound under.
+    pub(crate) slot_names: Vec<String>,
+    /// The compound units typing formed, which lowering keys.
+    pub(crate) formed_units: UnitTable,
 }
 
 /// What a condition is typed against.
@@ -131,6 +141,20 @@ pub(crate) enum Site {
     Universal(usize),
     /// The existential conjunct at this index.
     Existential(usize),
+    /// The clause's declared name: its `hyperproperty` `claim` occurrence.
+    Claim,
+    /// The body wrapper's `claim` occurrence (FR-488 "The body").
+    Body,
+    /// The formula node at this arena index.
+    Node(usize),
+    /// The atom slot at this index.
+    Slot(usize),
+    /// The slot at the second index of the universal conjunct at the first.
+    UniversalSlot(usize, usize),
+    /// The slot at the second index of the existential conjunct at the first.
+    ExistentialSlot(usize, usize),
+    /// The `align skip` operation at this index.
+    AlignSkip(usize),
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of the hyper clause at
@@ -141,6 +165,15 @@ pub(crate) fn hyper_site(clause: usize, site: Site) -> String {
         Site::Atom(node) => format!("hyper {clause} holds {node}"),
         Site::Universal(index) => format!("hyper {clause} match {index}"),
         Site::Existential(index) => format!("hyper {clause} match exists {index}"),
+        Site::Claim => format!("hyper {clause}"),
+        Site::Body => format!("hyper {clause} body"),
+        Site::Node(node) => format!("hyper {clause} node {node}"),
+        Site::Slot(slot) => format!("hyper {clause} slot {slot}"),
+        Site::UniversalSlot(index, slot) => format!("hyper {clause} match {index} slot {slot}"),
+        Site::ExistentialSlot(index, slot) => {
+            format!("hyper {clause} match exists {index} slot {slot}")
+        }
+        Site::AlignSkip(index) => format!("hyper {clause} align {index}"),
     }
 }
 
@@ -347,8 +380,11 @@ pub(crate) fn lower_atom<'a>(
         }));
     }
     let slot_count = typer.slots();
+    let slot_names = typer.slot_names().to_vec();
+    let formed_units = typer.into_formed_units();
     let observations = Observations::of(body.root(), Observation::Current, bound.len());
     let mut components = BTreeMap::new();
+    let mut read_spans = BTreeMap::new();
     for (read, _) in observations.iter() {
         let component = node_at(expression, &read.path())
             .and_then(|id| enclosing.get(id.index()).copied().flatten())
@@ -359,6 +395,7 @@ pub(crate) fn lower_atom<'a>(
         match component {
             Some(component) => {
                 components.insert(read.clone(), component);
+                read_spans.insert(read.clone(), locate(read));
             }
             None => {
                 return Err(Refused {
@@ -385,6 +422,9 @@ pub(crate) fn lower_atom<'a>(
     Ok(AtomCondition {
         body,
         slots: slot_count,
+        slot_names,
+        formed_units,
+        read_spans,
         components,
     })
 }
@@ -405,7 +445,10 @@ pub(crate) fn lower_conjunct<'a>(
     let refused = |refusal: CheckRefusal| {
         let span = locate(&refusal.location);
         Refused {
-            refusal: Box::new(refusal),
+            refusal: Box::new(CheckRefusal {
+                location: location.clone(),
+                cause: refusal.cause,
+            }),
             span,
         }
     };
@@ -425,6 +468,8 @@ pub(crate) fn lower_conjunct<'a>(
         }));
     }
     let slot_count = typer.slots();
+    let slot_names = typer.slot_names().to_vec();
+    let formed_units = typer.into_formed_units();
     Definedness::new(
         bound.len(),
         typing.dispatch_tables,
@@ -435,5 +480,7 @@ pub(crate) fn lower_conjunct<'a>(
     Ok(ConjunctCondition {
         body,
         slots: slot_count,
+        slot_names,
+        formed_units,
     })
 }

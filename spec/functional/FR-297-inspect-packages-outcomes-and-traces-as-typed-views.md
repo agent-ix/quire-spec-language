@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-277
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-286
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-120
@@ -53,6 +55,24 @@ limits and `&Cancel`
 Package and node inputs carry checked package authority. An outcome, trace,
 counterexample or graph input carries the producing operation's typed value;
 serialized JSON and rendered text do not establish that authority.
+
+The inspect limits value SHALL include `InspectLimits.max_view_entries`, with
+the default FR-255 publishes for `inspect.max_view_entries`. Each selected
+collection entry materialized into the typed view consumes one entry from one
+cumulative budget for the selected view: a
+dependency, model selection, export, requirement or capability-report record
+in a package view; an occurrence or source-map region in a node view; an
+assignment in a counterexample view; a position in a trace view; or a state
+or transition in a state-graph view. Fields that identify the view or one
+selected object, and scalar outcome fields, consume no collection entries.
+Inspection checks the bound before materializing the next entry. If that
+charge would exceed the configured bound, its attempted entry count is the
+configured bound plus one, and inspection returns
+`StageFailure::Limit` identifying `max_view_entries`, its configured bound,
+the attempted entry count and `inspect.max_view_entries`, with no view or
+partial content. An empty view succeeds when the bound is zero. This budget
+bounds typed view construction; FR-298's separate `render.output_bytes`
+continues to bound rendering of the completed view.
 
 The selector identifies one of the six views above. A node selector contains
 either a `NodeKey` scoped to the selected package or an `OccurrenceKey` in
@@ -167,7 +187,7 @@ remain the separate contracts in
 | FR-297-AC-7 | A finite trace preserves its positions, repeated states and absence of a loop start. A lasso retains its original position count and loop start. A retained partial graph preserves its exact states, transitions and partial status; retained empty and unretained graphs respectively produce an empty view and unavailable-retained-content refusal. | Test |
 | FR-297-AC-8 | Views of refused, incomplete, unsupported and trusted terminal records preserve each record's disposition, terminal value, cause, code and optional locus as present, including the trust basis. No view promotes any of those records to a certified proof. | Test |
 | FR-297-AC-9 | Each incompatible input/view combination is either unconstructible through the public typed request API or returns an incompatible-selection refusal naming the selector. Raw bytes, rendered text and unchecked syntax cannot construct a package/node inspection request; compiling controls use the checked input types. | Test |
-| FR-297-AC-10 | Repeated equal requests with equal limits and an uncancelled handle yield equal views. A precancelled request returns cancelled with no view; a request stopped by a configured inspection limit names that limit and returns no view. Successful inspection reports no work in the stages that produced its input. | Test |
+| FR-297-AC-10 | Repeated equal requests with equal limits and an uncancelled handle yield equal views. A precancelled request returns cancelled with no view. For each view with at least two collection entries, setting `InspectLimits.max_view_entries` to one less than the total number selected returns `StageFailure::Limit` naming `max_view_entries`, the configured bound, the attempted count (bound plus one) and `inspect.max_view_entries`, and no view; a bound equal to the total number selected returns the complete view. A zero bound accepts an empty view. Successful inspection reports no work in the stages that produced its input. | Test (TC-1168) |
 
 ## Dependencies
 
@@ -176,6 +196,7 @@ remain the separate contracts in
 - [FR-095](FR-095-occurrence-keyed-source-map-and-locus.md): the source map.
 - [FR-275](FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md): the call shape.
 - [FR-276](FR-276-cancel-a-lifecycle-operation.md) and [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md): cancellation and bounded inspection work.
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md): the setting name and default for the typed-view entry limit.
 - [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md): outcome fields retain their existing meaning.
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md): simulation runs.
 - [FR-290](FR-290-settle-plugin-results-as-typed-terminal-records.md): the `trusted` label.

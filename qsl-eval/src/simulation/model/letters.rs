@@ -25,15 +25,19 @@ use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
 use qsl_semantics::model::observation::Observation;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, Incomplete, Meter, ObjectReference, ValueType};
+use quire_eval::FamilyOutcome;
+use quire_exact::{EffectiveId, Meter, ObjectReference, Outcome, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::contracts::{verdict, Verdict};
 use super::walk::{rows_of, stop, Row};
 use super::{state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN};
 use crate::model_subject::{AtomStop, ModelInstance, ModelLetters};
-use crate::temporal::AtomReading;
-use crate::value::{evaluate_state_predicate, evaluate_state_predicate_at_absent_key};
+use crate::temporal::{AtomReading, CaptureReading};
+use crate::value::{
+    evaluate_activation_guard, evaluate_activation_guard_at_absent_key, evaluate_capture,
+    evaluate_state_predicate, evaluate_state_predicate_at_absent_key,
+};
 
 /// Why a clause has no [`ClauseLetters`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -92,9 +96,8 @@ impl<'a> ModelSystem<'a> {
     /// [`LettersRefusal::OverNotReference`] when the clause's `over`
     /// parameter is not an object reference, and
     /// [`LettersRefusal::OverTypeUndeclared`] when no model of the subject
-    /// declares its type. An emitted clause activates
-    /// `on origin` (FR-337), so it has no `when` condition to read
-    /// (Remaining work: QSL-898).
+    /// declares its type. A clause that activates `on each ... when (g)`
+    /// reads `g` through [`ModelLetters::activation`] (FR-337, FR-125-AC-18).
     pub fn clause_letters<'s>(
         &'s self,
         node: &'s TemporalClauseNode,
@@ -216,6 +219,23 @@ fn fault(invariant: &'static str) -> AtomStop {
     AtomStop::Fault(InternalFault::new("model-letters", invariant))
 }
 
+/// The reading of a condition's clause `outcome`.
+fn reading(outcome: &FamilyOutcome<Value>) -> Result<AtomReading, AtomStop> {
+    match verdict(outcome) {
+        Verdict::True => Ok(AtomReading::True),
+        Verdict::False => Ok(AtomReading::False),
+        Verdict::Undecided(outcome) => {
+            if let Some(cause) = outcome.undefined_cause() {
+                Ok(AtomReading::Undefined(cause))
+            } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
+                Err(AtomStop::Incomplete(incomplete))
+            } else {
+                Err(AtomStop::Refused(outcome))
+            }
+        }
+    }
+}
+
 impl ModelLetters for ClauseLetters<'_, '_> {
     /// # Errors
     ///
@@ -255,34 +275,148 @@ impl ModelLetters for ClauseLetters<'_, '_> {
             ),
         }
         .map_err(AtomStop::Fault)?;
-        match verdict(&evaluation.outcome) {
-            Verdict::True => Ok(AtomReading::True),
-            Verdict::False => Ok(AtomReading::False),
-            Verdict::Undecided(outcome) => {
-                if let Some(cause) = outcome.undefined_cause() {
-                    Ok(AtomReading::Undefined(cause))
-                } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
-                    Err(AtomStop::Incomplete(incomplete))
-                } else {
-                    Err(AtomStop::Refused(outcome))
-                }
-            }
-        }
+        reading(&evaluation.outcome)
     }
 
-    /// An emitted clause activates `on origin` (FR-337) and has no `when`
-    /// condition, so it activates wherever it is read.
+    /// The guard of the clause's `on each` activation (FR-337) for
+    /// `instance` at `state`: the `over` parameter and the trigger binder are
+    /// both the instance's object. A clause with no guard has no condition to
+    /// read, and the engine does not ask.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::atom`]; [`AtomStop::Fault`] also when the clause has no
+    /// guard.
     fn activation(
         &self,
-        _instance: &ModelInstance,
-        _state: &ModelSimState,
-        _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
-        Ok(AtomReading::True)
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, AtomStop> {
+        let (body, slots) = self
+            .node
+            .guard()
+            .ok_or_else(|| fault("engine-reads-the-guard-of-a-guarded-clause"))?;
+        let observed = self.observe(state)?;
+        let condition = Condition { body, slots };
+        let evaluation = match self.bound(&observed.rows, instance) {
+            Some(bound) => evaluate_activation_guard(
+                self.system.package,
+                &condition,
+                &observed.observation.environment,
+                bound,
+                meter,
+            ),
+            None => evaluate_activation_guard_at_absent_key(
+                self.system.package,
+                &condition,
+                &observed.observation.environment,
+                self.key_reference(instance)?,
+                instance.population.node.clone(),
+                meter,
+            ),
+        }
+        .map_err(AtomStop::Fault)?;
+        reading(&evaluation.outcome)
+    }
+
+    /// FR-337 "Capture observation": the captures in source order, each
+    /// through the clause evaluator over the observation at the activation,
+    /// the `over` parameter and the trigger binder the instance's object and
+    /// each earlier capture its value. A capture with no value ends the
+    /// reading at it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::atom`].
+    fn captures(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<CaptureReading, AtomStop> {
+        let clause = self.node.clause();
+        if clause.captures().len() == 0 {
+            return Ok(CaptureReading::Fixed);
+        }
+        let observed = self.observe(state)?;
+        let binders = 1 + usize::from(clause.trigger().is_some());
+        let bound = self.bound(&observed.rows, instance);
+        let object = match &bound {
+            Some(bound) => bound.clone(),
+            None => self.key_reference(instance)?,
+        };
+        let mut values: Vec<Value> = Vec::new();
+        for (index, (name, _)) in clause.captures().enumerate() {
+            let (body, slots) = self
+                .node
+                .capture(index)
+                .ok_or_else(|| fault("engine-reads-the-typed-captures-of-a-clause"))?;
+            let capture = Condition { body, slots };
+            let mut arguments = vec![Value::Reference(object.clone()); binders];
+            arguments.extend(values.iter().cloned());
+            let absent = bound
+                .is_none()
+                .then(|| ((0..binders).collect(), instance.population.node.clone()));
+            let evaluation = evaluate_capture(
+                self.system.package,
+                &capture,
+                &observed.observation.environment,
+                arguments,
+                absent,
+                meter,
+            )
+            .map_err(AtomStop::Fault)?;
+            if let FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome {
+                values.push(value.clone());
+                continue;
+            }
+            return match verdict(&evaluation.outcome) {
+                Verdict::Undecided(outcome) => {
+                    if let Some(cause) = outcome.undefined_cause() {
+                        Ok(CaptureReading::Undefined {
+                            capture: name.to_owned(),
+                            cause,
+                        })
+                    } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
+                        Err(AtomStop::Incomplete(incomplete))
+                    } else {
+                        Err(AtomStop::Refused(outcome))
+                    }
+                }
+                Verdict::True | Verdict::False => {
+                    Err(fault("a-capture-completes-no-boolean-verdict"))
+                }
+            };
+        }
+        Ok(CaptureReading::Fixed)
+    }
+
+    fn captured_read(&self) -> Option<usize> {
+        self.node.captured_read()
     }
 
     fn activation_reads(&self) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
-        Ok(BTreeSet::new())
+        let clause = self.node.clause();
+        let mut reads = BTreeSet::new();
+        let mut binders = vec![clause.over().clone()];
+        binders.extend(
+            clause
+                .trigger()
+                .map(|(name, value_type)| (name.to_owned(), value_type.clone())),
+        );
+        if let Some((guard, _)) = self.node.guard() {
+            reads.extend(self.system.guard_reads(guard, &binders)?);
+        }
+        for (index, (name, declared)) in clause.captures().enumerate() {
+            let (initializer, _) = self
+                .node
+                .capture(index)
+                .ok_or(FootprintRefusal::Unresolved { what: "capture" })?;
+            reads.extend(self.system.guard_reads(initializer, &binders)?);
+            binders.push((name.to_owned(), declared.clone()));
+        }
+        Ok(reads)
     }
 
     fn reads(&self, atom: FormulaNodeId) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
