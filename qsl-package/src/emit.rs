@@ -91,10 +91,11 @@ use quire_contract_model::{
     CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
     CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
-    CheckedPackageV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
+    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
+    PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -1278,7 +1279,10 @@ pub fn emit_timed_models(
             &semantic_id(package_id),
             &lock,
             &semantic_graph,
-            &source_map,
+            CheckedPackageSourceCorrespondenceRef {
+                source_map: &source_map,
+                refinement_step_rows: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
@@ -1755,7 +1759,10 @@ fn emit_package_inner(
             &semantic_id(package_id),
             &lock,
             &semantic_graph,
-            &source_map,
+            CheckedPackageSourceCorrespondenceRef {
+                source_map: &source_map,
+                refinement_step_rows: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
