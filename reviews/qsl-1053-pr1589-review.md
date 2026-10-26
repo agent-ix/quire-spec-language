@@ -48,7 +48,7 @@ Kani record beside the plugin record as TC-774 step 1 words it.
 
 ## Findings
 
-| id | severity | finding | location |
+| ID | Severity | Summary | Refs |
 |----|----------|---------|----------|
 | FND-001 | medium | The test calls `read_plugin_certification(entry.get("certification")).unwrap()` only on `"trusted"`. The `Trusted` in the asserted record is hard-coded by `trusted_proof`, not read from the entry. Making the reader accept `certified` (or everything) leaves the test green. The doc comment says the entry "reads through the FR-331 readers (`certification` first)", which the assertions do not prove. Fix: also assert `read_plugin_certification(Some(&json!("certified")))` is `Err(CertificationNotTrusted{received:"certified"})`, or drop the call and the claim. | plugin_tests.rs:1163 |
 | FND-002 | low | Most assertions repeat existing tagged tests (see Summary). Not tag inflation, since the test carries no AC tag and the only added value is the combined step-1 shape. Accepting this is a code-lead call. | plugin_tests.rs:1146-1202 |
