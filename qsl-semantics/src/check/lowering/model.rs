@@ -870,6 +870,47 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// FR-230 "Clock fields and the domain package": every field typed
+    /// `ix://quire/native/Clock` of an object type of this package, with its
+    /// owner's effective identity and its member name, in ascending
+    /// declaration-key order.
+    pub(crate) fn clock_fields(&self) -> Vec<(EffectiveId, &DeclarationKey, &str)> {
+        self.records
+            .values()
+            .filter_map(|record| {
+                let DomainPackageRecord::FieldMember(field) = record else {
+                    return None;
+                };
+                if !matches!(
+                    field.value_type,
+                    crate::model::domain_package::ValueTypeRef::Clock
+                ) {
+                    return None;
+                }
+                let owner = self.object_type_id(&field.owner)?;
+                let name =
+                    crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+                Some((owner, &field.key, name))
+            })
+            .collect()
+    }
+
+    /// The clock field `name` an object of type `object` holds: one declared
+    /// on `object` itself or on one of its ancestors.
+    pub(crate) fn clock_field(&self, object: EffectiveId, name: &str) -> Option<&DeclarationKey> {
+        let specific = self.types.get(&object)?;
+        self.clock_fields()
+            .into_iter()
+            .find(|(owner, _, field)| {
+                *field == name
+                    && self
+                        .types
+                        .get(owner)
+                        .is_some_and(|general| self.reaches_owner(specific, general))
+            })
+            .map(|(_, key, _)| key)
+    }
+
     /// The key of every declaration record of the package, of any kind.
     pub(crate) fn record_keys(&self) -> impl Iterator<Item = &DeclarationKey> {
         self.records.keys()
