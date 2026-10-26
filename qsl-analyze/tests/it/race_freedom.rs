@@ -282,6 +282,7 @@ fn forged_race(
         prefix.push(ModelStep {
             transition: system.reported(transition, &next).expect("reports"),
             post_state: digest,
+            delay: None,
         });
         state = next;
     }
@@ -298,6 +299,7 @@ fn forged_race(
         lasso: None,
         blocked: Vec::new(),
         refinement: None,
+        final_delay: None,
     }
 }
 
