@@ -218,7 +218,8 @@ fn check_with_internals(
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .with_unwritten_refinements();
+    .with_unwritten_refinements()
+    .with_unwritten_protocols();
     if let Some(internals) = internals {
         assembled = assembled.with_refinement_internals(internals);
     }
@@ -501,7 +502,9 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
             RowObservation::Internal
         ]
     );
-    assert!(refinement.concrete_protocol().is_some());
+    // `Fill` holds constructs S4 writes no node for yet (QSL-1125, QSL-1126):
+    // it has no clause key until it does.
+    assert!(refinement.concrete_protocol().is_none());
 }
 
 /// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
@@ -511,10 +514,12 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
 /// first row that names the clause.
 #[trace("TC-541", "FR-136-AC-6", "TC-540", "FR-135-AC-10")]
 #[test]
-fn the_rows_select_the_concrete_protocol_and_the_clause_has_a_node() {
+fn the_rows_select_the_concrete_protocol_and_an_unwritten_clause_has_no_node_yet() {
     let graph = checks(&unit(&fill(""), ROWS));
     let protocol = only_refinement(&graph).concrete_protocol();
-    assert!(protocol.is_some());
+    // `Fill` holds constructs S4 writes no node for yet (QSL-1125, QSL-1126):
+    // no clause key is recorded until it does.
+    assert!(protocol.is_none());
     // The same key whichever way the clause and the refinement are ordered.
     let reversed = header(true) + &refinement(ROWS) + &fill("");
     assert_eq!(
@@ -1519,12 +1524,9 @@ fn each_refinement_records_the_node_of_its_own_clause() {
     };
     assert_eq!(over_fill.name(), "OverFill");
     assert_eq!(over_other.name(), "OverOther");
-    assert!(over_fill.concrete_protocol().is_some());
-    assert!(over_other.concrete_protocol().is_some());
-    assert_ne!(
-        over_fill.concrete_protocol(),
-        over_other.concrete_protocol()
-    );
+    // Both protocols hold constructs S4 writes no node for yet.
+    assert!(over_fill.concrete_protocol().is_none());
+    assert!(over_other.concrete_protocol().is_none());
 }
 
 /// Every subset of `Fill`'s candidate rows gives the verdict and the missing
@@ -1807,7 +1809,7 @@ fn a_concrete_protocol_refines_an_abstract_protocol() {
             clause: "Seq".to_owned()
         }
     );
-    assert!(refinement.concrete_protocol().is_some());
+    assert!(refinement.concrete_protocol().is_none());
     assert!(refinement.abstract_internal().is_empty());
     let observed: Vec<RowObservation> = refinement.steps().iter().map(observation).collect();
     let node = RowObservation::Visible {

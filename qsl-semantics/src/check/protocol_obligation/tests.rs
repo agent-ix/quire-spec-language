@@ -106,7 +106,8 @@ fn assemble_against(model: SelectedModel, declarations: &str) -> (String, Packag
         vec![model],
         Vec::new(),
     )
-    .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"));
+    .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"))
+    .with_unwritten_protocols();
     (text, assembled)
 }
 

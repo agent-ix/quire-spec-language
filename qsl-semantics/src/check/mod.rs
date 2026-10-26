@@ -3513,7 +3513,13 @@ impl PackageDeclarations {
         }
         match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols) {
             Ok(inputs) => match lowering.protocol_nodes(&inputs) {
-                Ok(unsupported) => refusals.extend(unsupported),
+                // The refusal of a protocol with an unwritten construct is
+                // this check's emission gate, as the refinement's is.
+                Ok(unsupported) => {
+                    if !self.emit_unwritten_protocols {
+                        refusals.extend(unsupported);
+                    }
+                }
                 Err(refusal) => refusals.push(refusal),
             },
             Err(refusal) => refusals.push(refusal),
@@ -3525,6 +3531,15 @@ impl PackageDeclarations {
             };
             match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
                 Ok(key) => checked.concrete_protocol = Some(key),
+                // Under the test opt-in a protocol with an unwritten
+                // construct has no clause key, and is refused nowhere.
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
                 Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
