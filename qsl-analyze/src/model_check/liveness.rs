@@ -2141,6 +2141,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             lasso: None,
             blocked: Vec::new(),
             refinement: None,
+            final_delay: None,
         }))
     }
 
@@ -2186,6 +2187,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             lasso: None,
             blocked: Vec::new(),
             refinement: None,
+            final_delay: None,
         }))
     }
 
@@ -2381,6 +2383,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 }),
                 blocked: Vec::new(),
                 refinement: None,
+                final_delay: None,
             })
         })();
         match lifted {

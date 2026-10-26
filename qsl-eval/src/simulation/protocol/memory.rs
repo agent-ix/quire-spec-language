@@ -339,6 +339,13 @@ pub trait MemoryModel {
         None
     }
 
+    /// The member name of a queue entry's carried view in the state key:
+    /// `view` for a message view, `race` where the view is the race Booleans
+    /// alone (QSpec FR-438).
+    fn carried_member(&self) -> &'static str {
+        "view"
+    }
+
     /// `carried` in the state key, read against `component`.
     fn carried_key(&self, _component: &Self::Component, _carried: &CarriedView) -> CarriedKey {
         CarriedKey(Enc::Null)

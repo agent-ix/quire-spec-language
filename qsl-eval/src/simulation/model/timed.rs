@@ -46,6 +46,9 @@ use super::{ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
 use crate::temporal::UndefinedCause;
 
+mod over_time;
+pub use over_time::{DelayInterval, TimeLock, TimedTerminalClass};
+
 /// One clock of the subject: a clock field of one object of its universe.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockPlace {

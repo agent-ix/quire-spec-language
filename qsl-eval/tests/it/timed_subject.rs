@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-231 (TC-686): the timed subject of ADR-026 §11's `Rpc` model, its
-//! delays and discrete steps over exact clock valuations.
+//! delays and discrete steps over exact clock valuations; FR-232 (TC-687):
+//! terminal states, time-locks and weak fairness read over time.
 //!
 //! `Call` holds `phase` (`0` Idle, `1` Waiting, `2` Replied, `3` TimedOut),
 //! `inflight`, `late` and the clock `x`, a package field typed
@@ -147,6 +148,7 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
                     operation("send", if clocked { &["phase", "inflight", "late", "x"] } else { &["phase", "inflight", "late"] }),
                     operation("reply", &["phase", "inflight", "late"]),
                     operation("timeout", &["phase"]),
+                    operation("reset", &["phase"]),
                     operation("tick", &[]),
                     operation("work", &[]),
                     operation("spawn", &[]),
@@ -167,6 +169,14 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
 /// ADR-026 §11's members with the client deadline `t` (in ms) and `extra`
 /// declarations.
 fn rpc_unit(t: u32, extra: &str) -> String {
+    rpc_unit_guarded(t, ">=", extra)
+}
+
+/// [`rpc_unit`] with the guards' comparison `guard`: with `>=`, `reply`
+/// needs `x >= 1 ms` and `timeout` `x >= T`; with `>`, ADR-026 §11's
+/// strict-guard variant, `reply` needs `x > 3 ms` and `timeout` `x > T`.
+fn rpc_unit_guarded(t: u32, guard: &str, extra: &str) -> String {
+    let reply = if guard == ">" { 3 } else { 1 };
     format!(
         "dimension Time;\nunit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\
@@ -174,13 +184,19 @@ fn rpc_unit(t: u32, extra: &str) -> String {
          pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
          post Send using v on M::Call::send {{ \
              self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }}\n\
-         pre Reply using v on M::Call::reply {{ self.inflight and self.x >= 1 ms }}\n\
+         pre Reply using v on M::Call::reply {{ self.inflight and self.x {guard} {reply} ms }}\n\
          post Replied using v on M::Call::reply {{ not self.inflight and \
              self.late = (pre(self.phase) = 3) and \
              (pre(self.phase) = 1 implies self.phase = 2) and \
              (pre(self.phase) != 1 implies self.phase = pre(self.phase)) }}\n\
-         pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x >= {t} ms }}\n\
+         pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x {guard} {t} ms }}\n\
          post TimedOut using v on M::Call::timeout {{ self.phase = 3 }}\n\
+         pre Reset using v on M::Call::reset {{ \
+             not self.inflight and (self.phase = 2 or self.phase = 3) }}\n\
+         post ResetIdle using v on M::Call::reset {{ self.phase = 0 }}\n\
+         pre NoTick using v on M::Call::tick {{ false }}\n\
+         pre NoWork using v on M::Call::work {{ false }}\n\
+         pre NoSpawn using v on M::Call::spawn {{ false }}\n\
          time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
          time invariant ClientDeadline when {{ self.phase = 1 }} {{ self.x <= {t} ms }}\n\
          {extra}\n"
@@ -683,7 +699,7 @@ fn a_claim_reads_alike_with_and_without_time_stamps() {
 #[trace("TC-686")]
 #[test]
 fn a_created_objects_clock_starts_at_its_write() {
-    let world = world(&rpc_unit(4, ""));
+    let world = world(&only(&["spawn"], ""));
     let system = system_over(&world, &["c", "d"]);
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     assert_eq!(timed.places().len(), 2);
@@ -709,4 +725,208 @@ fn a_created_objects_clock_starts_at_its_write() {
     let c = 1 - d;
     assert_eq!(created.clocks().get(d), Some(&exact(0, 1)));
     assert_eq!(created.clocks().get(c), Some(&exact(2, 1)));
+}
+
+/// The unit over [`rpc_document`] with a dense source and `body`, every
+/// operation `body` leaves unguarded except `work` disabled.
+fn only(enabled: &[&str], body: &str) -> String {
+    let disabled: String = ["send", "reply", "timeout", "reset", "tick", "work", "spawn"]
+        .iter()
+        .filter(|name| !enabled.contains(name))
+        .map(|name| format!("pre No{name} using v on M::Call::{name} {{ false }}\n"))
+        .collect();
+    format!(
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n{disabled}{body}"
+    )
+}
+
+/// FR-232-AC-2: in the strict-guard variant `(Waiting, inflight, x = 3)` is
+/// a local time-lock and not deadlocked; in the unmodified model
+/// `(Replied, x = 2)` is quiescent and not terminal.
+#[trace("TC-687", "FR-232-AC-2")]
+#[test]
+fn a_strict_guard_time_locks_where_a_closed_one_does_not() {
+    use qsl_eval::simulation::model::{TimeLock, TimedTerminalClass};
+
+    let strict = world(&rpc_unit_guarded(3, ">", ""));
+    let strict_system = system(&strict);
+    let timed = TimedSystem::new(&strict_system, "M").expect("a timed subject");
+    let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+    let send = transition(&timed, &behaviour, "send");
+    behaviour
+        .advance(&timed, &exact(0, 1), &send)
+        .expect("send");
+    let locked = timed
+        .delay(behaviour.last().state(), &exact(3, 1))
+        .expect("decided")
+        .expect("admissible");
+    assert_eq!(
+        timed.time_lock(&locked, 64).expect("decided"),
+        Some(TimeLock::Local)
+    );
+    assert_eq!(
+        timed.terminal_class(&locked).expect("decided"),
+        TimedTerminalClass::TimeLock
+    );
+    assert!(!timed.deadlocked(&locked).expect("decided"));
+
+    let plain = world(&rpc_unit(3, ""));
+    let plain_system = system(&plain);
+    let timed = TimedSystem::new(&plain_system, "M").expect("a timed subject");
+    let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+    let send = transition(&timed, &behaviour, "send");
+    behaviour
+        .advance(&timed, &exact(0, 1), &send)
+        .expect("send");
+    let waiting = timed
+        .delay(behaviour.last().state(), &exact(3, 1))
+        .expect("decided")
+        .expect("admissible");
+    assert_eq!(timed.time_lock(&waiting, 64).expect("decided"), None);
+    let reply = transition(&timed, &behaviour, "reply");
+    behaviour
+        .advance(&timed, &exact(2, 1), &reply)
+        .expect("reply");
+    let replied = behaviour.last().state();
+    assert_eq!(replied.clocks().values(), [exact(2, 1)]);
+    assert!(timed.is_quiescent(replied.discrete()).expect("decided"));
+    assert_eq!(
+        timed.terminal_class(replied).expect("decided"),
+        TimedTerminalClass::NotTerminal
+    );
+    assert!(!timed.deadlocked(replied).expect("decided"));
+}
+
+/// Part of FR-232-AC-3 (TC-687): in `Stall` the timed state
+/// `(s0, x = 1)` is a non-local time-lock, since `ping` is enabled there and
+/// no state it reaches admits a positive delay. Not covered: `always
+/// holds(true)` settling `inconclusive`, `NoAdmittedBehaviour`, which needs
+/// the zone search and FR-235's settlement (QSL-581).
+#[trace("TC-687")]
+#[test]
+fn a_stall_that_only_pings_is_a_non_local_time_lock() {
+    use qsl_eval::simulation::model::TimeLock;
+
+    let stall = world(&only(
+        &["work"],
+        "time invariant Stall when { true } { self.x <= 1 ms }\n",
+    ));
+    let stall_system = system(&stall);
+    let timed = TimedSystem::new(&stall_system, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    assert_eq!(timed.time_lock(&initial, 64).expect("decided"), None);
+    let stuck = timed
+        .delay(&initial, &exact(1, 1))
+        .expect("decided")
+        .expect("admissible");
+    assert!(timed
+        .delay(&stuck, &exact(1, 1000))
+        .expect("decided")
+        .is_none());
+    assert_eq!(timed.steps(&stuck).expect("decided").len(), 1);
+    assert_eq!(
+        timed.time_lock(&stuck, 64).expect("decided"),
+        Some(TimeLock::NonLocal)
+    );
+}
+
+/// FR-232-AC-4: in `Serve` the lasso of `idle` steps with `x > 1` and loop
+/// delay 1 is unfair under `fair weak serve` when `serve` needs
+/// `x >= 1 ms`, enabled at every instant of the loop, and fair when it needs
+/// `x <= 1 ms`, disabled at every instant.
+#[trace("TC-687", "FR-232-AC-4")]
+#[test]
+fn weak_fairness_reads_enabledness_at_every_instant_of_the_loop() {
+    let fair = |guard: &str| {
+        let serve = world(&only(
+            &["work", "timeout"],
+            &format!(
+                "pre Serve using v on M::Call::timeout {{ self.x {guard} 1 ms }}\n\
+                 post Served using v on M::Call::timeout {{ self.phase = 3 }}\n"
+            ),
+        ));
+        let serve_system = system(&serve);
+        let timed = TimedSystem::new(&serve_system, "M").expect("a timed subject");
+        let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        let idle = transition(&timed, &behaviour, "work");
+        behaviour
+            .advance(&timed, &exact(2, 1), &idle)
+            .expect("idle");
+        behaviour
+            .advance(&timed, &exact(1, 1), &idle)
+            .expect("idle");
+        timed
+            .weakly_fair(&behaviour, 1, &exact(0, 1), |step| {
+                step.operation().contains("Call/timeout")
+            })
+            .expect("decided")
+    };
+    assert!(!fair(">="));
+    assert!(fair("<="));
+}
+
+/// FR-232 "Fairness over time" over the idle tail (SR-1598001 FND-001): a
+/// behaviour of `Serve` that stays at its initial state, `x = 0`, and
+/// repeats its stutter step after a delay of 2 holds `serve`'s guard
+/// `x >= 1 ms` from time 1 on at every instant, so it is unfair under
+/// `fair weak serve`; with the guard `x <= 1 ms`, disabled from time 1 on,
+/// it is fair.
+#[trace("TC-687")]
+#[test]
+fn an_idle_tail_is_unfair_to_a_constraint_its_delay_enables() {
+    let fair = |guard: &str| {
+        let serve = world(&only(
+            &["timeout"],
+            &format!(
+                "pre Serve using v on M::Call::timeout {{ self.x {guard} 1 ms }}\n\
+                 post Served using v on M::Call::timeout {{ self.phase = 3 }}\n"
+            ),
+        ));
+        let serve_system = system(&serve);
+        let timed = TimedSystem::new(&serve_system, "M").expect("a timed subject");
+        let behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        timed
+            .weakly_fair(&behaviour, 0, &exact(2, 1), |step| {
+                step.operation().contains("Call/timeout")
+            })
+            .expect("decided")
+    };
+    assert!(!fair(">="));
+    assert!(fair("<="));
+}
+
+/// FR-232 "Fairness over time" with a guard constant of `10^40 ms`, which
+/// FR-230-AC-4 admits (SR-1598001 FND-005): the idle tail's clock is moved
+/// past the constant in one step, so the verdict is the one a small
+/// constant gives, unfair under `x >= c` and fair under `x <= c`, and it
+/// returns at once.
+#[trace("TC-687")]
+#[test]
+fn a_huge_guard_constant_decides_fairness_as_a_small_one_does() {
+    let fair = |guard: &str, constant: &str| {
+        let serve = world(&only(
+            &["timeout"],
+            &format!(
+                "pre Serve using v on M::Call::timeout {{ self.x {guard} {constant} ms }}\n\
+                 post Served using v on M::Call::timeout {{ self.phase = 3 }}\n"
+            ),
+        ));
+        let serve_system = system(&serve);
+        let timed = TimedSystem::new(&serve_system, "M").expect("a timed subject");
+        let behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        timed
+            .weakly_fair(&behaviour, 0, &exact(2, 1), |step| {
+                step.operation().contains("Call/timeout")
+            })
+            .expect("decided")
+    };
+    let huge = format!("1{}", "0".repeat(40));
+    let started = std::time::Instant::now();
+    for guard in [">=", "<="] {
+        assert_eq!(fair(guard, &huge), fair(guard, "1"), "{guard}");
+    }
+    assert!(!fair(">=", &huge));
+    assert!(fair("<=", &huge));
+    assert!(started.elapsed() < std::time::Duration::from_secs(30));
 }

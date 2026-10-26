@@ -79,6 +79,7 @@ mod statistical_model;
 mod statistical_witness_replay;
 mod strong_fairness;
 mod strong_hint;
+mod time_lock_item;
 mod tso_fairness;
 mod units;
 mod universe_obligation;

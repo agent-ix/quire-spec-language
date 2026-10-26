@@ -570,6 +570,7 @@ fn drifting_lasso(world: &AuxWorld<'_>) -> TemporalCounterexample {
         prefix.push(ModelStep {
             transition,
             post_state: system.state_key(&next).expect("a key").1,
+            delay: None,
         });
         state = next;
     }
@@ -592,6 +593,7 @@ fn drifting_lasso(world: &AuxWorld<'_>) -> TemporalCounterexample {
                 .clone(),
         }),
         blocked: Vec::new(),
+        final_delay: None,
     }
 }
 
@@ -713,6 +715,7 @@ fn walk(system: &ModelSystem<'_>, operations: &[String]) -> Vec<ModelStep> {
         steps.push(ModelStep {
             transition,
             post_state: system.state_key(&next).expect("a key").1,
+            delay: None,
         });
         state = next;
     }
@@ -738,6 +741,7 @@ fn handmade(
         }),
         refinement: Some(failure),
         blocked: Vec::new(),
+        final_delay: None,
     }
 }
 

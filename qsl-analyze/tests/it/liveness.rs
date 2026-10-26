@@ -292,6 +292,7 @@ fn assert_weakly_fair(
                 .map(|(transition, next)| qsl_replay::ModelStep {
                     transition,
                     post_state: digest(&next),
+                    delay: None,
                 })
                 .collect()
         })
