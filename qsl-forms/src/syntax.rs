@@ -3596,6 +3596,105 @@ pub struct QuantityForm {
     pub span: Span,
 }
 
+/// How one task's jobs arrive (QSpec FR-419 / QSL FR-246).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskArrivalKind {
+    /// Fixed period.
+    Periodic,
+    /// Minimum inter-arrival time.
+    Sporadic,
+}
+
+/// Criticality class carried by a task declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskCriticality {
+    /// Low criticality.
+    Lo,
+    /// High criticality.
+    Hi,
+}
+
+/// A signed exact time quantity in a task declaration. The sign is kept
+/// separately so S3 can refuse negatives at the magnitude span.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskQuantityForm {
+    /// Exact magnitude and unit.
+    pub quantity: QuantityForm,
+    /// Whether the source included a leading minus sign.
+    pub negative: bool,
+    /// Span including the optional sign.
+    pub span: Span,
+}
+
+/// One task declaration as written. Every time member retains its exact
+/// quantity spelling and source span for S3 conversion and refusals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskForm {
+    /// The task's declared name.
+    pub name: NameForm,
+    /// Whether jobs are periodic or sporadic.
+    pub arrival: TaskArrivalKind,
+    /// The period or minimum inter-arrival time.
+    pub interval: TaskQuantityForm,
+    /// Relative deadline.
+    pub deadline: TaskQuantityForm,
+    /// Base WCET value.
+    pub wcet: TaskQuantityForm,
+    /// Optional high-mode WCET override.
+    pub wcet_hi: Option<TaskQuantityForm>,
+    /// Optional natural priority and its source span.
+    pub priority: Option<(u64, Span)>,
+    /// Criticality class.
+    pub criticality: TaskCriticality,
+    /// Optional release jitter.
+    pub jitter: Option<TaskQuantityForm>,
+    /// Optional blocking term.
+    pub blocking: Option<TaskQuantityForm>,
+    /// Whole task declaration span.
+    pub span: Span,
+}
+
+/// `taskset Name { task ... }` as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskSetForm {
+    /// Declared task-set name.
+    pub name: NameForm,
+    /// Tasks in source order.
+    pub tasks: Vec<TaskForm>,
+    /// Whole task-set declaration span.
+    pub span: Span,
+}
+
+/// A schedulability claim as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SchedulabilityClaimKind {
+    /// A policy-based schedulability claim.
+    Schedulable {
+        /// The source policy spelling.
+        policy: String,
+    },
+    /// A bound on one task's response time.
+    Response {
+        /// The task whose response time is bounded.
+        task: NameForm,
+        /// The stated bound.
+        bound: Box<QuantityForm>,
+    },
+}
+
+/// `schedulable N on S under P;` or `response N on S.task <= d under fixed_priority;`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchedulabilityClaimForm {
+    /// Claim name.
+    pub name: NameForm,
+    /// Referenced task-set name.
+    pub task_set: NameForm,
+    /// Claim kind and, for response, task and time bound.
+    pub kind: SchedulabilityClaimKind,
+    /// Whole claim span.
+    pub span: Span,
+}
+
 /// One `expr : exact-value` of a `random` declaration's distribution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WeightedValueForm {
@@ -4223,6 +4322,10 @@ pub enum DeclarationForm {
     /// A `hybrid` declaration (FR-447), boxed for the same reason as
     /// [`Self::Function`].
     Hybrid(Box<HybridForm>),
+    /// A task-set declaration (FR-246).
+    TaskSet(Box<TaskSetForm>),
+    /// A schedulability or response claim (FR-246).
+    SchedulabilityClaim(Box<SchedulabilityClaimForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

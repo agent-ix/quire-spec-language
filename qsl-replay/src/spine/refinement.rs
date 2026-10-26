@@ -351,6 +351,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::Temporal(_)
         | CheckCause::Hyper(_)
         | CheckCause::StateGraph(_)
+        | CheckCause::Schedulability(_)
         | CheckCause::Hybrid(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,

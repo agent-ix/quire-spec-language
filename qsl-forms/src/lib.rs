@@ -37,6 +37,7 @@ mod probabilistic;
 mod protocol_clause;
 mod protocol_control;
 mod refinement;
+mod schedulability;
 mod spans;
 mod state_graph;
 mod state_model;
@@ -96,6 +97,8 @@ pub use syntax::{
     TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper, TransitionForm, TreeRefusal,
     TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm,
     UrgentTarget, UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
+    SchedulabilityClaimForm, SchedulabilityClaimKind, TaskArrivalKind, TaskCriticality, TaskForm,
+    TaskQuantityForm, TaskSetForm,
     WorkloadWeightForm,
 };
 

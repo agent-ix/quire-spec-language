@@ -282,6 +282,16 @@ productions! {
     FrameBinding,
     #[doc = "`<member> to <string>`: one operation parameter's Rust parameter."]
     ParameterBinding,
+    /// `taskset S { task T (periodic | sporadic) <quantity> deadline <quantity> wcet <quantity> ... }`.
+    TaskSetDeclaration,
+    /// One task declaration inside a task set.
+    TaskDeclaration,
+    /// A `schedulable` claim over a named task set.
+    SchedulableClaim,
+    /// A `response` bound claim over one named task.
+    ResponseClaim,
+    /// A signed exact time quantity inside a task declaration.
+    TaskQuantity,
 }
 
 /// Revision-bound CST identity required when exchanging a node (FR-302 "CST

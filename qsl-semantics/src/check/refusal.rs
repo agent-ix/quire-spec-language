@@ -1807,6 +1807,8 @@ pub enum CheckCause {
     /// declaration, or a quantity literal reached a position no checker
     /// reads yet.
     Probabilistic(Box<super::probabilistic::ProbabilisticCause>),
+    /// FR-246: a task-set quantity or claim failed S3 admission.
+    Schedulability(Box<super::schedulability::SchedulabilityRefusal>),
     /// A `terminal when` predicate's checking refused (FR-124), with the
     /// declaration it is about.
     Terminal(Box<super::terminal::TerminalRefusal>),
@@ -2377,6 +2379,7 @@ impl CheckCause {
             Self::Refinement(cause) => cause.cause.code(),
             Self::Abstraction(cause) => cause.code(),
             Self::Probabilistic(cause) => cause.code(),
+            Self::Schedulability(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -2446,6 +2449,7 @@ impl CheckCause {
             Self::Refinement(cause) => cause.cause.cause(),
             Self::Abstraction(cause) => Some(cause.cause()),
             Self::Probabilistic(cause) => Some(cause.tag()),
+            Self::Schedulability(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.

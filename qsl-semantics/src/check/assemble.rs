@@ -772,6 +772,10 @@ struct Unit {
     /// Each state-graph claim's form, in source order, resolved by the
     /// caller into `StateGraphDeclaration`s (FR-165).
     state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
+    /// FR-246 task sets in source order.
+    task_sets: Vec<qsl_forms::TaskSetForm>,
+    /// FR-246 schedulability claims in source order.
+    schedulability_claims: Vec<qsl_forms::SchedulabilityClaimForm>,
 }
 
 impl Unit {
@@ -797,6 +801,8 @@ impl Unit {
             hybrids: Vec::new(),
             timed: Vec::new(),
             state_graph_claims: Vec::new(),
+            task_sets: Vec::new(),
+            schedulability_claims: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -875,6 +881,10 @@ impl Unit {
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Claim(claim)),
                 DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
+                DeclarationForm::TaskSet(task_set) => unit.task_sets.push(*task_set),
+                DeclarationForm::SchedulabilityClaim(claim) => {
+                    unit.schedulability_claims.push(*claim)
+                }
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -3730,6 +3740,8 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
+        package.task_sets = unit.task_sets;
+        package.schedulability_claims = unit.schedulability_claims;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {
             (

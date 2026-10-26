@@ -73,7 +73,9 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_)
-        | DeclarationForm::Hybrid(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Hybrid(_)
+        | DeclarationForm::TaskSet(_)
+        | DeclarationForm::SchedulabilityClaim(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -248,6 +250,8 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Probabilistic(_) => "probabilistic",
             DeclarationForm::StateGraphClaim(_) => "state-graph",
             DeclarationForm::Hybrid(_) => "hybrid",
+            DeclarationForm::TaskSet(_) => "taskset",
+            DeclarationForm::SchedulabilityClaim(_) => "schedulability",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

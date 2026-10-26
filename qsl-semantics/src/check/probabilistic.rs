@@ -29,7 +29,7 @@
 //! unchecked.
 
 mod claim;
-mod exact;
+pub(crate) mod exact;
 pub(crate) use exact::{value as exact_value, ExactFault};
 mod model;
 

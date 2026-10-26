@@ -197,6 +197,7 @@ pub(super) fn complete_v1() -> Grammar {
     protocol(&mut grammar);
     analysis(&mut grammar);
     probabilistic(&mut grammar);
+    schedulability(&mut grammar);
     grammar
 }
 
@@ -347,6 +348,9 @@ fn source_and_types(g: &mut Grammar) {
         r(P::SynthesisDeclaration),
         r(P::VerificationPlan),
         r(P::AbstractionDeclaration),
+        r(P::TaskSetDeclaration),
+        r(P::SchedulableClaim),
+        r(P::ResponseClaim),
     ];
     g.insert(P::Declaration, c(declarations));
     g.insert(
@@ -654,6 +658,72 @@ fn source_and_types(g: &mut Grammar) {
         ]),
     );
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));
+}
+
+/// QSpec FR-419's shared task-set and claim grammar. Semantic validity is
+/// deliberately left to S3 so well-shaped invalid values retain source spans.
+fn schedulability(g: &mut Grammar) {
+    g.insert(
+        P::TaskSetDeclaration,
+        s(vec![
+            literal("taskset"),
+            ident(),
+            x("{"),
+            star(r(P::TaskDeclaration)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::TaskDeclaration,
+        s(vec![
+            literal("task"),
+            ident(),
+            c(vec![x("periodic"), x("sporadic")]),
+            r(P::TaskQuantity),
+            x("deadline"),
+            r(P::TaskQuantity),
+            x("wcet"),
+            r(P::TaskQuantity),
+            opt(s(vec![x("priority"), uint()])),
+            c(vec![x("lo"), x("hi")]),
+            opt(s(vec![x("wcet_hi"), r(P::TaskQuantity)])),
+            opt(s(vec![x("jitter"), r(P::TaskQuantity)])),
+            opt(s(vec![x("blocking"), r(P::TaskQuantity)])),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TaskQuantity,
+        s(vec![opt(x("-")), r(P::ExactValue), r(P::QualifiedName)]),
+    );
+    g.insert(
+        P::SchedulableClaim,
+        s(vec![
+            literal("schedulable"),
+            ident(),
+            x("on"),
+            ident(),
+            x("under"),
+            c(vec![x("fixed_priority"), x("edf"), x("amc")]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ResponseClaim,
+        s(vec![
+            literal("response"),
+            ident(),
+            x("on"),
+            ident(),
+            x("."),
+            ident(),
+            x("<="),
+            r(P::QuantityLiteral),
+            x("under"),
+            x("fixed_priority"),
+            x(";"),
+        ]),
+    );
 }
 
 fn expressions(g: &mut Grammar) {

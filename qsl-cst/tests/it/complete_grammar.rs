@@ -205,6 +205,11 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::PopulationBinding,
     Production::FrameBinding,
     Production::ParameterBinding,
+    Production::TaskSetDeclaration,
+    Production::TaskDeclaration,
+    Production::SchedulableClaim,
+    Production::ResponseClaim,
+    Production::TaskQuantity,
 ];
 
 fn source(declarations: &str) -> String {
@@ -337,6 +342,17 @@ fn corpus() -> Vec<(&'static str, String)> {
                 "always possible Always using Complete over (c: M::Thing) { eventually[0,3] c.n = 2 until once c.n = 1 }\n",
                 "possible Mixed using Complete over (c: M::Thing) { not (c.n = 1 and eventually c.n = 2) }\n",
                 "unique path One using Complete over (c: M::Thing) from (c.n = 0) to (c.n = 2);",
+            )),
+        ),
+        (
+            "schedulability",
+            source(concat!(
+                "taskset Control {\n",
+                "task motor periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n",
+                "task sensor sporadic 6 ms deadline 5 ms wcet 2 ms priority 2 hi wcet_hi 3 ms jitter 1 ms blocking 1 ms;\n",
+                "}\n",
+                "schedulable ControlFp on Control under fixed_priority;\n",
+                "response MotorResponse on Control.motor <= 4 ms under fixed_priority;",
             )),
         ),
         (

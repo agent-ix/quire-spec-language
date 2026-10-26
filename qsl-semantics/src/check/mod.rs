@@ -136,7 +136,13 @@ mod references;
 mod refinement;
 mod refusal;
 mod region;
+mod schedulability;
 mod settings;
+pub use schedulability::{
+    CheckedArrival, CheckedPolicy, CheckedSchedulability, CheckedSchedulabilityClaim,
+    CheckedSchedulabilityClaimKind, CheckedTask, CheckedTaskSet, CheckedWcet,
+    SchedulabilityRefusal,
+};
 mod state_clause;
 mod state_graph_claim;
 mod state_model;
@@ -556,6 +562,8 @@ pub struct CheckedGraph {
     time_sources: Vec<ModelTimeSource>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
     time_units: time_units::TimeUnits,
+    /// FR-246: exact checked task sets, claims and their capability requests.
+    schedulability: schedulability::CheckedSchedulability,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
     /// FR-366: every checked type-level invariant, in declaration order of
@@ -2846,6 +2854,21 @@ impl PackageDeclarations {
             &models,
             self.identity,
         );
+        let schedulability = match schedulability::check(
+            &self.task_sets,
+            &self.schedulability_claims,
+            &time_units,
+            limits.rational_bits(),
+        ) {
+            Ok(checked) => checked,
+            Err(failures) => {
+                refusals.extend(failures.into_iter().map(|failure| CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::Schedulability(Box::new(failure)),
+                }));
+                return Err(refusals);
+            }
+        };
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
@@ -4522,6 +4545,7 @@ impl PackageDeclarations {
             header_layers,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
+            schedulability,
             state_clauses,
             type_invariants,
             terminals,
@@ -4866,6 +4890,11 @@ impl CheckedGraph {
     /// checked reason the name is not a linear time unit.
     pub fn time_unit_scale(&self, unit: &str) -> Result<&quire_exact::Rational, TimeUnitCause> {
         self.time_units.scale(unit)
+    }
+
+    /// FR-246: task sets and claims checked in their canonical exact units.
+    pub fn schedulability(&self) -> &schedulability::CheckedSchedulability {
+        &self.schedulability
     }
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {

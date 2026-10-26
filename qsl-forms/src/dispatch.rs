@@ -29,6 +29,7 @@ use super::hyper_clause;
 use super::probabilistic;
 use super::protocol_clause;
 use super::refinement;
+use super::schedulability;
 use super::state_graph;
 use super::state_model;
 use super::sum_case;
@@ -228,6 +229,10 @@ pub enum LeadingTokenKind {
     /// `hybrid`: the hybrid declaration form, holding its optional initial
     /// clause, modes, equations and transitions (FR-447).
     Hybrid,
+    /// `taskset`: the task-set front end (FR-246).
+    TaskSet,
+    /// `schedulable` or `response`: the claim front end (FR-246).
+    SchedulabilityClaim,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -447,6 +452,8 @@ fn dispatch(
         LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
         LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         LeadingTokenKind::Hybrid => hybrid_declaration::hybrid_declaration(construct),
+        LeadingTokenKind::TaskSet => schedulability::taskset(construct),
+        LeadingTokenKind::SchedulabilityClaim => schedulability::claim(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -500,6 +507,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
         b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
         b"hybrid" => Some(LeadingTokenKind::Hybrid),
+        b"taskset" => Some(LeadingTokenKind::TaskSet),
+        b"schedulable" | b"response" => Some(LeadingTokenKind::SchedulabilityClaim),
         _ => None,
     }
 }

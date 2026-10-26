@@ -1307,6 +1307,11 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding => Err(unexpected(node)),
+            Production::TaskSetDeclaration
+            | Production::TaskDeclaration
+            | Production::SchedulableClaim
+            | Production::ResponseClaim => Err(unexpected(node)),
+            Production::TaskQuantity => Err(unexpected(node)),
         }
     }
 
@@ -1988,6 +1993,11 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding => Err(unexpected(child)),
+            Production::TaskSetDeclaration
+            | Production::TaskDeclaration
+            | Production::SchedulableClaim
+            | Production::ResponseClaim => Err(unexpected(child)),
+            Production::TaskQuantity => Err(unexpected(child)),
         }
     }
 

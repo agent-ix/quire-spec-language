@@ -81,6 +81,7 @@ mod relationship_navigation;
 mod relationship_reachability;
 #[cfg(feature = "test-support")]
 mod relationship_snapshots;
+mod schedulability;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod state_graph_claims;
