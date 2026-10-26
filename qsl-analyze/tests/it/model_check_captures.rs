@@ -323,8 +323,6 @@ fn an_unbounded_root_is_refused_before_a_capture_read() {
 #[trace("TC-1267", "FR-337-AC-11")]
 #[test]
 fn the_liveness_reader_fixes_captures_at_the_activation() {
-    use qsl_analyze::model_check::LivenessRefusal;
-
     let formula = "capture z: Boolean = (6 mod (2 - c.value) = 0); eventually holds(c.value = 3)";
     for guard in ["true", "c.value = 2"] {
         let world = world(INFINITE, &each(guard), formula);
@@ -344,14 +342,16 @@ fn the_liveness_reader_fixes_captures_at_the_activation() {
     }
     for activation in ["on origin".to_owned(), each("false")] {
         let world = world(INFINITE, &activation, formula);
-        let refusal = run(&world, ModelCheckLimits::default())
-            .expect_err("a proof waits on FR-339's component certificate");
+        let outcome = run(&world, ModelCheckLimits::default()).expect("checked");
         assert!(
             matches!(
-                refusal,
-                ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
+                outcome,
+                ModelCheckOutcome::Holds {
+                    certificate: qsl_replay::ProofCertificate::Component(_),
+                    ..
+                }
             ),
-            "{activation}: {refusal:?}"
+            "{activation}: {outcome:?}"
         );
     }
 }
@@ -390,7 +390,9 @@ fn the_closure_checker_reads_the_captures_and_rejects_an_undefined_one() {
     let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
-    let qsl_replay::ProofCertificate::Closure(certificate) = certificate;
+    let qsl_replay::ProofCertificate::Closure(certificate) = certificate else {
+        panic!("a safety clause holds with a closure: {certificate:?}");
+    };
     assert!(!certificate.states.is_empty());
     assert_eq!(
         check(&at_three, certificate),
@@ -409,8 +411,7 @@ fn the_closure_checker_reads_the_captures_and_rejects_an_undefined_one() {
 /// `z` at position 2, where `6 mod (2 - c.value)` divides by zero, and the
 /// replay reproduces `UndefinedEvaluation` at position 2 located at `z`; the
 /// same payload located at the activation or at position 1 settles
-/// `inconclusive`. FR-339's component checker is not built, so its rejection
-/// of the certificate is not asserted.
+/// `inconclusive`.
 #[trace("TC-1267", "FR-337-AC-13")]
 #[test]
 fn replay_reproduces_an_undefined_capture_located_at_it() {

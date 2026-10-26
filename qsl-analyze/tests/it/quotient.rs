@@ -14,20 +14,18 @@
 //! FR-153-AC-4's unreduced comparison reads the unreduced engine's verdict:
 //! a refutation is `Violated` both ways, and a proof is the unreduced
 //! run's finding of no fair accepting cycle over the whole product, which
-//! it refuses to return as `Holds` only for want of FR-339's component
-//! certificate (`ComponentCertificateNotBuilt`). Strong constraints are
+//! it returns as `Holds` with FR-339's component certificate. Strong
+//! constraints are
 //! decided unreduced by EN-1's SCC refinement. Every concretised lasso also
 //! replays through FR-128.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    LivenessRefusal, ModelCheckRefusal, Reductions, SymmetryDeclaration,
-};
+use qsl_analyze::model_check::{ModelCheckRefusal, Reductions, SymmetryDeclaration};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_replay::{
     AppliedReduction, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReductionCause, ResultLabel,
-    SettlementBasis, TemporalCounterexample, TerminalValue,
+    ModelStep, ModelTraceSettlement, ModelTraceValue, ProofCertificate, ReachedLimit,
+    ReductionCause, ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue,
 };
 use quire_exact::ScalarLimits;
 
@@ -147,9 +145,10 @@ fn an_each_proof_on_the_annotated_quotient_holds_over_thirty_product_states() {
         run(&world, |v| Some(v == 2), symmetric()).as_ref().ok()
     );
     match run(&world, |v| Some(v == 2), Reductions::default()) {
-        Err(ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt {
+        Ok(ModelCheckOutcome::Holds {
+            certificate: ProofCertificate::Component(_),
             stats,
-        })) => assert_eq!(stats.product_states, 135),
+        }) => assert_eq!(stats.product_states, 135),
         other => panic!("expected the unreduced run to find no fair cycle: {other:?}"),
     }
 }
@@ -288,9 +287,10 @@ fn strong_each_holds_where_weak_each_admits_a_loop_that_never_fires() {
 fn no_fair_cycle(outcome: &Outcome) -> bool {
     matches!(
         outcome,
-        Err(ModelCheckRefusal::Liveness(
-            LivenessRefusal::ComponentCertificateNotBuilt { .. }
-        ))
+        Ok(ModelCheckOutcome::Holds {
+            certificate: ProofCertificate::Component(_),
+            ..
+        })
     )
 }
 

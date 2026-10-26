@@ -56,7 +56,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::fairness::{
-    Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
+    is_live, Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
 };
 use quire_exact::Cancel;
 
@@ -76,11 +76,24 @@ pub struct Component {
     pub witness: ComponentWitness,
 }
 
+/// FR-339's component certificate: the closure of a liveness (TP-4) proof
+/// and a partition of its states into components.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComponentCertificate {
+    /// The closure FR-338's check reads; its `package_id` is the
+    /// certificate's.
+    pub closure: ClosureCertificate,
+    /// The components, in topological order.
+    pub components: Vec<Component>,
+}
+
 /// A proof certificate carried by an EN-1 holding outcome (FR-126).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofCertificate {
     /// A closure certificate for an item checked by FR-338.
     Closure(ClosureCertificate),
+    /// A component certificate for a liveness item checked by FR-339.
+    Component(ComponentCertificate),
 }
 
 /// FR-339's component witness.
@@ -127,6 +140,9 @@ pub(crate) enum ProductGraphError {
     /// The product state was added before.
     #[error("the product state was added twice")]
     DuplicateState,
+    /// An edge or an acceptance set names a state that was not added.
+    #[error("the product graph names a state it does not hold")]
+    UnknownState,
     /// A fairness-graph refusal.
     #[error(transparent)]
     Fairness(#[from] FairnessError),
@@ -205,15 +221,6 @@ struct Level<'c> {
     removed: BTreeSet<Identity>,
     components: &'c [Component],
     fallback: ProductStateRef,
-}
-
-/// Whether `edge` is in a level's subgraph: it takes no identity in
-/// `removed`.
-fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
-    match edge.label {
-        EdgeLabel::Transition(identity) => !removed.contains(&identity),
-        EdgeLabel::Stutter => true,
-    }
 }
 
 /// The product graph holds no state. A closure the checker reached always
@@ -1209,7 +1216,7 @@ mod tests {
         product: &ProductGraph,
         analyses: &[qsl_eval::fairness::Analysis],
     ) -> Option<Vec<Component>> {
-        use qsl_eval::fairness::Outcome;
+        use qsl_eval::fairness::{Edge, Outcome};
         let removed = analyses
             .first()
             .map(|analysis| analysis.removed().clone())

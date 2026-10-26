@@ -12,9 +12,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    check_protocol, LivenessRefusal, ModelCheckRefusal, ProtocolCheckRequest,
-};
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::fairness::{check_loop, EdgeLabel, Identity, LassoFairness, LoopStep};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
@@ -29,10 +27,12 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, MemoryModelName, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    compile_package, replay_protocol_trace, CounterexampleKind, DependencyInput, Lasso,
-    MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject, ProtocolTraceSubject,
-    ReplayLimits, ReplayRefusal, TemporalCounterexample,
+    check_protocol_closure, check_protocol_components, compile_package, replay_protocol_trace,
+    CertificateRule, ClosureRefusal, ComponentCertificate, CounterexampleKind, DependencyInput,
+    Lasso, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits,
+    ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject, ProofCertificate,
+    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
+    TemporalCertificateCheck, TemporalCounterexample,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
@@ -151,6 +151,43 @@ impl Unit {
                 max_live_instances: None,
                 limits: ModelCheckLimits::default(),
             },
+            &Cancel::new(),
+        )
+    }
+
+    fn certificate_request<'u>(
+        &'u self,
+        selection: &[MemorySelection],
+        item: ModelCheckItem<'u>,
+    ) -> ProtocolCertificateRequest<'u> {
+        ProtocolCertificateRequest {
+            subject: self.subject(selection),
+            item,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        }
+    }
+
+    /// The component certificate of the unit's liveness proof under `tso`.
+    fn certified(&self) -> ComponentCertificate {
+        match self.check(&self.tso(), None).expect("the subject checks") {
+            ModelCheckOutcome::Holds {
+                certificate: ProofCertificate::Component(certificate),
+                ..
+            } => certificate,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn components(
+        &self,
+        certificate: &ComponentCertificate,
+    ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+        check_protocol_components(
+            &self.certificate_request(&self.tso(), self.item()),
+            certificate,
+            &ModelCheckLimits::default(),
             &Cancel::new(),
         )
     }
@@ -451,8 +488,8 @@ fn unfair_member<'f>(
 /// throughout meets every scheduler constraint, since `w` has no enabled
 /// step and `r` steps on every edge, and is rejected by the fairness set only
 /// under `flush(w)`'s constraint. Not covered: the AC's `proved` verdict,
-/// which waits on FR-339's component certificate, and its `refuted` verdict
-/// with the memory constraints ignored, which the engine has no switch for.
+/// which is FR-339-AC-7's, and its `refuted` verdict with the memory
+/// constraints ignored, which the engine has no switch for.
 #[trace("TC-673")]
 #[test]
 fn the_unflushed_lasso_is_unfair_only_under_the_flush_constraint() {
@@ -495,22 +532,89 @@ fn the_unflushed_lasso_is_unfair_only_under_the_flush_constraint() {
 
 /// ADR-025 MF-1 (TC-673), the engine half: with flush fairness in the set,
 /// EN-1 over `Spin` finds no fair counterexample to `eventually
-/// holds(k.r1 = 1)`: it explores the product and, having no component
-/// certificate to return, refuses `ComponentCertificateNotBuilt`. Not
-/// covered: `proved` itself, which waits on FR-339's component certificate.
+/// holds(k.r1 = 1)`: it explores the product and holds with a component
+/// certificate. Not covered: the certificate's check, which is the core's.
 #[trace("TC-673")]
 #[test]
 fn eventually_the_load_reads_the_flushed_store() {
     let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
-    let refusal = unit
-        .check(&unit.tso(), None)
-        .expect_err("the proof waits on FR-339");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
+    let outcome = unit.check(&unit.tso(), None).expect("the subject checks");
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Component(_),
+        stats,
+    } = outcome
     else {
-        panic!("{refusal:?}");
+        panic!("{outcome:?}");
     };
     assert!(stats.product_states > 0, "{stats:?}");
+}
+
+/// FR-339's checker over a protocol subject: `Spin`'s component certificate
+/// is accepted by `check_protocol_components`; the same components reversed
+/// are `BackwardEdge` and none at all are `NotPartition`; a certificate whose
+/// `package_id` is another package's is `PackageMismatch`, before any
+/// component is read; the closure alone of a liveness proof is refused
+/// `LivenessNeedsComponents`, and components offered for a deadlock-freedom
+/// item are refused `NotLiveness`.
+#[test]
+fn a_protocol_component_certificate_is_checked_by_the_protocol_checker() {
+    let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
+    let certificate = unit.certified();
+    assert!(certificate.components.len() > 1, "{certificate:?}");
+    assert_eq!(
+        unit.components(&certificate)
+            .expect("the request is checked"),
+        TemporalCertificateCheck::Accepted
+    );
+
+    let mut reversed = certificate.clone();
+    reversed.components.reverse();
+    let Ok(TemporalCertificateCheck::Rejected(rejection)) = unit.components(&reversed) else {
+        panic!("a reversed order lists a successor before its predecessor");
+    };
+    assert_eq!(rejection.rule, CertificateRule::BackwardEdge);
+
+    let mut emptied = certificate.clone();
+    emptied.components.clear();
+    let Ok(TemporalCertificateCheck::Rejected(rejection)) = unit.components(&emptied) else {
+        panic!("no components partition nothing");
+    };
+    assert_eq!(rejection.rule, CertificateRule::NotPartition);
+
+    let other = Unit::new(&spin_run(), &SETTLES.replace("= 1", "= 2"), &IS_ONE);
+    let foreign = qsl_package::emit_checked(&other.checked)
+        .expect("the package emits")
+        .package()
+        .package_id();
+    assert_ne!(foreign, certificate.closure.package_id);
+    let mut stale = emptied;
+    stale.closure.package_id = foreign;
+    assert_eq!(
+        unit.components(&stale).expect("the request is checked"),
+        TemporalCertificateCheck::PackageMismatch {
+            certificate: foreign,
+            recompiled: certificate.closure.package_id,
+        }
+    );
+
+    assert!(matches!(
+        check_protocol_closure(
+            &unit.certificate_request(&unit.tso(), unit.item()),
+            &certificate.closure,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        ),
+        Err(ClosureRefusal::LivenessNeedsComponents)
+    ));
+    assert!(matches!(
+        check_protocol_components(
+            &unit.certificate_request(&unit.tso(), ModelCheckItem::DeadlockFreedom),
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        ),
+        Err(ClosureRefusal::NotLiveness)
+    ));
 }
 
 /// ADR-025 MF-1 (TC-673): a liveness clause over a `tso` `parallel` that is
@@ -750,13 +854,16 @@ fn a_liveness_run_that_cut_a_store_settles_inconclusive() {
         }
     );
     assert!(states > 0);
-    let refusal = unit.check(&unit.tso(), None).expect_err("no bound reached");
+    let outcome = unit.check(&unit.tso(), None).expect("no bound reached");
     assert!(
         matches!(
-            refusal,
-            ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
+            outcome,
+            ModelCheckOutcome::Holds {
+                certificate: ProofCertificate::Component(_),
+                ..
+            }
         ),
-        "{refusal:?}"
+        "{outcome:?}"
     );
 }
 

@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#6f6b562125f5dcf69d5326335f36ffffb2cae96e"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#ff5c66ddf7abde183177c32bf111cb1084ff4f8b"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1706,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0f922ad161b48afa68ee924088c6ce8cee887e69"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0a365dbbec6b3592c646ea0dedea38800ff8c94c"
 dependencies = [
  "quire-canonical",
  "quire-exact",
