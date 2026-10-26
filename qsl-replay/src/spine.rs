@@ -1320,6 +1320,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     TimeUnitCause::AffineUnit { name, offset } => {
                         format!("{message}: the time unit `{name}` has the offset {offset}")
                     }
+                    TimeUnitCause::OtherTimeDimension { name } => format!(
+                        "{message}: `{name}` is a unit of another `Time` dimension than the model's"
+                    ),
                 },
                 TemporalCause::TimedProfileWithoutModelTime { clock, .. } => format!(
                     "{message}: the timed profile under `clock \"{clock}\"` is not checked yet"

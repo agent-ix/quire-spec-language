@@ -262,14 +262,7 @@ impl HybridCause {
             | Self::ProfileFit { .. }
             | Self::HorizonOutOfRange { .. } => Code::UnsupportedConstruct,
             Self::InvalidInterval { .. } => Code::InvalidTimedModel,
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    Code::MissingDeclaration
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    Code::IllTyped
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.code(),
             Self::CaptureType { fault, .. } => type_fault_class(fault).0,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::RateOneHybrid { .. } => Code::InvalidTimedModel,
@@ -295,14 +288,7 @@ impl HybridCause {
             | Self::ProfileFit { .. }
             | Self::HorizonOutOfRange { .. } => "expression-form",
             Self::InvalidInterval { .. } => "invalid-interval",
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    "missing-name"
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    "type-mismatch"
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.tag(),
             Self::CaptureType { fault, .. } => type_fault_class(fault).1,
             Self::ZeroDenominator { .. } => "unproved-nonzero",
             Self::RateOneHybrid { .. } => "rate-one-hybrid",

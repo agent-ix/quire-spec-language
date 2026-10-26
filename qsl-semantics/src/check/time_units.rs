@@ -292,14 +292,23 @@ impl TimeUnits {
     }
 
     /// `magnitude` of the time unit `from` converted exactly to `to`
-    /// (QSpec FR-142).
+    /// (QSpec FR-142). `from` must be a unit of `to`'s own time dimension:
+    /// a unit of another owner's `Time` is another dimension (QSpec FR-142
+    /// "Dimensions of different owners"), and QSL admits no dimension
+    /// equivalence that would relate the two.
     pub fn convert(
         &self,
         magnitude: &Rational,
         from: &str,
         to: &TimeScale,
     ) -> Result<Rational, TimeUnitCause> {
-        Ok(magnitude.mul(self.scale(from)?).mul(&to.reciprocal))
+        let scale = self.scale(from)?;
+        if self.dimension(from)? != to.dimension {
+            return Err(TimeUnitCause::OtherTimeDimension {
+                name: from.to_owned(),
+            });
+        }
+        Ok(magnitude.mul(scale).mul(&to.reciprocal))
     }
 }
 

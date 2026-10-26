@@ -262,3 +262,69 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
     assert_eq!(timed.source.period.as_deref(), Some("1/1"));
     assert!(timed.source.operation.is_some());
 }
+
+/// FR-230-AC-18's identity half (TC-685 step 7): with `example/config-version`
+/// (`R`: `Time`, `s`, `ms`) and the same package as `example/flow` (`F`:
+/// `Time`, `sec`) both selected and a source `Time` with `s`, the time
+/// members `time R dense unit R::ms`, `time R dense unit F::sec` and `time
+/// R dense unit s` each emit over their own `Time` node, and the three
+/// packages have three different identities. The S3 refusals of mixed
+/// dimensions are `qsl-semantics`' `time_dimensions_of_different_owners_do_not_mix`.
+#[trace("TC-685", "FR-230-AC-18")]
+#[test]
+fn three_time_dimensions_give_three_package_identities() {
+    let rpc = package_units_document();
+    let mut flow: Value = serde_json::from_str(
+        &config_version_unit::DOMAIN_PACKAGE.replace("example/config-version", "example/flow"),
+    )
+    .expect("the renamed fixture is JSON");
+    let origin = flow["types"][0]["origin"].clone();
+    let time = "ix://example/flow/dimension/Time";
+    flow["dimensions"] = json!([{
+        "identity": time, "name": "Time", "base": true, "terms": [], "origin": origin,
+    }]);
+    flow["units"] = json!([{
+        "identity": "ix://example/flow/unit/sec", "name": "sec", "dimension": time,
+        "scale": "1", "offset": "0", "origin": origin,
+    }]);
+    let flow = serde_json::to_vec(&flow).expect("JSON");
+    let packages = qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]);
+    let digest = |bytes: &[u8]| {
+        packages
+            .iter()
+            .find(|(_, document)| document.as_slice() == bytes)
+            .map(|(digest, _)| qsl_semantics::model::key::hex(digest))
+            .expect("a supplied document")
+    };
+    let identity = |unit: &str| {
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             profile t = \"quire.temporal.complete/v1\";\n\
+             model R = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model F = \"example/flow\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             dimension Time;\nunit s : Time = rational(1, 1);\n\
+             function noop using v(): Boolean pure {{ true }}\n\
+             time R dense unit {unit};\n",
+            digest(&rpc),
+            digest(&flow)
+        );
+        let graph = assemble_with_models(text.as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
+        let dimension = graph.time_sources()[0].time_dimension;
+        let emission = emit_checked(&CheckedPackage::link(graph))
+            .unwrap_or_else(|refusal| panic!("{unit} emits: {refusal:?}"));
+        (dimension, emission.package().package_id().hex())
+    };
+    let rpc = identity("R::ms");
+    let flow = identity("F::sec");
+    let own = identity("s");
+    assert_ne!(rpc.0, flow.0);
+    assert_ne!(rpc.0, own.0);
+    assert_ne!(flow.0, own.0);
+    assert_ne!(rpc.1, flow.1);
+    assert_ne!(rpc.1, own.1);
+    assert_ne!(flow.1, own.1);
+}

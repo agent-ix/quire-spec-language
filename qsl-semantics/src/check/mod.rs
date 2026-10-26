@@ -1242,15 +1242,27 @@ impl PackageDeclarations {
                                         ) {
                                             Ok(value) => value,
                                             Err(cause) => {
+                                                // A period of another time
+                                                // dimension refuses at the
+                                                // period; one that is no time
+                                                // unit, at the unit.
+                                                let span = if matches!(
+                                                    cause,
+                                                    TimeUnitCause::OtherTimeDimension { .. }
+                                                ) {
+                                                    period.span
+                                                } else {
+                                                    period.unit.span
+                                                };
                                                 return Some(CheckRefusal {
                                                     location: root(Origin::Expression),
                                                     cause: CheckCause::Temporal(Box::new(
                                                         TemporalCause::TimeQuantity {
                                                             cause: Box::new(cause),
-                                                            span: period.unit.span,
+                                                            span,
                                                         },
                                                     )),
-                                                })
+                                                });
                                             }
                                         };
                                         if converted.is_zero()

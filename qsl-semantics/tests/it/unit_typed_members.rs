@@ -51,7 +51,9 @@ fn targets(term: &Value) -> Vec<String> {
     while let Some(term) = pending.pop() {
         match term {
             Value::Object(members) => {
-                if let Some(Value::String(digest)) = term.get("target").and_then(|t| t.get("digest")) {
+                if let Some(Value::String(digest)) =
+                    term.get("target").and_then(|t| t.get("digest"))
+                {
                     found.push(digest.clone());
                 }
                 pending.extend(members.values().rev());
@@ -107,7 +109,9 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     };
     assert!(declared("Span").is_none(), "an alias has no node");
     let window = declared("Window").expect("the Window record");
-    let members = window["body"]["members"].as_array().expect("record members");
+    let members = window["body"]["members"]
+        .as_array()
+        .expect("record members");
     assert_eq!(targets(&members[0]), [unit.clone()], "d is typed by ms");
     let option = targets(&members[2]);
     let [option] = option.as_slice() else {
@@ -199,5 +203,8 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         }
     );
     assert_eq!(error.cause.code(), Code::MissingDeclaration);
-    assert_eq!(error.cause.catalog_code().to_string(), "missing_declaration/missing-name");
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "missing_declaration/missing-name"
+    );
 }
