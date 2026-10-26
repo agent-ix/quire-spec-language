@@ -13,6 +13,7 @@ use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{CollectionKind, FieldValue, IeeeWidth, ObjectReference, Value};
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 
+use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::key::effective_id_from_digest;
 use qsl_semantics::model::state::{ModelState, StateModel};
 use quire_checked::key::DeclarationKey;
@@ -192,22 +193,58 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
 /// FR-120's typed canonical form of `value`, where a record value is
 /// `{"type":"record","name":…,"fields":[{name, value}…]}` with `name` the
 /// declaration's checked node id, one entry per declared field in
-/// declaration order and an absent field `null`, and a tuple is
-/// `{"type":"tuple","name":…,"components":[…]}`. An enum value is
-/// `{"type":"enum","member":…,"rank":…}` with `member` its variant id, the
-/// declared identifier being no part of the value. Any other value is
-/// [`value_enc`]'s.
-pub(crate) fn typed_value_enc(value: &Value, types: &TypeEnvironment) -> Enc {
+/// declaration order and an absent field `null`; a tuple is
+/// `{"type":"tuple","name":…,"components":[…]}`; a union is
+/// `{"type":"union","name":…,"member":…,"components":[…]}`; and an enum is
+/// `{"type":"enum","name":…,"member":…}` with `name` the variant type's node
+/// id and `member` the declared case, both read from `variants`. Any other
+/// value is [`value_enc`]'s.
+pub(crate) fn typed_value_enc(
+    value: &Value,
+    types: &TypeEnvironment,
+    variants: &[VariantTypeDeclaration],
+) -> Enc {
     let slot_enc = |slot: &FieldValue| match slot {
-        FieldValue::Present(inner) => typed_value_enc(inner, types),
+        FieldValue::Present(inner) => typed_value_enc(inner, types, variants),
         FieldValue::Absent | FieldValue::Null => Enc::Null,
     };
     match value {
-        Value::Enum(member) => Enc::tagged(
-            "enum",
+        Value::Enum(member) => variants
+            .iter()
+            .find_map(|declared| {
+                declared
+                    .cases()
+                    .iter()
+                    .find(|case| case.variant() == member.variant())
+                    .map(|case| (declared, case))
+            })
+            .map_or(
+                Enc::Unencodable("an undeclared enum value"),
+                |(declared, case)| {
+                    Enc::tagged(
+                        "enum",
+                        vec![
+                            ("name", Enc::text(hex(declared.node().as_bytes()))),
+                            ("member", Enc::text(case.name())),
+                        ],
+                    )
+                },
+            ),
+        Value::Union(union) => Enc::tagged(
+            "union",
             vec![
-                ("member", Enc::text(hex(member.variant().as_bytes()))),
-                ("rank", Enc::text(member.rank().to_string())),
+                ("name", Enc::text(hex(union.declaration().as_bytes()))),
+                ("member", Enc::text(union.member().identifier().as_str())),
+                (
+                    "components",
+                    Enc::Array(
+                        union
+                            .payload()
+                            .iter()
+                            .map(|inner| typed_value_enc(inner, types, variants))
+                            .collect(),
+                    ),
+                ),
             ],
         ),
         Value::Composite(composite) => {
@@ -242,7 +279,7 @@ pub(crate) fn typed_value_enc(value: &Value, types: &TypeEnvironment) -> Enc {
                         ),
                     ],
                 ),
-                Some(CompositeShape::Union(_)) | None => Enc::Unencodable("a union value"),
+                Some(CompositeShape::Union(_)) | None => Enc::Unencodable("an undeclared record"),
             }
         }
         other => value_enc(other),

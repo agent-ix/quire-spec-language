@@ -590,10 +590,13 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// `protocol` beside its model's: the record type of every binder of an
 /// `event`, `send`, `receive` and `finish` step, each named by the
 /// protocol and the binder, and the attempt type of every compensation
-/// template. A bounded record type this module cannot
-/// enumerate is refused when the system is built
-/// ([`Unsupported::UnenumerableRecord`]).
-pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
+/// template. A binder's bounded record type this module cannot enumerate is
+/// refused when the system is built ([`Unsupported::UnenumerableRecord`]); an
+/// attempt type it cannot enumerate is an unbounded root.
+pub fn protocol_domains(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+) -> Vec<(WireNodeId, ValueType)> {
     let binders = protocol
         .slots
         .binders
@@ -606,10 +609,17 @@ pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueTyp
             )
         });
     // A `cattempt` takes one record of its template's attempt type (ST-11).
+    // An attempt type with no finite enumeration here is listed as an
+    // unbounded root, as the model lists a parameter it cannot enumerate.
     let attempts = protocol.obligations.compensations.iter().map(|template| {
+        let root = if model.enumerates(&template.attempt_type) {
+            template.attempt_type.clone()
+        } else {
+            ValueType::Integer
+        };
         (
             binder_root(&protocol.name, &format!("{}.attempt", template.name)),
-            template.attempt_type.clone(),
+            root,
         )
     });
     binders.chain(attempts).collect()
@@ -649,7 +659,7 @@ fn subject_domains(
     protocol: &CheckedProtocol,
 ) -> Vec<(WireNodeId, ValueType)> {
     let mut domains = model.domains();
-    domains.extend(protocol_domains(protocol));
+    domains.extend(protocol_domains(model, protocol));
     domains
 }
 

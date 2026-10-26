@@ -5,7 +5,8 @@
 
 use quire_exact::{
     from_admitted, from_admitted_slots, CollectionKind, CollectionType, EnumMember, FieldValue,
-    Integer, NodeKey, ObjectReference, OptionValue, Presence, Value, ValueType,
+    Integer, NodeKey, ObjectReference, OptionValue, Presence, UnionMember, UnionValue, Value,
+    ValueType,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 
@@ -47,11 +48,14 @@ enum Space {
         declaration: NodeKey,
         fields: Vec<(bool, Space)>,
     },
+    /// A union: its members in declaration order, each with the spaces of
+    /// its payload positions.
+    Union(Vec<(UnionMember, Vec<Space>)>),
 }
 
 impl Space {
     /// The space of `value_type`; `None` for a type with no finite space
-    /// here (a union, or a recursive record).
+    /// here (a recursive record, or a field FR-120 does not enumerate).
     fn of(
         value_type: &ValueType,
         objects: &[ObjectReference],
@@ -85,7 +89,23 @@ impl Space {
                     CompositeShape::Tuple(positions) => {
                         positions.iter().map(|position| (false, position)).collect()
                     }
-                    CompositeShape::Union(_) => return None,
+                    CompositeShape::Union(declared) => {
+                        visiting.push(*declaration);
+                        let spaces = declared
+                            .iter()
+                            .map(|member| {
+                                let verified = member.member()?.clone();
+                                let positions = member
+                                    .positions()
+                                    .iter()
+                                    .map(|position| Self::of(position, objects, types, visiting))
+                                    .collect::<Option<Vec<_>>>()?;
+                                Some((verified, positions))
+                            })
+                            .collect::<Option<Vec<_>>>();
+                        visiting.pop();
+                        return spaces.map(Self::Union);
+                    }
                 };
                 visiting.push(*declaration);
                 let fields = members
@@ -109,6 +129,13 @@ impl Space {
         match self {
             Self::Plain(domain) => domain.len(),
             Self::Enum(values) => values.len() as u128,
+            Self::Union(members) => members.iter().fold(0u128, |total, (_, positions)| {
+                total.saturating_add(
+                    positions
+                        .iter()
+                        .fold(1u128, |product, space| product.saturating_mul(space.len())),
+                )
+            }),
             Self::Composite { fields, .. } => {
                 fields.iter().fold(1u128, |total, (optional, space)| {
                     total.saturating_mul(space.len().saturating_add(u128::from(*optional)))
@@ -122,6 +149,27 @@ impl Space {
         match self {
             Self::Plain(domain) => domain.nth(index),
             Self::Enum(values) => values.get(usize::try_from(index).ok()?).cloned(),
+            Self::Union(members) => {
+                let mut remaining = index;
+                for (member, positions) in members {
+                    let count = positions
+                        .iter()
+                        .fold(1u128, |product, space| product.saturating_mul(space.len()));
+                    if remaining >= count {
+                        remaining -= count;
+                        continue;
+                    }
+                    let mut payload = Vec::with_capacity(positions.len());
+                    for space in positions.iter().rev() {
+                        let radix = space.len();
+                        payload.push(space.nth(remaining.checked_rem(radix)?)?);
+                        remaining = remaining.checked_div(radix)?;
+                    }
+                    payload.reverse();
+                    return Some(UnionValue::from_admitted(member.clone(), payload));
+                }
+                None
+            }
             Self::Composite {
                 declaration,
                 fields,
@@ -145,6 +193,18 @@ impl Space {
                 Some(from_admitted_slots(*declaration, slots.into_boxed_slice()))
             }
         }
+    }
+}
+
+/// Whether [`composite_values`] and [`Domain`] together enumerate `value_type`:
+/// a type FR-120 enumerates, or an enum, record, tuple or union of finite
+/// fields (ADR-027 ST-11: the records of a template's attempt type).
+pub(crate) fn enumerable_in(value_type: &ValueType, types: &TypeEnvironment) -> bool {
+    match value_type {
+        ValueType::Composite(_) | ValueType::Enum(_) => {
+            Space::of(value_type, &[], types, &mut Vec::new()).is_some()
+        }
+        other => enumerable(other),
     }
 }
 
@@ -466,26 +526,18 @@ mod tests {
         assert!(Domain::of(&ValueType::String, &[], &types()).is_none());
     }
 
-    /// The type environment of `Inner { e: <enum of two>, o?: Boolean }` and
+    /// The type environment of `Inner { e: Boolean, o?: Boolean }` and
     /// `Outer { inner: Inner, flag: Boolean }`.
     fn nested() -> (TypeEnvironment, NodeKey, NodeKey) {
-        use quire_exact::{EnumShape, VariantId};
         use quire_semantic_value::declaration::FieldDeclaration;
         let inner = NodeKey::from_digest([2; 32]);
         let outer = NodeKey::from_digest([3; 32]);
-        let shape = EnumShape::new(
-            false,
-            [
-                VariantId::from_digest([1; 32]),
-                VariantId::from_digest([4; 32]),
-            ],
-        );
         let declarations = [
             CompositeDeclaration::new(
                 inner,
                 "Inner",
                 CompositeShape::Record(vec![
-                    FieldDeclaration::new("e", ValueType::Enum(shape), Presence::Required),
+                    FieldDeclaration::new("e", ValueType::Boolean, Presence::Required),
                     FieldDeclaration::new("o", ValueType::Boolean, Presence::Optional),
                 ]),
             ),
@@ -505,10 +557,9 @@ mod tests {
         )
     }
 
-    /// ADR-027 ST-11 (FR-207-AC-6): the records of an attempt type range over
-    /// its whole finite domain: an enum, an optional field (absent first) and
-    /// a nested record of finite fields all enumerate, each combination once.
-    #[trace("TC-652", "FR-207-AC-6")]
+    /// ADR-027 ST-11: the records of an attempt type range over its whole
+    /// finite domain: an optional field (absent first) and a nested record of
+    /// finite fields enumerate, each combination once.
     #[test]
     fn an_attempt_type_of_finite_fields_enumerates_every_record() {
         let (types, inner, outer) = nested();
@@ -527,15 +578,65 @@ mod tests {
         let all = values(outer, &mut charged);
         let distinct: std::collections::BTreeSet<String> = all
             .iter()
-            .map(|value| format!("{:?}", super::super::encode::typed_value_enc(value, &types)))
+            .map(|value| {
+                format!(
+                    "{:?}",
+                    super::super::encode::typed_value_enc(value, &types, &[])
+                )
+            })
             .collect();
         assert_eq!(distinct.len(), 12);
     }
 
+    /// ADR-027 ST-11: a union over finite members enumerates every member
+    /// with every combination of its payload, in declaration order, and is
+    /// written as FR-120's union form.
+    #[test]
+    fn a_union_attempt_type_enumerates_every_member() {
+        use quire_exact::{Identifier, UnionMember};
+        use quire_semantic_value::declaration::UnionMemberDeclaration;
+        let union = NodeKey::from_digest([5; 32]);
+        let member = |name: &str, key: u8, positions: Vec<ValueType>| {
+            UnionMemberDeclaration::from_verified(
+                UnionMember::from_admitted(
+                    union,
+                    NodeKey::from_digest([key; 32]),
+                    Identifier::new(name).expect("an identifier"),
+                ),
+                positions,
+            )
+        };
+        let declaration = CompositeDeclaration::new(
+            union,
+            "Choice",
+            CompositeShape::Union(vec![
+                member("Flag", 6, vec![ValueType::Boolean]),
+                member("Pair", 7, vec![ValueType::Boolean, int(0, 1)]),
+                member("Nothing", 8, vec![]),
+            ]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        let values = composite_values::<()>(&ValueType::Composite(union), &[], &types, || Ok(()))
+            .expect("no stop")
+            .expect("a finite domain");
+        assert_eq!(values.len(), 2 + 4 + 1);
+        let written = quire_canonical::to_vec(
+            &super::super::encode::typed_value_enc(&values[1], &types, &[]),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .expect("encodes");
+        assert_eq!(
+            String::from_utf8(written).expect("UTF-8"),
+            format!(
+                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":"{}","type":"union"}}"#,
+                "05".repeat(32)
+            )
+        );
+    }
+
     /// FR-120's record form, written exactly: `type`, the declaration's node
     /// id as `name`, and one `{name, value}` entry per declared field with an
-    /// absent optional field `null`; an enum value is its variant id and rank.
-    #[trace("TC-652", "FR-205-AC-8")]
+    /// absent optional field `null`.
     #[test]
     fn a_record_value_is_written_in_fr_120_s_record_form() {
         let (types, inner, _) = nested();
@@ -544,16 +645,15 @@ mod tests {
             .expect("a finite domain")
             .remove(0);
         let written = quire_canonical::to_vec(
-            &super::super::encode::typed_value_enc(&first, &types),
+            &super::super::encode::typed_value_enc(&first, &types, &[]),
             quire_canonical::Limits::new(u64::MAX),
         )
         .expect("encodes");
-        let variant = "01".repeat(32);
         let name = "02".repeat(32);
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             format!(
-                r#"{{"fields":[{{"name":"e","value":{{"member":"{variant}","rank":"0","type":"enum"}}}},{{"name":"o","value":null}}],"name":"{name}","type":"record"}}"#
+                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":"{name}","type":"record"}}"#
             )
         );
     }

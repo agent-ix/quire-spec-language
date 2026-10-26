@@ -59,3 +59,19 @@ The `M::Attempt` fixture narrowing matches ADR-027 §7.1, which says the attempt
 one value. `touch` for `refund()` and `Cell` for `Peer` are equivalent stand-ins. The
 `RefundAttempt` negative control (no `cells` read) means the receiver alone is not what
 satisfies the `PeerAttempt` read assertion.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | An internal fault can be reached from source. Fix round 1 deleted the build-time refusal for an attempt type. `Space::of` returns `None` for a union and for any field type `Domain::of` cannot enumerate: String, Text, Float, Decimal, Rational, Uuid, Timestamp and `Population(Some)`. `classify_extent` (qsl-semantics family/requirements.rs) classifies a union over bounded members, and all of those scalars, as bounded, so the TS-5 pre-check lets them through. The first `cattempt` expansion then reaches `values_of(...).ok_or_else(fault("an-attempt-type-is-bounded"))`, an `established-invariant-broken` fault, where the result should be a verdict or a refusal. No test covers this. Fix: refuse such an attempt type when the system is built, with a spec'd cause, or enumerate unions (which ST-11 calls finite), and test one non-enumerable case. | qsl-eval/src/simulation/protocol/compensation.rs:453-456, qsl-eval/src/simulation/model/domain.rs:88,103, qsl-semantics/src/family/requirements.rs:395-412 |
+| FND-006 | medium | The enum attempt-record form does not match FR-120. `typed_value_enc` writes `{"type":"enum","member":<variant id hex>,"rank":…}`. FR-120 says `{"type":"enum","name":…,"member":…}`, where `name` is the enum declaration's node id and `member` the declared identifier, "so a value has one FR-181 text in QSL wherever it appears". The new unit test `a_record_value_is_written_in_fr_120_s_record_form` pins the non-conforming form. This form enters transition identities and state keys. Fix: write FR-120's form, taking the names from the checked package, or leave enum attempt types out of enumeration (no AC needs them) until it can be written. | qsl-eval/src/simulation/model/encode.rs:195-213, qsl-eval/src/simulation/model/domain.rs:538-559 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 870f4b963 removes the refusal and enumerates enums, optional fields, nested records and tuples (`Space`), with unit and integration tests. The remaining non-enumerable cases now fault: see FND-005. |
+| FND-002 | fixed | `a_record_value_is_written_in_fr_120_s_record_form` pins the exact JCS bytes of the record form. The enum part of that form is FND-006. |
+| FND-003 | fixed | The `PeerAttempt` clause now finds the `cattempt` by `StepKind::CAttempt`. |
+| FND-004 | fixed | `assert_changes_are_written` now runs in the FR-216-AC-7 loop, including the `attempts 2`/`not e.ok` exploration that holds a record. |

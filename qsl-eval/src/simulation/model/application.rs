@@ -102,6 +102,12 @@ impl<'a> ModelSystem<'a> {
         Ok(Some(values))
     }
 
+    /// Whether [`Self::values_of`] enumerates `value_type`: a type FR-120
+    /// enumerates, or an enum, record, tuple or union of finite fields.
+    pub(crate) fn enumerates(&self, value_type: &quire_exact::ValueType) -> bool {
+        super::domain::enumerable_in(value_type, self.types)
+    }
+
     /// The candidate budget of one expansion (FR-120 "Post-states").
     pub(crate) fn budget(&self) -> Budget {
         Budget::new(self.limits.max_candidates)

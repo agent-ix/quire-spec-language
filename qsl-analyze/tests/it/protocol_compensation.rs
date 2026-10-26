@@ -1489,12 +1489,11 @@ fn cattempt_and_the_commit_step_cover_the_attempt_record() {
     );
 }
 
-/// FR-207-AC-6 (TC-652): the records of the attempt type are its whole
+/// ADR-027 ST-11, TS-5: the records of the attempt type are its whole
 /// finite domain. An attempt type with an optional field has three records,
 /// the absent one first, each its own `cattempt` step; one with an unbounded
 /// field has no finite domain, so the item refuses `requires-bound` before
 /// any state is explored.
-#[trace("TC-652", "FR-207-AC-6")]
 #[test]
 fn an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound() {
     explore(
@@ -1522,7 +1521,13 @@ fn an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound() {
         },
     );
 
-    let body = attempt_unit("1 of M::WideAttempt", "false", false);
+    assert!(requires_bound("1 of M::WideAttempt"));
+}
+
+/// Whether the deadlock-freedom item over `Pay` with the attempt type
+/// `attempts` refuses `requires-bound`.
+fn requires_bound(attempts: &str) -> bool {
+    let body = attempt_unit(attempts, "false", false);
     let case = Case::new(&body, &[0]);
     let refused = check_protocol(
         ProtocolCheckRequest {
@@ -1536,8 +1541,43 @@ fn an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound() {
         },
         &Cancel::new(),
     );
-    assert!(
-        matches!(refused, Err(ModelCheckRefusal::RequiresBound(_))),
-        "{refused:?}"
+    matches!(refused, Err(ModelCheckRefusal::RequiresBound(_)))
+}
+
+/// ADR-027 ST-11, TS-5: an attempt type with a field this system cannot
+/// enumerate, though bounded, settles `requires-bound` like an unbounded one,
+/// before any state is explored; an enum field enumerates, and each record
+/// writes the enum as FR-120's `{"type":"enum","name","member"}`.
+#[test]
+fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
+    assert!(requires_bound("1 of M::TextAttempt"));
+    assert!(!requires_bound("1 of M::ModeAttempt"));
+    explore(
+        &attempt_unit("1 of M::ModeAttempt", "false", false),
+        |system, explored| {
+            let reached = &explored.reached;
+            let t2 = after(
+                reached,
+                after(reached, 0, StepKind::Attempt),
+                StepKind::Event,
+            );
+            let (_, t4) = fail(system, reached, t2, true);
+            let mut members: Vec<(String, Json)> = reached[t4]
+                .steps
+                .iter()
+                .filter(|(step, _)| step.kind() == StepKind::CAttempt)
+                .map(|(step, _)| {
+                    let value = identity(system, step)["record"]["fields"][0]["value"].clone();
+                    (value["member"].as_str().expect("a case").to_owned(), value)
+                })
+                .collect();
+            members.sort_by(|left, right| left.0.cmp(&right.0));
+            let cases: Vec<&str> = members.iter().map(|(case, _)| case.as_str()).collect();
+            assert_eq!(cases, ["fast", "slow"]);
+            let enum_value = &members[0].1;
+            assert_eq!(enum_value["type"], "enum");
+            assert_eq!(enum_value["name"].as_str().map(str::len), Some(64));
+            assert!(enum_value.get("rank").is_none(), "{enum_value}");
+        },
     );
 }

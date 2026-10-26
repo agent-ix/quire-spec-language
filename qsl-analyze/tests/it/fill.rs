@@ -134,6 +134,10 @@ pub(crate) fn document() -> Vec<u8> {
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
+    .chain([json!({"kind": {"module": PACKAGE, "name": "variant_type"},
+        "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}})])
     .collect();
     let value = ident("Cell/v");
     let weight = ident("Cell/w");
@@ -155,6 +159,15 @@ pub(crate) fn document() -> Vec<u8> {
             }),
         )
     };
+    let mode_cases: Vec<Json> = ["fast", "slow"]
+        .iter()
+        .enumerate()
+        .map(|(line, case)| {
+            json!({"identity": ident(&format!("variant/Mode-{case}")), "name": case,
+                "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                    "startLine": line + 1, "startColumn": 3}}})
+        })
+        .collect();
     let fields: Vec<Json> = [("v", &value), ("w", &weight)]
         .into_iter()
         .map(|(name, field)| {
@@ -202,6 +215,11 @@ pub(crate) fn document() -> Vec<u8> {
             record("PeerAttempt", "p", &cell, "required"),
             // An optional field: three records, absent first.
             record("OptAttempt", "ok", "ix://quire/native/Boolean", "optional"),
+            // An enum field: two records, named by their declared cases.
+            wire_type(&ident("Mode"), "variant_type", json!({"variants": mode_cases})),
+            record("ModeAttempt", "m", &ident("Mode"), "required"),
+            // A field with no finite enumeration here, though bounded.
+            record("TextAttempt", "s", "ix://quire/native/String", "required"),
             // An unbounded field: no finite domain.
             record("WideAttempt", "n", "ix://quire/native/Integer", "required"),
         ],

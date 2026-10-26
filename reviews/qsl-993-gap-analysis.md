@@ -44,3 +44,15 @@ FR-207-AC-5, FR-207-AC-6 and FR-216-AC-7 are fully asserted by their tests. FR-2
 attempt-record clause is fully asserted, but the AC as a whole is not. No code was found that
 has no owning requirement: every new path traces to PS-8, ST-11, ST-12, TS-2 or CP-4. The
 exception is the attempt-type `UnenumerableRecord` refusal, recorded as SR-1587003 FND-001.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | Two new tests are tagged FR-207-AC-6 for behaviour the AC does not state. `an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound` (qsl-analyze) and `an_attempt_type_of_finite_fields_enumerates_every_record` (qsl-eval unit) carry `#[trace("TC-652", "FR-207-AC-6")]`. AC-6 states only a `RefundAttempt { ok: Boolean }` template under `not e.ok` and `l.ok`. Optional fields, enums, nested records and `requires-bound` for an unbounded attempt field are ADR-027 ST-11/TS-5 behaviour, and no AC states them. AC-6 is fully covered by its own test, so the matrix total does not change, but these bindings are wrong. Drop the tags, or add an AC for the attempt-type domain and the attempt-type root and tag the tests to it. | qsl-analyze/tests/it/protocol_compensation.rs:1492-1499, qsl-eval/src/simulation/model/domain.rs:511-513 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The AC-8 integration test is now untagged, with a correct "Part of" doc. But the new unit test `a_record_value_is_written_in_fr_120_s_record_form` (qsl-eval domain.rs:538) is tagged `#[trace("TC-652", "FR-205-AC-8")]`, and it asserts none of AC-8: it tests FR-120's record encoding. The matrix still reports FR-205-AC-8 as covered while its first three sentences are asserted by no tagged test. Drop that tag. |

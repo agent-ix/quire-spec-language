@@ -481,7 +481,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
             }
             records.push(Bound {
-                enc: typed_value_enc(&value, self.model.types()),
+                enc: typed_value_enc(
+                    &value,
+                    self.model.types(),
+                    self.package.graph().scope().variant_types(),
+                ),
                 value: Some(value),
             });
         }
