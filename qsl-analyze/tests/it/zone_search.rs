@@ -17,8 +17,8 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    check_zone_certificate, CertEdge, CertificateCheckLimits, CounterexampleKind, DivergentTarget,
-    ModelCheckItem, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
+    check_zone_certificate, CertEdge, CertificateCheckLimits, CertifiedItem, CounterexampleKind,
+    DivergentTarget, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
     ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
@@ -882,7 +882,7 @@ fn operation(certificate: &Certificate, edge: usize) -> &'static str {
 pub(crate) type Certificate = ZoneCertificate<ItemObligation<&'static str>>;
 
 /// FR-245's check of `certificate` against `world`'s subject, for the item
-/// its obligation names: the first clause, or the deadlock-freedom item.
+/// its obligation names: the first clause, or a derived item.
 pub(crate) fn check(
     world: &World,
     certificate: &Certificate,
@@ -892,8 +892,9 @@ pub(crate) fn check(
     let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("letters");
     let item = match certificate.obligation.kind {
-        ObligationKind::DeadlockFreedom => ModelCheckItem::DeadlockFreedom,
-        _ => ModelCheckItem::Clause {
+        ObligationKind::DeadlockFreedom => CertifiedItem::DeadlockFreedom,
+        ObligationKind::TimeLockFreedom => CertifiedItem::TimeLockFreedom,
+        _ => CertifiedItem::Clause {
             clause: node.clause(),
             letters: &letters,
         },

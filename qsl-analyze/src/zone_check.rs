@@ -15,6 +15,7 @@ mod concretise;
 mod dbm;
 mod divergence;
 mod lasso;
+mod live_certificate;
 mod liveness;
 mod scale;
 mod search;

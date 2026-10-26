@@ -8,16 +8,17 @@
 //! step's convex part to the node that holds or covers its successor. Every
 //! certificate carries `admitted`, a path of its own edges from an initial
 //! node to a divergent target (ADR-026 TD-6), taken from the evidence the
-//! vacuity test accepted (FR-240's test). FR-240's component and
-//! divergence parts belong to the liveness and time-lock-freedom proofs
-//! (QSL-583) and are not built here.
+//! vacuity test accepted (FR-240's test). A time-lock-freedom proof adds
+//! the divergence part: each node's own path to a divergent target, from
+//! FR-240's test at that node. The liveness proof's product and component
+//! parts are built in `live_certificate`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
 use qsl_replay::{
-    CertEdge, CertNode, CertificateItem, DivergenceWitness, DivergentTarget, LuBounds, Zone,
-    ZoneCertificate,
+    CertEdge, CertNode, CertificateItem, Components, DivergenceWitness, DivergentTarget, LuBounds,
+    Zone, ZoneCertificate,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Integer;
@@ -40,12 +41,14 @@ pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_
 /// A certificate before it names the obligation it proves.
 #[derive(Clone, Debug)]
 pub(super) struct Proof {
-    scale: Integer,
-    lu_bounds: LuBounds,
-    nodes: Vec<CertNode>,
-    edges: Vec<CertEdge>,
-    initial: Vec<usize>,
-    admitted: DivergenceWitness,
+    pub(super) scale: Integer,
+    pub(super) lu_bounds: LuBounds,
+    pub(super) nodes: Vec<CertNode>,
+    pub(super) edges: Vec<CertEdge>,
+    pub(super) initial: Vec<usize>,
+    pub(super) components: Option<Components>,
+    pub(super) divergence: Option<Vec<DivergenceWitness>>,
+    pub(super) admitted: DivergenceWitness,
 }
 
 impl Proof {
@@ -61,6 +64,8 @@ impl Proof {
             nodes: self.nodes,
             edges: self.edges,
             initial: self.initial,
+            components: self.components,
+            divergence: self.divergence,
             admitted: self.admitted,
         }
     }
@@ -69,12 +74,14 @@ impl Proof {
 impl Run<'_, '_, '_> {
     /// The certificate of a completed run with no admitted violation, its
     /// `admitted` part mapped from `witness`, the evidence FR-240's test
-    /// accepted from the initial node `root`.
+    /// accepted from the initial node `root`; with `divergence`, each
+    /// node's own witness of that test too (the time-lock-freedom item).
     pub(super) fn certificate(
         &mut self,
         roots: &[usize],
         root: usize,
         witness: &EscapeWitness,
+        divergence: bool,
     ) -> Result<Proof, Halt> {
         let mut nodes = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
@@ -88,6 +95,7 @@ impl Run<'_, '_, '_> {
                 automaton_state: node.q,
                 zone: core_zone(&node.zone)?,
                 locked: node.locked,
+                product: None,
             });
         }
         // Edges by source in discovery order; from one source the search
@@ -132,10 +140,29 @@ impl Run<'_, '_, '_> {
                 part,
                 horizon,
                 to,
+                silent: None,
             });
         }
-        let admitted = admitted(&edges, &steps, root, witness)
+        let witnessed = admitted(&edges, &steps, root, witness)
             .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("divergence-witness")))?;
+        let divergence = if divergence {
+            let mut witnesses = Vec::with_capacity(self.nodes.len());
+            for node in 0..self.nodes.len() {
+                self.poll()?;
+                // FR-232: the item holds, so every valuation of every node
+                // has a time-divergent continuation.
+                let escape = self.node_escape(node)?;
+                let found = escape
+                    .witness
+                    .filter(|_| escape.diverges)
+                    .and_then(|witness| admitted(&edges, &steps, node, &witness))
+                    .ok_or(ZoneCheckRefusal::Fault("node-divergence-witness"))?;
+                witnesses.push(found);
+            }
+            Some(witnesses)
+        } else {
+            None
+        };
         let integers = |bounds: &[Option<BigInt>]| {
             bounds
                 .iter()
@@ -151,14 +178,16 @@ impl Run<'_, '_, '_> {
             nodes,
             edges,
             initial: roots.to_vec(),
-            admitted,
+            components: None,
+            divergence,
+            admitted: witnessed,
         })
     }
 }
 
 /// `zone` as the core's zone, which the certificate carries: the same
 /// matrix, read by the core's own code (ADR-026 CF-6).
-fn core_zone(zone: &Dbm) -> Result<Zone, Halt> {
+pub(super) fn core_zone(zone: &Dbm) -> Result<Zone, Halt> {
     let dim = zone.dim();
     let mut bounds = Vec::with_capacity(dim * dim);
     for i in 0..dim {

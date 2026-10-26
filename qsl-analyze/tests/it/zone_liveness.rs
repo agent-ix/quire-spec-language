@@ -12,7 +12,7 @@ use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_replay::{replay, reproduced};
 use crate::zone_search::{claim, delays, rpc_claim, violated, windowed, Outcome, INFINITE};
 
-fn decide(world: &World) -> Outcome {
+pub(crate) fn decide(world: &World) -> Outcome {
     claim(world, ZoneCheckLimits::default(), &Cancel::new())
 }
 
@@ -49,7 +49,7 @@ fn loop_delay(counterexample: &TemporalCounterexample) -> Rational {
 
 /// FR-240-AC-1's response claim over `Rpc` with deadline `t`, with
 /// `extra` added to the model.
-fn response(t: u32, extra: &str) -> World {
+pub(crate) fn response(t: u32, extra: &str) -> World {
     rpc_claim(
         t,
         INFINITE,
@@ -137,7 +137,7 @@ fn rpc_echo() -> World {
 /// no data change, `serve` guarded `x {guard}` setting `retried` (the spec's
 /// `done`), and the claim
 /// `eventually holds(c.retried)` under the fairness set `fairness`.
-fn serve(guard: &str, fairness: &str) -> World {
+pub(crate) fn serve(guard: &str, fairness: &str) -> World {
     world(
         &document(&["x"], &[("idle", &[]), ("serve", &["retried"])]),
         INFINITE,

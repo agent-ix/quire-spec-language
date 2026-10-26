@@ -39,9 +39,12 @@ use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Ide
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{GuardedStep, ModelSimState};
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
-use qsl_replay::{CounterexampleKind, Lasso, TemporalCounterexample, UndefinedLocus};
+use qsl_replay::{
+    CounterexampleKind, FairnessMember, Lasso, TemporalCounterexample, UndefinedLocus,
+};
 use qsl_semantics::check::CaptureSite;
 use quire_exact::{Integer, Meter, Rational};
+use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::concretise::{concretise, NotConcretised, Stage, Target};
@@ -66,24 +69,26 @@ type CellAtom = (usize, BigInt);
 
 /// One vertex of the product.
 #[derive(Clone, Debug)]
-struct LiveVertex {
-    state: ModelSimState,
-    q: StateId,
+pub(super) struct LiveVertex {
+    pub(super) state: ModelSimState,
+    pub(super) q: StateId,
     /// The vertex's sign against each of its state's cell atoms.
     cell: Vec<Sign>,
-    /// The zone; `None` for an idle-tail vertex.
-    zone: Option<Dbm>,
+    /// The zone, over the clock places and, under a dense source, `z`.
+    pub(super) zone: Dbm,
     /// Entered by a position: a step, the initial position or a stutter.
-    positioned: bool,
-    /// Entered by a divergence reset, a tick or a stutter.
-    divergent: bool,
+    pub(super) positioned: bool,
+    /// Entered by a divergence reset, or under a tick source by a tick.
+    pub(super) divergent: bool,
+    /// In the idle tail: the behaviour takes no further step.
+    pub(super) tail: bool,
     /// The initial state's index, for an initial vertex.
-    initial: Option<usize>,
+    pub(super) initial: Option<usize>,
 }
 
 /// How an edge of the product is taken.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Via {
+pub(super) enum Via {
     /// A guarded step's convex part.
     Step { step: usize, part: usize },
     /// A delay into the next cell.
@@ -95,10 +100,10 @@ enum Via {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct LiveEdge {
-    from: usize,
-    to: usize,
-    via: Via,
+pub(super) struct LiveEdge {
+    pub(super) from: usize,
+    pub(super) to: usize,
+    pub(super) via: Via,
 }
 
 /// Where an undefined position is read: an initial state, by its index,
@@ -111,11 +116,11 @@ enum Origin {
 
 /// One instance's product.
 #[derive(Default)]
-struct Product {
-    vertices: Vec<LiveVertex>,
-    edges: Vec<LiveEdge>,
+pub(super) struct Product {
+    pub(super) vertices: Vec<LiveVertex>,
+    pub(super) edges: Vec<LiveEdge>,
     /// The edges out of each vertex, by index into `edges`.
-    out: Vec<Vec<usize>>,
+    pub(super) out: Vec<Vec<usize>>,
     /// The edge that discovered each vertex.
     parent: Vec<Option<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
@@ -141,7 +146,32 @@ enum Found {
     Counterexample(Box<TemporalCounterexample>),
     /// A fair accepting cycle, none of which concretised.
     NotConcretised,
-    Nothing,
+    /// No fair accepting cycle: why, by component.
+    Nothing(InstanceProof),
+}
+
+/// FR-240's decision over every instance.
+pub(super) enum Liveness {
+    /// The first instance's counterexample.
+    Violated(Box<TemporalCounterexample>),
+    /// No instance has a fair accepting cycle: each instance's product and
+    /// the fairness kernels' analysis of it, in instance order.
+    Proved(Vec<InstanceProof>),
+}
+
+/// One instance's product with no fair accepting cycle, as FR-244's
+/// component part reads it.
+pub(super) struct InstanceProof {
+    pub(super) product: Product,
+    /// The kernels' components of the product, each with its outcome.
+    pub(super) analyses: Vec<Analysis>,
+    /// Each kernel fairness constraint as the clause's member it is.
+    pub(super) members: Vec<FairnessMember>,
+    /// The automaton's acceptance sets: the kernels' sets after them are
+    /// divergence, then position.
+    pub(super) automaton_sets: usize,
+    /// The aM bounds the product's vertices are identified under.
+    pub(super) bounds: Vec<Option<BigInt>>,
 }
 
 /// The run's view of one instance's product.
@@ -213,7 +243,7 @@ impl Run<'_, '_, '_> {
     ///
     /// [`ZoneUndecided::LassoNotConcretized`] when a fair accepting cycle
     /// exists and none concretises.
-    pub(super) fn liveness(&mut self) -> Result<Option<TemporalCounterexample>, Halt> {
+    pub(super) fn liveness(&mut self) -> Result<Liveness, Halt> {
         let mut automaton = self
             .live
             .take()
@@ -223,10 +253,7 @@ impl Run<'_, '_, '_> {
         found
     }
 
-    fn each_instance(
-        &mut self,
-        automaton: &mut PropertyAutomaton,
-    ) -> Result<Option<TemporalCounterexample>, Halt> {
+    fn each_instance(&mut self, automaton: &mut PropertyAutomaton) -> Result<Liveness, Halt> {
         let claim = self
             .claim()
             .ok_or(ZoneCheckRefusal::Fault("liveness-claim"))?;
@@ -258,6 +285,7 @@ impl Run<'_, '_, '_> {
         }
         let start = self.automaton(automaton.initial())?;
         let mut not_concretised = false;
+        let mut proofs = Vec::with_capacity(instances.len());
         for instance in &instances {
             let mut live = Live {
                 instance,
@@ -274,9 +302,11 @@ impl Run<'_, '_, '_> {
                 product: Product::default(),
             };
             match self.decide(&mut live)? {
-                Found::Counterexample(counterexample) => return Ok(Some(*counterexample)),
+                Found::Counterexample(counterexample) => {
+                    return Ok(Liveness::Violated(counterexample))
+                }
                 Found::NotConcretised => not_concretised = true,
-                Found::Nothing => {}
+                Found::Nothing(proof) => proofs.push(proof),
             }
         }
         if not_concretised {
@@ -305,7 +335,7 @@ impl Run<'_, '_, '_> {
                 return Err(self.undecided(ZoneUndecided::NoAdmittedBehaviour));
             }
         }
-        Ok(None)
+        Ok(Liveness::Proved(proofs))
     }
 
     /// Whether the subject, read by `live`'s universal automaton, reaches a
@@ -317,15 +347,10 @@ impl Run<'_, '_, '_> {
     /// (spec gap STD-493, comment fd83efcd, item 3).
     fn admits_fair(&mut self, live: &mut Live<'_>) -> Result<bool, Halt> {
         self.build(live)?;
-        if live
-            .product
-            .vertices
-            .iter()
-            .any(|vertex| vertex.zone.is_none())
-        {
+        if live.product.vertices.iter().any(|vertex| vertex.tail) {
             return Ok(true);
         }
-        let (model, vertices) = self.fair_model(live)?;
+        let (model, vertices, _) = self.fair_model(live)?;
         let analyses = analyze(&model.graph, &vertices, &model.constraints, self.cancel)
             .map_err(|error| self.fairness(error))?;
         Ok(Analysis::first_fair_in(&analyses).is_some())
@@ -348,7 +373,7 @@ impl Run<'_, '_, '_> {
         if let Some(found) = self.build(live)? {
             return Ok(Found::Counterexample(Box::new(found)));
         }
-        let (model, vertices) = self.fair_model(live)?;
+        let (model, vertices, members) = self.fair_model(live)?;
         let analyses = analyze(&model.graph, &vertices, &model.constraints, self.cancel)
             .map_err(|error| self.fairness(error))?;
         let mut passing = false;
@@ -386,7 +411,13 @@ impl Run<'_, '_, '_> {
         Ok(if passing {
             Found::NotConcretised
         } else {
-            Found::Nothing
+            Found::Nothing(InstanceProof {
+                product: std::mem::take(&mut live.product),
+                analyses,
+                members,
+                automaton_sets: live.acceptance_sets(),
+                bounds: live.lower.clone(),
+            })
         })
     }
 
@@ -397,8 +428,16 @@ impl Run<'_, '_, '_> {
         }
     }
 
-    /// The product as the fairness kernels read it, and its vertices.
-    fn fair_model(&mut self, live: &Live<'_>) -> Result<(FairModel, BTreeSet<Vertex>), Halt> {
+    /// The product as the fairness kernels read it, its vertices, and each
+    /// kernel constraint as the clause's fairness member it is.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the model, its vertices and members"
+    )]
+    fn fair_model(
+        &mut self,
+        live: &Live<'_>,
+    ) -> Result<(FairModel, BTreeSet<Vertex>, Vec<FairnessMember>), Halt> {
         let mut transitions: Vec<ModelTransition> = Vec::new();
         let mut number = |transition: &ModelTransition| -> Identity {
             let index = match transitions.iter().position(|held| held == transition) {
@@ -417,7 +456,7 @@ impl Run<'_, '_, '_> {
             let steps = self.steps_for(&vertex.state)?;
             let mut enabled = Vec::new();
             for step in &steps {
-                if self.enabled_at(live, vertex, step)? {
+                if self.enabled_at(vertex, step)? {
                     enabled.push(number(step.transition()));
                 }
             }
@@ -508,38 +547,46 @@ impl Run<'_, '_, '_> {
             },
         )
         .map_err(|_| ZoneCheckRefusal::Fault("fairness-constraints"))?;
-        Ok((FairModel { graph, constraints }, all))
+        // `fairness_constraints`' order: each clause constraint in turn, a
+        // `whole` one once and an `each` one per numbered transition.
+        let mut members = Vec::with_capacity(constraints.len());
+        for (index, constraint) in claim.clause.fairness().iter().enumerate() {
+            let operation = constraint.operation();
+            let text = self
+                .timed
+                .system()
+                .operation_text(operation.declaring_type(), operation.name())
+                .ok_or(ZoneCheckRefusal::Fault("fairness-operation"))?;
+            match constraint.granularity() {
+                FairnessGranularity::Whole => members.push(FairnessMember {
+                    constraint: index,
+                    transition: None,
+                }),
+                FairnessGranularity::Each => members.extend(
+                    transitions
+                        .iter()
+                        .filter(|transition| transition.operation() == text)
+                        .map(|transition| FairnessMember {
+                            constraint: index,
+                            transition: Some(transition.clone()),
+                        }),
+                ),
+            }
+        }
+        if members.len() != constraints.len() {
+            return Err(ZoneCheckRefusal::Fault("fairness-members").into());
+        }
+        Ok((FairModel { graph, constraints }, all, members))
     }
 
     /// Whether `step` is enabled at the instants of `vertex` (FR-232: a
     /// convex part of its guard holds and its target's time invariants
     /// would): at every one, for a fairness-constrained step, whose
     /// enabledness its cell decides.
-    fn enabled_at(
-        &mut self,
-        live: &Live<'_>,
-        vertex: &LiveVertex,
-        step: &GuardedStep,
-    ) -> Result<bool, Halt> {
-        let zone = match &vertex.zone {
-            Some(zone) => zone.clone(),
-            // The idle tail is read where every clock is past every
-            // constant (FR-232): under a tick source, at a terminal state,
-            // where nothing is enabled.
-            None if self.timed.tick_period().is_some() => return Ok(false),
-            None => {
-                let atoms = live
-                    .atoms
-                    .get(&self.key(&vertex.state)?)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut zone = Dbm::universe(live.dim);
-                for (clock, value) in &atoms {
-                    zone.constrain(0, *clock, Bound::lt(-value.clone()))?;
-                }
-                zone
-            }
-        };
+    fn enabled_at(&mut self, vertex: &LiveVertex, step: &GuardedStep) -> Result<bool, Halt> {
+        // An idle-tail vertex reads its zone too: a step the tail does not
+        // take may still be enabled there.
+        let zone = vertex.zone.clone();
         for part in self.enabling_parts(step)? {
             let mut at = zone.clone();
             constrain_at(&mut at, &part, &self.scale)?;
@@ -578,9 +625,10 @@ impl Run<'_, '_, '_> {
                         state: state.clone(),
                         q,
                         cell: cell.clone(),
-                        zone: Some(zone.clone()),
+                        zone: zone.clone(),
                         positioned: true,
                         divergent: false,
+                        tail: false,
                         initial: Some(index),
                     };
                     if let Some(new) = self.add_vertex(live, vertex, None)? {
@@ -618,28 +666,13 @@ impl Run<'_, '_, '_> {
         let vertex = live.product.vertices[at].clone();
         let state = vertex.state.clone();
         let mut created = Vec::new();
-        let idles = vertex.zone.is_some()
+        let idles = !vertex.tail
             && match self.timed.tick_period() {
                 Some(_) => self.steps_for(&state)?.is_empty(),
                 None => self.timed(self.timed.is_quiescent(&state))? && self.elapses(&state)?,
             };
         if idles {
-            let Reading::Defined(letter) = self.reading(live, &state, false)? else {
-                return Err(ZoneCheckRefusal::Fault("idle-letter").into());
-            };
-            let infinity = vec![Sign::Above; vertex.cell.len()];
-            for q in self.automaton(live.successors(vertex.q, letter))? {
-                let next = LiveVertex {
-                    state: state.clone(),
-                    q,
-                    cell: infinity.clone(),
-                    zone: None,
-                    positioned: true,
-                    divergent: true,
-                    initial: None,
-                };
-                created.extend(self.add_vertex(live, next, Some((at, Via::Stutter)))?);
-            }
+            created.extend(self.stutter(live, at)?);
         }
         Ok(created)
     }
@@ -650,24 +683,20 @@ impl Run<'_, '_, '_> {
         let vertex = live.product.vertices[at].clone();
         let mut created = Vec::new();
         let dense = self.timed.tick_period().is_none();
-        let Some(zone) = vertex.zone.clone() else {
-            // An idle-tail vertex stutters on.
-            let Reading::Defined(letter) = self.reading(live, &vertex.state, false)? else {
-                return Err(ZoneCheckRefusal::Fault("idle-letter").into());
-            };
-            for q in self.automaton(live.successors(vertex.q, letter))? {
-                let next = LiveVertex {
-                    q,
-                    ..vertex.clone()
-                };
-                created.extend(self.add_vertex(live, next, Some((at, Via::Stutter)))?);
-            }
-            return Ok(Expansion::Created(created));
-        };
+        let zone = vertex.zone.clone();
         let state = vertex.state.clone();
         let scale = self.scale.clone();
-        // The steps, each convex part from the cell.
-        for (index, step) in self.steps_for(&state)?.iter().enumerate() {
+        if vertex.tail {
+            // An idle-tail vertex stutters on.
+            created.extend(self.stutter(live, at)?);
+        }
+        // The steps, each convex part from the cell; none in the idle tail.
+        let steps = if vertex.tail {
+            Vec::new()
+        } else {
+            self.steps_for(&state)?
+        };
+        for (index, step) in steps.iter().enumerate() {
             let target = self.timed(self.timed.invariants(step.post()))?;
             let tick =
                 self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero());
@@ -711,9 +740,10 @@ impl Run<'_, '_, '_> {
                             state: post.clone(),
                             q,
                             cell: cell.clone(),
-                            zone: Some(entered.clone()),
+                            zone: entered.clone(),
                             positioned: true,
                             divergent: !dense && tick,
+                            tail: false,
                             initial: None,
                         };
                         created.extend(self.add_vertex(live, next, Some((at, via)))?);
@@ -736,7 +766,7 @@ impl Run<'_, '_, '_> {
                 };
                 let next = LiveVertex {
                     cell,
-                    zone: Some(entered),
+                    zone: entered,
                     positioned: false,
                     divergent: false,
                     initial: None,
@@ -754,7 +784,7 @@ impl Run<'_, '_, '_> {
                 reset.reset(z, &BigInt::from(0))?;
                 if let Some(entered) = self.close(live, &state, reset, &vertex.cell)? {
                     let next = LiveVertex {
-                        zone: Some(entered),
+                        zone: entered,
                         positioned: false,
                         divergent: true,
                         initial: None,
@@ -765,6 +795,29 @@ impl Run<'_, '_, '_> {
             }
         }
         Ok(Expansion::Created(created))
+    }
+
+    /// The idle-tail stutters from vertex `at`: the state's letter read
+    /// again, the zone kept, and the behaviour in the idle tail.
+    fn stutter(&mut self, live: &mut Live<'_>, at: usize) -> Result<Vec<usize>, Halt> {
+        let vertex = live.product.vertices[at].clone();
+        let Reading::Defined(letter) = self.reading(live, &vertex.state, false)? else {
+            return Err(ZoneCheckRefusal::Fault("idle-letter").into());
+        };
+        let dense = self.timed.tick_period().is_none();
+        let mut created = Vec::new();
+        for q in self.automaton(live.successors(vertex.q, letter))? {
+            let next = LiveVertex {
+                q,
+                positioned: true,
+                divergent: !dense,
+                tail: true,
+                initial: None,
+                ..vertex.clone()
+            };
+            created.extend(self.add_vertex(live, next, Some((at, Via::Stutter)))?);
+        }
+        Ok(created)
     }
 
     /// Store `vertex` unless one with equal state, automaton state, cell
@@ -785,17 +838,12 @@ impl Run<'_, '_, '_> {
         key.extend(vertex.cell.iter().map(|sign| *sign as u8));
         key.push(u8::from(vertex.positioned));
         key.push(u8::from(vertex.divergent));
-        key.push(u8::from(vertex.zone.is_none()));
+        key.push(u8::from(vertex.tail));
         if let Some(stored) = live.product.passed.get(&key) {
             for &candidate in stored {
-                let same = match (&vertex.zone, &live.product.vertices[candidate].zone) {
-                    (Some(zone), Some(held)) => {
-                        zone.alu_covered_by(held, &live.lower, &live.upper)?
-                            && held.alu_covered_by(zone, &live.lower, &live.upper)?
-                    }
-                    (None, None) => true,
-                    _ => false,
-                };
+                let held = &live.product.vertices[candidate].zone;
+                let same = vertex.zone.alu_covered_by(held, &live.lower, &live.upper)?
+                    && held.alu_covered_by(&vertex.zone, &live.lower, &live.upper)?;
                 if same {
                     if let Some((from, via)) = from {
                         self.add_edge(live, from, candidate, via)?;
@@ -804,7 +852,7 @@ impl Run<'_, '_, '_> {
                 }
             }
         }
-        let bytes = vertex.zone.as_ref().map_or(0, super::search::zone_bytes);
+        let bytes = super::search::zone_bytes(&vertex.zone);
         self.charge_vertex(bytes)?;
         self.escape_state();
         let index = live.product.vertices.len();
@@ -1178,7 +1226,7 @@ impl Run<'_, '_, '_> {
             refinement: None,
             final_delay: None,
         };
-        if live.product.vertices[entry].zone.is_none() {
+        if live.product.vertices[entry].tail {
             // The idle tail: the stem to the quiescent state, then its
             // stutter forever (FR-236).
             let tail = stem
