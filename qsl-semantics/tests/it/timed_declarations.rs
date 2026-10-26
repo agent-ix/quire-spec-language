@@ -1296,6 +1296,7 @@ fn check_two_over(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n\
+         profile tt = \"quire.temporal.timed/v1\";\n\
          model R = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model F = \"example/flow\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          dimension Time;\nunit s : Time = rational(1, 1);\n{body}\n",
@@ -1339,6 +1340,9 @@ fn check_two_over(
 /// period `1 F::sec` refuses at the period;
 /// a unit `len` of a base dimension `Length` and a unit of a derived
 /// `Duration = Time` refuse `time dense unit` `ill_typed`/`type-mismatch`.
+/// FR-142's conversion refuses the same way on the other paths that read a
+/// time quantity: a task's `wcet 1 F::sec` at the quantity and a timed
+/// interval bound `3 F::sec` at its unit.
 /// The three models' package identities are `qsl-package`'s
 /// `three_time_dimensions_give_three_package_identities`.
 #[trace("TC-685", "FR-230-AC-18")]
@@ -1387,6 +1391,19 @@ fn time_dimensions_of_different_owners_do_not_mix() {
         (
             "dimension Length;\nunit len : Length = rational(1, 1);\ntime R dense unit len;\n",
             "len",
+        ),
+        (
+            "time R dense unit R::ms;\n\
+             taskset Ctl {\n\
+             task a periodic 4 R::ms deadline 4 R::ms wcet 1 F::sec priority 1 lo;\n\
+             }\n",
+            "1 F::sec",
+        ),
+        (
+            "time R dense unit R::ms;\n\
+             temporal C using tt over (c: R::ConfigVersion) clock \"model-time\" on origin \
+             { eventually[0 R::ms, 3 F::sec] holds(c.versionNumber = 2) }\n",
+            "F::sec",
         ),
         (
             "dimension Duration = Time;\nunit d : Duration = rational(1, 1);\n\

@@ -12,8 +12,9 @@ use quire_exact::{IllTypedCause, ValueType};
 use serde_json::{json, Value};
 
 use crate::model_operations::{
-    admit_and_assemble_with_body, config_unit, config_version_document_with_operations,
-    empty_frame, operation, operation_parameter, parse_and_build,
+    admit_and_assemble_with_body, config_unit, config_unit_with_profiles,
+    config_version_document_with_operations, empty_frame, operation, operation_parameter,
+    parse_and_build,
 };
 
 const UNITS: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
@@ -65,7 +66,7 @@ fn targets(term: &Value) -> Vec<String> {
     found
 }
 
-/// FR-230-AC-15 (TC-685 step 17): with dimension `Time`, root `s` and `ms`
+/// Part of FR-230-AC-15 (TC-685 step 17): with dimension `Time`, root `s` and `ms`
 /// of scale `1/1000`, a record field, a tuple element, a union payload, an
 /// `Option` and a `Set` of `Quantity<ms>`, a function parameter and result,
 /// a predicate parameter of the alias `Span = Quantity<ms>`, and an
@@ -73,9 +74,10 @@ fn targets(term: &Value) -> Vec<String> {
 /// Every position is typed by the one nominal unit node of `ms`; the alias
 /// has no node, the tuple element and union payload reference the unit node
 /// itself, and `Option`'s composite node holds the unit node. `f(3 s)`
-/// refuses `ill_typed`/`type-mismatch`, and `record R { d: Quantity<Time> }`
-/// `missing_declaration`/`missing-name`.
-#[trace("TC-685", "FR-230-AC-15")]
+/// refuses `ill_typed`/`type-mismatch` at `3 s`, and `record R { d: Quantity<Time> }`
+/// `missing_declaration`/`missing-name`. Not covered: the AC's
+/// `Map<Text, Quantity<ms>>`, which source cannot write (STD-493 item 12).
+#[trace("TC-685")]
 #[test]
 fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let body = format!(
@@ -127,6 +129,15 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         .expect("the Option node");
     assert_eq!(option["semantic_form"], "option");
     assert_eq!(targets(&option["body"]), std::slice::from_ref(&unit));
+    let set = targets(&members[3]);
+    let [set] = set.as_slice() else {
+        panic!("marks is typed by one composite: {set:?}");
+    };
+    let (_, set) = nodes
+        .iter()
+        .find(|(key, _)| key == set)
+        .expect("the Set node");
+    assert_eq!(targets(&set["body"]), std::slice::from_ref(&unit), "{set}");
     for (name, position) in [("Pair", 0), ("Bound", 0)] {
         let node = declared(name).expect("the composite");
         let member = &node["body"]["members"][position];
@@ -169,27 +180,37 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let [(_, parameter)] = measure.parameters() else {
         panic!("one parameter");
     };
+    // The operation's parameter and result are the one type `f`'s
+    // parameter is, `Quantity` of the `ms` unit node (above).
+    let f = graph.callable("f").expect("f is callable");
+    assert_eq!(
+        parameter, &f.parameters[0].1,
+        "measure's parameter is Quantity<ms>"
+    );
     assert!(matches!(parameter, ValueType::Quantity(_)), "{parameter:?}");
     assert_eq!(measure.result(), Some(parameter));
 
     // A quantity of another unit of the same dimension does not stand for
-    // `Quantity<ms>`.
-    let refusals = admit_and_assemble_with_body(
-        &document,
-        &format!(
-            "{UNITS}function f using v(d: Quantity<ms>): Quantity<ms> pure {{ d }}\n\
-             function g using v(): Quantity<ms> pure {{ f(3 s) }}\n"
-        ),
-    )
-    .expect("assembles")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
-    .expect_err("3 s is not a Quantity<ms>");
-    assert!(
-        refusals
-            .iter()
-            .all(|refusal| refusal.cause == CheckCause::IllTyped(IllTypedCause::TypeMismatch)),
-        "{refusals:?}"
+    // `Quantity<ms>`: refused at the argument `3 s`.
+    let mismatched = format!(
+        "{UNITS}function f using v(d: Quantity<ms>): Quantity<ms> pure {{ d }}\n\
+         function g using v(): Quantity<ms> pure {{ f(3 s) }}\n"
     );
+    let declarations = admit_and_assemble_with_body(&document, &mismatched).expect("assembles");
+    let regions = declarations.regions();
+    let (text, _) = config_unit_with_profiles(&document, "", &mismatched);
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("3 s is not a Quantity<ms>");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    let region = regions.refusal_region(refusal).expect("a region");
+    assert_eq!(&text[region.start() as usize..region.end() as usize], "3 s");
 
     // `Time` is a dimension, not a unit.
     let refusal = admit_and_assemble_with_body(

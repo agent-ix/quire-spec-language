@@ -267,8 +267,9 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
 /// (`R`: `Time`, `s`, `ms`) and the same package as `example/flow` (`F`:
 /// `Time`, `sec`) both selected and a source `Time` with `s`, the time
 /// members `time R dense unit R::ms`, `time R dense unit F::sec` and `time
-/// R dense unit s` each emit over their own `Time` node, and the three
-/// packages have three different identities. The S3 refusals of mixed
+/// R dense unit s` each emit a timed root whose `time_dimension` is their
+/// own `Time` node, three different nodes, and the three packages have
+/// three different identities. The S3 refusals of mixed
 /// dimensions are `qsl-semantics`' `time_dimensions_of_different_owners_do_not_mix`.
 #[trace("TC-685", "FR-230-AC-18")]
 #[test]
@@ -313,18 +314,36 @@ fn three_time_dimensions_give_three_package_identities() {
             .expect("the unit assembles")
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
-        let dimension = graph.time_sources()[0].time_dimension;
+        let dimension = graph.time_sources()[0].time_dimension.to_string();
         let emission = emit_checked(&CheckedPackage::link(graph))
             .unwrap_or_else(|refusal| panic!("{unit} emits: {refusal:?}"));
+        // The emitted timed root references the checked time dimension.
+        let wire = wire(&emission);
+        let [root] = nodes(&wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "timed_model")
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("{unit}: one emitted timed root");
+        };
+        let emitted = root["body"]["members"]
+            .as_array()
+            .and_then(|members| {
+                members
+                    .iter()
+                    .find(|member| member["name"] == "time_dimension")
+            })
+            .map(|member| member["value"]["target"]["digest"].clone())
+            .expect("the root's time dimension");
+        assert_eq!(emitted, json!(dimension), "{unit}");
         (dimension, emission.package().package_id().hex())
     };
     let rpc = identity("R::ms");
     let flow = identity("F::sec");
     let own = identity("s");
-    assert_ne!(rpc.0, flow.0);
-    assert_ne!(rpc.0, own.0);
-    assert_ne!(flow.0, own.0);
-    assert_ne!(rpc.1, flow.1);
-    assert_ne!(rpc.1, own.1);
-    assert_ne!(flow.1, own.1);
+    // The time dimensions differ, and with them the packages.
+    for (left, right) in [(&rpc, &flow), (&rpc, &own), (&flow, &own)] {
+        assert_ne!(left.0, right.0);
+        assert_ne!(left.1, right.1);
+    }
 }
