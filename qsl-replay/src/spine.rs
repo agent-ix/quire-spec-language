@@ -1212,6 +1212,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::OpenInterval { .. } => {
                     format!("{message}: this profile admits no `[a,*]` interval")
                 }
+                TemporalCause::Multiple { causes } => format!(
+                    "{message}: multiple temporal faults in source order ({})",
+                    causes.len()
+                ),
                 TemporalCause::InvertedInterval { lower, upper, .. } => {
                     format!("{message}: the interval [{lower},{upper}] has a > b")
                 }
@@ -1237,6 +1241,21 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")
+                }
+                TemporalCause::AggregateModelSubject { .. } => {
+                    format!("{message}: aggregate terms require a trace subject")
+                }
+                TemporalCause::InvalidAggregateValue { .. } => {
+                    format!("{message}: an aggregate literal is outside its admitted range")
+                }
+                TemporalCause::InvalidAggregateWindow { .. } => {
+                    format!("{message}: the aggregate window has a > b")
+                }
+                TemporalCause::AggregateWindowKindMismatch { .. } => {
+                    format!("{message}: the aggregate window bound has the wrong kind for this profile")
+                }
+                TemporalCause::AggregateProfileUnsupported { .. } => {
+                    format!("{message}: this temporal profile admits no aggregate window")
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")

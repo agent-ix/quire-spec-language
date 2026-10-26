@@ -2937,7 +2937,46 @@ impl PackageDeclarations {
             }
             match outcome {
                 Ok(staged) if !temporal_clause::is_emitted(staged.value()) => {
-                    refusals.push(temporal_clause::not_emitted(&staged.into_value()));
+                    let checked = staged.into_value();
+                    if checked.has_aggregate {
+                        let location =
+                            lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                        let condition_declarations = state_clause::ClauseDeclarations {
+                            scope: &scope,
+                            signatures: &signatures,
+                            dispatch_tables: &dispatch_tables,
+                            models: &models,
+                            checking_limits: limits,
+                            location: &location,
+                            nodes_used,
+                            cancel: Some(cancel),
+                            staged: None,
+                        };
+                        let mut condition_cx = crate::family::CheckContext::new(
+                            &condition_declarations,
+                            contract_limits,
+                            &mut contract_meter,
+                            &mut contract_diagnostics,
+                            &mut contract_scopes,
+                        );
+                        match temporal_clause::condition::check_conditions(
+                            index,
+                            &clause.form,
+                            &checked,
+                            &condition_declarations,
+                            &mut condition_cx.reborrow(&scope),
+                        ) {
+                            Ok((_, used)) => nodes_used = used,
+                            Err(refusal) => {
+                                refusals.push(refusal);
+                                if cancel.tripped().is_some() {
+                                    return Err(refusals);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    refusals.push(temporal_clause::not_emitted(&checked));
                 }
                 Ok(staged) => {
                     let checked = staged.into_value();
