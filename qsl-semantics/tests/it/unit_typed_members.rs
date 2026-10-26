@@ -112,7 +112,11 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let members = window["body"]["members"]
         .as_array()
         .expect("record members");
-    assert_eq!(targets(&members[0]), [unit.clone()], "d is typed by ms");
+    assert_eq!(
+        targets(&members[0]),
+        std::slice::from_ref(&unit),
+        "d is typed by ms"
+    );
     let option = targets(&members[2]);
     let [option] = option.as_slice() else {
         panic!("o is typed by one composite: {option:?}");
@@ -122,11 +126,11 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         .find(|(key, _)| key == option)
         .expect("the Option node");
     assert_eq!(option["semantic_form"], "option");
-    assert_eq!(targets(&option["body"]), [unit.clone()]);
+    assert_eq!(targets(&option["body"]), std::slice::from_ref(&unit));
     for (name, position) in [("Pair", 0), ("Bound", 0)] {
         let node = declared(name).expect("the composite");
         let member = &node["body"]["members"][position];
-        assert_eq!(targets(member), [unit.clone()], "{name}");
+        assert_eq!(targets(member), std::slice::from_ref(&unit), "{name}");
     }
     for function in ["f", "p"] {
         let node = declared(function).expect("the function");
