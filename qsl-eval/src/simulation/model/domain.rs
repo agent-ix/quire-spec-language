@@ -126,6 +126,9 @@ impl Space {
                 declaration,
                 fields,
             } => {
+                if index >= self.len() {
+                    return None;
+                }
                 let mut remaining = index;
                 let mut slots = Vec::with_capacity(fields.len());
                 for (optional, space) in fields.iter().rev() {
