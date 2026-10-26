@@ -357,7 +357,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     }
 
     /// What makes `entry` one choice among a queue's entries: its bytes and,
-    /// under a model that carries a race summary, its carried race view.
+    /// under a model that carries a race summary, its carried view.
     fn choice(
         &self,
         memory: Option<&M::Component>,
@@ -368,7 +368,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .carried
             .as_ref()
             .zip(memory)
-            .and_then(|(carried, memory)| self.memory.carried_race_key(memory, carried))
+            .and_then(|(carried, memory)| self.memory.carried_choice_key(memory, carried))
         {
             identity.extend(jcs(&race.0)?);
         }
@@ -377,7 +377,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
 
     /// The distinct deliverable entries for `message` in `instance`, each
     /// with its queue and position; `memory` tells entries of equal bytes
-    /// apart by their carried race views, and `None` only asks whether any
+    /// apart by their carried views, and `None` only asks whether any
     /// is deliverable.
     fn deliverable<'i>(
         &self,

@@ -327,11 +327,11 @@ pub trait MemoryModel {
     /// carries no race summary leaves it unchanged.
     fn carried_after(&self, _carried: &mut CarriedView, _access: &AccessRecord) {}
 
-    /// The part of `carried` that tells two queued entries of equal bytes
-    /// apart as a choice: its race view, when the model carries a race
-    /// summary (a receiver of either entry may then race where the other's
-    /// does not), else `None`.
-    fn carried_race_key(
+    /// What tells two queued entries of equal bytes apart as a choice: the
+    /// whole of `carried`, when the model carries a race summary (a receiver
+    /// of either entry may then read other messages, or race where the
+    /// other's does not), else `None`.
+    fn carried_choice_key(
         &self,
         _component: &Self::Component,
         _carried: &CarriedView,
