@@ -742,6 +742,7 @@ impl Shared<'_, '_, '_> {
                             state_key: position.digest(),
                             locus: locus.clone(),
                             transition: None,
+                            time: None,
                         },
                         cause,
                     })))
@@ -985,6 +986,7 @@ impl<'c> Shared<'_, '_, 'c> {
                     state_key: last.ok_or_else(broken)?,
                     locus: UndefinedLocus::ClaimPredicate(ClaimPredicate::Target),
                     transition: None,
+                    time: None,
                 },
                 cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
             })));

@@ -258,6 +258,19 @@ pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
+/// [`package`] with the temporal profile `quire.temporal.complete/v1`, which
+/// admits a `time` member (FR-230).
+pub(crate) fn timed_package(document: &[u8], body: &str) -> CheckedPackage {
+    let text = unit_text(document, body).replace(
+        "profile t0 = \"quire.temporal.infinite-trace/v1\";",
+        "profile t0 = \"quire.temporal.complete/v1\";",
+    );
+    let graph = declarations_from_text(document, text)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
 /// The text of the temporal clause `name` over `c: M::Counter`, `on origin`,
 /// whose formula is `formula` under infinite-trace.
 pub(crate) fn clause_text(name: &str, fairness: &str, formula: &str) -> String {

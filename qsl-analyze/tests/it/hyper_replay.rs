@@ -63,6 +63,7 @@ fn take(world: &World, state: &ModelSimState, input: i64) -> (ModelStep, ModelSi
         ModelStep {
             transition,
             post_state,
+            delay: None,
         },
         next,
     )
@@ -1152,6 +1153,7 @@ fn a_projected_prefix_that_is_bad_early_reproduces_at_the_position_that_fixes_it
             trace.steps.push(HyperStep::Model(ModelStep {
                 transition,
                 post_state,
+                delay: None,
             }));
             trace.marks.push(StepMark::Skipped);
             state = next;

@@ -773,6 +773,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         lasso: None,
         blocked: Vec::new(),
         refinement: None,
+        final_delay: None,
     };
     let (cause, code, tag) = refusal(replay_with(&holds, empty, |value| Some(value >= 0)));
     assert!(
@@ -938,4 +939,45 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
         "{:?}",
         result.settlement
     );
+}
+
+/// Part of FR-236-AC-4 (TC-691): a counterexample over the untimed
+/// `Counter` subject carries `delay: None` on every step and
+/// `final_delay: None`, reproduces as FR-126's does, and measures no bytes
+/// for the absent delays. The same payload with a delay on a step, or with a
+/// final delay, refuses rather than replaying with the delay unchecked. Not
+/// covered: byte equality with FR-126's counterexample, which has no byte
+/// encoding to compare.
+#[trace("TC-691")]
+#[test]
+fn an_untimed_counterexample_carries_no_delay() {
+    let safety = counter(document(false), "", "always holds(c.value < 2)");
+    let payload = found(&safety, below_two);
+    assert_eq!(payload.prefix.len(), 2);
+    assert!(payload.prefix.iter().all(|step| step.delay.is_none()));
+    assert_eq!(payload.final_delay, None);
+    assert_eq!(
+        reproduced(replay_with(&safety, payload.clone(), below_two)),
+        Some(2)
+    );
+
+    let zero = quire_exact::Rational::from_integer(quire_exact::Integer::zero());
+    let mut delayed = payload.clone();
+    delayed.prefix[1].delay = Some(zero.clone());
+    {
+        use qsl_replay::FamilyPayload;
+        let delay = std::mem::size_of::<Option<quire_exact::Rational>>();
+        assert_eq!(
+            delayed.measured_bytes(),
+            payload.measured_bytes() + delay,
+            "only a present delay is measured"
+        );
+    }
+    let (cause, code, tag) = refusal(replay_with(&safety, delayed, below_two));
+    assert_eq!(cause, ModelTraceRefusal::UntimedDelay { step: Some(1) });
+    assert_eq!((code, tag), (Code::InvalidRuntimeInput, "invalid-value"));
+    let mut final_delay = payload;
+    final_delay.final_delay = Some(zero);
+    let (cause, ..) = refusal(replay_with(&safety, final_delay, below_two));
+    assert_eq!(cause, ModelTraceRefusal::UntimedDelay { step: None });
 }

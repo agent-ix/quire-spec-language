@@ -659,6 +659,7 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
                 .reported(transition.clone(), &states[*at].0)
                 .expect("the step reports"),
             post_state: system.state_key(&states[*at].0).expect("a key").1,
+            delay: None,
         })
         .collect();
     assert_eq!(stem.last().map(|(_, at)| *at), Some(looped));
@@ -676,6 +677,7 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
         kind: CounterexampleKind::Formula,
         blocked: Vec::new(),
         refinement: None,
+        final_delay: None,
     };
     let Err(ReplayRefusal::ModelTrace(refusal)) = unit.replay(&tso, payload) else {
         panic!("an unfair lasso refuses");
@@ -729,6 +731,7 @@ fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
                 .reported(transition.clone(), &states[*at].0)
                 .expect("the step reports"),
             post_state: system.state_key(&states[*at].0).expect("a key").1,
+            delay: None,
         })
         .collect();
     assert_eq!(stem.last().map(|(_, at)| *at), Some(looped));
@@ -744,6 +747,7 @@ fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
         kind: CounterexampleKind::Formula,
         blocked: Vec::new(),
         refinement: None,
+        final_delay: None,
     };
     let Err(ReplayRefusal::ModelTrace(refusal)) = unit.replay(&ra, payload) else {
         panic!("an unfair RA lasso refuses");
