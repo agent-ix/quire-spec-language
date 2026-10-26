@@ -58,6 +58,7 @@ exception is the attempt-type `UnenumerableRecord` refusal, recorded as SR-15870
 | FND-001 | still-open | The AC-8 integration test is now untagged, with a correct "Part of" doc. But the new unit test `a_record_value_is_written_in_fr_120_s_record_form` (qsl-eval domain.rs:538) is tagged `#[trace("TC-652", "FR-205-AC-8")]`, and it asserts none of AC-8: it tests FR-120's record encoding. The matrix still reports FR-205-AC-8 as covered while its first three sentences are asserted by no tagged test. Drop that tag. |
 | FND-001 | fixed | ee414a85a removes `#[trace("TC-652","FR-205-AC-8")]` from `a_record_value_is_written_in_fr_120_s_record_form`. No test now claims FR-205-AC-8 falsely. The remaining coverage gap is FND-003. |
 | FND-002 | fixed | Both FR-207-AC-6 tags are removed. The tests now cite ADR-027 ST-11/TS-5 in prose only. |
+| FND-003 | fixed | f51ea4f68 adds `a_thread_names_its_registration_and_the_commit_and_attempt_records_are_keyed`, tagged FR-205-AC-8. It runs the `repeat` max 2 and `parallel Triggers` scenario with capture `id` and guard `f = id`. It finds two states with the same registration entries where thread `(0, Refund, 0)` names a different registration, and asserts their keys differ. It also checks that the commit entry appears, is absent at s0, and is absent once the instance finishes. It then runs the attempt-record variant. The binding is correct. It is weaker than the AC in one respect: it shows both namings exist but does not tie each to its trigger order. |
 
 ## New findings (disposition pass 2)
 
