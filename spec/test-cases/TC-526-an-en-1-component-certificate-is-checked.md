@@ -14,7 +14,7 @@ Verify that `check_components` accepts a weak-fairness liveness proof's
 partition and rejects a failing witness, a backward edge and a
 non-partition.
 
-Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 and FR-339-AC-7.
+Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 to FR-339-AC-8.
 
 ## Test Procedure
 
@@ -36,6 +36,12 @@ Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 and FR-339-AC-7.
    component's witness naming the scheduler constraint of branch `w`, then
    `r`'s `flush` class; then with the polling-before-store component's
    witness naming `w`'s `flush` class.
+7. Over the weak `each` claim with letters that never hold, grow a closure
+   from the checker's rejections, and offer it to `check_closure` and, in a
+   `Holds`, to FR-127's settlement; settle AC-1's component certificate; offer
+   components for a safety item; over `Spin`, run `check_protocol_components`
+   on the proof's certificate, reversed, emptied and with a foreign
+   `package_id`, and the closure and components cross-offered (FR-339-AC-8).
 
 Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 
@@ -54,3 +60,6 @@ Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 - Step 6: accepted, the polling-after-store component naming `w`'s `flush`
   class and the polling-before-store component the scheduler constraint of
   branch `w`; then `WitnessFails` three times.
+- Step 7: `Violated`; `LivenessNeedsComponents` and `failed`; `proved`,
+  `certified`; `NotLiveness`; accepted, `BackwardEdge`, `NotPartition`,
+  `PackageMismatch`, `LivenessNeedsComponents`, `NotLiveness`.
