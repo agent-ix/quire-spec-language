@@ -181,3 +181,28 @@ fn a_task_named_by_a_member_word_keeps_its_members() {
     assert_eq!(periodic.arrival, ArrivalForm::Periodic);
     assert_eq!(quantity(&periodic.interval), (false, 9, "ms"));
 }
+
+#[trace("TC-704")]
+#[test]
+fn s2_builds_a_release_declaration_as_written() {
+    let (text, unit) = build(
+        "release Ctl.a on Config::ConfigVersion::sample;\n\
+         release Other.z on ConfigVersion::command;",
+    );
+    let forms: Vec<_> = unit.forms().iter().map(|form| form.form()).collect();
+    let [DeclarationForm::Release(first), DeclarationForm::Release(second)] = forms[..] else {
+        panic!("two release declarations: {forms:?}");
+    };
+    assert_eq!(first.task_set.name, "Ctl");
+    assert_eq!(first.task.name, "a");
+    assert_eq!(first.operation.name, "Config::ConfigVersion::sample");
+    assert_eq!(
+        &text[first.span.start..first.span.end],
+        "release Ctl.a on Config::ConfigVersion::sample;"
+    );
+    assert_eq!(&text[first.task.span.start..first.task.span.end], "a");
+    // S2 resolves no name: an undeclared set and task still build.
+    assert_eq!(second.task_set.name, "Other");
+    assert_eq!(second.task.name, "z");
+    assert_eq!(second.operation.name, "ConfigVersion::command");
+}

@@ -145,3 +145,47 @@ fn every_added_word_is_an_identifier_outside_its_position() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(texts(&parsed, &text, Production::Task), tasks);
 }
+
+/// QSpec `release-decl`: `release S.t on M::o;` parses to its production,
+/// beside a temporal `release` operator in the same unit. The word is the
+/// reserved temporal operator, which is infix, so each keeps its position and
+/// neither reads as the other.
+#[trace("TC-704", "FR-249-AC-3")]
+#[test]
+fn a_release_declaration_parses_beside_the_temporal_release_operator() {
+    let release = "release Ctl.a on Config::ConfigVersion::sample;";
+    let temporal = "temporal W using Complete over (s: Integer) clock \"t\" on origin \
+         { holds(s > 0) release holds(s > 1) }";
+    let text = source(&format!("{release}\n{temporal}\n{release}"));
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(
+        texts(&parsed, &text, Production::ReleaseDeclaration),
+        [release, release]
+    );
+    assert_eq!(
+        texts(&parsed, &text, Production::TemporalClause).len(),
+        1,
+        "the operator form is still one temporal clause"
+    );
+}
+
+/// A declaration head `release` needs its own shape: the temporal operator
+/// does not open a declaration, and a malformed release declaration is not
+/// admitted.
+#[trace("TC-704")]
+#[test]
+fn a_malformed_release_declaration_is_not_admitted() {
+    for declaration in [
+        "release Ctl on M::o;",
+        "release Ctl.a M::o;",
+        "release Ctl.a on M::o",
+        "release Ctl.a on ;",
+        "release holds(true);",
+    ] {
+        let text = source(declaration);
+        let parsed = parse(&text);
+        assert!(!parsed.is_admissible(), "{declaration}");
+        assert!(texts(&parsed, &text, Production::ReleaseDeclaration).is_empty());
+    }
+}

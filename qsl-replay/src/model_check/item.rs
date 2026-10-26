@@ -8,8 +8,8 @@
 //! at request time (FR-125 Instancing). Each instance has its own
 //! translation, under a key context that binds the typed reference of its
 //! key: two admitting populations that hold the same key give two instances
-//! with one key context. The deadlock-freedom item has one instance with the
-//! binding `[]`.
+//! with one key context. The deadlock-freedom and race-freedom items have one
+//! instance with the binding `[]`.
 //!
 //! A clause's key contexts name its identity, which the item does not carry:
 //! [`ClauseIdentity::resolve`] reads it from the request's package
@@ -42,6 +42,9 @@ pub enum ModelCheckItem<'a> {
     },
     /// FR-124's derived deadlock-freedom item.
     DeadlockFreedom,
+    /// FR-224's derived race-freedom item, `always holds(not raced)`, over a
+    /// protocol subject with a weak `parallel`.
+    RaceFreedom,
 }
 
 /// One instance of an item: the bound population key, `None` for the
@@ -96,6 +99,9 @@ pub enum ItemRefusal {
     /// The deadlock-freedom item's context did not encode.
     #[error("the deadlock-freedom context does not encode")]
     DeadlockContext,
+    /// The race-freedom item's context did not encode.
+    #[error("the race-freedom context does not encode")]
+    RaceContext,
     /// FR-125: a population that admits the `over` type has no universe
     /// (`RequiresBound`), or that check could not classify it.
     #[error("the clause's instances are not finite: {0:?}")]
@@ -128,6 +134,12 @@ impl ModelCheckItem<'_> {
                 translation: Translation::Safety(
                     SafetyTranslation::deadlock_freedom()
                         .map_err(|_| ItemRefusal::DeadlockContext)?,
+                ),
+            }]),
+            Self::RaceFreedom => Ok(vec![Instance {
+                binding: None,
+                translation: Translation::Safety(
+                    SafetyTranslation::race_freedom().map_err(|_| ItemRefusal::RaceContext)?,
                 ),
             }]),
             Self::Clause { clause, .. } => {

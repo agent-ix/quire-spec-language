@@ -4268,6 +4268,21 @@ pub struct ResponseForm {
     pub span: Span,
 }
 
+/// `release S.task on M::o;` (QSpec FR-419, QSL FR-249): each step of the
+/// operation releases one job of the task. S2 resolves nothing: the task set,
+/// the task and the operation stay spelled.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleaseForm {
+    /// The task set, spelled.
+    pub task_set: DeclaredName,
+    /// The task, spelled.
+    pub task: DeclaredName,
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// `hybrid Name using p { [initial { entry+ }] mode+ }` (FR-447, QSpec FR-193
 /// "Source form and the clock line"). S2 resolves nothing: the `using`
 /// alias, the mode and transition names and every equation's left side stay
@@ -4423,6 +4438,8 @@ pub enum DeclarationForm {
     Schedulable(Box<SchedulableForm>),
     /// A `response` claim (QSpec FR-419).
     Response(Box<ResponseForm>),
+    /// A `release` declaration (QSpec FR-419, QSL FR-249).
+    Release(Box<ReleaseForm>),
     /// A `hybrid` declaration (FR-447), boxed for the same reason as
     /// [`Self::Function`].
     Hybrid(Box<HybridForm>),

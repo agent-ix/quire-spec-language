@@ -30,6 +30,7 @@ use super::identity::{
 };
 use super::memory::{Access, GatedStep, MemoryModel, Read, ReadChoice, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
+use super::race::AccessRecord;
 use super::settle::Settled;
 use super::{
     undetermined, Bound, Disposition, Instance, Parallel, ParallelKey, ProtocolRefusal,
@@ -406,6 +407,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 let shared = super::memory::SharedCell {
                                     location: &location,
                                     cell,
+                                    non_atomic: self.non_atomic.contains(&location),
                                 };
                                 let reads = self.memory.reads(
                                     &state.memory,
@@ -808,7 +810,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
             self.normalize(&mut next, ordinal)?;
             gathered.successors.push((
-                ProtocolTransition::fence(path.clone(), text, ordering.label()),
+                ProtocolTransition::fence(path.clone(), text, ordering),
                 next,
             ));
         }
@@ -935,6 +937,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Some(SharedCell {
                     location,
                     cell: self.potential.cell(location)?,
+                    non_atomic: self.non_atomic.contains(location),
                 })
             })
             .collect();
@@ -942,9 +945,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .memory
             .split(&next.memory, path, &children, model, &cells, &next.model);
         self.normalize(&mut next, ordinal)?;
-        gathered
-            .successors
-            .push((ProtocolTransition::fork(path.clone(), text), next));
+        gathered.successors.push((
+            ProtocolTransition::fork(path.clone(), text).forking(children),
+            next,
+        ));
         Ok(())
     }
 
@@ -1291,6 +1295,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 let mut next = state.clone();
                 next.model = model;
                 next.memory = memory;
+                if let Some(shared) = access.shared {
+                    let record = AccessRecord {
+                        thread: path.clone(),
+                        location: shared.location.clone(),
+                        reads: matches!(access.class, AccessClass::Load | AccessClass::Rmw),
+                        writes: matches!(access.class, AccessClass::Store | AccessClass::Rmw),
+                        ordering: access.ordering,
+                    };
+                    self.carry_after(&mut next, &record);
+                    identity = identity.accessing(record).racing(chosen.race);
+                }
                 if let Some(bound) = bound.clone() {
                     Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
                 }
@@ -1303,6 +1318,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
         }
         Ok(())
+    }
+
+    /// ADR-025 DR-3: the views queued `send`s carry are happens-before
+    /// carriers, which `access` updates in `next`.
+    fn carry_after(&self, next: &mut ProtocolState<M>, access: &AccessRecord) {
+        for instance in next.instances.values_mut() {
+            for entries in instance.queues.values_mut() {
+                for entry in entries {
+                    if let Some(carried) = &mut entry.carried {
+                        self.memory.carried_after(carried, access);
+                    }
+                }
+            }
+        }
     }
 
     /// The shared locations the attempt `node` loads or reads-modifies-writes
@@ -1344,7 +1373,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 &state.memory,
                 path,
                 &state.model,
-                &SharedCell { location, cell },
+                &SharedCell {
+                    location,
+                    cell,
+                    non_atomic: self.non_atomic.contains(location),
+                },
             );
             if !reads.is_empty() {
                 reading.insert(location, reads);
@@ -1410,6 +1443,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 cell: accesses
                     .cell(location)
                     .ok_or_else(|| ProtocolRefusal::fault("a-shared-location-has-a-cell"))?,
+                non_atomic: self.non_atomic.contains(location),
             }),
             None => None,
         };

@@ -21,8 +21,8 @@ use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
 use super::identity::{
-    ProtocolTransition, QueueEvent, Removal, SendOutcome, SendRecord, StepKind, ThreadPath,
-    WaitCause,
+    ProtocolTransition, QueueEvent, QueueFlow, Removal, SendOutcome, SendRecord, StepKind,
+    ThreadPath, WaitCause,
 };
 use super::memory::MemoryModel;
 use super::program::{Channel, Cursor, Message};
@@ -167,6 +167,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 enc,
                 carried: self.memory.send(&state.memory, path),
             };
+            let appended = entry.bytes.clone();
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
             let mut displaced = None;
@@ -190,7 +191,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             LossSelector::Head | LossSelector::New => None,
                         };
                         if let Some(at) = dropped {
-                            displaced = Some(queue.remove(at));
+                            let removed = queue.remove(at);
+                            let before = queue[..at.min(queue.len())]
+                                .iter()
+                                .filter(|queued| queued.bytes == removed.bytes)
+                                .count();
+                            displaced = Some((removed, before));
                             queue.push(entry);
                             SendOutcome::Accepted
                         } else {
@@ -203,7 +209,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 channel.name.clone(),
                 value_enc(&payload),
                 outcome,
-                displaced.as_ref().map(|entry| entry.enc.clone()),
+                displaced.as_ref().map(|(entry, _)| entry.enc.clone()),
             );
             let enc = value_enc(&payload);
             let mut next = state.clone();
@@ -220,10 +226,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             );
             let mut transition =
                 ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
-                    .recording(record);
+                    .recording(record)
+                    .flowing(QueueFlow {
+                        entry: appended,
+                        displaced: displaced
+                            .as_ref()
+                            .map(|(entry, before)| (entry.bytes.clone(), *before)),
+                    });
             let dropped = match (outcome, &displaced) {
                 (SendOutcome::Lost, _) => Some(text.clone()),
-                (_, Some(entry)) => Some(self.program.text(entry.send)?.to_owned()),
+                (_, Some((entry, _))) => Some(self.program.text(entry.send)?.to_owned()),
                 (SendOutcome::Accepted | SendOutcome::Rejected, None) => None,
             };
             if let Some(send) = dropped {
@@ -305,6 +317,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         instance: ordinal,
                         send: self.program.text(entry.send)?.to_owned(),
                         removal: Removal::Received,
+                    })
+                    .flowing(QueueFlow {
+                        entry: entry.bytes.clone(),
+                        displaced: None,
                     });
             if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
                 && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
@@ -480,6 +496,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             *ordinal,
                             entry.enc.clone(),
                         );
+                        transition = transition.flowing(QueueFlow {
+                            entry: entry.bytes.clone(),
+                            displaced: None,
+                        });
                         if kind == StepKind::Lose {
                             transition = transition.removing(QueueEvent {
                                 channel: channel.name.clone(),

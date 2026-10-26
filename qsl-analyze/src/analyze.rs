@@ -369,7 +369,9 @@ impl AnalyzeRecord {
             .and_then(|record| record.counterexample.as_ref())
             .and_then(|counterexample| match &counterexample.kind {
                 CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
-                CounterexampleKind::Formula | CounterexampleKind::Deadlock => None,
+                CounterexampleKind::Formula
+                | CounterexampleKind::Deadlock
+                | CounterexampleKind::Race(_) => None,
             });
         Some(match undefined {
             Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
