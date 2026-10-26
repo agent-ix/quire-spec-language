@@ -1779,11 +1779,11 @@ fn an_integer_range_must_lie_inside_the_range_it_defines() {
     assert_eq!(range.at, "self.value");
 }
 
-/// A unit holding a `terminal` declaration and a refinement reports both as
-/// not emitted, not only the first.
+/// A unit holding a `terminal` declaration and a refinement refuses only the
+/// refinement as not emitted: the `terminal` declaration is emitted.
 #[trace("TC-540")]
 #[test]
-fn a_terminal_and_a_refinement_are_each_refused_not_emitted() {
+fn only_the_refinement_beside_a_terminal_is_refused_not_emitted() {
     let (spec, cas) = counters();
     let body = format!(
         "terminal Halt using v on Spec any;\n{}",
@@ -1793,13 +1793,13 @@ fn a_terminal_and_a_refinement_are_each_refused_not_emitted() {
     let refusals = declarations
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect_err("neither is emitted yet");
+        .expect_err("the refinement is not emitted yet");
     assert_eq!(
         refusals
             .iter()
             .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
             .collect::<Vec<_>>(),
-        [(Code::UnsupportedConstruct, Some("not-yet-implemented")); 2]
+        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
     );
 }
 
