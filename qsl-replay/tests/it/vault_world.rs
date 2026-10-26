@@ -515,6 +515,12 @@ impl World {
         }
     }
 
+    /// The world with an empty initial list.
+    pub fn without_initial_states(mut self) -> Self {
+        self.initial.clear();
+        self
+    }
+
     /// The clause as the world's package assembled it.
     pub fn clause(&self) -> &CheckedHyperClause {
         &self.package.graph().hyper_clauses()[0]
