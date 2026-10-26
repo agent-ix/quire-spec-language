@@ -1233,6 +1233,13 @@ pub enum TemporalCause {
         /// The bound's span.
         span: Span,
     },
+    /// FR-230 "Clock-typed positions": an argument for a `Clock` parameter,
+    /// or the body of a function whose result is `Clock`, that is no place
+    /// expression. `ill_typed`/`type-mismatch`, located at it.
+    NotAPlaceExpression {
+        /// The argument's or the body's span.
+        span: Span,
+    },
     /// FR-230 "Clocks and resets": a write to a clock that is not a reset
     /// of a clock of the operation's frame to a constant. Located at the
     /// write.
@@ -1735,6 +1742,7 @@ impl TemporalCause {
             | Self::ClockComparison { span }
             | Self::NegativeClockConstant { span }
             | Self::ClockBoundNotConstant { span }
+            | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
@@ -1848,7 +1856,7 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
-            Self::UnitlessTimedBound { .. } => Code::IllTyped,
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
@@ -1933,7 +1941,7 @@ impl TemporalCause {
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
-            Self::UnitlessTimedBound { .. } => "type-mismatch",
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
             Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {

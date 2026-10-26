@@ -288,7 +288,8 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
-    ClockTypePosition, TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
+    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, TimedDeclaration,
+    TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
@@ -1295,17 +1296,21 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
-                        // A `Clock` the unit's own source writes in a type
-                        // position has no checked form yet (FR-230
-                        // "Clock-typed positions").
+                        // FR-230 "Clock-typed positions": a `Clock` in a
+                        // declared type position is admitted (the assembler
+                        // kept its declaration out of the value world); one
+                        // inside an expression has no checked form.
                         if let TimedDeclaration::ClockType(position) = form {
-                            return Some(CheckRefusal {
-                                location: root(Origin::Expression),
-                                cause: CheckCause::TimedNotChecked {
-                                    construct: TimedConstruct::Clock,
-                                    span: position.span,
-                                },
-                            });
+                            return match position.site {
+                                ClockSite::Declaration => None,
+                                ClockSite::Expression => Some(CheckRefusal {
+                                    location: root(Origin::Expression),
+                                    cause: CheckCause::TimedNotChecked {
+                                        construct: TimedConstruct::Clock,
+                                        span: position.span,
+                                    },
+                                }),
+                            };
                         }
                         // A time invariant and an `urgent` declaration are
                         // checked with the clauses they read (`timed_model`).
@@ -1343,6 +1348,8 @@ impl PackageDeclarations {
                     types: &self.types,
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
+                    clock_reading: &self.clock_reading,
+                    functions: &self.functions,
                     units: &units,
                     rational_bits: limits.rational_bits(),
                     nodes: limits.nodes(),

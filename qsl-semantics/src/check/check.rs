@@ -466,6 +466,9 @@ pub struct PackageDeclarations {
     /// The complete timed declaration forms S2 built, in source order for
     /// FR-230's S3 check and located refusals.
     pub timed_forms: Vec<super::assemble::TimedDeclaration>,
+    /// FR-230: the unit's clock-reading declarations in source order, which
+    /// have no checked node; S3 checks each body and expands each call.
+    pub clock_reading: Vec<super::assemble::ClockReadingDeclaration>,
     /// The `taskset`, `schedulable` and `response` forms S2 built, in source
     /// order, for QSL FR-246's S3 check.
     pub task_set_forms: Vec<super::task_set::TaskSetDeclaration>,
@@ -657,6 +660,7 @@ impl PackageDeclarations {
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             timed_forms: Vec::new(),
+            clock_reading: Vec::new(),
             task_set_forms: Vec::new(),
             time_sources: Vec::new(),
             profile_selections: Vec::new(),

@@ -499,3 +499,235 @@ fn an_unread_clock_of_an_untimed_model_refuses_at_the_model() {
     );
     assert!(text.starts_with("model Config"), "{text}");
 }
+
+/// The declared names of the checked package's semantic nodes.
+fn declared_names(graph: &CheckedGraph) -> Vec<String> {
+    graph
+        .semantic_graph()
+        .nodes()
+        .filter_map(|node| {
+            let preimage: Value = serde_json::from_slice(node.preimage()).ok()?;
+            let names = preimage["declaration"]["qualified_name"]
+                .as_array()?
+                .clone();
+            Some(
+                names
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("::"),
+            )
+        })
+        .collect()
+}
+
+/// One constraint of a convex part: its clock's name, comparison and bound.
+type Bound = (String, ClockOp, Rational);
+
+/// Each convex part of `guard` as its data literals' model attributes, each
+/// constraint as its clock's name, comparison and bound.
+fn parts(model: &TimedModel, guard: usize) -> Vec<(Vec<String>, Vec<Bound>)> {
+    model.guards()[guard]
+        .parts()
+        .iter()
+        .map(|part| {
+            (
+                part.data()
+                    .map(|data| attributes(data.body()))
+                    .unwrap_or_default(),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| {
+                        (
+                            model
+                                .clock(constraint.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            constraint.op(),
+                            constraint.bound().clone(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+const WITHIN: &str = "predicate near using v(c: Clock, b: Quantity<ms>): Boolean { c <= b }\n";
+
+/// FR-230-AC-9 (TC-685 step 11): the clock-reading predicate `near(c:
+/// Clock, b: Quantity<ms>)` expands where a precondition calls it:
+/// `near(self.x, 3 ms)` is the one constraint `x <= 3` on `Call.x`, and
+/// `near(self.x, 3 ms) and near(self.y, 1 ms)` two constraints; the
+/// checked package holds no node for `near`. Not covered: the time
+/// invariant body `near(self.x, 3 ms)`, which the time invariant grammar
+/// (a list of clock bounds) does not admit (STD-493).
+#[trace("TC-685", "FR-230-AC-9")]
+#[test]
+fn a_clock_reading_predicate_expands_in_a_precondition() {
+    let body = format!(
+        "{UNITS}time Config dense unit ms;\n{WITHIN}\
+         pre Near using v on Config::Call::bump {{ near(self.x, 3 ms) }}\n\
+         pre Both using v on Config::Call::send {{ near(self.x, 3 ms) and near(self.y, 1 ms) }}\n"
+    );
+    let graph = check(&rpc_document(&["x", "y"]), &body).expect("the calls expand");
+    let model = timed(&graph);
+    assert_eq!(
+        parts(model, 0),
+        [(
+            Vec::new(),
+            vec![("x".to_owned(), ClockOp::LessOrEqual, exact(3, 1))]
+        )]
+    );
+    assert_eq!(
+        parts(model, 1),
+        [(
+            Vec::new(),
+            vec![
+                ("x".to_owned(), ClockOp::LessOrEqual, exact(3, 1)),
+                ("y".to_owned(), ClockOp::LessOrEqual, exact(1, 1)),
+            ]
+        )]
+    );
+    assert!(
+        !declared_names(&graph).iter().any(|name| name == "near"),
+        "{:?}",
+        declared_names(&graph)
+    );
+}
+
+/// FR-230-AC-9's refusals (TC-685 step 11), each at its span:
+/// `near(self.x, self.n)` refuses `clock-bound-not-constant` at the
+/// argument; `near(5, 3 ms)` `ill_typed`/`type-mismatch` at `5`; a body
+/// `self.n = c` for a clock parameter `c` and `n: Int`
+/// `clock-read-outside-constraint` at the clock read; `near(self.x, 3 ms)`
+/// in an `invariant` clause `clock-read-outside-constraint` at the call. Not
+/// covered: a body that resets `c`, which a predicate body cannot write
+/// (STD-493).
+#[trace("TC-685", "FR-230-AC-9")]
+#[test]
+fn clock_reading_misuses_refuse_at_their_span() {
+    let document = rpc_document(&["x", "y"]);
+    let dense = format!("{UNITS}time Config dense unit ms;\n{WITHIN}");
+    for (declarations, code, tag, at) in [
+        (
+            "pre P using v on Config::Call::bump { near(self.x, self.n) }",
+            Code::InvalidTimedModel,
+            "clock-bound-not-constant",
+            "self.n",
+        ),
+        (
+            "pre P using v on Config::Call::bump { near(5, 3 ms) }",
+            Code::IllTyped,
+            "type-mismatch",
+            "5",
+        ),
+        (
+            "predicate copies using v(c: Clock): Boolean { self.n = c }",
+            Code::InvalidTimedModel,
+            "clock-read-outside-constraint",
+            "c",
+        ),
+        (
+            "invariant I using v on Config::Call at current { near(self.x, 3 ms) }",
+            Code::InvalidTimedModel,
+            "clock-read-outside-constraint",
+            "near(self.x, 3 ms)",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{dense}{declarations}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (code, tag, at),
+            "{declarations}"
+        );
+    }
+}
+
+/// Part of FR-230-AC-10 (TC-685 step 12): with `function pick(a: Clock, b:
+/// Clock, left: Boolean): Clock { if left then a else b }`, the guard
+/// `pick(self.x, self.y, self.ready) >= 1 ms` checks to two convex parts,
+/// `x >= 1` with the data predicate `self.ready` and `y >= 1` with
+/// `not self.ready`; `function g(): Clock { 0 }` refuses `ill_typed`/
+/// `type-mismatch` at the body. Not covered: `peer_clock(o: Call): Clock {
+/// o.peer.x }`, a place reached through a reference, whose constraint reads
+/// another object's clock.
+#[trace("TC-685")]
+#[test]
+fn a_clock_result_function_selects_its_place_by_data() {
+    let document = rpc_document(&["x", "y"]);
+    let dense = format!("{UNITS}time Config dense unit ms;\n");
+    let body = format!(
+        "{dense}function pick using v(a: Clock, b: Clock, left: Boolean): Clock pure {{ \
+             if left then a else b }}\n\
+         pre Picked using v on Config::Call::bump {{ pick(self.x, self.y, self.ready) >= 1 ms }}\n"
+    );
+    let graph = check(&document, &body).expect("the place expression expands");
+    let ready = vec!["ready".to_owned()];
+    assert_eq!(
+        parts(timed(&graph), 0),
+        [
+            (
+                ready.clone(),
+                vec![("x".to_owned(), ClockOp::GreaterOrEqual, exact(1, 1))]
+            ),
+            (
+                ready,
+                vec![("y".to_owned(), ClockOp::GreaterOrEqual, exact(1, 1))]
+            ),
+        ]
+    );
+    let (cause, text) = refused(
+        &document,
+        &format!("{dense}function g using v(): Clock pure {{ 0 }}\n"),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (Code::IllTyped, "type-mismatch", "0")
+    );
+}
+
+/// Part of FR-230-AC-14 (TC-685 step 16): in a dense model's unit, a
+/// function `f(c: Clock)`, a function `g(): Clock { self.x }`, a record with
+/// a `Clock` field, `type Alias = Clock;`, `Option<Clock>` and
+/// `Sequence<Clock>` raise no refusal of their own; the record's checked node
+/// lists its data field only, and none of the others has a node. Not
+/// covered: the package fields `t: Timer` and `ts: Sequence<Timer>` under a
+/// tick source or no time source, which need package records with clock
+/// fields.
+#[trace("TC-685")]
+#[test]
+fn clock_typed_declarations_raise_no_refusal_of_their_own() {
+    let body = format!(
+        "{UNITS}time Config dense unit ms;\n\
+         predicate f using v(c: Clock): Boolean {{ true }}\n\
+         function g using v(): Clock pure {{ self.x }}\n\
+         record Timer {{ x: Clock; n: Integer; }}\n\
+         type Alias = Clock;\n\
+         type Maybe = Option<Clock>;\n\
+         type Clocks = Sequence<Clock>;\n"
+    );
+    let graph = check(&rpc_document(&["x"]), &body).expect("the declarations check");
+    let names = declared_names(&graph);
+    assert!(names.iter().any(|name| name == "Timer"), "{names:?}");
+    for absent in ["f", "g", "Alias", "Maybe", "Clocks"] {
+        assert!(
+            !names.iter().any(|name| name == absent),
+            "{absent}: {names:?}"
+        );
+    }
+    let timer = graph
+        .semantic_graph()
+        .nodes()
+        .find_map(|node| {
+            let preimage: Value = serde_json::from_slice(node.preimage()).ok()?;
+            (preimage["declaration"]["qualified_name"] == json!(["Timer"])).then_some(preimage)
+        })
+        .expect("the Timer record node");
+    assert_eq!(
+        timer["body"]["members"].as_array().map(Vec::len),
+        Some(1),
+        "Timer lists its data field n only: {timer}"
+    );
+}

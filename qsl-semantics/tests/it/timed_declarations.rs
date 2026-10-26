@@ -860,35 +860,40 @@ fn clock_offsets(text: &str) -> Vec<usize> {
         .collect()
 }
 
-/// FR-230 "Clock-typed positions": under the timed facet a `Clock` the
-/// unit's own source writes in a type position reaches S3 rather than
-/// refusing at assembly, and S3 refuses it as not checked yet, at the
-/// `Clock`.
+/// FR-230 "Clock-typed positions": under the timed facet a `Clock` written
+/// inside an expression, here the target of `convert`, has no checked form,
+/// so S3 refuses it at the `Clock` and checks no other construct of its
+/// clause; a `Clock` in a declared type position is admitted.
 #[trace("TC-685")]
 #[test]
-fn a_source_clock_type_reaches_s3_under_the_timed_facet() {
-    let body = "record R { x: Clock; }\n";
+fn a_clock_inside_an_expression_is_not_checked() {
+    let body = "invariant B using v on Config::ConfigVersion at current { \
+                convert<Clock>(self) = convert<Clock>(self) }\n\
+                record R { x: Clock; n: Integer; }\n";
     let refusals = admit_and_assemble_with_profiles(
         &document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
         body,
     )
-    .expect("the assembler retains the Clock for S3")
+    .expect("the assembler retains each Clock for S3")
     .check(quire_semantic_value::checking::CheckingLimits::default())
-    .expect_err("a source Clock type has no checked form yet");
-    let [error] = refusals.as_slice() else {
-        panic!("one refusal expected: {refusals:?}");
-    };
-    assert!(
-        matches!(
-            error.cause,
+    .expect_err("a Clock inside an expression has no checked form");
+    let spans: Vec<usize> = refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
             CheckCause::TimedNotChecked {
                 construct: TimedConstruct::Clock,
-                ..
-            }
-        ),
-        "{error:?}"
+                span,
+            } => span.start,
+            other => panic!("not-checked expected: {other:?}"),
+        })
+        .collect();
+    let (text, _) = config_unit_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
     );
+    assert_eq!(spans, clock_offsets(&text)[..2]);
 }
 
 const SECONDS_AND_MILLISECONDS: &str =
