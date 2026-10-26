@@ -6,7 +6,9 @@
 //! IR's v2 reader.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::{CheckCause, CheckRefusal, LawRole, ProtocolReferenceCause};
+use qsl_semantics::check::{
+    CheckCause, CheckRefusal, LawRole, ProtocolConstruct, ProtocolReferenceCause,
+};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -14,7 +16,7 @@ use super::*;
 
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 
-/// One protocol named `name`: a role over the spine model's `Gadget`, an
+/// One protocol named `name`: a static role over the spine model's `Gadget`, an
 /// empty `run` sequence and a `finish`.
 fn protocol(name: &str) -> String {
     format!(
@@ -85,11 +87,10 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
 const ATTEMPT_ROOT: &str = "attempt Update by R on Config::ConfigVersion::attemptUpdate \
      contracts [] as (tried: Boolean) { true };";
 
-/// The refusal an event- or commit-rooted protocol carries when a protocol
-/// profile is selected: the root names no FR-052 control construct to be the
-/// node's `profile_operator`.
-fn unsupported_root(root: &'static str) -> CheckCause {
-    CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::UnsupportedRoot { root }))
+/// The refusal of a protocol that names `construct`, whose node is not
+/// written yet.
+fn not_emitted(construct: ProtocolConstruct) -> CheckCause {
+    CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
 }
 
 /// SR-9123 FND-001: a protocol whose `run` root is an event node (a
@@ -107,28 +108,43 @@ fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
         .all(|node| node.node_tag() != qsl_semantics::check::NodeTag::Protocol));
 }
 
-/// With a protocol profile selected, the root has no operator to carry, so
-/// the protocol refuses `unsupported_construct`/`declaration-form` at its
-/// declaration, a catalogued cause and never an internal fault; a reference
-/// to it refuses with the same cause at the reference.
+/// With a protocol profile selected, a protocol that names a construct
+/// whose node is not written yet refuses `unsupported_construct`/
+/// `not-yet-implemented` at its declaration, once for each such construct and
+/// naming the ticket that writes it, never an internal fault; a reference to
+/// it refuses with the first of them at the reference.
 #[trace("FR-092-AC-18", "FR-218-AC-8", "TC-1021")]
 #[test]
-fn a_non_control_root_refuses_a_selected_profile_and_a_reference_to_it() {
-    let cause = unsupported_root("attempt");
-    assert_eq!(cause.code(), qsl_foundation::Code::UnsupportedConstruct);
-    assert_eq!(cause.cause(), Some("declaration-form"));
+fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
+    let attempt = not_emitted(ProtocolConstruct::Control("attempt"));
+    assert_eq!(attempt.code(), qsl_foundation::Code::UnsupportedConstruct);
+    assert_eq!(attempt.cause(), Some("not-yet-implemented"));
+    for (construct, ticket) in [
+        (ProtocolConstruct::ReplicatedRoles, "QSL-1125"),
+        (ProtocolConstruct::Channels, "QSL-1125"),
+        (ProtocolConstruct::Relationships, "QSL-1125"),
+        (ProtocolConstruct::Control("attempt"), "QSL-1126"),
+        (ProtocolConstruct::Requirements, "QSL-1127"),
+        (ProtocolConstruct::Compensations, "QSL-1127"),
+        (ProtocolConstruct::Captures, "QSL-1121e"),
+        (ProtocolConstruct::ActivationGuard, "QSL-1121e"),
+        (ProtocolConstruct::Terminal, "QSL-1121f"),
+        (ProtocolConstruct::FinishReadsDeclaration, "QSL-1121g"),
+    ] {
+        assert_eq!(construct.tracking(), ticket, "{construct:?}");
+    }
 
     let declared = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, false), false)
-        .expect_err("the root names no operator");
+        .expect_err("the protocol names an unwritten construct");
     assert_eq!(
         declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
-        [&cause]
+        [&attempt]
     );
 
     let referred = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, true), false)
         .expect_err("the reference refuses too");
     assert_eq!(referred.len(), 2, "{referred:?}");
-    assert!(referred.iter().all(|r| r.cause == cause));
+    assert!(referred.iter().all(|r| r.cause == attempt));
     assert_ne!(referred[0].location, referred[1].location);
 }
 
@@ -141,6 +157,144 @@ fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
         panic!("one {tag}/{form} node: {matching:#?}");
     };
     node
+}
+
+/// The node `digest` names.
+fn node_by_id<'w>(wire: &'w Value, id: &Value) -> &'w Value {
+    nodes(wire)
+        .iter()
+        .find(|node| &node["node_id"] == id)
+        .unwrap_or_else(|| panic!("a node {id}"))
+}
+
+/// The value of the clause argument `name`, after checking that the clause
+/// holds its thirteen arguments in FR-464's order.
+fn clause_argument<'w>(clause: &'w Value, name: &str) -> &'w Value {
+    let arguments = clause["body"]["arguments"].as_array().unwrap();
+    let names: Vec<&str> = arguments
+        .iter()
+        .map(|argument| argument["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "over",
+            "activation",
+            "captures",
+            "roles",
+            "relationships",
+            "channels",
+            "queues",
+            "requirements",
+            "compensations",
+            "terminal",
+            "scheduling",
+            "run",
+            "finish"
+        ]
+    );
+    arguments
+        .iter()
+        .find(|argument| argument["name"] == name)
+        .map(|argument| &argument["value"])
+        .unwrap()
+}
+
+/// The graph the clause `Fill` is the root of: the `over` binder at level 0,
+/// an `origin` activation, one static role, the `run` sequence and the
+/// `finish` obligation, each its own node declared at its FR-464 path, and
+/// every set but `roles` empty.
+fn assert_clause_graph(wire: &Value, clause: &Value) {
+    let reference = |value: &Value| -> &Value {
+        assert_eq!(value["term"], "reference");
+        node_by_id(wire, &value["target"])
+    };
+    let level = |parameter: &Value| -> (String, String) {
+        let members = parameter["body"]["members"].as_array().unwrap();
+        (
+            members[0]["value"]["value"].as_str().unwrap().to_owned(),
+            members[1]["value"]["value"].as_str().unwrap().to_owned(),
+        )
+    };
+    let over = reference(clause_argument(clause, "over"));
+    assert_eq!(
+        (over["node_tag"].as_str(), over["semantic_form"].as_str()),
+        (Some("value"), Some("parameter"))
+    );
+    assert_eq!(level(over), ("input".to_owned(), "0".to_owned()));
+    assert_eq!(
+        clause_argument(clause, "activation"),
+        &json!({"term": "aggregate", "members": [{
+            "term": "binding", "name": "kind",
+            "value": {"term": "literal", "value": "origin", "value_kind": "text",
+                      "type": clause_argument(clause, "activation")["members"][0]["value"]["type"]}
+        }]})
+    );
+    for empty in [
+        "captures",
+        "relationships",
+        "channels",
+        "queues",
+        "requirements",
+        "compensations",
+        "terminal",
+        "scheduling",
+    ] {
+        assert_eq!(
+            clause_argument(clause, empty),
+            &json!({"term": "aggregate", "members": []}),
+            "{empty}"
+        );
+    }
+
+    let roles = clause_argument(clause, "roles")["members"]
+        .as_array()
+        .unwrap();
+    let [role] = roles.as_slice() else {
+        panic!("one role: {roles:?}");
+    };
+    let role = reference(role);
+    assert_eq!(role["semantic_form"], "role");
+    assert_eq!(
+        role["declaration"]["qualified_name"],
+        json!(["Fill", "role", "R"])
+    );
+    assert_eq!(role["body"]["operation"]["member"]["operator"], "role");
+    assert_eq!(
+        role["body"]["arguments"][1]["value"],
+        json!({"term": "aggregate", "members": []}),
+        "a static role replicates nothing"
+    );
+    let model = reference(&role["body"]["arguments"][0]["value"]);
+    assert_eq!(model["semantic_form"], "object_type");
+
+    let run = reference(clause_argument(clause, "run"));
+    assert_eq!(run["semantic_form"], "control");
+    assert_eq!(
+        run["declaration"]["qualified_name"],
+        json!(["Fill", "run", "Main"])
+    );
+    assert_eq!(run["body"]["operation"]["member"]["operator"], "sequence");
+    assert_eq!(
+        run["body"]["arguments"],
+        json!([{"term": "binding", "name": "children", "value": {"term": "aggregate", "members": []}}])
+    );
+
+    let finish = reference(clause_argument(clause, "finish"));
+    assert_eq!(finish["semantic_form"], "obligation");
+    assert_eq!(
+        finish["declaration"]["qualified_name"],
+        json!(["Fill", "finish", "End"])
+    );
+    assert_eq!(finish["body"]["operation"]["member"]["operator"], "finish");
+    let binder = reference(&finish["body"]["arguments"][0]["value"]);
+    assert_eq!(
+        level(binder),
+        ("outcome".to_owned(), "1".to_owned()),
+        "after `over`"
+    );
+    let constraint = reference(&finish["body"]["arguments"][1]["value"]);
+    assert_eq!(constraint["body"]["value"], json!(true));
 }
 
 fn reference_key(text: &str) -> (String, Value) {
@@ -175,7 +329,7 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
         .iter()
         .filter(|node| node["node_tag"] == "protocol")
         .collect();
-    assert_eq!(protocol_nodes.len(), 2, "no node for roles, run or finish");
+    assert_eq!(protocol_nodes.len(), 5);
     let clause = node_of(&wire, "protocol", "protocol_clause");
     let reference = node_of(&wire, "protocol", "protocol_reference");
 
@@ -193,8 +347,9 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
     assert_eq!(clause["body"]["operation"]["laws"], json!([law]));
     assert_eq!(
         clause["body"]["operation"]["member"],
-        json!({"kind": "profile_operator", "operator": "sequence"})
+        json!({"kind": "profile_operator", "operator": "protocol"})
     );
+    assert_clause_graph(&wire, clause);
     assert_eq!(clause["declaration"]["qualified_name"], json!(["Fill"]));
     assert_eq!(
         clause["occurrences"],
@@ -244,6 +399,170 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
     let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
     let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
     assert_eq!(&text[start..end], "protocol Fill");
+}
+
+/// FR-092-AC-16, FR-092-AC-18: an `each` trigger, a nested `run` tree, two
+/// static roles and `scheduling adversarial` emit the
+/// graph IR admits: the trigger at level 1 and the finish binder after it,
+/// the child control declared under its holder, the roles ascending by digest
+/// with the whole-model role's `model` the selection's text identity, and the
+/// adversarial text.
+#[trace("FR-092-AC-16", "FR-092-AC-18", "TC-1021")]
+#[test]
+fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
+    let text = selecting(
+        "protocol Flow using v over (input: Boolean) on each (gadget: M::Gadget) {\n\
+         role R on M::Gadget;\n\
+         role W on M::Widget;\n\
+         scheduling adversarial;\n\
+         run sequence Outer { sequence Inner { } }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n",
+    );
+    let (emission, wire, _, read) = emit_model_unit(&text, None);
+    assert_eq!(emission.omitted, []);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let clause = node_of(&wire, "protocol", "protocol_clause");
+    let reference = |value: &Value| node_by_id(&wire, &value["target"]);
+    let level = |parameter: &Value| {
+        parameter["body"]["members"][1]["value"]["value"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    let activation = clause_argument(clause, "activation")["members"]
+        .as_array()
+        .unwrap();
+    assert_eq!(activation[0]["value"]["value"], "each");
+    assert_eq!(activation[1]["name"], "trigger");
+    let trigger = reference(&activation[1]["value"]);
+    assert_eq!(level(trigger), "1");
+    assert_eq!(level(reference(clause_argument(clause, "over"))), "0");
+    let finish = reference(clause_argument(clause, "finish"));
+    assert_eq!(
+        level(reference(&finish["body"]["arguments"][0]["value"])),
+        "2",
+        "the finish binder follows `over` and the trigger"
+    );
+
+    let scheduling = clause_argument(clause, "scheduling")["members"]
+        .as_array()
+        .unwrap();
+    assert_eq!(scheduling.len(), 1);
+    assert_eq!(scheduling[0]["value"], "adversarial");
+
+    let outer = reference(clause_argument(clause, "run"));
+    assert_eq!(
+        outer["declaration"]["qualified_name"],
+        json!(["Flow", "run", "Outer"])
+    );
+    let children = outer["body"]["arguments"][0]["value"]["members"]
+        .as_array()
+        .unwrap();
+    let [inner] = children.as_slice() else {
+        panic!("one child: {children:?}");
+    };
+    assert_eq!(
+        reference(inner)["declaration"]["qualified_name"],
+        json!(["Flow", "run", "Outer", "Inner"])
+    );
+
+    let roles = clause_argument(clause, "roles")["members"]
+        .as_array()
+        .unwrap();
+    let digests: Vec<&str> = roles
+        .iter()
+        .map(|role| role["target"]["digest"].as_str().unwrap())
+        .collect();
+    assert_eq!(digests.len(), 2);
+    assert!(
+        digests.windows(2).all(|pair| pair[0] < pair[1]),
+        "ascending: {digests:?}"
+    );
+    let models: Vec<&str> = roles
+        .iter()
+        .map(|role| {
+            reference(&reference(role)["body"]["arguments"][0]["value"])["semantic_form"]
+                .as_str()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(
+        models,
+        ["object_type", "object_type"],
+        "each role refers to its type's node"
+    );
+}
+
+/// FR-464 "Sets": the order of `roles` follows the node digests, not the
+/// source order, so swapping two roles' order in the source leaves the
+/// clause's `roles` argument unchanged.
+#[trace("FR-464-AC-1", "TC-1021")]
+#[test]
+fn the_roles_set_does_not_follow_source_order() {
+    let source = |first: &str, second: &str| {
+        selecting(&format!(
+            "protocol Flow using v over (input: Boolean) on origin {{\n\
+             {first}\n{second}\n\
+             run sequence Main {{ }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n\
+             }}\n"
+        ))
+    };
+    let roles_of = |text: &str| {
+        let (_, wire, _, read) = emit_model_unit(text, None);
+        assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+        let clause = node_of(&wire, "protocol", "protocol_clause");
+        clause_argument(clause, "roles").clone()
+    };
+    let (gadget, widget) = ("role R on M::Gadget;", "role W on M::Widget;");
+    let in_order = roles_of(&source(gadget, widget));
+    assert_eq!(in_order["members"].as_array().unwrap().len(), 2);
+    assert_eq!(in_order, roles_of(&source(widget, gadget)));
+}
+
+/// FR-092-AC-18: an activation guard and a terminal member
+/// each refuse at the protocol, naming the construct, never writing the
+/// protocol without it; a role on a whole model refuses as the IR gap it is.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn constructs_without_a_node_yet_refuse_naming_the_construct() {
+    let flow = |extra: &str, activation: &str| {
+        selecting(&format!(
+            "protocol Flow using v over (input: Boolean) {activation} {{\n\
+             role R on M::Gadget;\n\
+             {extra}\n\
+             run sequence Main {{ }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n\
+             }}\n"
+        ))
+    };
+    let causes = |text: &str| -> Vec<CheckCause> {
+        refusals(text)
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect()
+    };
+    assert_eq!(
+        causes(&flow("", "on each (g: M::Gadget) when (true)")),
+        [not_emitted(ProtocolConstruct::ActivationGuard)]
+    );
+    assert_eq!(
+        causes(&selecting(
+            "protocol Flow using v over (input: Boolean) on origin {\n\
+             role W on M;\n\
+             run sequence Main { }\n\
+             finish End as (outcome: Boolean) { true };\n\
+             }\n"
+        )),
+        [not_emitted(ProtocolConstruct::WholeModelRole)]
+    );
+    assert_eq!(ProtocolConstruct::WholeModelRole.tracking(), "IR-874");
+    assert_eq!(
+        causes(&flow("terminal any;", "on origin")),
+        [not_emitted(ProtocolConstruct::Terminal)]
+    );
 }
 
 /// FR-092-AC-17 (TC-1021 step 6): the reference's key is the digest of its
