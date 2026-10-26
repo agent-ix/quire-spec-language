@@ -810,7 +810,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
             self.normalize(&mut next, ordinal)?;
             gathered.successors.push((
-                ProtocolTransition::fence(path.clone(), text, ordering.label()),
+                ProtocolTransition::fence(path.clone(), text, ordering),
                 next,
             ));
         }

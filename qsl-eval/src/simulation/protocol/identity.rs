@@ -7,6 +7,7 @@
 //! tree's controls from the root down to it, joined by `/`, or the
 //! `finish` node's own name.
 
+use qsl_semantics::check::AccessOrdering;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::ObjectReference;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -347,7 +348,7 @@ enum Members {
     /// `memory_step`, the typed identity its memory model gives.
     Memory { identity: MemoryStepId },
     /// `ordering`: a `fence`'s ordering (QSpec FR-426).
-    Fence { ordering: &'static str },
+    Fence { ordering: AccessOrdering },
     /// A `cattempt`'s `operation`, `receiver` and `arguments`, with the
     /// FR-120 identity of the application, and its `template` and
     /// `registration`.
@@ -431,6 +432,21 @@ impl SendOutcome {
             Self::Lost => "lost",
         }
     }
+}
+
+/// The queued entries a channel-moving step touched, each by the canonical
+/// bytes of its queue-entry encoding (ADR-027 PS-7), which name its send node,
+/// its sending thread and its payload: the entry a `send` appended, a
+/// `receive` took, a `duplicate` copied or a `lose` dropped, and the entry a
+/// `send` displaced. Equal entries are interchangeable except in the memory
+/// view they carry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueueFlow {
+    /// The entry the step appended, took, copied or dropped.
+    pub entry: Vec<u8>,
+    /// The queued entry a `send` displaced at capacity, and how many entries
+    /// of the same bytes were queued before it.
+    pub displaced: Option<(Vec<u8>, usize)>,
 }
 
 /// A `send` step's send record (ADR-027 ST-3), the step's result: carried
@@ -596,6 +612,7 @@ pub struct ProtocolTransition {
     access: Option<AccessRecord>,
     race: Option<DataRace>,
     children: Vec<ThreadPath>,
+    flow: Option<QueueFlow>,
 }
 
 /// Resolver metadata for a shared RA load. It is deliberately outside the
@@ -635,12 +652,13 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
     /// The `fence` at `node` by `thread`, with its `ordering` (ADR-027
     /// TS-2, SE-5).
-    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: &'static str) -> Self {
+    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: AccessOrdering) -> Self {
         Self {
             kind: StepKind::Fence,
             thread: Some(thread),
@@ -654,6 +672,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -683,6 +702,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -725,6 +745,19 @@ impl ProtocolTransition {
         self
     }
 
+    /// This `send`, `receive`, `duplicate` or `lose`, having moved the queued
+    /// entries `flow` names. It is no part of the identity.
+    pub(crate) fn flowing(mut self, flow: QueueFlow) -> Self {
+        self.flow = Some(flow);
+        self
+    }
+
+    /// The queued entries a `send`, `receive`, `duplicate` or `lose` moved;
+    /// `None` for every other step.
+    pub fn queue_flow(&self) -> Option<&QueueFlow> {
+        self.flow.as_ref()
+    }
+
     /// For a `fork`, the branch threads it creates; empty for every other
     /// step.
     pub fn fork_children(&self) -> &[ThreadPath] {
@@ -761,6 +794,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -785,6 +819,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -817,6 +852,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -839,6 +875,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -856,6 +893,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -875,6 +913,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -903,6 +942,7 @@ impl ProtocolTransition {
             access: None,
             race: None,
             children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -1035,10 +1075,10 @@ impl ProtocolTransition {
         self.kind
     }
 
-    /// For a `fence`, its `ordering`'s spelling.
-    pub fn fence_ordering(&self) -> Option<&'static str> {
+    /// For a `fence`, its `ordering`.
+    pub fn fence_ordering(&self) -> Option<AccessOrdering> {
         match &self.members {
-            Members::Fence { ordering } => Some(ordering),
+            Members::Fence { ordering } => Some(*ordering),
             _ => None,
         }
     }
@@ -1191,7 +1231,7 @@ impl ProtocolTransition {
             Members::Memory { identity } => {
                 members.push(("memory_step", identity.enc()));
             }
-            Members::Fence { ordering } => members.push(("ordering", Enc::text(*ordering))),
+            Members::Fence { ordering } => members.push(("ordering", Enc::text(ordering.label()))),
             Members::CAttempt {
                 operation,
                 receiver,

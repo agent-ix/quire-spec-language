@@ -80,7 +80,8 @@ pub use footprint::{
 };
 pub use identity::{
     Actor, BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition,
-    RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
+    QueueFlow, RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath,
+    WaitCause,
 };
 pub use memory::{
     Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,

@@ -6,17 +6,22 @@
 //! in the case of a `choice` where the flag load read 1.
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::model_subject::ModelLetters;
 use qsl_eval::simulation::protocol::{MemorySelection, ProtocolTransition, Ra, StepKind};
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    CounterexampleKind, ModelCheckItem, ModelCheckOutcome, ModelStep, ModelTraceSettlement, Race,
-    ResultLabel, TemporalCounterexample,
+    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
+    ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
+    TemporalCounterexample,
 };
 use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
+use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 
-use crate::litmus::{attempt, contracts, protocol, NO_BOTH_ZERO};
+use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
 use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
 /// `SB::Main::Both` resolved to `ra`.
@@ -182,13 +187,20 @@ fn a_relaxed_flag_refutes_race_freedom_under_ra_and_the_race_replays() {
     );
 }
 
-/// The settlement of `payload`'s replay, which must be a disagreement.
+/// The settlement of `payload`'s replay, which must be the `ReplayParity`
+/// verdict disagreement: the replay completed, and found no race where the
+/// payload claimed one. A prefix that failed to replay would settle with the
+/// `NoValue` cause instead.
 fn disagreement(case: &Case, payload: TemporalCounterexample<ProtocolTransition>) {
     let replayed = case.replay_race(&ra(), payload).expect("replays");
-    assert!(
-        matches!(replayed.settlement, ModelTraceSettlement::Inconclusive(_)),
-        "{replayed:?}"
-    );
+    let ModelTraceSettlement::Inconclusive(cause) = &replayed.settlement else {
+        panic!("{replayed:?}");
+    };
+    let DisagreementCause::Verdicts { proved, replayed } = cause else {
+        panic!("{cause:?}");
+    };
+    assert_eq!(proved.category(), Category::Violation);
+    assert_eq!(replayed.category(), Category::Success);
 }
 
 /// FR-227-AC-3 (TC-672), the forged races: an envelope whose `earlier` names
@@ -213,34 +225,59 @@ fn a_forged_race_settles_inconclusive_under_ra() {
     // The release/acquire shape has no race: the path to its data load, after
     // a flag load that read 1, with a race claimed on `data`.
     let ordered = unit(&message_passing("", "release", "acquire"), &MP);
-    let system = ordered.system(&ra(), Ra::default()).expect("builds");
+    let path = [
+        Hop::Fork,
+        Hop::At("Sx", None),
+        Hop::At("Sy", None),
+        Hop::At("Ly", Some(0)),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&ordered, &path, race.location, 2, 5);
+    disagreement(&ordered, forged);
+}
+
+/// A step of a hand-walked path: the `fork`, or the step at a node with the
+/// read depth it chose.
+#[derive(Clone, Copy)]
+enum Hop {
+    Fork,
+    Kind(StepKind),
+    /// The step at the node, whatever its read depth.
+    Node(&'static str),
+    At(&'static str, Option<u64>),
+}
+
+/// A counterexample of kind `Race{location, earlier, later}` over the prefix
+/// `path` walks through `case`'s `ra` system from its initial state.
+fn forged_race(
+    case: &Case,
+    path: &[Hop],
+    location: Location,
+    earlier: u64,
+    later: u64,
+) -> TemporalCounterexample<ProtocolTransition> {
+    let system = case.system(&ra(), Ra::default()).expect("builds");
     let mut state = system.initial().remove(0);
     let mut prefix = Vec::new();
-    let path: [(&str, Option<u64>); 5] = [
-        ("", None),
-        ("Sx", None),
-        ("Sy", None),
-        ("Ly", Some(0)),
-        ("Lx", Some(0)),
-    ];
-    for (node, read) in path {
+    for hop in path {
         let (transition, next) = system
             .successors(&state)
             .expect("expands")
             .successors
             .into_iter()
-            .find(|(transition, _)| {
-                let at = if node.is_empty() {
-                    transition.kind() == StepKind::Fork
-                } else {
+            .find(|(transition, _)| match hop {
+                Hop::Fork => transition.kind() == StepKind::Fork,
+                Hop::Kind(kind) => transition.kind() == *kind,
+                Hop::Node(node) => is_at(transition, node),
+                Hop::At(node, read) => {
                     is_at(transition, node)
-                };
-                at && transition
-                    .memory_choice()
-                    .and_then(|choice| choice.read_depth)
-                    == read
+                        && transition
+                            .memory_choice()
+                            .and_then(|choice| choice.read_depth)
+                            == *read
+                }
             })
-            .unwrap_or_else(|| panic!("{node} is enabled"));
+            .unwrap_or_else(|| panic!("a step for the hop of the path is enabled"));
         let (_, digest) = SubjectSystem::state_key(&system, &next).expect("a key");
         prefix.push(ModelStep {
             transition: system.reported(transition, &next).expect("reports"),
@@ -248,21 +285,20 @@ fn a_forged_race_settles_inconclusive_under_ra() {
         });
         state = next;
     }
-    let forged = TemporalCounterexample {
+    TemporalCounterexample {
         initial_state: 0,
         prefix,
         over_binding: None,
         fairness: Vec::new(),
         kind: CounterexampleKind::Race(Race {
-            location: race.location,
-            earlier: 2,
-            later: 5,
+            location,
+            earlier,
+            later,
         }),
         lasso: None,
         blocked: Vec::new(),
         refinement: None,
-    };
-    disagreement(&ordered, forged);
+    }
 }
 
 /// FR-224-AC-4 (TC-669), the `ra` half: in the `relaxed`-flag shape the
@@ -279,4 +315,321 @@ fn a_race_changes_no_authored_claims_verdict_under_ra() {
     };
     assert_eq!(verdict(""), CounterexampleKind::Formula);
     assert_eq!(verdict("relaxed"), CounterexampleKind::Formula);
+}
+
+/// `message_passing`'s branches `a` and `b` over the extra contracts `extra`
+/// and the channel members `members`.
+fn unit_with(members: &str, extra: &str, a: &str, b: &str) -> Case {
+    let run = litmus_run(&[("a", a.to_owned()), ("b", b.to_owned())], "");
+    Case::with_letters(
+        &(contracts() + extra + &protocol_with("SB", members, &run) + NO_BOTH_ZERO),
+        &MP,
+    )
+}
+
+/// The reader of `message_passing`: it loads `data` after a flag load with
+/// `flag_load` that read 1, then `after`.
+fn reader(flag_load: &str, before_data: &str) -> String {
+    format!(
+        "sequence B {{ {} choice Pick by c visible (bLy) {{ case yes when {{ bLy }} \
+         sequence Yes {{ {before_data} {} }} \
+         case no when {{ not bLy }} sequence Skip {{ }} }} }}",
+        attempt("Ly", "c", "Core::look", flag_load, "LooksY, Looked"),
+        load_ordered("Lx", "x", 2, ""),
+    )
+}
+
+/// Whether `outcome` proved the item over its subject.
+fn holds(outcome: &ModelCheckOutcome<ProtocolTransition>) -> bool {
+    matches!(outcome, ModelCheckOutcome::Holds { .. })
+}
+
+/// FR-227-AC-3 (TC-672), the fence branches of replay: in fence-based message
+/// passing (`data := 1; fence release; flag := 1 relaxed` against `r1 := flag
+/// relaxed; fence acquire; r2 := data`) the fences order the accesses, so the
+/// item proves, and a race forged on `data` is refused. The release fence
+/// sets `rel` for the `flag` store although the location was first touched
+/// after the fence (RC11, ADR-025 RA-5).
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_through_release_and_acquire_fences_is_refused() {
+    let writer = steps(
+        "A",
+        &[
+            put("Sx", "x", ""),
+            "fence F1 ordering release;".to_owned(),
+            put("Sy", "y", "relaxed"),
+        ],
+    );
+    let case = unit_with(
+        "",
+        "",
+        &writer,
+        &reader("relaxed", "fence F2 ordering acquire;"),
+    );
+    let outcome = case.check(&ra(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    let path = [
+        Hop::Fork,
+        Hop::At("Sx", None),
+        Hop::Node("F1"),
+        Hop::At("Sy", None),
+        Hop::At("Ly", Some(0)),
+        Hop::Node("F2"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&case, &path, location_of(&case, "x"), 2, 7);
+    disagreement(&case, forged);
+
+    // Without the acquire fence the same shape races, and the race replays.
+    let racy = unit_with("", "", &writer, &reader("relaxed", ""));
+    let counterexample = violated(racy.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = racy.replay_race(&ra(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// FR-227-AC-3 (TC-672), the read-modify-write branch of replay: a `release`
+/// `add` on the flag publishes `data` to the `acquire` flag load, so the item
+/// proves and a forged race is refused.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_through_a_release_read_modify_write_is_refused() {
+    let extra = "pre AddY using v on M::Cell::add { self.id = 1 and self.v < 3 }\n";
+    let writer = format!(
+        "sequence A {{ {}{} }}",
+        put("Sx", "x", ""),
+        attempt("Ay", "w", "Cell::add", "release", "AddY, AddOne"),
+    );
+    let case = unit_with("", extra, &writer, &reader("acquire", ""));
+    let outcome = case.check(&ra(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    let path = [
+        Hop::Fork,
+        Hop::At("Sx", None),
+        Hop::Node("Ay"),
+        Hop::At("Ly", Some(0)),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&case, &path, location_of(&case, "x"), 2, 5);
+    disagreement(&case, forged);
+}
+
+/// FR-227-AC-3 (TC-672), the nested `fork` and `join` branches of replay: a
+/// branch stores `data` in an inner `parallel` and joins it, beside a branch
+/// that loads `data` unsynchronised. The item refutes, and the race replays
+/// over a prefix that forks and joins the inner `parallel`.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_race_replays_through_a_nested_fork_and_join() {
+    let writer = format!(
+        "sequence A {{ parallel Inner {{ branch i sequence I {{ {} }} branch j sequence J {{ }} }} \
+         join all [i, j]; }}",
+        put("Sx", "x", ""),
+    );
+    let reader = steps("B", &[load_ordered("Lx", "x", 2, "")]);
+    let case = unit_with("", "", &writer, &reader);
+    let counterexample = violated(case.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    let kinds: Vec<StepKind> = counterexample
+        .prefix
+        .iter()
+        .map(|step| step.transition.kind())
+        .collect();
+    assert!(kinds.iter().filter(|kind| **kind == StepKind::Fork).count() >= 2);
+    let replayed = case
+        .replay_race(&ra(), counterexample)
+        .expect("the race replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// The channel `ch` whose delivery is unknown, so `duplicate` and `lose`
+/// steps exist.
+const LOSSY: &str = "channel ch from w to w carries Boolean ordering unordered \
+                     delivery unknown capacity 2 overflow block;";
+
+/// `data := 1` before or after the `send`, beside a branch that receives
+/// and loads `data`.
+fn channel_case(store_before_send: bool) -> Case {
+    let send = "send Tx via ch as (tx: Boolean) { tx };";
+    let store = put("Sx", "x", "");
+    let sender = if store_before_send {
+        format!("sequence Sender {{ {store} {send} }}")
+    } else {
+        format!("sequence Sender {{ {send} {store} }}")
+    };
+    let receiver = format!(
+        "sequence Recv {{ receive Rx via ch of s::Sender::Tx as (rx: Boolean) {{ true }}; {} }}",
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch s {sender} branch r {receiver} }} \
+         join all [s, r]; }}"
+    );
+    Case::with_letters(
+        &(contracts() + &protocol_with("SB", LOSSY, &run) + NO_BOTH_ZERO),
+        &MP,
+    )
+}
+
+/// FR-227-AC-3 (TC-672), the `send` and `receive` branches of replay, and the
+/// receive-side join of the race summary: `data` stored before the `send`
+/// happens before the load after the `receive`, so the item proves; a race
+/// forged on `data` is refused, also over a path through a `duplicate` of the
+/// queued entry on the lossy channel.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_through_a_lossy_channel_is_refused() {
+    let case = channel_case(true);
+    let outcome = case.check(&ra(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    let location = location_of(&case, "x");
+    let direct = [
+        Hop::Fork,
+        Hop::At("Sx", None),
+        Hop::Node("Tx"),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    disagreement(&case, forged_race(&case, &direct, location.clone(), 2, 5));
+    let duplicated = [
+        Hop::Fork,
+        Hop::At("Sx", None),
+        Hop::Node("Tx"),
+        Hop::Kind(StepKind::Duplicate),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    disagreement(&case, forged_race(&case, &duplicated, location, 2, 6));
+}
+
+/// The queued-send carrier (`carry_after`, `carried_after`): `data` stored
+/// after the `send` is not ordered before the load after the `receive`, so
+/// the item refutes with a race that replays. The queued entry's view must
+/// not learn of the later store.
+#[test]
+fn a_store_after_the_send_races_with_the_receivers_load() {
+    let case = channel_case(false);
+    let counterexample = violated(case.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    assert_eq!(
+        counterexample.kind,
+        CounterexampleKind::Race(Race {
+            location: location_of(&case, "x"),
+            earlier: position_of(&counterexample, "Sx"),
+            later: position_of(&counterexample, "Lx"),
+        })
+    );
+    let replayed = case.replay_race(&ra(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// FND-002 of QSL-932: until the `tso` race summary lands, EN-1 refuses the
+/// race-freedom item over a `tso` `parallel` rather than prove it unchecked.
+#[test]
+fn the_race_freedom_item_over_a_tso_parallel_is_refused() {
+    let case = unit(&message_passing("", "relaxed", "relaxed"), &MP);
+    let tso = [select("SB::Main::Both", MemoryModelName::Tso)];
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            subject: case.subject(&tso),
+            item: ModelCheckItem::RaceFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("refused");
+    assert!(matches!(refusal, ModelCheckRefusal::TsoRace), "{refusal:?}");
+}
+
+/// The race-freedom item names a protocol subject: EN-1 refuses it over a
+/// model subject, and so do the SMT facade and the replay of a race
+/// counterexample, all with `invalid-value`.
+#[test]
+fn the_race_freedom_item_over_a_model_subject_is_refused() {
+    use crate::counter::{
+        package_with_clauses, subject as model_subject, Documents, CONTRACT, UNLIMITED,
+    };
+    let documents = Documents::new(crate::counter::document(false));
+    let (package, _) = package_with_clauses(&documents.document, CONTRACT, &[]);
+    let mut documents = documents;
+    let start = documents.start("s0", &[("c", 0)]);
+    let second = start.clone();
+    let subject = model_subject(&package, &documents, vec![start], &["c"], UNLIMITED);
+    let refusal = qsl_analyze::model_check::check_model(
+        qsl_analyze::model_check::ModelCheckRequest {
+            subject: model_subject(&package, &documents, vec![second], &["c"], UNLIMITED),
+            item: ModelCheckItem::RaceFreedom,
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("refused");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::RaceOverModel),
+        "{refusal:?}"
+    );
+
+    let refused = qsl_replay::encode_smt_query(
+        &subject,
+        ModelCheckItem::RaceFreedom,
+        qsl_replay::SmtQueryKind::InductionBase { depth: 1 },
+        &qsl_replay::SmtEncodingLimits::default(),
+    )
+    .expect_err("refused");
+    assert_eq!(refused.code(), Some("invalid-value"));
+}
+
+/// FR-224 with the closure checker: a certificate that holds every reachable
+/// state of the relaxed-flag subject under the race-freedom key is rejected
+/// `BadState` at the post-state of the step that completes the race. The
+/// certificate is the deadlock-freedom run's states with the key an honest
+/// race-freedom proof carries.
+#[test]
+fn a_closure_certificate_over_a_racy_edge_is_rejected_bad_state() {
+    let relaxed = unit(&message_passing("", "relaxed", "relaxed"), &MP);
+    let ordered = unit(&message_passing("", "release", "acquire"), &MP);
+    let certificate = |outcome: ModelCheckOutcome<ProtocolTransition>| match outcome {
+        ModelCheckOutcome::Holds {
+            certificate: ProofCertificate::Closure(certificate),
+            ..
+        } => certificate,
+        other => panic!("{other:?}"),
+    };
+    let honest = certificate(ordered.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    let mut forged = certificate(relaxed.check(&ra(), ModelCheckItem::DeadlockFreedom, None));
+    let key = honest.states[0].automaton_state.clone();
+    for state in &mut forged.states {
+        state.automaton_state = key.clone();
+    }
+    let checked = check_protocol_closure(
+        &ProtocolCertificateRequest {
+            subject: relaxed.subject(&ra()),
+            item: ModelCheckItem::RaceFreedom,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        &forged,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the request is checked");
+    let TemporalCertificateCheck::Rejected(rejection) = checked else {
+        panic!("{checked:?}");
+    };
+    assert_eq!(rejection.rule, CertificateRule::BadState);
 }

@@ -524,7 +524,12 @@ impl RaComponent {
                 },
             );
         }
-        let tip = self.tip();
+        let mut tip = self.tip();
+        // QSpec FR-438: entering the `parallel`, no location has been written,
+        // so its last write, none, happens before every carrier.
+        for location in self.races.keys() {
+            set_write(&mut tip.race, location);
+        }
         for shared in self.shared.values_mut() {
             for message in &mut shared.messages {
                 if message.view.at.is_empty() {
@@ -1702,7 +1707,13 @@ impl MemoryModel for Ra {
     ///   store or RMW reads and writes both;
     /// - an access to a location with a race summary reads and writes
     ///   `race(ℓ)`, whose Booleans every write to `ℓ` clears in every other
-    ///   carrier (DR-3);
+    ///   carrier (DR-3). MR-1 has every access, fence, send and receive of the
+    ///   `parallel` touch `race(ℓ)`; only the accesses to `ℓ` do here, which
+    ///   is sound because every other step changes a carrier's Booleans of `ℓ`
+    ///   by a copy or an or, and a write's clear (to false, except in its own
+    ///   thread's `cur` and `acq`) commutes with both: clearing then copying
+    ///   or or-ing gives what or-ing then clearing gives, and the steps that
+    ///   move a view already meet `view(b)`;
     /// - a fence reads and writes `view(b)`, and a `seq_cst` fence also `S`;
     /// - every `seq_cst` access and fence reads and writes the SC event
     ///   graph, and while an SC event is live so does every step that moves

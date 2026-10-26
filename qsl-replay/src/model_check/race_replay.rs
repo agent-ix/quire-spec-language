@@ -15,21 +15,25 @@
 //!   joins the clock of the message it read, and decides its race only after
 //!   its own acquire join;
 //! - a fence joins `acq` into `cur` when it is `acquire` or stronger, sets
-//!   every `rel(ℓ)` to `cur` when it is `release` or stronger, and a
+//!   `rel(ℓ)` of every location, touched or not, to `cur` when it is
+//!   `release` or stronger, and a
 //!   `seq_cst` one joins the global fence clock into `cur` and takes it back;
 //! - `fork` copies a thread's clocks to each branch and `join` joins the
 //!   branches' into the parent;
-//! - a `send` queues `cur` and its `receive` joins it into `cur` and `acq`.
+//! - a `send` queues `cur` and its `receive` joins it into `cur` and `acq`;
+//!   a `duplicate` copies a queued entry with its clock, and a `lose`, or a
+//!   `send` that displaces one at capacity, drops it.
 //!
 //! A message or slot is found by the depth its step names, counted from the
 //! mo-last message, which garbage collection (RA-7) never changes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::simulation::protocol::{
     AccessRecord, ProtocolTransition, SendOutcome, StepKind, ThreadPath,
 };
 use qsl_eval::simulation::Location;
+use qsl_semantics::check::AccessOrdering;
 
 use crate::model_check::counterexample::Race;
 
@@ -49,7 +53,12 @@ fn join(into: &mut Clock, from: &Clock) {
 struct Clocks {
     cur: Clock,
     acq: Clock,
+    /// `rel(ℓ)` for each location a release access has set since the last
+    /// release fence; every other location's is `fence`.
     rel: BTreeMap<Location, Clock>,
+    /// `cur` at the thread's last release fence, which RA-5 assigns to
+    /// `rel(ℓ)` of every location, whether or not it has been touched.
+    fence: Clock,
     /// Events the thread has made.
     time: u64,
 }
@@ -60,6 +69,24 @@ impl Clocks {
         self.time = self.time.saturating_add(1);
         self.cur.insert(thread.clone(), self.time);
         self.time
+    }
+
+    /// `rel(ℓ)`.
+    fn released(&self, location: &Location) -> Clock {
+        self.rel.get(location).unwrap_or(&self.fence).clone()
+    }
+
+    /// These clocks joined with `other`'s.
+    fn join(&mut self, other: &Self) {
+        let locations: Vec<Location> = self.rel.keys().chain(other.rel.keys()).cloned().collect();
+        for location in locations {
+            let mut joined = self.released(&location);
+            join(&mut joined, &other.released(&location));
+            self.rel.insert(location, joined);
+        }
+        join(&mut self.fence, &other.fence);
+        join(&mut self.cur, &other.cur);
+        join(&mut self.acq, &other.acq);
     }
 }
 
@@ -75,26 +102,37 @@ struct Event {
     clock: Clock,
 }
 
+/// A queued entry: its canonical bytes and the clock its sender carried.
+type Queued = (Vec<u8>, Clock);
+
 /// The vector-clock state of a replayed prefix.
 #[derive(Default)]
 struct Replay {
     threads: BTreeMap<ThreadPath, Clocks>,
+    /// The threads that hold views: the parent and the branches of every
+    /// `parallel` forked and not yet joined (RA-6).
+    live: BTreeSet<ThreadPath>,
     /// Each location's messages in modification order, oldest first: the
     /// clock their writers gave them. The initial message holds none.
     messages: BTreeMap<Location, Vec<Clock>>,
     /// The global `seq_cst` fence clock.
     fences: Clock,
-    /// Each channel's queued entries: the send node and the clock the
-    /// sender carried, oldest first.
-    queues: BTreeMap<(String, u64), Vec<(String, Clock)>>,
+    /// Each channel's queued entries, oldest first: the entry's canonical
+    /// bytes and the clock the sender carried.
+    queues: BTreeMap<(String, u64), Vec<Queued>>,
 }
 
 /// Whether the access loads or stores with acquire or release strength
 /// (RA-2, RA-3).
 fn strength(access: &AccessRecord) -> (bool, bool) {
-    use qsl_semantics::check::AccessOrdering::{AcqRel, Acquire, Release, SeqCst};
-    let acquires = matches!(access.ordering, Some(Acquire | AcqRel | SeqCst));
-    let releases = matches!(access.ordering, Some(Release | AcqRel | SeqCst));
+    let acquires = matches!(
+        access.ordering,
+        Some(AccessOrdering::Acquire | AccessOrdering::AcqRel | AccessOrdering::SeqCst)
+    );
+    let releases = matches!(
+        access.ordering,
+        Some(AccessOrdering::Release | AccessOrdering::AcqRel | AccessOrdering::SeqCst)
+    );
     (acquires, releases)
 }
 
@@ -103,8 +141,36 @@ impl Replay {
         self.threads.entry(path.clone()).or_default()
     }
 
+    /// The `before`-th queued entry of `queue` with the canonical bytes
+    /// `entry`; entries of equal bytes are taken in queue order.
+    fn take(&mut self, queue: &(String, u64), entry: &[u8], before: usize) -> Option<Clock> {
+        let queued = self.queues.get_mut(queue)?;
+        let at = queued
+            .iter()
+            .enumerate()
+            .filter(|(_, (held, _))| held == entry)
+            .nth(before)?
+            .0;
+        Some(queued.remove(at).1)
+    }
+
     /// The step at one position, and the access event it makes.
     fn step(&mut self, step: &ProtocolTransition) -> Option<Event> {
+        match step.kind() {
+            StepKind::Duplicate | StepKind::Lose => {
+                let (channel, instance) = step.channel_queue()?;
+                let queue = (channel.to_owned(), instance);
+                let entry = &step.queue_flow()?.entry;
+                let clock = self.take(&queue, entry, 0)?;
+                if step.kind() == StepKind::Duplicate {
+                    let queued = self.queues.entry(queue).or_default();
+                    queued.push((entry.clone(), clock.clone()));
+                    queued.push((entry.clone(), clock));
+                }
+                return None;
+            }
+            _ => {}
+        }
         let thread = step.thread()?;
         match step.kind() {
             StepKind::Attempt => self.attempt(step, thread),
@@ -116,60 +182,63 @@ impl Replay {
                 let parent = self.thread(thread);
                 parent.tick(thread);
                 let copy = parent.clone();
+                self.live.insert(thread.clone());
                 for child in step.fork_children() {
                     self.threads.insert(child.clone(), copy.clone());
+                    self.live.insert(child.clone());
                 }
                 None
             }
             StepKind::Join => {
-                let parent = self.thread(thread).clone();
                 let below: Vec<ThreadPath> = self
-                    .threads
-                    .keys()
+                    .live
+                    .iter()
                     .filter(|path| *path != thread && thread.is_prefix_of(path))
                     .cloned()
                     .collect();
-                let mut joined = parent;
+                let mut joined = self.thread(thread).clone();
                 for path in &below {
+                    self.live.remove(path);
                     if let Some(clocks) = self.threads.remove(path) {
-                        join(&mut joined.cur, &clocks.cur);
-                        join(&mut joined.acq, &clocks.acq);
-                        for (location, clock) in clocks.rel {
-                            join(joined.rel.entry(location).or_default(), &clock);
-                        }
+                        joined.join(&clocks);
                     }
                 }
                 joined.tick(thread);
                 self.threads.insert(thread.clone(), joined);
-                if self.threads.len() == 1 {
+                if self.live.len() == 1 && self.live.contains(thread) {
                     // An outermost `join`: the next `parallel` starts from
                     // one initial message per location (RA-1, RA-7).
                     self.messages.clear();
+                    self.live.clear();
                 }
                 None
             }
             StepKind::Send => {
-                let accepted = step
-                    .send_record()
-                    .is_some_and(|record| record.outcome() == SendOutcome::Accepted);
-                let (Some(node), true) = (step.node(), accepted) else {
-                    return None;
-                };
                 let record = step.send_record()?;
+                let flow = step.queue_flow()?;
+                let queue = (record.channel().to_owned(), thread.instance);
+                if let Some((displaced, before)) = &flow.displaced {
+                    self.take(&queue, displaced, *before);
+                }
+                if record.outcome() != SendOutcome::Accepted {
+                    return None;
+                }
                 let clocks = self.thread(thread);
                 clocks.tick(thread);
                 let carried = clocks.cur.clone();
                 self.queues
-                    .entry((record.channel().to_owned(), thread.instance))
+                    .entry(queue)
                     .or_default()
-                    .push((node.to_owned(), carried));
+                    .push((flow.entry.clone(), carried));
                 None
             }
             StepKind::Receive => {
-                let (channel, instance, send) = step.received()?;
-                let queue = self.queues.get_mut(&(channel.to_owned(), instance))?;
-                let at = queue.iter().position(|(node, _)| node == send)?;
-                let (_, carried) = queue.remove(at);
+                let (channel, instance, _) = step.received()?;
+                let carried = self.take(
+                    &(channel.to_owned(), instance),
+                    &step.queue_flow()?.entry,
+                    0,
+                )?;
                 let clocks = self.thread(thread);
                 clocks.tick(thread);
                 join(&mut clocks.cur, &carried);
@@ -181,10 +250,15 @@ impl Replay {
     }
 
     /// RA-5, DR-2.
-    fn fence(&mut self, thread: &ThreadPath, ordering: &str) {
-        let acquires = matches!(ordering, "acquire" | "acq_rel" | "seq_cst");
-        let releases = matches!(ordering, "release" | "acq_rel" | "seq_cst");
-        let locations: Vec<Location> = self.messages.keys().cloned().collect();
+    fn fence(&mut self, thread: &ThreadPath, ordering: AccessOrdering) {
+        let acquires = matches!(
+            ordering,
+            AccessOrdering::Acquire | AccessOrdering::AcqRel | AccessOrdering::SeqCst
+        );
+        let releases = matches!(
+            ordering,
+            AccessOrdering::Release | AccessOrdering::AcqRel | AccessOrdering::SeqCst
+        );
         let clocks = self.thread(thread);
         clocks.tick(thread);
         if acquires {
@@ -192,12 +266,11 @@ impl Replay {
             join(&mut clocks.cur, &acquired);
         }
         if releases {
-            let current = clocks.cur.clone();
-            for location in locations {
-                clocks.rel.insert(location, current.clone());
-            }
+            // `rel(ℓ)` of every location, touched or not.
+            clocks.fence = clocks.cur.clone();
+            clocks.rel.clear();
         }
-        if ordering == "seq_cst" {
+        if ordering == AccessOrdering::SeqCst {
             let mut current = clocks.cur.clone();
             join(&mut current, &self.fences);
             self.fences.clone_from(&current);
@@ -255,7 +328,7 @@ impl Replay {
                 clocks.rel.insert(location.clone(), clocks.cur.clone());
                 clocks.cur.clone()
             } else {
-                clocks.rel.get(location).cloned().unwrap_or_default()
+                clocks.released(location)
             };
             if let Some((_, carried)) = &read {
                 join(&mut given, carried);
