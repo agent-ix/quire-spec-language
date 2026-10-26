@@ -293,6 +293,20 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
             },
         ),
         (
+            json!({"type": "reduction-not-preserving", "form": {"refinement": {"liveness": false}}, "reduction": "constraint"}),
+            InconclusiveCause::ReductionNotPreserving {
+                reduction: ReductionKind::StateConstraint,
+                form: PropertyForm::Refinement { liveness: false },
+            },
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": {"refinement": {"liveness": true}}, "reduction": "constraint"}),
+            InconclusiveCause::ReductionNotPreserving {
+                reduction: ReductionKind::StateConstraint,
+                form: PropertyForm::Refinement { liveness: true },
+            },
+        ),
+        (
             json!({"type": "constraint-reached", "boundary_states": 2}),
             InconclusiveCause::ConstraintReached { boundary_states: 2 },
         ),
@@ -387,6 +401,22 @@ fn tc_774_cause_reader_refuses_in_order() {
             PluginResultRefusal::Unsupported {
                 pointer: "/cause/form".to_owned(),
                 feature: "fairness".to_owned(),
+            },
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": {"refinement": {}}, "reduction": "symmetry"}),
+            PluginResultRefusal::MissingMember {
+                pointer: "/cause/form/refinement/liveness".to_owned(),
+            },
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": {"refinement": {"liveness": "yes"}}, "reduction": "symmetry"}),
+            wrong("/cause/form/refinement/liveness"),
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": {"safety": {}}, "reduction": "symmetry"}),
+            PluginResultRefusal::UnknownMember {
+                pointer: "/cause/form/safety".to_owned(),
             },
         ),
         (
