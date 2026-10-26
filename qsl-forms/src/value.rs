@@ -81,6 +81,34 @@ pub(crate) fn has_token(items: &[Item<'_>], spelling: &[u8]) -> bool {
         .any(|item| matches!(item, Item::Token(token) if token.spelling() == spelling))
 }
 
+/// The float shape a `FloatValue` production's leading `float32` / `float64`
+/// keyword and hex payload spell. `#[string_edge]`: reads the keyword's
+/// spelling off the imported CST.
+#[ix_trace_rs::string_edge]
+fn float_shape(
+    cst: &LosslessCst,
+    items: &[Item<'_>],
+    child: &CstNode,
+) -> Result<Shape, FormsRefusal> {
+    match items.first() {
+        Some(Item::Token(token)) if token.spelling() == b"float32" => {
+            let hex = spelled(cst, only(items, Production::Hex32, child)?)?;
+            let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
+            Ok(Shape::Float32(
+                u32::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
+            ))
+        }
+        Some(Item::Token(token)) if token.spelling() == b"float64" => {
+            let hex = spelled(cst, only(items, Production::Hex64, child)?)?;
+            let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
+            Ok(Shape::Float64(
+                u64::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
+            ))
+        }
+        _ => Err(unexpected(child)),
+    }
+}
+
 /// The refusal for a CST node whose shape its grammar rule does not give.
 pub(crate) fn unexpected(node: &CstNode) -> FormsRefusal {
     FormsRefusal::at(
@@ -1779,23 +1807,7 @@ impl<'c> Mapping<'c> {
                 self.leaf(Shape::Rational(numerator, denominator), &task)
             }
             Production::FloatValue => {
-                let bits = match items.first() {
-                    Some(Item::Token(token)) if token.spelling() == b"float32" => {
-                        let hex = spelled(self.cst, only(&items, Production::Hex32, child)?)?;
-                        let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
-                        Shape::Float32(
-                            u32::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
-                        )
-                    }
-                    Some(Item::Token(token)) if token.spelling() == b"float64" => {
-                        let hex = spelled(self.cst, only(&items, Production::Hex64, child)?)?;
-                        let digits = hex.strip_prefix("0x").ok_or_else(|| unexpected(child))?;
-                        Shape::Float64(
-                            u64::from_str_radix(digits, 16).map_err(|_| unexpected(child))?,
-                        )
-                    }
-                    _ => return Err(unexpected(child)),
-                };
+                let bits = float_shape(self.cst, &items, child)?;
                 self.leaf(bits, &task)
             }
             Production::QuantityLiteral => {
