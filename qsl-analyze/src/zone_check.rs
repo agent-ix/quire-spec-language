@@ -4,10 +4,19 @@
 //! [`Dbm`] is its zone representation (EZ-2, FR-238): a difference-bound
 //! matrix over arbitrary-precision integer bounds, after every constant of
 //! the model and the claim has been scaled once to an integer by
-//! [`scale_constants`].
+//! [`scale_constants`]. [`check_timed_model`] is its search (FR-239), with
+//! finite counterexamples concretised to exact delays (FR-241).
 
+mod concretise;
 mod dbm;
+mod divergence;
 mod scale;
+mod search;
 
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
+pub use search::{
+    check_timed_model, SymbolicEdge, SymbolicGraph, SymbolicNode, ZoneCheckItem, ZoneCheckLimit,
+    ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStats, ZoneStop,
+    ZoneUndecided,
+};

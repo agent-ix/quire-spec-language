@@ -365,6 +365,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
             state_key: case.package_id,
             locus: UndefinedLocus::Contract("CanInc".to_owned()),
             transition: None,
+            time: None,
         },
         cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
     };

@@ -625,6 +625,7 @@ fn evaluate_arguments(
                                 object: object.clone(),
                             })),
                             transition: None,
+                            time: None,
                         },
                         cause,
                     }))
@@ -889,6 +890,7 @@ fn mapping_verdict(
                     state_key: digest,
                     locus: UndefinedLocus::Mapping(Box::new(MappingSite { row, object })),
                     transition: None,
+                    time: None,
                 },
                 cause: *cause,
             })
@@ -941,6 +943,7 @@ mod tests {
                 state_key: DigestRecord::mint(DigestDomain::Sha256Jcs, [0; 32]),
                 locus: UndefinedLocus::Constraint("c".to_owned()),
                 transition: None,
+                time: None,
             },
             cause: qsl_eval::temporal::UndefinedCause::InsufficientData(
                 qsl_eval::temporal::InsufficientData {
