@@ -52,6 +52,7 @@ Tag the tests `#[trace("TC-592", "FR-167-AC-n")]`.
   `RequiresBound` with no node explored.
 - Step 4: the `always possible` and `unique path` items settle
   `ReductionNotPreserving` before expansion and the `possible` item is
-  explored; `ReductionNotPreserving`; the EN-1 manifest lists the three
-  forms and the monitor's lists none.
+  explored; `ReductionNotPreserving`; the EN-1 manifest's `state_graph_forms`
+  has `possible`, `always-possible` and `unique-path`, and the trace monitor
+  manifest has no `state_graph_forms` member.
 - Step 5: byte-equal graphs, labels and open sets.
