@@ -12,9 +12,10 @@
 //! divergence parts belong to the liveness and time-lock-freedom proofs
 //! (QSL-583) and are not built here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
+use qsl_eval::simulation::model::PlaceConstraint;
 use qsl_foundation::digest::DigestRecord;
 use qsl_route::deadlock::ItemObligation;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -79,8 +80,15 @@ pub struct CertEdge {
     /// The step's transition identity; `None` for an idle-tail stutter
     /// position of a TT-2 clause's automaton (FR-242).
     pub transition: Option<ModelTransition>,
-    /// The convex part of the step's guard taken; 0 for a stutter.
-    pub part: usize,
+    /// The convex part of the step's guard taken; `None` for a stutter.
+    pub part: Option<usize>,
+    /// Under a dense source, the piece of a TT-2 clause's horizon axis the
+    /// position lies in, as constraints on the horizon clock (the place
+    /// past the model's clock places), which decides the automaton state
+    /// `to` holds; `None` with no automaton, past the formula's horizon,
+    /// and under a tick source, whose automaton state keeps its stamp (spec
+    /// gap STD-493: FR-244's edge names no piece).
+    pub horizon: Option<Vec<PlaceConstraint>>,
     /// The node whose zone holds, or under the aLU simulation covers, the
     /// successor.
     pub to: usize,
@@ -170,7 +178,13 @@ impl Run<'_, '_, '_> {
         let mut edges = Vec::with_capacity(order.len());
         let mut steps = Vec::with_capacity(order.len());
         for edge in order {
-            let SymbolicEdge { from, to, step, .. } = self.edges[edge].clone();
+            let SymbolicEdge {
+                from,
+                to,
+                step,
+                piece,
+                ..
+            } = self.edges[edge].clone();
             let (transition, part) = match step {
                 Some((step, part)) => {
                     let transition = self
@@ -179,15 +193,25 @@ impl Run<'_, '_, '_> {
                         .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
                         .transition()
                         .clone();
-                    (Some(transition), part)
+                    (Some(transition), Some(part))
                 }
-                None => (None, 0),
+                None => (None, None),
+            };
+            let horizon = match piece {
+                Some(piece) => Some(
+                    self.pieces
+                        .get(piece)
+                        .map(|(constraints, _)| constraints.clone())
+                        .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-piece")))?,
+                ),
+                None => None,
             };
             steps.push(step);
             edges.push(CertEdge {
                 from,
                 transition,
                 part,
+                horizon,
                 to,
             });
         }
@@ -260,25 +284,56 @@ fn admitted(
 
 /// The first sequence of certificate edges from `at` that takes `moves`'
 /// model steps in order, depth first over the edges each step has, with
-/// the node it ends at.
+/// the node it ends at. The search is iterative, and a `(node, move)` pair
+/// from which the rest cannot be taken is tried once.
 fn follow(
     edges: &[CertEdge],
     steps: &[Option<(usize, usize)>],
     at: usize,
     moves: &[Move],
 ) -> Option<(usize, Vec<usize>)> {
-    let Some((&first, rest)) = moves.split_first() else {
-        return Some((at, Vec::new()));
-    };
-    let Some(step) = first else {
-        // Only time passes.
-        return follow(edges, steps, at, rest);
-    };
-    (0..edges.len())
-        .filter(|&edge| edges[edge].from == at && steps[edge] == Some(step))
-        .find_map(|edge| {
-            let (end, mut taken) = follow(edges, steps, edges[edge].to, rest)?;
-            taken.insert(0, edge);
-            Some((end, taken))
-        })
+    // The model steps only: a move with none lets time pass.
+    let moves: Vec<(usize, usize)> = moves.iter().filter_map(|step| *step).collect();
+    let mut leaving: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (index, edge) in edges.iter().enumerate() {
+        leaving.entry(edge.from).or_default().push(index);
+    }
+    let mut dead: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // Each frame: the node, the move taken next, and the next candidate
+    // edge to try.
+    let mut taken: Vec<usize> = Vec::new();
+    let mut frames: Vec<(usize, usize)> = vec![(at, 0)];
+    loop {
+        let depth = frames.len() - 1;
+        let (node, next) = *frames.last()?;
+        if depth == moves.len() {
+            return Some((node, taken));
+        }
+        let candidates = leaving.get(&node).map_or(&[][..], Vec::as_slice);
+        let found = candidates
+            .iter()
+            .enumerate()
+            .skip(next)
+            .find(|(_, &edge)| {
+                steps[edge] == Some(moves[depth]) && !dead.contains(&(edges[edge].to, depth + 1))
+            })
+            .map(|(index, &edge)| (index, edge));
+        match found {
+            Some((index, edge)) => {
+                if let Some(frame) = frames.last_mut() {
+                    frame.1 = index + 1;
+                }
+                taken.push(edge);
+                frames.push((edges[edge].to, 0));
+            }
+            None => {
+                dead.insert((node, depth));
+                frames.pop();
+                taken.pop();
+                if frames.is_empty() {
+                    return None;
+                }
+            }
+        }
+    }
 }

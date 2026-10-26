@@ -39,7 +39,7 @@ use quire_exact::{Cancel, Meter, Rational};
 use super::certificate::{Proof, ZoneCertificate};
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
-use super::window::{Read, WindowClaim};
+use super::window::{Read, Stamp, WindowClaim};
 use super::{scale_constants, Bound, Dbm, DbmError};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 
@@ -180,9 +180,10 @@ pub(super) struct SymbolicEdge {
     /// part's index among its parts; `None` for an idle-tail stutter
     /// position (FR-242).
     pub step: Option<(usize, usize)>,
-    /// The piece of the horizon clock's axis the position lies in, by
-    /// index into the claim automaton's pieces; 0 with no automaton.
-    pub piece: usize,
+    /// The piece of the horizon clock's axis a TT-2 position lies in, by
+    /// index into the run's pieces; `None` with no automaton, under a tick
+    /// source, and past the formula's horizon.
+    pub piece: Option<usize>,
 }
 
 /// How a new node is reached: an edge from a stored node, with its step
@@ -191,7 +192,7 @@ pub(super) struct SymbolicEdge {
 struct Arrival {
     from: usize,
     step: Option<(usize, usize)>,
-    piece: usize,
+    piece: Option<usize>,
 }
 
 impl SymbolicEdge {
@@ -357,6 +358,7 @@ pub fn check_timed_model<S: Clone>(
                 window = Some(WindowClaim::new(
                     clause.formula(),
                     instances.len(),
+                    request.subject.tick_period().cloned(),
                     request.limits.max_automaton_states,
                 )?);
                 Some(Claim {
@@ -428,7 +430,10 @@ pub(super) struct Run<'r, 's, 'a> {
     claim: Option<Claim<'r>>,
     /// A TT-2 clause's automaton, whose horizon clock is the last clock of
     /// every zone.
-    window: Option<WindowClaim>,
+    pub(super) window: Option<WindowClaim>,
+    /// The pieces of the horizon axis a TT-2 position is read on, computed
+    /// once: under a tick source, one, since the automaton keeps the stamp.
+    pub(super) pieces: Vec<(Vec<PlaceConstraint>, Rational)>,
     pub(super) limits: ZoneCheckLimits,
     cancel: &'r Cancel,
     pub(super) scale: BigInt,
@@ -463,10 +468,15 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         cancel: &'r Cancel,
     ) -> Self {
         let (scale, lower, upper) = scaled_bounds(timed, window.as_ref());
+        let pieces = match (&window, timed.tick_period()) {
+            (Some(window), None) => window.pieces(timed.places().len()),
+            _ => vec![(Vec::new(), zero_stamp())],
+        };
         Self {
             timed,
             claim,
             window,
+            pieces,
             limits,
             cancel,
             scale,
@@ -531,11 +541,6 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// and, for a TT-2 clause, the horizon clock.
     pub(super) fn dim(&self) -> usize {
         self.timed.places().len() + 1 + usize::from(self.window.is_some())
-    }
-
-    /// The horizon clock's place index, past the clock places.
-    fn horizon(&self) -> usize {
-        self.timed.places().len()
     }
 
     /// Intersect `zone` with `constraints`.
@@ -652,7 +657,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             let mut zone = Dbm::zero(dim);
             // Position 0 is read at time 0, before time elapses.
             let q = match self.window {
-                Some(_) => self.window_position(None, &discrete, &zero_stamp(), false)?,
+                Some(_) => {
+                    self.window_position(None, &discrete, Stamp::At(&zero_stamp()), false)?
+                }
                 None => 0,
             };
             self.settle(&discrete, &mut zone)?;
@@ -858,37 +865,47 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let q = self.nodes[node].q;
         let scale = self.scale.clone();
         let mut created = Vec::new();
-        let Some(pieces) = self
-            .window
-            .as_ref()
-            .map(|window| window.pieces(self.horizon()))
-        else {
-            for successor in self.successors(&state, &zone, &scale)? {
+        // With no automaton, and once a TT-2 automaton state has decided
+        // every obligation, past the formula's horizon (FR-242, ADR-026
+        // EZ-9), a step reads no position: the automaton state stays, no
+        // atom is read and no piece of the horizon axis splits the zone,
+        // whose horizon clock no longer matters. The zone graph goes on, so
+        // the certificate keeps its edges and its `admitted` path.
+        let frozen = self.window.as_ref().is_none_or(|window| window.decided(q));
+        if frozen {
+            let horizon = self.window.as_ref().map(|_| self.timed.places().len() + 1);
+            for mut successor in self.successors(&state, &zone, &scale)? {
+                if let Some(h) = horizon {
+                    successor.zone.free(h)?;
+                }
                 let arrival = Arrival {
                     from: node,
                     step: Some((successor.step, successor.part)),
-                    piece: 0,
+                    piece: None,
                 };
                 if let Some(new) =
-                    self.insert(successor.state, 0, successor.zone, None, Some(arrival))?
+                    self.insert(successor.state, q, successor.zone, None, Some(arrival))?
                 {
                     created.push(new);
                 }
             }
             return Ok(created);
+        }
+        let Some(window) = self.window.as_ref() else {
+            return Err(ZoneCheckRefusal::Fault("window").into());
         };
-        let tail = self
-            .window
-            .as_ref()
-            .and_then(|window| window.state(q))
-            .is_some_and(|state| state.tail);
-        // A step's position, read on each piece of the horizon axis; none in
-        // the idle tail, which takes no further step.
+        let tail = window.state(q).is_some_and(|state| state.tail);
+        let period = self.timed.tick_period().cloned();
+        let pieces = self.pieces.clone();
+        // A step's position, read on each piece of the horizon axis, or
+        // under a tick source after its tick; none in the idle tail, which
+        // takes no further step.
         let positions = if tail {
             Vec::new()
         } else {
             self.positions(&state, &zone, &scale)?
         };
+        let terminal = positions.is_empty();
         for successor in positions {
             for (piece, (constraints, stamp)) in pieces.iter().enumerate() {
                 let mut at = successor.zone.clone();
@@ -896,6 +913,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 if at.is_empty() {
                     continue;
                 }
+                let advance = match (&period, successor.tick) {
+                    (Some(period), true) => period.clone(),
+                    _ => zero_stamp(),
+                };
+                let stamp = match period {
+                    Some(_) => Stamp::After(&advance),
+                    None => Stamp::At(stamp),
+                };
                 let read = self.window_step(q, &successor.state, stamp, false)?;
                 self.settle(&successor.state, &mut at)?;
                 if at.is_empty() {
@@ -904,7 +929,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 let arrival = Arrival {
                     from: node,
                     step: Some((successor.step, successor.part)),
-                    piece,
+                    piece: period.is_none().then_some(piece),
                 };
                 if let Some(new) =
                     self.insert(successor.state.clone(), read, at, None, Some(arrival))?
@@ -913,21 +938,31 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 }
             }
         }
-        // At a quiescent state the behaviour may idle: a stutter position
-        // after any delay, from which it stays in the idle tail.
-        if self.timed(self.timed.is_quiescent(&state))? && self.elapses(&state)? {
+        // The behaviour may idle: under a dense source at a quiescent state,
+        // a stutter position after a delay; under a tick source at a
+        // terminal state, whose stutter step is a tick (FR-231). Either
+        // leaves it in the idle tail.
+        let idles = match &period {
+            Some(_) => tail || terminal,
+            None => self.timed(self.timed.is_quiescent(&state))? && self.elapses(&state)?,
+        };
+        if idles {
             for (piece, (constraints, stamp)) in pieces.iter().enumerate() {
                 let mut at = zone.clone();
                 self.constrain(&mut at, constraints)?;
                 if at.is_empty() {
                     continue;
                 }
+                let stamp = match &period {
+                    Some(period) => Stamp::After(period),
+                    None => Stamp::At(stamp),
+                };
                 let read = self.window_step(q, &state, stamp, true)?;
                 self.settle(&state, &mut at)?;
                 let arrival = Arrival {
                     from: node,
                     step: None,
-                    piece,
+                    piece: period.is_none().then_some(piece),
                 };
                 if let Some(new) = self.insert(state.clone(), read, at, None, Some(arrival))? {
                     created.push(new);
@@ -942,7 +977,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         &mut self,
         q: usize,
         state: &ModelSimState,
-        stamp: &Rational,
+        stamp: Stamp<'_>,
         stutter: bool,
     ) -> Result<usize, Halt> {
         self.window_position(Some(q), state, stamp, stutter)
@@ -955,7 +990,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         &mut self,
         from: Option<usize>,
         state: &ModelSimState,
-        stamp: &Rational,
+        stamp: Stamp<'_>,
         stutter: bool,
     ) -> Result<usize, Halt> {
         let claim = self
@@ -1280,10 +1315,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let initial = self.nodes[at]
             .initial
             .ok_or(ZoneCheckRefusal::Fault("path-root"))?;
-        let pieces = self
-            .window
-            .as_ref()
-            .map(|window| window.pieces(self.horizon()));
+        let pieces = self.window.as_ref().map(|_| self.pieces.clone());
         let mut stages = Vec::with_capacity(path.len());
         let mut stutters = 0_usize;
         for (from, step, piece) in path {
@@ -1291,12 +1323,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             let post = step.as_ref().map_or(&state, |(step, _)| step.post());
             let target = self.timed(self.timed.invariants(post))?;
             stutters += usize::from(step.is_none());
-            let position = match &pieces {
-                Some(pieces) => pieces
+            let position = match (&pieces, piece) {
+                (Some(pieces), Some(piece)) => pieces
                     .get(piece)
                     .map(|(constraints, _)| constraints.clone())
                     .ok_or(ZoneCheckRefusal::Fault("edge-piece"))?,
-                None => Vec::new(),
+                _ => Vec::new(),
             };
             stages.push(super::concretise::Stage {
                 invariants: self.timed(self.timed.invariants(&state))?,

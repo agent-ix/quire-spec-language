@@ -141,11 +141,11 @@ pub(super) fn concretise(
         }
         let part: &[PlaceConstraint] = match &stage.step {
             Some((step, part)) => step.parts().get(*part).ok_or(NotConcretised::Part)?,
-            None => {
-                // A stutter position comes after a positive delay.
-                times.constrain(at - 1, at, Bound::lt(BigInt::from(0)))?;
-                &[]
-            }
+            // A stutter position reads the state again. One at zero delay
+            // re-reads the same state at the same stamp, so it only marks
+            // the idle tail and is taken as is: no positive delay is
+            // required of it (SR-1631001 FND-004).
+            None => &[],
         };
         for constraint in stage.invariants.iter().chain(part) {
             resets.constrain(&mut times, at, constraint, scale)?;

@@ -11,8 +11,8 @@ use qsl_analyze::zone_check::{
 };
 use qsl_eval::simulation::model::{ModelSystem, PlaceConstraint, TimedSystem};
 use qsl_eval::temporal::{
-    evaluate_timed_at, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TimedTrace, UndefinedCause,
+    evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
+    TemporalPosition, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -41,9 +41,20 @@ fn rpc_document() -> Vec<u8> {
 /// ADR-026 §11's `Rpc` with client deadline `t` ms and the claim
 /// `NoLateReply` under infinite-trace.
 fn rpc(t: u32) -> World {
+    rpc_claim(
+        t,
+        INFINITE,
+        "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(not c.late) }\n",
+    )
+}
+
+/// ADR-026 §11's `Rpc` with client deadline `t` ms, under the profile
+/// lines `profiles`, with `claim` as its one temporal clause.
+fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
     world(
         &rpc_document(),
-        INFINITE,
+        profiles,
         &format!(
             "{DENSE}\
              pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
@@ -61,8 +72,7 @@ fn rpc(t: u32) -> World {
              post ResetIdle using v on M::Call::reset {{ self.phase = 0 }}\n\
              time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
              time invariant ClientDeadline when {{ self.phase = 1 }} {{ self.x <= {t} ms }}\n\
-             temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
-             {{ always holds(not c.late) }}\n"
+             {claim}"
         ),
     )
 }
@@ -154,6 +164,7 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
                 "timeout",
                 "reset",
                 "heartbeat",
+                "tick",
                 "retry",
                 "step",
                 "go",
@@ -328,6 +339,11 @@ fn budgets_and_cancellation_stop_the_search() {
 /// resets `x` and increments `n`; the time invariant `x <= 1` applies while
 /// `n < 2`, or always when `locked`.
 fn ticker(locked: bool) -> World {
+    ticker_with(locked, "always holds(6 mod (2 - c.phase) >= 0)")
+}
+
+/// [`ticker`] with `body` as its clause on origin, under the timed profile.
+fn ticker_with(locked: bool, body: &str) -> World {
     let when = if locked { "true" } else { "self.phase < 2" };
     world(
         &document(&["x"], &[("step", &["phase", "x"])]),
@@ -340,7 +356,7 @@ fn ticker(locked: bool) -> World {
                  (pre(self.phase) = 1 implies self.phase = 2) and self.x = 0 ms }}\n\
              time invariant Tick when {{ {when} }} {{ self.x <= 1 ms }}\n\
              temporal Defined using tt over (c: M::Call) clock \"model-time\" on origin \
-             {{ always holds(6 mod (2 - c.phase) >= 0) }}\n"
+             {{ {body} }}\n"
         ),
     )
 }
@@ -687,7 +703,11 @@ fn assert_edges_cover(world: &World, certificate: &ZoneCertificate<&'static str>
             .find(|step| Some(step.transition()) == edge.transition.as_ref())
             .expect("the edge's transition is enabled");
         let mut zone = certificate.nodes[edge.from].zone.clone();
-        constrain(&mut zone, &step.parts()[edge.part], scale);
+        constrain(
+            &mut zone,
+            &step.parts()[edge.part.expect("a step's part")],
+            scale,
+        );
         for (place, value) in step.resets() {
             zone.reset(place + 1, &scaled(value, scale))
                 .expect("a place");
@@ -1028,11 +1048,22 @@ fn a_request_obligation_must_be_its_items() {
 /// on origin, over a model with clocks `clocks` and `operations` whose
 /// constraints are `model`.
 fn windowed(clocks: &[&str], operations: &[(&str, &[&str])], model: &str, body: &str) -> World {
+    windowed_under(DENSE, clocks, operations, model, body)
+}
+
+/// [`windowed`] under the time units and source `time`.
+fn windowed_under(
+    time: &str,
+    clocks: &[&str],
+    operations: &[(&str, &[&str])],
+    model: &str,
+    body: &str,
+) -> World {
     world(
         &document(clocks, operations),
         TIMED,
         &format!(
-            "{DENSE}{model}\
+            "{time}{model}\
              temporal W using tt over (c: M::Call) clock \"model-time\" on origin {{ {body} }}\n"
         ),
     )
@@ -1063,6 +1094,11 @@ fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
 
 /// `go` sets `retried` at exactly `at` ms, after which nothing happens.
 fn retried_at(at: &str) -> World {
+    retried_at_with(at, "eventually[2 ms, 2 ms] holds(c.retried)")
+}
+
+/// [`retried_at`] with `body` as its clause.
+fn retried_at_with(at: &str, body: &str) -> World {
     windowed(
         &["x"],
         &[("go", &["phase", "retried"])],
@@ -1071,7 +1107,7 @@ fn retried_at(at: &str) -> World {
              post Gone using v on M::Call::go {{ self.phase = 1 and self.retried }}\n\
              time invariant Wait when {{ self.phase = 0 }} {{ self.x <= {at} }}\n"
         ),
-        "eventually[2 ms, 2 ms] holds(c.retried)",
+        body,
     )
 }
 
@@ -1100,35 +1136,44 @@ fn a_punctual_window_is_decided_by_a_horizon_clock() {
     assert_eq!(delays(&late), [exact(5, 2)]);
 }
 
-/// FR-242-AC-3: `always holds(not c.late)` under the timed profile is
-/// TT-1: it builds no automaton and decides on discrete states, with zero
-/// automaton states counted.
+/// FR-242-AC-3: over ADR-026 §11's `Rpc` (TC-697's fixture), `always
+/// holds(not c.late)` under the timed profile is TT-1: with `T = 3 ms` and
+/// `T = 4 ms` it builds no automaton and decides on discrete states, with
+/// zero automaton states counted.
 #[trace("TC-697", "FR-242-AC-3")]
 #[test]
 fn a_timed_invariant_builds_no_automaton() {
-    let timed = windowed(
-        &["x"],
-        &[
-            ("send", &["phase", "inflight", "late", "x"]),
-            ("reply", &["phase", "inflight"]),
-        ],
-        "pre SendIdle using v on M::Call::send { self.phase = 0 }\n\
-         post Send using v on M::Call::send { self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }\n\
-         pre Reply using v on M::Call::reply { self.inflight and self.x >= 1 ms }\n\
-         post Replied using v on M::Call::reply { not self.inflight and self.phase = 0 }\n\
-         time invariant ServerDeadline when { self.inflight } { self.x <= 3 ms }\n",
-        "always holds(not c.late)",
-    );
-    match claim(&timed, ZoneCheckLimits::default(), &Cancel::new()) {
-        ZoneCheckOutcome::Holds { stats, certificate } => {
-            assert_eq!(stats.automaton_states, 0);
-            assert!(certificate
-                .nodes
-                .iter()
-                .all(|node| node.automaton_state == 0));
-        }
-        other => panic!("expected a proof, got {other:?}"),
+    for t in [3, 4] {
+        let timed = rpc_claim(
+            t,
+            TIMED,
+            "temporal NoLateReply using tt over (c: M::Call) clock \"model-time\" on origin \
+             { always holds(not c.late) }\n",
+        );
+        let stats = match claim(&timed, ZoneCheckLimits::default(), &Cancel::new()) {
+            ZoneCheckOutcome::Holds { stats, certificate } => {
+                assert!(certificate
+                    .nodes
+                    .iter()
+                    .all(|node| node.automaton_state == 0));
+                stats
+            }
+            ZoneCheckOutcome::Violated { stats, .. } => stats,
+            other => panic!("expected a decision, got {other:?}"),
+        };
+        assert_eq!(stats.automaton_states, 0, "T = {t}");
     }
+    // As under infinite-trace (FR-239-AC-1): proved at 4, refuted at 3.
+    let four = rpc_claim(
+        4,
+        TIMED,
+        "temporal NoLateReply using tt over (c: M::Call) clock \"model-time\" on origin \
+         { always holds(not c.late) }\n",
+    );
+    assert!(matches!(
+        claim(&four, ZoneCheckLimits::default(), &Cancel::new()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
 }
 
 /// FR-242: an interval operator under another temporal operator needs a
@@ -1162,16 +1207,18 @@ impl Stream {
 }
 
 /// A timed lasso unrolled past every window: each position's stamp, in
-/// quarters of a ms, and its `p` and `q`.
+/// quarters of a ms, its `p` and `q`, and what an odd reading of `q` there
+/// gives: an undefined value or a window short of data.
 struct Unrolled {
     stamps: Vec<Rational>,
     p: Vec<bool>,
     q: Vec<bool>,
+    odd: Vec<Option<UndefinedCause>>,
 }
 
 /// A random lasso of length at most 8 with stamps in steps of 1/4 ms,
 /// starting at 0 and with a loop of positive total delay, unrolled until
-/// its stamps pass `beyond` ms.
+/// its stamps pass `beyond` ms. One position in 25 reads `q` oddly.
 fn lasso(stream: &mut Stream, beyond: u64) -> Unrolled {
     let length = usize::try_from(stream.below(8) + 1).expect("small");
     let entry = usize::try_from(stream.below(length as u64)).expect("small");
@@ -1185,10 +1232,21 @@ fn lasso(stream: &mut Stream, beyond: u64) -> Unrolled {
     delay[0] = 0;
     let p: Vec<bool> = (0..length).map(|_| stream.below(2) == 1).collect();
     let q: Vec<bool> = (0..length).map(|_| stream.below(2) == 1).collect();
+    let odd: Vec<Option<UndefinedCause>> = (0..length)
+        .map(|_| match stream.below(50) {
+            0 => Some(UndefinedCause::Kernel(Undefined::DivisionByZero)),
+            1 => Some(UndefinedCause::InsufficientData(InsufficientData {
+                count: 0,
+                min_count: 1,
+            })),
+            _ => None,
+        })
+        .collect();
     let mut unrolled = Unrolled {
         stamps: Vec::new(),
         p: Vec::new(),
         q: Vec::new(),
+        odd: Vec::new(),
     };
     let (mut at, mut quarters) = (0, 0_u64);
     while quarters <= 4 * beyond + 4 {
@@ -1197,6 +1255,7 @@ fn lasso(stream: &mut Stream, beyond: u64) -> Unrolled {
             .push(exact(i64::try_from(quarters).expect("small"), 4));
         unrolled.p.push(p[at]);
         unrolled.q.push(q[at]);
+        unrolled.odd.push(odd[at].clone());
         if at + 1 < length {
             at += 1;
             quarters += delay[at];
@@ -1219,6 +1278,8 @@ impl Lasso<'_> {
     fn reading(&self, atom: FormulaNodeId, at: usize) -> AtomReading {
         let value = if Some(atom) == self.p {
             self.unrolled.p[at]
+        } else if let Some(cause) = &self.unrolled.odd[at] {
+            return AtomReading::Undefined(cause.clone());
         } else {
             self.unrolled.q[at]
         };
@@ -1252,11 +1313,14 @@ impl TemporalLetters for Lasso<'_> {
 
 /// Part of FR-242-AC-1 (TC-697): for `eventually[0 ms, 3 ms] holds(q)`,
 /// `eventually[0 ms, 3 ms) holds(q)` and `holds(p) until(1 ms, 2 ms]
-/// holds(q)`, on 1,000 random timed lassos each, with stamps in steps of
-/// 1/4 ms and length at most 8 (unrolled past every window), the TT-2
-/// automaton rejects the clause exactly on the lassos on which the
-/// reference evaluator returns `false`, and accepts it exactly where it
-/// returns `true`. Not covered: `always (holds(p) implies eventually[0 ms,
+/// holds(q)`, and for `always`, `release`, a punctual window under `and`,
+/// past operators on origin and boolean combinations of windows, on 1,000
+/// random timed lassos each (stamps in steps of 1/4 ms, length at most 8,
+/// unrolled past every window, `q` now and then undefined or short of a
+/// window's data), the TT-2 translation's verdict is the reference
+/// evaluator's: it rejects the clause exactly where the evaluator returns
+/// `false`, and an undefined or short reading settles as the evaluator
+/// settles it. Not covered: `always (holds(p) implies eventually[0 ms,
 /// 2 ms] holds(q))`, a TT-3 form translated by MightyL (QSL-583).
 #[trace("TC-697")]
 #[test]
@@ -1265,6 +1329,12 @@ fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
         "eventually[0 ms, 3 ms] holds(c.retried)",
         "eventually[0 ms, 3 ms) holds(c.retried)",
         "holds(c.late) until(1 ms, 2 ms] holds(c.retried)",
+        "always[1 ms, 2 ms] holds(c.retried)",
+        "holds(c.late) release(1 ms, 2 ms] holds(c.retried)",
+        "holds(c.late) and eventually[1 ms, 1 ms] holds(c.retried)",
+        "once[0 ms, 1 ms] holds(c.late) or eventually[0 ms, 2 ms) holds(c.retried)",
+        "holds(c.late) since[0 ms, 1 ms] holds(c.retried)",
+        "historically[0 ms, 1 ms] holds(c.late) implies always(0 ms, 1 ms] holds(c.retried)",
     ];
     let mut stream = Stream(0x5eed_1234_abcd_ef01);
     for formula in formulas {
@@ -1288,7 +1358,7 @@ fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
             .collect();
         atoms.sort_by_key(|(start, _)| *start);
         let p = (atoms.len() == 2).then(|| atoms[0].1);
-        let (mut held, mut failed) = (0, 0);
+        let (mut held, mut failed, mut odd) = (0, 0, 0);
         for _ in 0..1_000 {
             let unrolled = lasso(&mut stream, 3);
             let mut letters = Lasso {
@@ -1309,38 +1379,157 @@ fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
                 &mut meter,
             )
             .expect("the evaluator reads the lasso");
-            match (verdict, reference) {
-                (Some(true), TemporalOutcome::Holds) => held += 1,
-                (Some(false), TemporalOutcome::Violated { .. }) => failed += 1,
-                (verdict, reference) => panic!(
-                    "{formula} on {:?}, p {:?}, q {:?}: automaton {verdict:?}, evaluator \
-                     {reference:?}",
-                    unrolled.stamps, unrolled.p, unrolled.q
-                ),
+            assert_eq!(
+                verdict, reference,
+                "{formula} on {:?}, p {:?}, q {:?}, odd {:?}",
+                unrolled.stamps, unrolled.p, unrolled.q, unrolled.odd
+            );
+            match reference {
+                TemporalOutcome::Holds => held += 1,
+                TemporalOutcome::Violated { .. } => failed += 1,
+                _ => odd += 1,
             }
         }
-        // Both answers occur, so the comparison is not vacuous.
+        // Both answers occur, and odd readings too, so the comparison is
+        // not vacuous.
         assert!(
-            held > 0 && failed > 0,
-            "{formula}: {held} held, {failed} failed"
+            held > 0 && failed > 0 && odd > 0,
+            "{formula}: {held} held, {failed} failed, {odd} odd"
         );
     }
 }
 
-/// FR-242 with FR-231's idle tail: where no step is ever enabled,
-/// `eventually[0 ms, 3 ms] holds(c.retried)` is violated only by staying,
-/// so the counterexample ends in the terminal stutter's loop.
+/// SR-1631001 FND-001: under a tick source of period 1 ms whose `tick` is
+/// always enabled, position `i` is stamped `i` ms, so `eventually[0 ms,
+/// 3 ms] holds(c.retried)`, with `retried` never set, is violated at the
+/// fourth tick, the first position past the window.
 #[trace("TC-697")]
 #[test]
-fn an_idle_tail_passes_a_window() {
-    let idle = windowed(
+fn a_window_over_a_tick_source_is_read_at_each_tick() {
+    let ticks = windowed_under(
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         time M tick M::Call::tick period 1 ms unit ms;\n",
+        &[],
+        &[("tick", &[])],
+        "",
+        "eventually[0 ms, 3 ms] holds(c.retried)",
+    );
+    let counterexample = violated(claim(&ticks, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert_eq!(
+        operations(&counterexample),
+        ["tick", "tick", "tick", "tick"]
+    );
+    assert_eq!(counterexample.lasso, None);
+}
+
+/// FR-242 at the product level: over the model whose `go` sets `retried`
+/// at exactly 2 ms, an open end excludes that instant and a closed end
+/// includes it, so `always[0 ms, 2 ms) holds(not c.retried)` is proved and
+/// `always[0 ms, 2 ms] holds(not c.retried)` is violated by `go` after
+/// 2 ms.
+#[trace("TC-697")]
+#[test]
+fn an_open_and_a_closed_end_are_read_on_their_own_pieces() {
+    let open = retried_at_with("2 ms", "always[0 ms, 2 ms) holds(not c.retried)");
+    assert!(matches!(
+        claim(&open, ZoneCheckLimits::default(), &Cancel::new()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+    let closed = retried_at_with("2 ms", "always[0 ms, 2 ms] holds(not c.retried)");
+    let counterexample = violated(claim(&closed, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert_eq!(operations(&counterexample), ["go"]);
+    assert_eq!(delays(&counterexample), [exact(2, 1)]);
+}
+
+/// FR-242 with an undefined atom: over `Ticker`, `always[0 ms, 3 ms]
+/// holds(6 mod (2 - c.phase) >= 0)` is still open when `phase` reaches 2
+/// at 2 ms, where the atom is undefined, and the clause is refuted there
+/// with an undefined evaluation of cause `division-by-zero`.
+#[trace("TC-697")]
+#[test]
+fn an_undefined_atom_inside_a_window_refutes_it() {
+    let world = ticker_with(false, "always[0 ms, 3 ms] holds(6 mod (2 - c.phase) >= 0)");
+    let counterexample = violated(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
+    let CounterexampleKind::UndefinedEvaluation(undefined) = &counterexample.kind else {
+        panic!("an undefined evaluation: {:?}", counterexample.kind);
+    };
+    assert_eq!(undefined.site.position, 2);
+    assert_eq!(
+        undefined.cause,
+        UndefinedCause::Kernel(Undefined::DivisionByZero)
+    );
+    assert_eq!(operations(&counterexample), ["step", "step"]);
+}
+
+/// The model in which no step is ever enabled: every behaviour stays at
+/// its initial state, `retried` false throughout.
+fn idle(body: &str) -> World {
+    windowed(
         &[],
         &[("go", &["phase"])],
         "pre Go using v on M::Call::go { self.phase = 1 }\n",
-        "eventually[0 ms, 3 ms] holds(c.retried)",
-    );
-    let counterexample = violated(claim(&idle, ZoneCheckLimits::default(), &Cancel::new()));
+        body,
+    )
+}
+
+/// FR-242 with FR-231's idle tail: where no step is ever enabled,
+/// `eventually[0 ms, 3 ms] holds(c.retried)` is violated only by staying:
+/// a formula counterexample with no step, whose loop is the terminal
+/// stutter.
+#[trace("TC-697")]
+#[test]
+fn an_idle_tail_passes_a_window() {
+    let counterexample = violated(claim(
+        &idle("eventually[0 ms, 3 ms] holds(c.retried)"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert!(counterexample.prefix.is_empty());
     let lasso = counterexample.lasso.as_ref().expect("a lasso");
     assert!(lasso.terminal_stutter);
-    assert_eq!(lasso.entry, counterexample.prefix.len());
+    assert_eq!(lasso.entry, 0);
+}
+
+/// FR-242 with a lower-bounded window that only the idle tail reaches.
+/// The tail's stutter positions come after any positive delays (FR-231),
+/// so some idle behaviour has none inside `[2 ms, 3 ms]` and some has one
+/// there: `eventually[2 ms, 3 ms] holds(not c.retried)`, true at every
+/// position, is violated by a stutter past 3 ms, and `always[2 ms, 3 ms]
+/// holds(c.retried)` by one inside the window, each with no step.
+#[trace("TC-697")]
+#[test]
+fn a_lower_bounded_window_is_decided_by_the_idle_tail() {
+    for body in [
+        "eventually[2 ms, 3 ms] holds(not c.retried)",
+        "always[2 ms, 3 ms] holds(c.retried)",
+    ] {
+        let counterexample = violated(claim(
+            &idle(body),
+            ZoneCheckLimits::default(),
+            &Cancel::new(),
+        ));
+        assert_eq!(counterexample.kind, CounterexampleKind::Formula, "{body}");
+        assert!(counterexample.prefix.is_empty(), "{body}");
+        assert!(
+            counterexample
+                .lasso
+                .as_ref()
+                .is_some_and(|lasso| lasso.terminal_stutter),
+            "{body}"
+        );
+    }
+    // A window that position 0 already decides needs no stutter:
+    // `eventually[0 ms, 3 ms] holds(not c.retried)` is proved.
+    assert!(matches!(
+        claim(
+            &idle("eventually[0 ms, 3 ms] holds(not c.retried)"),
+            ZoneCheckLimits::default(),
+            &Cancel::new()
+        ),
+        ZoneCheckOutcome::Holds { .. }
+    ));
 }
