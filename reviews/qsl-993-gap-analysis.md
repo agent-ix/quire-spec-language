@@ -56,3 +56,11 @@ exception is the attempt-type `UnenumerableRecord` refusal, recorded as SR-15870
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | still-open | The AC-8 integration test is now untagged, with a correct "Part of" doc. But the new unit test `a_record_value_is_written_in_fr_120_s_record_form` (qsl-eval domain.rs:538) is tagged `#[trace("TC-652", "FR-205-AC-8")]`, and it asserts none of AC-8: it tests FR-120's record encoding. The matrix still reports FR-205-AC-8 as covered while its first three sentences are asserted by no tagged test. Drop that tag. |
+| FND-001 | fixed | ee414a85a removes `#[trace("TC-652","FR-205-AC-8")]` from `a_record_value_is_written_in_fr_120_s_record_form`. No test now claims FR-205-AC-8 falsely. The remaining coverage gap is FND-003. |
+| FND-002 | fixed | Both FR-207-AC-6 tags are removed. The tests now cite ADR-027 ST-11/TS-5 in prose only. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | FR-205-AC-8 now has no tagged test. One of the four ACs this ticket names is therefore uncovered in the matrix. Its first scenario is asserted nowhere: `Refund` with `attempts 1` and `commit Committed`, two registrations from a `repeat` of maximum 2 that differ in capture `id`, and a `parallel Triggers` of two branches. That scenario has two outcomes, which reach different keys: thread `(0, Refund, 0)` names `r1` after one trigger order and `r2` after the other. `a_compensation_thread_keys_its_registration` (crosswise, untagged) and the new commit-entry assertions cover parts of it. Write the scenario's test and tag it FR-205-AC-8. | spec/functional/FR-205-define-the-protocol-subject-and-its-state-key.md:131, qsl-analyze/tests/it/protocol_compensation.rs:1319-1331 |

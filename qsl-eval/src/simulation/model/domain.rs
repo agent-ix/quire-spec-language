@@ -8,7 +8,9 @@ use quire_exact::{
     Integer, NodeKey, ObjectReference, OptionValue, Presence, UnionMember, UnionValue, Value,
     ValueType,
 };
-use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, TypeEnvironment, UnionMemberDeclaration,
+};
 
 /// Whether this module can enumerate `value_type`: `Boolean`, `Int[..]`,
 /// `Option<T>`, `Reference<T>` and a sequence with a declared maximum over
@@ -206,6 +208,70 @@ pub(crate) fn enumerable_in(value_type: &ValueType, types: &TypeEnvironment) -> 
         }
         other => enumerable(other),
     }
+}
+
+/// The child-index paths (the classifier's: record field, tuple position,
+/// flattened union payload position, each from 0) of the leaves of
+/// `value_type` this module cannot enumerate; the type's own path when no
+/// leaf is to blame.
+pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment) -> Vec<Vec<u32>> {
+    fn walk(
+        value_type: &ValueType,
+        types: &TypeEnvironment,
+        path: &mut Vec<u32>,
+        visiting: &mut Vec<NodeKey>,
+        found: &mut Vec<Vec<u32>>,
+    ) {
+        match value_type {
+            ValueType::Enum(_) => {}
+            ValueType::Composite(declaration) => {
+                if visiting.contains(declaration) {
+                    return;
+                }
+                let Some(declared) = types.composite(*declaration) else {
+                    found.push(path.clone());
+                    return;
+                };
+                let members: Vec<&ValueType> = match declared.shape() {
+                    CompositeShape::Record(fields) => {
+                        fields.iter().map(|field| field.value_type()).collect()
+                    }
+                    CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(members) => members
+                        .iter()
+                        .flat_map(UnionMemberDeclaration::positions)
+                        .collect(),
+                };
+                visiting.push(*declaration);
+                for (index, member) in members.into_iter().enumerate() {
+                    let Ok(index) = u32::try_from(index) else {
+                        break;
+                    };
+                    path.push(index);
+                    walk(member, types, path, visiting, found);
+                    path.pop();
+                }
+                visiting.pop();
+            }
+            other => {
+                if Domain::of(other, &[], types).is_none() {
+                    found.push(path.clone());
+                }
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(
+        value_type,
+        types,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut found,
+    );
+    if found.is_empty() && !enumerable_in(value_type, types) {
+        found.push(Vec::new());
+    }
+    found
 }
 
 /// Every value of the composite type `value_type`, in index order; `charge`

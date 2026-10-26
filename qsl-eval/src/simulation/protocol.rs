@@ -41,10 +41,12 @@ mod tso;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
+use qsl_semantics::family::ClaimExtent;
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
@@ -59,7 +61,7 @@ use crate::simulation::model::{
     verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
     BROKEN,
 };
-use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, RequiresBound};
 use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
@@ -593,10 +595,7 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// template. A binder's bounded record type this module cannot enumerate is
 /// refused when the system is built ([`Unsupported::UnenumerableRecord`]); an
 /// attempt type it cannot enumerate is an unbounded root.
-pub fn protocol_domains(
-    model: &ModelSystem<'_>,
-    protocol: &CheckedProtocol,
-) -> Vec<(WireNodeId, ValueType)> {
+pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
     let binders = protocol
         .slots
         .binders
@@ -609,20 +608,49 @@ pub fn protocol_domains(
             )
         });
     // A `cattempt` takes one record of its template's attempt type (ST-11).
-    // An attempt type with no finite enumeration here is listed as an
-    // unbounded root, as the model lists a parameter it cannot enumerate.
     let attempts = protocol.obligations.compensations.iter().map(|template| {
-        let root = if model.enumerates(&template.attempt_type) {
-            template.attempt_type.clone()
-        } else {
-            ValueType::Integer
-        };
         (
-            binder_root(&protocol.name, &format!("{}.attempt", template.name)),
-            root,
+            attempt_root(protocol, &template.name),
+            template.attempt_type.clone(),
         )
     });
     binders.chain(attempts).collect()
+}
+
+/// The root a template's attempt type is named by.
+fn attempt_root(protocol: &CheckedProtocol, template: &str) -> WireNodeId {
+    binder_root(&protocol.name, &format!("{template}.attempt"))
+}
+
+/// ADR-027 TS-5, ST-11: a bounded attempt type that `values_of` cannot
+/// enumerate (a `String` or `Text` field, say, which `classify_extent` takes
+/// as bounded) is as unbounded to the run as an `Integer`: every leaf that
+/// cannot be enumerated is a domain of the request, at its child-index path.
+fn check_attempt_types(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+) -> Result<(), NotSimulated> {
+    let mut domains = BTreeMap::new();
+    for template in &protocol.obligations.compensations {
+        if model.enumerates(&template.attempt_type) {
+            continue;
+        }
+        for path in model.unenumerable_paths(&template.attempt_type) {
+            domains.insert(
+                DomainKey::Node {
+                    node: attempt_root(protocol, &template.name),
+                    path,
+                },
+                DomainKind::Integer,
+            );
+        }
+    }
+    match ClaimExtent::from_domains(domains) {
+        ClaimExtent::Bounded => Ok(()),
+        ClaimExtent::Unbounded(domains) => {
+            Err(NotSimulated::RequiresBound(RequiresBound { domains }))
+        }
+    }
 }
 
 /// The root a protocol binder's record type is named by: the digest of
@@ -650,7 +678,8 @@ pub fn check_protocol_bounds(
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
     let domains = subject_domains(model, protocol);
-    check_requires_bound(&roots(&domains), model.types(), position_limit)
+    check_requires_bound(&roots(&domains), model.types(), position_limit)?;
+    check_attempt_types(model, protocol)
 }
 
 /// The roots of `model` and of `protocol`.
@@ -659,7 +688,7 @@ fn subject_domains(
     protocol: &CheckedProtocol,
 ) -> Vec<(WireNodeId, ValueType)> {
     let mut domains = model.domains();
-    domains.extend(protocol_domains(model, protocol));
+    domains.extend(protocol_domains(protocol));
     domains
 }
 
@@ -684,6 +713,7 @@ pub fn explore_protocol<M: MemoryModel>(
     limits: crate::simulation::explore::Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<crate::simulation::explore::Exploration<ModelFinding>, NotSimulated> {
+    check_attempt_types(&system.model, system.protocol)?;
     let domains = subject_domains(&system.model, system.protocol);
     crate::simulation::explore::explore_request(
         system,

@@ -108,6 +108,12 @@ impl<'a> ModelSystem<'a> {
         super::domain::enumerable_in(value_type, self.types)
     }
 
+    /// The child-index paths of the leaves of `value_type` that
+    /// [`Self::enumerates`] refuses.
+    pub(crate) fn unenumerable_paths(&self, value_type: &quire_exact::ValueType) -> Vec<Vec<u32>> {
+        super::domain::unenumerable_paths(value_type, self.types)
+    }
+
     /// The candidate budget of one expansion (FR-120 "Post-states").
     pub(crate) fn budget(&self) -> Budget {
         Budget::new(self.limits.max_candidates)

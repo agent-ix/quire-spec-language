@@ -19,6 +19,7 @@ use qsl_eval::simulation::protocol::{
     ProtocolTransition, RegistrationKey, RestKind, Sc, StepKind, ThreadPath, WaitCause,
 };
 use qsl_eval::simulation::{independent, Footprint, Location, SubjectSystem};
+use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::BackendId;
 use qsl_replay::{
     ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, OutcomeItem, RequestIndex, ResultLabel,
@@ -1316,20 +1317,17 @@ fn a_cattempt_takes_one_step_per_attempt_record_the_retry_relation_admits() {
     }
 }
 
-/// Part of FR-205-AC-8 (TC-650), the attempt record and the commit entry: with `attempts 2 of
-/// M::RefundAttempt`, a precondition-free operation and the retry relation
-/// `not e.ok`, `observations` holds the thread's attempt record with `ok`
-/// after its first `cattempt`, a retry `cattempt` is enabled after `ok` false
-/// and only `cend` after `ok` true, and the two post-states have different
-/// keys. The record is absent after the second `cattempt`, after `cend` and
-/// in the post-state of the step of `Committed` taken while the thread rests
-/// at its retry point holding one. With the relation `l.ok`, which does not
-/// read `e`, no state holds a record and the two first `cattempt` steps
-/// reach one state.
-/// The registration naming under crosswise activation is
-/// `a_compensation_thread_keys_its_registration`'s; not covered here: the
-/// `repeat` of two registrations with captures and the `parallel Triggers`.
-#[test]
+/// FR-205-AC-8's second scenario: with `attempts 2 of M::RefundAttempt`, a
+/// precondition-free operation and the retry relation `not e.ok`,
+/// `observations` holds the thread's attempt record with `ok` after its first
+/// `cattempt`, a retry `cattempt` is enabled after `ok` false and only `cend`
+/// after `ok` true, and the two post-states have different keys. The record
+/// is absent after the second `cattempt`, after `cend` and in the post-state
+/// of the step of `Committed` taken while the thread rests at its retry point
+/// holding one. With the relation `l.ok`, which does not read `e`, no state
+/// holds a record and the two first `cattempt` steps reach one state. The
+/// commit entry is in the key after the step of `Committed` and absent once
+/// the instance has finished.
 fn the_attempt_record_is_keyed_while_a_retry_can_read_it() {
     explore(
         &attempt_unit("2 of M::RefundAttempt", "not e.ok", true),
@@ -1521,12 +1519,16 @@ fn an_optional_field_adds_a_record_and_an_unbounded_one_requires_a_bound() {
         },
     );
 
-    assert!(requires_bound("1 of M::WideAttempt"));
+    assert_eq!(
+        requires_bound("1 of M::WideAttempt"),
+        [(vec![0], DomainKind::Integer)]
+    );
 }
 
-/// Whether the deadlock-freedom item over `Pay` with the attempt type
-/// `attempts` refuses `requires-bound`.
-fn requires_bound(attempts: &str) -> bool {
+/// The domains of the `requires-bound` refusal of the deadlock-freedom item
+/// over `Pay` with the attempt type `attempts`: each one's child-index path
+/// and kind; none when the item does not refuse.
+fn requires_bound(attempts: &str) -> Vec<(Vec<u32>, DomainKind)> {
     let body = attempt_unit(attempts, "false", false);
     let case = Case::new(&body, &[0]);
     let refused = check_protocol(
@@ -1541,7 +1543,17 @@ fn requires_bound(attempts: &str) -> bool {
         },
         &Cancel::new(),
     );
-    matches!(refused, Err(ModelCheckRefusal::RequiresBound(_)))
+    match refused {
+        Err(ModelCheckRefusal::RequiresBound(bound)) => bound
+            .domains
+            .iter()
+            .map(|(key, kind)| match key {
+                DomainKey::Node { path, .. } => (path.clone(), kind),
+                other => panic!("a node domain, got {other:?}"),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// ADR-027 ST-11, TS-5: an attempt type with a field this system cannot
@@ -1550,8 +1562,13 @@ fn requires_bound(attempts: &str) -> bool {
 /// writes the enum as FR-120's `{"type":"enum","name","member"}`.
 #[test]
 fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
-    assert!(requires_bound("1 of M::TextAttempt"));
-    assert!(!requires_bound("1 of M::ModeAttempt"));
+    // The field's path is named; the kinds a domain can have include none
+    // for `String`, so it is listed as the unbounded `Integer` it stands in for.
+    assert_eq!(
+        requires_bound("1 of M::TextAttempt"),
+        [(vec![0], DomainKind::Integer)]
+    );
+    assert!(requires_bound("1 of M::ModeAttempt").is_empty());
     explore(
         &attempt_unit("1 of M::ModeAttempt", "false", false),
         |system, explored| {
@@ -1580,4 +1597,120 @@ fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
             assert!(enum_value.get("rank").is_none(), "{enum_value}");
         },
     );
+}
+
+/// FR-205-AC-8's first scenario: `Refund` with `attempts 1` and `commit
+/// Committed`, whose forward `effect` is reached twice in a `repeat` of
+/// maximum 2, and then a `parallel Triggers` of two sibling branches that
+/// each bind a trigger record, followed by `commit Committed`. The two
+/// registrations differ in the capture `id`, and the activation guard
+/// compares `id` with the trigger record.
+fn registrations_by_trigger() -> String {
+    let template = "compensate Refund for Main::Loop::Body::Paid as (fwd: M::Level)\n\
+         by w on M::Cell::touch using v clock \"c\" {\n\
+         capture id: Boolean = fwd = 1;\n\
+         activate first (f: Boolean) when { f = id } { }\n\
+         within [0, 10];\n\
+         attempts 1 of M::Attempt;\n\
+         retry (e: M::Attempt, l: M::Attempt) { false };\n\
+         commit Main::Committed;\n\
+         recover (r: M::Attempt) { true };\n\
+         }";
+    let run = format!(
+        "sequence Main {{ {} repeat Loop by w visible () max 2 while {{ true }} \
+         sequence Body {{ effect Paid of Main::C as (pd: M::Level) {{ pd <= 1 }}; }} \
+         exhausted sequence Out {{ }} \
+         parallel Triggers {{ branch t1 event T1 by w as (a: Boolean) {{ a }}; \
+         branch t2 event T2 by w as (b: Boolean) {{ not b }}; }} join all [t1, t2]; \
+         {COMMITTED} }}",
+        CHARGE.replace(
+            "M::Cell::inc contracts [IncPre, IncPost]",
+            "M::Cell::touch contracts [TouchPre]"
+        ),
+    );
+    unit(template, &run)
+}
+
+/// FR-205-AC-8 (TC-650): the registrations `r1` and `r2` of the twice-reached
+/// effect differ in `id`; after `r1`'s trigger and then `r2`'s, thread
+/// `(0, Refund, 0)` names `r1`, and after `r2`'s and then `r1`'s it names
+/// `r2`, so the two states, whose registrations are alike, have different
+/// keys. The commit entry is in the key after the step of `Committed` and
+/// absent once the instance finishes, and in the `attempts 2` variant with
+/// the retry relation `not e.ok` the thread's attempt record is keyed while
+/// a retry can read it, as `the_attempt_record_is_keyed_while_a_retry_can_read_it`
+/// states.
+#[trace("TC-650", "FR-205-AC-8")]
+#[test]
+fn a_thread_names_its_registration_and_the_commit_and_attempt_records_are_keyed() {
+    explore(&registrations_by_trigger(), |system, explored| {
+        let reached = &explored.reached;
+        let registrations = |at: usize| -> Vec<(Json, Json)> {
+            entries(&key_json(system, &reached[at]), "control")
+                .into_iter()
+                .filter(|(key, _)| key["type"] == "registration")
+                .collect()
+        };
+        // For each state with both threads live, the ordinal of the
+        // registration thread 0 names, with the registrations beside it.
+        let mut named: std::collections::BTreeMap<String, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for at in 0..reached.len() {
+            if compensations(system, reached, at).len() != 2 {
+                continue;
+            }
+            let key = key_json(system, &reached[at]);
+            let thread = entries(&key, "control")
+                .into_iter()
+                .find(|(key, _)| key["type"] == "thread-path" && path_of(key) == compensation(0))
+                .expect("thread 0");
+            let ordinal = thread.1["registration"]["ordinal"]
+                .as_str()
+                .expect("an ordinal")
+                .to_owned();
+            // Registrations alike but for their status are grouped by their
+            // captures.
+            let captures: Vec<Json> = registrations(at)
+                .into_iter()
+                .map(|(key, value)| json!([key["ordinal"], value["captures"]]))
+                .collect();
+            named
+                .entry(format!("{ordinal}/{captures:?}"))
+                .or_default()
+                .push(at);
+        }
+        let by_ordinal = |wanted: &str| -> Vec<usize> {
+            named
+                .iter()
+                .filter(|(label, _)| label.starts_with(wanted))
+                .flat_map(|(_, states)| states.clone())
+                .collect()
+        };
+        let (first, second) = (by_ordinal("0/"), by_ordinal("1/"));
+        assert!(!first.is_empty() && !second.is_empty(), "{named:?}");
+        let alike = first.iter().find_map(|a| {
+            second
+                .iter()
+                .find(|b| registrations(*a) == registrations(**b))
+                .map(|b| (*a, *b))
+        });
+        let (a, b) = alike.expect("two orders over alike registrations");
+        assert_ne!(key_json(system, &reached[a]), key_json(system, &reached[b]));
+
+        // The commit entry: absent before the step of `Committed`, present
+        // after it, absent once the instance has finished.
+        let mut committed_seen = false;
+        for state in reached {
+            let key = key_json(system, state);
+            let live = entries(&key, "control")
+                .iter()
+                .any(|(key, _)| key["type"] == "protocol-instance");
+            let entries = commit_entries(&key);
+            assert!(live || entries.is_empty());
+            committed_seen |= entries.len() == 1;
+        }
+        assert!(committed_seen);
+        assert!(commit_entries(&key_json(system, &reached[0])).is_empty());
+    });
+    the_attempt_record_is_keyed_while_a_retry_can_read_it();
 }

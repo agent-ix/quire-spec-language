@@ -75,3 +75,11 @@ satisfies the `PeerAttempt` read assertion.
 | FND-002 | fixed | `a_record_value_is_written_in_fr_120_s_record_form` pins the exact JCS bytes of the record form. The enum part of that form is FND-006. |
 | FND-003 | fixed | The `PeerAttempt` clause now finds the `cattempt` by `StepKind::CAttempt`. |
 | FND-004 | fixed | `assert_changes_are_written` now runs in the FR-216-AC-7 loop, including the `attempts 2`/`not e.ok` exploration that holds a record. |
+| FND-005 | fixed | ee414a85a enumerates unions (`Space::Union`) and lists any attempt type that `enumerable_in` rejects as an unbounded root, so the TS-5 pre-check answers `requires-bound` before exploration. `a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named` covers a String field. Every production caller of `ProtocolSystem::new` runs `check_protocol_bounds` first: check.rs:673 and :808, replay.rs:626, closure.rs:356. Only tests build the system directly. |
+| FND-006 | fixed | `typed_value_enc` now writes `{"type":"enum","name":<variant type node id>,"member":<declared case>}` from the package's `variant_types()`, with no `rank`. A union writes FR-120's union form. The integration test asserts the case names `fast` and `slow`, a 64-hex name and no rank. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The requires-bound cause for a non-enumerable attempt type reports the wrong domain kind and loses the field path. `protocol_domains` swaps the whole attempt type for `ValueType::Integer` at the root `<protocol>/<template>.attempt`. For `TextAttempt { s: String }` the cause says kind `integer` at path `[]`. For `WideAttempt { n: Integer }`, `classify_extent` would have named field `n` at path `[0]`, and now it does not. The root id names the right template. This follows the model's own `domains()` convention, which also lists a non-enumerable type as `Integer`, so the diagnostic is imprecise but the verdict is right. FR-101-AC-8 asks for each unbounded domain's key and kind. | qsl-eval/src/simulation/protocol.rs:611-624, qsl-eval/src/simulation/model.rs:794-812 |
