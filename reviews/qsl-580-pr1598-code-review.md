@@ -51,3 +51,9 @@ Round 1, against #1598 fix commit f2efd8da7 on the restacked head bd68b877a (is_
 | FND-002 | accepted-no-change | Documented helper limit, as the finding recorded: `time_lock` decides only states where time is already stopped, and its doc comment hands the rest to the zone engine. #1599's FR-240 divergence test (zone_check/divergence.rs) is the TD-1 decision procedure. |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+
+Round 2, against round-2 commit 570a62e05 (head).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | - |
