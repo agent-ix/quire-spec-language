@@ -33,3 +33,15 @@ Ticket: QSL-580. Plan completion: not assessed. This is a planless audit of the 
 ## Coverage
 
 Plan completion: not assessed. Semantic review: done by hand for the four claimed ACs, not the opt-in fan-out. FR-230-AC-9 to AC-38 are declared out of scope in the PR body: no tags, no code. A full `quire matrix` run is in the reviewer report.
+
+## Dispositions
+
+Round 1, against #1602 (qsl-580a-fix-round-1 head 7a91813e9, squash-merged to main as 1434f6e18) over #1594's merge a2e4f192e. Focused tests on origin/main 1434f6e18: `cargo test -p qsl-semantics --test it -- timed_model timed_declarations`, 47 passed.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Spec gap, no code change possible: filed as STD-493 (Backlog), which names the unreachable time-invariant-shape vector of FR-230-AC-2. Stays open until STD-493 amends FR-230-AC-2 or QSpec FR-415's clock-bound. |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |

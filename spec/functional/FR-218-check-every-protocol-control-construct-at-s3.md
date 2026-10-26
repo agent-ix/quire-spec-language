@@ -395,6 +395,29 @@ none of its operands.
   | `event` record | the event is `by R`, with or without `for` |
   | `send` payloads, `effect` and `commit` records, the protocol's activation binder | never |
 
+  Where the control is a `repeat`, S3 SHALL make a record binder declared in its body readable
+  at that repeat's `visible(...)` entries and `while` guard when the binder is
+  readable at the body's exit. The value read at the repeat decision SHALL be
+  the value from the most recently completed body iteration. This rule SHALL
+  compose through the body's `sequence`, `branch`, `parallel` and other
+  controls using their normal scope and join rules; it SHALL NOT make a
+  sibling-branch value readable before an all-branch join or make a binder
+  eligible for a role other than the role that produced it.
+
+  Where the `while` guard reads a binder declared in that repeat's body, the
+  repeat SHALL use post-test semantics: it SHALL execute the body once before
+  evaluating the guard, then SHALL evaluate the guard after each completed
+  body iteration using that iteration's binder values. Such a repeat SHALL
+  complete at least one body iteration. Where the guard reads no binder
+  declared in that repeat's body, the repeat SHALL retain pre-test semantics:
+  it SHALL evaluate the guard on entry and after each completed body iteration,
+  and a false entry guard SHALL skip the body.
+
+  Where a post-test repeat has `max 0`, S3 SHALL refuse the repeat with
+  `invalid_package`/`invalid-value` at the repeat declaration, because no
+  execution can both complete its required first body iteration and respect
+  the authored maximum.
+
   A `finish` record and a compensation's binders are bound where no node of
   the `run` tree reads them, so a decision that names one refuses as an
   out-of-scope read (Scopes) and never as `ineligible-kind`. The refusals of
@@ -422,8 +445,8 @@ none of its operands.
   is in the table's last row, and `unlisted` when it is eligible but no
   individual `visible` entry lists the fact. An eligible record that is not
   readable at the decision, such as a parallel sibling's record before the join,
-  an optional branch's record, an `await` match read outside its `then` path or
-  a record bound inside the `repeat` body, refuses as an out-of-scope read
+  an optional branch's record or an `await` match read outside its `then` path,
+  refuses as an out-of-scope read
   (Scopes).
 - The partition of a `choice` SHALL be proved over the atoms of its guards as
   independent Booleans (QSpec FR-053). An atom is a Boolean fact, or a
@@ -542,7 +565,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-15 | `related by Pipe (a, b)` checks when `a` and `b` have the types of the relationship's first and second ends, and the node holds the clause; `related by Absent (a, b)` refuses `missing_declaration`/`missing-name` at `Absent`; swapped ends, or an end of another type, refuse `ill_typed`/`type-mismatch` at that end, retaining relationship, `end`, expected and actual. A node with `related by Pipe (a, b)` and `related by Owns (c, d)` holds two checked clauses in source order. | Test (TC-1056) |
 | FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key, the same for a clause with an `on each` activation and a capture (S4 emits such a clause, FR-337-AC-8 to FR-337-AC-10, and the requirement is carried by the emitted clause node of `Due`'s position, so its key is that clause node's key, captures included); `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
 | FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send` binder, an `effect` record, a `commit` record, the protocol's activation binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind` (for the four binder kinds), `unlisted`; a `finish` record read by a decision refuses `missing_declaration`/`missing-name` as an out-of-scope read, because no decision reaches it, and a read that is out of scope and also unlisted reports the scope refusal only. A discarded `let` that reads a fact still needs the fact listed. A read of the `over` input refuses `ill_typed`/`operator-ineligible` at the read, naming the guard; a read of a protocol capture checks without listing. | Test (TC-1056) |
-| FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. | Test (TC-1056) |
+| FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, and an `await` match read after the `await` each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. A repeat's own visible entry and guard may read its body attempt binders from the most recently completed iteration, subject to owner-role eligibility. | Test (TC-1056, TC-1268) |
 | FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
 | FR-218-AC-20 | A FIFO key of type `Boolean`, and a key of a record type, check because the clause checker admits `=` over them; a key of a type over which it admits no `=` refuses `ill_typed`/`operator-ineligible` at the key, retaining `operator` `=` and the type. | Test (TC-1056) |
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
@@ -557,6 +580,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-30 | Over three visible Boolean facts `a`, `b`, `c`: a two-case `choice` with guards `a and b and c` and `not (a and b and c)` checks, and its unit's measured `s3.work_units` spend exceeds that of the same unit with guards `a and a and a` and `not (a and a and a)` (one distinct atom, two valuations, the same guard nodes) by exactly 6, so the proof charges one unit per valuation and the atom comparison charges nothing beyond the node charges. A `choice` of the same shape over 24 distinct atoms (`2^24` valuations) stops under the default `s3.work_units` (16777216) with a `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, at the choice's span, naming bound 16777216 and setting `s3.work_units`, and no `unproved-exhaustiveness`; it checks with `s3.work_units` set to 33554432 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation. Guards `a and b and c` and `not a`, over the three atoms `a`, `b`, `c`, leave a valuation uncovered and refuse `unproved-exhaustiveness` with `failed` `[missing-arm]`. | Test (TC-1172) |
 | FR-218-AC-31 | Over branches `a`, `b` and `c`, with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and y }` declared in the unit, `join predicate(f) [a, c]` and `join predicate(f) [c, a, c]` each check to `Predicate{function}` holding `f`'s node key and the joined labels `a` and `c`, and a second join naming `f` holds the same key. `join predicate(g) [a, c]` with no `g` declared refuses `missing_declaration`/`missing-name` at `g`, retaining node and name; `g` declared as a `predicate` refuses `ill_typed`/`operator-ineligible` at `g`, naming the kind. `join predicate(f) [a, b, c]` (three labels, two parameters), a function `h(x: Boolean, y: Int[0, 1]): Boolean` joined on `[a, c]`, and a function `k(x: Boolean, y: Boolean): Int[0, 1]` joined on `[a, c]` each refuse `ill_typed`/`type-mismatch` at the name, retaining node, function, expected and actual. A unit whose joined function is `function r using v(x: Boolean, y: Boolean): Boolean pure { r(x, y) }`, which calls itself with no `decreases` measure, refuses `undefined_expression`/`unproved-decrease` (failed obligation `missing-measure`) at `r`'s declaration and gives no refusal at the join. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-32 | In an outer repeat whose only body is a nested repeat with an event in its body, `repeat max 1 while a` has a feasible false valuation, so its skip edge makes the outer repeat refuse `unsupported_construct`/`declaration-form` at the outer repeat for missing progress. Replacing its guard with `a or not a or b or not b` makes false infeasible over the two independent visible atoms, so its skip edge is absent and the outer repeat checks from the nested repeat's entered-body progress. The infeasible case evaluates four valuations, charging each before evaluation; it checks at the measured exact `s3.work_units` limit and, at one unit less, stops at the nested repeat's span with `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, naming the bound, denied charge count and setting `s3.work_units`, with no enclosing progress refusal. A run raised through each FR-255 entry point checks. | Test (TC-1172) |
+| FR-218-AC-33 | A repeat owned by role `c` whose body contains `attempt Load by c as (loaded: Boolean)` checks with `visible (loaded)` and `while { not loaded }`; its first body pass is unconditional, each later guard reads the most recently completed body's binder, and at least one iteration completes. The same post-test repeat with `max 0` refuses `invalid_package`/`invalid-value` at the declaration. A repeat whose guard reads no body binder retains pre-test behavior, so `while { false }` skips its body. The same binder produced by a role in a nested body branch is readable only after that branch is in the repeat body's completed scope; a binder produced by a different role or by a sibling outside the body remains refused with `wrong_snapshot`/`wrong-observation` or `missing_declaration`/`missing-name`, respectively. | Test (TC-1268) |
 
 ## Dependencies
 
