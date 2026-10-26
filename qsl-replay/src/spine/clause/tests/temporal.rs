@@ -44,6 +44,8 @@ enum Unit {
     /// `Guarded`, under the bounded profile: an `on each` clause activated
     /// where the counter's value is 1 (FR-337, FR-330).
     Guarded,
+    /// An on-each activation guard that becomes undefined at value 2.
+    GuardUndefined,
 }
 
 impl Unit {
@@ -51,7 +53,7 @@ impl Unit {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
-            Self::Undefined | Self::Guarded => {
+            Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
         }
@@ -78,6 +80,11 @@ impl Unit {
                 "temporal Guarded using t over (c: Counters::Counter) clock \"model-steps\" \
                  on each (q: Counters::Counter) when (q.value = 1) \
                  { eventually[0,1] holds(c.value = 2) }\n"
+            }
+            Self::GuardUndefined => {
+                "temporal GuardUndefined using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) when (3 mod (2 - q.value) >= 0) \
+                 { always[0,0] holds(c.value = c.value) }\n"
             }
         }
     }
@@ -346,6 +353,40 @@ fn replay_facade_preserves_and_matches_an_observed_undefined_value() {
             if undefined.at.index() == 2
     ));
     assert!(inconclusive.parity().is_some());
+}
+
+/// FR-331-AC-9: observed packets can name undefined atom evaluations, but
+/// cannot identify an undefined `on each` activation guard.
+#[trace("TC-847", "FR-331-AC-9")]
+#[test]
+fn an_observed_undefined_on_each_guard_settles_inconclusive() {
+    let cause = qsl_eval::temporal::UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero);
+    let packet = observed_replay_request(
+        "GuardUndefined",
+        Unit::GuardUndefined,
+        &[2, 0, 1],
+        None,
+        0,
+        ObservedReplayExpectation::Undefined(cause.clone()),
+    );
+    let replayed = crate::replay(packet, crate::ReplayLimits::default())
+        .expect("the observed guarded packet is admissible");
+    let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
+        panic!("the replay returns its observed-temporal arm");
+    };
+    assert_eq!(
+        replayed.settlement(),
+        crate::ObservedTemporalSettlement::Inconclusive,
+        "the packet has no activation locus"
+    );
+    assert_eq!(replayed.position().index(), 0);
+    assert!(matches!(
+        replayed.outcome(),
+        qsl_eval::temporal::TemporalOutcome::Undefined(undefined)
+            if undefined.at.index() == 0 && undefined.cause == cause
+    ));
+    assert_eq!(replayed.undefined_locus(), None);
+    assert!(replayed.parity().is_some());
 }
 
 #[trace("TC-847", "FR-331-AC-8")]
