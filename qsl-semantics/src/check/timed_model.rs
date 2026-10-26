@@ -495,6 +495,9 @@ pub(crate) struct Inputs<'a> {
     /// The package's expression-node limit, which bounds each guard's
     /// disjunctive form.
     pub(crate) nodes: u64,
+    /// Each selected model alias's declaration span, which locates a clock
+    /// field of an untimed model that no clause reads.
+    pub(crate) model_spans: &'a std::collections::BTreeMap<String, Span>,
 }
 
 /// `cause`, located by the span it carries.
@@ -531,6 +534,19 @@ impl Clocks<'_> {
             .iter()
             .position(|clock| &clock.field == key)
             .map(ClockId)
+    }
+
+    /// Whether node `id` of `form` reads a clock through a path other than
+    /// `self`, `o.x`: a read no clock constraint admits (FR-230).
+    fn foreign(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Field { operand, field }) = form.expression.get(id).map(|n| n.node())
+        else {
+            return false;
+        };
+        !matches!(
+            form.expression.get(*operand).map(|n| n.node()),
+            Some(ExprNode::SelfRef)
+        ) && self.model.names_only_clocks(field)
     }
 
     /// The exact value of the time quantity `quantity`, in the model's unit.
@@ -585,6 +601,12 @@ impl<'f> Located<'f> {
             let id = node.id();
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
+                first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
+            // A clock read through another path is a read, though no
+            // constraint can take it.
+            if clocks.foreign(form, id) {
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
@@ -921,10 +943,10 @@ fn resets(
             right,
         }) = located.node(conjunct)
         else {
-            return Err(located.outside(conjunct));
+            return Err(nested_write(located, conjunct));
         };
         let Some(clock) = located.clock(*left) else {
-            return Err(located.outside(conjunct));
+            return Err(nested_write(located, conjunct));
         };
         if located.reads_clock(*right) {
             return Err(TemporalCause::ClockWrite { span });
@@ -947,6 +969,31 @@ fn resets(
         resets.push(ClockReset { clock, value, span });
     }
     Ok((leaves, resets))
+}
+
+/// A postcondition's clock read under `conjunct` that is no top-level reset:
+/// `clock-write` at an equation `self.x = e` that sets a clock, such as one nested under
+/// `implies`, and otherwise `clock-read-outside-constraint` at the read.
+fn nested_write(located: &Located<'_>, conjunct: ExprId) -> TemporalCause {
+    let mut pending = vec![conjunct];
+    while let Some(id) = pending.pop() {
+        if let Some(ExprNode::Binary {
+            operator: BinaryOperator::Equal,
+            left,
+            ..
+        }) = located.node(id)
+        {
+            if located.clock(*left).is_some() {
+                return TemporalCause::ClockWrite {
+                    span: located.span(id),
+                };
+            }
+        }
+        if let Some(node) = located.node(id) {
+            pending.extend(node.children());
+        }
+    }
+    located.outside(conjunct)
 }
 
 /// One state clause, its clocks read out: a precondition's guard parts or a
@@ -1182,7 +1229,8 @@ fn prepare_models(
         }
     };
     // A clock of a tick model refuses at its time declaration; one of an
-    // untimed model at its first read.
+    // untimed model at its first read, or at the model's declaration when no
+    // clause reads it.
     for model in inputs.models {
         let clocks = clocks_of(model);
         let Some(field) = clocks.fields.first() else {
@@ -1191,14 +1239,22 @@ fn prepare_models(
         let span = match source_of(model) {
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => continue,
             Some(source) => Some(source.span),
-            None => state_clauses.iter().find_map(|clause| {
-                let form = ExpressionForm {
-                    expression: clause.body.clone(),
-                    spans: clause.spans.body.clone(),
-                };
-                Located::of(&form, &clocks, clause.context)
-                    .and_then(|located| located.first(located.root()))
-            }),
+            None => state_clauses
+                .iter()
+                .find_map(|clause| {
+                    let form = ExpressionForm {
+                        expression: clause.body.clone(),
+                        spans: clause.spans.body.clone(),
+                    };
+                    Located::of(&form, &clocks, clause.context)
+                        .and_then(|located| located.first(located.root()))
+                })
+                .or_else(|| {
+                    model
+                        .alias()
+                        .and_then(|alias| inputs.model_spans.get(alias))
+                        .copied()
+                }),
         };
         if let Some(span) = span {
             return Err(timed(TemporalCause::ClockWithoutDenseTime {
