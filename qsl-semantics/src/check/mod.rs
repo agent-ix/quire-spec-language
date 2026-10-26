@@ -171,8 +171,8 @@ pub use refinement::{
     ProtocolStepKind, RefinementCatalogClass, RefinementCatalogNode, RefinementCause,
     RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
     RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
-    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget, SubjectSide,
-    UnsupportedFeature,
+    RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
+    StepRow, StepTarget, SubjectSide, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,

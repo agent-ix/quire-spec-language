@@ -1086,32 +1086,20 @@ fn empty_model_refinement_node(
             .concrete_subject_node()
             .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
     );
-    let profile = CheckedArtifactRef {
-        authority: "agent-ix".into(),
-        identity: refinement.profile().identity.as_str().into(),
-    };
-    let body = serde_json::json!({
-        "term": "refinement",
-        "abstract": abstract_node,
-        "profile": profile,
-        "populations": [],
-        "objects": [],
-        "steps": [],
-        "histories": [],
-        "assume": [],
-        "ensure": []
-    });
-    let typed_body = CheckedTerm::deserialize(body.clone()).map_err(encoding)?;
+    let (identity, typed_body) =
+        refinement
+            .v2_empty_model_emission()
+            .map_err(|error| match error {
+                qsl_semantics::check::RefinementV2EncodingError::MissingSubject => {
+                    EmitRefusal::RefinementSubjectNotEmitted
+                }
+                qsl_semantics::check::RefinementV2EncodingError::Body(_)
+                | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
+                    EmitRefusal::RefinementIdentityEncoding
+                }
+            })?;
     let semantic_type = concrete_node;
-    let id = node_id(
-        qsl_semantics::check::CheckedRefinement::v2_identity(
-            refinement
-                .concrete_subject_node()
-                .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
-            &body,
-        )
-        .map_err(|_| EmitRefusal::RefinementIdentityEncoding)?,
-    );
+    let id = node_id(identity);
     let declaration = CheckedOccurrence {
         role: CheckedOccurrenceRole::Declaration,
         ordinal: 0,

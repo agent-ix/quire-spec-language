@@ -34,6 +34,8 @@ mod step_label;
 
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+
 pub use catalog::{RefinementCatalogClass, RefinementCatalogNode, RefinementClassCatalog};
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
@@ -566,13 +568,47 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
-    /// The V2 identity key for a refinement body's canonical QSpec preimage.
-    /// Key construction remains in the semantic layer; the package writer
-    /// can serialize the checked body without minting a semantic identity.
-    pub fn v2_identity(
+    /// The typed V2 body and key for a row-empty model refinement.
+    /// Construction remains in the check core; the package writer can
+    /// serialize the checked body without depending on JSON or minting a
+    /// semantic identity.
+    pub fn v2_empty_model_emission(
+        &self,
+    ) -> Result<(NodeKey, quire_contract_model::CheckedTerm), RefinementV2EncodingError> {
+        let abstract_subject = self
+            .abstract_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let concrete_subject = self
+            .concrete_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let body = serde_json::json!({
+            "term": "refinement",
+            "abstract": {
+                "domain": quire_exact::NODE_KEY_DOMAIN,
+                "digest": abstract_subject.to_string()
+            },
+            "profile": {
+                "authority": "agent-ix",
+                "identity": self.profile.identity.as_str()
+            },
+            "populations": [],
+            "objects": [],
+            "steps": [],
+            "histories": [],
+            "assume": [],
+            "ensure": []
+        });
+        let typed_body = quire_contract_model::CheckedTerm::deserialize(body.clone())
+            .map_err(RefinementV2EncodingError::Body)?;
+        let identity = Self::v2_identity(concrete_subject, &body)?;
+        Ok((identity, typed_body))
+    }
+
+    /// QSpec FR-375's canonical relation-node identity construction.
+    fn v2_identity(
         semantic_type: NodeKey,
         body: &serde_json::Value,
-    ) -> Result<NodeKey, quire_canonical::Error> {
+    ) -> Result<NodeKey, RefinementV2EncodingError> {
         let preimage = serde_json::json!({
             "version": "quire.refinement-node/v1",
             "semantic_type": {
@@ -581,7 +617,8 @@ impl CheckedRefinement {
             },
             "body": body
         });
-        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))?;
+        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .map_err(RefinementV2EncodingError::Identity)?;
         Ok(NodeKey::from_digest(*digest.as_bytes()))
     }
 
@@ -665,6 +702,17 @@ impl CheckedRefinement {
             Err(refusals)
         }
     }
+}
+
+/// A row-empty refinement's checked V2 body could not be constructed.
+#[derive(Debug)]
+pub enum RefinementV2EncodingError {
+    /// The checked declaration has no selected model subject.
+    MissingSubject,
+    /// The FR-375 body is not admitted by the checked term vocabulary.
+    Body(serde_json::Error),
+    /// The FR-375 identity preimage could not be canonically encoded.
+    Identity(quire_canonical::Error),
 }
 
 /// `population A::p from C::q`, resolved.
