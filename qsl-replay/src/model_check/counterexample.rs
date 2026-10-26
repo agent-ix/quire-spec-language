@@ -12,6 +12,7 @@
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
+use qsl_eval::simulation::Location;
 use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;
@@ -42,6 +43,21 @@ const DEADLOCK_FREEDOM_ROLE: &str = "deadlock-freedom";
 pub fn deadlock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
     let node = WireNodeId::from_digest(*package_id.as_bytes());
     let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(DEADLOCK_FREEDOM_ROLE), 0));
+    (node, occurrence)
+}
+
+/// The occurrence role of the derived race-freedom item.
+const RACE_FREEDOM_ROLE: &str = "race-freedom";
+
+/// The envelope identity of the race-freedom item of the package
+/// `package_id`, as [`deadlock_freedom_clause`] names the deadlock-freedom
+/// item's: its node is the package's own identity and its occurrence key is
+/// that node with the role `race-freedom` and ordinal 0. The subject and its
+/// resolved models are bound by the envelope's obligation identity
+/// (FR-224), not here.
+pub fn race_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
+    let node = WireNodeId::from_digest(*package_id.as_bytes());
+    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(RACE_FREEDOM_ROLE), 0));
     (node, occurrence)
 }
 
@@ -130,6 +146,18 @@ pub struct UndefinedEvaluation {
     pub cause: UndefinedCause,
 }
 
+/// ADR-025 DR-5: the data race a race-freedom counterexample reports.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Race {
+    /// The shared location both accesses touch.
+    pub location: Location,
+    /// The position of the earlier conflicting access: the position the
+    /// trace reaches by the step that made it.
+    pub earlier: u64,
+    /// The position of the step that completes the race: the prefix's last.
+    pub later: u64,
+}
+
 /// What a counterexample refutes (ADR-018 DL-4).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CounterexampleKind {
@@ -137,6 +165,9 @@ pub enum CounterexampleKind {
     Formula,
     /// The deadlock-freedom item: the prefix ends at a deadlocked state.
     Deadlock,
+    /// The race-freedom item (FR-224): the prefix ends at the step that
+    /// completes a data race.
+    Race(Race),
     /// An expression undefined at the prefix's last position.
     UndefinedEvaluation(UndefinedEvaluation),
 }
@@ -232,8 +263,13 @@ impl<T: SubjectTransition> TemporalCounterexample<T> {
         match (&self.kind, self.lasso) {
             (CounterexampleKind::Deadlock, _) => None,
             (CounterexampleKind::Formula, Some(_)) => Some(0),
-            (CounterexampleKind::Formula | CounterexampleKind::UndefinedEvaluation(_), None)
-            | (CounterexampleKind::UndefinedEvaluation(_), Some(_)) => {
+            (
+                CounterexampleKind::Formula
+                | CounterexampleKind::Race(_)
+                | CounterexampleKind::UndefinedEvaluation(_),
+                None,
+            )
+            | (CounterexampleKind::Race(_) | CounterexampleKind::UndefinedEvaluation(_), Some(_)) => {
                 u64::try_from(self.prefix.len()).ok()
             }
         }

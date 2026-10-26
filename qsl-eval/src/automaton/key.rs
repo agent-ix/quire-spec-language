@@ -52,6 +52,7 @@ pub const AUTOMATON_STATE_KEY_V1: &str = "quire.automaton-state-key/v1";
 
 /// The root of the derived deadlock-freedom item's context.
 const DEADLOCK_FREEDOM: &str = "deadlock-freedom";
+const RACE_FREEDOM: &str = "race-freedom";
 
 /// FR-338's `AutomatonStateKey`: the complete canonical octets of one
 /// automaton state under its context. Equality compares complete octets;
@@ -95,6 +96,8 @@ pub enum ContextRoot {
     Clause(OccurrenceKey),
     /// The derived deadlock-freedom item: `["deadlock-freedom"]`.
     DeadlockFreedom,
+    /// The derived race-freedom item (FR-224): `["race-freedom"]`.
+    RaceFreedom,
 }
 
 /// A context's activation: `"origin"` or `"each"` for a bounded monitor,
@@ -165,6 +168,17 @@ impl StateContext {
         }
     }
 
+    /// The derived race-freedom item's context: `[["race-freedom"],
+    /// "quire.temporal.infinite-trace/v1", "infinite", []]`.
+    pub fn race_freedom() -> Self {
+        Self {
+            root: ContextRoot::RaceFreedom,
+            profile: TemporalProfile::InfiniteTrace,
+            activation: ContextActivation::Infinite,
+            binding: Vec::new(),
+        }
+    }
+
     /// The context of `clause` at `occurrence` under `binding`: its profile
     /// and activation are the checked clause's own.
     pub fn clause(
@@ -210,6 +224,7 @@ impl StateContext {
                 Enc::text(occurrence.origin().ordinal().to_string()),
             ]),
             ContextRoot::DeadlockFreedom => Enc::Array(vec![Enc::text(DEADLOCK_FREEDOM)]),
+            ContextRoot::RaceFreedom => Enc::Array(vec![Enc::text(RACE_FREEDOM)]),
         };
         let binding = self
             .binding
@@ -277,6 +292,8 @@ pub enum SafetyItem {
     },
     /// FR-124's deadlock-freedom item, `always holds(not deadlocked)`.
     DeadlockFreedom,
+    /// FR-224's race-freedom item, `always holds(not raced)`.
+    RaceFreedom,
 }
 
 /// A clause this module does not translate.
@@ -362,6 +379,16 @@ impl SafetyTranslation {
             SafetyItem::DeadlockFreedom,
             &StateContext::deadlock_freedom(),
         )
+    }
+
+    /// The translation of the race-freedom item.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyRefusal::Encoding`] when the context does not encode within the
+    /// identity byte budget.
+    pub fn race_freedom() -> Result<Self, KeyRefusal> {
+        Self::new(SafetyItem::RaceFreedom, &StateContext::race_freedom())
     }
 
     /// The translation of the TP-1 clause `clause` under `context`.

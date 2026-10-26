@@ -32,6 +32,7 @@ mod identity;
 mod memory;
 mod program;
 mod ra;
+mod race;
 mod roles;
 mod selection;
 mod settle;
@@ -39,7 +40,7 @@ mod steps;
 mod tso;
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
@@ -55,6 +56,7 @@ use crate::fairness::{Constraint, Identity};
 use crate::model_subject::{ModelInstance, ProtocolSubject};
 use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
+use crate::simulation::footprint::Location;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
 use crate::simulation::model::{
@@ -80,7 +82,8 @@ pub use footprint::{
 };
 pub use identity::{
     Actor, BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition,
-    RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
+    QueueFlow, RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath,
+    WaitCause,
 };
 pub use memory::{
     Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,
@@ -88,6 +91,7 @@ pub use memory::{
 };
 use program::{Program, Rest};
 pub use ra::{CarriedView, Ra, RaComponent};
+pub use race::{AccessRecord, Conflict, DataRace, EarlierKind};
 pub use selection::{
     MemorySelection, MemorySelectionRefusal, ResolvedMemory, ResolvedParallel, SubjectMemory,
 };
@@ -842,6 +846,9 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     /// EN-1's potential footprints, used to reserve memory backing for
     /// operations that may become enabled (ADR-025 MA-1).
     potential: WeakAccesses,
+    /// The shared locations some attempt accesses with no `ordering`: those
+    /// with a race summary (ADR-025 DR-3).
+    non_atomic: BTreeSet<Location>,
     /// The `over` parameter's bound value.
     over: Value,
     /// Each static role's binding: role name, then model identity.
@@ -959,6 +966,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             program,
             memory,
             governing,
+            non_atomic: weak.non_atomic(),
             potential: weak,
             initial_enabled: enabled,
             over,

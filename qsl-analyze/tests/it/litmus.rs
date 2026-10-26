@@ -4,7 +4,8 @@
 //! each `Int[0, 3]`) with operations `set` (`v`), `add` (`v`) and `both`
 //! (`v` and `w`), and a population `cores` of `Core` (registers `r1` to
 //! `r4`) with operations `read1` to `read4(c: Cell)`, each modifying its own
-//! register, and `copy`, which reads `r1` into `r3`.
+//! register, `look(c: Cell)`, which reads `v` into `r1` and returns whether it
+//! read 1, and `copy`, which reads `r1` into `r3`.
 //!
 //! An attempt names no receiver, so a cell's `id` selects it: `IsX` holds
 //! for `x` (`id = 0`) and `IsY` for `y` (`id = 1`); `id` is never written,
@@ -114,6 +115,13 @@ fn operation(owner: &str, name: &str, params: &[&str], modifies: &[&str]) -> Jso
     })
 }
 
+/// `operation` with a Boolean result.
+fn returning(mut operation: Json) -> Json {
+    operation["returns"] = json!({"typeRef": "ix://quire/native/Boolean", "nullable": false,
+        "multiplicity": multiplicity()});
+    operation
+}
+
 fn fields(owner: &str, names: &[&str]) -> Vec<Json> {
     names
         .iter()
@@ -188,6 +196,7 @@ pub(crate) fn document() -> Vec<u8> {
                     operation("Core", "read2", &["c"], &["r2"]),
                     operation("Core", "read3", &["c"], &["r3"]),
                     operation("Core", "read4", &["c"], &["r4"]),
+                    returning(operation("Core", "look", &["c"], &["r1"])),
                     operation("Core", "copy", &[], &["r3"]),
                 ],
                 "relationships": [],
@@ -210,7 +219,9 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
 /// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreOne` stores 1,
 /// `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
-/// `BothOne` stores 1 to `v` and `w`; `ReadsX<n>`/`ReadsY<n>`/`ReadsZ<n>` select the cell
+/// `BothOne` stores 1 to `v` and `w`; `LooksY` selects the flag cell `look`
+/// loads and `Looked` loads its `v` into `r1` and returns whether it is 1;
+/// `ReadsX<n>`/`ReadsY<n>`/`ReadsZ<n>` select the cell
 /// register `n` loads, `Read<n>` loads its `v` and `ReadW` loads `w`.
 pub(crate) fn contracts() -> String {
     let mut text = String::from(
@@ -240,7 +251,9 @@ pub(crate) fn contracts() -> String {
         ));
     }
     text.push_str(
-        "post ReadW using v on M::Core::read3 { self.r3 = pre(c.w) }\n\
+        "pre LooksY using v on M::Core::look { c.id = 1 }\n\
+         post Looked using v on M::Core::look { self.r1 = pre(c.v) and result = (pre(c.v) = 1) }\n\
+         post ReadW using v on M::Core::read3 { self.r3 = pre(c.w) }\n\
          post CopyR using v on M::Core::copy { self.r3 = pre(self.r1) }\n",
     );
     text
