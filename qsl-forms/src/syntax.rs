@@ -3358,6 +3358,81 @@ pub struct TemporalOperatorForm {
     pub operator_span: Span,
 }
 
+/// One aggregate kind used by a temporal window atom (FR-194).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AggregateKindForm {
+    /// Number of positions admitted by the optional filter.
+    Count,
+    /// Exact sum of the values admitted by the optional filter.
+    Sum,
+    /// Least admitted value.
+    Min,
+    /// Greatest admitted value.
+    Max,
+    /// Share of admitted positions where the predicate holds.
+    Fraction(ExpressionForm),
+    /// Nearest-rank quantile level, as authored.
+    Quantile(ExactValueForm),
+}
+
+/// A `past[a, b]` window, with each bound's written kind retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PastWindowForm {
+    /// Nearest age or offset.
+    pub lower: HorizonForm,
+    /// Farthest age or offset.
+    pub upper: HorizonForm,
+    /// The whole window span.
+    pub span: Span,
+}
+
+/// One aggregate term before profile, type, unit or range checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateTermForm {
+    /// The aggregate kind and any kind-specific authored expression.
+    pub kind: AggregateKindForm,
+    /// The optional `of` expression.
+    pub value: Option<ExpressionForm>,
+    /// The optional `where holds(...)` filter.
+    pub filter: Option<ExpressionForm>,
+    /// The past window.
+    pub window: PastWindowForm,
+    /// The optional `min_count` literal.
+    pub min_count: Option<Spanned<u64>>,
+    /// The complete term span.
+    pub span: Span,
+}
+
+/// The comparison following a temporal aggregate term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AggregateComparison {
+    /// `<`.
+    Less,
+    /// `<=`.
+    LessEqual,
+    /// `=`.
+    Equal,
+    /// `>=`.
+    GreaterEqual,
+    /// `>`.
+    Greater,
+}
+
+/// An aggregate term compared with its threshold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AggregateAtomForm {
+    /// The aggregate term.
+    pub term: AggregateTermForm,
+    /// The comparison operator.
+    pub comparison: AggregateComparison,
+    /// The threshold expression.
+    pub threshold: ExpressionForm,
+    /// The complete atom span.
+    pub span: Span,
+    /// The comparison token span.
+    pub comparison_span: Span,
+}
+
 /// One node of a temporal formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TemporalNodeForm {
@@ -3375,6 +3450,8 @@ pub enum TemporalNodeForm {
         /// The span of the whole `holds(e)`.
         span: Span,
     },
+    /// A window aggregate atom.
+    AggregateAtom(AggregateAtomForm),
     /// An operator applied to its operands.
     Operator(TemporalOperatorForm),
 }

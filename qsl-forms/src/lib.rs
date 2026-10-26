@@ -72,10 +72,11 @@ pub use refinement::{
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
-    AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BoundOp, BuiltinType,
-    CaptureForm, CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockBoundForm,
-    ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
+    Accumulation, ActivationForm, AggregateAtomForm, AggregateComparison, AggregateKindForm,
+    AggregateTermForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm, AttemptForm,
+    BinaryOperator, BinderForm, BinderKind, BinderQuery, BoundOp, BuiltinType, CaptureForm,
+    CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockBoundForm, ClockForm,
+    CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
     CompensationRetry, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DelayDistributionForm, DelayForm, DimensionForm,
     DimensionTermForm, EnumForm, EnumMemberForm, EquationForm, EventForm, ExactNumberForm,
@@ -97,6 +98,7 @@ pub use syntax::{
     TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm,
     UrgentTarget, UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
     WorkloadWeightForm,
+    PastWindowForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

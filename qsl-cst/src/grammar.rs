@@ -1534,9 +1534,57 @@ fn temporal(g: &mut Grammar) {
             x("true"),
             x("false"),
             s(vec![x("("), r(P::TemporalExpression), x(")")]),
+            r(P::AggregateAtom),
             s(vec![x("holds"), x("("), r(P::Expression), x(")")]),
             s(vec![x("holds"), x("("), r(P::HyperExpression), x(")")]),
         ]),
+    );
+    g.insert(
+        P::AggregateAtom,
+        s(vec![
+            r(P::AggregateTerm),
+            c(vec![x("<"), x("<="), x("="), x(">="), x(">")]),
+            r(P::Expression),
+        ]),
+    );
+    g.insert(
+        P::AggregateTerm,
+        s(vec![
+            r(P::AggregateKind),
+            opt(s(vec![x("of"), r(P::Expression)])),
+            opt(s(vec![
+                x("where"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+            ])),
+            x("over"),
+            x("past"),
+            r(P::PastWindow),
+            opt(s(vec![x("min_count"), uint()])),
+        ]),
+    );
+    g.insert(
+        P::AggregateKind,
+        c(vec![
+            x("count"),
+            x("sum"),
+            x("min"),
+            x("max"),
+            s(vec![
+                x("fraction"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+            ]),
+            s(vec![x("quantile"), r(P::ExactValue)]),
+        ]),
+    );
+    g.insert(
+        P::PastWindow,
+        s(vec![x("["), r(P::Horizon), x(","), r(P::Horizon), x("]")]),
     );
 }
 
