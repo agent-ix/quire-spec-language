@@ -77,3 +77,27 @@ Other checks:
 - An edge into an already-known state is still checked for a race, because `advance` runs before the `known` lookup.
 
 Evidence: `cargo test -p qsl-analyze --test it -- race_freedom:: load_buffering:: rc11_oracle:: release_acquire:: tso_fairness::` gave 43 passed and 0 failed. A second filter, `race_freedom litmus weak_memory`, gave 44 passed. `cargo test -p qsl-replay -p qsl-route --lib` gave 877 and 18 passed, 0 failed. `make ci` was not run, by brief.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | high | EN-1 can wrongly prove race-freedom over a channel. It treats queued entries with the same bytes (send node, thread, payload) as one choice, but those bytes leave out the carried view. With `repeat` sending the same payload before and after `data := 1`, a `lose` drops only the older entry and a `receive` takes only the oldest. The path that loses the newer entry and receives the older one is never explored, so the race on `data` is missed and the item settles `proved`. The dedup predates this PR, but this PR's race item now depends on it. | qsl-eval/src/simulation/protocol/channel.rs:352-354, 482 |
+| FND-013 | low | Race replay folds a channel's per-key sub-queues into one queue per (channel, instance) and takes the first entry with matching bytes. With a keyed `fifo` channel whose key reads model state, equal-byte entries in different sub-queues can be matched differently from the engine. | qsl-replay/src/model_check/race_replay.rs:122, 146-155 |
+| FND-014 | low | Four new tests have no trace tag, in a repo that traces its tests: `a_store_after_the_send_races_with_the_receivers_load`, `the_race_freedom_item_over_a_tso_parallel_is_refused`, `the_race_freedom_item_over_a_model_subject_is_refused` and `a_closure_certificate_over_a_racy_edge_is_rejected_bad_state`. | qsl-analyze/tests/it/race_freedom.rs:515, 536, 559, 601 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | b0015317e: a release fence records `fence = cur` and clears `rel`. `released(l)` falls back to `fence` for any location the thread has not released since. `Clocks::join` joins per location and joins the fence clocks too. This is sound: `cur` only grows, so `fence` covers every earlier `rel(l)`. `a_forged_race_through_release_and_acquire_fences_is_refused` fails on the old rule. |
+| FND-002 | still-open | EN-1 now refuses: `TsoRace` at `check_protocol` entry maps to `unsupported_construct`/`not-yet-implemented`, which is the right code and place, like `WeakLiveness`. But `check_protocol_closure` (closure.rs:388) still checks a race-freedom certificate under `tso`, where no step carries a race, so it would accept a forged closure certificate. It needs the same refusal. |
+| FND-003 | still-open | Lose, displace and receive-by-bytes now mirror the engine, which also takes the first entry with equal bytes. `Duplicate` does not: it removes the original and appends two copies (race_replay.rs:165-169), which moves the original behind later equal-byte entries. The engine leaves the original in place and appends the copy (`fifo`) or inserts it after the equal entries (unordered). Take [e1, e2] with equal bytes and duplicate e1: the engine has [e1, e2, e1'] and replay has [e2, e1, e1]. The second receive joins e1's older clock where the engine joins e2's, so a forged race is accepted. Also, no test fails on the old rule. |
+| FND-004 | fixed | b0015317e: `enter` sets the write Boolean on `tip` for every race location, so every carrier starts at `{"write":true,"reads":{}}` as FR-438 states. Verdicts are unchanged because `last_write` is null. |
+| FND-005 | deferred | Filed upstream as STD-491 (QSpec FR-438 / ADR-025 DR-3 spec gap). |
+| FND-006 | fixed | b0015317e adds the commutation argument to the MR-1 footprint doc at ra.rs:1707-1716. |
+| FND-007 | fixed | b0015317e: the facade refuses `Refusal::RaceOverModel` with code `invalid-value`, matching EN-1. Asserted by `the_race_freedom_item_over_a_model_subject_is_refused`. |
+| FND-008 | fixed | b0015317e: `disagreement` now requires `DisagreementCause::Verdicts` with `Violation`/`Success`. |
+| FND-009 | fixed | b0015317e: replay clears `messages` only when the `live` view-holding set is just the joining thread. This mirrors the engine's `merge`, which clears when `threads.keys().all(== parent)`. |
+| FND-010 | fixed | b0015317e: `Members::Fence` holds `AccessOrdering` and replay matches the typed variants. The encoded spelling is `ordering.label()`, as before. |
+| FND-011 | deferred | Filed upstream as STD-491. |

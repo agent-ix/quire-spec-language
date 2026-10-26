@@ -12,9 +12,9 @@ use qsl_eval::simulation::protocol::{MemorySelection, ProtocolTransition, Ra, St
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
-    ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
+    check_protocol_closure, CertificateRule, ClosureRefusal, CounterexampleKind, DisagreementCause,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement,
+    ProofCertificate, ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
     TemporalCounterexample,
 };
 use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
@@ -632,4 +632,133 @@ fn a_closure_certificate_over_a_racy_edge_is_rejected_bad_state() {
         panic!("{checked:?}");
     };
     assert_eq!(rejection.rule, CertificateRule::BadState);
+}
+
+/// A sender that stores `data` then sends the same payload, twice in a
+/// `repeat`, beside a receiver that receives once and loads `data`, over a
+/// channel of capacity `capacity` with `overflow`. The second
+/// send is after the second store; the first is not.
+fn repeat_case(ordering: &str, capacity: u32, overflow: &str, store_first: bool) -> Case {
+    let store = put("Sx", "x", "");
+    let send = "send Tx via ch as (tx: Boolean) { tx };";
+    let body = if store_first {
+        format!("{store} {send}")
+    } else {
+        format!("{send} {store}")
+    };
+    let sender = format!(
+        "sequence Sender {{ repeat Loop by w visible () max 2 while {{ true }} \
+         sequence Body {{ {body} }} exhausted sequence Out {{ }} }}"
+    );
+    let receiver = format!(
+        "sequence Recv {{ receive Rx via ch of s::Sender::Loop::Body::Tx as (rx: Boolean) \
+         {{ true }}; {} }}",
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch s {sender} branch r {receiver} }} \
+         join all [s, r]; }}"
+    );
+    let channel = format!(
+        "channel ch from w to w carries Boolean ordering {ordering} delivery unknown \
+         capacity {capacity} overflow {overflow};"
+    );
+    Case::with_letters(
+        &(contracts() + &protocol_with("SB", &channel, &run) + NO_BOTH_ZERO),
+        &MP,
+    )
+}
+
+/// QSL-932 gap analysis FND-005: a `repeat` sends one payload twice, the
+/// second entry displacing the first (`overflow loss head`, capacity 1), and
+/// the receiver takes the second, which carries both stores. A race forged
+/// on the second store is refused; replay used to match the receive to the
+/// displaced first entry and accept it.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_after_a_displaced_send_is_refused() {
+    let case = repeat_case("fifo by (m: Boolean) { true }", 1, "loss head", true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&case, &path, location_of(&case, "x"), 4, 7);
+    disagreement(&case, forged);
+}
+
+/// A `duplicate` keeps the original queued and adds one copy after the equal
+/// entries of an `unordered` queue. Taking the first of the equal entries
+/// after it is the older send, which carries only the first store, so the
+/// second store races with the load and replay reproduces the race.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_duplicate_leaves_the_original_in_place_and_adds_one_copy_after_it() {
+    let case = repeat_case("unordered", 3, "block", true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Kind(StepKind::Duplicate),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let race = forged_race(&case, &path, location_of(&case, "x"), 4, 8);
+    let replayed = case.replay_race(&ra(), race).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// Entries of equal bytes (same send, thread and payload) are one choice of
+/// the engine, which takes the first. A `repeat` sends one payload before and
+/// after `data := 1` over a lossy channel; the earlier entry does not carry
+/// the store, so the item refutes with a race, and the race replays.
+#[test]
+fn equal_queue_entries_with_different_views_still_expose_the_race() {
+    let case = repeat_case("unordered", 2, "block", false);
+    let counterexample = violated(case.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = case.replay_race(&ra(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// The closure checker refuses the race-freedom item over a `tso` `parallel`
+/// as EN-1 does, since no `tso` step carries a race, so it would accept a
+/// certificate that holds every state.
+#[test]
+fn a_race_freedom_certificate_is_refused_over_a_tso_parallel() {
+    let case = unit(&message_passing("", "release", "acquire"), &MP);
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Closure(certificate),
+        ..
+    } = case.check(&ra(), ModelCheckItem::RaceFreedom, None)
+    else {
+        panic!("the ordered shape proves");
+    };
+    let tso = [select("SB::Main::Both", MemoryModelName::Tso)];
+    let refusal = check_protocol_closure(
+        &ProtocolCertificateRequest {
+            subject: case.subject(&tso),
+            item: ModelCheckItem::RaceFreedom,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        &certificate,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("refused");
+    assert!(matches!(refusal, ClosureRefusal::TsoRace), "{refusal:?}");
 }

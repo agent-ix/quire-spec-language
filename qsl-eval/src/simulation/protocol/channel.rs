@@ -36,6 +36,17 @@ use crate::simulation::model::encode::{value_enc, Enc};
 use crate::simulation::model::{verdict, ModelFinding, ModelSimState, Verdict};
 use crate::value::evaluate_protocol_slot;
 
+/// How many entries of `queue` ahead of `position` have the bytes of the one
+/// at `position`.
+fn equal_before(queue: &[Entry], position: usize) -> usize {
+    queue.get(position).map_or(0, |entry| {
+        queue[..position]
+            .iter()
+            .filter(|queued| queued.bytes == entry.bytes)
+            .count()
+    })
+}
+
 /// Insert `entry` into an `unordered` queue, kept in ascending JCS bytes.
 fn insert_sorted(queue: &mut Vec<Entry>, entry: Entry) {
     let at = queue.partition_point(|queued| queued.bytes <= entry.bytes);
@@ -170,6 +181,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             let appended = entry.bytes.clone();
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
+            let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
             let mut displaced = None;
             let outcome = if queue.len() < channel.capacity {
                 if fifo {
@@ -228,7 +240,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
                     .recording(record)
                     .flowing(QueueFlow {
+                        key: fifo_key,
                         entry: appended,
+                        before: 0,
                         displaced: displaced
                             .as_ref()
                             .map(|(entry, before)| (entry.bytes.clone(), *before)),
@@ -294,6 +308,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             let mut queue = target.queues.get(&at.0).cloned().unwrap_or_default();
+            let before = equal_before(&queue, at.1);
+            let fifo_key = at.0.fifo.as_ref().map(|fifo| fifo.bytes.clone());
             if at.1 < queue.len() {
                 queue.remove(at.1);
             }
@@ -319,7 +335,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         removal: Removal::Received,
                     })
                     .flowing(QueueFlow {
+                        key: fifo_key,
                         entry: entry.bytes.clone(),
+                        before,
                         displaced: None,
                     });
             if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
@@ -497,7 +515,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             entry.enc.clone(),
                         );
                         transition = transition.flowing(QueueFlow {
+                            key: key.fifo.as_ref().map(|fifo| fifo.bytes.clone()),
                             entry: entry.bytes.clone(),
+                            before: equal_before(queue, position),
                             displaced: None,
                         });
                         if kind == StepKind::Lose {
