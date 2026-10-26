@@ -895,6 +895,30 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// Whether every field member of the package named `name` is a clock,
+    /// and one is: a read of `.name` through any path reads a clock.
+    pub(crate) fn names_only_clocks(&self, name: &str) -> bool {
+        let mut clock = false;
+        for record in self.records.values() {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                continue;
+            };
+            if crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)
+                != Some(name)
+            {
+                continue;
+            }
+            if !matches!(
+                field.value_type,
+                crate::model::domain_package::ValueTypeRef::Clock
+            ) {
+                return false;
+            }
+            clock = true;
+        }
+        clock
+    }
+
     /// The clock field `name` an object of type `object` holds: one declared
     /// on `object` itself or on one of its ancestors.
     pub(crate) fn clock_field(&self, object: EffectiveId, name: &str) -> Option<&DeclarationKey> {
