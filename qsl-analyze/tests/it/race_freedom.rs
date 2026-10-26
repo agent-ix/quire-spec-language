@@ -12,9 +12,9 @@ use qsl_eval::simulation::protocol::{MemorySelection, ProtocolTransition, Ra, St
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 use qsl_replay::{
-    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
-    ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
+    check_protocol_closure, CertificateRule, ClosureRefusal, CounterexampleKind, DisagreementCause,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement,
+    ProofCertificate, ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
     TemporalCounterexample,
 };
 use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
@@ -511,7 +511,8 @@ fn a_forged_race_through_a_lossy_channel_is_refused() {
 /// The queued-send carrier (`carry_after`, `carried_after`): `data` stored
 /// after the `send` is not ordered before the load after the `receive`, so
 /// the item refutes with a race that replays. The queued entry's view must
-/// not learn of the later store.
+/// not learn of the later store. It asserts no acceptance criterion: FR-224-AC-5's
+/// channel variant, which would back it, is deferred to QSL-995.
 #[test]
 fn a_store_after_the_send_races_with_the_receivers_load() {
     let case = channel_case(false);
@@ -533,6 +534,7 @@ fn a_store_after_the_send_races_with_the_receivers_load() {
 
 /// FND-002 of QSL-932: until the `tso` race summary lands, EN-1 refuses the
 /// race-freedom item over a `tso` `parallel` rather than prove it unchecked.
+/// It asserts no acceptance criterion; FR-224-AC-2's `tso` half is QSL-995's.
 #[test]
 fn the_race_freedom_item_over_a_tso_parallel_is_refused() {
     let case = unit(&message_passing("", "relaxed", "relaxed"), &MP);
@@ -555,7 +557,8 @@ fn the_race_freedom_item_over_a_tso_parallel_is_refused() {
 
 /// The race-freedom item names a protocol subject: EN-1 refuses it over a
 /// model subject, and so do the SMT facade and the replay of a race
-/// counterexample, all with `invalid-value`.
+/// counterexample, all with `invalid-value`. It asserts no acceptance
+/// criterion; it backs a refusal no AC names.
 #[test]
 fn the_race_freedom_item_over_a_model_subject_is_refused() {
     use crate::counter::{
@@ -597,7 +600,8 @@ fn the_race_freedom_item_over_a_model_subject_is_refused() {
 /// state of the relaxed-flag subject under the race-freedom key is rejected
 /// `BadState` at the post-state of the step that completes the race. The
 /// certificate is the deadlock-freedom run's states with the key an honest
-/// race-freedom proof carries.
+/// race-freedom proof carries. It asserts no acceptance criterion; FR-224's
+/// ACs name no closure-certificate rule.
 #[test]
 fn a_closure_certificate_over_a_racy_edge_is_rejected_bad_state() {
     let relaxed = unit(&message_passing("", "relaxed", "relaxed"), &MP);
@@ -632,4 +636,188 @@ fn a_closure_certificate_over_a_racy_edge_is_rejected_bad_state() {
         panic!("{checked:?}");
     };
     assert_eq!(rejection.rule, CertificateRule::BadState);
+}
+
+/// A sender that stores `data` then sends the same payload, twice in a
+/// `repeat`, beside a receiver that receives once and loads `data`, over a
+/// channel of capacity `capacity` with `overflow`. The second
+/// send is after the second store; the first is not.
+fn repeat_case(ordering: &str, capacity: u32, overflow: &str, store_first: bool) -> Case {
+    let store = put("Sx", "x", "");
+    let send = "send Tx via ch as (tx: Boolean) { tx };";
+    let body = if store_first {
+        format!("{store} {send}")
+    } else {
+        format!("{send} {store}")
+    };
+    let sender = format!(
+        "sequence Sender {{ repeat Loop by w visible () max 2 while {{ true }} \
+         sequence Body {{ {body} }} exhausted sequence Out {{ }} }}"
+    );
+    let receiver = format!(
+        "sequence Recv {{ receive Rx via ch of s::Sender::Loop::Body::Tx as (rx: Boolean) \
+         {{ true }}; {} }}",
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch s {sender} branch r {receiver} }} \
+         join all [s, r]; }}"
+    );
+    let channel = format!(
+        "channel ch from w to w carries Boolean ordering {ordering} delivery unknown \
+         capacity {capacity} overflow {overflow};"
+    );
+    Case::with_letters(
+        &(contracts() + &protocol_with("SB", &channel, &run) + NO_BOTH_ZERO),
+        &MP,
+    )
+}
+
+/// QSL-932 gap analysis FND-005: a `repeat` sends one payload twice, the
+/// second entry displacing the first (`overflow loss head`, capacity 1), and
+/// the receiver takes the second, which carries both stores. A race forged
+/// on the second store is refused; replay used to match the receive to the
+/// displaced first entry and accept it.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_after_a_displaced_send_is_refused() {
+    let case = repeat_case("fifo by (m: Boolean) { true }", 1, "loss head", true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&case, &path, location_of(&case, "x"), 4, 7);
+    disagreement(&case, forged);
+}
+
+/// A `duplicate` keeps the original queued and adds one copy after the equal
+/// entries of an `unordered` queue. Taking the first of the equal entries
+/// after it is the older send, which carries only the first store, so the
+/// second store races with the load and replay reproduces the race.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_duplicate_leaves_the_original_in_place_and_adds_one_copy_after_it() {
+    let case = repeat_case("unordered", 3, "block", true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Kind(StepKind::Duplicate),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let race = forged_race(&case, &path, location_of(&case, "x"), 4, 8);
+    let replayed = case.replay_race(&ra(), race).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// Entries of equal bytes (same send, thread and payload) are one choice of
+/// the engine, which takes the first. A `repeat` sends one payload before and
+/// after `data := 1` over a lossy channel; the earlier entry does not carry
+/// the store, so the item refutes with a race, and the race replays. It asserts
+/// no acceptance criterion; it guards the single-receiver case of FND-012.
+#[test]
+fn equal_queue_entries_with_different_views_still_expose_the_race() {
+    let case = repeat_case("unordered", 2, "block", false);
+    let counterexample = violated(case.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = case.replay_race(&ra(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// The closure checker refuses the race-freedom item over a `tso` `parallel`
+/// as EN-1 does, since no `tso` step carries a race, so it would accept a
+/// certificate that holds every state. It asserts no acceptance criterion;
+/// QSL-995 deletes the refusal with the `tso` race summary.
+#[test]
+fn a_race_freedom_certificate_is_refused_over_a_tso_parallel() {
+    let case = unit(&message_passing("", "release", "acquire"), &MP);
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Closure(certificate),
+        ..
+    } = case.check(&ra(), ModelCheckItem::RaceFreedom, None)
+    else {
+        panic!("the ordered shape proves");
+    };
+    let tso = [select("SB::Main::Both", MemoryModelName::Tso)];
+    let refusal = check_protocol_closure(
+        &ProtocolCertificateRequest {
+            subject: case.subject(&tso),
+            item: ModelCheckItem::RaceFreedom,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        &certificate,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("refused");
+    assert!(matches!(refusal, ClosureRefusal::TsoRace), "{refusal:?}");
+}
+
+/// FND-012 of QSL-932: queued entries of equal bytes but different carried
+/// views are different choices. `s` sends one payload twice from a `repeat`
+/// and, after each send, receives an ack that `w` sends after storing `data`,
+/// so its first entry does not carry the store and its second does. `r1`
+/// receives, then sets a `relaxed` flag; `r2` receives only after reading
+/// that flag as 1, which orders nothing, and is the only reader of `data`.
+/// The engine must also give `r1` the later entry and `r2` the earlier one,
+/// where `r2` races with the store; the item refutes with a race that
+/// replays. It asserts no acceptance criterion.
+#[test]
+fn a_second_receiver_of_an_older_equal_entry_races_with_the_store() {
+    let sender = "sequence S { repeat Loop by w visible () max 2 while { true } \
+         sequence Body { send Tx via ch as (tx: Boolean) { tx }; \
+         receive Ak via ch2 of w::W::Acks::Ack as (ak: Boolean) { true }; } \
+         exhausted sequence Out { } }";
+    let writer = format!(
+        "sequence W {{ {} repeat Acks by w visible () max 2 while {{ true }} \
+         send Ack via ch2 as (ack: Boolean) {{ ack }}; exhausted sequence OutW {{ }} }}",
+        put("Sx", "x", ""),
+    );
+    let first = format!(
+        "sequence R1 {{ receive Ra via ch of s::S::Loop::Body::Tx as (ra: Boolean) \
+         {{ true }}; {} }}",
+        put("Sy", "y", "relaxed"),
+    );
+    let second = format!(
+        "sequence R2 {{ {} choice Pick2 by c visible (bLy) {{ case yes when {{ bLy }} \
+         sequence Y {{ receive Rb via ch of s::S::Loop::Body::Tx as (rb: Boolean) \
+         {{ true }}; {} }} case no when {{ not bLy }} sequence Skip2 {{ }} }} }}",
+        attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch w {writer} branch s {sender} \
+         branch r1 {first} branch r2 {second} }} join all [w, s, r1, r2]; }}"
+    );
+    let channels = "channel ch from w to w carries Boolean ordering unordered \
+                    delivery exactly-once-premise capacity 2 overflow block; \
+                    channel ch2 from w to w carries Boolean ordering unordered \
+                    delivery exactly-once-premise capacity 2 overflow block;";
+    let case = Case::with_letters(
+        &(contracts() + &protocol_with("SB", channels, &run) + NO_BOTH_ZERO),
+        &MP,
+    );
+    let counterexample = violated(case.check(&ra(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = case.replay_race(&ra(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
 }

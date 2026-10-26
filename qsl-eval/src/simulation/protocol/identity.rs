@@ -440,11 +440,17 @@ impl SendOutcome {
 /// its sending thread and its payload: the entry a `send` appended, a
 /// `receive` took, a `duplicate` copied or a `lose` dropped, and the entry a
 /// `send` displaced. Equal entries are interchangeable except in the memory
-/// view they carry.
+/// view they carry, so the entry a step touched is named by its queue, its
+/// bytes and its place among the queue's entries of equal bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueueFlow {
+    /// The queue's FIFO key bytes; `None` for an `unordered` channel's queue.
+    pub key: Option<Vec<u8>>,
     /// The entry the step appended, took, copied or dropped.
     pub entry: Vec<u8>,
+    /// How many entries of the same bytes were ahead of the entry in its
+    /// queue; 0 for an appended entry.
+    pub before: usize,
     /// The queued entry a `send` displaced at capacity, and how many entries
     /// of the same bytes were queued before it.
     pub displaced: Option<(Vec<u8>, usize)>,

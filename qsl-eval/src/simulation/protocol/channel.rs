@@ -36,11 +36,28 @@ use crate::simulation::model::encode::{value_enc, Enc};
 use crate::simulation::model::{verdict, ModelFinding, ModelSimState, Verdict};
 use crate::value::evaluate_protocol_slot;
 
+/// How many entries of `queue` ahead of `position` have the bytes of the one
+/// at `position`.
+fn equal_before(queue: &[Entry], position: usize) -> usize {
+    queue.get(position).map_or(0, |entry| {
+        queue[..position]
+            .iter()
+            .filter(|queued| queued.bytes == entry.bytes)
+            .count()
+    })
+}
+
 /// Insert `entry` into an `unordered` queue, kept in ascending JCS bytes.
 fn insert_sorted(queue: &mut Vec<Entry>, entry: Entry) {
     let at = queue.partition_point(|queued| queued.bytes <= entry.bytes);
     queue.insert(at, entry);
 }
+
+/// A deliverable entry with its choice identity.
+type Deliverable<'i> = (Delivery<'i>, Vec<u8>);
+
+/// A deliverable entry's queue and position, and the entry.
+type Delivery<'i> = ((QueueKey, usize), &'i Entry);
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The `send` or `receive` `node`.
@@ -170,6 +187,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             let appended = entry.bytes.clone();
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
+            let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
             let mut displaced = None;
             let outcome = if queue.len() < channel.capacity {
                 if fifo {
@@ -228,7 +246,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
                     .recording(record)
                     .flowing(QueueFlow {
+                        key: fifo_key,
                         entry: appended,
+                        before: 0,
                         displaced: displaced
                             .as_ref()
                             .map(|(entry, before)| (entry.bytes.clone(), *before)),
@@ -274,7 +294,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let channel = self.channel_of(node)?.name.clone();
         let text = self.program.text(node)?.to_owned();
         let instance = Self::instance(state, ordinal)?;
-        for (at, entry) in Self::deliverable(instance, message) {
+        for (at, entry) in self.deliverable(Some(&state.memory), instance, message)? {
             if !self.admits(
                 Reader {
                     instance,
@@ -294,6 +314,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             let mut queue = target.queues.get(&at.0).cloned().unwrap_or_default();
+            let before = equal_before(&queue, at.1);
+            let fifo_key = at.0.fifo.as_ref().map(|fifo| fifo.bytes.clone());
             if at.1 < queue.len() {
                 queue.remove(at.1);
             }
@@ -319,7 +341,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         removal: Removal::Received,
                     })
                     .flowing(QueueFlow {
+                        key: fifo_key,
                         entry: entry.bytes.clone(),
+                        before,
                         displaced: None,
                     });
             if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
@@ -332,13 +356,36 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
+    /// What makes `entry` one choice among a queue's entries: its bytes and,
+    /// under a model that carries a race summary, its carried view.
+    fn choice(
+        &self,
+        memory: Option<&M::Component>,
+        entry: &Entry,
+    ) -> Result<Vec<u8>, ProtocolRefusal> {
+        let mut identity = entry.bytes.clone();
+        if let Some(race) = entry
+            .carried
+            .as_ref()
+            .zip(memory)
+            .and_then(|(carried, memory)| self.memory.carried_choice_key(memory, carried))
+        {
+            identity.extend(jcs(&race.0)?);
+        }
+        Ok(identity)
+    }
+
     /// The distinct deliverable entries for `message` in `instance`, each
-    /// with its queue and position.
+    /// with its queue and position; `memory` tells entries of equal bytes
+    /// apart by their carried views, and `None` only asks whether any
+    /// is deliverable.
     fn deliverable<'i>(
+        &self,
+        memory: Option<&M::Component>,
         instance: &'i Instance,
         message: &Message<'_>,
-    ) -> Vec<((QueueKey, usize), &'i Entry)> {
-        let mut found: Vec<((QueueKey, usize), &Entry)> = Vec::new();
+    ) -> Result<Vec<Delivery<'i>>, ProtocolRefusal> {
+        let mut found: Vec<Deliverable<'i>> = Vec::new();
         for (key, queue) in &instance.queues {
             if key.channel != message.channel {
                 continue;
@@ -349,15 +396,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 queue.iter().enumerate().collect()
             };
             for (position, entry) in candidates {
+                let identity = self.choice(memory, entry)?;
                 let distinct = !found
                     .iter()
-                    .any(|((other, _), seen)| other == key && seen.bytes == entry.bytes);
+                    .any(|(((other, _), _), seen)| other == key && *seen == identity);
                 if Some(entry.send) == message.from && distinct {
-                    found.push(((key.clone(), position), entry));
+                    found.push((((key.clone(), position), entry), identity));
                 }
             }
         }
-        found
+        Ok(found.into_iter().map(|(delivery, _)| delivery).collect())
     }
 
     /// PD-4 for a waiting `receive` of instance `ordinal`, over the steps
@@ -375,7 +423,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Result<WaitCause, ProtocolRefusal> {
         let message = self.message(node)?;
         let channel = self.channel_of(node)?.name.clone();
-        if !Self::deliverable(instance, message).is_empty() {
+        if !self.deliverable(None, instance, message)?.is_empty() {
             return Ok(WaitCause::Constraint);
         }
         let queued = instance
@@ -475,8 +523,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         variants.push((StepKind::Lose, lost));
                     }
                     for (kind, changed) in variants {
-                        let bytes: Vec<Vec<u8>> =
-                            changed.iter().map(|queued| queued.bytes.clone()).collect();
+                        let bytes: Vec<Vec<u8>> = changed
+                            .iter()
+                            .map(|queued| self.choice(Some(&state.memory), queued))
+                            .collect::<Result<_, _>>()?;
                         if results
                             .iter()
                             .any(|(seen, result)| *seen == kind && *result == bytes)
@@ -497,7 +547,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             entry.enc.clone(),
                         );
                         transition = transition.flowing(QueueFlow {
+                            key: key.fifo.as_ref().map(|fifo| fifo.bytes.clone()),
                             entry: entry.bytes.clone(),
+                            before: equal_before(queue, position),
                             displaced: None,
                         });
                         if kind == StepKind::Lose {
