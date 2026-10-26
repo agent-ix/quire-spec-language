@@ -1624,15 +1624,6 @@ pub enum StateGraphCause {
         /// The constraint's span.
         span: Span,
     },
-    /// A claim whose parts all check, but that no S4 emission writes yet:
-    /// refused rather than compiled and silently missing from the package.
-    /// Located at the claim.
-    NotEmitted {
-        /// The declared claim name.
-        name: String,
-        /// The claim's span.
-        span: Span,
-    },
     /// The state clause checker refused a predicate, as it refuses an
     /// invariant body.
     Predicate {
@@ -1664,7 +1655,6 @@ impl StateGraphCause {
             Self::ReadsBeyondState { span }
             | Self::TemporalOperator { span }
             | Self::Fairness { span }
-            | Self::NotEmitted { span, .. }
             | Self::Predicate { span, .. } => Some(*span),
         }
     }
@@ -1674,8 +1664,7 @@ impl StateGraphCause {
         match self {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
-            | Self::Fairness { .. }
-            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            | Self::Fairness { .. } => Code::UnsupportedConstruct,
             Self::Predicate { cause, .. } => cause.code(),
         }
     }
@@ -1686,7 +1675,6 @@ impl StateGraphCause {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
             | Self::Fairness { .. } => Some("expression-form"),
-            Self::NotEmitted { .. } => Some("not-yet-implemented"),
             Self::Predicate { cause, .. } => cause.cause(),
         }
     }

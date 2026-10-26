@@ -165,6 +165,12 @@ productions! {
     WeightedValue,
     #[doc = "`reward <identifier> on <qualified-name> = <expression> ;`: a named reward on an operation."]
     RewardDeclaration,
+    #[doc = "`delay <qualified-name> ~ <delay-distribution> ;`: a delay distribution on an operation of a `time dense` model."]
+    DelayDeclaration,
+    #[doc = "`uniform [[<quantity-literal>, <quantity-literal>]]`, `exponential (<exact-value>)` or `discrete { <weighted-delay>, ... }`: the families a delay is drawn from."]
+    DelayDistribution,
+    #[doc = "`<quantity-literal> : <exact-value>`: one delay of a discrete distribution and its weight."]
+    WeightedDelay,
     #[doc = "`workload <identifier> on <identifier> { <workload-weight>+ }`: a weight for each operation of a model."]
     WorkloadDeclaration,
     #[doc = "`weight <qualified-name> = <exact-value> ;`: one operation's weight in a workload."]

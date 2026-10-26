@@ -180,7 +180,9 @@ pub use model_check::hyper_settle::{
 pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
-pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
+pub use model_check::identity::{
+    node_occurrence, ClauseIdentity, ClauseRootRefusal, StateGraphIdentity,
+};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
     meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,

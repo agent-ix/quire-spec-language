@@ -50,6 +50,7 @@ mod probabilistic;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod state_graph_claim;
 mod temporal_clause;
 mod timed_source;
 mod union_nodes;

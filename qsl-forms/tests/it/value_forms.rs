@@ -72,6 +72,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::ModelRelation(_)
         | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
+        | DeclarationForm::Delay(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_)
@@ -248,6 +249,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::ModelRelation(_) => "model_relation",
             DeclarationForm::Random(_) => "random",
             DeclarationForm::Reward(_) => "reward",
+            DeclarationForm::Delay(_) => "delay",
             DeclarationForm::Workload(_) => "workload",
             DeclarationForm::Probabilistic(_) => "probabilistic",
             DeclarationForm::StateGraphClaim(_) => "state-graph",

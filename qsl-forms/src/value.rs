@@ -1218,6 +1218,9 @@ impl<'c> Mapping<'c> {
             | Production::RandomDeclaration
             | Production::WeightedValue
             | Production::RewardDeclaration
+            | Production::DelayDeclaration
+            | Production::DelayDistribution
+            | Production::WeightedDelay
             | Production::WorkloadDeclaration
             | Production::WorkloadWeight
             | Production::ProbabilisticClause
@@ -1892,6 +1895,9 @@ impl<'c> Mapping<'c> {
             | Production::RandomDeclaration
             | Production::WeightedValue
             | Production::RewardDeclaration
+            | Production::DelayDeclaration
+            | Production::DelayDistribution
+            | Production::WeightedDelay
             | Production::WorkloadDeclaration
             | Production::WorkloadWeight
             | Production::ProbabilisticClause

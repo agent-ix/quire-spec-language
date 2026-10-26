@@ -99,6 +99,7 @@ use quire_exact::{Origin, Role};
 mod clause_root;
 mod hybrid;
 mod hyper_root;
+mod state_graph_root;
 #[cfg(test)]
 pub(crate) mod tests;
 mod timed_model;
@@ -106,6 +107,9 @@ mod timed_model;
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
 pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
 pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
+pub use state_graph_root::{
+    resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
+};
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
     CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,

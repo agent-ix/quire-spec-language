@@ -225,6 +225,8 @@ pub enum LeadingTokenKind {
     Random,
     /// `reward`: the `Probabilistic` reward form (FR-311).
     Reward,
+    /// `delay`: the `Probabilistic` delay-distribution form (FR-253).
+    Delay,
     /// `workload`: the `Probabilistic` workload form (FR-311).
     Workload,
     /// `probabilistic`: the `Probabilistic` claim form (FR-392).
@@ -453,6 +455,7 @@ fn dispatch(
         LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         LeadingTokenKind::Random => probabilistic::random_declaration(construct),
         LeadingTokenKind::Reward => probabilistic::reward_declaration(construct),
+        LeadingTokenKind::Delay => probabilistic::delay_declaration(construct),
         LeadingTokenKind::Workload => probabilistic::workload_declaration(construct),
         LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
         LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
@@ -508,6 +511,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"relation" => Some(LeadingTokenKind::Relation),
         b"random" => Some(LeadingTokenKind::Random),
         b"reward" => Some(LeadingTokenKind::Reward),
+        b"delay" => Some(LeadingTokenKind::Delay),
         b"workload" => Some(LeadingTokenKind::Workload),
         b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
         b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
@@ -775,6 +779,7 @@ mod tests {
         for (kind, production) in [
             ("Random", "probabilistic::random_declaration"),
             ("Reward", "probabilistic::reward_declaration"),
+            ("Delay", "probabilistic::delay_declaration"),
             ("Workload", "probabilistic::workload_declaration"),
             ("Probabilistic", "probabilistic::probabilistic_clause"),
         ] {
@@ -782,6 +787,7 @@ mod tests {
         }
         assert_eq!(from_spelling(b"random"), Some(LeadingTokenKind::Random));
         assert_eq!(from_spelling(b"reward"), Some(LeadingTokenKind::Reward));
+        assert_eq!(from_spelling(b"delay"), Some(LeadingTokenKind::Delay));
         assert_eq!(from_spelling(b"workload"), Some(LeadingTokenKind::Workload));
         assert_eq!(
             from_spelling(b"probabilistic"),
