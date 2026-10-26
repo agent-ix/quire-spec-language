@@ -199,7 +199,10 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
         "quire.op.record.project"
     );
     assert_eq!(read["body"]["operation"]["member"]["name"], "versionNumber");
-    assert_eq!(node_with(&when.wire, target(literal))["body"]["value"], "3");
+    assert_eq!(
+        node_with(&when.wire, target(literal))["semantic_form"],
+        "conversion"
+    );
     // `self` is typed `Reference<T>` for the model's one object type, which is
     // the node the terminal's `model` binding names.
     let self_type = node_with(
