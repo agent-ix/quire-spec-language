@@ -611,6 +611,32 @@ pub struct ClauseRunUsage {
     pub evaluation_consumed: Vec<(quire_exact::LimitKind, u64)>,
 }
 
+/// Whether native evaluation entered one implication's consequent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsequentState {
+    /// The implication was reached and its false antecedent skipped the
+    /// consequent.
+    Skipped,
+    /// The implication was reached and its true antecedent entered the
+    /// consequent.
+    Entered,
+    /// An enclosing short-circuit skipped the implication itself.
+    NotReached,
+}
+
+/// One checked implication's consequent at its source location, with the
+/// state observed in the native clause evaluation.
+#[derive(Clone, Debug)]
+pub struct ConsequentSourceEvent {
+    /// The source region of the implication expression, which identifies
+    /// the generated activation site.
+    pub implication: qsl_foundation::source::provenance::SourceRegion,
+    /// The source region of the consequent expression.
+    pub consequent: qsl_foundation::source::provenance::SourceRegion,
+    /// Whether native evaluation entered this consequent.
+    pub state: ConsequentState,
+}
+
 impl ClauseRunUsage {
     fn from_meter(
         meter: &Meter,
@@ -642,6 +668,9 @@ pub struct ClauseRunReport {
     /// FR-266 (QSpec FR-351): the separating witness record, present
     /// exactly when `basis` is decisive.
     pub witness: Option<SeparatingWitnessRecord>,
+    /// Per-implication consequent observations from a completed native
+    /// Boolean clause evaluation, in checked expression order.
+    pub consequent_source_events: Vec<ConsequentSourceEvent>,
 }
 
 /// FR-266: the basis of a report that derives no witness: `closed-scope`
@@ -749,6 +778,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         package_id,
         disposition,
         usage: ClauseRunUsage::default(),
+        consequent_source_events: Vec::new(),
     };
 
     if let Some(language) = unit.language {
@@ -895,6 +925,7 @@ impl CompiledRun<'_> {
             package_id: Some(self.package_id),
             disposition,
             usage: ClauseRunUsage::default(),
+            consequent_source_events: Vec::new(),
         }
     }
 }
@@ -910,6 +941,44 @@ pub(crate) fn check_clause(
     selection: &ClauseSelection,
 ) -> ClauseRunReport {
     check_clause_admitted(run, clause, selection).report
+}
+
+/// Derive the source event for every authored implication consequent from
+/// the evaluator's checked-node decision trail. Enumerating the checked
+/// body as well as consulting the trail preserves consequents skipped by an
+/// enclosing connective, which have no decision entry of their own.
+fn derive_consequent_source_events(
+    graph: &CheckedGraph,
+    clause: &CheckedStateClause,
+    evaluation: &qsl_eval::value::ClauseEvaluation,
+) -> Result<Vec<ConsequentSourceEvent>, InternalFault> {
+    use qsl_semantics::check::{Connective, NodeKind};
+
+    let mut events = Vec::new();
+    let mut pending = vec![clause.body()];
+    while let Some(node) = pending.pop() {
+        if let NodeKind::Connective(Connective::Implies, _, consequent) = node.kind() {
+            let consequent = node.at(*consequent);
+            let implication = graph
+                .region(node.location())
+                .ok_or_else(|| InternalFault::new("run_clause", "implication-has-source-region"))?;
+            let consequent = graph.region(consequent.location()).ok_or_else(|| {
+                InternalFault::new("run_clause", "implication-consequent-has-source-region")
+            })?;
+            let state = match evaluation.decision(node.location()) {
+                Some(true) => ConsequentState::Entered,
+                Some(false) => ConsequentState::Skipped,
+                None => ConsequentState::NotReached,
+            };
+            events.push(ConsequentSourceEvent {
+                implication,
+                consequent,
+                state,
+            });
+        }
+        pending.extend(node.children().into_iter().rev());
+    }
+    Ok(events)
 }
 
 /// [`check_clause`]'s report, with the observations admission produced
@@ -978,20 +1047,27 @@ pub(crate) fn check_clause_admitted(
         };
     };
     let mut derived = None;
+    let mut consequent_source_events = Vec::new();
     let disposition = match run
         .package
         .evaluate_clause(&qualified, &observations, &mut meter)
     {
-        Ok(evaluation) => match derive_separating_witness(clause, &evaluation) {
+        Ok(evaluation) => match derive_consequent_source_events(graph, clause, &evaluation) {
             Err(fault) => ClauseDisposition::EvaluateFault(fault),
-            Ok(witness) => {
-                derived = witness;
-                match convert_outcome(evaluation.evaluation, graph, run.sources) {
-                    Ok(outcome) => ClauseDisposition::Evaluate(outcome),
-                    Err(refusal) => match *refusal {
-                        RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-                        other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-                    },
+            Ok(events) => {
+                consequent_source_events = events;
+                match derive_separating_witness(clause, &evaluation) {
+                    Err(fault) => ClauseDisposition::EvaluateFault(fault),
+                    Ok(witness) => {
+                        derived = witness;
+                        match convert_outcome(evaluation.evaluation, graph, run.sources) {
+                            Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+                            Err(refusal) => match *refusal {
+                                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+                            },
+                        }
+                    }
                 }
             }
         },
@@ -1026,6 +1102,9 @@ pub(crate) fn check_clause_admitted(
         )),
     };
     let mut report = run.report(disposition);
+    if report.disposition.truth().is_some() {
+        report.consequent_source_events = consequent_source_events;
+    }
     report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
     // FR-266: a `Clause` run that completed a Boolean takes FR-265's basis
     // and record; every other disposition keeps `unavailable`.
@@ -1208,6 +1287,7 @@ fn run_function(
         package_id: Some(package_id),
         disposition,
         usage: ClauseRunUsage::default(),
+        consequent_source_events: Vec::new(),
     };
 
     let selected = match select(package, name) {

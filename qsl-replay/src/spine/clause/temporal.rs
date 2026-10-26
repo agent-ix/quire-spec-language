@@ -104,6 +104,7 @@ pub(super) fn run_temporal(
         package_id: Some(run.package_id),
         disposition,
         usage,
+        consequent_source_events: Vec::new(),
     };
     let early = |disposition| report(disposition, ClauseRunUsage::default());
 

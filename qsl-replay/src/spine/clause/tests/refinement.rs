@@ -586,6 +586,7 @@ fn dispositions_the_gate_never_produces_are_tool_failures() {
             usage: Default::default(),
             basis: crate::proof_result::SettlementBasis::Unavailable,
             witness: None,
+            consequent_source_events: Vec::new(),
             disposition,
         };
         assert_eq!(
@@ -746,6 +747,7 @@ fn a_clause_run_compile_type_admission_limit_names_the_limit() {
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
+        consequent_source_events: Vec::new(),
         disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
             code: Code::StageLimitExceeded,
             cause: "type-limit",
@@ -890,6 +892,7 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
         usage: Default::default(),
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
+        consequent_source_events: Vec::new(),
         disposition: ClauseDisposition::ArgumentRefusal(Box::new(RunRefusal::Cancelled(
             quire_exact::CancelCause::Requested,
         ))),
