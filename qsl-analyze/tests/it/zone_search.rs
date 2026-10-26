@@ -596,6 +596,61 @@ fn a_quiescent_terminal_state_is_a_deadlock_over_time() {
     }
 }
 
+/// FR-239's aLU coverage never hides a deadlock from the deadlock-freedom
+/// item. `a` enters phase 1 at `x = 0`, and `b` enters it at `x >= 2`;
+/// `b`'s successor is covered by `a`'s and never judged. Where `go` leaves
+/// phase 1 only while `x <= 1`, the covered valuations are deadlocked, but
+/// so are the stored node's after a delay, and the item is not proved. Where
+/// `go` has no upper bound, no valuation of phase 1 is deadlocked, covered
+/// or stored, and the item holds. A quiescent zone is closed under delay
+/// and every guard is a bound on one clock, so the enabling zones cover a
+/// stored quiescent zone only when one is the universe, which then covers
+/// every valuation of that model state.
+#[trace("TC-694")]
+#[test]
+fn a_covered_successor_hides_no_deadlock() {
+    let entered = |go: &str| {
+        deadlock(&world(
+            &document(
+                &["x"],
+                &[
+                    ("a", &["phase", "x"]),
+                    ("b", &["phase"]),
+                    ("go", &["phase"]),
+                    ("rest", &[]),
+                ],
+            ),
+            "",
+            &format!(
+                "{DENSE}\
+                 pre A using v on M::Call::a {{ self.phase = 0 }}\n\
+                 post Entered using v on M::Call::a {{ self.phase = 1 and self.x = 0 ms }}\n\
+                 pre B using v on M::Call::b {{ self.phase = 0 and self.x >= 2 ms }}\n\
+                 post Late using v on M::Call::b {{ self.phase = 1 }}\n\
+                 pre Go using v on M::Call::go {{ self.phase = 1 and self.x {go} }}\n\
+                 post Gone using v on M::Call::go {{ self.phase = 2 }}\n\
+                 pre Rest using v on M::Call::rest {{ self.phase = 2 }}\n"
+            ),
+        ))
+    };
+    match entered("<= 1 ms") {
+        ZoneCheckOutcome::Undecided { cause, .. } => {
+            assert_eq!(cause, ZoneUndecided::DeadlockAfterDelay);
+        }
+        other => panic!("expected the item not proved, got {other:?}"),
+    }
+    let certificate = proved(entered(">= 0 ms"));
+    let covering = certificate
+        .edges
+        .iter()
+        .filter(|edge| edge.from == 0)
+        .map(|edge| edge.to)
+        .collect::<Vec<_>>();
+    // `a` and `b` both lead to the one stored phase-1 node.
+    assert_eq!(covering.len(), 2);
+    assert_eq!(covering[0], covering[1]);
+}
+
 /// FR-239 "Admitted behaviour" over the `Lock` model: `go` moves `A` (`0`)
 /// to `B` (`1`), `x <= 1 ms` while in `B`, and `ping`, enabled in `B`,
 /// changes nothing. `always holds(c.phase = 0)` fails only in `B`, where
