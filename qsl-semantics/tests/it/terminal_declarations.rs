@@ -48,8 +48,7 @@ fn declaration(graph: &CheckedGraph) -> &TerminalDeclaration {
 
 /// A model with no `terminal` declaration checks to `None`, `terminal when`
 /// to `When` with a Boolean body over `self`, and `terminal any` to `Any`.
-/// Verifies the three checked values of FR-124-AC-1; the package-identity
-/// half needs S4 emission and is not tested.
+/// Verifies the three checked values of FR-124-AC-1.
 #[trace("TC-519")]
 #[test]
 fn a_model_checks_to_none_when_or_any() {
@@ -161,29 +160,6 @@ fn a_predicate_reading_a_pre_state_refuses_as_an_invariant_does() {
         (region.start(), region.end()),
         (read.start as u64, read.end as u64)
     );
-}
-
-/// A checked `terminal` declaration refuses `not_emitted` at package build
-/// until S4 writes it, so a package is never built with an identity equal to
-/// the same package without the declaration; a package with none builds.
-#[trace("TC-1059", "FR-382-AC-6")]
-#[test]
-fn a_checked_terminal_declaration_refuses_not_emitted_at_package_build() {
-    for body in [ANY, WHEN] {
-        let refusals = admit_and_assemble_with_body(&document(), body)
-            .expect("the unit assembles")
-            .check(CheckingLimits::default())
-            .expect_err("a terminal declaration is not emitted yet");
-        assert_eq!(
-            code_and_cause(&refusals),
-            [(Code::UnsupportedConstruct, Some("not-yet-implemented"))],
-            "{body}"
-        );
-    }
-    admit_and_assemble_with_body(&document(), NONE)
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .expect("a package with no terminal declaration builds");
 }
 
 /// A `terminal when` on a model with no population has no object for `self`
