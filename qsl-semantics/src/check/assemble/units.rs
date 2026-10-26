@@ -26,6 +26,24 @@ use quire_semantic_value::unit::UnitGraph;
 pub(super) struct Assembled {
     pub(super) graph: UnitGraph,
     pub(super) spans: BTreeMap<NodeKey, Span>,
+    /// Each dimension's key and normalized base map (base-dimension key to
+    /// exponent), by its declared name.
+    pub(super) dimensions: BTreeMap<String, (NodeKey, BTreeMap<NodeKey, Integer>)>,
+    /// Each unit's dimension key, composed scale and composed offset to its
+    /// canonical root, by its declared name.
+    pub(super) units: BTreeMap<String, ComposedUnit>,
+}
+
+/// A unit's dimension node and its composed edge to the canonical root of
+/// that dimension: `root = scale × value + offset`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ComposedUnit {
+    /// The unit's dimension node.
+    pub(crate) dimension: NodeKey,
+    /// The composed scale to the root.
+    pub(crate) scale: Rational,
+    /// The composed offset to the root.
+    pub(crate) offset: Rational,
 }
 
 fn error(cause: AssemblyCause, span: Span) -> AssemblyError {
@@ -171,6 +189,8 @@ pub(super) fn assemble(
         return Ok(Assembled {
             graph: UnitGraph::default(),
             spans: BTreeMap::new(),
+            dimensions: BTreeMap::new(),
+            units: BTreeMap::new(),
         });
     }
     let mut errors = Vec::new();
@@ -358,6 +378,7 @@ pub(super) fn assemble(
         }
     }
     let mut unit_keys: Vec<Option<NodeKey>> = vec![None; units.len()];
+    let mut composed: Vec<Option<ComposedUnit>> = vec![None; units.len()];
     let mut unit_nodes = Vec::with_capacity(units.len());
     for component in strongly_connected(&unit_edges) {
         for index in component {
@@ -385,6 +406,29 @@ pub(super) fn assemble(
             .map_err(|refusal| fault(refusal.into()))?;
             let key = nominal_key(&preimage, limits.identity).map_err(fault)?;
             unit_keys[index] = Some(key);
+            // `root = s_t × (s × v + o) + o_t` along the target's edge.
+            composed[index] = Some(match unit_edges[index].first() {
+                Some(target) => {
+                    let to = composed[*target].clone().ok_or_else(|| {
+                        fault(
+                            InvalidSemanticGraph {
+                                cause: SemanticGraphCause::UnknownDimension,
+                            }
+                            .into(),
+                        )
+                    })?;
+                    ComposedUnit {
+                        dimension,
+                        scale: to.scale.mul(&scales[index]),
+                        offset: to.scale.mul(&offsets[index]).add(&to.offset),
+                    }
+                }
+                None => ComposedUnit {
+                    dimension,
+                    scale: scales[index].clone(),
+                    offset: offsets[index].clone(),
+                },
+            });
             unit_nodes.push((preimage, key));
         }
     }
@@ -401,5 +445,29 @@ pub(super) fn assemble(
             spans.insert(*key, *span);
         }
     }
-    Ok(Assembled { graph, spans })
+    let mut named_dimensions = BTreeMap::new();
+    for (index, key) in dimension_keys.iter().enumerate() {
+        let Some(key) = key else { continue };
+        let map = maps[index]
+            .iter()
+            .filter_map(|(base, exponent)| Some((dimension_keys[*base]?, exponent.clone())))
+            .collect();
+        named_dimensions
+            .entry(dimension_names[index].to_owned())
+            .or_insert((*key, map));
+    }
+    let mut named_units = BTreeMap::new();
+    for (index, unit) in composed.into_iter().enumerate() {
+        if let Some(unit) = unit {
+            named_units
+                .entry(unit_names[index].to_owned())
+                .or_insert(unit);
+        }
+    }
+    Ok(Assembled {
+        graph,
+        spans,
+        dimensions: named_dimensions,
+        units: named_units,
+    })
 }

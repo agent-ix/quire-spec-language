@@ -221,4 +221,7 @@ pub use semantic_node::{
 // `UnitGraph`, `CompoundUnit`, `compound_unit_id`, `InvalidCompoundUnit`,
 // `CompoundUnitCause`, `NotAUnitKey`) is `quire_semantic_value::unit`, which
 // every caller names directly.
-pub use unit::{admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, UnitPreimage};
+pub use unit::{
+    admit_unit_graph, CompoundUnitPreimage, DimensionEquivalencePreimage, DimensionPreimage,
+    UnitPreimage,
+};

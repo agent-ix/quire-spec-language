@@ -2519,6 +2519,55 @@ pub struct DimensionForm {
     pub terms: Vec<DimensionTermForm>,
 }
 
+/// `dimension A ~ B by x U = y V;` (FR-091 "Dimension-equivalence form"):
+/// the two dimension names and the two ratio terms as written, resolved,
+/// reordered and reduced by nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DimensionEquivalenceForm {
+    /// The two dimension names, in source order.
+    pub dimensions: [NameForm; 2],
+    /// The two ratio terms of the `by` clause, in source order.
+    pub ratio: [RatioTermForm; 2],
+    /// The span of the declaration.
+    pub span: Span,
+}
+
+/// One side `x U` of a dimension equivalence's `by` clause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RatioTermForm {
+    /// The ratio number `x`.
+    pub number: RatioNumberForm,
+    /// The unit name `U`, as written.
+    pub unit: NameForm,
+    /// The span of the term.
+    pub span: Span,
+}
+
+/// Which spelling a [`RatioNumberForm`] was written in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RatioNumberKind {
+    /// An unsigned integer, its value over 1.
+    Integer,
+    /// `rational(numerator, denominator)`.
+    Rational,
+    /// `decimal(coefficient, scale)`.
+    Decimal,
+}
+
+/// A ratio number as written: its spelling kind and its two parts
+/// (numerator and denominator, or coefficient and scale).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RatioNumberForm {
+    /// The spelling kind.
+    pub kind: RatioNumberKind,
+    /// The numerator, or the coefficient.
+    pub first: Integer,
+    /// The denominator, or the scale.
+    pub second: Integer,
+    /// The span of the number.
+    pub span: Span,
+}
+
 /// Which spelling an [`ExactNumberForm`] was written in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExactNumberKind {
@@ -4533,6 +4582,8 @@ pub enum DeclarationForm {
     Enum(EnumForm),
     /// A `dimension` declaration.
     Dimension(DimensionForm),
+    /// A `dimension A ~ B by x U = y V;` declaration.
+    DimensionEquivalence(Box<DimensionEquivalenceForm>),
     /// A `unit` declaration, boxed to keep the declaration sum compact.
     Unit(Box<UnitForm>),
     /// An `invariant`, `pre` or `post` state clause, boxed for the same

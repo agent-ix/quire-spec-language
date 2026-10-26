@@ -13,6 +13,8 @@
 mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
+#[cfg(feature = "test-support")]
+mod dimension_equivalence;
 mod dispatch_linking;
 #[cfg(feature = "test-support")]
 mod enum_type_admission;
@@ -98,7 +100,6 @@ mod tc235_business_meanings;
 mod temporal_fairness;
 #[cfg(feature = "test-support")]
 mod terminal_declarations;
-#[cfg(feature = "test-support")]
 mod timed_declarations;
 #[cfg(feature = "test-support")]
 mod timed_intervals;

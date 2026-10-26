@@ -52,6 +52,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Enum(_)
         | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
+        | DeclarationForm::DimensionEquivalence(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::Abstraction(_)
         | DeclarationForm::StateClause(_)
@@ -92,6 +93,20 @@ fn refusal(declarations: &str) -> (String, FormsCause, Option<Span>) {
     match build_unit(&parsed) {
         Err(refusal) => (text, refusal.cause, refusal.span),
         other => panic!("{declarations}: a refusal, not {other:?}"),
+    }
+}
+
+/// The first `len` bytes of a span.
+trait Prefix {
+    fn prefix(self, len: usize) -> Span;
+}
+
+impl Prefix for Span {
+    fn prefix(self, len: usize) -> Span {
+        Span {
+            start: self.start,
+            end: self.start + len,
+        }
     }
 }
 
@@ -230,6 +245,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Enum(_) => "enum",
             DeclarationForm::Union(_) => "union",
             DeclarationForm::Dimension(_) => "dimension",
+            DeclarationForm::DimensionEquivalence(_) => "dimension_equivalence",
             DeclarationForm::Unit(_) => "unit",
             DeclarationForm::Abstraction(_) => "abstraction",
             DeclarationForm::StateClause(_) => "state_clause",
@@ -1240,5 +1256,153 @@ fn malformed_literals_refuse_at_the_lexer() {
             (CompleteCode::InvalidSyntax, cause),
             "{body}"
         );
+    }
+}
+
+/// FR-091-AC-59 (TC-482): S2 builds a dimension-equivalence form with its
+/// two names and two ratio terms as written, each with its span, and refuses
+/// a malformed one `invalid_syntax` at the offending token.
+#[trace("FR-091-AC-59", "TC-482")]
+#[test]
+fn s2_builds_dimension_equivalence_forms_as_written() {
+    use qsl_forms::{DimensionEquivalenceForm, RatioNumberKind};
+    let only = |form: &DeclarationForm| -> DimensionEquivalenceForm {
+        match form {
+            DeclarationForm::DimensionEquivalence(equivalence) => (**equivalence).clone(),
+            other => panic!("a dimension-equivalence form: {other:?}"),
+        }
+    };
+    let (text, unit) = build("dimension Distance ~ Length by 1 dist = 1 km;");
+    let [form] = unit.forms() else {
+        panic!("one form");
+    };
+    let equivalence = only(form.form());
+    let names: Vec<_> = equivalence
+        .dimensions
+        .iter()
+        .map(|name| (name.name.as_str(), name.span))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("Distance", span_of(&text, "Distance")),
+            ("Length", span_of(&text, "Length"))
+        ]
+    );
+    let terms: Vec<_> = equivalence
+        .ratio
+        .iter()
+        .map(|term| {
+            (
+                term.number.kind,
+                term.number.first.clone(),
+                term.number.second.clone(),
+                term.number.span,
+                term.unit.name.as_str(),
+                term.unit.span,
+                term.span,
+            )
+        })
+        .collect();
+    assert_eq!(
+        terms,
+        [
+            (
+                RatioNumberKind::Integer,
+                Integer::one(),
+                Integer::one(),
+                span_of(&text, "1 dist =").prefix(1),
+                "dist",
+                span_of(&text, "dist"),
+                span_of(&text, "1 dist"),
+            ),
+            (
+                RatioNumberKind::Integer,
+                Integer::one(),
+                Integer::one(),
+                span_of(&text, "1 km;").prefix(1),
+                "km",
+                span_of(&text, "km"),
+                span_of(&text, "1 km"),
+            ),
+        ]
+    );
+    assert_eq!(
+        equivalence.span,
+        span_of(&text, "dimension Distance ~ Length by 1 dist = 1 km;")
+    );
+
+    let (text, unit) = build("dimension R::Time ~ F::Time by 1 R::s = rational(1, 1000) F::ms;");
+    let equivalence = only(unit.forms()[0].form());
+    assert_eq!(equivalence.dimensions[0].name, "R::Time");
+    assert_eq!(equivalence.dimensions[0].span, span_of(&text, "R::Time"));
+    assert_eq!(equivalence.dimensions[1].name, "F::Time");
+    assert_eq!(equivalence.ratio[0].unit.name, "R::s");
+    assert_eq!(equivalence.ratio[0].unit.span, span_of(&text, "R::s"));
+    assert_eq!(equivalence.ratio[1].unit.name, "F::ms");
+    assert_eq!(
+        (
+            equivalence.ratio[1].number.kind,
+            equivalence.ratio[1].number.first.clone(),
+            equivalence.ratio[1].number.second.clone()
+        ),
+        (
+            RatioNumberKind::Rational,
+            Integer::one(),
+            Integer::from(1000_i64)
+        )
+    );
+
+    let (_, unit) = build("dimension A ~ B by decimal(5, 1) u = 1 v;");
+    let number = &only(unit.forms()[0].form()).ratio[0].number;
+    assert_eq!(
+        (number.kind, number.first.clone(), number.second.clone()),
+        (
+            RatioNumberKind::Decimal,
+            Integer::from(5_i64),
+            Integer::one()
+        )
+    );
+
+    let (_, unit) = build(
+        "dimension R::Time ~ F::Time by 1 R::s = 1 F::s;\n\
+         dimension F::Time ~ R::Time by 1 F::s = 1 R::s;",
+    );
+    let firsts: Vec<_> = unit
+        .forms()
+        .iter()
+        .map(|form| only(form.form()).dimensions[0].name.clone())
+        .collect();
+    assert_eq!(firsts, ["R::Time", "F::Time"]);
+
+    for written in [
+        "dimension Length;",
+        "dimension Accel = Length * Time^-2 / Mass;",
+    ] {
+        let (_, unit) = build(written);
+        assert!(
+            matches!(unit.forms()[0].form(), DeclarationForm::Dimension(_)),
+            "{written}"
+        );
+    }
+
+    for (written, offending) in [
+        ("dimension R::Time;", ";"),
+        ("dimension A ~ B ~ C;", "~ C"),
+        ("dimension A ~;", ";"),
+        ("dimension A ~ B = C;", "= C"),
+        ("dimension A ~ B;", ";"),
+        ("dimension A ~ B by 1 u;", ";"),
+        ("dimension A ~ B by u = 1 v;", "u ="),
+        ("dimension A ~ B by 1 u = 1;", ";"),
+        ("dimension A ~ B by 1 u = 1 v w;", "w;"),
+    ] {
+        let (text, parsed) = parse(written);
+        assert!(!parsed.is_admissible(), "{written}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, Code::InvalidSyntax, "{written}");
+        let at = diagnostic.byte_span().expect("located").start;
+        assert_eq!(at, text.rfind(offending).expect("in the unit"), "{written}");
+        assert!(build_unit(&parsed).is_err(), "{written}");
     }
 }

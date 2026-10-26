@@ -596,6 +596,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             limit.actual(),
             limit.setting()
         ),
+        AssemblyCause::DimensionEquivalence { retained, .. } => {
+            format!(
+                "the dimension equivalence is not admissible at {}",
+                retained.join(", ")
+            )
+        }
         AssemblyCause::UnitGraphTopology { declarations, .. } => {
             format!(
                 "the unit graph is not admissible at {}",

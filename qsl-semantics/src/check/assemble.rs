@@ -30,10 +30,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
-    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind,
-    TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm, UrgentForm,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionEquivalenceForm, DimensionForm,
+    EnumForm, ExprNode, Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit,
+    PopulationBoundForm, RecordFieldForm, StateClauseForm, TerminalDeclarationForm,
+    TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm,
+    UrgentForm,
 };
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -69,7 +70,10 @@ use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
+mod equivalence;
 mod units;
+
+pub use equivalence::{DimensionEquivalence, EquivalenceClasses, EquivalenceFault};
 
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
@@ -298,6 +302,14 @@ pub enum AssemblyCause {
     /// [`AssemblyLimits::decimal_scale`] (`s3.decimal_scale`); `actual` is
     /// `u128::MAX` when the scale does not fit a `u64`.
     DecimalScaleLimit(LimitExceeded),
+    /// A dimension equivalence refused past name resolution (QSpec FR-142
+    /// "Dimension equivalence" steps 3 to 7), naming what it retains.
+    DimensionEquivalence {
+        /// Which step refused.
+        fault: EquivalenceFault,
+        /// The declarations, units, dimensions or values the step retains.
+        retained: Vec<String>,
+    },
     /// A unit-graph topology error, naming the declarations it concerns.
     UnitGraphTopology {
         /// Which check refused.
@@ -495,7 +507,7 @@ impl AssemblyCause {
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
             }
-            Self::QuantityCycle { .. } => Code::InvalidPackage,
+            Self::QuantityCycle { .. } | Self::DimensionEquivalence { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
@@ -583,6 +595,11 @@ impl AssemblyCause {
                 "duplicate-declaration"
             }
             Self::QuantityCycle { .. } => "definition-cycle",
+            Self::DimensionEquivalence { fault, .. } => match fault {
+                EquivalenceFault::Conflicting => "conflicting-definition",
+                EquivalenceFault::Incompatible => "incompatible-definition",
+                EquivalenceFault::InvalidValue => "invalid-value",
+            },
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
@@ -753,6 +770,7 @@ impl TimedDeclaration {
 struct Unit {
     aliases: Vec<AliasForm>,
     dimensions: Vec<DimensionForm>,
+    equivalences: Vec<DimensionEquivalenceForm>,
     units: Vec<UnitForm>,
     composites: Vec<Composite>,
     enums: Vec<EnumForm>,
@@ -808,6 +826,7 @@ impl Unit {
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
+            equivalences: Vec::new(),
             units: Vec::new(),
             composites: Vec::new(),
             enums: Vec::new(),
@@ -872,6 +891,9 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
+                DeclarationForm::DimensionEquivalence(equivalence) => {
+                    unit.equivalences.push(*equivalence)
+                }
                 DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
@@ -2993,6 +3015,18 @@ impl PackageDeclarations {
                 None
             }
         };
+        // The unit's dimension equivalences, over its own dimensions and
+        // units and those of its selected packages.
+        let equivalences = match &quantities {
+            Some(source) => {
+                equivalence::assemble(&unit.equivalences, Some(source), &admitted, &owner, limits)
+                    .unwrap_or_else(|found| {
+                        errors.extend(found);
+                        Vec::new()
+                    })
+            }
+            None => Vec::new(),
+        };
 
         // Every type form names declarations of the unit or admitted model
         // object and record/event types.
@@ -3593,6 +3627,12 @@ impl PackageDeclarations {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
         }
+        for equivalence in &equivalences {
+            package
+                .nominal_spans
+                .insert(equivalence.key, equivalence.span);
+        }
+        package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
