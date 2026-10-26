@@ -461,7 +461,8 @@ pub(super) fn fairness_set<'t>(
 /// protocol transition identities a graph or a loop holds, numbered by
 /// `identity`, each with the index of the member it comes from: a `whole`
 /// member is one constraint over its class, an `each` member one per class
-/// any of `transitions` is in, in class order (ADR-018 FA-1, PA-1).
+/// any of `transitions` is in, in class order (ADR-018 FA-1, PA-1). The
+/// visibility pairs of an `ra` member follow every other constraint (FR-339).
 ///
 /// # Errors
 ///
@@ -472,6 +473,7 @@ pub fn protocol_constraints<E>(
     identity: impl Fn(&ProtocolTransition) -> Result<Identity, E>,
 ) -> Result<Vec<(usize, Constraint)>, E> {
     let mut constraints = Vec::new();
+    let mut visibility = Vec::new();
     for (index, member) in fairness.iter().enumerate() {
         if matches!(
             member.target(),
@@ -492,7 +494,7 @@ pub fn protocol_constraints<E>(
                     fresh: read.fresh.then_some(identity).into_iter().collect(),
                 });
             }
-            constraints.extend(
+            visibility.extend(
                 visibility_constraints(pairs)
                     .into_iter()
                     .map(|constraint| (index, constraint)),
@@ -516,6 +518,8 @@ pub fn protocol_constraints<E>(
             constraints.push((index, Constraint::new(strength, members)));
         }
     }
+    // FR-339 "Protocol subjects": the visibility pairs come last.
+    constraints.extend(visibility);
     Ok(constraints)
 }
 

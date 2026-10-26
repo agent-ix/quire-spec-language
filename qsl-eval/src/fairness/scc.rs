@@ -124,7 +124,7 @@ pub fn components(
 
 /// Whether `edge` is in the subgraph that leaves out every edge taking one
 /// of `removed` (a visibility refinement's load edges, ADR-025 MF-2).
-pub(crate) fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
+pub fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
     match edge.label {
         EdgeLabel::Transition(identity) => !removed.contains(&identity),
         EdgeLabel::Stutter => true,

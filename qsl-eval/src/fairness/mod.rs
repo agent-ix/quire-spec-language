@@ -34,4 +34,4 @@ pub use error::FairnessError;
 pub use graph::{Edge, EdgeLabel, Graph, Identity, Vertex};
 pub use lasso::{check_loop, LassoFairness, LoopStep};
 pub use refine::{analyze, Analysis, Outcome};
-pub use scc::{components, Component};
+pub use scc::{components, is_live, Component};

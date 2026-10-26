@@ -4,6 +4,7 @@
 mod analyze;
 mod bounded_closure;
 mod closure_certificate;
+mod component_certificate;
 mod counter;
 mod deadlock_item;
 mod exact_probabilistic;

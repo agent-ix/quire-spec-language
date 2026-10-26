@@ -12,9 +12,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    check_protocol, LivenessRefusal, ModelCheckRefusal, ProtocolCheckRequest,
-};
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::fairness::{check_loop, EdgeLabel, Identity, LassoFairness, LoopStep};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
@@ -31,8 +29,8 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     compile_package, replay_protocol_trace, CounterexampleKind, DependencyInput, Lasso,
     MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject, ProtocolTraceSubject,
-    ReplayLimits, ReplayRefusal, TemporalCounterexample,
+    ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject, ProofCertificate,
+    ProtocolTraceSubject, ReplayLimits, ReplayRefusal, TemporalCounterexample,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
@@ -451,8 +449,8 @@ fn unfair_member<'f>(
 /// throughout meets every scheduler constraint, since `w` has no enabled
 /// step and `r` steps on every edge, and is rejected by the fairness set only
 /// under `flush(w)`'s constraint. Not covered: the AC's `proved` verdict,
-/// which waits on FR-339's component certificate, and its `refuted` verdict
-/// with the memory constraints ignored, which the engine has no switch for.
+/// which is FR-339-AC-7's, and its `refuted` verdict with the memory
+/// constraints ignored, which the engine has no switch for.
 #[trace("TC-673")]
 #[test]
 fn the_unflushed_lasso_is_unfair_only_under_the_flush_constraint() {
@@ -495,20 +493,19 @@ fn the_unflushed_lasso_is_unfair_only_under_the_flush_constraint() {
 
 /// ADR-025 MF-1 (TC-673), the engine half: with flush fairness in the set,
 /// EN-1 over `Spin` finds no fair counterexample to `eventually
-/// holds(k.r1 = 1)`: it explores the product and, having no component
-/// certificate to return, refuses `ComponentCertificateNotBuilt`. Not
-/// covered: `proved` itself, which waits on FR-339's component certificate.
+/// holds(k.r1 = 1)`: it explores the product and holds with a component
+/// certificate. Not covered: the certificate's check, which is the core's.
 #[trace("TC-673")]
 #[test]
 fn eventually_the_load_reads_the_flushed_store() {
     let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
-    let refusal = unit
-        .check(&unit.tso(), None)
-        .expect_err("the proof waits on FR-339");
-    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
-        refusal
+    let outcome = unit.check(&unit.tso(), None).expect("the subject checks");
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Component(_),
+        stats,
+    } = outcome
     else {
-        panic!("{refusal:?}");
+        panic!("{outcome:?}");
     };
     assert!(stats.product_states > 0, "{stats:?}");
 }
@@ -750,13 +747,16 @@ fn a_liveness_run_that_cut_a_store_settles_inconclusive() {
         }
     );
     assert!(states > 0);
-    let refusal = unit.check(&unit.tso(), None).expect_err("no bound reached");
+    let outcome = unit.check(&unit.tso(), None).expect("no bound reached");
     assert!(
         matches!(
-            refusal,
-            ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { .. })
+            outcome,
+            ModelCheckOutcome::Holds {
+                certificate: ProofCertificate::Component(_),
+                ..
+            }
         ),
-        "{refusal:?}"
+        "{outcome:?}"
     );
 }
 

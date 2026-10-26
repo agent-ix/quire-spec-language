@@ -317,6 +317,7 @@ fn certificate(outcome: &ModelCheckOutcome) -> ClosureCertificate {
 fn closure_proof(certificate: &ProofCertificate) -> &ClosureCertificate {
     match certificate {
         ProofCertificate::Closure(closure) => closure,
+        ProofCertificate::Component(_) => panic!("expected a closure certificate"),
     }
 }
 
