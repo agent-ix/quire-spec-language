@@ -14,7 +14,7 @@ use super::{Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{BindingValue, BodyTerm, GroupTerm, LeafTerm, MemberTerm, NodeTag};
 use crate::check::refusal::CheckRefusal;
-use crate::check::{CheckedTerminalPredicate, TerminalDeclaration};
+use crate::check::{CheckedTerminalPredicate, TerminalDeclaration, TerminalMode};
 
 /// One place in a `terminal` declaration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,12 +67,12 @@ impl Lowering<'_> {
                 let (parameters, condition) =
                     self.terminal_predicate(input.index, object, predicate)?;
                 (
-                    "when",
+                    TerminalMode::When.wire(),
                     parameters,
                     BindingValue::Leaf(LeafTerm::reference(condition)),
                 )
             }
-            TerminalDeclaration::Any => ("any", empty_group(), empty_group()),
+            TerminalDeclaration::Any => (TerminalMode::Any.wire(), empty_group(), empty_group()),
             TerminalDeclaration::None => {
                 return Err(super::fault(
                     &claim_at,
