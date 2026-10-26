@@ -205,7 +205,7 @@ pub use model_check::replay::{
 };
 pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,
-    ResultLabel, Truth, EXPLICIT_STATE,
+    ResultLabel, Truth, EXPLICIT_STATE, K_INDUCTION,
 };
 pub use model_check::smt_query::{
     encode_smt_query, Refusal, SmtEncodingLimits, SmtEncodingRefusal, SmtQueryKind,
