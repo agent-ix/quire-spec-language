@@ -57,3 +57,11 @@ not contain (FND-003).
 | FND-001 | medium | FR-230-AC-7 requires each refusal to retain "its owning declaration", which FR-230 defines as the model for a `time invariant` or `urgent` declaration. The test tagged FR-230-AC-7 asserts the declaration names `Deadline` and `Eager`, so the tag claims an AC the code does not meet. | qsl-semantics/tests/it/timed_declarations.rs:700-740; spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:559-564 |
 | FND-002 | medium | FR-231-AC-2's last clause ("under event-position false-extension the execution closes at position 2") is tagged on a test that chooses the closed reading itself (`idle_tail = false`, `Finite { len: 3 }`). No code maps the unit's temporal profile to that reading, so the profile half of the AC is unbacked. | qsl-eval/tests/it/timed_subject.rs:588-655 |
 | FND-003 | medium | FR-230-AC-8 has no FR-230-AC-8 tag, and the deferral routes it to STD-493 item 9 ("definition_selections for a unit with clocks"). AC-8's text never mentions `definition_selections`. It asks for E3 resolution (FR-110-AC-13, already tagged and tested), for S3 admission under the selected layer (already exercised by the AC-1..AC-5 tests, which select `quire.temporal.complete/v1`), and for AC-7's refusals without it (built in this PR). AC-8 can be built and tagged now. | qsl-semantics/tests/it/timed_model.rs:205; qsl-replay/src/spine/clause/tests/layers.rs:170 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The AC-7 test asserts the model `Config` as the owner of the `time invariant` and `urgent` refusals (commit f67887da9). |
+| FND-002 | fixed | The FR-231-AC-2 event-position half now derives the closed reading from the clause's profile through `TimedBehaviour::clause_reading`. |
+| FND-003 | fixed | `a_unit_selecting_the_timed_facet_passes_the_gate` is tagged FR-230-AC-8. It checks that the selected unit gets no `unsupported_construct`/`declaration-form` refusal, and its doc comment points to FR-110-AC-13's E3 test and the AC-1..AC-5 tests for the other parts. |
