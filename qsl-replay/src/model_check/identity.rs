@@ -17,11 +17,11 @@ use std::collections::BTreeMap;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{
-    emit_checked_with_cancel, read_import_view, resolve_clause_root, AdmittedPackages,
-    CheckedPackage, ClauseRootUnresolved, EmitRefusal, V2ReadLimits,
+    emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_state_graph_root,
+    AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal, V2ReadLimits,
 };
-use qsl_semantics::check::{CheckedTemporalClause, TemporalClauseNode};
-use qsl_semantics::library::LibraryName;
+use qsl_semantics::check::{CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode};
+use qsl_semantics::library::{LibraryName, PackageId};
 use quire_exact::{Cancel, CancelCause};
 
 /// The `claim` occurrence of a checked clause `node`: its node id and claim
@@ -79,27 +79,91 @@ impl ClauseIdentity {
                 name: clause.name().to_owned(),
             })?;
         let triple = node_occurrence(node);
-        let emission =
-            emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
-                EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
-                other => ClauseRootRefusal::Package(other.to_string()),
-            })?;
-        let library = LibraryName::new("package")
-            .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
-        let mut admitted = AdmittedPackages::default();
-        read_import_view(
-            package,
-            &emission,
-            library,
-            domain_packages,
-            &mut admitted,
-            V2ReadLimits::default(),
-        )
-        .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
+        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
         let read = admitted
-            .package(&emission.package().package_id())
+            .package(&package_id)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
         let root = resolve_clause_root(read, &triple)?;
+        Ok(Self {
+            occurrence: root.occurrence().clone(),
+            over: root.over(),
+        })
+    }
+}
+
+/// `package` emitted under `cancel` and read back through the I2 reader,
+/// with the emitted `package_id` the read recorded it at.
+fn read_back(
+    package: &CheckedPackage,
+    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    cancel: &Cancel,
+) -> Result<(AdmittedPackages, PackageId), ClauseRootRefusal> {
+    let emission = emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
+        EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
+        other => ClauseRootRefusal::Package(other.to_string()),
+    })?;
+    let library = LibraryName::new("package")
+        .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
+    let mut admitted = AdmittedPackages::default();
+    read_import_view(
+        package,
+        &emission,
+        library,
+        domain_packages,
+        &mut admitted,
+        V2ReadLimits::default(),
+    )
+    .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
+    Ok((admitted, emission.package().package_id()))
+}
+
+/// A state-graph claim's identity in its package: the checked occurrence and
+/// the node of its `over` parameter, `None` for a claim with no `over`
+/// (FR-410 "Behavior").
+///
+/// Only [`StateGraphIdentity::resolve`] makes one: a request cannot name it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateGraphIdentity {
+    occurrence: OccurrenceKey,
+    over: Option<WireNodeId>,
+}
+
+impl StateGraphIdentity {
+    /// The claim's O-07 occurrence: node, role and ordinal.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The `over` parameter's checked node.
+    pub fn over(&self) -> Option<WireNodeId> {
+        self.over
+    }
+
+    /// The identity of `claim` in `package`, read from the package's emitted
+    /// `quire.checked-package/v2` bytes through the I2 state-graph lookup.
+    ///
+    /// # Errors
+    ///
+    /// [`ClauseRootRefusal`] when `claim` carries no occurrence, the package
+    /// does not emit or read back, or the lookup does not find the claim's
+    /// triple; or `cancel` stopped the emission.
+    pub fn resolve(
+        package: &CheckedPackage,
+        domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        claim: &CheckedStateGraphClaim,
+        cancel: &Cancel,
+    ) -> Result<Self, ClauseRootRefusal> {
+        let triple = claim
+            .occurrence()
+            .ok_or_else(|| ClauseRootRefusal::Undeclared {
+                name: claim.name().to_owned(),
+            })?;
+        let (admitted, package_id) = read_back(package, domain_packages, cancel)?;
+        let read = admitted
+            .package(&package_id)
+            .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
+        let root = resolve_state_graph_root(read, triple)
+            .map_err(|fault| ClauseRootRefusal::Package(format!("{fault:?}")))??;
         Ok(Self {
             occurrence: root.occurrence().clone(),
             over: root.over(),

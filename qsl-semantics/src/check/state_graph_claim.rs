@@ -16,10 +16,10 @@
 //! - records the claim's form ([`StateGraphForm`]) beside its requirement
 //!   record ([`StateGraphClaim::requirements`]).
 //!
-//! The checked claim is retained on the [`CheckedGraph`](super::CheckedGraph);
-//! no S4 emission writes a state-graph claim node yet, so the claim has no
-//! node identity and its requirement record is keyed by a node the caller
-//! supplies.
+//! The checked claim is retained on the [`CheckedGraph`](super::CheckedGraph)
+//! with its `claim` occurrence (FR-410): S4 writes it as one
+//! `claim`/`state_graph` node (`lowering::state_graph`), and its requirement
+//! record is keyed by that node.
 
 use std::collections::BTreeMap;
 
@@ -31,6 +31,7 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, ValueType};
 use quire_semantic_value::location::{Location, Origin};
@@ -46,6 +47,9 @@ use crate::family::{CheckContext, CheckOutcome, ClaimExtent, FamilyContract, Req
 /// `over` type resolved to an object type of an admitted domain package.
 #[derive(Clone, Debug)]
 pub struct StateGraphDeclaration {
+    /// The claim's index among the unit's state-graph claims: the site its
+    /// nodes are located at.
+    pub index: usize,
     /// The claim as S2 built it.
     pub form: StateGraphClaimForm,
     /// The profile selection the claim's `using` alias resolved to.
@@ -77,6 +81,8 @@ pub struct CheckedPredicateBody {
     parameters: Vec<(String, ValueType)>,
     body: CheckedBody,
     slots: usize,
+    slot_names: Vec<String>,
+    formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 impl CheckedPredicateBody {
@@ -93,6 +99,16 @@ impl CheckedPredicateBody {
     /// The number of evaluation slots of the body.
     pub fn slots(&self) -> usize {
         self.slots
+    }
+
+    /// The name each slot of the body was bound under.
+    pub(crate) fn slot_names(&self) -> &[String] {
+        &self.slot_names
+    }
+
+    /// Hand the compound units typing formed to lowering, which keys them.
+    pub(crate) fn take_formed_units(&mut self) -> quire_semantic_value::quantity::UnitTable {
+        std::mem::take(&mut self.formed_units)
     }
 }
 
@@ -130,6 +146,22 @@ impl CheckedStatePredicate {
         match self {
             Self::ConstantTrue => None,
             Self::Checked(checked) => Some(checked.body()),
+        }
+    }
+
+    /// The written predicate's checked body with its slot names, or `None`
+    /// for the constant `true`.
+    pub(crate) fn written(&self) -> Option<&CheckedPredicateBody> {
+        match self {
+            Self::ConstantTrue => None,
+            Self::Checked(checked) => Some(checked),
+        }
+    }
+
+    fn written_mut(&mut self) -> Option<&mut CheckedPredicateBody> {
+        match self {
+            Self::ConstantTrue => None,
+            Self::Checked(checked) => Some(checked),
         }
     }
 }
@@ -206,6 +238,9 @@ pub struct CheckedStateGraphClaim {
     over: Option<OverParameter>,
     form: StateGraphForm,
     claim: StateGraphClaim,
+    /// The `claim` occurrence of the claim's node, set when a package is
+    /// assembled (FR-410 "Outputs").
+    occurrence: Option<OccurrenceKey>,
     /// The package's running expression-node total after this claim.
     pub(crate) nodes_used: u64,
 }
@@ -235,6 +270,87 @@ impl CheckedStateGraphClaim {
     /// The claim's requirement, to key by the claim's checked node.
     pub fn claim(&self) -> &StateGraphClaim {
         &self.claim
+    }
+
+    /// The `claim` occurrence `[node, "claim", ordinal]` (ADR-013 O-07) of
+    /// the claim's `claim`/`state_graph` node (FR-410 "Outputs"): `None` for
+    /// a claim checked outside an assembled package.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
+    }
+
+    /// The same claim, assembled into a package at `occurrence`.
+    pub(crate) fn assembled_at(mut self, occurrence: OccurrenceKey) -> Self {
+        self.occurrence = Some(occurrence);
+        self
+    }
+
+    /// The predicates in the order `from`, `target`: the predicates the node
+    /// references, each with the site it is located at.
+    pub(crate) fn node_predicates(
+        &self,
+    ) -> (Option<&CheckedStatePredicate>, &CheckedStatePredicate) {
+        match &self.form {
+            StateGraphForm::Possible { target } => (None, target),
+            StateGraphForm::AlwaysPossible { from, target } => (Some(from), target),
+            StateGraphForm::UniquePath { from, to } => (Some(from), to),
+        }
+    }
+
+    /// Hand the compound units typing formed to lowering, which keys them.
+    pub(crate) fn take_formed_units(&mut self) -> Vec<quire_semantic_value::quantity::UnitTable> {
+        let predicates: Vec<&mut CheckedStatePredicate> = match &mut self.form {
+            StateGraphForm::Possible { target } => vec![target],
+            StateGraphForm::AlwaysPossible { from, target } => vec![from, target],
+            StateGraphForm::UniquePath { from, to } => vec![from, to],
+        };
+        predicates
+            .into_iter()
+            .filter_map(CheckedStatePredicate::written_mut)
+            .map(CheckedPredicateBody::take_formed_units)
+            .collect()
+    }
+}
+
+/// The nodes a state-graph claim's lowering locates occurrences at: the
+/// claim's declared name, its `over` parameter and its two predicates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Site {
+    /// The claim's declared name: its `claim` occurrence.
+    Claim,
+    /// The `over` parameter.
+    Over,
+    /// The `from` predicate (`unique path`'s `X`).
+    From,
+    /// The `target` predicate (`unique path`'s `Y`).
+    Target,
+}
+
+/// The `Origin::TypeDeclaration` name of `site` of the state-graph claim at
+/// `claim`. Spaced, so it names no declared type.
+pub(crate) fn state_graph_site(claim: usize, site: Site) -> String {
+    match site {
+        Site::Claim => format!("state graph {claim}"),
+        Site::Over => format!("state graph {claim} over"),
+        Site::From => format!("state graph {claim} from"),
+        Site::Target => format!("state graph {claim} target"),
+    }
+}
+
+/// The root location of `site` of the state-graph claim at `claim`.
+pub(crate) fn state_graph_location(claim: usize, site: Site) -> Location {
+    Location::root(Origin::TypeDeclaration {
+        name: state_graph_site(claim, site),
+    })
+}
+
+impl PredicateRole {
+    /// The site the predicate of this role is located at.
+    pub(crate) fn site(self) -> Site {
+        match self {
+            Self::From => Site::From,
+            Self::Target | Self::To => Site::Target,
+        }
     }
 }
 
@@ -270,16 +386,6 @@ fn refusal(cause: StateGraphCause) -> CheckRefusal {
         location: Location::root(Origin::Expression),
         cause: CheckCause::StateGraph(Box::new(cause)),
     }
-}
-
-/// The refusal for a claim that checks but that no S4 emission writes yet
-/// (FR-165): refused rather than compiled and silently missing from the
-/// package.
-pub(crate) fn not_emitted(checked: &CheckedStateGraphClaim) -> CheckRefusal {
-    refusal(StateGraphCause::NotEmitted {
-        name: checked.name.clone(),
-        span: checked.span,
-    })
 }
 
 /// The predicates of a claim form, each with its role, in source order.
@@ -495,13 +601,14 @@ fn check_predicate<'a>(
     let body: &Expression = &operand.expression;
     // Each predicate continues from the nodes the claim's earlier ones used,
     // so the node limit applies to the claim's cumulative total.
+    let location = state_graph_location(declaration.index, role.site());
     let declarations = &ClauseDeclarations {
         scope: declarations.scope,
         signatures: declarations.signatures,
         dispatch_tables: declarations.dispatch_tables,
         models: declarations.models,
         checking_limits: declarations.checking_limits,
-        location: declarations.location,
+        location: &location,
         nodes_used,
         cancel: declarations.cancel,
         staged: declarations.staged,
@@ -524,6 +631,8 @@ fn check_predicate<'a>(
             parameters: typed.parameters,
             body: typed.body,
             slots: typed.slots,
+            slot_names: typed.slot_names,
+            formed_units: typed.formed_units,
         }),
         typed.nodes_used,
     ))
@@ -580,6 +689,7 @@ fn check_claim<'a>(
         claim: StateGraphClaim {
             kind: Capability::TemporalSatisfaction,
         },
+        occurrence: None,
         nodes_used,
     })
 }

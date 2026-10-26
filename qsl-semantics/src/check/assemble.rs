@@ -3675,6 +3675,25 @@ impl PackageDeclarations {
             declared_type_spans.insert(hybrid_site(HybridSite::Claim(claim)), form.name.span);
             declared_type_spans.insert(hybrid_site(HybridSite::Over(claim)), form.over.name.span);
         }
+        // FR-410: a state-graph claim's nodes are located at its declared
+        // name, its `over` parameter's name and each predicate's expression
+        // tree; the constant `true` an omitted `from` stands for is located
+        // at the claim.
+        for (index, declaration) in package.state_graph_claims.iter().enumerate() {
+            use super::state_graph_claim::{state_graph_site, Site};
+            let form = &declaration.form;
+            declared_type_spans.insert(state_graph_site(index, Site::Claim), form.name.span);
+            if let Some(over) = &form.over {
+                declared_type_spans.insert(state_graph_site(index, Site::Over), over.name.span);
+            }
+            declared_type_spans.insert(state_graph_site(index, Site::From), form.span);
+            for (role, predicate) in super::state_graph_claim::predicates(&form.kind) {
+                if let Some(operand) = predicate.operands.first() {
+                    declared_site_spans
+                        .insert(state_graph_site(index, role.site()), operand.spans.clone());
+                }
+            }
+        }
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
         declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
@@ -4124,6 +4143,7 @@ fn state_graph_claims(
             continue;
         };
         claims.push(StateGraphDeclaration {
+            index: claims.len(),
             form,
             selection,
             context,
