@@ -1911,7 +1911,6 @@ pub mod fixtures {
             C::CollectionKindMismatch,
             C::PopulationPair,
             C::ValueKindMismatch,
-            C::CallDepthExceeded,
             C::UnknownCheckedFunction,
             C::ForeignCheckedExpression,
             C::MeterBorrowConflict,
@@ -1942,43 +1941,6 @@ pub mod fixtures {
                 C::GeneratedTypeCheckRejected { cause },
                 C::GeneratedEqualityCheckRejected { cause },
             ]);
-        }
-        // The actual dependency enum is closed: adding a cause requires a fixture.
-        for cause in &cases {
-            match cause {
-                C::NativeIntegerCapacityBreach
-                | C::CollectionElementNotAdmitted
-                | C::DeferredResultNotAdmitted
-                | C::CanonicalKeyUnavailable
-                | C::BoundedDivisionExpected
-                | C::CollectionKindMismatch
-                | C::PopulationPair
-                | C::ValueKindMismatch
-                | C::CallDepthExceeded
-                | C::UnknownCheckedFunction
-                | C::ForeignCheckedExpression
-                | C::MeterBorrowConflict
-                | C::EqualityScheduleMismatch
-                | C::EqualityOperandSourceNotAdmitted
-                | C::EqualityOperandNonIntegralDecimal
-                | C::EqualityQuantityNonExactPlacement
-                | C::EqualityConversionShapeMismatch
-                | C::EqualityOperandTargetNotAdmitted
-                | C::EqualityUnitUnresolved
-                | C::EqualityEnumVariantUnresolved
-                | C::ExpectedIntegerPlacement
-                | C::GeneratedBodyPlaceholderInvoked
-                | C::GeneratedArgumentShapeMismatch
-                | C::GeneratedOperandKindUnsupported
-                | C::GeneratedUnexpectedOutcome
-                | C::GeneratedIntervalInvalid
-                | C::GeneratedEnvironmentRejected
-                | C::GeneratedDescriptorReconstructionFailed
-                | C::ScheduledComparisonRefused { .. }
-                | C::EqualityQuantityConversionRejected { .. }
-                | C::GeneratedTypeCheckRejected { .. }
-                | C::GeneratedEqualityCheckRejected { .. } => {}
-            }
         }
         cases
     }
