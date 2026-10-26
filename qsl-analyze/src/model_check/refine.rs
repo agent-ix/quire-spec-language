@@ -463,6 +463,7 @@ impl Run<'_, '_> {
             let step = transition.clone().map(|transition| ModelStep {
                 transition,
                 post_state: digest,
+                delay: None,
             });
             let initial_index = self.nodes[at].initial_index;
             let (position, taken) = self.judge(verdict, Some(at), step.clone(), initial_index)?;
@@ -629,6 +630,7 @@ impl Run<'_, '_> {
             lasso: None,
             refinement: Some(failure.failure),
             blocked: Vec::new(),
+            final_delay: None,
         }
     }
 }
@@ -877,6 +879,7 @@ impl Run<'_, '_> {
                     prefix.push(ModelStep {
                         transition,
                         post_state,
+                        delay: None,
                     });
                 }
                 None => stutters += 1,
@@ -915,6 +918,7 @@ impl Run<'_, '_> {
                 }),
                 refinement: Some(failure),
                 blocked: Vec::new(),
+                final_delay: None,
             }),
             stats: self.stats(),
         })
