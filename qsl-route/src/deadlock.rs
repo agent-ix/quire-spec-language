@@ -10,6 +10,9 @@
 //! identity is the subject and the fixed kind `deadlock-freedom`, so it is
 //! never an authored claim's identity over the same subject.
 //!
+//! A timed subject (FR-232, ADR-026 TD-2) also gets one time-lock-freedom
+//! item from [`time_lock_freedom_items`], with no opt-out.
+//!
 //! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
 //! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
 //! subject, unless its protocol clause declares `terminal any`.
@@ -73,6 +76,9 @@ pub enum ObligationKind {
     /// The derived deadlock-freedom item: the fixed kind
     /// `deadlock-freedom`.
     DeadlockFreedom,
+    /// The derived time-lock-freedom item (FR-232): the fixed kind
+    /// `time-lock-freedom`.
+    TimeLockFreedom,
     /// The derived race-freedom item (FR-224, ADR-025 DR-4): the fixed kind
     /// `race-freedom`, over the subject's resolved models, which are part of
     /// its identity (ADR-013 O-09).
@@ -285,6 +291,78 @@ pub fn race_freedom_items<S: Clone + Eq>(
             subject: item.subject.clone(),
             models: item.models.to_vec(),
         });
+    }
+    derived
+}
+
+/// FR-232 (ADR-026 TD-2): one derived time-lock-freedom item, over a timed
+/// subject. It is requested, routed and negotiated as an unbounded temporal
+/// item, like the deadlock-freedom item, and settled by FR-235.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeLockFreedomItem<S> {
+    subject: S,
+}
+
+impl<S: Clone> TimeLockFreedomItem<S> {
+    /// The subject the item is over.
+    pub fn subject(&self) -> &S {
+        &self.subject
+    }
+
+    /// The item's obligation identity: the subject and `time-lock-freedom`.
+    pub fn obligation(&self) -> ItemObligation<S> {
+        ItemObligation {
+            subject: self.subject.clone(),
+            kind: ObligationKind::TimeLockFreedom,
+        }
+    }
+
+    /// The requested capability kind: `temporal-satisfaction`.
+    pub fn kind(&self) -> Capability {
+        Capability::TemporalSatisfaction
+    }
+
+    /// The extent classification: unbounded.
+    pub fn extent(&self) -> ExtentClassification {
+        ExtentClassification::Unbounded {
+            finite_bound_available: false,
+        }
+    }
+}
+
+/// Whether a subject over the models `models` of `package` is timed: one of
+/// them has a `time` member (ADR-026 TS-1). Another model of the package
+/// being timed does not make it so.
+fn is_timed(package: &CheckedGraph, models: &[String]) -> bool {
+    package
+        .time_sources()
+        .iter()
+        .any(|source| models.iter().any(|model| *model == source.model))
+}
+
+/// FR-232: the time-lock-freedom items of a request's temporal and
+/// state-graph items over model subjects: one per distinct timed subject,
+/// in temporal-item then state-graph-item order. `models_of` gives the
+/// model aliases a subject ranges over. There is no opt-out: a `terminal`
+/// member does not remove it.
+pub fn time_lock_freedom_items<S: Clone + Eq>(
+    temporal: &[ModelTemporalItem<'_, S>],
+    state_graph: &[ModelStateGraphItem<'_, S>],
+    models_of: impl Fn(&S) -> Vec<String>,
+) -> Vec<TimeLockFreedomItem<S>> {
+    let subjects = temporal
+        .iter()
+        .map(|item| (item.subject, item.package))
+        .chain(state_graph.iter().map(|item| (item.subject, item.package)));
+    let mut derived: Vec<TimeLockFreedomItem<S>> = Vec::new();
+    for (subject, package) in subjects {
+        if is_timed(package, &models_of(subject))
+            && derived.iter().all(|seen| seen.subject != *subject)
+        {
+            derived.push(TimeLockFreedomItem {
+                subject: subject.clone(),
+            });
+        }
     }
     derived
 }
