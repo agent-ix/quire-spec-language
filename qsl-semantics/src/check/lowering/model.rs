@@ -644,6 +644,24 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// The object type a `terminal` declaration's model node names (FR-411):
+    /// the one object type the package's populations range over (FR-124),
+    /// else its least object type by declaration key, so that a model with
+    /// no population still names a model node. QSpec FR-476 does not say
+    /// which model node a `terminal any` over several object types names;
+    /// the least is the current choice until STD-492 settles it.
+    pub(crate) fn terminal_object(&self) -> Option<EffectiveId> {
+        let populated = self.population_objects();
+        let mut populated = populated.iter();
+        match (populated.next(), populated.next()) {
+            (Some(only), None) => Some(*only),
+            _ => self
+                .object_types()
+                .min_by(|(left, _), (right, _)| left.cmp(right))
+                .map(|(_, id)| id),
+        }
+    }
+
     /// The declaring object type's effective identity and operation name for
     /// one admitted FCD operation member.
     pub(crate) fn operation_anchor_declaration(
@@ -868,6 +886,47 @@ impl AdmittedModel {
         self.population_domains()
             .map(|(_, _, canonical)| canonical)
             .collect()
+    }
+
+    /// FR-230 "Clock fields and the domain package": every field typed
+    /// `ix://quire/native/Clock` of an object type of this package, with its
+    /// owner's effective identity and its member name, in ascending
+    /// declaration-key order.
+    pub(crate) fn clock_fields(&self) -> Vec<(EffectiveId, &DeclarationKey, &str)> {
+        self.records
+            .values()
+            .filter_map(|record| {
+                let DomainPackageRecord::FieldMember(field) = record else {
+                    return None;
+                };
+                if !matches!(
+                    field.value_type,
+                    crate::model::domain_package::ValueTypeRef::Clock
+                ) {
+                    return None;
+                }
+                let owner = self.object_type_id(&field.owner)?;
+                let name =
+                    crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+                Some((owner, &field.key, name))
+            })
+            .collect()
+    }
+
+    /// The clock field `name` an object of type `object` holds: one declared
+    /// on `object` itself or on one of its ancestors.
+    pub(crate) fn clock_field(&self, object: EffectiveId, name: &str) -> Option<&DeclarationKey> {
+        let specific = self.types.get(&object)?;
+        self.clock_fields()
+            .into_iter()
+            .find(|(owner, _, field)| {
+                *field == name
+                    && self
+                        .types
+                        .get(owner)
+                        .is_some_and(|general| self.reaches_owner(specific, general))
+            })
+            .map(|(_, key, _)| key)
     }
 
     /// The key of every declaration record of the package, of any kind.

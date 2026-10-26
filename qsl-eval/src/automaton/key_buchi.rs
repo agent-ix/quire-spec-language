@@ -146,6 +146,11 @@ impl BuchiStates {
         })
     }
 
+    /// The maximum canonical state-key byte length for this context.
+    pub fn max_key_bytes(&self) -> u64 {
+        self.max_bytes
+    }
+
     /// The canonical key of `state`.
     ///
     /// # Errors
@@ -209,6 +214,7 @@ impl BuchiStates {
             shape: &self.shape,
             max_bytes: self.max_bytes,
             subject: self.subject,
+            boolean_obligations: true,
         };
         match tag {
             "buchi" if self.form == BuchiForm::Origin => {

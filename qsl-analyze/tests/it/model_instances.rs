@@ -271,7 +271,6 @@ impl World {
             "temporal C using t0 over (x: M::{over}) clock \"model-steps\" on origin {{ always holds(true) }}\n"
         );
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         let [node] = graph.temporal_clauses() else {
@@ -697,7 +696,6 @@ impl World {
             "temporal C using t0 over (x: {over}) clock \"model-steps\" {activation} {{ {formula} }}\n"
         );
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         CheckedPackage::link(graph)
@@ -1217,7 +1215,6 @@ fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
         );
         CheckedPackage::link(
             declarations_with_model_profile(PACKAGE, &world.document, &body)
-                .with_unwritten_terminals()
                 .check(CheckingLimits::default())
                 .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
         )
@@ -1306,7 +1303,6 @@ impl World {
         );
         CheckedPackage::link(
             declarations_with_model_profile(PACKAGE, &self.document, &body)
-                .with_unwritten_terminals()
                 .check(CheckingLimits::default())
                 .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
         )

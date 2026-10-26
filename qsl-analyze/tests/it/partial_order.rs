@@ -927,8 +927,7 @@ fn vector(
             else {
                 panic!("expected a violation, got {outcome:?}");
             };
-            // FR-128 refuses an authored undefined evaluation; its prefix
-            // re-executes on the subject instead.
+            // An undefined evaluation's prefix re-executes on the subject.
             if matches!(
                 counterexample.kind,
                 CounterexampleKind::UndefinedEvaluation(_)

@@ -404,6 +404,9 @@ pub struct ModelSystem<'a> {
     types: &'a TypeEnvironment,
     operations: &'a qsl_semantics::model::operation::OperationTable,
     package: &'a CheckedPackage,
+    /// FR-411: the package's `terminal` declarations, read from its emitted
+    /// `temporal`/`terminal` nodes.
+    terminals: Vec<qsl_package::PackageTerminal<'a>>,
     model: StateModel,
     universes: BTreeMap<DeclarationKey, Vec<String>>,
     initial: Vec<ModelSimState>,
@@ -600,6 +603,8 @@ impl<'a> ModelSystem<'a> {
             types,
             operations: graph.scope().operations(),
             package: request.package,
+            terminals: qsl_package::resolve_terminals(request.package)
+                .map_err(|_| fault("terminal-nodes-resolve"))?,
             clauses: Self::clauses_of(request.package)?,
             model,
             universes,

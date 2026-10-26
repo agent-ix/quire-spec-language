@@ -1,0 +1,390 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-230: S3 checks a timed model's clocks, guards, resets, time
+//! invariants and urgency. The fixture is ADR-026 §11's `Rpc` call, as a
+//! domain package object type `Call` whose clocks are package fields typed
+//! `ix://quire/native/Clock`, with the guards and resets written as the
+//! unit's own state clauses.
+
+use ix_trace_rs::trace;
+use qsl_foundation::diagnostic::Code;
+use qsl_semantics::check::{
+    CheckCause, CheckRefusal, CheckedGraph, ClockOp, TemporalCause, TimeSourceKind, TimedModel,
+};
+use qsl_semantics::model::intake::meaning;
+use quire_exact::{Integer, Rational};
+use serde_json::{json, Value};
+
+use crate::model_operations::{
+    admit_and_assemble_with_profiles, config_unit_with_profiles, operation,
+    version_number_value_type, wire_construct, wire_envelope, wire_field, wire_type,
+};
+
+const PACKAGE: &str = "example/config-version";
+const TEMPORAL: &str = "profile t = \"quire.temporal.complete/v1\";\n";
+const UNITS: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
+                     unit ms : Time = rational(1, 1000) * s;\n";
+
+fn call(member: &str) -> String {
+    format!("ix://{PACKAGE}/Call/{member}")
+}
+
+/// A field of `Call`; a clock is typed `Clock` and, as FCD admits it,
+/// non-unique.
+fn field(name: &str, type_ref: &str) -> Value {
+    let mut field = wire_field(&call(name), name, type_ref, "required", 1);
+    if type_ref == "ix://quire/native/Clock" {
+        field["multiplicity"]["unique"] = json!(false);
+    }
+    field
+}
+
+/// An operation of `Call` writing `modifies`.
+fn call_operation(name: &str, modifies: &[&str]) -> Value {
+    let mut operation = operation(
+        name,
+        json!([]),
+        None,
+        json!({
+            "modifies": modifies.iter().map(|field| call(field)).collect::<Vec<_>>(),
+            "creates": [],
+            "deletes": [],
+        }),
+    );
+    operation["identity"] = json!(call(name));
+    operation
+}
+
+/// `Call` with Boolean `waiting`, `inflight`, `late` and `ready`, the bound
+/// integer `n`, the clocks `clocks`, and the operations `send` (writing
+/// `waiting`, `inflight`, `late` and `x`), `reply`, `timeout` and `bump`
+/// (writing `n` and `x`), over the population `calls`.
+fn rpc_document(clocks: &[&str]) -> Vec<u8> {
+    let (number_construct, number_type, number) = version_number_value_type();
+    let boolean = "ix://quire/native/Boolean";
+    let mut fields = vec![
+        field("waiting", boolean),
+        field("inflight", boolean),
+        field("late", boolean),
+        field("ready", boolean),
+        field("n", &number),
+    ];
+    fields.extend(
+        clocks
+            .iter()
+            .map(|clock| field(clock, "ix://quire/native/Clock")),
+    );
+    let call_type = format!("ix://{PACKAGE}/Call");
+    let types = json!([
+        number_type,
+        wire_type(
+            &call_type,
+            "object_type",
+            json!({
+                "supertypes": [],
+                "fields": fields,
+                "operations": [
+                    call_operation("send", &["waiting", "inflight", "late", "x"]),
+                    call_operation("reply", &["inflight", "late", "waiting"]),
+                    call_operation("timeout", &["waiting"]),
+                    call_operation("bump", &["n", "x"]),
+                ],
+                "relationships": [],
+            }),
+        ),
+    ]);
+    let population = format!("ix://{PACKAGE}/calls");
+    let populations = json!([{
+        "identity": population.clone(),
+        "displayName": population.clone(),
+        "kind": {"module": PACKAGE, "name": "population"},
+        "members": [call_type],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": population.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [population],
+            }
+        },
+    }]);
+    let constructs = json!([
+        wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
+        wire_construct("population", meaning::POPULATION, json!({})),
+        number_construct,
+    ]);
+    wire_envelope(constructs, types, populations)
+        .to_string()
+        .into_bytes()
+}
+
+/// ADR-026 §11's `Rpc` members, in the unit's own spelling, under `time`.
+fn rpc(time: &str) -> String {
+    format!(
+        "{UNITS}{time}\n\
+         pre SendIdle using v on Config::Call::send {{ not self.waiting }}\n\
+         post Send using v on Config::Call::send {{ \
+             self.waiting and self.inflight and not self.late and self.x = 0 ms }}\n\
+         pre Reply using v on Config::Call::reply {{ self.inflight and self.x >= 1 ms }}\n\
+         pre Timeout using v on Config::Call::timeout {{ self.waiting and self.x >= 3 ms }}\n\
+         time invariant ServerDeadline when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
+         time invariant ClientDeadline when {{ self.waiting }} {{ self.x <= 3 ms }}\n"
+    )
+}
+
+fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    admit_and_assemble_with_profiles(document, TEMPORAL, body)
+        .expect("S2 builds every timed form")
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+}
+
+fn timed(graph: &CheckedGraph) -> &TimedModel {
+    graph.timed_model("Config").expect("a timed model")
+}
+
+fn exact(numerator: i64, denominator: i64) -> Rational {
+    Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a rational")
+}
+
+/// The one timed refusal of `body` over `document`, with the text it is
+/// located at.
+fn refused(document: &[u8], body: &str) -> (TemporalCause, String) {
+    let refusals = check(document, body).expect_err("the timed member is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal expected: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("a timed refusal expected: {refusal:?}");
+    };
+    let (text, _) = config_unit_with_profiles(document, TEMPORAL, body);
+    let span = cause.span();
+    ((**cause).clone(), text[span.start..span.end].to_owned())
+}
+
+/// FR-230-AC-1, FR-230-AC-8: `Rpc` under `time dense unit ms` checks to a
+/// dense source, the one clock `Call.x`, the two time invariants bounding
+/// `x` by 3, `send`'s reset of `x` to 0 and `reply`'s guard with its one
+/// convex part `x >= 1` beside the data predicate `self.inflight`.
+#[trace("FR-230-AC-1", "FR-230-AC-8")]
+#[test]
+fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
+    let graph = check(&rpc_document(&["x"]), &rpc("time Config dense unit ms;"))
+        .expect("Rpc checks under the timed facet");
+    assert!(matches!(
+        graph.time_sources()[0].source,
+        TimeSourceKind::Dense
+    ));
+    assert_eq!(graph.time_sources()[0].unit, "ms");
+    let model = timed(&graph);
+    let names: Vec<&str> = model.clocks().iter().map(|clock| clock.name()).collect();
+    assert_eq!(names, ["x"]);
+    let x = model.clocks()[0].clone();
+
+    let invariants: Vec<_> = model
+        .invariants()
+        .iter()
+        .map(|invariant| {
+            let [bound] = invariant.bounds() else {
+                panic!("one bound");
+            };
+            (
+                invariant.name(),
+                model.clock(bound.clock()).expect("a clock").name(),
+                bound.op(),
+                bound.bound().clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        invariants,
+        [
+            ("ServerDeadline", "x", ClockOp::LessOrEqual, exact(3, 1)),
+            ("ClientDeadline", "x", ClockOp::LessOrEqual, exact(3, 1)),
+        ]
+    );
+
+    let [send] = model.resets() else {
+        panic!("one postcondition resets a clock");
+    };
+    assert_eq!(send.clause(), "Send");
+    assert_eq!(send.operation().declaration.name(), "send");
+    let [reset] = send.resets() else {
+        panic!("send resets one clock");
+    };
+    assert_eq!(model.clock(reset.clock()), Some(&x));
+    assert_eq!(reset.value(), &exact(0, 1));
+
+    let guards: Vec<_> = model
+        .guards()
+        .iter()
+        .map(|guard| (guard.clause(), guard.operation().declaration.name()))
+        .collect();
+    assert_eq!(guards, [("Reply", "reply"), ("Timeout", "timeout")]);
+    let [part] = model.guards()[0].parts() else {
+        panic!("reply's guard has one convex part");
+    };
+    assert!(part.data().is_some(), "the part keeps `self.inflight`");
+    let [constraint] = part.clocks() else {
+        panic!("one clock constraint");
+    };
+    assert_eq!(
+        (constraint.op(), constraint.bound()),
+        (ClockOp::GreaterOrEqual, &exact(1, 1))
+    );
+    // The data reading of each clause no longer reads the clock.
+    assert!(graph.state_clause("Reply").is_some());
+}
+
+/// FR-230-AC-1: under `time dense unit s`, `reply`'s bound `1 ms` converts
+/// to `1/1000`.
+#[trace("FR-230-AC-1")]
+#[test]
+fn a_bound_converts_exactly_to_the_model_unit() {
+    let graph = check(&rpc_document(&["x"]), &rpc("time Config dense unit s;"))
+        .expect("Rpc checks in seconds");
+    let model = timed(&graph);
+    let [part] = model.guards()[0].parts() else {
+        panic!("one convex part");
+    };
+    assert_eq!(part.clocks()[0].bound(), &exact(1, 1000));
+    assert_eq!(model.resets()[0].resets()[0].value(), &exact(0, 1));
+}
+
+/// FR-230-AC-4: `(x < 1 or x > 2) and self.ready` is two convex parts,
+/// `x < 1` and `x > 2`, each with the data predicate `self.ready`.
+#[trace("FR-230-AC-4")]
+#[test]
+fn a_disjunctive_guard_splits_into_convex_parts() {
+    let body = format!(
+        "{UNITS}time Config dense unit ms;\n\
+         pre Bump using v on Config::Call::bump {{ \
+             (self.x < 1 ms or self.x > 2 ms) and self.ready }}\n"
+    );
+    let graph = check(&rpc_document(&["x"]), &body).expect("the guard checks");
+    let [guard] = timed(&graph).guards() else {
+        panic!("one guard");
+    };
+    let parts: Vec<_> = guard
+        .parts()
+        .iter()
+        .map(|part| {
+            let [constraint] = part.clocks() else {
+                panic!("one constraint per part");
+            };
+            (
+                part.data().is_some(),
+                constraint.op(),
+                constraint.bound().clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            (true, ClockOp::Less, exact(1, 1)),
+            (true, ClockOp::Greater, exact(2, 1)),
+        ]
+    );
+}
+
+/// FR-230-AC-4: 64 package clock fields are 64 clocks of `Call`, and a
+/// `10^40 ms` constant checks exactly.
+#[trace("FR-230-AC-4")]
+#[test]
+fn many_clocks_and_a_huge_constant_check() {
+    let names: Vec<String> = (0..64).map(|index| format!("c{index:02}")).collect();
+    let mut clocks: Vec<&str> = names.iter().map(String::as_str).collect();
+    clocks.push("x");
+    let huge = format!("1{} ms", "0".repeat(40));
+    let body = format!(
+        "{UNITS}time Config dense unit ms;\n\
+         pre Bump using v on Config::Call::bump {{ self.x <= {huge} }}\n"
+    );
+    let graph = check(&rpc_document(&clocks), &body).expect("the constant checks");
+    let model = timed(&graph);
+    assert_eq!(model.clocks().len(), 65);
+    let bound = model.guards()[0].parts()[0].clocks()[0].bound().clone();
+    let expected = format!("1{}", "0".repeat(40));
+    assert_eq!(bound.numerator().to_string(), expected);
+}
+
+/// FR-230-AC-2: each ill-formed clock use refuses at its span.
+#[trace("FR-230-AC-2")]
+#[test]
+fn ill_formed_clock_uses_refuse_at_their_span() {
+    let document = rpc_document(&["x", "y"]);
+    let dense = format!("{UNITS}time Config dense unit ms;\n");
+    for (clause, tag, at) in [
+        (
+            "post P using v on Config::Call::bump { self.n = self.x }",
+            "clock-read-outside-constraint",
+            "self.x",
+        ),
+        (
+            "pre P using v on Config::Call::bump { self.x <= self.y }",
+            "clock-comparison",
+            "self.x <= self.y",
+        ),
+        (
+            "pre P using v on Config::Call::bump { self.x >= -1 ms }",
+            "negative-clock-constant",
+            "-1 ms",
+        ),
+        (
+            "post P using v on Config::Call::bump { self.x = self.x + 1 ms }",
+            "clock-write",
+            "self.x = self.x + 1 ms",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{dense}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, tag, at),
+            "{clause}"
+        );
+    }
+}
+
+/// FR-230-AC-2: a clock field under a tick source refuses
+/// `clock-without-dense-time` at the time declaration.
+#[trace("FR-230-AC-2")]
+#[test]
+fn a_clock_under_tick_time_refuses() {
+    let body = format!("{UNITS}time Config tick Config::Call::bump period 1 ms unit ms;\n");
+    let (cause, text) = refused(&rpc_document(&["x"]), &body);
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::InvalidTimedModel,
+            "clock-without-dense-time",
+            "time Config tick Config::Call::bump period 1 ms unit ms;"
+        )
+    );
+}
+
+/// FR-230-AC-2: `urgent` on an operation whose guard reads a clock refuses
+/// `urgent-guard-reads-clock` at the declaration; on one whose guard reads
+/// none it checks.
+#[trace("FR-230-AC-2")]
+#[test]
+fn urgency_on_a_clock_guarded_operation_refuses() {
+    let document = rpc_document(&["x"]);
+    let urgent = "urgent Prompt Config::Call::reply;";
+    let (cause, text) = refused(
+        &document,
+        &format!("{}{urgent}\n", rpc("time Config dense unit ms;")),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (Code::InvalidTimedModel, "urgent-guard-reads-clock", urgent)
+    );
+    let graph = check(
+        &document,
+        &format!(
+            "{}urgent Eager Config::Call::send;\nurgent Busy when {{ self.inflight }};\n",
+            rpc("time Config dense unit ms;")
+        ),
+    )
+    .expect("urgency on an unguarded operation and on a predicate checks");
+    assert_eq!(timed(&graph).urgency().len(), 2);
+}

@@ -368,13 +368,30 @@ FR-381 checks a protocol capture and keeps it.
 - A capture no `holds` condition reads changes no verdict except by the
   undefined reading above: the clause with and without it returns the same
   verdict and counterexample where every capture is defined.
-- A clause some `holds` condition of which reads a capture is, until
-  QSL-1092, refused by the engine with
-  `ModelCheckRefusal::CaptureRead`, naming the clause and the capture, and
-  returns no verdict, as a guarded TP-4 clause was refused before QSL-1037
-  (FR-338's automaton-state keys carry no capture vector). It still checks at
-  S3 and is emitted at S4. QSL-1092 decides such a clause over the
-  product of the instance's state, the activation and the capture vector.
+- A clause some `holds` condition of which reads a capture SHALL be refused
+  by the engine with `ModelCheckRefusal::CaptureRead`, naming the clause and
+  the first capture a condition reads, before any state is explored, and
+  returns no verdict. It still checks at S3 and is emitted at S4. This is the
+  standing decision of QSL-1092, not a stage gap, for two reasons. A letter
+  is one set of atoms per position, while an atom that reads a capture is
+  true or false per activation, so the concurrent activations of an
+  `on each` clause, whose capture vectors differ, cannot share a letter
+  (an `on origin` clause has one vector). And a `Holds` verdict carries a
+  certificate over FR-338's `AutomatonStateKey`, which names the automaton
+  state alone: a key without the vector would identify product states whose
+  futures differ, so a sound key is a set of (automaton state, capture
+  vector) pairs for `on each` and a single pair for `on origin`, which
+  changes the FR-338 key algebra, the FR-339 component keys and the TP-4
+  state-key bridge of QSL-1098 together. The key argument bears on a `Holds`
+  that carries a certificate; the letter argument bears on every verdict, a
+  `Violated` counterexample included. The engine therefore returns no
+  verdict, and `analyze` reports it on the wire as
+  `unsupported_construct`/`not-yet-implemented`, the catalog's only cause for
+  an engine that does not decide a form; no cause names a standing refusal.
+  A clause whose conditions read no capture is unaffected, and a capture that
+  no condition reads changes no key. Deciding such a clause is a later
+  requirement that amends FR-338 and FR-339 after the QSL-1098 bridge is on
+  main; it is not specified here.
 - The capture's footprint (FR-156 "Atom footprints") SHALL be the locations
   its initializer reads, with the `over` parameter as the receiver of a read
   through `over`, the trigger binder or an earlier capture, joined into the
@@ -447,8 +464,8 @@ For QSL-1081 (captures):
 | FR-337-AC-9 | Over the same unit, `on each (q: M::Counter) when (c.value >= 1)` with the captures of AC-8 emits a clause node whose captures argument binds `n` to the term of `c.value`, whose field read references `c`'s parameter node at level 0, and `m` to the term of `q.value`, whose read references the level-1 trigger node; the `value`/`parameter` nodes `n` and `m` are at levels 2 and 3 typed by `Int[0, 3]`'s type node, and `holds(c.value >= n)` lowers its read of `n` as a reference to `n`'s node; under `on origin` the nodes are at levels 1 and 2; a clause with no capture binds the empty aggregate. Each capture node's `expression` occurrence and its type node's `type` occurrence are located at the capture's name. QSL's I2 reader admits each package and returns each clause's triple and `over` node, never a trigger or capture node as `over`. | Test (TC-1267) |
 | FR-337-AC-10 | The clause of AC-9 and the same clause with the capture `n` renamed `p`, with `n`'s initializer `q.value`, with `n` declared `Int[0, 9]`, with `n` and `m` in the other order, with a third capture added and with no capture each emit a different clause key and `package_id`; reformatting changes neither; `requires temporal Due;` over the clause with the captures (FR-218-AC-16) binds to `Due`'s position among the unit's temporal clauses, and the node the protocol's `requirements` set holds for it is the emitted clause node, so its key equals the clause key of AC-9 and differs from the key over the same clause with no capture. | Test (TC-1267) |
 | FR-337-AC-11 | Read through QSL's production letter seam over the `Counter` subject under event-position false-extension, `eventually[0,1] holds(c.value = 3)` `on each (q: M::Counter) when (c.value = 1)` with an added unread `capture n: Int[0, 3] = c.value;` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2`, as AC-18 of FR-125 returns it without the capture, and with `when (c.value >= 2)` returns `Holds{Exhaustive}`; under infinite-trace `always holds(true)` `on each (q: M::Counter) when (true)` with `capture z: Boolean = (6 mod (2 - c.value) = 0);` returns `Violated` with `kind: UndefinedEvaluation` at position 2, cause `division-by-zero`, its site naming the capture `z`, and with `when (false)` (S3 refuses `c.value = 7` over `Int[0, 3]`, an unproved range) returns `Holds{Exhaustive}` because no activation evaluates the capture. | Test (TC-1267) |
-| FR-337-AC-12 | The clause `eventually[0,1] holds(n < 3 and c.value = n + 1)` under event-position false-extension, `on each (q: M::Counter) when (c.value = 1)` with `capture n: Int[0, 3] = c.value;` checks and S4 emits it, and the engine returns `ModelCheckRefusal::CaptureRead` naming the clause and `n` and no verdict, exploring no state (no state is charged to the meter); the same refusal results for `always holds(n < 3 and c.value <= n + 1)` under infinite-trace `on each`, for a bounded monitor clause `on origin` with `capture n: Int[0, 3] = c.value;` and `always holds(c.value >= n)`, and for a clause reading its second capture only, naming that capture; a clause whose unit has an unbounded root returns `RequiresBound`, not `CaptureRead`; the same clause with the `holds` condition `c.value = 3` returns AC-11's verdict with the capture unread. | Test (TC-1267) |
-| FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. The replay of an undefined capture (FR-128 reproducing `UndefinedEvaluation` at position 2 located at `z`) is deferred to QSL-1096, which builds the replay of an authored clause's undefined evaluation; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
+| FR-337-AC-12 | The standing `CaptureRead` refusal of "Capture observation" (QSL-1092): the clause `eventually[0,1] holds(n < 3 and c.value = n + 1)` under event-position false-extension, `on each (q: M::Counter) when (c.value = 1)` with `capture n: Int[0, 3] = c.value;` checks and S4 emits it, and the engine returns `ModelCheckRefusal::CaptureRead` naming the clause and `n` and no verdict, exploring no state (no state is charged to the meter); the same refusal results for `always holds(n < 3 and c.value <= n + 1)` under infinite-trace `on each`, for a bounded monitor clause `on origin` with `capture n: Int[0, 3] = c.value;` and `always holds(c.value >= n)`, and for a clause reading its second capture only, naming that capture; a clause whose unit has an unbounded root returns `RequiresBound`, not `CaptureRead`; the same clause with the `holds` condition `c.value = 3` returns AC-11's verdict with the capture unread. | Test (TC-1267) |
+| FR-337-AC-13 | Over the `Counter` subject with a capture `n: Int[0, 3] = c.value;` no `holds` reads: infinite-trace `always holds(c.value <= 1)` `on each (q: M::Counter) when (c.value >= 3)` is `Violated`, as FR-125-AC-18 returns it, and FR-128 replays its counterexample to `reproduced-with-evaluated-witness`; the unguarded `on each (q: M::Counter)` clause with the same capture is `Holds{Exhaustive}` (a guarded clause carries no closure certificate) and FR-338's checker accepts the `ClosureCertificate`, reading the captures from the recompiled package. For AC-11's `z` clause, FR-338's checker rejects a certificate for a reached state at which `z` is undefined `BadState` at the reached product state, as it rejects an undefined atom. FR-128 replays the same clause's `UndefinedEvaluation` counterexample to `reproduced-with-evaluated-witness` with the undefined value at position 2 located at `z`, and the payload with `where.locus` naming the activation or another capture, or with `where.position` 1, settles `inconclusive`, `ReplayParity`; FR-339's component checker is not built, so its rejection of the same certificate waits on it. | Test (TC-1267) |
 | FR-337-AC-14 | The footprint (FR-156 "Atom footprints") of `always holds(true)` `on each (q: M::Counter) when (true)` with `capture n: Int[0, 3] = c.value;` holds the location `Counter::value` with the `over` parameter as its receiver, which the same clause with no capture does not, and FR-126's partial-order run joins it into the atoms'; a capture initializer reading through `q` has the same receiver. | Test (TC-1267) |
 | FR-337-AC-15 | A clause with an aggregate atom emits a `temporal`/`formula` node with identity `quire.op.temporal.aggregate` and the normalized typed argument defined by QSpec FR-370-AC-14; its expression terms bind the clause's `over` parameter and captures, spans resolve through the source map, and changing the window, normalized `min_count`, expression, comparison or converted threshold changes the formula key and package identity. | Test (TC-1267) |
 
@@ -497,4 +514,6 @@ in the package source map and SHALL NOT enter the identity preimage.
   the S4 emission and the letter seam's guard read) is owned by QSL-1037.
   Capture emission: specified by QSL-1081 (this requirement); the code half,
   also under QSL-1081, implements it. The engine's reading of a capture a
-  `holds` condition reads (the `CaptureRead` residual) is owned by QSL-1092.
+  `holds` condition reads is a standing refusal (QSL-1092, "Capture
+  observation"); the replay of an authored clause's undefined evaluation,
+  including at a capture, is FR-128-AC-5 and FR-337-AC-13 (QSL-1096).

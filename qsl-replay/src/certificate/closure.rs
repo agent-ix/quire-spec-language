@@ -61,8 +61,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    AutomatonStateKey, BoundedKind, BoundedState, BoundedTranslation, SafetyItem, SafetyState,
-    SafetyTranslation,
+    Atom, AutomatonStateKey, BoundedKind, BoundedState, BoundedTranslation, Letter, SafetyItem,
+    SafetyState, SafetyTranslation, StateId, SubjectKind,
 };
 use qsl_eval::model_subject::{
     refused_invariant, AtomStop, ModelLetters, ModelSubject, ProtocolSubject,
@@ -89,7 +89,9 @@ use crate::certificate::check::{
 };
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
-use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
+use crate::model_check::item::{
+    Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,
+};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
 use qsl_eval::smt::SmtEncodingLimits;
@@ -298,6 +300,7 @@ pub fn check_closure(
         &system,
         &system,
         Bounds::default(),
+        SubjectKind::Ordinary,
         &request.subject,
         &request.item,
         certificate,
@@ -383,6 +386,7 @@ pub fn check_protocol_closure(
                     memory: None,
                     instance,
                 },
+                SubjectKind::Protocol,
                 &subject.model,
                 item,
                 certificate,
@@ -408,6 +412,7 @@ pub fn check_protocol_closure(
                     memory: Some(bound),
                     instance,
                 },
+                SubjectKind::Protocol,
                 &subject.model,
                 item,
                 certificate,
@@ -430,6 +435,7 @@ pub fn check_protocol_closure(
                     memory: Some(bound),
                     instance,
                 },
+                SubjectKind::Protocol,
                 &subject.model,
                 item,
                 certificate,
@@ -455,6 +461,7 @@ fn check_system<S: SubjectSystem>(
     system: &S,
     model: &ModelSystem<'_>,
     bounds: Bounds,
+    subject_kind: SubjectKind,
     subject: &ModelSubject<'_>,
     item: &ModelCheckItem<'_>,
     certificate: &ClosureCertificate,
@@ -463,7 +470,13 @@ fn check_system<S: SubjectSystem>(
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let meter = subject.simulation.meter;
     let budgets = Budgets::of(&subject.simulation);
-    let instances = match item.instances(subject, model, cancel) {
+    let mut instances = match item.instances_for(
+        subject,
+        model,
+        cancel,
+        subject_kind,
+        limits.max_automaton_states,
+    ) {
         Ok(instances) => instances,
         Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
             return Ok(TemporalCertificateCheck::Stopped(
@@ -544,7 +557,7 @@ fn check_system<S: SubjectSystem>(
         limited: BTreeSet::new(),
         instance_limited: BTreeSet::new(),
     };
-    let run = check.run(&instances);
+    let run = check.run(&mut instances);
     // ADR-025 MB-4: a reached set closed only because the memory bound cut
     // steps is never accepted, so the item never settles `proved` over it.
     if run.is_ok() && !check.limited.is_empty() {
@@ -596,6 +609,13 @@ struct BoundedPending<S: SubjectSystem> {
     /// The counted distance from position 0, held at one past the horizon
     /// once it is passed.
     distance: u64,
+}
+
+/// A reached TP-4 product state waiting to expand its model component.
+struct LivenessPending<S: SubjectSystem> {
+    state: S::State,
+    at: ProductStateRef,
+    automaton: StateId,
 }
 
 /// A product state of a bounded instance, as the run tells two apart.
@@ -665,7 +685,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         poll(self.cancel)
     }
 
-    fn run(&mut self, instances: &[Instance]) -> Step<()> {
+    fn run(&mut self, instances: &mut [Instance]) -> Step<()> {
         self.poll()?;
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
@@ -675,12 +695,16 @@ impl<S: SubjectSystem> Check<'_, S> {
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         initial.dedup_by(|later, earlier| later.0 == earlier.0);
         for instance in instances {
-            match &instance.translation {
+            let binding = instance.binding.as_ref();
+            match &mut instance.translation {
                 Translation::Safety(translation) => {
-                    self.run_safety(instance, translation, &initial)?;
+                    self.run_safety(binding, translation, &initial)?;
                 }
                 Translation::Bounded(translation) => {
-                    self.run_bounded(instance, translation, &initial)?;
+                    self.run_bounded(binding, translation, &initial)?;
+                }
+                Translation::Liveness(translation) => {
+                    self.run_liveness(binding, translation, &initial)?;
                 }
             }
         }
@@ -691,7 +715,7 @@ impl<S: SubjectSystem> Check<'_, S> {
     /// stays under the carried root.
     fn run_safety(
         &mut self,
-        instance: &Instance,
+        binding: Option<&qsl_eval::model_subject::ModelInstance>,
         translation: &SafetyTranslation,
         initial: &[Initial<S>],
     ) -> Step<()> {
@@ -700,7 +724,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         for (_, _, digest, state) in initial {
             let before = None;
             if let Some(pending) = self.reach(
-                instance,
+                binding,
                 translation,
                 state.clone(),
                 *digest,
@@ -727,7 +751,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     return Err(Self::reject(CertificateRule::BadState, at));
                 }
                 if let Some(next) = self.reach(
-                    instance,
+                    binding,
                     translation,
                     state,
                     digest,
@@ -742,22 +766,265 @@ impl<S: SubjectSystem> Check<'_, S> {
         Ok(())
     }
 
+    /// The closure of a TP-4 instance's product of model states and the
+    /// clause's nondeterministic Büchi states.
+    fn run_liveness(
+        &mut self,
+        binding: Option<&qsl_eval::model_subject::ModelInstance>,
+        translation: &mut LivenessTranslation,
+        initial: &[Initial<S>],
+    ) -> Step<()> {
+        let ModelCheckItem::Clause { letters, clause } = self.item else {
+            return Err(fault("tp4-clause-item").into());
+        };
+        let binding = binding.ok_or_else(|| fault("tp4-clause-binding"))?;
+        let start = translation
+            .automaton
+            .initial()
+            .map_err(|error| self.automaton_error(error))?;
+        let mut visited = BTreeSet::new();
+        let mut queue = VecDeque::new();
+        for (_, _, digest, state) in initial {
+            self.poll()?;
+            let Some(letter) =
+                self.liveness_letter(translation, *letters, clause, binding, state, true, true)?
+            else {
+                let at = self.product_liveness(translation, *digest, start)?;
+                return Err(Self::reject(CertificateRule::BadState, at));
+            };
+            let successors = translation
+                .automaton
+                .successors(start, letter)
+                .map_err(|error| self.automaton_error(error))?;
+            for automaton in successors {
+                if let Some(pending) = self.reach_liveness(
+                    translation,
+                    state.clone(),
+                    *digest,
+                    automaton,
+                    CertificateRule::InitialMissing,
+                    &mut visited,
+                )? {
+                    queue.push_back(pending);
+                }
+            }
+        }
+        while let Some(pending) = queue.pop_front() {
+            self.poll()?;
+            let (expansion, _) = self.expand(&pending.state, &pending.at)?;
+            if expansion.findings.iter().any(|finding| {
+                matches!(
+                    finding,
+                    ModelFinding::ContractUndetermined { .. }
+                        | ModelFinding::ProtocolExpressionUndetermined { .. }
+                )
+            }) {
+                return Err(Self::reject(CertificateRule::BadState, pending.at));
+            }
+            for (transition, digest, state) in self.ordered(expansion.successors)? {
+                self.poll()?;
+                let counted = self.system.counts_step(&transition);
+                let Some(letter) = self.liveness_letter(
+                    translation,
+                    *letters,
+                    clause,
+                    binding,
+                    &state,
+                    counted,
+                    false,
+                )?
+                else {
+                    let at = self.product_liveness(translation, digest, pending.automaton)?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                };
+                let successors = translation
+                    .automaton
+                    .successors(pending.automaton, letter)
+                    .map_err(|error| self.automaton_error(error))?;
+                for automaton in successors {
+                    self.charge_edge()?;
+                    if let Some(next) = self.reach_liveness(
+                        translation,
+                        state.clone(),
+                        digest,
+                        automaton,
+                        CertificateRule::SuccessorMissing,
+                        &mut visited,
+                    )? {
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Read a TP-4 clause's letter, activation and captures at one model
+    /// state. `counted` describes the step into this position.
+    #[allow(clippy::too_many_arguments)]
+    fn liveness_letter(
+        &self,
+        translation: &LivenessTranslation,
+        letters: &dyn ModelLetters,
+        clause: &qsl_semantics::check::CheckedTemporalClause,
+        binding: &qsl_eval::model_subject::ModelInstance,
+        state: &S::State,
+        counted: bool,
+        initial: bool,
+    ) -> Step<Option<Letter>> {
+        let state = self.system.atom_state(state);
+        let state = state.as_ref();
+        let mut letter = Letter::default();
+        let when = translation.automaton.when();
+        let active = if let Some(when) = when {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            match letters.activation(binding, state, &mut meter) {
+                Ok(AtomReading::True) => {
+                    letter = letter.with(when);
+                    true
+                }
+                Ok(AtomReading::False) => false,
+                Ok(AtomReading::Undefined(_)) => return Ok(None),
+                Err(AtomStop::Incomplete(incomplete)) => {
+                    return Err(stopped(
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
+                        crate::meter_bound(&self.meter, incomplete.limit_kind),
+                    ))
+                }
+                Err(AtomStop::Fault(internal)) => {
+                    return Err(ClosureRefusal::Fault(internal).into())
+                }
+                Err(AtomStop::Refused(outcome)) => {
+                    return Err(fault(refused_invariant(&outcome)).into())
+                }
+                Err(AtomStop::Unobservable(stop)) => return Err(self.expansion_stop(stop)),
+            }
+        } else {
+            true
+        };
+        let captures_at_position = match clause.activation() {
+            qsl_semantics::check::Activation::Origin => initial,
+            qsl_semantics::check::Activation::Each { .. } => active,
+        };
+        if captures_at_position && clause.captures().len() > 0 {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            match letters.captures(binding, state, &mut meter) {
+                Ok(CaptureReading::Fixed) => {}
+                Ok(CaptureReading::Undefined { .. }) => return Ok(None),
+                Err(AtomStop::Incomplete(incomplete)) => {
+                    return Err(stopped(
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
+                        crate::meter_bound(&self.meter, incomplete.limit_kind),
+                    ))
+                }
+                Err(AtomStop::Fault(internal)) => {
+                    return Err(ClosureRefusal::Fault(internal).into())
+                }
+                Err(AtomStop::Refused(outcome)) => {
+                    return Err(fault(refused_invariant(&outcome)).into())
+                }
+                Err(AtomStop::Unobservable(stop)) => return Err(self.expansion_stop(stop)),
+            }
+        }
+        for (index, atom) in translation.automaton.atoms().iter().enumerate() {
+            let Some(holds) = self.atom(letters, *atom, binding, state)? else {
+                return Ok(None);
+            };
+            if holds {
+                let atom = Atom::new(index).map_err(|_| fault("tp4-atom-in-range"))?;
+                letter = letter.with(atom);
+            }
+        }
+        if !counted {
+            if let Some(uncounted) = translation.automaton.uncounted() {
+                letter = letter.with(uncounted);
+            }
+        }
+        Ok(Some(letter))
+    }
+
+    fn reach_liveness(
+        &mut self,
+        translation: &LivenessTranslation,
+        state: S::State,
+        digest: DigestRecord,
+        automaton: StateId,
+        missing: CertificateRule,
+        visited: &mut BTreeSet<(DigestRecord, StateId)>,
+    ) -> Step<Option<LivenessPending<S>>> {
+        if visited.contains(&(digest, automaton)) {
+            return Ok(None);
+        }
+        let at = self.product_liveness(translation, digest, automaton)?;
+        if self.reached >= self.limits.limits.max_states {
+            return Err(stopped(
+                ModelCheckLimit::MaxStates,
+                widen(self.limits.limits.max_states),
+            ));
+        }
+        self.reached += 1;
+        visited.insert((digest, automaton));
+        if !self.members.contains(&at) {
+            return Err(Self::reject(missing, at));
+        }
+        Ok(Some(LivenessPending {
+            state,
+            at,
+            automaton,
+        }))
+    }
+
+    fn product_liveness(
+        &mut self,
+        translation: &LivenessTranslation,
+        digest: DigestRecord,
+        state: StateId,
+    ) -> Step<ProductStateRef> {
+        let buchi = match translation
+            .automaton
+            .buchi_state(state, translation.keys.max_key_bytes())
+        {
+            Ok(buchi) => buchi,
+            Err(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { .. }) => {
+                return Err(ClosureRefusal::Encoding.into())
+            }
+            Err(_) => return Err(fault("tp4-state-key-bridge").into()),
+        };
+        let key = translation
+            .keys
+            .key(&buchi)
+            .map_err(|_| ClosureRefusal::Encoding)?;
+        self.product_of(digest, key)
+    }
+
+    fn automaton_error(&self, error: qsl_eval::automaton::AutomatonError) -> Halt {
+        match error {
+            qsl_eval::automaton::AutomatonError::StateLimit { limit } => {
+                stopped(ModelCheckLimit::MaxAutomatonStates, limit)
+            }
+            _ => fault("tp4-automaton-transition").into(),
+        }
+    }
+
     /// The closure of a bounded instance (TP-2): every product state of a
     /// model state, its bounded monitor state and, up to one past the
     /// horizon, its counted distance, from the initial states.
     fn run_bounded(
         &mut self,
-        instance: &Instance,
+        binding: Option<&qsl_eval::model_subject::ModelInstance>,
         translation: &BoundedTranslation,
         initial: &[Initial<S>],
     ) -> Step<()> {
         let ModelCheckItem::Clause { letters, .. } = self.item else {
             return Err(fault("clause-item-translation").into());
         };
-        let binding = instance
-            .binding
-            .as_ref()
-            .ok_or_else(|| fault("clause-instance-binding"))?;
+        let binding = binding.ok_or_else(|| fault("clause-instance-binding"))?;
         let mut run = BoundedRun {
             translation,
             letters: *letters,
@@ -1041,7 +1308,7 @@ impl<S: SubjectSystem> Check<'_, S> {
     #[allow(clippy::too_many_arguments)]
     fn reach(
         &mut self,
-        instance: &Instance,
+        binding: Option<&qsl_eval::model_subject::ModelInstance>,
         translation: &SafetyTranslation,
         state: S::State,
         digest: DigestRecord,
@@ -1057,10 +1324,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let ModelCheckItem::Clause { letters, .. } = self.item else {
                     return Err(fault("clause-item-translation").into());
                 };
-                let bound = instance
-                    .binding
-                    .as_ref()
-                    .ok_or_else(|| fault("clause-instance-binding"))?;
+                let bound = binding.ok_or_else(|| fault("clause-instance-binding"))?;
                 if !self.captured(
                     *letters,
                     bound,

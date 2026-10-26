@@ -41,6 +41,9 @@ use crate::automaton::dnf::Dnf;
 use crate::automaton::error::AutomatonError;
 use crate::automaton::formula::{invariant, lower, FutureKind, Ir, Lowered, Node, NodeId, Window};
 use crate::automaton::gba::{Gba, GbaBuilder, Transition};
+use crate::automaton::key::SubjectKind;
+use crate::automaton::key_buchi::{BuchiPhase, BuchiState};
+use crate::automaton::key_state::{Configuration, Obligation, Occurrence, Window as KeyWindow};
 use crate::automaton::letter::{Atom, Guard, Letter};
 use crate::automaton::numbering::Numbering;
 use crate::automaton::past::{Memory, Outcome, Past};
@@ -115,6 +118,27 @@ impl PropertyAutomaton {
     /// Which representation the property got.
     pub fn kind(&self) -> AutomatonKind {
         self.kind
+    }
+
+    /// Resolve a reached TP-4 engine state to FR-338's structural state.
+    /// The returned value is independent of this automaton's run-local
+    /// `StateId` and can be encoded under the clause's checked context.
+    /// Its obligation and acceptance vectors are in engine order, so only the
+    /// key octets are canonical (not equality with `admit`'s decoded state).
+    pub fn buchi_state(
+        &self,
+        state: StateId,
+        max_key_bytes: u64,
+    ) -> Result<BuchiState, AutomatonError> {
+        if self.kind != AutomatonKind::Liveness {
+            return Err(invariant("buchi-key-requires-liveness-automaton"));
+        }
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        self.translator
+            .buchi_state(config, &self.eventualities, max_key_bytes)
     }
 
     /// The `holds` atoms of the clause: atom `i` of the letter is
@@ -533,6 +557,12 @@ fn translate_formula(
         atoms,
         positive,
         negative,
+        positive_occurrences,
+        negative_occurrences,
+        positive_past_occurrences,
+        negative_past_occurrences,
+        positive_nested_intervals,
+        negative_nested_intervals,
     } = lower(formula, symmetry.is_some())?;
     let mut next_atom = atoms.len();
     let mut take_atom = || {
@@ -577,6 +607,11 @@ fn translate_formula(
     } else {
         (AutomatonKind::Liveness, negation)
     };
+    let target_is_negative = matches!(selection, Selection::Negation)
+        || (matches!(selection, Selection::Clause) && !bounded && kind == AutomatonKind::Liveness);
+    let activation_root = (kind == AutomatonKind::Liveness
+        && matches!(activation, Activation::Each { .. }))
+    .then_some(target);
     let order = ir.reachable(target)?;
     let exchanges = symmetry
         .map(|symmetry| {
@@ -607,6 +642,31 @@ fn translate_formula(
         ir,
         order,
         uncounted,
+        occurrences: if target_is_negative {
+            negative_occurrences
+        } else {
+            positive_occurrences
+        },
+        past_occurrences: if target_is_negative {
+            negative_past_occurrences
+        } else {
+            positive_past_occurrences
+        },
+        nested_intervals: if target_is_negative {
+            negative_nested_intervals
+        } else {
+            positive_nested_intervals
+        },
+        subject: match counting {
+            Counting::Every => SubjectKind::Ordinary,
+            Counting::ByKind => SubjectKind::Protocol,
+        },
+        accept_counted_intervals: kind == AutomatonKind::Liveness && uncounted.is_some(),
+        activation_root,
+        activation_guarded: match activation {
+            Activation::Origin => None,
+            Activation::Each { guarded } => Some(guarded),
+        },
     };
     let eventualities: Vec<NodeId> = translator.eventualities()?.into_iter().collect();
     let initial = translator.initial(target)?;
@@ -776,21 +836,155 @@ struct Translator {
     /// does not count; none when every step counts or no interval operator
     /// measures distance.
     uncounted: Option<Atom>,
+    /// Checked-formula occurrence paths for selected NNF nodes.
+    occurrences: BTreeMap<NodeId, Vec<Occurrence>>,
+    past_occurrences: BTreeMap<NodeId, Vec<(Vec<u64>, crate::automaton::key_state::PastOperator)>>,
+    nested_intervals: BTreeSet<NodeId>,
+    subject: SubjectKind,
+    /// FR-338's protocol non-progress acceptance applies to liveness
+    /// translations; safety monitors keep finite interval debt in counters.
+    accept_counted_intervals: bool,
+    /// The synthetic outer eventuality selecting an `on each` TP-4
+    /// activation, if present.
+    activation_root: Option<NodeId>,
+    activation_guarded: Option<bool>,
 }
 
 impl Translator {
+    /// Project a reached engine configuration to FR-338's TP-4 branch.
+    fn buchi_state(
+        &self,
+        config: &Config,
+        eventualities: &[NodeId],
+        max_key_bytes: u64,
+    ) -> Result<BuchiState, AutomatonError> {
+        let mut branch = Configuration::default();
+        let waiting = self
+            .activation_root
+            .is_some_and(|root| config.must.contains(&root));
+
+        for node in &config.must {
+            if Some(*node) == self.activation_root {
+                continue;
+            }
+            let occurrences = self
+                .occurrences
+                .get(node)
+                .ok_or_else(|| invariant("buchi-obligation-has-source-occurrence"))?;
+            branch
+                .obligations
+                .extend(occurrences.iter().cloned().map(Obligation::Current));
+        }
+
+        for (node, counter) in &config.counters {
+            let occurrences = self
+                .occurrences
+                .get(node)
+                .ok_or_else(|| invariant("buchi-window-has-source-occurrence"))?;
+            match counter {
+                Counter::Deadline(counter) if counter.is_pending() => {
+                    branch
+                        .windows
+                        .extend(occurrences.iter().cloned().map(|occurrence| {
+                            if self.nested_intervals.contains(node) {
+                                KeyWindow::Offsets(occurrence, vec![(0, counter.remaining())])
+                            } else {
+                                KeyWindow::Deadline(occurrence, counter.remaining())
+                            }
+                        }));
+                }
+                Counter::Extent(counter) if counter.is_pending() => {
+                    branch
+                        .windows
+                        .extend(occurrences.iter().cloned().map(|occurrence| {
+                            if self.nested_intervals.contains(node) {
+                                KeyWindow::Offsets(occurrence, vec![(0, counter.remaining())])
+                            } else {
+                                KeyWindow::Extent(occurrence, counter.remaining())
+                            }
+                        }));
+                }
+                Counter::Deadline(_) | Counter::Extent(_) => {}
+            }
+        }
+
+        for (node, remaining) in &config.shifts {
+            let occurrences = self
+                .occurrences
+                .get(node)
+                .ok_or_else(|| invariant("buchi-shift-has-source-occurrence"))?;
+            for offset in remaining {
+                branch
+                    .windows
+                    .extend(occurrences.iter().cloned().map(|occurrence| {
+                        crate::automaton::key_state::Window::Shift(occurrence, *offset)
+                    }));
+            }
+        }
+
+        for (node, memory) in &config.memory {
+            let occurrences = self
+                .past_occurrences
+                .get(node)
+                .ok_or_else(|| invariant("buchi-past-has-source-occurrence"))?;
+            let Node::Past { kind, window, .. } = self.ir.node(*node)? else {
+                return Err(invariant("buchi-past-node"));
+            };
+            let past = Past::new(kind, window, self.subject);
+            branch.past.extend(
+                occurrences
+                    .iter()
+                    .map(|(path, operator)| {
+                        past.key_memory(memory, path, *operator, self.subject, max_key_bytes)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+
+        for eventuality in eventualities {
+            if Some(*eventuality) == self.activation_root
+                || config.shifts.contains_key(eventuality)
+                || config.must.contains(eventuality)
+                || config.counters.contains_key(eventuality)
+            {
+                continue;
+            }
+            let occurrences = self
+                .occurrences
+                .get(eventuality)
+                .ok_or_else(|| invariant("buchi-acceptance-has-source-occurrence"))?;
+            branch.acceptance.extend(occurrences.iter().cloned());
+        }
+
+        match self.activation_root {
+            Some(_) => {
+                let phase = if waiting {
+                    BuchiPhase::Waiting
+                } else {
+                    BuchiPhase::Active
+                };
+                // The guarded/unguarded form is the clause's own activation,
+                // recorded in `activation_guarded` when the translator is built.
+                if self.activation_guarded == Some(true) {
+                    Ok(BuchiState::Guarded(phase, branch))
+                } else {
+                    Ok(BuchiState::Each(phase, branch))
+                }
+            }
+            None => Ok(BuchiState::Elementary(branch)),
+        }
+    }
+
     /// The unbounded `eventually` and `until` cores: what a state may carry
     /// forever without the run being accepted.
     fn eventualities(&self) -> Result<BTreeSet<NodeId>, AutomatonError> {
         let mut cores = BTreeSet::new();
         for id in &self.order {
-            if let Node::Future {
-                kind,
-                window: Window::From { .. },
-                ..
-            } = self.ir.node(*id)?
-            {
-                if kind.is_eventuality() {
+            if let Node::Future { kind, window, .. } = self.ir.node(*id)? {
+                if kind.is_eventuality()
+                    && (matches!(window, Window::From { .. })
+                        || (self.accept_counted_intervals && self.uncounted.is_some()))
+                {
                     cores.insert(self.ir.core(*id));
                 }
             }
@@ -818,11 +1012,16 @@ impl Translator {
                 Node::Past {
                     kind,
                     window,
+                    left,
                     right,
                     ..
                 } => {
                     let witness = value_of(right);
-                    memory.insert(*id, Past::new(kind, window).stationary(witness));
+                    let guard = left.is_some_and(value_of);
+                    memory.insert(
+                        *id,
+                        Past::new(kind, window, self.subject).stationary(guard, witness),
+                    );
                     witness
                 }
                 Node::Future { .. } => return Err(invariant("state-formula-has-no-future")),
@@ -928,7 +1127,7 @@ impl Translator {
                         .get(id)
                         .ok_or_else(|| invariant("past-operator-remembered"))?;
                     let guard = left.map(|left| truths.of(left)).transpose()?;
-                    let cases = Past::new(kind, window).outcomes(
+                    let cases = Past::new(kind, window, self.subject).outcomes(
                         remembered,
                         guard,
                         truths.of(right)?,

@@ -94,7 +94,6 @@ fn with_peers(document: &[u8]) -> Vec<u8> {
 fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     admit_and_assemble_with_body(document, body)
         .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-        .with_unwritten_terminals()
         .check(CheckingLimits::default())
 }
 

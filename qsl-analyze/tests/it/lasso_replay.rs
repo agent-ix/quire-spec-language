@@ -8,12 +8,12 @@
 //!
 //! Not covered: FR-128-AC-1's `ConfigVersion` and `Branch` subjects and
 //! FR-128-AC-4's `upd(a)` lasso, which need subjects this crate's fixtures
-//! do not have; the `interval` and `trace: "observed"` refusals of AC-3,
-//! since the payload carries neither member yet; and the undefined-letter
-//! counterexamples of AC-5 (TC-539), which this replay does not build.
+//! do not have; and the `interval` and `trace: "observed"` refusals of AC-3,
+//! since the payload carries neither member yet.
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
@@ -22,7 +22,8 @@ use qsl_replay::{
     DigestDomain, DigestRecord, DisagreementCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal, ModelTraceReplayResult,
     ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, ReplayRefusal,
-    ResultLabel, TemporalCounterexample, TerminalValue, WireNodeId,
+    ResultLabel, TemporalCounterexample, TerminalValue, UndefinedEvaluation, UndefinedLocus,
+    WireNodeId,
 };
 use quire_exact::Cancel;
 
@@ -30,7 +31,7 @@ use crate::counter::{
     document, document_with_ranged_parameter, package_from_text, subject, unit_text, universe,
     Documents, Letters, CONTRACT, UNLIMITED,
 };
-use crate::liveness::{counter, is_zero, Fixture};
+use crate::liveness::{counter, fixture, is_zero, Fixture};
 use crate::model_settle::{envelope_at, request};
 
 const FORMULA: &str = "always eventually holds(c.value = 3)";
@@ -501,27 +502,139 @@ fn a_bad_prefix_of_a_fair_safety_clause_reproduces() {
     );
 }
 
-/// An undefined-evaluation counterexample of an authored clause is refused
-/// not yet implemented (FR-128-AC-5 is not built) rather than checked
-/// against the deadlock item's rules and settled as an engine disagreement.
-#[trace("TC-523")]
+/// FR-128-AC-5: an authored clause's undefined-evaluation counterexample
+/// replays to `reproduced-with-evaluated-witness` with the undefined value,
+/// at the position and locus it names with its cause; with `where` moved, a
+/// prefix truncated before it, another locus or another cause, it settles
+/// `inconclusive` by a disagreement.
+#[trace("TC-539", "FR-128-AC-5")]
 #[test]
-fn an_authored_clauses_undefined_evaluation_is_refused_until_it_is_built() {
+fn an_authored_clauses_undefined_evaluation_replays() {
     fn undefined_at_two(value: i64) -> Option<bool> {
         (value != 2).then_some(true)
     }
     let fixture = counter(document(false), "", "always holds(c.value >= 0)");
     let payload = found(&fixture, undefined_at_two);
-    assert!(matches!(
-        payload.kind,
-        qsl_replay::CounterexampleKind::UndefinedEvaluation(_)
-    ));
-    let (cause, code, tag) = refusal(replay_with(&fixture, payload, undefined_at_two));
-    assert_eq!(cause, ModelTraceRefusal::AuthoredUndefined);
+    let qsl_replay::CounterexampleKind::UndefinedEvaluation(claimed) = payload.kind.clone() else {
+        panic!("expected an undefined evaluation: {payload:?}");
+    };
+    assert_eq!(claimed.site.position, 2);
+    let result = replay_with(&fixture, payload.clone(), undefined_at_two).expect("replays");
     assert_eq!(
-        (code, tag),
-        (Code::UnsupportedConstruct, "not-yet-implemented")
+        result.settlement,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(claimed.clone()),
+            trace_position: payload.trace_position(),
+        }
     );
+
+    let parity =
+        |payload: TemporalCounterexample| match replay_with(&fixture, payload, undefined_at_two)
+            .expect("replays")
+            .settlement
+        {
+            ModelTraceSettlement::Inconclusive(cause) => {
+                assert!(
+                    matches!(cause, DisagreementCause::Verdicts { .. }),
+                    "{cause:?}"
+                );
+            }
+            other => panic!("expected an inconclusive disagreement, got {other:?}"),
+        };
+    let moved = |edit: &dyn Fn(&mut UndefinedEvaluation)| {
+        let mut payload = payload.clone();
+        let qsl_replay::CounterexampleKind::UndefinedEvaluation(evaluation) = &mut payload.kind
+        else {
+            panic!("an undefined evaluation");
+        };
+        edit(evaluation);
+        payload
+    };
+    parity(moved(&|evaluation| evaluation.site.position = 1));
+    parity(moved(&|evaluation| {
+        evaluation.site.locus = UndefinedLocus::Activation
+    }));
+    parity(moved(&|evaluation| {
+        evaluation.cause = UndefinedCause::Kernel(quire_exact::Undefined::IeeeNotFinite)
+    }));
+    let mut truncated = payload.clone();
+    truncated.prefix.truncate(1);
+    parity(truncated);
+}
+
+/// FR-128-AC-6's authored half, and the order of one position's reads: over
+/// the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`
+/// from value 2, the empty-prefix counterexample of the authored clause
+/// `always holds(...)` located at the `CanInc` guard replays to
+/// `reproduced-with-evaluated-witness` at position 0 when the letter is
+/// defined, and located at the clause's atom settles `inconclusive`,
+/// `ReplayParity`. Where the atom is also undefined at position 0, the
+/// letter is read first: the payload at the atom reproduces, and the payload
+/// at the guard is a disagreement. Not asserted whole: the AC's deadlock-freedom
+/// halves are TC-539's other tests, and FR-128-AC-7 and AC-8 have no authored
+/// fixture here.
+#[trace("TC-539")]
+#[test]
+fn an_authored_clauses_letter_is_read_before_its_contract_conjunctions() {
+    fn defined(_: i64) -> Option<bool> {
+        Some(true)
+    }
+    fn undefined(_: i64) -> Option<bool> {
+        None
+    }
+    let guarded = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n";
+    let fixture = fixture(
+        document(false),
+        guarded,
+        "",
+        "always holds(c.value >= 0)",
+        &[("c", 2)],
+    );
+    let at_guard = found(&fixture, defined);
+    let qsl_replay::CounterexampleKind::UndefinedEvaluation(guard) = at_guard.kind.clone() else {
+        panic!("expected an undefined guard: {at_guard:?}");
+    };
+    assert_eq!(guard.site.position, 0);
+    assert!(matches!(guard.site.locus, UndefinedLocus::Contract(_)));
+    let at_atom = found(&fixture, undefined);
+    let qsl_replay::CounterexampleKind::UndefinedEvaluation(atom) = at_atom.kind.clone() else {
+        panic!("expected an undefined atom: {at_atom:?}");
+    };
+    assert_eq!(atom.site.position, 0);
+    assert!(matches!(atom.site.locus, UndefinedLocus::Atom(_)));
+
+    let settle = |payload: &TemporalCounterexample, letters: fn(i64) -> Option<bool>| {
+        replay_with(&fixture, payload.clone(), letters)
+            .expect("replays")
+            .settlement
+    };
+    let reproduces =
+        |payload: &TemporalCounterexample, evaluation: &UndefinedEvaluation, letters| {
+            assert_eq!(
+                settle(payload, letters),
+                ModelTraceSettlement::Reproduced {
+                    value: ModelTraceValue::Undefined(evaluation.clone()),
+                    trace_position: Some(0),
+                }
+            );
+        };
+    let disagrees = |payload: &TemporalCounterexample, letters| {
+        assert!(matches!(
+            settle(payload, letters),
+            ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts { .. })
+        ));
+    };
+    let with = |payload: &TemporalCounterexample, evaluation: &UndefinedEvaluation| {
+        let mut payload = payload.clone();
+        payload.kind = qsl_replay::CounterexampleKind::UndefinedEvaluation(evaluation.clone());
+        payload
+    };
+    // A defined letter: the guard is the position's undefined evaluation.
+    reproduces(&at_guard, &guard, defined);
+    disagrees(&with(&at_guard, &atom), defined);
+    // An undefined letter is read first: the guard is never reached.
+    reproduces(&at_atom, &atom, undefined);
+    disagrees(&with(&at_atom, &guard), undefined);
 }
 
 /// Under a bounded profile a finite prefix reads as a closed trace, so a

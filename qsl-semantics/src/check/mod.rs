@@ -146,6 +146,7 @@ mod task_set;
 mod temporal_clause;
 mod terminal;
 mod time_units;
+mod timed_model;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
     CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Delay, DelayDistribution,
@@ -175,7 +176,7 @@ pub use refinement::{
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
-    TerminalDeclaration, TerminalRefusal,
+    TerminalDeclaration, TerminalMode, TerminalNode, TerminalRefusal,
 };
 mod type_form;
 mod type_invariant;
@@ -401,6 +402,10 @@ pub use temporal_clause::{
     TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
     TimedPropertyForm, UnaryTemporal,
 };
+pub use timed_model::{
+    CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp, ClockReset,
+    ClockResets, ConvexPart, TimeInvariant, TimedModel, Urgency,
+};
 
 /// A checked function.
 #[derive(Debug)]
@@ -571,6 +576,9 @@ pub struct CheckedGraph {
     /// FR-124: the intended terminal states of each selected model, by
     /// alias.
     terminals: Vec<CheckedTerminal>,
+    /// FR-230: the checked timed model of each time source, in time-source
+    /// order.
+    timed_models: Vec<TimedModel>,
     /// FR-135 to FR-137: every checked refinement, in declaration order.
     refinements: Vec<CheckedRefinement>,
     /// FR-304: the unit's `abstraction` declarations, in declaration order,
@@ -1267,31 +1275,11 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
-                        if let TimedDeclaration::Urgent(urgent) = form {
-                            if matches!(urgent.target, qsl_forms::UrgentTarget::When(_))
-                                && self.time_sources.is_empty()
-                                && !self
-                                    .timed_forms
-                                    .iter()
-                                    .any(|form| matches!(form, TimedDeclaration::TimeSource(_)))
-                            {
-                                return Some(CheckRefusal {
-                                    location: root(Origin::Expression),
-                                    cause: CheckCause::Temporal(Box::new(
-                                        TemporalCause::UrgencyWithoutTimeSource {
-                                            span: urgent.span,
-                                        },
-                                    )),
-                                });
-                            }
-                        }
+                        // A time invariant and an `urgent` declaration are
+                        // checked with the clauses they read (`timed_model`).
+                        return None;
                     }
-                    let cause = if admitted {
-                        CheckCause::TimedNotChecked {
-                            construct: form.construct(),
-                            span: form.span(),
-                        }
-                    } else {
+                    let cause = {
                         let owner = match form {
                             TimedDeclaration::TimeSource(source) => source.model.name.clone(),
                             TimedDeclaration::TimeInvariant(invariant) => {
@@ -1317,6 +1305,29 @@ impl PackageDeclarations {
                 return Err(refusals);
             }
         }
+        // FR-230: the clocks of each timed model, read out of the state
+        // clauses before they are typed.
+        let timed_drafts = {
+            let units = time_units::TimeUnits::new(
+                &self.units,
+                self.nominal_spans.keys().copied(),
+                &self.models,
+                self.identity,
+            );
+            timed_model::prepare(
+                &timed_model::Inputs {
+                    models: &self.models,
+                    types: &self.types,
+                    time_sources: &self.time_sources,
+                    timed_forms: &self.timed_forms,
+                    units: &units,
+                    rational_bits: limits.rational_bits(),
+                    nodes: limits.nodes(),
+                },
+                &mut self.state_clauses,
+            )
+            .map_err(|refusal| vec![refusal])?
+        };
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
         let body_location = |index: usize, name: &str| {
@@ -1745,7 +1756,7 @@ impl PackageDeclarations {
                 type_spans.insert(time_operation_origin(index), span);
             }
         }
-        let site_spans = self.declared_site_spans;
+        let mut site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
@@ -2258,7 +2269,37 @@ impl PackageDeclarations {
         // to `TerminalDeclaration::None`.
         let mut terminals = Vec::new();
         for (index, terminal) in self.terminals.iter().enumerate() {
-            let location = Location::root(Origin::Expression);
+            // FR-411: the declaration and its predicate are located at
+            // declaration sites, so the emitted node's occurrences resolve.
+            type_spans.insert(
+                lowering::terminal_site(index, lowering::TerminalSite::Claim),
+                terminal.span,
+            );
+            let location = lowering::terminal_location(index, lowering::TerminalSite::Predicate);
+            if let terminal::TerminalClauseKind::When { predicate, .. } = &terminal.kind {
+                site_spans.insert(
+                    lowering::terminal_site(index, lowering::TerminalSite::Predicate),
+                    predicate.spans.clone(),
+                );
+            }
+            // STD-492: `terminal any` names no object type to hang its model
+            // node on when the model declares none, so S4 would have no node
+            // to write. Refused here until QSpec settles the node.
+            if matches!(terminal.kind, terminal::TerminalClauseKind::Any)
+                && !models.iter().any(|model| {
+                    model.alias() == Some(terminal.model.as_str())
+                        && model.terminal_object().is_some()
+                })
+            {
+                refusals.push(CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::TerminalWithoutObjectType {
+                        name: terminal.name.clone(),
+                        span: terminal.span,
+                    },
+                });
+                continue;
+            }
             let declarations = state_clause::ClauseDeclarations {
                 scope: &scope,
                 signatures: &signatures,
@@ -2284,6 +2325,7 @@ impl PackageDeclarations {
                         model: terminal.model.clone(),
                         name: Some(terminal.name.clone()),
                         declaration,
+                        occurrence: None,
                     });
                 }
                 Err(refusal) => {
@@ -2304,10 +2346,56 @@ impl PackageDeclarations {
                     model: alias.clone(),
                     name: None,
                     declaration: TerminalDeclaration::None,
+                    occurrence: None,
                 });
             }
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
+        // FR-230: each timed model's guard parts, time invariants and
+        // `urgent when` predicates, each typed as a Boolean over the state.
+        let timed_models = {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let checking = timed_model::Checking {
+                declarations: &declarations,
+                state_clauses: &state_clause_forms,
+                complete_value: crate::value::definition::DefinitionLock::pinned()
+                    .closure(&header_layers)
+                    .contains(&crate::value::layer::HeaderLayer::ValueComplete),
+            };
+            match timed_model::check(timed_drafts, &checking, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    checked
+                }
+                Err(refusal) => {
+                    let exhausted =
+                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                    Vec::new()
+                }
+            }
+        };
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
         // state-clause bodies over the concrete object. FR-147: the
         // `refinement_internals` value is parsed once. A refinement over a
@@ -3963,6 +4051,25 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-411, QSpec FR-476: each checked `terminal` declaration, after
+        // every function its predicate may call.
+        let mut lowered_terminals = Vec::with_capacity(terminals.len());
+        for (index, declaration) in self.terminals.iter().enumerate() {
+            let Some(checked) = terminals
+                .iter()
+                .find(|checked| checked.model == declaration.model)
+            else {
+                continue;
+            };
+            match lowering.terminal(&lowering::TerminalInput {
+                index,
+                model: &declaration.model,
+                declaration: &checked.declaration,
+            }) {
+                Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -4250,6 +4357,24 @@ impl PackageDeclarations {
                 for slot in 0..conjunct.slots().len() {
                     type_spans.insert(hyper_site(index, make(at, slot)), conjunct.span());
                 }
+            }
+        }
+        // FR-411: each terminal node's `claim` occurrence, the key a reader of
+        // the emitted package finds the declaration's node by.
+        for (index, model, key) in &lowered_terminals {
+            let location = lowering::terminal_location(*index, lowering::TerminalSite::Claim);
+            let claim = occurrences
+                .iter_role(family::OccurrenceRole::Claim)
+                .find(|(node, _, at)| *node == *key && **at == location)
+                .map(|(_, origin, _)| origin)
+                .ok_or_else(|| {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                })?;
+            if let Some(checked) = terminals.iter_mut().find(|checked| checked.model == *model) {
+                checked.occurrence = Some(OccurrenceKey::new(claims::wire(*key), claim.clone()));
             }
         }
         let hyper_nodes = checked_hyper
@@ -4623,22 +4748,19 @@ impl PackageDeclarations {
                 })
                 .collect(),
         );
-        // FR-124, FR-382: no S4 emission writes a `terminal` declaration yet,
-        // so a package that checks with one is refused rather than compiled
-        // with an identity equal to the same package without it
-        // (`terminal::not_emitted`).
         let mut unwritten = Vec::new();
-        if !self.emit_unwritten_terminals {
-            unwritten.extend(
-                self.terminals
-                    .iter()
-                    .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span)),
-            );
-        }
         if !self.emit_unwritten_refinements {
             unwritten.extend(self.refinements.iter().map(|refinement| {
                 refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
             }));
+        }
+        if !self.emit_unwritten_timed_members {
+            unwritten.extend(
+                timed_models
+                    .iter()
+                    .filter(|model| model.has_members())
+                    .map(timed_model::not_emitted),
+            );
         }
         if !unwritten.is_empty() {
             return Err(unwritten);
@@ -4667,6 +4789,7 @@ impl PackageDeclarations {
             state_clauses,
             type_invariants,
             terminals,
+            timed_models,
             refinements,
             abstractions: self.abstractions,
             model_names,
@@ -5247,6 +5370,19 @@ impl CheckedGraph {
     /// in ascending order.
     pub fn terminals(&self) -> &[CheckedTerminal] {
         &self.terminals
+    }
+
+    /// FR-230: the checked timed model of each time source, in time-source
+    /// order.
+    pub fn timed_models(&self) -> &[TimedModel] {
+        &self.timed_models
+    }
+
+    /// FR-230: the checked timed model of the model alias `model`.
+    pub fn timed_model(&self, model: &str) -> Option<&TimedModel> {
+        self.timed_models
+            .iter()
+            .find(|timed| timed.model() == model)
     }
 
     /// FR-124: the intended terminal states of the model `alias`; `None` when
