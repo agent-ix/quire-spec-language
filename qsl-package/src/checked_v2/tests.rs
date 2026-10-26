@@ -1397,6 +1397,7 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
             continue;
         };
         let mut inner = CheckedPackageEvidence::new();
+        supply_qspec_extension_definitions(&mut inner, &library, &[]);
         for feature in library["lock"]["required_features"].as_array().unwrap() {
             inner.support_feature(feature.as_str().unwrap());
         }

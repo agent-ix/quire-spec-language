@@ -676,6 +676,14 @@ impl AdmittedModel {
         Some((declaring, name.to_owned()))
     }
 
+    /// How many `state_machine` records this package declares.
+    pub(crate) fn state_machine_count(&self) -> usize {
+        self.records
+            .values()
+            .filter(|record| matches!(record, DomainPackageRecord::StateMachine(_)))
+            .count()
+    }
+
     /// Every operation owner of this package that `M::T::op` can name: an
     /// object type, a process or a state machine (FR-104, FR-115, FR-121),
     /// with its declaration key and effective identity.
