@@ -87,7 +87,8 @@ pub use admitted::{
 pub use application::{
     acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
     CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
-    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle, SelectionRefusal,
+    CheckedApplicationSession, CheckedCallOccurrence, CheckedCallSite, CheckedCallSiteRefusal,
+    CheckedClosureCompilation, CheckedClosureHandle, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
