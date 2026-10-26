@@ -192,6 +192,7 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
         | ModelCheckRefusal::FormNotDecided { .. }
         | ModelCheckRefusal::CaptureRead { .. }
         | ModelCheckRefusal::WeakLiveness
+        | ModelCheckRefusal::TsoRace
         | ModelCheckRefusal::InstanceLiveness
         | ModelCheckRefusal::ReducedLiveness
         | ModelCheckRefusal::ProtocolAbstractSide
@@ -204,8 +205,9 @@ pub(super) fn model_refusal(refusal: &ModelCheckRefusal) -> Refusal {
             Refusal::Unsupported(EXPRESSION_FORM)
         }
         // A request defect: an operation or subject count the request names
-        // wrongly.
-        ModelCheckRefusal::Liveness(LivenessRefusal::UnknownOperation { .. })
+        // wrongly, or the race-freedom item over a model subject.
+        ModelCheckRefusal::RaceOverModel
+        | ModelCheckRefusal::Liveness(LivenessRefusal::UnknownOperation { .. })
         | ModelCheckRefusal::Hyper(
             HyperRefusal::UnknownOperation { .. } | HyperRefusal::SubjectCount { .. },
         ) => Refusal::Failed(INVALID_VALUE),

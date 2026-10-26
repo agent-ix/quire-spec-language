@@ -7,11 +7,13 @@
 //! tree's controls from the root down to it, joined by `/`, or the
 //! `finish` node's own name.
 
+use qsl_semantics::check::AccessOrdering;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::ObjectReference;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::memory::{MemoryChoice, MemoryStepId};
+use super::race::{AccessRecord, DataRace};
 use crate::simulation::model::encode::{reference_enc, Enc};
 
 /// One step of a thread's path (QSpec FR-425): for a branch thread, the
@@ -346,7 +348,7 @@ enum Members {
     /// `memory_step`, the typed identity its memory model gives.
     Memory { identity: MemoryStepId },
     /// `ordering`: a `fence`'s ordering (QSpec FR-426).
-    Fence { ordering: &'static str },
+    Fence { ordering: AccessOrdering },
     /// A `cattempt`'s `operation`, `receiver` and `arguments`, with the
     /// FR-120 identity of the application, its `template` and
     /// `registration`, and its attempt `record` (ST-11).
@@ -431,6 +433,21 @@ impl SendOutcome {
             Self::Lost => "lost",
         }
     }
+}
+
+/// The queued entries a channel-moving step touched, each by the canonical
+/// bytes of its queue-entry encoding (ADR-027 PS-7), which name its send node,
+/// its sending thread and its payload: the entry a `send` appended, a
+/// `receive` took, a `duplicate` copied or a `lose` dropped, and the entry a
+/// `send` displaced. Equal entries are interchangeable except in the memory
+/// view they carry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueueFlow {
+    /// The entry the step appended, took, copied or dropped.
+    pub entry: Vec<u8>,
+    /// The queued entry a `send` displaced at capacity, and how many entries
+    /// of the same bytes were queued before it.
+    pub displaced: Option<(Vec<u8>, usize)>,
 }
 
 /// A `send` step's send record (ADR-027 ST-3), the step's result: carried
@@ -593,6 +610,10 @@ pub struct ProtocolTransition {
     memory: Option<CarriedComponent>,
     actor: Option<Actor>,
     visibility_read: Option<VisibilityRead>,
+    access: Option<AccessRecord>,
+    race: Option<DataRace>,
+    children: Vec<ThreadPath>,
+    flow: Option<QueueFlow>,
 }
 
 /// Resolver metadata for a shared RA load. It is deliberately outside the
@@ -629,12 +650,16 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
     /// The `fence` at `node` by `thread`, with its `ordering` (ADR-027
     /// TS-2, SE-5).
-    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: &'static str) -> Self {
+    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: AccessOrdering) -> Self {
         Self {
             kind: StepKind::Fence,
             thread: Some(thread),
@@ -645,6 +670,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -671,6 +700,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -691,6 +724,61 @@ impl ProtocolTransition {
         self.visibility_read.as_ref()
     }
 
+    /// This attempt, having accessed a shared location of a weak `parallel`
+    /// (ADR-025 DR-3). Like the memory component, it is no part of the
+    /// identity.
+    pub(crate) fn accessing(mut self, access: AccessRecord) -> Self {
+        self.access = Some(access);
+        self
+    }
+
+    /// This attempt, having completed `race` (ADR-025 DR-4). It is no part
+    /// of the identity.
+    pub(crate) fn racing(mut self, race: Option<DataRace>) -> Self {
+        self.race = race;
+        self
+    }
+
+    /// This `fork`, having created the branch threads `children`. Like the
+    /// memory component, they are no part of the identity.
+    pub(crate) fn forking(mut self, children: Vec<ThreadPath>) -> Self {
+        self.children = children;
+        self
+    }
+
+    /// This `send`, `receive`, `duplicate` or `lose`, having moved the queued
+    /// entries `flow` names. It is no part of the identity.
+    pub(crate) fn flowing(mut self, flow: QueueFlow) -> Self {
+        self.flow = Some(flow);
+        self
+    }
+
+    /// The queued entries a `send`, `receive`, `duplicate` or `lose` moved;
+    /// `None` for every other step.
+    pub fn queue_flow(&self) -> Option<&QueueFlow> {
+        self.flow.as_ref()
+    }
+
+    /// For a `fork`, the branch threads it creates; empty for every other
+    /// step.
+    pub fn fork_children(&self) -> &[ThreadPath] {
+        &self.children
+    }
+
+    /// The shared-location access an attempt of a weak `parallel` makes; its
+    /// thread, location, direction and `ordering`. `None` for every other
+    /// step.
+    pub fn access(&self) -> Option<&AccessRecord> {
+        self.access.as_ref()
+    }
+
+    /// The data race this step completes (ADR-025 DR-4); `None` for an
+    /// explored step that completes none and for a step replayed from a
+    /// counterexample under a memory model with no race summary.
+    pub fn race(&self) -> Option<&DataRace> {
+        self.race.as_ref()
+    }
+
     /// A step of `kind` by `thread` at `node` that binds `record`: an
     /// `event`, `send`, `receive` or `finish`.
     pub(crate) fn record(kind: StepKind, thread: ThreadPath, node: String, record: Enc) -> Self {
@@ -704,6 +792,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -725,6 +817,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -757,6 +853,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -776,6 +876,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -790,6 +894,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -806,6 +914,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -831,6 +943,10 @@ impl ProtocolTransition {
             memory: None,
             actor: None,
             visibility_read: None,
+            access: None,
+            race: None,
+            children: Vec::new(),
+            flow: None,
         }
     }
 
@@ -961,6 +1077,29 @@ impl ProtocolTransition {
     /// The step's kind.
     pub fn kind(&self) -> StepKind {
         self.kind
+    }
+
+    /// For a `fence`, its `ordering`.
+    pub fn fence_ordering(&self) -> Option<AccessOrdering> {
+        match &self.members {
+            Members::Fence { ordering } => Some(*ordering),
+            _ => None,
+        }
+    }
+
+    /// For a `receive`, the channel's qualified name, the protocol
+    /// instance's ordinal and the static declaration path of the send node
+    /// whose entry it took off the queue.
+    pub fn received(&self) -> Option<(&str, u64, &str)> {
+        match &self.removed {
+            Some(QueueEvent {
+                channel,
+                instance,
+                send,
+                removal: Removal::Received,
+            }) => Some((channel, *instance, send)),
+            _ => None,
+        }
     }
 
     /// Whether the step counts for interval distance (ADR-027 PB-3).
@@ -1096,7 +1235,7 @@ impl ProtocolTransition {
             Members::Memory { identity } => {
                 members.push(("memory_step", identity.enc()));
             }
-            Members::Fence { ordering } => members.push(("ordering", Enc::text(*ordering))),
+            Members::Fence { ordering } => members.push(("ordering", Enc::text(ordering.label()))),
             Members::CAttempt {
                 operation,
                 receiver,

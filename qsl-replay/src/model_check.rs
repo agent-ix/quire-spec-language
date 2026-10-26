@@ -25,6 +25,7 @@ pub mod identity;
 pub mod item;
 pub mod limits;
 pub mod outcome;
+pub mod race_replay;
 pub mod refinement_replay;
 pub mod refinement_settle;
 pub mod replay;
