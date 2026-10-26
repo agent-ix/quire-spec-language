@@ -699,7 +699,7 @@ fn a_sampled_witness_never_hides_an_undefined_target() {
         panic!("undefined: {:?}", instance.outcome);
     };
     assert_eq!(versions(&world, stem), vec![(0, 0), (1, 0), (2, 0)]);
-    assert_eq!(undefined.predicate, PredicateRole::Target);
+    assert_eq!(undefined.predicate, Some(PredicateRole::Target));
     assert_eq!(
         undefined.cause,
         qsl_eval::temporal::UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
@@ -1162,7 +1162,7 @@ fn an_undefined_target_refutes_in_place_of_a_witness() {
     );
     assert_eq!(versions(&world, stem), vec![(0, 0), (1, 0), (2, 0)]);
     assert_eq!(undefined.state_key, stem.steps[1].post_state);
-    assert_eq!(undefined.predicate, PredicateRole::Target);
+    assert_eq!(undefined.predicate, Some(PredicateRole::Target));
     assert!(undefined.locus.is_some());
     assert_eq!(
         undefined.cause,

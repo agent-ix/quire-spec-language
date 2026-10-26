@@ -85,6 +85,17 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
 
 /// [`assemble`] against `model` in place of fixture R.
 fn assemble_against(model: SelectedModel, declarations: &str) -> (String, PackageDeclarations) {
+    assemble_with(model, declarations, true)
+}
+
+/// [`assemble_against`], with a protocol that names a construct S4 writes no
+/// node for yet checked as it is (`unwritten`) or refused (the production
+/// check).
+fn assemble_with(
+    model: SelectedModel,
+    declarations: &str,
+    unwritten: bool,
+) -> (String, PackageDeclarations) {
     let (profile, declarations) = match declarations.split_once('\n') {
         Some((first, rest)) if first.starts_with("profile ") => (format!("{first}\n"), rest),
         _ => (String::new(), declarations),
@@ -107,6 +118,11 @@ fn assemble_against(model: SelectedModel, declarations: &str) -> (String, Packag
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"));
+    let assembled = if unwritten {
+        assembled.with_unwritten_protocols()
+    } else {
+        assembled
+    };
     (text, assembled)
 }
 
@@ -1175,4 +1191,46 @@ fn a_refused_read_is_classified_in_the_order_the_criteria_state() {
         ReadClass::Foreign
     );
     assert_eq!(universe.classify("order", &at_protocol), ReadClass::Stage);
+}
+
+/// FR-092-AC-18, FR-383: a protocol with an `each` guard, captures and a
+/// `compensate` template is never checked to a package without them: with a
+/// protocol profile selected the production check refuses `NotEmitted` for
+/// each, naming QSL-1121e and QSL-1127.
+#[trace("FR-092-AC-18", "FR-383-AC-1")]
+#[test]
+fn a_guard_a_capture_and_a_compensation_refuse_the_protocol_naming_their_tickets() {
+    use super::super::refusal::{ProtocolConstruct, ProtocolReferenceCause};
+    let (_, assembled) = assemble_with(
+        obligation_model(),
+        &format!("profile pp = \"quire.protocol.finite-global/v1\";\n{BASE}"),
+        false,
+    );
+    let constructs: Vec<ProtocolConstruct> = assembled
+        .check(CheckingLimits::default())
+        .map(|_| ())
+        .expect_err("the protocol refuses")
+        .into_iter()
+        .map(|refusal| match refusal.cause {
+            CheckCause::ProtocolReference(cause) => match *cause {
+                ProtocolReferenceCause::NotEmitted { construct } => construct,
+                ProtocolReferenceCause::Repeated { .. } => panic!("repeated"),
+            },
+            other => panic!("only NotEmitted refusals, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        constructs,
+        [
+            ProtocolConstruct::Compensations,
+            ProtocolConstruct::Control("attempt"),
+            ProtocolConstruct::Control("effect"),
+            ProtocolConstruct::Control("commit"),
+            ProtocolConstruct::Captures,
+            ProtocolConstruct::ActivationGuard
+        ]
+    );
+    assert_eq!(constructs[0].tracking(), "QSL-1127");
+    assert_eq!(constructs[4].tracking(), "QSL-1121e");
+    assert_eq!(constructs[5].tracking(), "QSL-1121e");
 }

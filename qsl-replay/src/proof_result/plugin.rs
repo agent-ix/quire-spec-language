@@ -246,6 +246,7 @@ impl TerminalRecord {
             ),
             Ok(ReplayResult::Witness(_)) => (TerminalValue::Failed, None),
             Ok(ReplayResult::ObservedTemporal(_)) => (TerminalValue::Failed, None),
+            Ok(ReplayResult::ModelGraph(_)) => (TerminalValue::Failed, None),
             Err(refusal) => (TerminalValue::from_replay_refusal(refusal), None),
         };
         let mut record = Self::with_backend(request_index, plugin, value);

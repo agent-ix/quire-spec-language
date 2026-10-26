@@ -10,7 +10,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use super::{CheckedLifetime, CheckedTerminalMember};
 use crate::check::protocol_clause::ProtocolNodeId;
-use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
+use crate::check::refusal::{ProtocolAnchorCause, ProtocolConstruct, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
 mod fixture {
@@ -612,4 +612,42 @@ fn the_reference_protocols_check_with_their_edges() {
             .len(),
         1
     );
+}
+
+/// FR-092-AC-18, FR-383: a replicated role (and the capture, the `terminal`
+/// and the channels of the same protocols) is never checked to a package
+/// without its node: the production check refuses it `NotEmitted`, naming the
+/// construct and the ticket that writes it.
+#[trace("FR-092-AC-18", "FR-383-AC-1")]
+#[test]
+fn a_replicated_role_refuses_the_protocol_naming_its_ticket() {
+    let constructs = |text: &str| -> Vec<ProtocolConstruct> {
+        let text = text.replacen(
+            "model M",
+            "profile pp = \"quire.protocol.finite-global/v1\";\nmodel M",
+            1,
+        );
+        check(&text)
+            .map(|_| ())
+            .expect_err("the protocol refuses")
+            .into_iter()
+            .map(|refusal| match refusal.cause {
+                CheckCause::ProtocolReference(cause) => {
+                    cause.construct().unwrap_or_else(|| panic!("{cause:?}"))
+                }
+                other => panic!("only NotEmitted refusals, got {other:?}"),
+            })
+            .collect()
+    };
+    let found = constructs(&workers("workflow"));
+    assert_eq!(
+        found,
+        [
+            ProtocolConstruct::ReplicatedRoles,
+            ProtocolConstruct::Control("event"),
+            ProtocolConstruct::Control("check"),
+            ProtocolConstruct::Captures
+        ]
+    );
+    assert_eq!(found[0].tracking(), "QSL-1125");
 }

@@ -1451,6 +1451,7 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
         ReplayResult::Witness(arm) => arm,
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ModelGraph(arm) => panic!("expected the witness arm, got {arm:?}"),
     }
 }
 

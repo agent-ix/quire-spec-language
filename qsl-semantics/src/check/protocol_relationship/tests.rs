@@ -9,7 +9,9 @@ use qsl_foundation::SourceIdentity;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 
-use crate::check::refusal::{ProtocolAnchorCause, RelatedEnd};
+use crate::check::refusal::{
+    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, RelatedEnd,
+};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord,
@@ -321,4 +323,113 @@ fn a_related_clause_types_each_end_by_its_relationship() {
         }
     ));
     assert_eq!(at, "sent.id");
+}
+
+/// The constructs the production check (no `with_unwritten_protocols`)
+/// refuses `text` for, in order, with a protocol profile selected. Every
+/// refusal must be a `NotEmitted` one.
+fn unwritten(text: &str) -> Vec<ProtocolConstruct> {
+    let text = text.replacen(
+        "model M",
+        "profile pp = \"quire.protocol.finite-global/v1\";\nmodel M",
+        1,
+    );
+    let refusals = check(&text).map(|_| ()).expect_err("the protocol refuses");
+    refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
+            CheckCause::ProtocolReference(cause) => match cause.as_ref() {
+                ProtocolReferenceCause::NotEmitted { construct } => *construct,
+                ProtocolReferenceCause::Repeated { .. } => panic!("{refusal:?}"),
+            },
+            other => panic!("{text}: only NotEmitted refusals, got {other:?}"),
+        })
+        .collect()
+}
+
+/// A protocol over the checked R fixture with `members` before `run`, an
+/// empty `run` sequence and a `finish`, so the only construct it names is
+/// what `members` and `activation` write.
+fn bare(activation: &str, members: &str, finish: &str) -> String {
+    let (captures, members) = members
+        .strip_prefix("capture ")
+        .map_or(("", members), |_| (members, ""));
+    format!(
+        "{HEADER}protocol Bare using v over (view: M::Node) {activation} {{\n\
+         {captures}\n\
+         role Seller on M::Node;\n\
+         {members}\n\
+         run sequence Main {{ }}\n\
+         finish Closed as (closed: M::Receipt) {{ {finish} }};\n\
+         }}\n"
+    )
+}
+
+/// FR-092-AC-18, FR-383: a protocol with a protocol profile selected that
+/// names a construct whose node is not written yet never checks to a package
+/// that lacks that part of its graph: it refuses `NotEmitted`, naming the
+/// construct and the ticket that writes it, for every such construct.
+#[trace("FR-092-AC-18", "FR-383-AC-1")]
+#[test]
+fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
+    use ProtocolConstruct as C;
+    let channel = "channel Pay from Seller to Seller carries M::Plain ordering unordered \
+                   delivery at-least-once capacity 2 overflow block;";
+    let cases: Vec<(String, Vec<C>, &str)> = vec![
+        (bare("on origin", "", "true"), vec![], ""),
+        (
+            bare("on origin", channel, "true"),
+            vec![C::Channels],
+            "QSL-1125",
+        ),
+        (
+            bare("on origin", "relationship Pipe = M::pipe;", "true"),
+            vec![C::Relationships],
+            "QSL-1125",
+        ),
+        (
+            bare("on origin", "capture start: M::Total = view.total;", "true"),
+            vec![C::Captures],
+            "QSL-1121e",
+        ),
+        (
+            bare("on each (opened: M::Tick) when (opened.ready)", "", "true"),
+            vec![C::ActivationGuard],
+            "QSL-1121e",
+        ),
+        (
+            bare("on origin", "terminal any;", "true"),
+            vec![C::Terminal],
+            "QSL-1121f",
+        ),
+        (
+            bare("on origin", "", "ok()"),
+            vec![C::FinishReadsDeclaration],
+            "QSL-1121g",
+        ),
+    ];
+    for (text, expected, ticket) in cases {
+        let text = if expected == [C::FinishReadsDeclaration] {
+            text.replacen(
+                "protocol Bare",
+                "function ok using v(): Boolean pure { true }\nprotocol Bare",
+                1,
+            )
+        } else {
+            text
+        };
+        if expected.is_empty() {
+            let packaged = text.replacen(
+                "model M",
+                "profile pp = \"quire.protocol.finite-global/v1\";\nmodel M",
+                1,
+            );
+            checks(&packaged);
+            continue;
+        }
+        assert_eq!(unwritten(&text), expected, "{text}");
+        for construct in expected {
+            assert_eq!(construct.tracking(), ticket, "{construct:?}");
+        }
+    }
 }

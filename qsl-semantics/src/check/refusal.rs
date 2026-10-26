@@ -445,6 +445,14 @@ pub enum ProtocolAnchorCause {
         /// The `repeat`'s name span.
         span: Span,
     },
+    /// FR-218: a post-test repeat with a zero maximum cannot execute its
+    /// required first body iteration. `invalid_package`/`invalid-value`.
+    RepeatMaxConflict {
+        /// The repeat's declared name.
+        repeat: String,
+        /// The repeat declaration's name span.
+        span: Span,
+    },
     /// FR-218 "Choice and repeat decisions": a `choice` whose guards are not
     /// proved exhaustive and exclusive. `undefined_expression`/
     /// `unproved-exhaustiveness`, at the choice.
@@ -754,14 +762,65 @@ pub enum ProtocolReferenceCause {
         /// The first reference to the same target.
         first: Location,
     },
-    /// A protocol, or a reference to it, whose `run` root names no FR-052
-    /// control construct (`sequence`, `choice`, `parallel`, `repeat`) to be
-    /// the `profile_operator` of its node, while a protocol profile is
-    /// selected. `unsupported_construct`/`declaration-form`.
-    UnsupportedRoot {
-        /// The root's own keyword, such as `attempt` or `commit`.
-        root: &'static str,
+    /// A protocol, or a reference to it, that names a construct whose
+    /// FR-464, FR-465 or FR-466 node QSL does not write yet, while a protocol
+    /// profile is selected: the protocol would otherwise be written without
+    /// that part of its graph. `unsupported_construct`/`not-yet-implemented`.
+    NotEmitted {
+        /// The construct no node is written for.
+        construct: ProtocolConstruct,
     },
+}
+
+/// A construct of a protocol whose FR-464, FR-465 or FR-466 node QSL does not
+/// write yet. Each names the ticket that writes it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ProtocolConstruct {
+    /// A replicated `role r each T from population ...` member (FR-465
+    /// "Role" `replication` Group): QSL-1125. A static role is written.
+    ReplicatedRoles,
+    /// A static role `on` a whole model alias (FR-465 "Role": `model` is the
+    /// text identity of a `model_selections` row). IR's protocol reader at
+    /// `quire-contract-ir` `9a84e654` admits only the reference form of
+    /// `model`, so the node cannot be proved admitted: an IR gap, IR-874.
+    WholeModelRole,
+    /// A `channel` member and the queue generated for it (FR-465 "Channel",
+    /// "Queue"): QSL-1125.
+    Channels,
+    /// A `relationship` member (FR-464 "Clause body"): QSL-1125.
+    Relationships,
+    /// A `requires temporal` member (FR-464 "Activation relation"): QSL-1127.
+    Requirements,
+    /// A `compensate` template (FR-466 "Compensation"): QSL-1127.
+    Compensations,
+    /// A control of the `run` tree other than a `sequence`, by its keyword
+    /// (FR-466): QSL-1126.
+    Control(&'static str),
+    /// A protocol `capture` (FR-464 "Clause body"): QSL-1121e.
+    Captures,
+    /// An `activation on each` guard (FR-464 "Clause body"): QSL-1121e.
+    ActivationGuard,
+    /// A `terminal` member (FR-465 "Terminal"): QSL-1121f.
+    Terminal,
+    /// A `finish` constraint that calls a function or refers to a protocol:
+    /// the node is written before the functions are, so the constraint
+    /// cannot name them yet. QSL-1121g.
+    FinishReadsDeclaration,
+}
+
+impl ProtocolConstruct {
+    /// The ticket that writes this construct's node.
+    pub const fn tracking(self) -> &'static str {
+        match self {
+            Self::ReplicatedRoles | Self::Channels | Self::Relationships => "QSL-1125",
+            Self::WholeModelRole => "IR-874",
+            Self::Control(_) => "QSL-1126",
+            Self::Requirements | Self::Compensations => "QSL-1127",
+            Self::Captures | Self::ActivationGuard => "QSL-1121e",
+            Self::Terminal => "QSL-1121f",
+            Self::FinishReadsDeclaration => "QSL-1121g",
+        }
+    }
 }
 
 impl ProtocolReferenceCause {
@@ -769,14 +828,22 @@ impl ProtocolReferenceCause {
     pub fn first(&self) -> Option<&Location> {
         match self {
             Self::Repeated { first } => Some(first),
-            Self::UnsupportedRoot { .. } => None,
+            Self::NotEmitted { .. } => None,
+        }
+    }
+
+    /// The construct no node is written for, for a protocol that names one.
+    pub fn construct(&self) -> Option<ProtocolConstruct> {
+        match self {
+            Self::Repeated { .. } => None,
+            Self::NotEmitted { construct } => Some(*construct),
         }
     }
 
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Repeated { .. } | Self::UnsupportedRoot { .. } => Code::UnsupportedConstruct,
+            Self::Repeated { .. } | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -784,7 +851,7 @@ impl ProtocolReferenceCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Repeated { .. } => "expression-form",
-            Self::UnsupportedRoot { .. } => "declaration-form",
+            Self::NotEmitted { .. } => "not-yet-implemented",
         }
     }
 }
@@ -920,6 +987,7 @@ impl ProtocolAnchorCause {
             | Self::CarriesMismatch { span, .. }
             | Self::CausalCycle { span, .. }
             | Self::NoProgress { span, .. }
+            | Self::RepeatMaxConflict { span, .. }
             | Self::Exhaustiveness { span, .. }
             | Self::KeyClause { span, .. }
             | Self::KeyModelState { span, .. }
@@ -982,7 +1050,9 @@ impl ProtocolAnchorCause {
             | Self::AwaitedForm { .. }
             | Self::WeakJoin { .. }
             | Self::AccessShape { .. } => Code::UnsupportedConstruct,
-            Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
+            Self::CausalCycle { .. }
+            | Self::RepeatMaxConflict { .. }
+            | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).0
@@ -1042,6 +1112,7 @@ impl ProtocolAnchorCause {
             | Self::AccessShape { .. } => "declaration-form",
             Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
+            Self::RepeatMaxConflict { .. } => "invalid-value",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).1
@@ -2593,6 +2664,10 @@ pub enum KeyFault {
     /// or a declaration a second node (FR-303): names the recorded pair and
     /// the offered one.
     CorrespondenceConflict(Box<super::identity::CorrespondenceConflict>),
+    /// A protocol that passed S3 lacks a fact its node needs: its `run`
+    /// root, its `finish` node, the checked body of its `finish` constraint
+    /// or the binder slot of its closing record.
+    UncheckedProtocolFact,
 }
 
 impl KeyFault {
@@ -2622,6 +2697,7 @@ impl KeyFault {
             Self::UnkeyableRequirements => "requirements-item-keyed",
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),
             Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
+            Self::UncheckedProtocolFact => "protocol-fact-checked",
         }
     }
 }

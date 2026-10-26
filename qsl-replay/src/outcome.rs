@@ -1171,6 +1171,11 @@ impl OutcomeDocument {
             Ok(ReplayResult::ObservedTemporal(arm)) => {
                 Self::new(Operation::Replay, Some(OutcomeStage::S8), arm.category())
             }
+            Ok(ReplayResult::ModelGraph(arm)) => Self::new(
+                Operation::Replay,
+                Some(OutcomeStage::S8),
+                ReplayResult::ModelGraph(arm.clone()).category(),
+            ),
             Err(refusal) => Self::new(
                 Operation::Replay,
                 replay_stage(refusal),
@@ -1332,6 +1337,9 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::WrongReplayTarget { .. }
         | ReplayRefusal::WrongObservedTemporalTarget { .. }
         | ReplayRefusal::WrongObservedTemporalSource
+        | ReplayRefusal::WrongModelGraphEntry
+        | ReplayRefusal::ModelGraphMismatch { .. }
+        | ReplayRefusal::WrongModelGraphSource
         | ReplayRefusal::TargetMismatch { .. }
         | ReplayRefusal::MalformedOperationTarget { .. }
         | ReplayRefusal::AmbiguousOperation { .. }
