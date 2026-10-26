@@ -437,41 +437,26 @@ impl RaComponent {
 
     /// DR-3 and ADR-025 DR-4: the data race `access` completes at this
     /// component, decided from its pre-state over the accessing thread's
-    /// `cur` view; `None` for a location with no race summary.
-    fn race_of(&self, access: &AccessRecord) -> Option<DataRace> {
+    /// `cur` view, joined with `read`, the race Booleans of the message an
+    /// acquire read-modify-write reads: what happens before the store it
+    /// reads happens before its write. `None` for a location with no race
+    /// summary.
+    fn race_of(&self, access: &AccessRecord, read: Option<&RaceMap>) -> Option<DataRace> {
         let summary = self.races.get(&access.location)?;
-        let carrier = self
+        let mut carrier = self
             .threads
             .get(&access.thread)
             .and_then(|views| views.cur.race.get(&access.location))
             .cloned()
             .unwrap_or_default();
+        if let Some(bools) = read.and_then(|map| map.get(&access.location)) {
+            carrier.join(bools);
+        }
         let earlier = summary.conflicts(access, &carrier);
         (!earlier.is_empty()).then(|| DataRace {
             location: access.location.clone(),
             earlier,
         })
-    }
-
-    /// DR-3: an acquire read-modify-write decides its race only after the
-    /// race Booleans of the message `id` it reads are joined into its `cur`
-    /// view, since what happens before the store it reads happens before its
-    /// write.
-    fn joined_race_of(
-        &self,
-        access: &AccessRecord,
-        read: Id,
-    ) -> Option<DataRace> {
-        let mut joined = self.clone();
-        let carried = self
-            .shared
-            .get(&access.location)
-            .and_then(|held| held.messages.iter().find(|message| message.id == read))
-            .map(|message| message.view.race.clone())?;
-        if let Some(views) = joined.threads.get_mut(&access.thread) {
-            join_maps(&mut views.cur.race, &carried);
-        }
-        joined.race_of(access)
     }
 
     /// DR-3: the summary and every carrier after `access`: a write sets the
@@ -1263,7 +1248,7 @@ impl Ra {
             return Vec::new();
         };
         let access = delta.access(true, false);
-        let race = component.race_of(&access);
+        let race = component.race_of(&access, None);
         let mut next = component.clone();
         next.note(&access);
         next.read_from(thread, location, id, acquires(*ordering));
@@ -1311,7 +1296,7 @@ impl Ra {
             .map_or(0, |at| at + 1);
         let value = post.cell(shared.cell).cloned();
         let access = delta.access(false, true);
-        let race = component.race_of(&access);
+        let race = component.race_of(&access, None);
         let mut chosen = Vec::new();
         let mut cut = false;
         for slot in first..=len {
@@ -1395,9 +1380,9 @@ impl Ra {
         let id = read_message.id;
         let access = delta.access(true, true);
         let race = if acquires(*ordering) {
-            component.joined_race_of(&access, id)
+            component.race_of(&access, Some(&read_message.view.race))
         } else {
-            component.race_of(&access)
+            component.race_of(&access, None)
         };
         let mut next = component.clone();
         next.note(&access);

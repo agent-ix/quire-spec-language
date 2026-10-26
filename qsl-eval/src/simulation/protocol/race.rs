@@ -111,7 +111,7 @@ pub(crate) struct RaceBools {
 
 impl RaceBools {
     /// These Booleans or-ed with `other`'s (a join of carriers).
-    fn join(&mut self, other: &Self) {
+    pub(crate) fn join(&mut self, other: &Self) {
         self.write |= other.write;
         self.reads.extend(other.reads.iter().cloned());
     }

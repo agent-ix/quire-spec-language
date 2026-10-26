@@ -43,6 +43,7 @@ mod protocol_footprints;
 mod protocol_roles;
 mod protocol_system;
 mod quotient;
+mod race_freedom;
 mod rc11_oracle;
 #[path = "../support/rc11.rs"]
 mod rc11_support;

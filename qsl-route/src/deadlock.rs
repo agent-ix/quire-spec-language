@@ -204,7 +204,7 @@ pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
 /// One item over a protocol subject, as the race-freedom writer reads it
 /// (FR-224): the subject, the resolved model of each of its outermost
 /// `parallel`s, and whether it has a non-atomic shared access (ADR-025 MA-2).
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct ProtocolMemoryItem<'g, S> {
     /// The protocol subject.
     pub subject: &'g S,
@@ -214,6 +214,14 @@ pub struct ProtocolMemoryItem<'g, S> {
     /// location with no `ordering`.
     pub non_atomic_access: bool,
 }
+
+impl<S> Clone for ProtocolMemoryItem<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for ProtocolMemoryItem<'_, S> {}
 
 /// One derived race-freedom item (FR-224).
 #[derive(Clone, Debug, Eq, PartialEq)]
