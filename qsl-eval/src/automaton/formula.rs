@@ -730,11 +730,6 @@ struct Occurrences {
 /// Resolve each occurrence path in the checked formula to the node its
 /// polarity selects in the NNF arena. The path, not the arena's materialized
 /// node index, is the stable identity used by FR-338.
-struct OccurrenceNodes {
-    nodes: BTreeMap<NodeId, Vec<Occurrence>>,
-    past: BTreeMap<NodeId, Vec<(Vec<u64>, PastOperator)>>,
-}
-
 fn occurrence_nodes(
     formula: &CheckedFormula,
     pairs: &[Option<(NodeId, NodeId)>],
