@@ -1872,6 +1872,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 Value::Float(result.value())
             }
+            NodeKind::IeeeSquareRoot(rounding, _) => {
+                let Value::Float(operand) = self.pop()? else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                let result = outcome_into_stop(
+                    evaluate_ieee(IeeeOperation::SquareRoot(operand), *rounding, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                }
+                Value::Float(result.value())
+            }
             NodeKind::Quantity(operator, _, _) => {
                 let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)
                 else {
@@ -1928,6 +1944,29 @@ impl<'a, 'm> Machine<'a, 'm> {
                         self.meter,
                     ))?),
                 }
+            }
+            NodeKind::IeeeNumericEquality(_, _) => {
+                let right = self.pop()?;
+                let left = self.pop()?;
+                let (Value::Float(left), Value::Float(right)) = (left, right) else {
+                    return Err(Halt::Fault(InternalFault::new(
+                        "S6a",
+                        "typed-ieee-equality-operands-are-not-floats",
+                    )));
+                };
+                let same_width = left.width() == right.width();
+                let numeric_equal = if !same_width || left.is_nan() || right.is_nan() {
+                    false
+                } else {
+                    let zero = |value: quire_exact::IeeeValue| match value.width() {
+                        quire_exact::IeeeWidth::Binary32 => value.bits() & 0x7fff_ffff == 0,
+                        quire_exact::IeeeWidth::Binary64 => {
+                            value.bits() & 0x7fff_ffff_ffff_ffff == 0
+                        }
+                    };
+                    (zero(left) && zero(right)) || left.bits() == right.bits()
+                };
+                Value::Boolean(numeric_equal)
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
