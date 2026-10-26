@@ -24,7 +24,8 @@
 //!   a `duplicate` copies a queued entry with its clock, and a `lose`, or a
 //!   `send` that displaces one at capacity, drops it.
 //!
-//! Under `tso` there are no messages: a store waits in its thread's buffer
+//! Under `tso` there is no global fence clock (DR-3), so a `seq_cst` fence is
+//! an acquire and a release only. There are no messages either: a store waits in its thread's buffer
 //! with the clock it was given, `flush` moves it to memory, and a load joins
 //! the clock of the newest buffered store of its thread, else of memory.
 //!
@@ -116,6 +117,8 @@ type Queued = (Vec<u8>, Clock);
 /// The vector-clock state of a replayed prefix.
 #[derive(Default)]
 struct Replay {
+    /// The prefix runs under `tso`, which has no counterpart of `S` (DR-3).
+    tso: bool,
     threads: BTreeMap<ThreadPath, Clocks>,
     /// The threads that hold views: the parent and the branches of every
     /// `parallel` forked and not yet joined (RA-6).
@@ -317,6 +320,7 @@ impl Replay {
             ordering,
             AccessOrdering::Release | AccessOrdering::AcqRel | AccessOrdering::SeqCst
         );
+        let tso = self.tso;
         let clocks = self.thread(thread);
         clocks.tick(thread);
         if acquires {
@@ -328,7 +332,7 @@ impl Replay {
             clocks.fence = clocks.cur.clone();
             clocks.rel.clear();
         }
-        if ordering == AccessOrdering::SeqCst {
+        if ordering == AccessOrdering::SeqCst && !tso {
             let mut current = clocks.cur.clone();
             join(&mut current, &self.fences);
             self.fences.clone_from(&current);
@@ -469,8 +473,11 @@ impl Replay {
 /// DR-6: whether the accesses at the positions `race` names are by different
 /// threads, touch its location, include a write and a non-atomic access, and
 /// are unordered by happens-before over `steps`, the replayed prefix.
-pub(super) fn reproduces(steps: &[ProtocolTransition], race: &Race) -> bool {
-    let mut replay = Replay::default();
+pub(super) fn reproduces(steps: &[ProtocolTransition], race: &Race, tso: bool) -> bool {
+    let mut replay = Replay {
+        tso,
+        ..Replay::default()
+    };
     let events: Vec<Option<Event>> = steps.iter().map(|step| replay.step(step)).collect();
     let event = |position: u64| -> Option<&Event> {
         let at = usize::try_from(position).ok()?.checked_sub(1)?;

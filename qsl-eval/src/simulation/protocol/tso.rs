@@ -687,6 +687,10 @@ impl MemoryModel for Tso {
         (!component.race.summaries.is_empty()).then(|| self.carried_key(component, carried))
     }
 
+    fn carried_member(&self) -> &'static str {
+        "race"
+    }
+
     fn carried_key(&self, component: &TsoComponent, carried: &CarriedView) -> CarriedKey {
         CarriedKey(component.race.map_enc(carried.race()))
     }

@@ -23,6 +23,7 @@ use qsl_replay::{
 use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
+use serde_json::{json, Value as Json};
 
 use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
 use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
@@ -94,6 +95,26 @@ fn location_of_under(case: &Case, key: &str, selection: &[MemorySelection]) -> L
         .find(|location| accesses.cell(location).is_some_and(|cell| cell.key == key))
         .cloned()
         .expect("a shared location")
+}
+
+/// The obligation identity of the race-freedom item `case`'s request gives
+/// under `selection`.
+fn race_freedom_obligation(case: &Case, selection: &[MemorySelection]) -> String {
+    let accesses = case.accesses(selection);
+    let subject = case.subject(selection);
+    let models: Vec<(String, MemoryModelName)> = subject
+        .memory
+        .parallels()
+        .iter()
+        .map(|resolved| (resolved.parallel.clone(), resolved.model))
+        .collect();
+    let item = ProtocolMemoryItem {
+        subject: &subject.protocol,
+        models: &models,
+        non_atomic_access: !accesses.non_atomic().is_empty(),
+    };
+    let items = race_freedom_items(&[item]);
+    format!("{:?}", items[0].obligation())
 }
 
 /// FR-224's request writer over `case`'s `ra` request: the number of
@@ -856,20 +877,6 @@ fn a_second_receiver_of_an_older_equal_entry_races_with_the_store_under_tso() {
     );
 }
 
-/// FR-224-AC-1 (TC-669), the `tso` half: ADR-025 §10's message-passing shape
-/// with `data` non-atomic and a `release` flag store and `acquire` flag load
-/// carries one `RaceFreedom` item under `tso`, which settles `proved`.
-#[trace("TC-669", "FR-224-AC-1")]
-#[test]
-fn a_release_acquire_flag_proves_race_freedom_under_tso() {
-    let case = unit(&message_passing("", "release", "acquire"), &MP);
-    assert_eq!(race_freedom_item_count(&case, &tso()), 1);
-    let outcome = case.check(&tso(), ModelCheckItem::RaceFreedom, None);
-    assert!(holds(&outcome), "{outcome:?}");
-    let record = case.settle_race(&tso(), &outcome);
-    assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
-}
-
 /// FR-224-AC-2 (TC-669), the `tso` half: with a `relaxed` flag the item
 /// settles `refuted` under `tso` with kind `Race{location: data, earlier,
 /// later}`, `earlier` the position of `data := 1` and `later` that of
@@ -900,25 +907,10 @@ fn a_relaxed_flag_refutes_race_freedom_under_tso_and_the_race_replays() {
     );
 }
 
-/// FR-224-AC-4 (TC-669), the `tso` half: a race changes no authored claim's
-/// verdict. `tso` forbids ADR-025 §10's message-passing outcome, so the claim
-/// `always holds(not (r1 = 1 and r2 = 0))` holds with `data` non-atomic and
-/// with `data` atomic and `relaxed`, the same verdict.
-#[trace("TC-669", "FR-224-AC-4")]
-#[test]
-fn a_race_changes_no_authored_claims_verdict_under_tso() {
-    for data in ["", "relaxed"] {
-        let case = unit(&message_passing(data, "relaxed", "relaxed"), &MP);
-        let outcome = case.claim(&tso(), None);
-        assert!(holds(&outcome), "data {data:?}: {outcome:?}");
-    }
-}
-
-/// FR-227-AC-3 (TC-672) for `tso`: a race forged on the `release`/`acquire`
-/// shape, whose `data` load runs after a flag load that read the flushed
+/// FR-227 "For `kind: Race`" under `tso` (no acceptance criterion states it
+/// for `tso`): a race forged on the `release`/`acquire` shape, whose `data` load runs after a flag load that read the flushed
 /// `release` store, settles `inconclusive`, `ReplayParity`: the store buffer
 /// and `flush` give the load a happens-before the forged race contradicts.
-#[trace("TC-672", "FR-227-AC-3")]
 #[test]
 fn a_forged_race_settles_inconclusive_under_tso() {
     let case = unit(&message_passing("", "release", "acquire"), &MP);
@@ -934,4 +926,323 @@ fn a_forged_race_settles_inconclusive_under_tso() {
     let location = location_of_under(&case, "x", &tso());
     let forged = forged_race_under(&case, &tso(), Tso::default(), &path, location, 2, 7);
     disagreement_under(&case, &tso(), forged);
+}
+
+/// Walk `case`'s `tso` system along `path` and return the JSON of the state
+/// key after each hop.
+fn tso_keys_after(case: &Case, path: &[Hop]) -> Vec<Json> {
+    let system = case.system(&tso(), Tso::default()).expect("builds");
+    let mut state = system.initial().remove(0);
+    let mut keys = Vec::new();
+    for hop in path {
+        let (_, next) = system
+            .successors(&state)
+            .expect("expands")
+            .successors
+            .into_iter()
+            .find(|(transition, _)| match hop {
+                Hop::Fork => transition.kind() == StepKind::Fork,
+                Hop::Kind(kind) => transition.kind() == *kind,
+                Hop::Node(node) | Hop::At(node, _) => is_at(transition, node),
+            })
+            .unwrap_or_else(|| panic!("a step for the hop of the path is enabled"));
+        let (key, _) = system.state_key(&next).expect("a key");
+        keys.push(serde_json::from_slice::<Json>(&key).expect("JSON"));
+        state = next;
+    }
+    keys
+}
+
+/// The identity of the object a location of the unit names: its key's
+/// characters in hexadecimal.
+fn identity(name: &str) -> String {
+    name.bytes().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The value of the entry of the map member `member` whose key has `kind`
+/// and which `pick` accepts.
+fn entry_of(member: &Json, kind: &str, pick: impl Fn(&Json) -> bool) -> Json {
+    member["entries"]
+        .as_array()
+        .expect("a map")
+        .iter()
+        .find(|entry| entry["key"]["type"] == json!(kind) && pick(&entry["key"]))
+        .unwrap_or_else(|| panic!("an entry of {kind}"))["value"]
+        .clone()
+}
+
+/// The race entry of `kind` for the location `name`.
+fn race_entry(member: &Json, kind: &str, name: &str) -> Json {
+    entry_of(member, kind, |key| {
+        key["location"]["object"]["identity"] == json!(identity(name))
+    })
+}
+
+/// The thread entry of `kind` of the branch `branch`.
+fn thread_entry(member: &Json, kind: &str, branch: &str) -> Json {
+    entry_of(member, kind, |key| {
+        key["thread"]["steps"][0]["branch"] == json!(branch)
+    })
+}
+
+/// The write Boolean a race map holds for the location `name`.
+fn write_of(map: &Json, name: &str) -> bool {
+    map["entries"]
+        .as_array()
+        .expect("a map")
+        .iter()
+        .find(|entry| entry["key"]["object"]["identity"] == json!(identity(name)))
+        .unwrap_or_else(|| panic!("a map entry for {name}"))["value"]["write"]
+        .as_bool()
+        .expect("a Boolean")
+}
+
+/// Every queue entry in `key` that carries a view, with the member naming it.
+fn carried(key: &Json, found: &mut Vec<(String, Json)>) {
+    match key {
+        Json::Object(members) => {
+            if members.contains_key("entry") {
+                for member in ["race", "view"] {
+                    if let Some(value) = members.get(member) {
+                        found.push((member.to_owned(), value.clone()));
+                    }
+                }
+            }
+            members.values().for_each(|value| carried(value, found));
+        }
+        Json::Array(values) => values.iter().for_each(|value| carried(value, found)),
+        _ => {}
+    }
+}
+
+/// FR-224-AC-6 (TC-669): in the message-passing shape under `tso`, the state
+/// after the writer's `data := 1` holds `data`'s race-summary entry, the
+/// writer's `race-summaries` entry mapping `data` to `"write":true` in `cur`
+/// and `acq` and `"write":false` in `rel` for `flag`, and the buffered `data`
+/// element's `race` member mapping it to `"write":false`. The buffered `flag`
+/// element, and after `flush` the `race-memory` entry for `flag`, map `data` to
+/// `"write":true` with a `release` store and `"write":false` with a `relaxed`
+/// one. The item settles `proved` with the `release` store and `acquire` load
+/// and with the flag passed by a `send` and `receive`, whose queue entry holds
+/// the writer's `cur` map under the member `race`, and `refuted` with the
+/// `relaxed` flag.
+#[trace("TC-669", "FR-224-AC-6")]
+#[test]
+fn the_tso_race_summary_holds_the_typed_values_of_the_message_passing_shape() {
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Sy"),
+        Hop::Kind(StepKind::Memory),
+        Hop::Kind(StepKind::Memory),
+    ];
+    for (flag, carries) in [("release", true), ("relaxed", false)] {
+        let case = unit(&message_passing("", flag, "acquire"), &MP);
+        let keys = tso_keys_after(&case, &path);
+        let stored = &keys[1]["memory"];
+        let summary = race_entry(stored, "race-summary", "x");
+        assert_eq!(summary["last_write"]["atomic"], json!(false));
+        assert_eq!(
+            summary["last_write"]["thread"]["steps"][0]["branch"],
+            json!("a")
+        );
+        assert_eq!(summary["last_reads"]["entries"], json!([]));
+        let writer = thread_entry(stored, "race-summaries", "a");
+        assert!(write_of(&writer["cur"], "x"), "{flag}");
+        assert!(write_of(&writer["acq"], "x"), "{flag}");
+        let rel = &writer["rel"]["entries"]
+            .as_array()
+            .expect("a map")
+            .iter()
+            .find(|entry| entry["key"]["object"]["identity"] == json!(identity("y")))
+            .expect("the release summary for flag")["value"];
+        assert!(!write_of(rel, "x"), "{flag}");
+        let buffer = thread_entry(stored, "store-buffer", "a");
+        assert!(!write_of(&buffer["elements"][0]["race"], "x"), "{flag}");
+        let flagged = thread_entry(&keys[2]["memory"], "store-buffer", "a");
+        assert_eq!(
+            write_of(&flagged["elements"][1]["race"], "x"),
+            carries,
+            "{flag}"
+        );
+        let memory = race_entry(&keys[4]["memory"], "race-memory", "y");
+        assert_eq!(write_of(&memory, "x"), carries, "{flag}");
+    }
+
+    let case = unit(&message_passing("", "release", "acquire"), &MP);
+    let outcome = case.check(&tso(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    assert_eq!(
+        case.settle_race(&tso(), &outcome).label,
+        ResultLabel::Proved
+    );
+
+    let sent = channel_case(true);
+    let outcome = sent.check(&tso(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    assert_eq!(
+        sent.settle_race(&tso(), &outcome).label,
+        ResultLabel::Proved
+    );
+    let keys = tso_keys_after(
+        &sent,
+        &[
+            Hop::Fork,
+            Hop::Node("Sx"),
+            Hop::Kind(StepKind::Memory),
+            Hop::Node("Tx"),
+        ],
+    );
+    let mut entries = Vec::new();
+    carried(&keys[3], &mut entries);
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].0, "race");
+    assert!(write_of(&entries[0].1, "x"));
+
+    let relaxed = unit(&message_passing("", "relaxed", "relaxed"), &MP);
+    let outcome = relaxed.check(&tso(), ModelCheckItem::RaceFreedom, None);
+    assert_eq!(
+        relaxed.settle_race(&tso(), &outcome).label,
+        ResultLabel::Refuted
+    );
+}
+
+/// FR-224-AC-3 (TC-669), the `tso` half: a subject whose shared accesses are
+/// all atomic carries no `RaceFreedom` item under `tso`, nor does the AC-1
+/// shape under `sc`; two items over one subject give one item, whose identity
+/// differs between the `tso` and `ra` requests.
+#[trace("TC-669", "FR-224-AC-3")]
+#[test]
+fn the_race_freedom_item_is_derived_only_for_a_weak_subject_with_a_non_atomic_access() {
+    let atomic = unit(&message_passing("relaxed", "release", "acquire"), &MP);
+    assert_eq!(race_freedom_item_count(&atomic, &tso()), 0);
+    let plain = unit(&message_passing("", "release", "acquire"), &MP);
+    let sc = [select("SB::Main::Both", MemoryModelName::Sc)];
+    assert_eq!(race_freedom_item_count(&plain, &sc), 0);
+    assert_eq!(race_freedom_item_count(&plain, &tso()), 1);
+    assert_ne!(
+        race_freedom_obligation(&plain, &tso()),
+        race_freedom_obligation(&plain, &ra())
+    );
+}
+
+/// FR-227 "For `kind: Race`" under `tso`, over the fence and the locked
+/// paths of replay (no acceptance criterion states them for `tso`): in
+/// fence-based message passing the fences order the accesses, and in a
+/// `release` read-modify-write on the flag the locked access does, so the item
+/// proves and a race forged on `data` is refused.
+#[test]
+fn a_forged_race_through_tso_fences_and_a_locked_access_is_refused() {
+    let writer = steps(
+        "A",
+        &[
+            put("Sx", "x", ""),
+            "fence F1 ordering release;".to_owned(),
+            put("Sy", "y", "relaxed"),
+        ],
+    );
+    let case = unit_with(
+        "",
+        "",
+        &writer,
+        &reader("relaxed", "fence F2 ordering acquire;"),
+    );
+    let outcome = case.check(&tso(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("F1"),
+        Hop::Node("Sy"),
+        Hop::Kind(StepKind::Memory),
+        Hop::Kind(StepKind::Memory),
+        Hop::Node("Ly"),
+        Hop::Node("F2"),
+        Hop::Node("Lx"),
+    ];
+    let location = location_of_under(&case, "x", &tso());
+    let forged = forged_race_under(&case, &tso(), Tso::default(), &path, location, 2, 9);
+    disagreement_under(&case, &tso(), forged);
+
+    let extra = "pre AddY using v on M::Cell::add { self.id = 1 and self.v < 3 }\n";
+    let writer = format!(
+        "sequence A {{ {}{} }}",
+        put("Sx", "x", ""),
+        attempt("Ay", "w", "Cell::add", "release", "AddY, AddOne"),
+    );
+    let locked = unit_with("", extra, &writer, &reader("acquire", ""));
+    let outcome = locked.check(&tso(), ModelCheckItem::RaceFreedom, None);
+    assert!(holds(&outcome), "{outcome:?}");
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Kind(StepKind::Memory),
+        Hop::Node("Ay"),
+        Hop::Node("Ly"),
+        Hop::Node("Lx"),
+    ];
+    let location = location_of_under(&locked, "x", &tso());
+    let forged = forged_race_under(&locked, &tso(), Tso::default(), &path, location, 2, 6);
+    disagreement_under(&locked, &tso(), forged);
+}
+
+/// FR-227 "For `kind: Race`" under `tso`, over replay's `send` and `receive`
+/// (no acceptance criterion states it for `tso`): `data` stored and flushed
+/// before the `send` happens before the load after the `receive`, so a race
+/// forged on it is refused; stored after the `send` it races, and the race
+/// replays.
+#[test]
+fn a_forged_race_through_a_tso_channel_is_refused_and_a_real_one_replays() {
+    let case = channel_case(true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Kind(StepKind::Memory),
+        Hop::Node("Tx"),
+        Hop::Node("Rx"),
+        Hop::Node("Lx"),
+    ];
+    let location = location_of_under(&case, "x", &tso());
+    let forged = forged_race_under(&case, &tso(), Tso::default(), &path, location, 2, 6);
+    disagreement_under(&case, &tso(), forged);
+
+    let racy = channel_case(false);
+    let counterexample = violated(racy.check(&tso(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = racy.replay_race(&tso(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+}
+
+/// QSL-995 review FND-001, under `tso` (no acceptance criterion states it):
+/// `tso` has no counterpart of the global fence view `S` (ADR-025 DR-3), so
+/// `seq_cst` fences order nothing between threads. In `a: x := 1; fence
+/// seq_cst; y := 1` against `b: fence seq_cst; r1 := y; r2 := x` the item
+/// refutes and the race replays.
+#[test]
+fn seq_cst_fences_do_not_order_threads_under_tso() {
+    let writer = steps(
+        "A",
+        &[
+            put("Sx", "x", ""),
+            "fence F1 ordering seq_cst;".to_owned(),
+            put("Sy", "y", "relaxed"),
+        ],
+    );
+    let reader = format!(
+        "sequence B {{ fence F2 ordering seq_cst; {} choice Pick by c visible (bLy) {{ \
+         case yes when {{ bLy }} {} case no when {{ not bLy }} sequence Skip {{ }} }} }}",
+        attempt("Ly", "c", "Core::look", "relaxed", "LooksY, Looked"),
+        load_ordered("Lx", "x", 2, ""),
+    );
+    let case = unit_with("", "", &writer, &reader);
+    let counterexample = violated(case.check(&tso(), ModelCheckItem::RaceFreedom, None));
+    assert!(matches!(counterexample.kind, CounterexampleKind::Race(_)));
+    let replayed = case.replay_race(&tso(), counterexample).expect("replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
 }

@@ -1385,7 +1385,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                                         Some(carried) => Enc::Object(vec![
                                             ("entry", entry.enc.clone()),
                                             (
-                                                "view",
+                                                self.memory.carried_member(),
                                                 self.memory.carried_key(&state.memory, carried).0,
                                             ),
                                         ]),

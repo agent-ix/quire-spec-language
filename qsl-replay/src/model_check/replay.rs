@@ -722,7 +722,14 @@ impl ProtocolReplay<'_> {
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
             (CounterexampleKind::Race(race), _) => {
-                if reproduces(&steps, race) {
+                if reproduces(
+                    &steps,
+                    race,
+                    system
+                        .memory()
+                        .models()
+                        .contains(&qsl_foundation::MemoryModelName::Tso),
+                ) {
                     ModelTraceSettlement::Reproduced {
                         value: ModelTraceValue::Truth(false),
                         trace_position: payload.trace_position(),
