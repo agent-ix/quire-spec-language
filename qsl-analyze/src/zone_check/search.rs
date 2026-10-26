@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-239: EN-6's passed/waiting search of symbolic states `(s, Z)` over a
 //! timed subject (ADR-026 EZ-1, EZ-3 to EZ-5), deciding a TT-1 timed
-//! invariant or the deadlock-freedom item.
+//! invariant, a TT-2 bounded window, the deadlock-freedom item or, by
+//! FR-240's time-lock search on the completed graph
+//! ([`super::time_lock`]), the time-lock-freedom item.
 //!
 //! A symbolic state pairs a model state with a zone over the subject's clock
 //! places, scaled once to integers ([`scale_constants`]). Successors come
@@ -80,6 +82,9 @@ pub enum ZoneCheckItem<'a> {
     },
     /// FR-124's deadlock-freedom item, read over time (FR-232).
     DeadlockFreedom,
+    /// FR-232's time-lock-freedom item, decided by FR-240's time-lock
+    /// search.
+    TimeLockFreedom,
 }
 
 /// A request to EN-6.
@@ -261,7 +266,8 @@ pub enum ZoneCheckRefusal {
     #[error("the atom's evaluation stopped: {0}")]
     Atom(String),
     /// The request's obligation is not its item's: an authored claim's
-    /// occurrence for a clause, `deadlock-freedom` for that item.
+    /// occurrence for a clause, `deadlock-freedom` or `time-lock-freedom`
+    /// for those items.
     #[error("the request's obligation is not its item's")]
     ObligationMismatch,
     /// An invariant of the engine broke.
@@ -338,12 +344,15 @@ pub fn check_timed_model<S: Clone>(
         ZoneCheckItem::DeadlockFreedom => {
             request.obligation.kind == ObligationKind::DeadlockFreedom
         }
+        ZoneCheckItem::TimeLockFreedom => {
+            request.obligation.kind == ObligationKind::TimeLockFreedom
+        }
     };
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
     let mut window = None;
-    let claim = match request.item {
+    let judged = match request.item {
         ZoneCheckItem::Clause { clause, letters } => {
             let instances = || {
                 request
@@ -359,7 +368,7 @@ pub fn check_timed_model<S: Clone>(
                 ) {
                     return Err(ZoneCheckRefusal::UnsupportedForm);
                 }
-                Some(Claim {
+                Judged::Claim(Claim {
                     clause,
                     atom: Some(atom),
                     letters,
@@ -376,7 +385,7 @@ pub fn check_timed_model<S: Clone>(
                     request.subject.tick_period().cloned(),
                     request.limits.max_automaton_states,
                 )?);
-                Some(Claim {
+                Judged::Claim(Claim {
                     clause,
                     atom: None,
                     letters,
@@ -386,9 +395,10 @@ pub fn check_timed_model<S: Clone>(
                 return Err(ZoneCheckRefusal::UnsupportedForm);
             }
         }
-        ZoneCheckItem::DeadlockFreedom => None,
+        ZoneCheckItem::DeadlockFreedom => Judged::DeadlockFreedom,
+        ZoneCheckItem::TimeLockFreedom => Judged::TimeLockFreedom,
     };
-    let mut run = Run::new(request.subject, claim, window, request.limits, cancel);
+    let mut run = Run::new(request.subject, judged, window, request.limits, cancel);
     let searched = match run.search() {
         Ok(searched) => searched,
         Err(Halt::Outcome(searched)) => *searched,
@@ -431,6 +441,17 @@ pub(super) enum Searched {
     },
 }
 
+/// What a run judges its nodes by.
+enum Judged<'r> {
+    /// An authored clause.
+    Claim(Claim<'r>),
+    /// The deadlock-freedom item: a node holding deadlocked valuations.
+    DeadlockFreedom,
+    /// The time-lock-freedom item, which judges no node during the search:
+    /// FR-240's time-lock search runs on the completed graph.
+    TimeLockFreedom,
+}
+
 struct Claim<'r> {
     clause: &'r CheckedTemporalClause,
     letters: &'r dyn ModelLetters,
@@ -442,7 +463,7 @@ struct Claim<'r> {
 
 pub(super) struct Run<'r, 's, 'a> {
     pub(super) timed: &'r TimedSystem<'s, 'a>,
-    claim: Option<Claim<'r>>,
+    judged: Judged<'r>,
     /// A TT-2 clause's automaton, whose horizon clock is the last clock of
     /// every zone.
     pub(super) window: Option<WindowClaim>,
@@ -461,7 +482,7 @@ pub(super) struct Run<'r, 's, 'a> {
     parent: Vec<Option<usize>>,
     pub(super) edges: Vec<SymbolicEdge>,
     /// The retained edges leaving each node, by index into `edges`.
-    out: Vec<Vec<usize>>,
+    pub(super) out: Vec<Vec<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
     /// The bytes of every zone stored, by the search and by its divergence
     /// checks.
@@ -479,17 +500,19 @@ pub(super) struct Run<'r, 's, 'a> {
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
     fn new(
         timed: &'r TimedSystem<'s, 'a>,
-        claim: Option<Claim<'r>>,
+        judged: Judged<'r>,
         window: Option<WindowClaim>,
         limits: ZoneCheckLimits,
         cancel: &'r Cancel,
     ) -> Self {
         let (scale, mut lower, mut upper) = scaled_bounds(timed, window.as_ref());
-        if claim.is_none() {
-            // FR-232's deadlocks are not preserved by the aLU simulation:
-            // the deadlock-freedom item covers under the aM bisimulation,
-            // `L = U = max(L, U)` per clock, which its certificate's
-            // checker reads (FR-245).
+        if !matches!(judged, Judged::Claim(_)) {
+            // The deadlock-freedom and time-lock-freedom items read
+            // valuations whose absence of behaviour the aLU simulation does
+            // not preserve: they cover under the aM bisimulation,
+            // `L = U = max(L, U)` per clock, which the deadlock item's
+            // certificate checker reads (FR-245) and FR-240's trap search
+            // needs (`super::time_lock`).
             for (lower, upper) in lower.iter_mut().zip(&mut upper) {
                 let most = lower.clone().max(upper.clone());
                 lower.clone_from(&most);
@@ -502,7 +525,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         };
         Self {
             timed,
-            claim,
+            judged,
             window,
             pieces,
             limits,
@@ -522,6 +545,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             escape_edges: 0,
             steps: BTreeMap::new(),
             insufficient: None,
+        }
+    }
+
+    /// The authored clause the run judges, if any.
+    fn claim(&self) -> Option<&Claim<'r>> {
+        match &self.judged {
+            Judged::Claim(claim) => Some(claim),
+            Judged::DeadlockFreedom | Judged::TimeLockFreedom => None,
         }
     }
 
@@ -562,7 +593,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         result.map_err(|stop| self.undecided(ZoneUndecided::UndecidedSuccessor(stop)))
     }
 
-    fn scaled(&self, value: &Rational) -> BigInt {
+    pub(super) fn scaled(&self, value: &Rational) -> BigInt {
         scaled(value, &self.scale)
     }
 
@@ -573,7 +604,11 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     /// Intersect `zone` with `constraints`.
-    fn constrain(&self, zone: &mut Dbm, constraints: &[PlaceConstraint]) -> Result<(), DbmError> {
+    pub(super) fn constrain(
+        &self,
+        zone: &mut Dbm,
+        constraints: &[PlaceConstraint],
+    ) -> Result<(), DbmError> {
         constrain_at(zone, constraints, &self.scale)
     }
 
@@ -709,6 +744,16 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             for created in self.expand(node)? {
                 queue.push_back(created);
                 delayed_deadlock |= self.judge(created)?;
+            }
+        }
+        // FR-240: the time-lock-freedom item's search runs on the completed
+        // graph, before vacuity, which bars a proof only.
+        if matches!(self.judged, Judged::TimeLockFreedom) {
+            if let Some(counterexample) = self.first_time_lock()? {
+                return Ok(Searched::Violated {
+                    counterexample: Box::new(counterexample),
+                    stats: self.stats(),
+                });
             }
         }
         // Vacuity (ADR-026 TD-6): an initial state with a time-divergent
@@ -872,7 +917,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     /// The guarded steps of `state`, computed once per model state.
-    fn steps_for(&mut self, state: &ModelSimState) -> Result<Vec<GuardedStep>, Halt> {
+    pub(super) fn steps_for(&mut self, state: &ModelSimState) -> Result<Vec<GuardedStep>, Halt> {
         let key = self.key(state)?;
         if let Some(steps) = self.steps.get(&key) {
             return Ok(steps.clone());
@@ -1030,10 +1075,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         stamp: Stamp<'_>,
         stutter: bool,
     ) -> Result<usize, Halt> {
-        let claim = self
-            .claim
-            .as_ref()
-            .ok_or(ZoneCheckRefusal::Fault("window-claim"))?;
+        let Judged::Claim(claim) = &self.judged else {
+            return Err(ZoneCheckRefusal::Fault("window-claim").into());
+        };
         let window = self
             .window
             .as_mut()
@@ -1116,8 +1160,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         }
         if self.insufficient.is_none() {
             let instance = self
-                .claim
-                .as_ref()
+                .claim()
                 .and_then(|claim| claim.instances.get(at))
                 .cloned()
                 .ok_or(ZoneCheckRefusal::Fault("window-instance"))?;
@@ -1127,7 +1170,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     /// FR-240's test from `node`.
-    fn node_escape(&mut self, node: usize) -> Result<Escape, Halt> {
+    pub(super) fn node_escape(&mut self, node: usize) -> Result<Escape, Halt> {
         let state = self.nodes[node].state.clone();
         let zone = self.nodes[node].zone.clone();
         let (scale, lower, upper) = (self.scale.clone(), self.lower.clone(), self.upper.clone());
@@ -1141,8 +1184,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         reason = "no violation, a violation, or one only after a delay"
     )]
     fn badness(&mut self, node: usize) -> Result<Option<Result<Badness, ()>>, Halt> {
-        let Some(claim) = &self.claim else {
-            return self.deadlock(node);
+        let claim = match &self.judged {
+            Judged::Claim(claim) => claim,
+            Judged::DeadlockFreedom => return self.deadlock(node),
+            Judged::TimeLockFreedom => return Ok(None),
         };
         if let Some(window) = &self.window {
             // A TT-2 clause is decided by its automaton state.
@@ -1197,35 +1242,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         }
         let dim = self.nodes[node].zone.dim();
         // The valuations from which some step is enabled after a delay.
-        let mut enabling = Vec::new();
-        for step in self.steps_of(node)? {
-            let target = self.timed(self.timed.invariants(step.post()))?;
-            // A reset clock's bound is constant over delays; a false one
-            // disables the step.
-            let reset_breaks = target.iter().any(|bound| {
-                step.resets()
-                    .iter()
-                    .rev()
-                    .find(|(place, _)| *place == bound.place())
-                    .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-            });
-            if reset_breaks {
-                continue;
-            }
-            let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
-            let unreset: Vec<PlaceConstraint> = target
-                .into_iter()
-                .filter(|bound| !reset.contains(&bound.place()))
-                .collect();
-            for part in step.parts() {
-                let mut zone = Dbm::universe(dim);
-                self.constrain(&mut zone, part)?;
-                self.constrain(&mut zone, &unreset)?;
-                if !zone.is_empty() {
-                    zone.down();
-                    enabling.push(zone);
-                }
-            }
+        let mut enabling = self.enabled(node, dim)?;
+        for zone in &mut enabling {
+            zone.down();
         }
         if enabling.is_empty() {
             return Ok(match self.timed.system().terminal_class(&state, false) {
@@ -1256,6 +1275,51 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             }
         }
         Ok(Some(Err(())))
+    }
+
+    /// The valuations at which some step of `node`'s model state is
+    /// enabled (FR-232 "Fairness over time"): a convex part of its guard
+    /// holds and its target satisfies the time invariants applying there,
+    /// one zone of dimension `dim` per part.
+    pub(super) fn enabled(&mut self, node: usize, dim: usize) -> Result<Vec<Dbm>, Halt> {
+        let mut enabled = Vec::new();
+        for step in self.steps_of(node)? {
+            let target = self.timed(self.timed.invariants(step.post()))?;
+            // A reset clock's bound is constant over delays; a false one
+            // disables the step.
+            let reset_breaks = target.iter().any(|bound| {
+                step.resets()
+                    .iter()
+                    .rev()
+                    .find(|(place, _)| *place == bound.place())
+                    .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
+            });
+            if reset_breaks {
+                continue;
+            }
+            let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
+            let unreset: Vec<PlaceConstraint> = target
+                .into_iter()
+                .filter(|bound| !reset.contains(&bound.place()))
+                .collect();
+            for part in step.parts() {
+                let mut zone = Dbm::universe(dim);
+                self.constrain(&mut zone, part)?;
+                self.constrain(&mut zone, &unreset)?;
+                if !zone.is_empty() {
+                    enabled.push(zone);
+                }
+            }
+        }
+        Ok(enabled)
+    }
+
+    /// The node whose real edge created `node`; `None` for an initial one.
+    pub(super) fn parent_of(&self, node: usize) -> Option<usize> {
+        self.parent[node]
+            .and_then(|edge| self.edges.get(edge))
+            .filter(|edge| !edge.covering)
+            .map(|edge| edge.from)
     }
 
     /// The valuations `node` is entered at, before time elapses.
@@ -1329,7 +1393,11 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// Whether the last valuation of `concrete`, at `state`, has a
     /// time-divergent continuation: FR-240's test from that one point, in
     /// units fine enough to hold it.
-    fn point_diverges(&mut self, state: &ModelSimState, concrete: &Concrete) -> Result<bool, Halt> {
+    pub(super) fn point_diverges(
+        &mut self,
+        state: &ModelSimState,
+        concrete: &Concrete,
+    ) -> Result<bool, Halt> {
         use num_integer::Integer as _;
         let factor = concrete
             .last_clocks
@@ -1356,13 +1424,13 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             .diverges)
     }
 
-    /// FR-241: the counterexample through the real edges to `node`.
-    fn counterexample(
+    /// The stages of the real edges to `node` from its initial node, that
+    /// node's initial-state index, and the number of idle-tail stutters
+    /// among them.
+    pub(super) fn stages_to(
         &mut self,
         node: usize,
-        badness: Badness,
-        escape: Escape,
-    ) -> Result<TemporalCounterexample, Halt> {
+    ) -> Result<(usize, Vec<super::concretise::Stage>, usize), Halt> {
         let mut path = Vec::new();
         let mut at = node;
         while let Some(edge) = self.parent[at] {
@@ -1411,6 +1479,17 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 position,
             });
         }
+        Ok((initial, stages, stutters))
+    }
+
+    /// FR-241: the counterexample through the real edges to `node`.
+    fn counterexample(
+        &mut self,
+        node: usize,
+        badness: Badness,
+        escape: Escape,
+    ) -> Result<TemporalCounterexample, Halt> {
+        let (initial, stages, stutters) = self.stages_to(node)?;
         // FR-241: the last valuation is one with a time-divergent
         // continuation, never a time-locked one. A deadlocked valuation of a
         // quiescent state diverges by its idle tail; otherwise the target is
@@ -1477,14 +1556,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             Badness::False(instance) => (
                 CounterexampleKind::Formula,
                 Some(instance),
-                self.claim
-                    .as_ref()
+                self.claim()
                     .map_or_else(Vec::new, |claim| claim.clause.fairness().to_vec()),
             ),
             Badness::Undefined(instance, cause, atom) => {
                 let claim = self
-                    .claim
-                    .as_ref()
+                    .claim()
                     .ok_or(ZoneCheckRefusal::Fault("undefined-claim"))?;
                 (
                     CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
@@ -1582,7 +1659,7 @@ pub(super) fn intersect(zone: &mut Dbm, other: &Dbm) -> Result<(), DbmError> {
 
 /// The parts of `zone` no zone of `covers` holds, as zones whose union is
 /// `zone` minus the union of `covers`.
-fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
+pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
     if zone.is_empty() {
         return Ok(Vec::new());
     }

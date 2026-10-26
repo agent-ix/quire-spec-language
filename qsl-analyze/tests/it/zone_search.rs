@@ -152,6 +152,25 @@ pub(crate) fn deadlock(world: &World) -> Outcome {
     .expect("EN-6 takes the item")
 }
 
+/// FR-232's time-lock-freedom item over `world`, decided by EN-6.
+pub(crate) fn time_lock_item(world: &World) -> Outcome {
+    let system: ModelSystem<'_> = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::TimeLockFreedom,
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::TimeLockFreedom,
+            },
+            limits: ZoneCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("EN-6 takes the item")
+}
+
 pub(crate) fn violated(outcome: Outcome) -> TemporalCounterexample {
     match outcome {
         ZoneCheckOutcome::Violated { counterexample, .. } => *counterexample,
@@ -377,15 +396,16 @@ fn ticker_with(locked: bool, body: &str) -> World {
     )
 }
 
-/// Part of FR-239-AC-5 (TC-710): over `Ticker`, `6 mod (2 - n)` is undefined
-/// at `n = 2`, reached by `step` after delay 1 twice, and the state there is
+/// FR-239-AC-5 (TC-710): over `Ticker`, `6 mod (2 - n)` is undefined at
+/// `n = 2`, reached by `step` after delay 1 twice, and the state there is
 /// quiescent, so the search is violated with an undefined evaluation of
 /// cause `division-by-zero` at position 2, time stamp 2 and `x = 0`, keyed
 /// by the model state alone. With the unconditional invariant that state is
-/// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`. Not
-/// covered: the time-lock-freedom item refuted over the time-locked
-/// variant, which FR-240's search decides (QSL-583).
-#[trace("TC-710")]
+/// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`, and the
+/// time-lock-freedom item is refuted. Its first time-lock in canonical
+/// order is the initial state itself, every continuation of which ends at
+/// the local time-lock.
+#[trace("TC-710", "FR-239-AC-5")]
 #[test]
 fn an_undefined_atom_refutes_only_where_time_diverges() {
     let counterexample = violated(claim(
@@ -427,6 +447,114 @@ fn an_undefined_atom_refutes_only_where_time_diverges() {
         }
         other => panic!("expected no admitted behaviour, got {other:?}"),
     }
+    let locked = violated(time_lock_item(&ticker(true)));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert!(locked.prefix.is_empty());
+    assert_eq!(locked.final_delay, Some(exact(0, 1)));
+    assert!(matches!(
+        time_lock_item(&ticker(false)),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+}
+
+/// FR-240-AC-3 (TC-695): the strict-guard `Rpc` variant's
+/// time-lock-freedom item is violated by a local time-lock, stem `send` at
+/// 0 and final delay 3; the unmodified `Rpc` holds under `T = 3 ms` and
+/// `T = 4 ms`. `Stall` is violated by a non-local time-lock, confirmed by a
+/// fresh exploration from its point zone: the stem is empty and the least
+/// delay reaches it. Two runs give equal counterexamples. A trap that holds
+/// only part of a zone is found: in `Hold`, `go` leaves for a quiescent
+/// state while `x <= 1`, and past 1 only `ping` loops, Zeno under `x <= 2`,
+/// so the valuations `1 < x <= 2` are trapped, reached after the midpoint
+/// delay 3/2.
+#[trace("TC-695", "FR-240-AC-3")]
+#[test]
+fn time_locks_are_found_local_and_non_local() {
+    let strict = rpc_variant(3, "> 3", ">", INFINITE, "");
+    let locked = violated(time_lock_item(&strict));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert_eq!(operations(&locked), ["send"]);
+    assert_eq!(delays(&locked), [exact(0, 1)]);
+    assert_eq!(locked.final_delay, Some(exact(3, 1)));
+    assert_eq!(violated(time_lock_item(&strict)), locked);
+    for t in [3, 4] {
+        assert!(
+            matches!(time_lock_item(&rpc(t)), ZoneCheckOutcome::Holds { .. }),
+            "T = {t}"
+        );
+    }
+
+    let stall = stall();
+    let trapped = violated(time_lock_item(&stall));
+    assert_eq!(trapped.kind, CounterexampleKind::TimeLock);
+    assert!(trapped.prefix.is_empty());
+    assert_eq!(trapped.final_delay, Some(exact(0, 1)));
+    assert_eq!(violated(time_lock_item(&stall)), trapped);
+    // With `ping` resetting `x`, time diverges through it.
+    assert!(matches!(
+        time_lock_item(&stall_resetting()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+
+    let hold = world(
+        &document(&["x"], &[("go", &["phase"]), ("ping", &[])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 and self.x <= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             pre Ping using v on M::Call::ping {{ self.phase = 0 and self.x > 1 ms }}\n\
+             time invariant Hold when {{ self.phase = 0 }} {{ self.x <= 2 ms }}\n"
+        ),
+    );
+    let partial = violated(time_lock_item(&hold));
+    assert_eq!(partial.kind, CounterexampleKind::TimeLock);
+    assert!(partial.prefix.is_empty());
+    assert_eq!(partial.final_delay, Some(exact(3, 2)));
+}
+
+/// FR-236-AC-2 (TC-691): the strict-guard variant's time-lock
+/// counterexample has one step, `send` with delay 0, `final_delay` 3,
+/// `kind: TimeLock` and no lasso; a `Formula` counterexample has
+/// `final_delay: None`.
+#[trace("TC-691", "FR-236-AC-2")]
+#[test]
+fn a_time_lock_counterexample_carries_its_final_delay() {
+    let locked = violated(time_lock_item(&rpc_variant(3, "> 3", ">", INFINITE, "")));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert_eq!(locked.prefix.len(), 1);
+    assert_eq!(operations(&locked), ["send"]);
+    assert_eq!(delays(&locked), [exact(0, 1)]);
+    assert_eq!(locked.final_delay, Some(exact(3, 1)));
+    assert_eq!(locked.lasso, None);
+    assert_eq!(locked.over_binding, None);
+
+    let formula = violated(claim(&rpc(3), ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(formula.kind, CounterexampleKind::Formula);
+    assert_eq!(formula.final_delay, None);
+}
+
+/// FR-232-AC-3's `Stall`: one object, clock `x` never reset,
+/// `time invariant when true { x <= 1 ms }`, and `ping` with no guard that
+/// changes no data field; the claim is `always holds(true)`.
+pub(crate) fn stall() -> World {
+    windowed(
+        &["x"],
+        &[("ping", &[])],
+        "time invariant Stall when { true } { self.x <= 1 ms }\n",
+        "always holds(true)",
+    )
+}
+
+/// [`stall`] with `ping` resetting `x`.
+pub(crate) fn stall_resetting() -> World {
+    windowed(
+        &["x"],
+        &[("ping", &["x"])],
+        "post Pinged using v on M::Call::ping { self.x = 0 ms }\n\
+         time invariant Stall when { true } { self.x <= 1 ms }\n",
+        "always holds(true)",
+    )
 }
 
 /// The deadlock-freedom item over a quiescent state with no step: `go`
