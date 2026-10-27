@@ -62,6 +62,37 @@ pub use lowering::{operation_text, AtomSlot, STUTTER_TEXT};
 /// The stage name this module's faults report.
 const STAGE: &str = "check.hyper";
 
+pub(super) fn declaration_has_ieee_literal(declaration: &HyperDeclaration) -> bool {
+    match declaration {
+        HyperDeclaration::Behaviours(form) => {
+            form.match_block
+                .as_ref()
+                .is_some_and(|block| block.expression.contains_ieee_literal())
+                || form.body.nodes().iter().any(|node| match node {
+                    qsl_forms::TemporalNodeForm::Holds { condition, .. } => {
+                        condition.expression.contains_ieee_literal()
+                    }
+                    qsl_forms::TemporalNodeForm::AggregateAtom(atom) => {
+                        atom.term
+                            .value
+                            .as_ref()
+                            .is_some_and(|value| value.expression.contains_ieee_literal())
+                            || atom
+                                .term
+                                .filter
+                                .as_ref()
+                                .is_some_and(|filter| filter.expression.contains_ieee_literal())
+                            || atom.threshold.expression.contains_ieee_literal()
+                    }
+                    qsl_forms::TemporalNodeForm::Constant { .. }
+                    | qsl_forms::TemporalNodeForm::Operator(_) => false,
+                })
+        }
+        HyperDeclaration::Finite(form) => form.body.expression.contains_ieee_literal(),
+        HyperDeclaration::Relation(form) => form.body.expression.contains_ieee_literal(),
+    }
+}
+
 /// A `hyper` clause or `relation` as the assembler hands it to the check.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HyperDeclaration {
@@ -2072,6 +2103,8 @@ fn check_match(
                 },
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
+                | ExprNode::Float32(_)
+                | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)
@@ -2521,6 +2554,8 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::ProtocolReference { .. } => true,
         ExprNode::Boolean(_)
         | ExprNode::Integer(_)
+        | ExprNode::Float32(_)
+        | ExprNode::Float64(_)
         | ExprNode::Rational(..)
         | ExprNode::String(_)
         | ExprNode::Name(_)
@@ -2689,6 +2724,8 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::Name(name) => (b"name".to_vec(), text_segment(&name.name)),
         ExprNode::Boolean(value) => (b"bool".to_vec(), vec![u8::from(*value)]),
         ExprNode::Integer(value) => (b"int".to_vec(), text_segment(&value.to_string())),
+        ExprNode::Float32(bits) => (b"float32".to_vec(), text_segment(&format!("{bits:08x}"))),
+        ExprNode::Float64(bits) => (b"float64".to_vec(), text_segment(&format!("{bits:016x}"))),
         ExprNode::String(text) => (b"str".to_vec(), text_segment(text)),
         ExprNode::Field { field, .. } => (b"field".to_vec(), text_segment(field)),
         ExprNode::Indexed { trace, .. } => (b"indexed".to_vec(), text_segment(&swap.apply(trace))),
@@ -3196,8 +3233,12 @@ pub fn check_hyper_clauses(
             })
             .collect(),
     );
+    let has_ieee_literal = package
+        .hyper_clauses
+        .iter()
+        .any(declaration_has_ieee_literal);
     scope
-        .select_declared_ieee_profile(signatures.as_slice())
+        .select_declared_ieee_profile(signatures.as_slice(), has_ieee_literal)
         .ok();
     let declarations = HyperDeclarations {
         temporal: TemporalDeclarations {

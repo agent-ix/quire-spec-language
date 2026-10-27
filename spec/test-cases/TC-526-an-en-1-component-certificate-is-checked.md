@@ -14,7 +14,7 @@ Verify that `check_components` accepts a weak-fairness liveness proof's
 partition and rejects a failing witness, a backward edge and a
 non-partition.
 
-Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 to FR-339-AC-8.
+Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 to FR-339-AC-9.
 
 ## Test Procedure
 
@@ -42,6 +42,9 @@ Scope: FR-339-AC-1 to FR-339-AC-3, FR-339-AC-6 to FR-339-AC-8.
    components for a safety item; over `Spin`, run `check_protocol_components`
    on the proof's certificate, reversed, emptied and with a foreign
    `package_id`, and the closure and components cross-offered (FR-339-AC-8).
+8. Offer FR-228-AC-10's `RefutedIgnoringConstraints` diagnostic as a component
+   certificate, then check an ordinary component certificate while the
+   liveness request's `ignore_memory_constraints` is `true`.
 
 Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 
@@ -63,3 +66,6 @@ Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 - Step 7: `Violated`; `LivenessNeedsComponents` and `failed`; `proved`,
   `certified`; `NotLiveness`; accepted, `BackwardEdge`, `NotPartition`,
   `PackageMismatch`, `LivenessNeedsComponents`, `NotLiveness`.
+- Step 8: the diagnostic is not a component certificate and is refused as
+  such; the ordinary certificate still resolves and checks all members of
+  the original fairness set, including `memory` members.

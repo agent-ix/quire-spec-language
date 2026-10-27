@@ -30,6 +30,9 @@ Scope: FR-105-AC-3, FR-105-AC-4, FR-105-AC-6.
    `pre B using v on Config::Sub::attemptUpdate { true }`.
 4. Inject an emitter fault at the `frame` node (a test-only hook in the
    `ProtocolClause` emission arm) and compile.
+5. Compile and read accepted initialization/handler invariants and pre/post
+   clauses; mutate each clause's execution point and the matching
+   operation-anchor binding independently, then rekey nodes and package.
 
 Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 
@@ -46,3 +49,6 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
   `ConfigVersion` node; both clauses reference that anchor.
 - Step 4: the compile refuses; no package bytes and no `state` node are
   emitted.
+- Step 5: each valid point round-trips; changing the point changes both
+  applicable node identities and `package_id`. A clause/anchor mismatch and
+  an inapplicable point are refused by the named state-step check.

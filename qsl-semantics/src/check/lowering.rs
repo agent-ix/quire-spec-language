@@ -3356,6 +3356,28 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::IeeeSquareRoot(rounding, operand) => {
+                let ValueType::Float(float) = node.at(*operand).value_type() else {
+                    return Err(fault(node.location(), KeyFault::UntypedIeeeOperand));
+                };
+                let width = match float.width() {
+                    quire_exact::IeeeWidth::Binary32 => "float32",
+                    quire_exact::IeeeWidth::Binary64 => "float64",
+                };
+                let law = self.law(LawRole::IeeeProfile, node.location())?;
+                let identity = format!("quire.op.ieee.{width}.sqrt");
+                (
+                    Keyed::Application(
+                        Operator::Unary,
+                        Operation {
+                            laws: vec![law],
+                            mode: Some(OperationMode::Rounding(*rounding)),
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::One(operand),
+                )
+            }
             NodeKind::ConvertDecimal(operand, target) => {
                 // FR-149 scale reduction: a decimal of larger maximum scale,
                 // or a rational whose denominators exceed 1.
@@ -3418,6 +3440,16 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::IeeeNumericEquality(left, right) => (
+                Keyed::Application(
+                    Operator::Binary,
+                    Operation {
+                        laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
+                        ..plain("quire.op.ieee.numeric_equal")
+                    },
+                ),
+                Operands::Two(left, right),
+            ),
             NodeKind::Connective(connective, left, right) => {
                 let identity = match connective {
                     Connective::And => "quire.op.boolean.and",
@@ -4478,6 +4510,10 @@ impl<'a> Lowering<'a> {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
             Value::Rational(value) => LiteralValue::Rational(value.clone()),
+            Value::Float(value) => match value.width() {
+                quire_exact::IeeeWidth::Binary32 => LiteralValue::Float32Bits(value.bits() as u32),
+                quire_exact::IeeeWidth::Binary64 => LiteralValue::Float64Bits(value.bits()),
+            },
             Value::Enum(member) => {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14). A model variant
@@ -4491,7 +4527,6 @@ impl<'a> Lowering<'a> {
             // by its unit's node; the magnitude is already reduced.
             Value::Quantity(quantity) => LiteralValue::Quantity(quantity.magnitude().clone()),
             Value::Decimal(_)
-            | Value::Float(_)
             | Value::Text(_)
             | Value::Option(_)
             | Value::Composite(_)

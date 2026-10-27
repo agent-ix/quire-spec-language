@@ -85,9 +85,9 @@ impl ModelCheckLimits {
     }
 }
 
-/// The limit a stopped EN-1 or EN-5 run reached, by the request member that
-/// raises it: a member of [`ModelCheckLimits`], or of the subject's FR-120
-/// limits.
+/// The limit a stopped EN-1, EN-2, EN-3 or EN-5 run reached, by the request
+/// member that raises it: a member of [`ModelCheckLimits`], or a run-specific
+/// solver or encoding setting.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ModelCheckLimit {
     /// `ModelCheckLimits::limits.max_states`.
@@ -117,6 +117,22 @@ pub enum ModelCheckLimit {
     MaxCandidates,
     /// FR-250: a hybrid solver's step budget.
     SolverSteps,
+    /// FR-315: the maximum solver steps in one SMT query.
+    SmtMaxSolverSteps,
+    /// FR-315: the maximum solver time in one SMT query.
+    SmtMaxSolverTime,
+    /// FR-315: maximum constants in one SMT encoding.
+    SmtEncodingMaxConstants,
+    /// FR-315: maximum applications in one SMT encoding.
+    SmtEncodingMaxApplications,
+    /// FR-315: maximum monitor atoms in one SMT encoding.
+    SmtEncodingMaxMonitorAtoms,
+    /// FR-315: maximum monitor states in one SMT encoding.
+    SmtEncodingMaxMonitorStates,
+    /// FR-315: maximum candidates in one SMT encoding.
+    SmtEncodingMaxCandidates,
+    /// FR-315: maximum script bytes in one SMT encoding.
+    SmtEncodingMaxScriptBytes,
     /// `ModelCheckLimits::witness_samples` (FR-166).
     WitnessSamples,
     /// `ModelCheckLimits::max_walk_steps` (FR-166).
@@ -127,12 +143,23 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
+    /// EN-6's `max_symbolic_states` (FR-239); setting
+    /// `zone_check.max_symbolic_states`.
+    ZoneMaxSymbolicStates,
+    /// EN-6's `max_symbolic_transitions`; setting
+    /// `zone_check.max_symbolic_transitions`.
+    ZoneMaxSymbolicTransitions,
+    /// EN-6's `max_automaton_states`; setting
+    /// `zone_check.max_automaton_states`.
+    ZoneMaxAutomatonStates,
+    /// EN-6's `max_zone_bytes`; setting `zone_check.max_zone_bytes`.
+    ZoneMaxZoneBytes,
 }
 
 impl ModelCheckLimit {
     /// The limit's name, snake_case per FR-255-AC-12
-    /// (`^[a-z][a-z0-9_]*$`): the FR-331 member name for an EN-1 member,
-    /// FR-255's engine-table limit name for an EN-5 product bound.
+    /// (`^[a-z][a-z0-9_]*$`): the FR-331 member name for a model-check limit,
+    /// or the FR-315 solver and encoding setting name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MaxStates => "max_states",
@@ -155,19 +182,29 @@ impl ModelCheckLimit {
             },
             Self::MaxCandidates => "max_candidates",
             Self::SolverSteps => "max_solver_steps",
+            Self::SmtMaxSolverSteps => "max_solver_steps",
+            Self::SmtMaxSolverTime => "max_solver_time",
+            Self::SmtEncodingMaxConstants => "max_constants",
+            Self::SmtEncodingMaxApplications => "max_applications",
+            Self::SmtEncodingMaxMonitorAtoms => "max_monitor_atoms",
+            Self::SmtEncodingMaxMonitorStates => "max_monitor_states",
+            Self::SmtEncodingMaxCandidates => "max_candidates",
+            Self::SmtEncodingMaxScriptBytes => "max_script_bytes",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.as_str(),
+            Self::ZoneMaxSymbolicStates => "max_symbolic_states",
+            Self::ZoneMaxSymbolicTransitions => "max_symbolic_transitions",
+            Self::ZoneMaxAutomatonStates => "max_automaton_states",
+            Self::ZoneMaxZoneBytes => "max_zone_bytes",
         }
     }
 
-    /// The FR-255 setting name that raises this limit: the `model_check.*`
-    /// row of an EN-1 member, `expansion.max_candidates`,
-    /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, an
-    /// EN-4 `statistical.*` row, or the `exact_prob.*` row of an EN-5 product
-    /// bound.
+    /// The request setting name that raises this limit: `model_check.*`,
+    /// `expansion.max_candidates`, solver/encoding settings, `accounting.*`,
+    /// `hybrid.max_solver_steps`, `statistical.*`, or `exact_prob.*`.
     pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "model_check.max_states",
@@ -181,11 +218,23 @@ impl ModelCheckLimit {
             }
             Self::MaxCandidates => "expansion.max_candidates",
             Self::SolverSteps => "hybrid.max_solver_steps",
+            Self::SmtMaxSolverSteps => "smt.max_solver_steps",
+            Self::SmtMaxSolverTime => "smt.max_solver_time",
+            Self::SmtEncodingMaxConstants => "smt_encoding.max_constants",
+            Self::SmtEncodingMaxApplications => "smt_encoding.max_applications",
+            Self::SmtEncodingMaxMonitorAtoms => "smt_encoding.max_monitor_atoms",
+            Self::SmtEncodingMaxMonitorStates => "smt_encoding.max_monitor_states",
+            Self::SmtEncodingMaxCandidates => "smt_encoding.max_candidates",
+            Self::SmtEncodingMaxScriptBytes => "smt_encoding.max_script_bytes",
             Self::WitnessSamples => "model_check.witness_samples",
             Self::MaxWalkSteps => "model_check.max_walk_steps",
             Self::MaxWitnessSet => "model_check.max_witness_set",
             Self::MaxRelationTuples => "model_check.max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
+            Self::ZoneMaxSymbolicStates => "zone_check.max_symbolic_states",
+            Self::ZoneMaxSymbolicTransitions => "zone_check.max_symbolic_transitions",
+            Self::ZoneMaxAutomatonStates => "zone_check.max_automaton_states",
+            Self::ZoneMaxZoneBytes => "zone_check.max_zone_bytes",
         }
     }
 }
@@ -308,6 +357,26 @@ mod tests {
             },
             ModelCheckLimit::MaxCandidates => ("max_candidates", "expansion.max_candidates"),
             ModelCheckLimit::SolverSteps => ("max_solver_steps", "hybrid.max_solver_steps"),
+            ModelCheckLimit::SmtMaxSolverSteps => ("max_solver_steps", "smt.max_solver_steps"),
+            ModelCheckLimit::SmtMaxSolverTime => ("max_solver_time", "smt.max_solver_time"),
+            ModelCheckLimit::SmtEncodingMaxConstants => {
+                ("max_constants", "smt_encoding.max_constants")
+            }
+            ModelCheckLimit::SmtEncodingMaxApplications => {
+                ("max_applications", "smt_encoding.max_applications")
+            }
+            ModelCheckLimit::SmtEncodingMaxMonitorAtoms => {
+                ("max_monitor_atoms", "smt_encoding.max_monitor_atoms")
+            }
+            ModelCheckLimit::SmtEncodingMaxMonitorStates => {
+                ("max_monitor_states", "smt_encoding.max_monitor_states")
+            }
+            ModelCheckLimit::SmtEncodingMaxCandidates => {
+                ("max_candidates", "smt_encoding.max_candidates")
+            }
+            ModelCheckLimit::SmtEncodingMaxScriptBytes => {
+                ("max_script_bytes", "smt_encoding.max_script_bytes")
+            }
             ModelCheckLimit::WitnessSamples => ("witness_samples", "model_check.witness_samples"),
             ModelCheckLimit::MaxWalkSteps => ("max_walk_steps", "model_check.max_walk_steps"),
             ModelCheckLimit::MaxWitnessSet => ("max_witness_set", "model_check.max_witness_set"),
@@ -321,6 +390,17 @@ mod tests {
                     ("max_cycle_steps", "statistical.max_cycle_steps")
                 }
             },
+            ModelCheckLimit::ZoneMaxSymbolicStates => {
+                ("max_symbolic_states", "zone_check.max_symbolic_states")
+            }
+            ModelCheckLimit::ZoneMaxSymbolicTransitions => (
+                "max_symbolic_transitions",
+                "zone_check.max_symbolic_transitions",
+            ),
+            ModelCheckLimit::ZoneMaxAutomatonStates => {
+                ("max_automaton_states", "zone_check.max_automaton_states")
+            }
+            ModelCheckLimit::ZoneMaxZoneBytes => ("max_zone_bytes", "zone_check.max_zone_bytes"),
         }
     }
 
@@ -335,6 +415,14 @@ mod tests {
             ModelCheckLimit::ExactProbMaxAutomatonStates,
             ModelCheckLimit::MaxCandidates,
             ModelCheckLimit::SolverSteps,
+            ModelCheckLimit::SmtMaxSolverSteps,
+            ModelCheckLimit::SmtMaxSolverTime,
+            ModelCheckLimit::SmtEncodingMaxConstants,
+            ModelCheckLimit::SmtEncodingMaxApplications,
+            ModelCheckLimit::SmtEncodingMaxMonitorAtoms,
+            ModelCheckLimit::SmtEncodingMaxMonitorStates,
+            ModelCheckLimit::SmtEncodingMaxCandidates,
+            ModelCheckLimit::SmtEncodingMaxScriptBytes,
             ModelCheckLimit::WitnessSamples,
             ModelCheckLimit::MaxWalkSteps,
             ModelCheckLimit::MaxWitnessSet,
@@ -342,6 +430,10 @@ mod tests {
             ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxCycleSteps),
+            ModelCheckLimit::ZoneMaxSymbolicStates,
+            ModelCheckLimit::ZoneMaxSymbolicTransitions,
+            ModelCheckLimit::ZoneMaxAutomatonStates,
+            ModelCheckLimit::ZoneMaxZoneBytes,
         ];
         all.extend(
             [

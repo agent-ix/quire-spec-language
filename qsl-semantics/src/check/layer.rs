@@ -271,6 +271,8 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         ExprNode::Case(_)
         | ExprNode::Record { .. }
         | ExprNode::Collection { .. }
+        | ExprNode::Float32(_)
+        | ExprNode::Float64(_)
         | ExprNode::Convert { .. }
         | ExprNode::Flatten(_)
         | ExprNode::Accumulate { .. } => Some(LayerForm::ValueConstruct),
