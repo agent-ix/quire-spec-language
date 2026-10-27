@@ -73,6 +73,9 @@ struct DeclFlags {
     non_root: bool,
     scalar_type: bool,
     record_value_type: bool,
+    /// A package `alias` or `sequence` type definition (FR-230 "Units",
+    /// "Clock collections").
+    core_type: bool,
     event_type: bool,
     variant_type: bool,
     state_machine: bool,
@@ -702,7 +705,9 @@ impl RecordIndex {
                 DomainPackageRecord::PersistenceInterface(_) => {
                     index.flags[own.0].persistence_interface = true;
                 }
-                DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {}
+                DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {
+                    index.flags[own.0].core_type = true;
+                }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     match &scalar.domain {
@@ -848,6 +853,12 @@ impl RecordIndex {
     /// Whether some `RecordValueType` record declares `key`.
     pub(crate) fn is_record_value_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).record_value_type
+    }
+
+    /// Whether a package `alias` or `sequence` type definition declares
+    /// `key`.
+    pub(crate) fn is_alias_or_sequence_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).core_type
     }
 
     /// Whether some `EventType` record declares `key`.

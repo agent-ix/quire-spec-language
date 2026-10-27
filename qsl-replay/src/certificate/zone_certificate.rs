@@ -423,6 +423,9 @@ pub struct ZoneCertificateRequest<'a> {
     /// The alias of the model whose time source and timed model the
     /// subject is read under (FR-230).
     pub model: &'a str,
+    /// The bound on a state's live clocks the search ran under (QSpec
+    /// FR-415, `model_check.max_clocks`).
+    pub max_clocks: std::num::NonZeroU64,
     /// The item.
     pub item: CertifiedItem<'a>,
 }
@@ -669,7 +672,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
     }
     let system = ModelSystem::new(request.simulation)
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
-    let timed = TimedSystem::new(&system, request.model)
+    let timed = TimedSystem::with_max_clocks(&system, request.model, request.max_clocks)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
     if timed.writes_collections() {
         return Err(ZoneCertificateRefusal::CarriedClocks);

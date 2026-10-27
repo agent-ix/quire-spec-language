@@ -335,6 +335,11 @@ fn system(world: &World) -> ModelSystem<'_> {
 
 /// [`system`] over the universe `keys`.
 fn system_over<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
+    system_limited(world, keys, 1_000_000)
+}
+
+/// [`system_over`] under the expansion bound `max_candidates`.
+fn system_limited<'w>(world: &'w World, keys: &[&str], max_candidates: u64) -> ModelSystem<'w> {
     ModelSystem::new(ModelSimulationRequest {
         package: &world.package,
         packages: &world.packages,
@@ -349,9 +354,7 @@ fn system_over<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
             keys: keys.iter().map(|key| (*key).to_owned()).collect(),
         }],
         observation: ObservationLimits::default(),
-        expansion: ExpansionLimits {
-            max_candidates: 1_000_000,
-        },
+        expansion: ExpansionLimits { max_candidates },
         meter: METER,
     })
     .expect("the system admits")
@@ -1631,13 +1634,16 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
     }
 }
 
-/// Part of FR-230-AC-19 (TC-685), SR-1655002 FND-002: a sequence with no
-/// declared maximum records `max: None` and is bounded in analysis by
-/// `max_clocks` (QSpec FR-415 "Cardinality bound"). With `max_clocks` 7, the
-/// three clocks `t.x`, `t.y` and `x` leave room for two slots of each of
-/// `ts.[slot].x` and `ts.[slot].y`: a state holding two elements steps, and
-/// one holding three stops `MaxClocks { max_clocks: 7 }` when it is
-/// expanded, as it does not under the default bound.
+/// Part of FR-230-AC-19 (TC-685), SR-1655002 FND-002 and SR-1676001
+/// FND-001: a sequence with no declared maximum records `max: None` and is
+/// bounded in analysis by `max_clocks` on the live clocks of a state (QSpec
+/// FR-415 "Cardinality bound"). The live clocks of a state are `t.x`, `t.y`
+/// and `x` and two for each element of `ts`. With `max_clocks` 7, a state
+/// holding two elements (7 live clocks) steps, and one holding three (9)
+/// stops `MaxClocks { max_clocks: 7 }` when it is expanded, as it does not
+/// under the default bound. With `max_clocks` 3, 4 and 5 a state holding two
+/// elements stops, whatever room the bound leaves for listing a slot, and
+/// does not step with its element clocks missing.
 #[trace("TC-685")]
 #[test]
 fn an_unbounded_collection_is_bounded_by_max_clocks() {
@@ -1654,17 +1660,25 @@ fn an_unbounded_collection_is_bounded_by_max_clocks() {
             json!({"t": timer("0"), "ts": {"sequence": vec![timer("1"); held]}}),
         )
     };
-    for (held, stops) in [(2, false), (3, true)] {
+    for (held, max_clocks, stops) in [
+        (2, 7, false),
+        (3, 7, true),
+        (2, 3, true),
+        (2, 4, true),
+        (2, 5, true),
+    ] {
         let world = holding(held);
         let held_system = system(&world);
-        let timed = TimedSystem::with_max_clocks(&held_system, "M", 7).expect("a timed subject");
-        assert_eq!(timed.places().len(), 7);
+        let bound = std::num::NonZeroU64::new(max_clocks).expect("a positive bound");
+        let timed =
+            TimedSystem::with_max_clocks(&held_system, "M", bound).expect("a timed subject");
         let [initial] = &timed.initial()[..] else {
             panic!("one initial state");
         };
+        assert_eq!(timed.live_clocks(initial.discrete()), 3 + 2 * held as u64);
         let steps = timed.steps(initial);
         if stops {
-            assert_eq!(steps.err(), Some(TimedStop::MaxClocks { max_clocks: 7 }));
+            assert_eq!(steps.err(), Some(TimedStop::MaxClocks { max_clocks }));
             let roomy = TimedSystem::new(&held_system, "M").expect("a timed subject");
             let [initial] = &roomy.initial()[..] else {
                 panic!("one initial state");
@@ -1770,7 +1784,12 @@ fn an_unbounded_quantified_guard_reads_each_held_slot() {
             json!({"t": timer("0"), "ts": {"sequence": [timer("2"), timer("1")]}}),
         );
         let held = system(&world);
-        let timed = TimedSystem::with_max_clocks(&held, "M", 16).expect("a timed subject");
+        let timed = TimedSystem::with_max_clocks(
+            &held,
+            "M",
+            std::num::NonZeroU64::new(16).expect("positive"),
+        )
+        .expect("a timed subject");
         let [initial] = &timed.initial()[..] else {
             panic!("one initial state");
         };
@@ -2211,4 +2230,45 @@ fn a_quantified_guard_reads_a_collection_below_a_record_field() {
         .expect("no invariant bounds the delay");
     assert_eq!(read(initial), vec![vec![(vec![1], false)]]);
     assert_eq!(read(&later), vec![vec![(vec![1], true)]]);
+}
+
+/// Part of FR-230-AC-21 (TC-685), SR-1676001 FND-002: the alternatives of
+/// a `forall` family whose body has two parts at each held slot are a
+/// product over the held slots, charged against the expansion's
+/// `max_candidates`. Under `max_candidates` 12, `forall(e in self.ts: e.n
+/// = 2 implies e.x >= 1 ms)` over two `Timer { n: 1 }` elements (2 + 4
+/// alternatives charged) expands, and over four (2 + 4 + 8 + 16) stops
+/// `resource_exhausted` naming `max_candidates` instead of listing them.
+#[trace("TC-685")]
+#[test]
+fn a_family_product_is_charged_against_max_candidates() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let expanded = |held: usize| {
+        let world = world_holding(
+            timer_sequence_document(None),
+            "",
+            &only(
+                &["work"],
+                "pre Near using v on M::Call::work { forall(e in self.ts: e.n = 2 implies e.x >= 1 ms) }\n",
+            ),
+            json!({"t": timer("0"), "ts": {"sequence": vec![timer("1"); held]}}),
+        );
+        let limited = system_limited(&world, &["c"], 12);
+        let timed = TimedSystem::new(&limited, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        timed
+            .guarded_steps(initial.discrete())
+            .map(|steps| steps.len())
+    };
+    assert!(expanded(2).is_ok(), "{:?}", expanded(2));
+    let Err(TimedStop::Expansion(stop)) = expanded(4) else {
+        panic!("the product stops: {:?}", expanded(4));
+    };
+    assert_eq!(
+        stop.limit,
+        Some(qsl_eval::simulation::ExpansionLimit::MaxCandidates)
+    );
 }

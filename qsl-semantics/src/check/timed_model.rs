@@ -200,6 +200,17 @@ impl ClockOp {
     }
 }
 
+/// The slot of a clock collection a guard part reads: one held slot, or
+/// the template slot of a [`QuantifiedFamily`], which the reading
+/// instantiates at each slot the collection holds.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SlotRef {
+    /// The slot at this index.
+    Held(u64),
+    /// Every held slot in turn.
+    Family,
+}
+
 /// An atomic clock constraint `x ~ c` over the clock `x` of `self`, or of
 /// the object `self` reaches through the reference fields `via`, its bound
 /// exact in the model's unit (FR-230 `ClockConstraint`).
@@ -207,7 +218,7 @@ impl ClockOp {
 pub struct ClockConstraint {
     clock: ClockId,
     via: Vec<PlaceStep>,
-    slots: Vec<u64>,
+    slots: Vec<SlotRef>,
     op: ClockOp,
     bound: Rational,
     span: Span,
@@ -229,8 +240,9 @@ impl ClockConstraint {
 
     /// The slot of each collection on the clock's path, outermost first:
     /// none outside collections; `[j]` for the clock of slot `j` of a
-    /// quantified collection (FR-230 "Quantified reads").
-    pub fn slots(&self) -> &[u64] {
+    /// quantified collection (FR-230 "Quantified reads"), or the template
+    /// slot of a family.
+    pub fn slots(&self) -> &[SlotRef] {
         &self.slots
     }
 
@@ -286,17 +298,13 @@ impl StatePredicate for CheckedTimedPredicate {
 pub struct ElementBinding {
     name: String,
     path: Vec<String>,
-    slot: u64,
+    slot: SlotRef,
 }
 
 impl ElementBinding {
-    /// The slot of a [`QuantifiedFamily`]'s template part: the reading
-    /// instantiates it at each slot the collection holds.
-    pub const FAMILY_SLOT: u64 = u64::MAX;
-
     /// The element the receiver's collection at `path` holds at `slot`,
     /// read by the parameter `name`.
-    pub fn new(name: String, path: Vec<String>, slot: u64) -> Self {
+    pub fn new(name: String, path: Vec<String>, slot: SlotRef) -> Self {
         Self { name, path, slot }
     }
 
@@ -311,7 +319,7 @@ impl ElementBinding {
     }
 
     /// The slot.
-    pub fn slot(&self) -> u64 {
+    pub fn slot(&self) -> SlotRef {
         self.slot
     }
 }
@@ -331,7 +339,7 @@ pub struct ConvexPart {
 /// at a state whose collection holds `n` elements, either every slot below
 /// `n` enables one of [`Self::parts`] (`each`), or some slot below `n` does.
 /// The parts are templates whose element bindings and clock constraints
-/// name [`ElementBinding::FAMILY_SLOT`], read at each slot in turn.
+/// name [`SlotRef::Family`], read at each slot in turn.
 #[derive(Debug)]
 pub struct QuantifiedFamily {
     path: Vec<String>,
@@ -654,7 +662,7 @@ struct PartDraft {
     families: Vec<(Vec<String>, bool, Vec<PartDraft>)>,
 }
 
-/// An unbounded quantifier's body read at [`ElementBinding::FAMILY_SLOT`]:
+/// An unbounded quantifier's body read at [`SlotRef::Family`]:
 /// the family of its entries indexed by size (FR-230 "Quantified reads").
 #[derive(Debug)]
 struct FamilyDraft {

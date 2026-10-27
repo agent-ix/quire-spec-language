@@ -41,7 +41,7 @@ use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::timed::explore::{explore, widen, Closure};
 
 /// The timed subject of the recompiled system under the timed model of
-/// `model`, the alias the subject names.
+/// `model`, the alias the subject names, bounded by `max_clocks`.
 ///
 /// # Errors
 ///
@@ -50,8 +50,9 @@ use crate::timed::explore::{explore, widen, Closure};
 pub(super) fn timed_subject<'s, 'a>(
     system: &'s ModelSystem<'a>,
     model: &str,
+    max_clocks: std::num::NonZeroU64,
 ) -> Result<TimedSystem<'s, 'a>, ReplayRefusal> {
-    TimedSystem::new(system, model)
+    TimedSystem::with_max_clocks(system, model, max_clocks)
         .map_err(|refusal| refused(ModelTraceRefusal::TimedSubject(refusal)))
 }
 
