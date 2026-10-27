@@ -220,7 +220,7 @@ fn identity_and_budgets_are_checked_first() {
         qsl_replay::ZoneCertificateRequest {
             simulation: world.request(),
             model: "M",
-            item: qsl_replay::ModelCheckItem::DeadlockFreedom,
+            item: qsl_replay::CertifiedItem::DeadlockFreedom,
         },
         &other,
         certificate_item,
@@ -808,7 +808,7 @@ fn an_identity_mismatch_names_both_identities() {
         qsl_replay::ZoneCertificateRequest {
             simulation: world.request(),
             model: "M",
-            item: qsl_replay::ModelCheckItem::DeadlockFreedom,
+            item: qsl_replay::CertifiedItem::DeadlockFreedom,
         },
         &certificate.obligation,
         certificate_item,

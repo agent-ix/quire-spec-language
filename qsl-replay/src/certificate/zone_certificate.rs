@@ -11,7 +11,10 @@
 //!
 //! 1. the `Malformed` members: the scale (every constant of the model and
 //!    the claim exact at it), the LU bounds (each at least the
-//!    bound the checker computes from the model), the nodes and the edges;
+//!    bound the checker computes from the model), the nodes, the edges, and
+//!    the component part (present for a liveness clause only) and
+//!    divergence part (for the time-lock-freedom item only), each shaped to
+//!    the nodes;
 //! 2. the initial coverage: each initial symbolic state is covered by a
 //!    named initial node of its discrete state (`InitialMissing`, at the
 //!    initial discrete state);
@@ -21,7 +24,13 @@
 //!    bounds (`SuccessorMissing`); no node is bad unless it is `locked`, and
 //!    from a `locked` node no quiescent node and no cycle that lets time
 //!    diverge is reachable (`BadState`);
-//! 4. `admitted`: a path of such edges from an initial node to a quiescent
+//! 4. for a liveness clause, the component part (`product`): every edge
+//!    goes to an equal or greater component (`BackwardEdge`, at the edge),
+//!    and each component's reason holds (`WitnessFails`, at the component);
+//! 5. for the time-lock-freedom item, the divergence part (`divergence`):
+//!    each node's path leads from it to a divergent target, and its every
+//!    valuation diverges (`WitnessFails`, at the node);
+//! 6. `admitted`: a path of such edges from an initial node to a quiescent
 //!    node, a terminal node under a tick source, or a cycle that lets time
 //!    advance (`WitnessFails`, at its last node).
 //!
@@ -52,16 +61,20 @@
 //!
 //! Supported items are a TT-1 invariant (`always holds(p)`), a TT-2 window
 //! claim, whose automaton the checker rebuilds with qsl-eval's own
-//! translation (FR-242), and the deadlock-freedom item. The liveness and
-//! time-lock-freedom forms need their component and divergence parts
-//! (QSL-583): each is refused [`ZoneCertificateRefusal::UnsupportedItem`].
-//! A certificate numbers its automaton states in its own order; the
-//! checker binds each number to the state it recomputes, one to one.
+//! translation (FR-242), any other infinite-trace or timed clause on
+//! FR-240's liveness product, whose negation automaton it rebuilds the same
+//! way, and the deadlock-freedom and time-lock-freedom items. A
+//! certificate numbers its automaton states in its own order; the checker
+//! binds each number to the state it recomputes, one to one.
+
+mod divergence;
+mod product;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
-use qsl_eval::automaton::{Read, Stamp, WindowClaim};
+use qsl_eval::automaton::{translate_position_negation, AutomatonError, Read, Stamp, WindowClaim};
 use qsl_eval::fairness::{components, EdgeLabel, FairnessError, Graph, Identity};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
@@ -81,7 +94,6 @@ use super::closure::CertificateRejection;
 use super::zone::{LuBounds, Zone, ZoneError};
 use super::{CertificateLocus, CertificateMember, CertificateRule};
 use crate::model_check::identity::node_occurrence;
-use crate::model_check::item::ModelCheckItem;
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::IncompleteCause;
 
@@ -107,9 +119,209 @@ pub struct ZoneCertificate<O> {
     /// The node that holds each initial symbolic state, one per initial
     /// state that admits a valuation (spec gap STD-493: FR-244 names one).
     pub initial: Vec<usize>,
+    /// FR-244's Büchi part (ADR-026 CF-2): for a claim decided on FR-240's
+    /// liveness product, each node's component and each component's
+    /// reason; `None` for a reachability proof.
+    pub components: Option<Components>,
+    /// FR-244's divergence part: for the time-lock-freedom item, each
+    /// node's path to a divergent target, by node; `None` otherwise.
+    pub divergence: Option<Vec<DivergenceWitness>>,
     /// The witness that the subject admits a time-divergent behaviour
     /// (ADR-026 TD-6).
     pub admitted: DivergenceWitness,
+}
+
+/// What a node of FR-240's liveness product carries beyond a search
+/// node: the instance whose claim automaton it reads, and how it was
+/// entered, which places it in the product's acceptance sets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProductMark {
+    /// The index of the `over` instance, in the subject's order.
+    pub instance: usize,
+    /// Entered by a position: the initial position, a step or a stutter.
+    pub positioned: bool,
+    /// Entered by the divergence clock's reset, or under a tick source by
+    /// a tick.
+    pub divergent: bool,
+    /// In the idle tail (FR-231): the behaviour takes no further step.
+    pub tail: bool,
+}
+
+/// A product edge that is no position.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SilentMove {
+    /// A delay into the next cell of the node's state (FR-240's split by
+    /// the fairness guards).
+    Wait,
+    /// The reset of the divergence clock `z`, the zone's last clock, once
+    /// it has reached 1 (the non-Zeno construction).
+    Diverge,
+}
+
+/// A component numbering (FR-244's Büchi part): every edge between
+/// numbered nodes goes to an equal or greater index, so every cycle lies in
+/// one component.
+///
+/// Its `Clone`, `Debug`, `PartialEq` and `Drop` read nested numberings
+/// without recursion: a crafted certificate may nest strong reasons deeper
+/// than the stack (SR-1647001 FND-001, FND-004).
+pub struct Components {
+    /// Each node's component, by node; `None` for a node the numbering does
+    /// not cover.
+    pub numbering: Vec<Option<usize>>,
+    /// Each component's reason, by index.
+    pub reasons: Vec<ComponentReason>,
+}
+
+/// A reason of one level of a flattened [`Components`]: a leaf reason, or
+/// a strong reason's constraints and the level of its nested numbering.
+#[derive(Debug, PartialEq)]
+enum LevelReason<'c> {
+    Leaf(&'c ComponentReason),
+    Strong(&'c [FairnessMember], usize),
+}
+
+/// One level of a flattened [`Components`]: its numbering and reasons.
+type Level<'c> = (&'c [Option<usize>], Vec<LevelReason<'c>>);
+
+impl Components {
+    /// Every numbering of `self`, nested ones included, breadth first:
+    /// level 0 is `self`, and a strong reason names the later level of its
+    /// nested numbering. Read without recursion.
+    fn levels(&self) -> Vec<Level<'_>> {
+        let mut order: Vec<&Self> = vec![self];
+        let mut levels = Vec::new();
+        let mut at = 0;
+        while let Some(&components) = order.get(at) {
+            let mut reasons = Vec::with_capacity(components.reasons.len());
+            for reason in &components.reasons {
+                reasons.push(match reason {
+                    ComponentReason::Strong {
+                        constraints,
+                        nested,
+                    } => {
+                        order.push(nested);
+                        LevelReason::Strong(constraints, order.len() - 1)
+                    }
+                    leaf => LevelReason::Leaf(leaf),
+                });
+            }
+            levels.push((components.numbering.as_slice(), reasons));
+            at += 1;
+        }
+        levels
+    }
+}
+
+impl Clone for Components {
+    /// Rebuilt from its levels, deepest first.
+    fn clone(&self) -> Self {
+        let levels = self.levels();
+        let mut built: Vec<Option<Self>> = (0..levels.len()).map(|_| None).collect();
+        for (index, (numbering, reasons)) in levels.iter().enumerate().rev() {
+            let reasons = reasons
+                .iter()
+                .map(|reason| match reason {
+                    // A leaf holds no numbering: its own clone is shallow.
+                    LevelReason::Leaf(leaf) => (*leaf).clone(),
+                    LevelReason::Strong(constraints, level) => ComponentReason::Strong {
+                        constraints: constraints.to_vec(),
+                        nested: Box::new(built[*level].take().unwrap_or_else(|| Self {
+                            numbering: Vec::new(),
+                            reasons: Vec::new(),
+                        })),
+                    },
+                })
+                .collect();
+            built[index] = Some(Self {
+                numbering: numbering.to_vec(),
+                reasons,
+            });
+        }
+        built
+            .first_mut()
+            .and_then(Option::take)
+            .unwrap_or_else(|| Self {
+                numbering: Vec::new(),
+                reasons: Vec::new(),
+            })
+    }
+}
+
+impl PartialEq for Components {
+    fn eq(&self, other: &Self) -> bool {
+        self.levels() == other.levels()
+    }
+}
+
+impl Eq for Components {}
+
+impl fmt::Debug for Components {
+    /// Its levels, breadth first, each strong reason naming its nested
+    /// numbering's level.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Components")
+            .field("levels", &self.levels())
+            .finish()
+    }
+}
+
+impl Drop for Components {
+    /// Drops nested numberings without recursion: a crafted certificate
+    /// may nest strong reasons deeper than the stack (SR-1647001 FND-001).
+    fn drop(&mut self) {
+        let mut pending = std::mem::take(&mut self.reasons);
+        while let Some(reason) = pending.pop() {
+            if let ComponentReason::Strong { mut nested, .. } = reason {
+                pending.append(&mut nested.reasons);
+            }
+        }
+    }
+}
+
+/// Why a component holds no fair accepting cycle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ComponentReason {
+    /// No edge joins two of its nodes: it holds no cycle.
+    Acyclic,
+    /// None of its nodes is in the acceptance set.
+    Lacks(AcceptanceSet),
+    /// The weak fairness constraint is enabled at every valuation of every
+    /// node and taken by no edge inside.
+    Weak(FairnessMember),
+    /// The strong fairness constraints are taken by no edge inside, and the
+    /// component without the nodes that enable any of them at some
+    /// valuation has the nested numbering, each of whose components has its
+    /// own reason.
+    Strong {
+        /// The constraints.
+        constraints: Vec<FairnessMember>,
+        /// The numbering of the rest.
+        nested: Box<Components>,
+    },
+}
+
+/// An acceptance set of the liveness product.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AcceptanceSet {
+    /// The claim automaton's acceptance set at this index.
+    Automaton(usize),
+    /// The nodes entered by the divergence clock's reset or a tick.
+    Divergence,
+    /// The nodes entered by a position.
+    Position,
+}
+
+/// One fairness constraint of the clause: the constraint at `constraint`
+/// in the clause's fairness set, and for an `each` constraint the one
+/// transition identity it is about.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FairnessMember {
+    /// The constraint's index in the clause's fairness set.
+    pub constraint: usize,
+    /// The transition identity of an `each` constraint; `None` for a
+    /// `whole` one.
+    pub transition: Option<ModelTransition>,
 }
 
 /// One certificate node.
@@ -125,6 +337,8 @@ pub struct CertNode {
     /// Whether the node violates the item only on time-locked valuations,
     /// which FR-239 continues past.
     pub locked: bool,
+    /// For a node of FR-240's liveness product, its instance and entry.
+    pub product: Option<ProductMark>,
 }
 
 /// One certificate edge.
@@ -145,6 +359,9 @@ pub struct CertEdge {
     /// The node whose zone holds, or under the aLU simulation covers, the
     /// successor.
     pub to: usize,
+    /// A liveness product's silent edge; `transition` and `part` are then
+    /// `None`.
+    pub silent: Option<SilentMove>,
 }
 
 /// A path of certificate edges to a divergent target.
@@ -179,6 +396,10 @@ pub struct CertificateCheckLimits {
     pub max_certificate_edges: u64,
     /// The most certificate bytes a check reads.
     pub max_certificate_bytes: u64,
+    /// The most states of the claim automaton the checker rebuilds itself
+    /// (ADR-018 LA-5): reaching it stops the check as EN-6's own
+    /// `max_automaton_states` stops the search (SR-1647001 FND-002).
+    pub max_automaton_states: u64,
 }
 
 impl Default for CertificateCheckLimits {
@@ -186,6 +407,7 @@ impl Default for CertificateCheckLimits {
         Self {
             max_certificate_edges: 1 << 24,
             max_certificate_bytes: 1 << 30,
+            max_automaton_states: crate::model_check::limits::DEFAULT_MAX_AUTOMATON_STATES,
         }
     }
 }
@@ -200,7 +422,23 @@ pub struct ZoneCertificateRequest<'a> {
     /// subject is read under (FR-230).
     pub model: &'a str,
     /// The item.
-    pub item: ModelCheckItem<'a>,
+    pub item: CertifiedItem<'a>,
+}
+
+/// The item a zone certificate proves, as the checker recompiles it.
+#[derive(Clone, Copy)]
+pub enum CertifiedItem<'a> {
+    /// An authored clause, its atoms read through `letters`.
+    Clause {
+        /// The checked clause.
+        clause: &'a qsl_semantics::check::CheckedTemporalClause,
+        /// The seam to the one clause evaluator for its `holds` atoms.
+        letters: &'a dyn ModelLetters,
+    },
+    /// FR-124's derived deadlock-freedom item, read over time (FR-232).
+    DeadlockFreedom,
+    /// FR-232's derived time-lock-freedom item.
+    TimeLockFreedom,
 }
 
 /// The item an obligation names, as the checker compares it with the
@@ -339,6 +577,15 @@ impl<O> From<ZoneError> for Halt<O> {
 
 type Step<T, O> = Result<T, Halt<O>>;
 
+/// The verdict of a check whose rebuilt claim automaton reached
+/// `max_automaton_states`, `limit`.
+fn automaton_stop(limit: u64) -> ZoneCertificateVerdict {
+    ZoneCertificateVerdict::Stopped(IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::MaxAutomatonStates,
+        value: limit,
+    })
+}
+
 fn fault<O>(fault: CheckerFault) -> Halt<O> {
     Halt::Refusal(ZoneCertificateRefusal::Fault(fault))
 }
@@ -395,7 +642,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
     // occurrence in the package, or the derived item's kind.
     let named = ItemIdentity::from(item_of(&certificate.obligation));
     let recompiled = match request.item {
-        ModelCheckItem::Clause { clause, .. } => request
+        CertifiedItem::Clause { clause, .. } => request
             .simulation
             .package
             .graph()
@@ -405,8 +652,8 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             .map_or(ItemIdentity::UnlistedClause, |node| {
                 ItemIdentity::Clause(node_occurrence(node))
             }),
-        ModelCheckItem::DeadlockFreedom => ItemIdentity::DeadlockFreedom,
-        ModelCheckItem::RaceFreedom => ItemIdentity::Other,
+        CertifiedItem::DeadlockFreedom => ItemIdentity::DeadlockFreedom,
+        CertifiedItem::TimeLockFreedom => ItemIdentity::TimeLockFreedom,
     };
     if named != recompiled || recompiled == ItemIdentity::Other {
         return Err(ZoneCertificateRefusal::IdentityMismatch {
@@ -418,8 +665,9 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
     let timed = TimedSystem::new(&system, request.model)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
+    let mut live = None;
     let (claim, window) = match request.item {
-        ModelCheckItem::Clause { clause, letters } => {
+        CertifiedItem::Clause { clause, letters } => {
             if !matches!(
                 clause.profile(),
                 TemporalProfile::InfiniteTrace | TemporalProfile::Timed
@@ -440,7 +688,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     clause.formula(),
                     instances.len(),
                     timed.tick_period().cloned(),
-                    u64::MAX,
+                    limits.max_automaton_states,
                 )
                 .map_err(|_| ZoneCertificateRefusal::UnsupportedItem)?;
                 let pieces = match timed.tick_period() {
@@ -452,7 +700,43 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     pieces,
                 })
             } else {
-                return Err(ZoneCertificateRefusal::UnsupportedItem);
+                // FR-240: any other clause, on the liveness product.
+                let mut automaton =
+                    match translate_position_negation(clause, limits.max_automaton_states) {
+                        Ok(automaton) => automaton,
+                        Err(AutomatonError::StateLimit { limit }) => {
+                            return Ok(automaton_stop(limit))
+                        }
+                        Err(AutomatonError::ProfileNotTranslated { .. }) => {
+                            return Err(ZoneCertificateRefusal::UnsupportedItem)
+                        }
+                        Err(_) => {
+                            return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton))
+                        }
+                    };
+                let start = match automaton.initial() {
+                    Ok(start) => start,
+                    Err(AutomatonError::StateLimit { limit }) => return Ok(automaton_stop(limit)),
+                    Err(_) => return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton)),
+                };
+                let mut operations = Vec::new();
+                for constraint in clause.fairness() {
+                    let operation = constraint.operation();
+                    let text = system
+                        .operation_text(operation.declaring_type(), operation.name())
+                        .ok_or(ZoneCertificateRefusal::Undecided)?;
+                    operations.push(text.to_owned());
+                }
+                live = Some(product::LiveClaim::new(
+                    automaton,
+                    start,
+                    letters,
+                    instances.clone(),
+                    clause.capture_site(),
+                    clause.fairness().to_vec(),
+                    operations,
+                ));
+                None
             };
             (
                 Some(Claim {
@@ -463,14 +747,16 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 window,
             )
         }
-        ModelCheckItem::DeadlockFreedom => (None, None),
-        ModelCheckItem::RaceFreedom => return Err(ZoneCertificateRefusal::UnsupportedItem),
+        CertifiedItem::DeadlockFreedom | CertifiedItem::TimeLockFreedom => (None, None),
     };
+    let time_lock = matches!(request.item, CertifiedItem::TimeLockFreedom);
     let count = certificate.nodes.len();
     let mut checker = Checker {
         timed: &timed,
         claim,
         window,
+        live,
+        time_lock,
         certificate,
         cancel,
         cover: certificate.lu_bounds.clone(),
@@ -482,6 +768,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         binds: BTreeMap::new(),
         read: Cell::new(0),
         max_edges: limits.max_certificate_edges,
+        max_automaton_states: limits.max_automaton_states,
     };
     match checker.verify(limits) {
         Ok(()) => Ok(ZoneCertificateVerdict::Accepted),
@@ -519,12 +806,22 @@ struct Successor {
     /// The checker's automaton state.
     q: usize,
     zone: Zone,
+    /// A liveness product's silent move.
+    silent: Option<SilentMove>,
+    /// A liveness product successor's instance and entry.
+    mark: Option<ProductMark>,
+    /// A liveness product successor's cell, over every clock of a node.
+    cell: Option<Zone>,
 }
 
 struct Checker<'c, 'a, O> {
     timed: &'c TimedSystem<'c, 'a>,
     claim: Option<Claim<'c>>,
     window: Option<Window>,
+    /// A clause decided on FR-240's liveness product.
+    live: Option<product::LiveClaim<'c>>,
+    /// Whether the item is time-lock freedom, with its divergence part.
+    time_lock: bool,
     certificate: &'c ZoneCertificate<O>,
     cancel: &'c Cancel,
     /// The bounds coverage is read under: the certificate's, or for the
@@ -548,6 +845,7 @@ struct Checker<'c, 'a, O> {
     /// divergence cycle again at each round of its repetition check.
     read: Cell<u64>,
     max_edges: u64,
+    max_automaton_states: u64,
 }
 
 impl<O> Checker<'_, '_, O> {
@@ -578,7 +876,29 @@ impl<O> Checker<'_, '_, O> {
                 self.node(node, &divergent)?;
             }
         }
+        if self.live.is_some() {
+            self.components()?;
+        }
+        if self.time_lock {
+            self.divergence_part()?;
+        }
         self.admitted()
+    }
+
+    /// Charge `count` edge reads against `max_certificate_edges`.
+    fn charge(&self, count: u64) -> Step<(), O> {
+        self.poll()?;
+        let read = self.read.get().saturating_add(count);
+        if read > self.max_edges {
+            return Err(Halt::Verdict(ZoneCertificateVerdict::Stopped(
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxEdges,
+                    value: self.max_edges,
+                },
+            )));
+        }
+        self.read.set(read);
+        Ok(())
     }
 
     fn poll(&self) -> Step<(), O> {
@@ -621,7 +941,8 @@ impl<O> Checker<'_, '_, O> {
     /// The zone dimension: the reference clock, the clock places and, for
     /// a TT-2 claim, the horizon clock.
     fn dim(&self) -> usize {
-        self.timed.places().len() + 1 + usize::from(self.window.is_some())
+        let z = self.live.is_some() && self.timed.tick_period().is_none();
+        self.timed.places().len() + 1 + usize::from(self.window.is_some()) + usize::from(z)
     }
 
     /// The horizon clock's index in a zone.
@@ -639,11 +960,25 @@ impl<O> Checker<'_, '_, O> {
             .window
             .as_ref()
             .map(|window| window.claim.borrow().constants().to_vec());
-        let Some((lower, upper)) =
+        let Some((mut lower, mut upper)) =
             computed_bounds(self.timed, constants.as_deref(), &certificate.scale)
         else {
             return malformed(CertificateMember::Scale);
         };
+        if self.live.is_some() {
+            // The liveness product's cells compare clocks with guard
+            // constants from both sides, which the aLU simulation keeps
+            // only under `L = U = max(L, U)`; `z` is compared with 1.
+            for (low, high) in lower.iter_mut().zip(upper.iter_mut()) {
+                let most = low.clone().max(high.clone());
+                low.clone_from(&most);
+                *high = most;
+            }
+            if self.timed.tick_period().is_none() {
+                lower.push(Some(certificate.scale.clone()));
+                upper.push(Some(certificate.scale.clone()));
+            }
+        }
         let at_least = |listed: &[Option<Integer>], computed: &[Option<Integer>]| {
             listed.len() == computed.len()
                 && listed
@@ -662,8 +997,15 @@ impl<O> Checker<'_, '_, O> {
         }
         let nodes = certificate.nodes.len();
         let windowed = self.window.is_some();
+        let live = self.live.as_ref();
         let node_ok = |node: &CertNode| {
-            node.zone.dim() == self.dim() && (windowed || node.automaton_state == 0)
+            node.zone.dim() == self.dim()
+                && (windowed || live.is_some() || node.automaton_state == 0)
+                && match (live, node.product) {
+                    (Some(live), Some(mark)) => mark.instance < live.instances.len(),
+                    (None, None) => true,
+                    _ => false,
+                }
         };
         if !certificate.nodes.iter().all(node_ok)
             || certificate.initial.iter().any(|&node| node >= nodes)
@@ -671,12 +1013,23 @@ impl<O> Checker<'_, '_, O> {
         {
             return malformed(CertificateMember::Nodes);
         }
+        // The Büchi part for a liveness product, the divergence part for
+        // the time-lock-freedom item, each shaped to the nodes. The
+        // time-lock item carries no component part, which FR-244's Büchi
+        // part text names (spec gap STD-493, comment 8eafddf9, item 1;
+        // SR-1647002 FND-003): its exact fixpoint is the stronger check.
+        match (&certificate.components, live) {
+            (Some(components), Some(_)) if numbering_ok(components, nodes) => {}
+            (None, None) => {}
+            _ => return malformed(CertificateMember::Components),
+        }
         let edges = certificate.edges.len();
         let dense = self.timed.tick_period().is_none();
         let edge_ok = |edge: &CertEdge| {
-            let shaped = match (&edge.transition, edge.part) {
-                (Some(_), Some(_)) => true,
-                (None, None) => windowed,
+            let shaped = match (&edge.transition, edge.part, edge.silent) {
+                (Some(_), Some(_), None) => true,
+                (None, None, None) => windowed || live.is_some(),
+                (None, None, Some(_)) => live.is_some(),
                 _ => false,
             };
             edge.from < nodes
@@ -693,6 +1046,22 @@ impl<O> Checker<'_, '_, O> {
             || !target_ok
         {
             return malformed(CertificateMember::Edges);
+        }
+        let witness_ok = |witness: &DivergenceWitness| {
+            witness.start < nodes
+                && witness.path.iter().all(|&edge| edge < edges)
+                && match &witness.target {
+                    DivergentTarget::Quiescent(node) | DivergentTarget::Terminal(node) => {
+                        *node < nodes
+                    }
+                    DivergentTarget::Cycle(cycle) => cycle.iter().all(|&edge| edge < edges),
+                }
+        };
+        match (&certificate.divergence, self.time_lock) {
+            (Some(witnesses), true)
+                if witnesses.len() == nodes && witnesses.iter().all(witness_ok) => {}
+            (None, false) => {}
+            _ => return malformed(CertificateMember::Divergence),
         }
         Ok(())
     }
@@ -788,14 +1157,15 @@ impl<O> Checker<'_, '_, O> {
         match read {
             Read::State(q) => Ok(q),
             Read::Atom(_) => Err(Halt::Refusal(ZoneCertificateRefusal::Undecided)),
-            Read::Fault(_) | Read::AutomatonStates => Err(fault(CheckerFault::Automaton)),
+            Read::AutomatonStates => Err(Halt::Verdict(automaton_stop(self.max_automaton_states))),
+            Read::Fault(_) => Err(fault(CheckerFault::Automaton)),
         }
     }
 
     /// Whether the certificate's automaton state `listed` names the
     /// checker's `q`, binding the two when neither is bound yet.
     fn binds(&mut self, listed: usize, q: usize) -> bool {
-        if self.window.is_none() {
+        if self.window.is_none() && self.live.is_none() {
             return listed == 0 && q == 0;
         }
         match (self.bound.get(&listed), self.binds.get(&q)) {
@@ -812,6 +1182,9 @@ impl<O> Checker<'_, '_, O> {
     /// Each initial symbolic state is covered by a named initial node of
     /// its discrete state and claim-automaton state.
     fn initial(&mut self) -> Step<(), O> {
+        if self.live.is_some() {
+            return self.live_initial_nodes();
+        }
         let certificate = self.certificate;
         for start in self.timed.initial() {
             self.poll()?;
@@ -846,6 +1219,48 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
+    /// The liveness product's initial nodes: for each initial state and
+    /// instance, each position-0 successor is covered by a named initial
+    /// node of its discrete state, automaton state, mark and cell.
+    fn live_initial_nodes(&mut self) -> Step<(), O> {
+        let certificate = self.certificate;
+        for start in self.timed.initial() {
+            self.poll()?;
+            let state = start.discrete().clone();
+            let digest = self.digest(&state)?;
+            let missing = || {
+                reject(
+                    CertificateRule::InitialMissing,
+                    CertificateLocus::ModelState(digest),
+                )
+            };
+            let Some(starts) = self.live_initial(&state)? else {
+                return missing();
+            };
+            for (_, q, mark, zone) in starts {
+                let cell = self.cell_zone_of(&state, &zone)?;
+                let mut covered = None;
+                for &node in &certificate.initial {
+                    let listed = &certificate.nodes[node];
+                    if listed.state_key == digest
+                        && listed.product == Some(mark)
+                        && zone.alu_covered_by(&listed.zone, &self.cover)?
+                        && cell.includes(&listed.zone)?
+                        && self.binds(listed.automaton_state, q)
+                    {
+                        covered = Some(node);
+                        break;
+                    }
+                }
+                let Some(node) = covered else {
+                    return missing();
+                };
+                self.states[node].get_or_insert(state.clone());
+            }
+        }
+        Ok(())
+    }
+
     /// The model state of every node an edge reaches from an initial node,
     /// each reached node's successors, and for each edge the successor it
     /// covers: of its transition identity, guard part and horizon piece,
@@ -868,7 +1283,12 @@ impl<O> Checker<'_, '_, O> {
                 .get(&listed.automaton_state)
                 .copied()
                 .unwrap_or_default();
-            let successors = self.successors_of(&state, q, &listed.zone)?;
+            let successors = match listed.product {
+                Some(mark) if self.live.is_some() => {
+                    self.live_successors(node, &state, q, mark, &listed.zone)?
+                }
+                _ => self.successors_of(&state, q, &listed.zone)?,
+            };
             for index in self.leaving[node].clone() {
                 let edge = &certificate.edges[index];
                 let target = &certificate.nodes[edge.to];
@@ -878,7 +1298,13 @@ impl<O> Checker<'_, '_, O> {
                         && successor.part == edge.part
                         && successor.horizon == edge.horizon
                         && successor.digest == target.state_key
-                        && successor.zone.alu_covered_by(&target.zone, &self.cover)?;
+                        && successor.silent == edge.silent
+                        && successor.mark == target.product
+                        && successor.zone.alu_covered_by(&target.zone, &self.cover)?
+                        && match &successor.cell {
+                            Some(cell) => cell.includes(&target.zone)?,
+                            None => true,
+                        };
                     if same && self.binds(target.automaton_state, successor.q) {
                         self.covers[index] = Some(position);
                         if self.states[edge.to].is_none() {
@@ -962,6 +1388,9 @@ impl<O> Checker<'_, '_, O> {
                                 digest,
                                 q,
                                 zone: next,
+                                silent: None,
+                                mark: None,
+                                cell: None,
                             });
                         }
                         continue;
@@ -993,6 +1422,9 @@ impl<O> Checker<'_, '_, O> {
                             digest,
                             q: read,
                             zone: at,
+                            silent: None,
+                            mark: None,
+                            cell: None,
                         });
                     }
                 }
@@ -1032,6 +1464,9 @@ impl<O> Checker<'_, '_, O> {
                     digest,
                     q: read,
                     zone: at,
+                    silent: None,
+                    mark: None,
+                    cell: None,
                 });
             }
         }
@@ -1079,6 +1514,11 @@ impl<O> Checker<'_, '_, O> {
     /// Whether `node` violates the item at some valuation of its zone.
     fn bad(&self, node: usize) -> Step<bool, O> {
         let state = self.state(node)?;
+        if self.time_lock || self.live.is_some() {
+            // Time-lock freedom is read from the divergence part, and a
+            // liveness product's bad cycles from its components.
+            return Ok(false);
+        }
         let Some(claim) = &self.claim else {
             return self.deadlocked(node);
         };
@@ -1328,7 +1768,10 @@ impl<O> Checker<'_, '_, O> {
     /// `admitted`: a path of valid edges from an initial node to a
     /// divergent target, recomputed in exact zones from the initial state,
     /// each held to its state's own invariants, so the path is one some
-    /// behaviour takes.
+    /// behaviour takes. It proves that a time-divergent behaviour exists,
+    /// as FR-244 TD-6 says, not that a fair one does: FR-240's vacuity
+    /// under fairness has no certificate part (spec gap STD-493, comment
+    /// 8eafddf9, item 3; SR-1647002 FND-002).
     fn admitted(&self) -> Step<(), O> {
         let witness = &self.certificate.admitted;
         let mut at = witness.start;
@@ -1376,12 +1819,20 @@ impl<O> Checker<'_, '_, O> {
             if self.digest(state)? != listed.state_key {
                 continue;
             }
+            let mut zone = Zone::zero(self.dim());
+            if self.live.is_some() {
+                let cell = self.cell_zone_of(state, &zone)?;
+                self.settle_within(state, &mut zone, Some(&cell))?;
+                if !zone.is_empty() {
+                    return Ok(Some(zone));
+                }
+                continue;
+            }
             let zero = Rational::from_integer(Integer::zero());
             let q = self.read(None, state, Stamp::At(&zero), false)?;
             if self.bound.get(&listed.automaton_state) != Some(&q) && self.window.is_some() {
                 continue;
             }
-            let mut zone = Zone::zero(self.dim());
             self.settle(state, &mut zone)?;
             if !zone.is_empty() {
                 return Ok(Some(zone));
@@ -1397,6 +1848,37 @@ impl<O> Checker<'_, '_, O> {
         let source = self.state(edge.from)?;
         let successor = self.covered(index)?;
         let mut next = zone.clone();
+        if let Some(cell) = &successor.cell {
+            // A liveness product's move, within the target's cell.
+            let post = successor.step.as_ref().map_or(source, GuardedStep::post);
+            match (&successor.step, successor.silent) {
+                (Some(step), _) => {
+                    let part = successor
+                        .part
+                        .and_then(|part| step.parts().get(part))
+                        .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))?;
+                    self.constrain(&mut next, part)?;
+                    for (place, value) in step.resets() {
+                        next.reset(place + 1, &self.scaled(value)?)?;
+                    }
+                    self.constrain(&mut next, &self.invariants(post)?)?;
+                }
+                (None, Some(SilentMove::Wait)) => {
+                    next.up();
+                    self.constrain(&mut next, &self.invariants(source)?)?;
+                }
+                (None, Some(SilentMove::Diverge)) => {
+                    let z = self.z_clock();
+                    next.constrain(0, z, &self.certificate.scale.neg(), false)?;
+                    if !next.is_empty() {
+                        next.reset(z, &Integer::zero())?;
+                    }
+                }
+                (None, None) => {}
+            }
+            self.settle_within(post, &mut next, Some(cell))?;
+            return Ok(next);
+        }
         let post = match &successor.step {
             Some(step) => {
                 let part = successor
@@ -1432,10 +1914,31 @@ impl<O> Checker<'_, '_, O> {
         let post = successor.step.as_ref().map_or(source, GuardedStep::post);
         let invariants = self.invariants(post)?;
         let mut zone = target.clone();
-        self.constrain(&mut zone, &invariants)?;
+        let hold = |zone: &mut Zone| -> Step<(), O> {
+            self.constrain(zone, &invariants)?;
+            if let Some(cell) = &successor.cell {
+                intersect(zone, cell)?;
+            }
+            Ok(())
+        };
+        hold(&mut zone)?;
         if self.elapses(post)? && !zone.is_empty() {
             zone.down();
-            self.constrain(&mut zone, &invariants)?;
+            hold(&mut zone)?;
+        }
+        match successor.silent {
+            Some(SilentMove::Wait) => {
+                if !zone.is_empty() {
+                    zone.down();
+                }
+            }
+            Some(SilentMove::Diverge) => {
+                let z = self.z_clock();
+                zone.constrain(z, 0, &Integer::zero(), false)?;
+                zone.free(z)?;
+                zone.constrain(0, z, &self.certificate.scale.neg(), false)?;
+            }
+            None => {}
         }
         if let Some(horizon) = &successor.horizon {
             self.constrain(&mut zone, horizon)?;
@@ -1481,17 +1984,7 @@ impl<O> Checker<'_, '_, O> {
         self.constrain(&mut held, &invariants)?;
         let length = u64::try_from(cycle.len()).unwrap_or(u64::MAX);
         loop {
-            self.poll()?;
-            let read = self.read.get().saturating_add(length);
-            if read > self.max_edges {
-                return Err(Halt::Verdict(ZoneCertificateVerdict::Stopped(
-                    IncompleteCause::LimitReached {
-                        limit: ModelCheckLimit::CertificateMaxEdges,
-                        value: self.max_edges,
-                    },
-                )));
-            }
-            self.read.set(read);
+            self.charge(length)?;
             let mut back = held.clone();
             for &index in cycle.iter().rev() {
                 back = self.pre(index, &back)?;
@@ -1535,6 +2028,13 @@ impl<O> Checker<'_, '_, O> {
         }
         if cycle.is_empty() || node != at {
             return Ok(false);
+        }
+        // The divergence clock resets only once a unit has passed.
+        if cycle
+            .iter()
+            .any(|&index| self.certificate.edges[index].silent == Some(SilentMove::Diverge))
+        {
+            return Ok(true);
         }
         if self.timed.tick_period().is_some() {
             for &index in cycle {
@@ -1697,8 +2197,8 @@ fn computed_bounds(
 }
 
 /// The size a check charges against `max_certificate_bytes`: each node's
-/// key and zone cells, each edge, the LU bounds and the witness, at their
-/// integers' magnitudes. It bounds the certificate's in-memory reading,
+/// key and zone cells, each edge, the LU bounds, the witnesses and the
+/// component numbering, at their integers' magnitudes. It bounds the certificate's in-memory reading,
 /// not an encoding: FR-418's byte encoding of the certificate does not
 /// exist yet (spec gap STD-493).
 fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
@@ -1727,8 +2227,97 @@ fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
         }
     }
     let edges = u64::try_from(certificate.edges.len()).unwrap_or(u64::MAX);
-    let witness = u64::try_from(certificate.admitted.path.len()).unwrap_or(u64::MAX);
+    let mut parts = witness_bytes(&certificate.admitted);
+    if let Some(components) = &certificate.components {
+        parts = parts.saturating_add(components_bytes(components));
+    }
+    for witness in certificate.divergence.iter().flatten() {
+        parts = parts.saturating_add(witness_bytes(witness));
+    }
     bytes
         .saturating_add(edges.saturating_mul(48))
-        .saturating_add(witness.saturating_mul(8))
+        .saturating_add(parts)
+}
+
+/// [`certificate_bytes`] of a divergence witness: its edges, each 8.
+fn witness_bytes(witness: &DivergenceWitness) -> u64 {
+    let cycle = match &witness.target {
+        DivergentTarget::Cycle(cycle) => cycle.len(),
+        DivergentTarget::Quiescent(_) | DivergentTarget::Terminal(_) => 1,
+    };
+    u64::try_from(witness.path.len().saturating_add(cycle).saturating_add(1))
+        .unwrap_or(u64::MAX)
+        .saturating_mul(8)
+}
+
+/// [`certificate_bytes`] of a component numbering: each node's index and
+/// each reason, 8 per entry, nested numberings included. Read without
+/// recursion, however deep the nesting.
+fn components_bytes(components: &Components) -> u64 {
+    let mut bytes = 0_u64;
+    let mut pending = vec![components];
+    while let Some(components) = pending.pop() {
+        let entries = components
+            .numbering
+            .len()
+            .saturating_add(components.reasons.len());
+        bytes = bytes.saturating_add(u64::try_from(entries).unwrap_or(u64::MAX).saturating_mul(8));
+        for reason in &components.reasons {
+            if let ComponentReason::Strong {
+                constraints,
+                nested,
+            } = reason
+            {
+                let listed = u64::try_from(constraints.len()).unwrap_or(u64::MAX);
+                bytes = bytes.saturating_add(listed.saturating_mul(8));
+                pending.push(nested);
+            }
+        }
+    }
+    bytes
+}
+
+/// Whether `components` numbers `nodes` nodes into its reasons, and each
+/// strong reason's nested numbering does too, numbering a strict subset of
+/// that reason's component: the engine nests a strong reason only below a
+/// node that enables one of its constraints, which the nested numbering
+/// leaves out. Each level then numbers fewer nodes, so the nesting is no
+/// deeper than the node count (SR-1647001 FND-001). Read without
+/// recursion.
+fn numbering_ok(components: &Components, nodes: usize) -> bool {
+    let mut pending = vec![components];
+    while let Some(components) = pending.pop() {
+        if components.numbering.len() != nodes {
+            return false;
+        }
+        let mut sizes = vec![0_usize; components.reasons.len()];
+        for &index in components.numbering.iter().flatten() {
+            match sizes.get_mut(index) {
+                Some(size) => *size += 1,
+                None => return false,
+            }
+        }
+        for (index, reason) in components.reasons.iter().enumerate() {
+            let ComponentReason::Strong { nested, .. } = reason else {
+                continue;
+            };
+            if nested.numbering.len() != nodes {
+                return false;
+            }
+            let mut numbered = 0_usize;
+            for (inner, outer) in nested.numbering.iter().zip(&components.numbering) {
+                if inner.is_some() {
+                    if *outer != Some(index) {
+                        return false;
+                    }
+                    numbered += 1;
+                }
+            }
+            if numbered >= sizes[index] {
+                return false;
+            }
+            pending.push(nested);
+        }
+    }
+    true
 }

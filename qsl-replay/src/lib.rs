@@ -119,8 +119,9 @@ pub use certificate::state_graph::{
 };
 pub use certificate::zone::{LuBounds, Zone, ZoneError};
 pub use certificate::zone_certificate::{
-    check_zone_certificate, CertEdge, CertNode, CertificateCheckLimits, CertificateItem,
-    CheckerFault, DivergenceWitness, DivergentTarget, ItemIdentity, ZoneCertificate,
+    check_zone_certificate, AcceptanceSet, CertEdge, CertNode, CertificateCheckLimits,
+    CertificateItem, CertifiedItem, CheckerFault, ComponentReason, Components, DivergenceWitness,
+    DivergentTarget, FairnessMember, ItemIdentity, ProductMark, SilentMove, ZoneCertificate,
     ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};

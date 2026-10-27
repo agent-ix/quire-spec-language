@@ -328,6 +328,12 @@ impl PropertyAutomaton {
         self.reached.len()
     }
 
+    /// The reached state numbered `index`; `None` when no state has that
+    /// number yet.
+    pub fn reached_state(&self, index: usize) -> Option<StateId> {
+        (index < self.reached.len()).then(|| StateId::new(index))
+    }
+
     /// The explicit automaton of every state reachable on some letter, built
     /// by reaching them all. This is for a caller that needs the whole graph,
     /// such as a test comparing it with the evaluator; a product reaches

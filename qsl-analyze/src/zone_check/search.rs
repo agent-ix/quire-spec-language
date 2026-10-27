@@ -44,6 +44,7 @@ use quire_exact::{Cancel, Meter, Rational};
 use super::certificate::Proof;
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
+use super::liveness::Liveness;
 use super::{scale_constants, Bound, Dbm, DbmError};
 use qsl_eval::automaton::{
     translate_position_negation, AutomatonError, PropertyAutomaton, Read, Stamp, WindowClaim,
@@ -826,18 +827,26 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             }
             Some((root, witness)) => {
                 // FR-240: a claim decided on the liveness product, once
-                // the subject admits a behaviour. Its proof carries the
-                // reachability part; the component part is QSL-583c's.
+                // the subject admits a behaviour; its proof is the
+                // product's (FR-244).
                 if matches!(self.judged, Judged::Liveness(_)) {
-                    if let Some(counterexample) = self.liveness()? {
-                        return Ok(Searched::Violated {
-                            counterexample: Box::new(counterexample),
-                            stats: self.stats(),
-                        });
-                    }
+                    let proof = match self.liveness()? {
+                        Liveness::Violated(counterexample) => {
+                            return Ok(Searched::Violated {
+                                counterexample,
+                                stats: self.stats(),
+                            });
+                        }
+                        Liveness::Proved(products) => self.live_certificate(products)?,
+                    };
+                    return Ok(Searched::Holds {
+                        proof: Box::new(proof),
+                        stats: self.stats(),
+                    });
                 }
                 let witness = witness.ok_or(ZoneCheckRefusal::Fault("divergence-witness"))?;
-                let proof = self.certificate(&roots, root, &witness)?;
+                let time_lock = matches!(self.judged, Judged::TimeLockFreedom);
+                let proof = self.certificate(&roots, root, &witness, time_lock)?;
                 Ok(Searched::Holds {
                     proof: Box::new(proof),
                     stats: self.stats(),

@@ -12,7 +12,7 @@ use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_replay::{replay, reproduced};
 use crate::zone_search::{claim, delays, rpc_claim, violated, windowed, Outcome, INFINITE};
 
-fn decide(world: &World) -> Outcome {
+pub(crate) fn decide(world: &World) -> Outcome {
     claim(world, ZoneCheckLimits::default(), &Cancel::new())
 }
 
@@ -49,7 +49,7 @@ fn loop_delay(counterexample: &TemporalCounterexample) -> Rational {
 
 /// FR-240-AC-1's response claim over `Rpc` with deadline `t`, with
 /// `extra` added to the model.
-fn response(t: u32, extra: &str) -> World {
+pub(crate) fn response(t: u32, extra: &str) -> World {
     rpc_claim(
         t,
         INFINITE,
@@ -137,7 +137,7 @@ fn rpc_echo() -> World {
 /// no data change, `serve` guarded `x {guard}` setting `retried` (the spec's
 /// `done`), and the claim
 /// `eventually holds(c.retried)` under the fairness set `fairness`.
-fn serve(guard: &str, fairness: &str) -> World {
+pub(crate) fn serve(guard: &str, fairness: &str) -> World {
     world(
         &document(&["x"], &[("idle", &[]), ("serve", &["retried"])]),
         INFINITE,
@@ -420,4 +420,49 @@ fn enabledness_reads_the_target_time_invariants() {
             "{fairness}"
         );
     }
+}
+
+/// FR-241-AC-4 (TC-696, SR-1647002 FND-001): a violation with no periodic
+/// counterexample. `a` (phase 0 to 1, guard `x >= 1 ms`, resets `x`)
+/// fires every millisecond under `x <= 1 ms`; `b` (phase 1 to 0, guard
+/// `y > 1 ms`, resets `y`) must fall later after each `a` than after the
+/// last, so no run repeats a loop with equal delays: one iteration would
+/// force `y = 1` at `b`. Runs such as `b` at `1 - 2^-n` after each `a`
+/// never retry and let time diverge, so `eventually holds(c.retried)` is
+/// violated, yet every lasso of the zone product, whose aM abstraction
+/// keeps Büchi acceptance but not periodicity (Puri, 2000), has
+/// unsatisfiable loop delays: EN-6 returns
+/// `Undecided(LassoNotConcretized)`.
+#[trace("TC-696", "FR-241-AC-4")]
+#[test]
+fn a_drifting_violation_has_no_periodic_counterexample() {
+    let drift = world(
+        &document(
+            &["x", "y"],
+            &[("a", &["phase", "x"]), ("b", &["phase", "y"])],
+        ),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre A using v on M::Call::a {{ self.phase = 0 and self.x >= 1 ms }}\n\
+             post Aed using v on M::Call::a {{ self.phase = 1 and self.x = 0 ms }}\n\
+             pre B using v on M::Call::b {{ self.phase = 1 and self.y > 1 ms }}\n\
+             post Bed using v on M::Call::b {{ self.phase = 0 and self.y = 0 ms }}\n\
+             time invariant HoldIdle when {{ self.phase = 0 }} {{ self.x <= 1 ms }}\n\
+             time invariant HoldBusy when {{ self.phase = 1 }} {{ self.x <= 1 ms }}\n\
+             temporal Retried using inf over (c: M::Call) clock \"model-steps\" on origin \
+             {{ eventually holds(c.retried) }}\n"
+        ),
+    );
+    let outcome = decide(&drift);
+    assert!(
+        matches!(
+            outcome,
+            ZoneCheckOutcome::Undecided {
+                cause: ZoneUndecided::LassoNotConcretized,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
 }
