@@ -233,3 +233,208 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         "missing_declaration/missing-name"
     );
 }
+
+/// `ix://example/config-version/<name>`.
+fn node(name: &str) -> String {
+    format!("ix://example/config-version/{name}")
+}
+
+/// A `constraints[]` entry `keyword` `value` on `applies`, owned by `owner`.
+fn bound(owner: &str, keyword: &str, value: &str, applies: &str) -> Value {
+    let identity = format!("{}/{keyword}", node(owner));
+    json!({
+        "identity": identity.clone(), "keyword": keyword,
+        "operands": {"value": value}, "appliesTo": applies,
+        "diagnosticCode": format!("bound.{keyword}"),
+        "origin": {"generated": {"generatorIdentity": identity.clone(),
+            "generatorVersion": "1.0.0", "inputIdentities": [identity]}},
+    })
+}
+
+/// [`document`] with an alias `D` of `ms` carrying `on_alias`, the
+/// `ConfigVersion` constraints `on_type`, and the optional fields `a: ms`,
+/// `d: D`, `ds: Sequence<D>` (multiplicity `[0, 2]`) and `t: s`.
+fn bounded_document(on_alias: Vec<Value>, on_type: Vec<Value>) -> Vec<u8> {
+    use crate::model_operations::{wire_field, wire_type};
+    let mut document: Value = serde_json::from_slice(&document()).expect("JSON");
+    let types = document["types"].as_array_mut().expect("types");
+    let mut alias = wire_type(
+        &node("D"),
+        "unused",
+        json!({"target": "ix://quire/unit/ms", "constraints": on_alias}),
+    );
+    alias["kind"] = json!("alias");
+    let owner = types
+        .iter_mut()
+        .find(|definition| definition["identity"] == node("ConfigVersion"))
+        .expect("ConfigVersion");
+    owner["constraints"] = json!(on_type);
+    let fields = owner["fields"].as_array_mut().expect("fields");
+    let member = |name: &str, type_ref: &str| {
+        wire_field(
+            &node(&format!("ConfigVersion/{name}")),
+            name,
+            type_ref,
+            "optional",
+            0,
+        )
+    };
+    fields.push(member("a", "ix://quire/unit/ms"));
+    fields.push(member("d", &node("D")));
+    let mut ds = member("ds", &node("D"));
+    ds["presence"] = json!("required");
+    ds["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    fields.push(ds);
+    fields.push(member("t", "ix://quire/unit/s"));
+    types.push(alias);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-26 (TC-685) and QSpec FR-154-AC-29, the intake and
+/// run-time halves of "Unit bounds": a `min` `"5"` on the alias `D` of `ms`
+/// and a `max` `"3"` on `ms` itself (on `ConfigVersion`) are admitted; the
+/// `ms` bound bounds `a`, `d` and `ds`, the `D` bound only `d` and `ds`,
+/// and neither bounds `t: s`. A sequence of `D` is checked at each element:
+/// `[6 ms, 2 ms]` violates the `min` at element 1, the `max` at element 0;
+/// `3 ms` satisfies the `max` `3` and `4 ms` violates it.
+/// `operands.value` `"1/0"`, `"0.5"`, `"2/4"` and `""`, a keyword
+/// `minLength` on `D`, and a `min` `"5"` after a `max` `"3"` on `D` each
+/// refuse `invalid_model_binding`/`malformed-declaration` at the
+/// constraint. Not covered: the bounded quantity type and its static
+/// literal refusal (QSpec FR-154-AC-31, which needs quire-exact's bounded
+/// quantity value type, IR-1051), and the initial-state and successor
+/// checks end to end, which wait on FR-106's Quantity snapshot form and on
+/// EN-1 writing a quantity field.
+#[trace("TC-685")]
+#[test]
+fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
+    use qsl_semantics::model::observation::PathStep;
+    use qsl_semantics::model::state::StateModel;
+
+    let admitted = bounded_document(
+        vec![bound("D", "min", "5", &node("D"))],
+        vec![bound("ConfigVersion", "max", "3", "ix://quire/unit/ms")],
+    );
+    let (unit_text, packages) = config_unit(&admitted);
+    let built = parse_and_build(&unit_text);
+    admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("the bounds admit: {refusal:?}"));
+    let graph = admit_and_assemble_with_body(&admitted, UNITS)
+        .expect("assembles")
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("checks");
+    let model = StateModel::new(
+        graph.model_selections(),
+        graph.scope().types(),
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("model views");
+    let bounds = model.member_bounds();
+    let mut read: Vec<(String, String, &str, String)> = bounds
+        .iter()
+        .map(|member| {
+            (
+                member
+                    .field
+                    .node
+                    .rsplit('/')
+                    .next()
+                    .expect("a name")
+                    .to_owned(),
+                member.constraint.node.clone(),
+                member.keyword(),
+                member.canonical_bound(),
+            )
+        })
+        .collect();
+    read.sort();
+    let on_ms = node("ConfigVersion/max");
+    let on_d = node("D/min");
+    let expected: Vec<(String, String, &str, String)> = vec![
+        ("a".to_owned(), on_ms.clone(), "max", "3".to_owned()),
+        ("d".to_owned(), on_ms.clone(), "max", "3".to_owned()),
+        ("d".to_owned(), on_d.clone(), "min", "5".to_owned()),
+        ("ds".to_owned(), on_ms.clone(), "max", "3".to_owned()),
+        ("ds".to_owned(), on_d.clone(), "min", "5".to_owned()),
+    ];
+    assert_eq!(read, expected);
+
+    let ms = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([9; 32]));
+    let quantity = |magnitude: i64| {
+        quire_exact::Value::Quantity(quire_exact::Quantity::new(
+            quire_exact::Rational::new(
+                quire_exact::Integer::from(magnitude),
+                quire_exact::Integer::from(1_i64),
+            )
+            .expect("a rational"),
+            ms,
+        ))
+    };
+    let sequence = quire_exact::from_admitted(
+        quire_exact::CollectionType::new(
+            quire_exact::CollectionKind::Sequence,
+            ValueType::Quantity(ms),
+            None,
+        ),
+        vec![quantity(6), quantity(2)],
+    );
+    let at = |constraint: &str| {
+        bounds
+            .iter()
+            .find(|member| {
+                member.constraint.node == constraint && member.field.node.ends_with("/ds")
+            })
+            .expect("a ds bound")
+            .violation(&sequence)
+    };
+    assert_eq!(at(&on_d), Some(vec![PathStep::Index(1)]));
+    assert_eq!(at(&on_ms), Some(vec![PathStep::Index(0)]));
+    let on_a = bounds
+        .iter()
+        .find(|member| member.field.node.ends_with("/a"))
+        .expect("a's bound");
+    assert_eq!(on_a.violation(&quantity(3)), None, "equality satisfies");
+    assert_eq!(on_a.violation(&quantity(4)), Some(vec![]));
+
+    let malformed = |on_alias: Vec<Value>| {
+        let document = bounded_document(on_alias, vec![]);
+        let (unit_text, packages) = config_unit(&document);
+        let built = parse_and_build(&unit_text);
+        let refusal = admit_unit(
+            &built.selections().models,
+            &packages,
+            ModelNormalizationLimits::default(),
+        )
+        .expect_err("the constraint refuses");
+        format!("{refusal:?}")
+    };
+    for value in ["1/0", "0.5", "2/4", ""] {
+        let refusal = malformed(vec![bound("D", "min", value, &node("D"))]);
+        assert!(
+            refusal.contains("InvalidModelBinding")
+                && refusal.contains("constraints")
+                && refusal.contains("operands"),
+            "{value:?}: {refusal}"
+        );
+    }
+    let refusal = malformed(vec![bound("D", "minLength", "3", &node("D"))]);
+    assert!(
+        refusal.contains("InvalidModelBinding") && refusal.contains("keyword"),
+        "{refusal}"
+    );
+    let refusal = malformed(vec![
+        bound("D", "max", "3", &node("D")),
+        bound("D", "min", "5", &node("D")),
+    ]);
+    assert!(
+        refusal.contains("InvalidModelBinding")
+            && refusal.contains("constraints[1]")
+            && refusal.contains("operands"),
+        "{refusal}"
+    );
+}

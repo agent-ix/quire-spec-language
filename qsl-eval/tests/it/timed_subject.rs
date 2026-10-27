@@ -2364,101 +2364,80 @@ fn a_family_product_is_charged_against_max_candidates() {
     );
 }
 
-/// Part of FR-230-AC-26 (TC-685), the run-time half of QSpec FR-154 "Unit
-/// bounds": with a field `Call.ds: Sequence<Level>`, `Level` the alias of
-/// `ix://quire/unit/ms` with the constraints `min` `"0"` and `max` `"10"`,
-/// empty in the initial state, a successor whose post-state sets `ds` to
-/// `sequence[5 ms, 11 ms]` is recorded, not pruned, as violating the `max`
-/// constraint as an invariant, checked at each element, and one that sets it
-/// to `sequence[10 ms]` (equality satisfying) or `sequence[0 ms]` records
-/// nothing; a `max` `"7"` on `ms` itself bounds `ds`'s elements as well. Not covered: the static
-/// refusal of the literal `11 ms` (QSpec FR-154-AC-31), which needs the
-/// bounded quantity value type (IR-1051), and the initial-state refusal,
-/// which waits on FR-106's Quantity snapshot form.
+/// `timer_document` with a record `Holder { ts: Timer [0, 2] }` and a field
+/// `hs: Sequence<Holder>` with no declared maximum.
+fn holders_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let holder = ident("Holder");
+    let mut ts = wire_field("ts", &ident("Timer"));
+    let identity = format!("{holder}/ts");
+    ts["identity"] = json!(identity);
+    ts["origin"] = origin(&identity);
+    ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+    let mut hs = wire_field("hs", &holder);
+    hs["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(hs);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-19 (TC-685), SR-1676001 round 2 CR FND-001: over `hs:
+/// Sequence<Holder>` with no declared maximum, `Holder { ts: Timer [0, 2]
+/// }`, an element holds as few as no clocks, so `hs` lists `max_clocks`
+/// slots and every state within the bound has a place for each live clock.
+/// With `max_clocks` 11, three holders of one `Timer` each (9 live clocks:
+/// `t.x`, `t.y`, `x` and two for each `Timer`) and four (11) step with every
+/// live clock placed, and five (13) stop `MaxClocks`; with `max_clocks` 15
+/// six holders (15) step.
 #[trace("TC-685")]
 #[test]
-fn a_unit_bound_violated_by_a_successor_is_recorded_as_an_invariant() {
-    use qsl_eval::simulation::model::ModelFinding;
-    use qsl_eval::simulation::TransitionSystem;
-
-    let level = ident("Level");
-    let constraint = |owner: &str, keyword: &str, value: &str, applies: &str| {
-        json!({
-            "identity": format!("{owner}/{keyword}"), "keyword": keyword,
-            "operands": {"value": value}, "appliesTo": applies,
-            "diagnosticCode": format!("bound.{keyword}"), "origin": origin(owner),
-        })
-    };
-    let document = |on_unit: bool| {
-        let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
-        let types = document["types"].as_array_mut().expect("types");
-        let mut alias = wire_type(
-            &level,
-            "unused",
-            json!({"target": "ix://quire/unit/ms", "constraints": [
-                constraint(&level, "min", "0", &level),
-                constraint(&level, "max", "10", &level),
-            ]}),
-        );
-        alias["kind"] = json!("alias");
-        types.push(alias);
-        let mut d = wire_field("d", &level);
-        d["presence"] = json!("optional");
-        types[1]["fields"]
-            .as_array_mut()
-            .expect("Call fields")
-            .push(d);
-        if on_unit {
-            types[1]["constraints"] =
-                json!([constraint(&ident("Call"), "max", "7", "ix://quire/unit/ms")]);
-        }
-        for operation in types[1]["operations"].as_array_mut().expect("operations") {
-            if operation["name"] == "send" {
-                operation["frame"]["modifies"]
-                    .as_array_mut()
-                    .expect("a frame")
-                    .push(json!(ident("Call/ds")));
-            }
-        }
-        serde_json::to_vec(&document).expect("JSON")
-    };
-    let violated = |on_unit: bool, written: &str| -> Vec<String> {
+fn an_unbounded_collection_of_records_places_every_live_clock() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let holder =
+        json!({"record": {"type": ident("Holder"), "fields": {"ts": {"sequence": [timer("1")]}}}});
+    for (holders, max_clocks, steps) in
+        [(3, 11, true), (4, 11, true), (5, 11, false), (6, 15, true)]
+    {
         let world = world_holding(
-            document(on_unit),
+            holders_document(),
             "",
             &only(
                 &["send"],
-                &format!(
-                    "post Send using v on M::Call::send {{ self.ds = sequence[{written}] }}\n"
-                ),
+                "post Send using v on M::Call::send { self.phase = 1 }\n",
             ),
-            json!({"ds": {"sequence": []}}),
+            json!({"t": timer("0"), "hs": {"sequence": vec![holder.clone(); holders]}}),
         );
         let held = system(&world);
-        let initial = held.initial().remove(0);
-        let expansion = held.successors(&initial).expect("the state expands");
-        assert!(
-            held.successors(&initial)
-                .expect("the state expands")
-                .findings
-                .is_empty(),
-            "the initial state violates nothing"
-        );
-        let [(_, post)] = &expansion.successors[..] else {
-            panic!("one successor: {:?}", expansion.successors.len());
+        let timed = TimedSystem::with_max_clocks(
+            &held,
+            "M",
+            std::num::NonZeroU64::new(max_clocks).expect("positive"),
+        )
+        .expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
         };
-        held.successors(post)
-            .expect("the successor expands")
-            .findings
-            .into_iter()
-            .filter_map(|finding| match finding {
-                ModelFinding::InvariantViolated { clause, .. } => Some(clause),
-                _ => None,
-            })
-            .collect()
-    };
-    assert_eq!(violated(false, "5 ms, 11 ms"), [format!("{level}/max")]);
-    assert!(violated(false, "10 ms").is_empty());
-    assert!(violated(false, "0 ms").is_empty());
-    assert_eq!(violated(true, "8 ms"), [format!("{}/max", ident("Call"))]);
+        let live = timed.live_clocks(initial.discrete());
+        assert_eq!(live, 3 + 2 * holders as u64);
+        let placed = timed
+            .places()
+            .iter()
+            .filter(|place| timed.live(place, initial.discrete()))
+            .count() as u64;
+        let stepped = timed.steps(initial);
+        if steps {
+            assert_eq!(placed, live, "{holders} holders at {max_clocks}");
+            assert!(
+                !stepped.expect("the state steps").is_empty(),
+                "{holders} holders at {max_clocks}"
+            );
+        } else {
+            assert_eq!(stepped.err(), Some(TimedStop::MaxClocks { max_clocks }));
+        }
+    }
 }
