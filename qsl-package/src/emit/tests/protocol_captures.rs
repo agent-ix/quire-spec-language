@@ -105,9 +105,9 @@ fn key(lowered: &Lowered) -> String {
 #[test]
 fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
     let lowered = admitted(&flow(
-        "Integer",
+        "M::Order",
         "on origin",
-        "capture a: Integer = input + 1;\ncapture b: Integer = a * 2;",
+        "capture a: Option<Reference<M::Order>> = deref(input).trail;\ncapture b: Boolean = present(a);",
         "true",
     ));
     let wire = &lowered.wire;
@@ -118,10 +118,9 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
         panic!("two captures");
     };
     let (a, b) = (target(wire, a), target(wire, b));
-    assert_eq!(a["semantic_type"], b["semantic_type"]);
     assert_eq!(
         node_by_id(wire, &a["semantic_type"])["semantic_form"],
-        "integer"
+        "option"
     );
     // `a` reads `over` alone; `b` reads `a` alone.
     let (init_a, init_b) = (target(wire, init_a), target(wire, init_b));
@@ -141,8 +140,14 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
         occurrences(&lowered, a),
         [("expression", "a"), ("expression", "a")]
     );
-    assert_eq!(occurrences(&lowered, init_a), [("expression", "input + 1")]);
-    assert_eq!(occurrences(&lowered, init_b), [("expression", "a * 2")]);
+    assert_eq!(
+        occurrences(&lowered, init_a),
+        [("expression", "deref(input).trail")]
+    );
+    assert_eq!(
+        occurrences(&lowered, init_b),
+        [("expression", "present(a)")]
+    );
 }
 
 /// FR-464 "Level": under `on each` the first capture is level 2 (the count
@@ -152,8 +157,8 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
 #[test]
 fn each_captures_start_after_the_trigger_and_the_readable_binders_follow_them() {
     let text = format!(
-        "{TICK}protocol Flow using v over (input: Integer) on each (t: Tick) {{\n\
-         capture a: Integer = t.n + input;\n\
+        "{TICK}protocol Flow using v over (input: M::Order) on each (t: Tick) {{\n\
+         capture a: Option<Reference<M::Order>> = deref(input).trail;\n\
          capture b: Boolean = t.ready;\n\
          role Buyer on M::Order;\n\
          role Agent each M::Person from people max 3 lifetime until(Agent = Agent);\n\
@@ -185,7 +190,7 @@ fn each_captures_start_after_the_trigger_and_the_readable_binders_follow_them() 
     let trigger = &member(activation, "trigger")["target"];
     let over = &clause_argument(clause, "over")["target"];
     let (init_a, init_b) = (target(wire, init_a), target(wire, init_b));
-    assert!(reads(wire, init_a, trigger) && reads(wire, init_a, over));
+    assert!(reads(wire, init_a, over) && !reads(wire, init_a, trigger));
     assert!(reads(wire, init_b, trigger) && !reads(wire, init_b, over));
 
     // The finish constraint reads the capture `b`.
@@ -227,13 +232,13 @@ fn member<'g>(group: &'g Value, name: &str) -> &'g Value {
 fn the_captures_follow_the_source_order() {
     let lowered = |first: &str, second: &str| {
         admitted(&flow(
-            "Integer",
+            "M::Order",
             "on origin",
             &format!("capture {first}\ncapture {second}"),
             "true",
         ))
     };
-    let (x, y) = ("x: Integer = input + 1;", "y: Integer = input + 2;");
+    let (x, y) = ("x: Integer = 1;", "y: Integer = 2;");
     let forward = lowered(x, y);
     let backward = lowered(y, x);
     assert_eq!(binders(&forward.wire), [pair("x", "1"), pair("y", "2")]);
@@ -249,7 +254,7 @@ fn the_captures_follow_the_source_order() {
 fn an_each_guard_emits_a_boolean_term_over_the_trigger() {
     let lowered = |guard: &str| {
         admitted(&flow(
-            "Integer",
+            "M::Order",
             &format!("on each (t: Tick){guard}"),
             "",
             "true",
@@ -308,7 +313,7 @@ fn an_each_guard_emits_a_boolean_term_over_the_trigger() {
 #[test]
 fn a_guard_with_captures_and_two_protocols_with_the_same_captures_are_admitted() {
     let one = flow(
-        "Integer",
+        "M::Order",
         "on each (t: Tick) when (t.ready)",
         "capture a: Integer = t.n;",
         "true",
@@ -340,48 +345,142 @@ fn a_guard_with_captures_and_two_protocols_with_the_same_captures_are_admitted()
     assert_eq!(clauses, 2);
 }
 
+/// The `acme/orders` document whose `Order` also carries the scalar fields
+/// `uid: UUID`, `at: Timestamp` and the optional
+/// `flag: Boolean`: the families QSL has no literal for are read through
+/// `over`.
+fn typed_orders_document() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&super::reachability::reachability_document()).unwrap();
+    let trail = document["types"][0]["fields"][0].clone();
+    let field = |name: &str, scalar: &str, presence: &str| {
+        let mut field = trail.clone();
+        field["identity"] = json!(format!("ix://acme/orders/Order/{name}"));
+        field["name"] = json!(name);
+        field["typeRef"] = json!(format!("ix://quire/native/{scalar}"));
+        field["presence"] = json!(presence);
+        field
+    };
+    let fields = document["types"][0]["fields"].as_array_mut().unwrap();
+    fields.push(field("uid", "UUID", "required"));
+    fields.push(field("at", "Timestamp", "required"));
+    fields.push(field("flag", "Boolean", "optional"));
+    serde_json::to_vec(&document).unwrap()
+}
+
 /// FR-465 "Role" / FR-464 `parameter`: a capture's declared type is the
 /// binder's type; every family the reader admits as a parameter's type is
-/// emitted and read back.
+/// emitted and read back. The clause's `over` is the owner-model reference
+/// (QSL-1147), so each type is initialized by a literal where QSL has one,
+/// and by a field of `over` otherwise. `Decimal[...]` `Text[...]` and `Float64`
+/// have neither and are asserted refused in the test below.
 #[test]
 fn a_capture_of_every_declared_type_is_admitted() {
     let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
-    for declared in [
-        "Integer",
-        "Boolean",
-        "String",
-        "UUID",
-        "Timestamp",
-        "Option<Boolean>",
-        "Sequence<Boolean>",
-        "Set<Boolean>",
-        "Bag<Boolean>",
-        "OrderedSet<Boolean>",
-        "Decimal[0, 10; 0, 2; nearest-even]",
-        "Rational[0, 10; 1, 1]",
-        "Float64",
-        "Point",
-        "Color",
-        "Tick",
-        "M::Order",
-        "Quantity<m>",
-        "Int[0, 5]",
-        "Text[0, 5; nfc]",
-        "Sequence<Boolean>[0, 3]",
-    ] {
-        let text = format!(
-            "{declarations}protocol Flow using v over (input: {declared}) on origin {{\n\
-             capture c: {declared} = input;\n\
-             role Buyer on M::Order;\n\
-             run sequence Main {{ }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}\n"
-        );
-        let lowered = lower_with(model(), PROFILES, &text);
+    let cases = [
+        ("Integer", "1"),
+        ("Boolean", "true"),
+        ("String", "\"text\""),
+        ("UUID", "deref(input).uid"),
+        ("Timestamp", "deref(input).at"),
+        ("Option<Boolean>", "deref(input).flag"),
+        ("Sequence<Boolean>", "sequence[true]"),
+        ("Set<Boolean>", "set[true]"),
+        ("Bag<Boolean>", "bag[true]"),
+        ("OrderedSet<Boolean>", "orderedSet[true]"),
+        ("Rational[0, 10; 1, 1]", "rational(1, 1)"),
+        ("Point", "Point { x: 1 }"),
+        ("Color", "Color::RED"),
+        ("Tick", "Tick { ready: true, n: 1 }"),
+        ("M::Order", "input"),
+        ("Quantity<m>", "1 m"),
+        ("Int[0, 5]", "1"),
+        ("Sequence<Boolean>[0, 3]", "sequence[true]"),
+        ("Option<Reference<M::Order>>", "deref(input).trail"),
+    ];
+    for (declared, initial) in cases {
+        let text = capture_of(&declarations, declared, initial);
+        let lowered = lower_with(typed_orders_document(), PROFILES, &text);
         assert!(lowered.ir.is_ok(), "{declared}: {:?}", lowered.ir.err());
         assert!(lowered.verified, "{declared}");
         assert_eq!(binders(&lowered.wire), [pair("c", "1")], "{declared}");
     }
+}
+
+/// A protocol over `M::Order` with one capture `c: declared = initial`.
+fn capture_of(declarations: &str, declared: &str, initial: &str) -> String {
+    format!(
+        "{declarations}protocol Flow using v over (input: M::Order) on origin {{\n\
+         capture c: {declared} = {initial};\n\
+         role Buyer on M::Order;\n\
+         run sequence Main {{ }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// The capture types with no initializer QSL can write, named rather than
+/// dropped: `Decimal[...]` (S2 builds no `decimal(...)` value), `Text[...]` (a
+/// string literal is a `String`, refused at S3 as a type mismatch) and
+/// `Float64` (a float literal needs a floating-point profile the fixture
+/// does not select).
+#[test]
+fn the_capture_types_without_an_initializer_refuse_where_written() {
+    let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
+    let decimal = capture_of(
+        &declarations,
+        "Decimal[0, 10; 0, 2; nearest-even]",
+        "decimal(100, 2)",
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+             model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{decimal}",
+            "0".repeat(64)
+        )
+        .as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    let refused = qsl_forms::build_unit(&parsed).expect_err("decimal(...) has no S2 value");
+    assert!(
+        matches!(
+            refused.cause,
+            qsl_forms::FormsCause::UnrepresentedConstruct {
+                production: qsl_cst::Production::ExactNumber
+            }
+        ),
+        "{refused:?}"
+    );
+    let causes = |text: &str| -> Vec<CheckCause> {
+        checked(text, false)
+            .expect_err(text)
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect()
+    };
+    let text = capture_of(&declarations, "Text[0, 5; nfc]", "\"abc\"");
+    let [CheckCause::ProtocolObligation(cause)] = &causes(&text)[..] else {
+        panic!("one obligation refusal for the Text capture");
+    };
+    assert!(
+        matches!(&**cause, ObligationCause::CaptureType { capture, .. } if capture == "c")
+            && format!("{cause:?}").contains("actual: String"),
+        "{cause:?}"
+    );
+    let float = capture_of(
+        &declarations,
+        "Float64",
+        "float64(bits: 0x3ff0000000000000)",
+    );
+    assert_eq!(
+        causes(&float),
+        [CheckCause::IeeeProfileNotAdmitted],
+        "Float64"
+    );
 }
 
 /// FR-381 / FR-464 "Slots that bar model state": a guard that is not Boolean
@@ -391,7 +490,7 @@ fn a_capture_of_every_declared_type_is_admitted() {
 fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
     let text = |guard: &str| {
         flow(
-            "Tick",
+            "M::Order",
             &format!("on each (t: Tick) when ({guard})"),
             "",
             "true",
@@ -404,8 +503,8 @@ fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
             .into_iter()
             .map(|refusal| refusal.cause)
             .collect();
-        let (Some(CheckCause::ProtocolObligation(cause)), None) = (causes.pop(), causes.pop())
-        else {
+        let last = causes.pop();
+        let (Some(CheckCause::ProtocolObligation(cause)), None) = (last, causes.pop()) else {
             panic!("one obligation refusal for {guard}");
         };
         *cause
@@ -416,7 +515,7 @@ fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
     assert_eq!(stage, ObligationStage::ProtocolActivation);
     assert_eq!(*cause, CheckCause::NonBooleanRoot);
     assert!(matches!(
-        refusal("input.ready"),
+        refusal("present(deref(input).trail)"),
         ObligationCause::ModelStateRead {
             stage: ObligationStage::ProtocolActivation,
             ..
@@ -447,7 +546,7 @@ fn a_fifo_binder_named_like_a_readable_binder_refuses() {
             .collect()
     };
     let each = "on each (t: Tick)";
-    let captured = "capture k: Integer = input;";
+    let captured = "capture k: Integer = 1;";
     for (activation, captures, binder) in [
         ("on origin", "", "input"),
         (each, "", "t"),
@@ -487,7 +586,7 @@ fn a_fifo_binder_named_like_a_readable_binder_refuses() {
 /// and the one channel `ordering`.
 fn flow_with_channel(activation: &str, captures: &str, ordering: &str) -> String {
     format!(
-        "{TICK}protocol Flow using v over (input: Integer) {activation} {{\n\
+        "{TICK}protocol Flow using v over (input: M::Order) {activation} {{\n\
          {captures}\n\
          role Buyer on M::Order;\n\
          role Seller on M::Person;\n\

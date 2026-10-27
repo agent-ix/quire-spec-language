@@ -40,6 +40,8 @@ pub enum Code {
     TestSuites,
     /// FR-344: a refinement gate's report could not be written as JSON.
     Refinement,
+    /// FR-353: qualification arguments or corpus were refused before execution.
+    Qualification,
 }
 
 impl Code {
@@ -58,6 +60,7 @@ impl Code {
             Self::Conformance => "conformance",
             Self::TestSuites => "test-suites",
             Self::Refinement => "refinement",
+            Self::Qualification => "qualify",
         }
     }
 }
@@ -338,6 +341,9 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// FR-353: corpus preflight or invocation refused before any vector ran.
+    #[error("qualify: {0}")]
+    QualificationRefusal(String),
 }
 
 impl Error {
@@ -383,6 +389,7 @@ impl Error {
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
             Self::RefinementReport { .. } => Code::Refinement,
+            Self::QualificationRefusal(_) => Code::Qualification,
         }
     }
 
@@ -412,6 +419,7 @@ impl Error {
             | Code::Conformance
             | Code::TestSuites => 1,
             Code::Usage | Code::Io | Code::Metadata | Code::StringEdgeScan => 2,
+            Code::Qualification => 2,
             // QSpec FR-301's tool-failure code: the gate could not report.
             Code::Refinement => Verdict::ToolFailure.exit_code(),
         }

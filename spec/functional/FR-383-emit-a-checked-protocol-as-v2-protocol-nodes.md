@@ -59,6 +59,15 @@ preimage and exact `dependencies`. It SHALL NOT derive ownership from the
 edge unchanged and refuse a missing edge, an external or absent target, a
 non-model target, or a target omitted from exact dependencies.
 
+The clause's model context is the object type its `over` input references
+(`over (input: M::T)`, a `Reference<T>` to an object type of a selected model),
+and the edge is the model declaration node of that object type, as QSpec's
+published fixtures write it. A clause whose `over` input is any other type (a
+scalar, an `Option`, a collection) has no model declaration node to name: S4
+refuses the protocol typed, `unsupported_construct`/`not-yet-implemented`
+naming the construct `NoOwnerModel` (QSL-1147), and a reference to it,
+and writes no clause node, rather than emit a clause the reader refuses.
+
 ## Use case
 
 A verification operator compiles a unit with an order protocol: three roles,
@@ -376,7 +385,8 @@ FR-105).
 | FR-383-AC-23 | ADR-027 §7's `Fill` with `role w on M` emits a `role` node whose `model` argument is the text `identity` of `M`'s `model_selections` row, with an empty `replication` Group and no `model` dependency, and QSL's I2 reader admits it (QSpec FR-465-AC-9); a clause with `role w on M` and `role u on N` emits two role nodes whose texts are the two selections' identities, with different keys, and a role on the whole model and `role v on M::Cell` have different keys. | Test (TC-1061) |
 | FR-383-AC-24 | Under Option A, a protocol whose predicate-join function refers to that protocol emits the full cyclic reference component with one shared `recursion_group`, `{size, ordinal}` coordinates and `group_reference` edges; the I2 reader admits it. An acyclic protocol in the same package has no `recursion_group` and `recursion` `null`, and its key inputs are unchanged. | Test (TC-1062) |
 | FR-383-AC-25 | SCC discovery is iterative and O(V + E), does not merge groups quadratically, hashes each completed group once, and uses no global lock on the emit path. There is no fixed recursion depth, group size, node count or group count cap: the only applicable work bound is the caller's shared `s3.work_units` budget, and exhaustion produces the existing typed limit refusal naming `s3.work_units`. A 100,000-node cycle group emits and reads back within the supplied budget without native stack overflow; the budget refuses at zero and one unit short and succeeds at the exact measured work; permuting authored node order leaves group identity unchanged. | Test (TC-1062) |
-| FR-383-AC-26 | Each protocol clause's node-level `owner_model` is the exact local model declaration node bound by the checker for its `over` subject, enters its application-node key preimage and exact dependencies, and is read back unchanged. Two clauses over different selected models have distinct owner edges; retargeting one changes its clause key and `package_id`. The edge and dependency target are not reconstructed from `over`'s parameter type. | Test (TC-1062, TC-1063) |
+| FR-383-AC-26 | Each protocol clause's node-level `owner_model` is the exact local model declaration node bound by the checker for its `over` subject, enters its application-node key preimage and exact dependencies, and is read back unchanged. Two clauses over different selected models have distinct owner edges; retargeting one changes its clause key and `package_id`. The edge is derived from the object type `over`'s `Reference` input names (QSpec FR-464), and a clause whose `over` names none has no edge to write (AC-27). | Test (TC-1062, TC-1063) |
+| FR-383-AC-27 | A protocol whose `over` input is `Boolean`, `Integer`, `Option<M::T>` or `Sequence<M::T>` is refused once with `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` (QSL-1147) and, with the emission gate open, writes no `protocol_clause` node; the same protocol over `M::T` writes the clause. Over the emitted package, a clause without the edge, an edge on another node, an external edge and an edge omitted from `dependencies` each refuse as IR's reader does (`malformed_wire`, `malformed_wire`, `malformed_wire`, `invalid_semantic_graph`), a non-model target refuses `ill_typed`/`operator-ineligible` at the edge, and retargeting only the edge refuses `invalid_package`/`stale-node-key` until the key and `package_id` are rebuilt. | Test (TC-1063) |
 
 ## Dependencies
 

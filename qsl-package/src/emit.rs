@@ -522,6 +522,9 @@ impl<'g> Candidate<'g> {
             annotations,
             laws,
         } = BodyNames::of(node.body());
+        // QSpec FR-464 "owner_model": a protocol clause depends on its exact
+        // owner model, besides the nodes its body reaches.
+        dependencies.extend(node.owner_model().map(node_id));
         // Rule 3: a `bounded_domain` node depends on the type it bounds.
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
@@ -628,6 +631,7 @@ impl<'g> Candidate<'g> {
                     .collect(),
             }),
             owner: node.owner().map(wire_owner),
+            owner_model: node.owner_model().map(node_id),
             body: CheckedTerm::deserialize(node.wire_body().map_err(encoding)?)
                 .map_err(encoding)?,
         })
@@ -1129,6 +1133,7 @@ fn empty_model_refinement_node(
     dependencies.dedup();
     Ok((
         CheckedSemanticNodeV2 {
+            owner_model: None,
             node_id: id,
             schema_version: GRAPH_V2.into(),
             node_tag: CheckedNodeTag::Relation.as_wire().into(),
@@ -1154,6 +1159,7 @@ fn refinement_subject_node(
 ) -> CheckedSemanticNodeV2 {
     let id = node_id(key);
     CheckedSemanticNodeV2 {
+        owner_model: None,
         node_id: id.clone(),
         schema_version: GRAPH_V2.into(),
         node_tag: CheckedNodeTag::Model.as_wire().into(),
@@ -1750,6 +1756,7 @@ fn emit_package_inner(
                     }],
                 });
                 nodes.push(CheckedSemanticNodeV2 {
+                    owner_model: None,
                     node_id: text_type.clone(),
                     schema_version: GRAPH_V2.into(),
                     node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
@@ -1786,6 +1793,7 @@ fn emit_package_inner(
                     }],
                 });
                 nodes.push(CheckedSemanticNodeV2 {
+                    owner_model: None,
                     node_id: rational_type.clone(),
                     schema_version: GRAPH_V2.into(),
                     node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
@@ -1848,6 +1856,7 @@ fn emit_package_inner(
                     }],
                 });
                 nodes.push(CheckedSemanticNodeV2 {
+                    owner_model: None,
                     node_id: id.clone(),
                     schema_version: GRAPH_V2.into(),
                     node_tag: CheckedNodeTag::ScalarType.as_wire().into(),

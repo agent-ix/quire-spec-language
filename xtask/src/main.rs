@@ -15,7 +15,7 @@ use std::process::ExitCode;
 use xtask::{
     canonical_types, checked_input, conformance,
     error::{Error, Result},
-    refinement, route_lint, seam_probe, string_edge, test_suites, Outcome,
+    qualification, refinement, route_lint, seam_probe, string_edge, test_suites, Outcome,
 };
 
 const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       \
@@ -23,6 +23,7 @@ const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-ed
                      cargo xtask test-suites <lane> [<cargo test args>]\n       \
                      cargo xtask conformance-input\n       cargo xtask conformance\n       \
                      cargo xtask ci\n       cargo xtask refinement versioning <corpus>\n       \
+                     cargo xtask qualify --corpus <dir> [--capability <id>]... [--limit <setting>=<value>]... [--text]\n       \\
                      cargo xtask canonical-types [<workspace>]";
 
 #[ix_trace_rs::string_edge]
@@ -40,6 +41,9 @@ fn run(arguments: &[OsString]) -> Result<Outcome> {
     }
     if command == "refinement" {
         return refinement::run(&workspace_root, operands);
+    }
+    if command == "qualify" {
+        return qualification::run(&workspace_root, operands);
     }
     let workspace_operand = match (command, operands) {
         (_, []) => None,

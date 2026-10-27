@@ -15,7 +15,7 @@ const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semanti
 const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
 const PROFILE: &str = "quire.protocol.finite-global/v1";
 
-const PROTOCOL: &str = "protocol Fill using v over (input: Boolean) on origin {\n\
+const PROTOCOL: &str = "protocol Fill using v over (input: M::Gadget) on origin {\n\
     role R on M::Gadget;\n\
     run sequence Main { }\n\
     finish End as (outcome: Boolean) { true };\n\
