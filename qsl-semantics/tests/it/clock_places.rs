@@ -4,7 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{ClockOp, PlaceStep};
+use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::{json, Value};
 
@@ -287,12 +287,12 @@ fn a_record_parameter_reads_its_clock_by_path() {
 }
 
 /// Part of FR-230-AC-14 (TC-685 step 16) and FR-230 "Records, tuples and
-/// unions": a `Timer` held by an optional field (`o?: Timer`) or a
-/// collection field (`ts: Timer` of multiplicity `[0, 3]`, the package form
-/// of `ts: Sequence<Timer>`) under a dense source is a guarded or
-/// collection place S3 does not check yet (STD-493 item 17), refused at the
-/// time declaration; under a tick source and with no time source the
-/// collection refuses `clock-without-dense-time` as a single field does.
+/// unions": a `Timer` held by an optional field (`o?: Timer`) under a dense
+/// source is a guarded place S3 does not check yet (STD-493 item 17),
+/// refused at the time declaration; under a tick source and with no time
+/// source a collection field (`ts: Timer` of multiplicity `[0, 3]`, the
+/// package form of `ts: Sequence<Timer>`) refuses
+/// `clock-without-dense-time` as a single field does.
 #[trace("TC-685")]
 #[test]
 fn a_record_clock_under_an_optional_or_collection_field() {
@@ -308,22 +308,21 @@ fn a_record_clock_under_an_optional_or_collection_field() {
                 .push(held);
         })
     };
-    for document in [with("o", "optional", 1), with("ts", "required", 3)] {
-        let refusals = check(&document, &format!("{UNITS}{DENSE}")).expect_err("not checked");
-        assert!(
-            matches!(
-                refusals.as_slice(),
-                [qsl_semantics::check::CheckRefusal {
-                    cause: qsl_semantics::check::CheckCause::TimedNotChecked {
-                        construct: qsl_semantics::check::TimedConstruct::Clock,
-                        ..
-                    },
+    let refusals =
+        check(&with("o", "optional", 1), &format!("{UNITS}{DENSE}")).expect_err("not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked {
+                    construct: qsl_semantics::check::TimedConstruct::Clock,
                     ..
-                }]
-            ),
-            "{refusals:?}"
-        );
-    }
+                },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
     let collection = {
         let mut document: Value = serde_json::from_slice(&with("ts", "required", 3)).expect("JSON");
         without_own_clock(&mut document);
@@ -511,4 +510,175 @@ fn a_negated_peer_clock_keeps_its_reference_and_other_references_refuse() {
             (Code::IllTyped, "type-mismatch", reader),
         );
     }
+}
+
+/// A [`timer_document`] whose `Call` also holds `ts: Timer` of
+/// multiplicity `[0, upper]` (`None`: unbounded), `ordered` and `unique` as
+/// given: the package form of `Sequence<Timer>`, `OrderedSet<Timer>`,
+/// `Set<Timer>` or `Bag<Timer>`.
+fn timer_collection(upper: Option<u64>, ordered: bool, unique: bool) -> Vec<u8> {
+    timer_document(move |document: &mut Value| {
+        let mut held = field("ts", &package("Timer"));
+        held["multiplicity"] = json!({"lower": 0, "ordered": ordered, "unique": unique});
+        if let Some(upper) = upper {
+            held["multiplicity"]["upper"] = json!(upper);
+        }
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(held);
+    })
+}
+
+/// Part of FR-230-AC-19 and FR-230-AC-23 (TC-685), the record parts: a
+/// `Timer` collection field `ts` under a dense source checks; its clock is
+/// the place `ts.[slot].x`, its path the field `ts`, a `Slot` step of the
+/// field's shape, then `x`, under the object field `ts`. The static clock
+/// count of the place is the declared maximum, `3` for `[0, 3]`, and none
+/// for `[0, *]`; the static clock dimension of one `Call` is `1 + 1 + 1`
+/// (`t.x`, `u.x`, `x`) plus `3`, or plus nothing when `ts` is unbounded. Not covered: a `Map<Text, Timer>` field and its key rule,
+/// which the domain package cannot declare (it has no map type), and the
+/// `Clock`-element collections (IR-1036).
+#[trace("TC-685")]
+#[test]
+fn a_record_collection_holds_one_clock_place_per_slot() {
+    for (upper, ordered, unique) in [
+        (Some(3), true, false),
+        (Some(3), true, true),
+        (Some(3), false, true),
+        (Some(3), false, false),
+        (None, true, false),
+    ] {
+        let document = timer_collection(upper, ordered, unique);
+        let graph = check(&document, &format!("{UNITS}{DENSE}")).expect("a collection checks");
+        let model = timed(&graph);
+        let place = model
+            .clocks()
+            .iter()
+            .find(|clock| clock.name() == "ts.[slot].x")
+            .unwrap_or_else(|| panic!("the slot place: {:?}", model.clocks()));
+        assert_eq!(
+            place.path(),
+            [
+                PlaceStep::Field("ts".to_owned()),
+                PlaceStep::Slot(CollectionShape {
+                    ordered,
+                    unique,
+                    min: 0,
+                    max: upper,
+                }),
+                PlaceStep::Field("x".to_owned()),
+            ]
+        );
+        assert_eq!(place.field().node, package("Call/ts"));
+        assert_eq!(place.bound(), upper);
+        assert_eq!(place.slots().count(), 1);
+        let single = model
+            .clocks()
+            .iter()
+            .find(|clock| clock.name() == "t.x")
+            .expect("t.x");
+        assert_eq!(single.bound(), Some(1));
+        // `t.x`, `u.x` and `x`, one each, and the slots of `ts`.
+        assert_eq!(model.dimension(place.owner()), Some(3 + upper.unwrap_or(0)));
+    }
+}
+
+/// Part of FR-230-AC-21 (TC-685), the record parts of "Element identity":
+/// over a `Timer` collection `ts`, `size(self.ts)`, a data field of an
+/// element read through a traversal (`size(filter(e in self.ts: e.n > 1))`)
+/// are data reads and check; an element's clock read in a traversal body
+/// (`filter` and `count` over `e.x`), an element read whole (`e`), `=`
+/// and `!=` over the collection or over `filter` results, `contains` and
+/// `convert` compare or read clocks and refuse
+/// `clock-read-outside-constraint` at the read.
+#[trace("TC-685")]
+#[test]
+fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
+    let document = timer_collection(Some(3), true, false);
+    let body = format!(
+        "{UNITS}{DENSE}pre D using v on Config::Call::bump {{ size(self.ts) < 3 }}\n\
+         pre E using v on Config::Call::reply {{ size(filter(e in self.ts: e.n > 1)) = 0 }}\n"
+    );
+    check(&document, &body).expect("data reads of a clock collection check");
+    for (clause, at) in [
+        (
+            "pre E using v on Config::Call::reply { size(filter(e in self.ts: e.x >= 1 ms)) = 0 }",
+            "e.x",
+        ),
+        (
+            "pre E using v on Config::Call::reply { count<Config::VersionNumber>(e in self.ts: e.x >= 1 ms) = 0 }",
+            "e.x",
+        ),
+        (
+            "pre E using v on Config::Call::reply { exists(e in self.ts: e = self.t) }",
+            "e",
+        ),
+        (
+            "pre E using v on Config::Call::reply { self.ts = self.ts }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { contains(self.ts, self.t) }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { self.ts != self.ts }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { filter(e in self.ts: e.n > 1) = filter(e in self.ts: e.n > 2) }",
+            "filter(e in self.ts: e.n > 1)",
+        ),
+        (
+            "pre E using v on Config::Call::reply { size(convert<Set<Config::Timer>[0, 3]>(self.ts)) > 0 }",
+            // The conversion's target, a collection of the clock-bearing
+            // record, is where the comparison of elements is named.
+            "Set<Config::Timer>[0, 3]",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "clock-read-outside-constraint", at),
+            "{clause}"
+        );
+    }
+}
+
+/// Part of FR-230-AC-19 (TC-685), the record part of a nested collection:
+/// with a record `Holder { ts: Timer [0, 2] }` held by `Call.hs` of
+/// multiplicity `[0, 3]`, the place `hs.[slot].ts.[slot].x` has two slot
+/// steps and the static bound `3 * 2`.
+#[trace("TC-685")]
+#[test]
+fn a_collection_in_a_collection_bounds_its_place_by_the_product() {
+    let document = timer_document(|document: &mut Value| {
+        let holder = package("Holder");
+        let mut ts = wire_field(
+            &format!("{holder}/ts"),
+            "ts",
+            &package("Timer"),
+            "required",
+            0,
+        );
+        ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+        let mut hs = field("hs", &holder);
+        hs["multiplicity"] = json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        types[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(hs);
+    });
+    let graph = check(&document, &format!("{UNITS}{DENSE}")).expect("a nested collection checks");
+    let model = timed(&graph);
+    let place = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "hs.[slot].ts.[slot].x")
+        .unwrap_or_else(|| panic!("the nested place: {:?}", model.clocks()));
+    assert_eq!(place.slots().count(), 2);
+    assert_eq!(place.bound(), Some(6));
 }

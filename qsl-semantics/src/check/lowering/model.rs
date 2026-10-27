@@ -37,11 +37,29 @@ use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 
 /// One step of a clock place's path below its object (FR-230 "Places"): a
-/// field of a record by name.
+/// field of a record by name, or a slot of a clock collection.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PlaceStep {
     /// A field, by its member name.
     Field(String),
+    /// A slot of the collection the steps before it reach: each element
+    /// the collection holds is one slot (FR-230 "Clock collections").
+    Slot(CollectionShape),
+}
+
+/// The shape of a clock collection (FR-230 "Clock collections", QSpec
+/// FR-415): a member whose multiplicity is not `[1, 1]`, by its kind and
+/// cardinality.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CollectionShape {
+    /// Whether the elements are ordered (`Sequence`, `OrderedSet`).
+    pub ordered: bool,
+    /// Whether the elements are unique (`Set`, `OrderedSet`).
+    pub unique: bool,
+    /// The fewest elements the collection holds.
+    pub min: u64,
+    /// The most elements it holds; `None` when no maximum is declared.
+    pub max: Option<u64>,
 }
 
 /// One clock place of an object type of the package (FR-230 "Places",
@@ -58,9 +76,11 @@ pub(crate) struct PackagePlace {
     /// Whether an optional member (`presence: optional`, `Option<Clock>`)
     /// is on the path.
     pub(crate) optional: bool,
-    /// Whether the place is an element of a clock collection: a member on
-    /// its path whose multiplicity is not `[1, 1]`.
-    pub(crate) collection: bool,
+}
+
+/// Whether `field` holds one value: multiplicity `[1, 1]`, not a collection.
+fn single(field: &crate::model::domain_package::FieldMemberRecord) -> bool {
+    field.multiplicity.lower == 1 && field.multiplicity.upper == Some(1)
 }
 
 /// Whether the place path `place` lies strictly below `path`: the value at
@@ -76,6 +96,7 @@ impl PackagePlace {
             .iter()
             .map(|step| match step {
                 PlaceStep::Field(name) => name.as_str(),
+                PlaceStep::Slot(_) => "[slot]",
             })
             .collect::<Vec<_>>()
             .join(".")
@@ -1030,7 +1051,6 @@ impl AdmittedModel {
                 field: field.key.clone(),
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
-                collection: false,
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
         }
@@ -1048,8 +1068,14 @@ impl AdmittedModel {
         places: &mut Vec<PackagePlace>,
     ) {
         use crate::model::domain_package::ValueTypeRef;
-        let single = field.multiplicity.lower == 1 && field.multiplicity.upper == Some(1);
-        at.collection |= !single;
+        if !single(field) {
+            at.path.push(PlaceStep::Slot(CollectionShape {
+                ordered: field.multiplicity.ordered,
+                unique: field.multiplicity.unique,
+                min: field.multiplicity.lower,
+                max: field.multiplicity.upper,
+            }));
+        }
         at.optional |= matches!(field.presence, quire_exact::Presence::Optional);
         let key = match &field.value_type {
             ValueTypeRef::Clock => {
@@ -1245,7 +1271,10 @@ impl AdmittedModel {
         path: &[PlaceStep],
     ) -> (usize, EffectiveId) {
         let mut at = object;
-        for (walked, PlaceStep::Field(name)) in path.iter().enumerate() {
+        for (walked, step) in path.iter().enumerate() {
+            let PlaceStep::Field(name) = step else {
+                return (walked, at);
+            };
             match self.referenced_object(at, name) {
                 Some(next) => at = next,
                 None => return (walked, at),
@@ -1263,7 +1292,9 @@ impl AdmittedModel {
         path: &[PlaceStep],
     ) -> Option<&DeclarationKey> {
         use crate::model::domain_package::ValueTypeRef;
-        let (PlaceStep::Field(first), rest) = path.split_first()?;
+        let (PlaceStep::Field(first), rest) = path.split_first()? else {
+            return None;
+        };
         let mut held = self.records.values().find_map(|record| {
             let DomainPackageRecord::FieldMember(field) = record else {
                 return None;
@@ -1271,15 +1302,19 @@ impl AdmittedModel {
             let owner = self.object_type_id(&field.owner)?;
             let name =
                 crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
-            (name == first && self.conforms(object, owner)).then_some(&field.value_type)
+            (name == first && self.conforms(object, owner) && single(field))
+                .then_some(&field.value_type)
         })?;
-        for PlaceStep::Field(step) in rest {
+        for step in rest {
+            let PlaceStep::Field(step) = step else {
+                return None;
+            };
             let ValueTypeRef::Package(record) = held else {
                 return None;
             };
             held = self
                 .members_of(record)
-                .find(|(name, _)| name == step)
+                .find(|(name, field)| name == step && single(field))
                 .map(|(_, field)| &field.value_type)?;
         }
         match held {

@@ -959,13 +959,20 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             match frame.environment.get(name) {
                 Some(Argument::Value { term, .. }) => trees.push((occurrence, self.term(term)?)),
                 // `self.f…`: the receiver's value at the path.
-                Some(Argument::Path(path)) => trees.push((
-                    occurrence,
-                    path.iter().fold(Expression::self_ref(), |operand, step| {
-                        let PlaceStep::Field(field) = step;
-                        Expression::field(operand, field.clone())
-                    }),
-                )),
+                Some(Argument::Path(path)) => {
+                    let mut tree = Expression::self_ref();
+                    for step in path {
+                        // An argument path names a single record or object,
+                        // never a collection slot.
+                        let PlaceStep::Field(field) = step else {
+                            return Err(timed(TemporalCause::NotAPlaceExpression {
+                                span: body.span(occurrence),
+                            }));
+                        };
+                        tree = Expression::field(tree, field.clone());
+                    }
+                    trees.push((occurrence, tree));
+                }
                 // A clock parameter read as data was refused above.
                 Some(Argument::Places(_)) | None => {
                     return Err(timed(TemporalCause::ClockReadOutsideConstraint {
