@@ -28,11 +28,15 @@
 //!
 //! An interval operator under another temporal operator needs a clock per
 //! activation: such a clause is refused (spec gap STD-493; QSL-583).
+//!
+//! The zone search (EN-6, `qsl-analyze`) and the zone certificate checker
+//! (FR-245, `qsl-replay`) both build this one automaton, so the checker
+//! rebuilds what the search read (ADR-018 LA-5).
 
 use std::collections::BTreeMap;
 
-use qsl_eval::simulation::model::PlaceConstraint;
-use qsl_eval::temporal::{
+use crate::simulation::model::PlaceConstraint;
+use crate::temporal::{
     AtomReading, InsufficientDataEvaluation, TemporalOutcome, TemporalPosition, UndefinedCause,
     UndefinedEvaluation,
 };
@@ -43,7 +47,36 @@ use qsl_semantics::check::{
 };
 use quire_exact::{Integer, Rational};
 
-use super::ZoneCheckRefusal;
+/// Why a clause has no TT-2 window automaton.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum WindowRefusal {
+    /// The clause is not a TT-2 `BoundedWindow` clause, or an operator in it
+    /// has no timed interval, or it reads an aggregate.
+    #[error("the clause is not a TT-2 bounded window")]
+    UnsupportedForm,
+    /// An interval operator lies under another temporal operator, which
+    /// needs a clock per activation (FR-242).
+    #[error("a TT-2 clause nests an interval operator under another")]
+    NestedWindow,
+    /// A formula node the formula names is not in its arena.
+    #[error("the formula names a node outside its arena")]
+    FormulaNode,
+    /// A read of [`bounded_window_verdict`] broke an invariant.
+    #[error("the window automaton broke an invariant: {0:?}")]
+    Broken(WindowFault),
+}
+
+/// An invariant of the automaton that a read broke.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowFault {
+    /// A read named an automaton state the automaton has not reached.
+    UnknownState,
+    /// A stamp's kind does not fit the source: an absolute stamp under a
+    /// tick source, or a relative one under a dense source.
+    StampKind,
+    /// A read whose atoms never stop, under no state bound, stopped.
+    UnboundedReadStopped,
+}
 
 /// A boolean combination over a formula's atoms and obligations.
 #[derive(Clone, Debug)]
@@ -112,7 +145,8 @@ enum Status {
 /// instances lacked a window's data; and the first instance whose reading
 /// was undefined, if any.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) struct WindowState {
+pub struct WindowState {
+    /// Whether the behaviour is in its idle tail.
     pub tail: bool,
     stamp: Option<Rational>,
     statuses: Vec<Status>,
@@ -122,15 +156,18 @@ pub(super) struct WindowState {
 
 /// An undefined reading: the instance's index, the atom and its cause.
 #[derive(Clone, Debug)]
-pub(super) struct Undefined {
+pub struct Undefined {
+    /// The instance's index.
     pub instance: usize,
+    /// The atom read undefined.
     pub atom: FormulaNodeId,
+    /// Its cause.
     pub cause: UndefinedCause,
 }
 
 /// Where a position lies on the time axis.
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Stamp<'a> {
+pub enum Stamp<'a> {
     /// At this time stamp: a dense source's representative of a piece of
     /// the `h` axis.
     At(&'a Rational),
@@ -140,19 +177,23 @@ pub(super) enum Stamp<'a> {
 }
 
 /// What a position reads: its automaton state, or a stop.
-pub(super) enum Read {
+pub enum Read {
+    /// The automaton state.
     State(usize),
-    Fault(&'static str),
+    /// The read broke an invariant.
+    Fault(WindowFault),
+    /// An atom's reading stopped.
     Atom(String),
+    /// `max_states` automaton states are reached.
     AutomatonStates,
 }
 
 /// The reading of atom `atom` for the instance of index `instance` at the
 /// position being read.
-pub(super) type Atoms<'f> = dyn FnMut(usize, FormulaNodeId) -> Result<AtomReading, String> + 'f;
+pub type Atoms<'f> = dyn FnMut(usize, FormulaNodeId) -> Result<AtomReading, String> + 'f;
 
 /// FR-242's TT-2 automaton for one clause, with the states it has reached.
-pub(super) struct WindowClaim {
+pub struct WindowClaim {
     instances: usize,
     /// The clause's value over its obligations.
     root: Expr,
@@ -175,14 +216,14 @@ impl WindowClaim {
     ///
     /// # Errors
     ///
-    /// [`ZoneCheckRefusal::NestedWindow`] for an interval operator under
+    /// [`WindowRefusal::NestedWindow`] for an interval operator under
     /// another temporal operator.
-    pub(super) fn new(
+    pub fn new(
         formula: &CheckedFormula,
         instances: usize,
         period: Option<Rational>,
         max_states: u64,
-    ) -> Result<Self, ZoneCheckRefusal> {
+    ) -> Result<Self, WindowRefusal> {
         let mut obligations = Vec::new();
         let root = top(formula, formula.root(), &mut obligations)?;
         let mut breakpoints: Vec<Rational> = obligations
@@ -220,28 +261,28 @@ impl WindowClaim {
 
     /// Every constant the automaton compares `h` with, which joins the
     /// scale and `h`'s `L` and `U`.
-    pub(super) fn constants(&self) -> &[Rational] {
+    pub fn constants(&self) -> &[Rational] {
         &self.breakpoints
     }
 
     /// The automaton states reached.
-    pub(super) fn state_count(&self) -> usize {
+    pub fn state_count(&self) -> usize {
         self.states.len()
     }
 
     /// Automaton state `q`.
-    pub(super) fn state(&self, q: usize) -> Option<&WindowState> {
+    pub fn state(&self, q: usize) -> Option<&WindowState> {
         self.states.get(q)
     }
 
     /// The undefined reading that made `q` bad, if any.
-    pub(super) fn undefined(&self, q: usize) -> Option<&Undefined> {
+    pub fn undefined(&self, q: usize) -> Option<&Undefined> {
         self.undefined.get(q).and_then(Option::as_ref)
     }
 
     /// The index of the first instance for which `q` falsifies the clause:
     /// its value is false and it read every window's data.
-    pub(super) fn violated(&self, q: usize) -> Option<usize> {
+    pub fn violated(&self, q: usize) -> Option<usize> {
         let state = self.states.get(q)?;
         (0..self.instances).find(|&at| {
             self.value(state, at) == Tri::False
@@ -253,7 +294,7 @@ impl WindowClaim {
     /// or before `q` (ADR-024 WA-4): the evaluator reports such a trace
     /// `InsufficientData` whatever the clause's value, unless a reading is
     /// undefined.
-    pub(super) fn insufficient(&self, q: usize) -> Option<usize> {
+    pub fn insufficient(&self, q: usize) -> Option<usize> {
         let state = self.states.get(q)?;
         if state.undefined.is_some() {
             return None;
@@ -263,7 +304,7 @@ impl WindowClaim {
 
     /// Whether every obligation of every instance is decided at `q`, so no
     /// later position changes the clause: FR-242 stops the path there.
-    pub(super) fn decided(&self, q: usize) -> bool {
+    pub fn decided(&self, q: usize) -> bool {
         self.states.get(q).is_some_and(|state| {
             state.undefined.is_some()
                 || state
@@ -286,7 +327,7 @@ impl WindowClaim {
     /// The pieces of the `h` axis on which every obligation decides alike:
     /// each breakpoint, and each open stretch between and around them, as
     /// constraints on the place `h` with a representative time stamp.
-    pub(super) fn pieces(&self, h: usize) -> Vec<(Vec<PlaceConstraint>, Rational)> {
+    pub fn pieces(&self, h: usize) -> Vec<(Vec<PlaceConstraint>, Rational)> {
         let zero = zero();
         let two = Rational::from_integer(Integer::one().add(&Integer::one()));
         let half = |value: &Rational| value.div(&two).unwrap_or_else(|| value.clone());
@@ -324,7 +365,7 @@ impl WindowClaim {
     }
 
     /// The state position 0 reads, at time 0.
-    pub(super) fn initial(&mut self, atoms: &mut Atoms<'_>) -> Read {
+    pub fn initial(&mut self, atoms: &mut Atoms<'_>) -> Read {
         let open = WindowState {
             tail: false,
             stamp: self.period.as_ref().map(|_| zero()),
@@ -343,7 +384,7 @@ impl WindowClaim {
 
     /// The state a position at `stamp` reads from automaton state `from`;
     /// `stutter` for an idle-tail position.
-    pub(super) fn step(
+    pub fn step(
         &mut self,
         from: usize,
         stamp: Stamp<'_>,
@@ -351,7 +392,7 @@ impl WindowClaim {
         atoms: &mut Atoms<'_>,
     ) -> Read {
         let Some(mut previous) = self.states.get(from).cloned() else {
-            return Read::Fault("window-state");
+            return Read::Fault(WindowFault::UnknownState);
         };
         let at = match (stamp, &previous.stamp) {
             (Stamp::At(stamp), None) => stamp.clone(),
@@ -368,7 +409,7 @@ impl WindowClaim {
                     _ => next,
                 }
             }
-            _ => return Read::Fault("window-stamp"),
+            _ => return Read::Fault(WindowFault::StampKind),
         };
         if previous.stamp.is_some() {
             previous.stamp = Some(at.clone());
@@ -474,20 +515,20 @@ impl WindowClaim {
 ///
 /// # Errors
 ///
-/// [`ZoneCheckRefusal::UnsupportedForm`] for a clause that is not a
-/// `BoundedWindow`, [`ZoneCheckRefusal::NestedWindow`] as the engine
-/// refuses it.
+/// [`WindowRefusal::UnsupportedForm`] for a clause that is not a
+/// `BoundedWindow`, [`WindowRefusal::NestedWindow`] as the engine
+/// refuses it, [`WindowRefusal::Broken`] for a broken invariant.
 #[doc(hidden)]
 pub fn bounded_window_verdict(
     clause: &CheckedTemporalClause,
     stamps: &[Rational],
     atoms: &mut dyn FnMut(FormulaNodeId, usize) -> AtomReading,
-) -> Result<TemporalOutcome, ZoneCheckRefusal> {
+) -> Result<TemporalOutcome, WindowRefusal> {
     if !matches!(
         clause.timed_form(),
         Some(TimedPropertyForm::BoundedWindow { .. })
     ) {
-        return Err(ZoneCheckRefusal::UnsupportedForm);
+        return Err(WindowRefusal::UnsupportedForm);
     }
     let mut window = WindowClaim::new(clause.formula(), 1, None, u64::MAX)?;
     let mut q = None;
@@ -514,9 +555,10 @@ pub fn bounded_window_verdict(
         };
         q = Some(match read {
             Read::State(next) => next,
-            Read::Fault(invariant) => return Err(ZoneCheckRefusal::Fault(invariant)),
-            Read::Atom(stop) => return Err(ZoneCheckRefusal::Atom(stop)),
-            Read::AutomatonStates => return Err(ZoneCheckRefusal::Fault("automaton-states")),
+            Read::Fault(fault) => return Err(WindowRefusal::Broken(fault)),
+            Read::Atom(_) | Read::AutomatonStates => {
+                return Err(WindowRefusal::Broken(WindowFault::UnboundedReadStopped))
+            }
         });
         if let Some(found) = q.and_then(|q| window.undefined(q)) {
             undefined.get_or_insert_with(|| UndefinedEvaluation {
@@ -534,7 +576,7 @@ pub fn bounded_window_verdict(
     }
     let state = window
         .state(q)
-        .ok_or(ZoneCheckRefusal::Fault("window-state"))?;
+        .ok_or(WindowRefusal::Broken(WindowFault::UnknownState))?;
     Ok(match (window.value(state, 0), insufficient) {
         (_, Some(insufficient)) => TemporalOutcome::InsufficientData(insufficient),
         (Tri::False, None) => TemporalOutcome::Violated {
@@ -579,15 +621,15 @@ fn top(
     formula: &CheckedFormula,
     node: FormulaNodeId,
     obligations: &mut Vec<Obligation>,
-) -> Result<Expr, ZoneCheckRefusal> {
+) -> Result<Expr, WindowRefusal> {
     let Some(form) = formula.nodes().get(node.index()) else {
-        return Err(ZoneCheckRefusal::Fault("formula-node"));
+        return Err(WindowRefusal::FormulaNode);
     };
     let mut recurse = |child: FormulaNodeId| top(formula, child, obligations);
     Ok(match form {
         FormulaNode::Constant(value) => Expr::Constant(*value),
         FormulaNode::Holds { .. } => origin(obligations, Expr::Atom(node)),
-        FormulaNode::Aggregate { .. } => return Err(ZoneCheckRefusal::UnsupportedForm),
+        FormulaNode::Aggregate { .. } => return Err(WindowRefusal::UnsupportedForm),
         FormulaNode::Not(inner) => Expr::Not(Box::new(recurse(*inner)?)),
         FormulaNode::And(left, right) => {
             Expr::And(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
@@ -689,15 +731,15 @@ fn origin(obligations: &mut Vec<Obligation>, expr: Expr) -> Expr {
 
 /// A state predicate: a boolean combination of atoms with no temporal
 /// operator.
-fn state(formula: &CheckedFormula, node: FormulaNodeId) -> Result<Expr, ZoneCheckRefusal> {
+fn state(formula: &CheckedFormula, node: FormulaNodeId) -> Result<Expr, WindowRefusal> {
     let Some(form) = formula.nodes().get(node.index()) else {
-        return Err(ZoneCheckRefusal::Fault("formula-node"));
+        return Err(WindowRefusal::FormulaNode);
     };
     let recurse = |child: FormulaNodeId| state(formula, child);
     Ok(match form {
         FormulaNode::Constant(value) => Expr::Constant(*value),
         FormulaNode::Holds { .. } => Expr::Atom(node),
-        FormulaNode::Aggregate { .. } => return Err(ZoneCheckRefusal::UnsupportedForm),
+        FormulaNode::Aggregate { .. } => return Err(WindowRefusal::UnsupportedForm),
         FormulaNode::Not(inner) => Expr::Not(Box::new(recurse(*inner)?)),
         FormulaNode::And(left, right) => {
             Expr::And(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
@@ -710,15 +752,15 @@ fn state(formula: &CheckedFormula, node: FormulaNodeId) -> Result<Expr, ZoneChec
             Box::new(recurse(*right)?),
         ),
         FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
-            return Err(ZoneCheckRefusal::NestedWindow)
+            return Err(WindowRefusal::NestedWindow)
         }
     })
 }
 
-fn timed(interval: Option<&CheckedInterval>) -> Result<TimedInterval, ZoneCheckRefusal> {
+fn timed(interval: Option<&CheckedInterval>) -> Result<TimedInterval, WindowRefusal> {
     match interval {
         Some(CheckedInterval::Timed(interval)) => Ok(interval.clone()),
-        _ => Err(ZoneCheckRefusal::UnsupportedForm),
+        _ => Err(WindowRefusal::UnsupportedForm),
     }
 }
 
