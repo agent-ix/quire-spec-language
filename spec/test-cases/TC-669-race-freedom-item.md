@@ -35,8 +35,14 @@ Use ADR-025 §10's message-passing shape.
    storing `x := 1` with `release`, and thread `b` running `fetch_add(1)` on
    `x` with the precondition `x.v = 1`, so it reads only `a`'s store, with
    `ordering acquire`, then `relaxed`. The RMW is not enabled in the initial
-   state; check that the request still carries one `RaceFreedom` item in both
-   orderings.
+   state; check that reachable-state classification defers the local release
+   store until the RMW is enabled, then finds the shared name and the request
+   carries one `RaceFreedom` item in both orderings. Also check a shape where
+   the RMW's precondition is true initially but the conflicting store is
+   enabled only after another step: the initially enabled RMW is deferred
+   while its name remains local, then is classified shared when the store is
+   enabled. The acquire RMW proves race freedom; the relaxed RMW refutes it
+   with `Race{x}`, earlier at `a`'s load and later at the RMW.
 
 Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 
