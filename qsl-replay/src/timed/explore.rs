@@ -57,6 +57,9 @@ pub(crate) enum ExploreStop {
     Zone,
     /// The explored graph named a vertex it does not hold.
     Graph,
+    /// A step writes a clock collection whole, and these zones map no
+    /// carried clock between places (FR-230 "Collection-valued writes").
+    CarriedClocks,
 }
 
 impl From<ZoneError> for ExploreStop {
@@ -77,6 +80,9 @@ pub(crate) fn explore(
     start: &TimedState,
     limits: &Limits,
 ) -> Result<Closure, ExploreStop> {
+    if timed.writes_collections() {
+        return Err(ExploreStop::CarriedClocks);
+    }
     match timed.tick_period() {
         Some(_) => explore_ticks(timed, start, limits),
         None => explore_zones(timed, start, limits),

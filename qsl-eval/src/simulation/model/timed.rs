@@ -45,6 +45,7 @@ use super::BROKEN;
 use super::{ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
 use crate::temporal::UndefinedCause;
+use crate::value::Provenance;
 
 mod over_time;
 pub use over_time::{DelayInterval, TimeLock, TimedTerminalClass};
@@ -203,6 +204,7 @@ pub struct GuardedStep {
     post: ModelSimState,
     parts: Vec<Vec<PlaceConstraint>>,
     resets: Vec<(usize, Rational)>,
+    carries: Vec<(usize, usize)>,
     guards: Vec<String>,
 }
 
@@ -246,9 +248,22 @@ impl GuardedStep {
         &self.resets
     }
 
-    /// `clocks` with the resets applied.
+    /// The carries of a collection write (FR-230 "Collection-valued
+    /// writes"), each a place of the post-state and the place of the
+    /// pre-state whose value it takes: a clock moves with its element.
+    pub fn carries(&self) -> &[(usize, usize)] {
+        &self.carries
+    }
+
+    /// `clocks` with the carries, then the resets, applied: every carry
+    /// reads `clocks` as they were before the step.
     pub fn reset(&self, clocks: &ClockValuation) -> ClockValuation {
         let mut values = clocks.0.clone();
+        for (to, from) in &self.carries {
+            if let (Some(value), Some(slot)) = (clocks.0.get(*from), values.get_mut(*to)) {
+                slot.clone_from(value);
+            }
+        }
         for (place, value) in &self.resets {
             if let Some(slot) = values.get_mut(*place) {
                 slot.clone_from(value);
@@ -477,6 +492,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             urgent_operations,
             tick,
         })
+    }
+
+    /// Whether a step of the model writes a clock collection whole (FR-230
+    /// "Collection-valued writes"), so its clocks may move between slots
+    /// ([`GuardedStep::carries`]). A zone over places maps no carried
+    /// clock yet, so a zone analysis refuses such a model by name.
+    pub fn writes_collections(&self) -> bool {
+        self.model
+            .resets()
+            .iter()
+            .any(|resets| !resets.writes().is_empty())
     }
 
     /// The underlying model system.
@@ -858,6 +884,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         }
                     }
                 }
+                let carries = self.written(&vector.receiver, post, &mut resets);
                 // A clock whose object or slot the step makes live takes
                 // the constant of its write, 0 when the step writes none
                 // (QSpec FR-181 "Timed subjects").
@@ -865,6 +892,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     if !self.live(clock, state)
                         && self.live(clock, post)
                         && resets.iter().all(|(reset, _)| *reset != place)
+                        && carries.iter().all(|(carried, _)| *carried != place)
                     {
                         resets.push((place, zero()));
                     }
@@ -876,6 +904,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     post: post.clone(),
                     parts,
                     resets,
+                    carries,
                     guards,
                 });
             }
@@ -895,6 +924,93 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         let steps = keyed.into_iter().map(|(_, step)| step).collect();
         Ok(steps)
+    }
+
+    /// The carries of the collections the step to `post` wrote whole on
+    /// `receiver` (FR-230 "Collection-valued writes", QSpec FR-181-AC-25):
+    /// each clock of a slot carried from slot `j` of `g` takes the value of
+    /// the clock at the same path below slot `j` of `g`, and each clock of a
+    /// fresh slot its literal's constant, pushed onto `resets`.
+    fn written(
+        &self,
+        receiver: &ObjectReference,
+        post: &ModelSimState,
+        resets: &mut Vec<(usize, Rational)>,
+    ) -> Vec<(usize, usize)> {
+        let mut carries = Vec::new();
+        let Some(effect) = post.reached_by() else {
+            return carries;
+        };
+        for written in &effect.written {
+            for (slot, provenance) in written.provenance.iter().enumerate() {
+                match provenance {
+                    Provenance::Fresh(clocks) => {
+                        for (clock, value) in clocks {
+                            if let Some(place) = u64::try_from(slot)
+                                .ok()
+                                .and_then(|slot| self.place_at(receiver, *clock, &[slot]))
+                            {
+                                resets.push((place, value.clone()));
+                            }
+                        }
+                    }
+                    Provenance::Carried { field, slot: from } => {
+                        for (to, place) in self.places.iter().enumerate() {
+                            if !place.holds(receiver) || place.slots.first() != Some(&slot) {
+                                continue;
+                            }
+                            let Some(source) =
+                                self.carried_clock(place.clock, &written.field, field)
+                            else {
+                                continue;
+                            };
+                            let mut slots: Vec<u64> = Vec::with_capacity(place.slots.len());
+                            for held in std::iter::once(from).chain(&place.slots[1..]) {
+                                match u64::try_from(*held) {
+                                    Ok(held) => slots.push(held),
+                                    Err(_) => break,
+                                }
+                            }
+                            if let Some(source) = self.place_at(receiver, source, &slots) {
+                                carries.push((to, source));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        carries
+    }
+
+    /// The clock of the collection `from` at the path below its slot that
+    /// `clock`, a clock of the collection `to`, has below its own.
+    fn carried_clock(&self, clock: ClockId, to: &str, from: &str) -> Option<ClockId> {
+        let path = self.model.clock(clock)?.path();
+        let [PlaceStep::Field(head), PlaceStep::Slot(_), below @ ..] = path else {
+            return None;
+        };
+        if head != to {
+            return None;
+        }
+        if to == from {
+            return Some(clock);
+        }
+        self.model.clock_fields().find_map(|(candidate, field)| {
+            let [PlaceStep::Field(head), PlaceStep::Slot(_), rest @ ..] = field.path() else {
+                return None;
+            };
+            let same = head == from
+                && rest.len() == below.len()
+                && rest
+                    .iter()
+                    .zip(below)
+                    .all(|(left, right)| match (left, right) {
+                        (PlaceStep::Field(left), PlaceStep::Field(right)) => left == right,
+                        (PlaceStep::Slot(_), PlaceStep::Slot(_)) => true,
+                        _ => false,
+                    });
+            same.then_some(candidate)
+        })
     }
 
     /// `constraints` of an operation's guard part over places, each of

@@ -540,6 +540,10 @@ pub enum ZoneCertificateRefusal<O> {
     TimedSubject(Box<TimedSubjectRefusal>),
     /// The item is not one this checker reads yet (see the module).
     UnsupportedItem,
+    /// A step of the model writes a clock collection whole (FR-230
+    /// "Collection-valued writes"), and the checker's zones map no carried
+    /// clock between places yet.
+    CarriedClocks,
     /// The clause's instances are not finite.
     Unbounded,
     /// A reading the check needs has no value: a guard, invariant, urgency,
@@ -556,7 +560,7 @@ impl<O> ZoneCertificateRefusal<O> {
             Self::ObligationMismatch { .. } | Self::IdentityMismatch { .. } => {
                 Code::StaleDependency
             }
-            Self::UnsupportedItem => Code::UnsupportedConstruct,
+            Self::UnsupportedItem | Self::CarriedClocks => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
                 Code::InvalidRuntimeInput
@@ -667,6 +671,9 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
     let timed = TimedSystem::new(&system, request.model)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
+    if timed.writes_collections() {
+        return Err(ZoneCertificateRefusal::CarriedClocks);
+    }
     let mut live = None;
     let (claim, window) = match request.item {
         CertifiedItem::Clause { clause, letters } => {

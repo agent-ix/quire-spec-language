@@ -287,6 +287,11 @@ pub enum ZoneCheckRefusal {
     /// The clause's negation automaton could not be built (FR-240).
     #[error("the clause's automaton could not be built: {0}")]
     Automaton(AutomatonError),
+    /// A step of the model writes a clock collection whole, so a clock may
+    /// move between slots (FR-230 "Collection-valued writes"), and EN-6's
+    /// zones map no carried clock between places yet.
+    #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
+    CarriedClocks,
     /// An invariant of the engine broke.
     #[error("the zone engine broke an invariant: {0}")]
     Fault(&'static str),
@@ -367,6 +372,9 @@ pub fn check_timed_model<S: Clone>(
     };
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
+    }
+    if request.subject.writes_collections() {
+        return Err(ZoneCheckRefusal::CarriedClocks);
     }
     // FR-239: an unbounded population root refuses before any state is
     // explored, as FR-126 states.
