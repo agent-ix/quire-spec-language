@@ -62,9 +62,11 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    `sk: Sequence<Clock>[0, 3]`, `so: Sequence<Option<Clock>>[0, 3]`,
    `sr21: Sequence<Timer>[0, 2]`, `sr85: Sequence<Timer>[0, 3]`,
    `Set<Cfg>[0, 1]`, `Set<Cfg>[0, 2]`, `Bag<Cfg>[0, 2]` and
-   `Set<Clock>[0, 2]`, each in its own field. Read each domain and its order.
+   `Set<Clock>[0, 2]`, `Set<Clock>` with no maximum, `Set<Timer>[0, 2]` and
+   `Bag<Timer>[0, 2]`, each in its own field. Read each domain and its order.
    Expand a state whose `sr21` is `[ {x: 5 ms, n: 1} ]` and one whose `sr21` is
-   empty, with `put` granting `sr21` and no clause.
+   empty, with `put` granting `sr21` and no clause; also a state whose `Set<Timer>` field
+   holds `{ {x: 5 ms, n: 1} }`.
 6. In further models grant, one at a time, `Reference<Clock>`,
    `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>`,
    `Set<Cfg>` (the last two with no maximum) and `Map<Boolean, Boolean>[0, 1]`.
@@ -97,7 +99,9 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   lexicographically with the first element most significant; `st`, `sk` and `so`
   have 4 each; `sr21` has 21 and `sr85` has 85, ordered by length and then by
   `n`, `x` adding no factor; `Set<Cfg>[0, 1]` 7, `Set<Cfg>[0, 2]` 22,
-  `Bag<Cfg>[0, 2]` 28, `Set<Clock>[0, 2]` 2. No unbounded root and no
+  `Bag<Cfg>[0, 2]` 28, `Set<Clock>[0, 2]` 2 and `Set<Clock>` with no maximum 2, `Set<Timer>[0, 2]` 11
+  and `Bag<Timer>[0, 2]` 15; from `{ {x: 5 ms, n: 1} }` the candidate `{n 1, n 2}`
+  holds `x` 5 ms for `n` 1 and 0 ms for `n` 2, and `{n 2}` holds 0 ms. No unbounded root and no
   candidate ranges over a clock slot. From `[ {x: 5 ms, n: 1} ]`, a length-2
   candidate holds `x` 5 ms in slot 0 and 0 ms in slot 1, and a length-0
   candidate holds none; from the empty pre-state both slots of a length-2
