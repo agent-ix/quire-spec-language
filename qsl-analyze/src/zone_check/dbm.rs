@@ -301,6 +301,23 @@ impl Dbm {
         Self { dim, bounds }
     }
 
+    /// This zone over `dim >= self.dim()` clocks, the added clocks
+    /// unconstrained but for `x >= 0`.
+    #[must_use]
+    pub fn widened(&self, dim: usize) -> Self {
+        let mut wide = Self::universe(dim.max(self.dim));
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                wide.bounds[i * wide.dim + j] = self.at(i, j).clone();
+            }
+        }
+        wide.close();
+        if self.is_empty() {
+            wide.set_empty();
+        }
+        wide
+    }
+
     /// Every finite bound multiplied by `factor > 0`: the same zone in units
     /// `factor` times finer.
     pub fn scale_by(&mut self, factor: &BigInt) {
@@ -324,6 +341,25 @@ impl Dbm {
             }
         }
         Self { dim, bounds }
+    }
+
+    /// This zone with its last clock projected away: the valuations of the
+    /// other clocks some value of it extends into the zone. A closed matrix
+    /// projects by dropping the clock's row and column.
+    #[must_use]
+    pub fn without_last_clock(&self) -> Self {
+        let dim = self.dim.saturating_sub(1);
+        let mut bounds = Vec::with_capacity(dim * dim);
+        for i in 0..dim {
+            for j in 0..dim {
+                bounds.push(self.at(i, j).clone());
+            }
+        }
+        let mut projected = Self { dim, bounds };
+        if self.is_empty() {
+            projected.set_empty();
+        }
+        projected
     }
 
     /// Free `clock`: drop every constraint on it but `clock >= 0`, the

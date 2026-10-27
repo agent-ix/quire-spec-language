@@ -129,10 +129,13 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Control("attempt"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),
-        (ProtocolConstruct::Captures, "QSL-1121e"),
-        (ProtocolConstruct::ActivationGuard, "QSL-1121e"),
         (ProtocolConstruct::Terminal, "QSL-1121f"),
         (ProtocolConstruct::FinishReadsDeclaration, "QSL-1121g"),
+        (ProtocolConstruct::CaptureReadsDeclaration, "QSL-1121g"),
+        (
+            ProtocolConstruct::ActivationGuardReadsDeclaration,
+            "QSL-1121g",
+        ),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
     }
@@ -539,9 +542,9 @@ fn the_roles_set_does_not_follow_source_order() {
     assert_eq!(in_order, roles_of(&source(widget, gadget)));
 }
 
-/// FR-092-AC-18: an activation guard and a terminal member
-/// each refuse at the protocol, naming the construct, never writing the
-/// protocol without it; a role on a whole model refuses as the IR gap it is.
+/// FR-092-AC-18: a terminal member refuses at the protocol, naming the
+/// construct, never writing the protocol without it; a role on a whole model
+/// refuses as the IR gap it is.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn constructs_without_a_node_yet_refuse_naming_the_construct() {
@@ -561,10 +564,6 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
             .map(|refusal| refusal.cause)
             .collect()
     };
-    assert_eq!(
-        causes(&flow("", "on each (g: M::Gadget) when (true)")),
-        [not_emitted(ProtocolConstruct::ActivationGuard)]
-    );
     assert_eq!(
         causes(&selecting(
             "protocol Flow using v over (input: Boolean) on origin {\n\

@@ -152,6 +152,23 @@ impl RawZone {
     }
 }
 
+impl RawZone {
+    /// The constraints of `{p | p_x >= 0 ∧ ∃y. p[x := y] ∈ Z}`, `y`
+    /// eliminated.
+    pub(super) fn free_constraints(&self, x: usize) -> Vec<(usize, usize, RefBound)> {
+        let mut out = Vec::new();
+        for i in (0..self.dim).filter(|&i| i != x) {
+            for j in (0..self.dim).filter(|&j| j != x) {
+                out.push((i, j, self.at(i, j)));
+                out.push((i, j, self.at(i, x).plus(self.at(x, j))));
+            }
+        }
+        out.push((x, x, self.at(x, x)));
+        out.push((0, x, RefBound::Le(0)));
+        out
+    }
+}
+
 /// Whether the point satisfies every listed constraint.
 pub(super) fn constraints_hold(
     constraints: Vec<(usize, usize, RefBound)>,

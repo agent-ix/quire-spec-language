@@ -24,15 +24,15 @@ use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, GroupTerm, LeafTerm,
-    MemberTerm, NodeRef, NodeTag, Operation, Operator,
+    BindingValue, BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, GroupTerm,
+    LeafTerm, MemberTerm, NodeRef, NodeTag, Operation, Operator,
 };
-use crate::check::refusal::{CheckRefusal, KeyFault};
+use crate::check::refusal::{CheckRefusal, ExecutionPointRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::operation::OperationDeclaration;
-use crate::value::member::Member;
+use crate::value::member::{AcceptedPoint, Member};
 use qsl_forms::StateClauseKind;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::{Location, Origin as LocationOrigin};
@@ -110,6 +110,50 @@ pub(crate) struct StateClauseInput<'a> {
     /// The object types whose model nodes name the clause's population
     /// domains.
     pub(crate) population_types: &'a [EffectiveId],
+    /// The accepted `ClauseBinding.execution_point` (QSpec FR-341/FR-342,
+    /// FR-105-AC-12), or `None` for a clause with no accepted point. It
+    /// enters the `state_clause` member and, for an operation clause, the
+    /// referenced `operation_anchor` body, so two clauses (or anchors) equal
+    /// but for the point are distinct nodes.
+    pub(crate) execution_point: Option<AcceptedPoint>,
+}
+
+/// Whether `point` is carryable by a `kind` clause whose operation is
+/// `operation` (`None` for an invariant).
+// The point's operation name and the clause's operation name are both
+// identifier text compared once, here.
+#[ix_trace_rs::string_edge]
+pub(crate) fn check_execution_point(
+    kind: StateClauseKind,
+    operation: Option<&str>,
+    point: &AcceptedPoint,
+) -> Result<(), ExecutionPointRefusal> {
+    use quire_contract_model::ExecutionPoint;
+    let named = |named: &quire_contract_model::AnchorName| match operation {
+        Some(operation) if operation == named.as_str() => Ok(()),
+        Some(_) | None => Err(ExecutionPointRefusal::OperationMismatch),
+    };
+    match (kind, point.point()) {
+        (
+            StateClauseKind::Invariant,
+            ExecutionPoint::Initialization { .. } | ExecutionPoint::Handler { .. },
+        ) => Ok(()),
+        (StateClauseKind::Precondition, ExecutionPoint::Pre { operation })
+        | (StateClauseKind::Postcondition, ExecutionPoint::Post { operation }) => named(operation),
+        (StateClauseKind::Invariant, ExecutionPoint::Pre { .. } | ExecutionPoint::Post { .. })
+        | (
+            StateClauseKind::Precondition,
+            ExecutionPoint::Initialization { .. }
+            | ExecutionPoint::Handler { .. }
+            | ExecutionPoint::Post { .. },
+        )
+        | (
+            StateClauseKind::Postcondition,
+            ExecutionPoint::Initialization { .. }
+            | ExecutionPoint::Handler { .. }
+            | ExecutionPoint::Pre { .. },
+        ) => Err(ExecutionPointRefusal::InapplicableVariant),
+    }
 }
 
 /// One protocol `attempt` naming an operation (FR-114), as
@@ -189,7 +233,7 @@ impl Lowering<'_> {
         &mut self,
         anchor: &AnchorInput<'_>,
     ) -> Result<NodeKey, CheckRefusal> {
-        let binding = self.operation_anchor(anchor, anchor.location)?;
+        let binding = self.operation_anchor(anchor, None, anchor.location)?;
         self.record(
             binding.anchor,
             OccurrenceRole::Anchor,
@@ -216,6 +260,14 @@ impl Lowering<'_> {
         clause: &StateClauseInput<'_>,
     ) -> Result<LoweredClause, CheckRefusal> {
         let location = clause.location;
+        if let Some(point) = &clause.execution_point {
+            check_execution_point(
+                clause.kind,
+                clause.anchor.as_ref().map(|anchor| anchor.operation.name()),
+                point,
+            )
+            .map_err(|refusal| fault(location, KeyFault::ExecutionPoint(refusal)))?;
+        }
         let mut scope = Vec::with_capacity(clause.parameters.len());
         for (level, (name, value_type)) in clause.parameters.iter().enumerate() {
             let type_key = self.binder_type(value_type, None, location)?;
@@ -241,7 +293,8 @@ impl Lowering<'_> {
         let (anchor, binding) = match &clause.anchor {
             None => (self.object_node(clause.context, location)?, None),
             Some(anchor) => {
-                let binding = self.operation_anchor(anchor, location)?;
+                let binding =
+                    self.operation_anchor(anchor, clause.execution_point.as_ref(), location)?;
                 self.record(binding.anchor, OccurrenceRole::Anchor, location.clone());
                 (binding.anchor, Some(binding))
             }
@@ -263,6 +316,7 @@ impl Lowering<'_> {
                 Operation {
                     member: Some(Member::StateClause {
                         clause: clause.kind,
+                        execution_point: clause.execution_point.clone(),
                     }),
                     ..Operation::plain("quire.op.state.clause")
                 },
@@ -302,7 +356,7 @@ impl Lowering<'_> {
         &mut self,
         input: &AttemptInput<'_>,
     ) -> Result<LoweredAttempt, CheckRefusal> {
-        let binding = self.operation_anchor(&input.anchor, input.location)?;
+        let binding = self.operation_anchor(&input.anchor, None, input.location)?;
         self.record(
             binding.anchor,
             OccurrenceRole::Anchor,
@@ -339,23 +393,33 @@ impl Lowering<'_> {
     fn operation_anchor(
         &mut self,
         anchor: &AnchorInput<'_>,
+        point: Option<&AcceptedPoint>,
         location: &Location,
     ) -> Result<OperationBinding, CheckRefusal> {
         let (declaring, frame) = self.frame_node(anchor, location)?;
         let frame_origin =
             self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
         let operation = self.text_literal(anchor.operation.name(), location)?;
+        // FR-342: the optional fourth binding follows `frame`; a point-free
+        // anchor (a protocol attempt's, an `align skip`'s) omits it.
+        let mut members = vec![
+            MemberTerm::bound("context", LeafTerm::reference(declaring)),
+            MemberTerm::bound("operation", operation),
+            MemberTerm::bound("frame", LeafTerm::reference(frame)),
+        ];
+        if let Some(point) = point {
+            members.push(MemberTerm::binding(
+                "execution_point",
+                BindingValue::ExecutionPoint(point.clone()),
+            ));
+        }
         let anchor = self.insert(
             location,
             NodeTag::State,
             "operation_anchor",
             Some(declaring),
             None,
-            BodyTerm::aggregate(vec![
-                MemberTerm::bound("context", LeafTerm::reference(declaring)),
-                MemberTerm::bound("operation", operation),
-                MemberTerm::bound("frame", LeafTerm::reference(frame)),
-            ]),
+            BodyTerm::aggregate(members),
         )?;
         Ok(OperationBinding {
             anchor,
@@ -522,5 +586,161 @@ impl Lowering<'_> {
         nodes.sort();
         nodes.dedup();
         Ok(nodes)
+    }
+}
+
+#[cfg(test)]
+mod execution_point_tests {
+    use super::*;
+    use quire_contract_model::{AnchorName, ExecutionPoint};
+
+    fn name(text: &str) -> AnchorName {
+        AnchorName::new(text).expect("test anchor name is valid")
+    }
+
+    fn init(text: &str) -> AcceptedPoint {
+        AcceptedPoint::new(ExecutionPoint::Initialization { name: name(text) })
+    }
+
+    fn handler(text: &str) -> AcceptedPoint {
+        AcceptedPoint::new(ExecutionPoint::Handler { name: name(text) })
+    }
+
+    fn pre(text: &str) -> AcceptedPoint {
+        AcceptedPoint::new(ExecutionPoint::Pre {
+            operation: name(text),
+        })
+    }
+
+    fn post(text: &str) -> AcceptedPoint {
+        AcceptedPoint::new(ExecutionPoint::Post {
+            operation: name(text),
+        })
+    }
+
+    type Outcome = Result<(), ExecutionPointRefusal>;
+
+    /// QSpec FR-341 "Execution point" / FR-342: every (clause kind, point)
+    /// pair is either carried or refused with its own typed reason, and a
+    /// `pre`/`post` point must name the clause's operation.
+    #[test]
+    fn each_clause_kind_point_pair_is_admitted_or_refused_typed() {
+        use ExecutionPointRefusal::{InapplicableVariant, OperationMismatch};
+        use StateClauseKind::{Invariant, Postcondition, Precondition};
+        type Case = (
+            &'static str,
+            StateClauseKind,
+            Option<&'static str>,
+            AcceptedPoint,
+            Outcome,
+        );
+        let cases: Vec<Case> = vec![
+            (
+                "invariant initialization",
+                Invariant,
+                None,
+                init("boot"),
+                Ok(()),
+            ),
+            ("invariant handler", Invariant, None, handler("go"), Ok(())),
+            (
+                "precondition pre",
+                Precondition,
+                Some("go"),
+                pre("go"),
+                Ok(()),
+            ),
+            (
+                "postcondition post",
+                Postcondition,
+                Some("go"),
+                post("go"),
+                Ok(()),
+            ),
+            (
+                "invariant pre",
+                Invariant,
+                None,
+                pre("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "invariant post",
+                Invariant,
+                None,
+                post("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "precondition initialization",
+                Precondition,
+                Some("go"),
+                init("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "precondition handler",
+                Precondition,
+                Some("go"),
+                handler("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "precondition post",
+                Precondition,
+                Some("go"),
+                post("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "postcondition initialization",
+                Postcondition,
+                Some("go"),
+                init("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "postcondition handler",
+                Postcondition,
+                Some("go"),
+                handler("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "postcondition pre",
+                Postcondition,
+                Some("go"),
+                pre("go"),
+                Err(InapplicableVariant),
+            ),
+            (
+                "precondition naming another operation",
+                Precondition,
+                Some("go"),
+                pre("stop"),
+                Err(OperationMismatch),
+            ),
+            (
+                "postcondition naming another operation",
+                Postcondition,
+                Some("go"),
+                post("stop"),
+                Err(OperationMismatch),
+            ),
+            (
+                "operation clause with no operation",
+                Precondition,
+                None,
+                pre("go"),
+                Err(OperationMismatch),
+            ),
+        ];
+        for (label, kind, operation, point, expected) in cases {
+            assert_eq!(
+                check_execution_point(kind, operation, &point),
+                expected,
+                "{label}"
+            );
+        }
     }
 }

@@ -16,8 +16,8 @@
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a control
-//! other than `sequence`, a capture, a `terminal` member, a requirement, a
-//! compensation) is refused with that construct named
+//! other than `sequence`, a `terminal` member, a requirement, a
+//! compensation, a capture or guard that names a function) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
@@ -37,11 +37,11 @@ use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedNode, NodeKind};
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
-    NodeTag, Operation, OperationLaw, Operator, TupleTerm,
+    NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
 use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
-use crate::check::protocol_obligation::CheckedActivation;
+use crate::check::protocol_obligation::{CaptureOwner, CheckedActivation};
 use crate::check::protocol_slots::{
     CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
 };
@@ -77,6 +77,12 @@ pub(crate) enum ProtocolSite<'a> {
     Finish(&'a str),
     /// The `finish` constraint's expression tree.
     FinishBody(&'a str),
+    /// The `activation on each` guard's expression tree.
+    ActivationGuard,
+    /// The capture of this name: its binder's `expression` occurrence.
+    Capture(&'a str),
+    /// The initializer of the capture of this name: its expression tree.
+    CaptureInitializer(&'a str),
     /// The role of this name: its `declaration` occurrence.
     Role(&'a str),
     /// The `until` term of the replicated role of this name.
@@ -102,6 +108,11 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::Channel(channel) => format!("protocol {protocol} channel {channel}"),
         ProtocolSite::ChannelKey(channel) => format!("protocol {protocol} channel {channel} key"),
         ProtocolSite::FinishBody(name) => format!("protocol {protocol} finish {name} body"),
+        ProtocolSite::ActivationGuard => format!("protocol {protocol} activation guard"),
+        ProtocolSite::Capture(name) => format!("protocol {protocol} capture {name}"),
+        ProtocolSite::CaptureInitializer(name) => {
+            format!("protocol {protocol} capture {name} initializer")
+        }
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
     }
 }
@@ -172,14 +183,17 @@ impl ProtocolInput<'_> {
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
             }
         }
-        if !form.captures.is_empty() {
-            unemitted.push(ProtocolConstruct::Captures);
+        if self.checked.obligations.captures.iter().any(|capture| {
+            capture.owner == CaptureOwner::Protocol && reads_declaration(capture.initializer.root())
+        }) {
+            unemitted.push(ProtocolConstruct::CaptureReadsDeclaration);
         }
         if matches!(
-            self.checked.obligations.activation,
-            CheckedActivation::OnEach { guard: Some(_), .. }
+            &self.checked.obligations.activation,
+            CheckedActivation::OnEach { guard: Some(guard), .. }
+                if reads_declaration(guard.root())
         ) {
-            unemitted.push(ProtocolConstruct::ActivationGuard);
+            unemitted.push(ProtocolConstruct::ActivationGuardReadsDeclaration);
         }
         if !matches!(slots.terminal, CheckedTerminalMember::None) {
             unemitted.push(ProtocolConstruct::Terminal);
@@ -510,7 +524,9 @@ impl Lowering<'_> {
                 location,
             )?),
         };
-        let readable: Vec<Binder> = [Some(over), trigger].into_iter().flatten().collect();
+        let mut readable: Vec<Binder> = [Some(over), trigger].into_iter().flatten().collect();
+        let guard = self.activation_guard(protocol, over, trigger)?;
+        let captures = self.capture_records(protocol, &mut readable)?;
 
         let roles = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
         let (channels, queues) = self.channel_nodes(
@@ -529,10 +545,14 @@ impl Lowering<'_> {
 
         let activation = match &trigger {
             None => GroupTerm::new(vec![member("kind", self.text_literal("origin", location)?)]),
-            Some(trigger) => GroupTerm::new(vec![
-                member("kind", self.text_literal("each", location)?),
-                member("trigger", LeafTerm::reference(trigger.parameter)),
-            ]),
+            Some(trigger) => {
+                let mut members = vec![
+                    member("kind", self.text_literal("each", location)?),
+                    member("trigger", LeafTerm::reference(trigger.parameter)),
+                ];
+                members.extend(guard.map(|guard| member("guard", guard)));
+                GroupTerm::new(members)
+            }
         };
         let scheduling = match slots.scheduling {
             CheckedScheduling::Fair => empty_group(),
@@ -554,10 +574,7 @@ impl Lowering<'_> {
                 vec![
                     MemberTerm::bound("over", LeafTerm::reference(over.parameter)),
                     MemberTerm::binding("activation", BindingValue::Group(activation)),
-                    MemberTerm::binding(
-                        "captures",
-                        BindingValue::Tuple(TupleTerm::new(Vec::new())),
-                    ),
+                    MemberTerm::binding("captures", BindingValue::Tuple(captures)),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
                     MemberTerm::binding("relationships", empty_group()),
                     MemberTerm::binding(
@@ -577,6 +594,85 @@ impl Lowering<'_> {
                 ],
             ),
         )
+    }
+
+    /// The `guard` term of the `activation on each` guard of `protocol`
+    /// (FR-464 "Clause body"), or `None` for an `origin` activation and an
+    /// `each` without a guard. The guard is checked over the activation
+    /// binder and `over`, in that order (QSpec FR-464 stage
+    /// `protocol-activation`), so its local slot 0 is the trigger and slot 1
+    /// is `over`; the checker bars a read of `over`.
+    fn activation_guard(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        over: Binder,
+        trigger: Option<Binder>,
+    ) -> Result<Option<LeafTerm>, CheckRefusal> {
+        let CheckedActivation::OnEach {
+            guard: Some(guard), ..
+        } = &protocol.checked.obligations.activation
+        else {
+            return Ok(None);
+        };
+        let unchecked = || fault(&protocol.location(), KeyFault::UncheckedProtocolFact);
+        let trigger = trigger.ok_or_else(unchecked)?;
+        let slots = &protocol.checked.slots;
+        let slot_names: Vec<String> = [slots.binders.get(1), slots.binders.first()]
+            .into_iter()
+            .map(|binder| binder.map(|binder| binder.name.clone()))
+            .collect::<Option<_>>()
+            .ok_or_else(unchecked)?;
+        let scope = [Binder { slot: 0, ..trigger }, Binder { slot: 1, ..over }];
+        let mut binders = Binders::new(&slot_names, &scope);
+        self.expression(guard.root(), &mut binders).map(Some)
+    }
+
+    /// The `captures` Tuple of `protocol` (FR-464 "Clause body"): one Group
+    /// of `binder` and `initializer` per capture, in evaluation order. Each
+    /// capture binder is a `parameter` at the level of the binders readable
+    /// before it, `over` and the trigger first, and joins `readable`; its
+    /// initializer is read over those binders alone (stage
+    /// `protocol-capture`).
+    fn capture_records(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        readable: &mut Vec<Binder>,
+    ) -> Result<TupleTerm, CheckRefusal> {
+        let name = protocol.form.name.name.as_str();
+        let slots = &protocol.checked.slots;
+        let slot_names: Vec<String> = slots
+            .binders
+            .iter()
+            .map(|binder| binder.name.clone())
+            .collect();
+        let checked: Vec<_> = protocol
+            .checked
+            .obligations
+            .captures
+            .iter()
+            .filter(|capture| capture.owner == CaptureOwner::Protocol)
+            .collect();
+        if checked.len() != protocol.form.captures.len() {
+            return Err(fault(&protocol.location(), KeyFault::UncheckedProtocolFact));
+        }
+        let mut records = Vec::with_capacity(checked.len());
+        for capture in checked {
+            let location = protocol_location(name, ProtocolSite::Capture(&capture.name));
+            let slot = readable.len();
+            let declared = slots
+                .binders
+                .get(slot)
+                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let binder = self.protocol_binder(declared, slot, slot, &location)?;
+            let mut binders = Binders::new(&slot_names, readable);
+            let initializer = self.expression(capture.initializer.root(), &mut binders)?;
+            readable.push(binder);
+            records.push(TupleMember::Group(GroupTerm::new(vec![
+                member("binder", LeafTerm::reference(binder.parameter)),
+                member("initializer", initializer),
+            ])));
+        }
+        Ok(TupleTerm::new(records))
     }
 
     /// The `role` nodes of `protocol` (FR-465 "Role") with each role's name,
