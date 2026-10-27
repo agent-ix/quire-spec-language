@@ -4,28 +4,32 @@
 //! replayed (TC-692, TC-694, TC-697).
 
 use ix_trace_rs::trace;
-use qsl_analyze::zone_check::{ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneStop};
+use qsl_analyze::zone_check::{
+    ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRefusal, ZoneStop,
+};
 use qsl_replay::{CertificateCheckLimits, ZoneCertificateVerdict};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
-use crate::timed_world::World;
+use crate::timed_world::{document_unbounded, World};
 use crate::zone_replay::{replay, reproduced};
 use crate::zone_search::{
-    check, claim, delays, operations, proved, rpc_claim, violated, Outcome, SUBJECT, TIMED,
+    check, claim, delays, operations, proved, request, rpc_claim, rpc_world, violated, Outcome,
+    SUBJECT, TIMED,
 };
 
 /// ADR-026 §11's `Settles` over `Rpc` with deadline `t`, its `eventually`
 /// over `interval`: every `Waiting` position is followed within the
 /// interval by a position that is not `Waiting`.
 pub(crate) fn settles(t: u32, interval: &str) -> World {
-    rpc_claim(
-        t,
-        TIMED,
-        &format!(
-            "temporal Settles using tt over (c: M::Call) clock \"model-time\" on origin \
-             {{ always (holds(c.phase = 1) implies eventually{interval} holds(not (c.phase = 1))) }}\n"
-        ),
+    rpc_claim(t, TIMED, &settles_clause(interval))
+}
+
+/// `Settles`' clause text, its `eventually` over `interval`.
+fn settles_clause(interval: &str) -> String {
+    format!(
+        "temporal Settles using tt over (c: M::Call) clock \"model-time\" on origin \
+         {{ always (holds(c.phase = 1) implies eventually{interval} holds(not (c.phase = 1))) }}\n"
     )
 }
 
@@ -67,9 +71,8 @@ fn settles_is_proved_and_its_strict_variant_refuted() {
 /// Part of FR-239-AC-4 (TC-694): `Settles` over `Rpc` with
 /// `max_symbolic_states` 2 stops naming the value 2; with a cancelled
 /// handle it stops `Cancelled`; two runs give equal outcomes, certificates
-/// and counterexamples. Not covered: the `RequiresBound` refusal of a
-/// subject with an unbounded population root, which no timed fixture here
-/// has.
+/// and counterexamples. The `RequiresBound` half is
+/// [`an_unbounded_root_requires_a_bound`].
 #[trace("TC-694")]
 #[test]
 fn settles_stops_at_its_budgets_and_repeats() {
@@ -121,4 +124,29 @@ fn a_settles_certificate_is_checked_against_the_rebuilt_automaton() {
         matches!(verdict, ZoneCertificateVerdict::Rejected(_)),
         "{verdict:?}"
     );
+}
+
+/// Part of FR-239-AC-4 (TC-694): `Settles` over `Rpc` whose `send` also
+/// takes `n: Integer`, an unbounded population root, refuses
+/// `RequiresBound` (FR-126), naming the unbounded domain; the refusal is
+/// read before any state is explored. Two runs refuse alike.
+#[trace("TC-694")]
+#[test]
+fn an_unbounded_root_requires_a_bound() {
+    let document = document_unbounded(
+        &["x"],
+        &[
+            ("send", &["phase", "inflight", "late", "x"]),
+            ("reply", &["phase", "inflight", "late"]),
+            ("timeout", &["phase"]),
+            ("reset", &["phase"]),
+        ],
+    );
+    let world = rpc_world(&document, 4, TIMED, &settles_clause("[0 ms, 3 ms]"));
+    let refusal = request(&world).expect_err("an unbounded root is refused");
+    let ZoneCheckRefusal::RequiresBound(roots) = &refusal else {
+        panic!("expected RequiresBound, got {refusal:?}");
+    };
+    assert!(!roots.domains.is_empty(), "{roots:?}");
+    assert_eq!(request(&world).expect_err("refused"), refusal);
 }

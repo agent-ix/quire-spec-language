@@ -21,7 +21,7 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeSource,
+    check_clauses, Activation, CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeSource,
     PackageDeclarations, TemporalProfile, TimeSourceKind, SCALAR_LIMITS_UNLIMITED,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -1114,4 +1114,150 @@ fn letter_of(atom_levels: &[i64], level: i64) -> Letter {
         .fold(Letter::default(), |letter, (index, _)| {
             letter.with(Atom::new(index).expect("a small atom"))
         })
+}
+
+/// Whether the evaluator refutes `fixture`'s clause on the timed lasso: at
+/// position 0 under `on origin`; under `on each`, at some position, read
+/// through enough unrolled loop iterations that every past window of at
+/// most 3 ms has settled.
+fn evaluator_refutes(
+    fixture: &Fixture,
+    body: &str,
+    trace: &TimedTrace,
+    letters: &mut Levels<'_>,
+    length: usize,
+    loop_start: usize,
+) -> bool {
+    let each = matches!(fixture.clause.activation(), Activation::Each { .. });
+    let last = if each {
+        length + 16 * (length - loop_start)
+    } else {
+        1
+    };
+    (0..last).any(|position| {
+        match evaluate_timed_at(
+            &fixture.clause,
+            trace,
+            TemporalPosition::new(u64::try_from(position).expect("small")),
+            letters,
+            &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+        )
+        .expect("the lasso is readable")
+        {
+            TemporalOutcome::Holds => false,
+            TemporalOutcome::Violated { .. } => true,
+            other => panic!("{body} at {position}: {other:?}"),
+        }
+    })
+}
+
+/// The automaton of `fixture` against the evaluator on `lassos` random
+/// lassos of length at most `max_length`, as [`evaluator_refutes`] reads
+/// them: the numbers held and violated.
+fn agreement(
+    fixture: &Fixture,
+    body: &str,
+    stream: &mut Stream,
+    lassos: usize,
+    max_length: u64,
+) -> (usize, usize) {
+    let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
+    let atom_levels = levels_of(fixture, claim.atoms());
+    let (mut held, mut violated) = (0, 0);
+    for _ in 0..lassos {
+        let length = usize::try_from(stream.below(max_length) + 1).expect("small");
+        let loop_start = usize::try_from(stream.below(length as u64)).expect("small");
+        let mut stamps = vec![0_u64];
+        for _ in 1..length {
+            let last = *stamps.last().expect("a stamp");
+            stamps.push(last + stream.below(5));
+        }
+        let period = stamps[length - 1] - stamps[loop_start] + 1 + stream.below(4);
+        let levels: Vec<i64> = (0..length)
+            .map(|_| i64::try_from(stream.below(3)).expect("small"))
+            .collect();
+        let word: Vec<Letter> = levels
+            .iter()
+            .map(|level| letter_of(&atom_levels, *level))
+            .collect();
+        let trace = TimedTrace::lasso(
+            stamps.iter().copied().map(quarters).collect(),
+            u64::try_from(loop_start).expect("small"),
+            quarters(period),
+        )
+        .expect("a timed lasso");
+        let mut letters = Levels {
+            fixture,
+            levels: levels.clone(),
+            undefined_at: None,
+        };
+        let refuted = evaluator_refutes(fixture, body, &trace, &mut letters, length, loop_start);
+        assert_eq!(
+            claim_accepts(&mut claim, &stamps, &word, loop_start, period),
+            refuted,
+            "{body} over stamps {stamps:?} (quarters), levels {levels:?}, loop to \
+             {loop_start} after {period}"
+        );
+        held += usize::from(!refuted);
+        violated += usize::from(refuted);
+    }
+    (held, violated)
+}
+
+/// FR-242 (TC-697, SR-1650002 FND-001): the one-clock subsumption rules,
+/// read where they decide. The negation of `eventually (p and
+/// eventually[0 ms, 1 ms] q)` restarts `always[0, 1]` at every `p`, kept
+/// once by the newer start; that of `eventually (p and (p until[0 ms,
+/// 1 ms] q))` restarts `release[0, 1]` alike; that of `eventually (p and
+/// always[0 ms, 1 ms] not q)` restarts `eventually[0, 1]`, kept by the older.
+/// Under `on origin` and `on each`, on 1,000 random timed lassos each, the
+/// automaton accepts exactly where the evaluator refutes the clause.
+/// Keeping the older `release` instead fails the first two at once.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_subsumption_rules_answer_to_the_evaluator() {
+    let mut stream = Stream(0x1650_5ab5_0000_0001);
+    for activation in ["on origin", "on each (q: M::Counter)"] {
+        for body in [
+            "eventually (holds(c.level = 1) and eventually[0 ms, 1 ms] holds(c.level = 2))",
+            "eventually (holds(c.level = 1) and \
+             (holds(c.level = 1) until[0 ms, 1 ms] holds(c.level = 2)))",
+            "eventually (holds(c.level = 1) and always[0 ms, 1 ms] not holds(c.level = 2))",
+        ] {
+            let fixture = timed_on(activation, body);
+            let (held, violated) = agreement(&fixture, body, &mut stream, 1_000, 8);
+            assert!(
+                held > 0 && violated > 0,
+                "{activation} {body}: {held} held, {violated} violated"
+            );
+        }
+    }
+}
+
+/// FR-242 (TC-697, SR-1650002 FND-004): the agreement test under `on
+/// each`, where every operator is read below the activating `until`. For
+/// 100 random formulas, on 40 random timed lassos each, the automaton
+/// accepts exactly where the evaluator refutes the clause at some position.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_timed_claim_automaton_agrees_under_each_activation() {
+    let mut stream = Stream(0x1650_eac4_0000_0002);
+    let (mut formulas, mut held, mut violated) = (0, 0, 0);
+    while formulas < 100 {
+        let body = random_formula(&mut stream, 3, true);
+        let fixture = timed_on("on each (q: M::Counter)", &body);
+        match TimedClaim::new(&fixture.clause, 1 << 20) {
+            Ok(_) => {}
+            Err(qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }) => continue,
+            Err(why) => panic!("{body}: {why}"),
+        }
+        formulas += 1;
+        let (more_held, more_violated) = agreement(&fixture, &body, &mut stream, 40, 6);
+        held += more_held;
+        violated += more_violated;
+    }
+    assert!(
+        held > 50 && violated > 50,
+        "{held} held, {violated} violated"
+    );
 }

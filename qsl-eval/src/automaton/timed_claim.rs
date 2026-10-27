@@ -38,8 +38,9 @@
 //! remaining positions, both reading the same guard from the newer start
 //! on. The construction keeps the older `until` and the newer `release`.
 //! A nested operator whose interval starts elsewhere has no such bound and
-//! is refused [`AutomatonError::NestedIntervalShape`] (spec gap STD-493:
-//! MightyL's general non-punctual construction).
+//! is refused [`AutomatonError::NestedIntervalShape`]: FR-242's MightyL
+//! translation of those intervals is not built yet. Remaining work:
+//! QSL-583 (583e).
 //!
 //! **Past operators** are tracked as memory: `since_I` remembers whether a
 //! witness holds with its guard ever since, and the clock since the latest

@@ -29,8 +29,10 @@ use std::collections::{BTreeMap, VecDeque};
 use num_bigint::BigInt;
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
-    GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop, TimedSystem,
+    check_model_bounds, GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop,
+    TimedSystem,
 };
+use qsl_eval::simulation::{NotSimulated, RequiresBound, BOUND_POSITIONS};
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
     CounterexampleKind, Lasso, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
@@ -39,6 +41,7 @@ use qsl_replay::{
 use qsl_semantics::check::{
     CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
 };
+use qsl_semantics::family::ClassifyFailure;
 use quire_exact::{Cancel, Meter, Rational};
 
 use super::certificate::Proof;
@@ -261,13 +264,18 @@ pub enum ZoneCheckOutcome<S> {
 pub enum ZoneCheckRefusal {
     /// The clause is of no profile EN-6 reads, or a timed operator nested
     /// under a future operator has an interval that does not start at a
-    /// closed 0, which FR-242's claim automaton does not translate (spec
-    /// gap STD-493).
+    /// closed 0, which FR-242's claim automaton does not translate yet.
+    /// Remaining work: QSL-583 (583e).
     #[error("the clause is of no form EN-6 decides")]
     UnsupportedForm,
-    /// The clause's `over` instances are not finite.
-    #[error("the clause's instances are not finite")]
-    Unbounded,
+    /// The subject has an unbounded population root (FR-239, FR-126):
+    /// refused before any state is explored.
+    #[error("the subject has an unbounded domain and requires a proof bound")]
+    RequiresBound(RequiresBound),
+    /// The subject's extent could not be classified (FR-126): neither
+    /// `RequiresBound` nor an exploration.
+    #[error("the subject's extent could not be classified: {0:?}")]
+    Extent(Box<ClassifyFailure>),
     /// An atom's evaluation could not give a reading.
     #[error("the atom's evaluation stopped: {0}")]
     Atom(String),
@@ -360,6 +368,9 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
+    // FR-239: an unbounded population root refuses before any state is
+    // explored, as FR-126 states.
+    check_model_bounds(request.subject.system(), BOUND_POSITIONS).map_err(not_simulated)?;
     let mut window = None;
     let mut live = None;
     let judged = match request.item {
@@ -369,7 +380,7 @@ pub fn check_timed_model<S: Clone>(
                     .subject
                     .system()
                     .instances(&clause.over().1)
-                    .map_err(|_| ZoneCheckRefusal::Unbounded)
+                    .map_err(not_simulated)
             };
             if let Some(atom) = qsl_eval::automaton::invariant_atom(clause) {
                 if !matches!(
@@ -1919,6 +1930,16 @@ fn widen(value: usize) -> u64 {
 /// Time 0.
 fn zero_stamp() -> Rational {
     Rational::from_integer(quire_exact::Integer::zero())
+}
+
+/// FR-126's refusals before any state is explored: `RequiresBound`, or an
+/// extent that could not be classified.
+fn not_simulated(refusal: NotSimulated) -> ZoneCheckRefusal {
+    match refusal {
+        NotSimulated::RequiresBound(roots) => ZoneCheckRefusal::RequiresBound(roots),
+        NotSimulated::Extent(failure) => ZoneCheckRefusal::Extent(Box::new(failure)),
+        _ => ZoneCheckRefusal::Fault("bounds-precheck-returns-only-requires-bound-or-extent"),
+    }
 }
 
 /// FR-242's TT-2 automaton of a `BoundedWindow` clause over `instances`

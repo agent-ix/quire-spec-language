@@ -366,8 +366,8 @@ fn stored_states_do_not_grow_with_the_constant() {
 /// Part of FR-239-AC-4 (TC-694): `max_symbolic_states` 2 stops naming the
 /// value 2, a cancelled handle stops `Cancelled`, and two runs give equal
 /// outcomes, over `NoLateReply`; `Settles` is
-/// `crate::zone_mitl::settles_stops_at_its_budgets_and_repeats`. Not
-/// covered: the `RequiresBound` refusal with no state explored.
+/// `crate::zone_mitl::settles_stops_at_its_budgets_and_repeats`, and the
+/// `RequiresBound` refusal `crate::zone_mitl::an_unbounded_root_requires_a_bound`.
 #[trace("TC-694")]
 #[test]
 fn budgets_and_cancellation_stop_the_search() {
