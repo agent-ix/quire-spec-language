@@ -851,7 +851,7 @@ fn lifted(values: &[&str]) -> Result<Vec<u8>, qsl_semantics::model::intake::Lift
     std::fs::write(
         functional.join("EN_001-tier.md"),
         format!(
-            "---\nid: EN_001\ntitle: Tier\nobject: enumeration\ntype: FR\n---\n\n\
+            "---\nid: EN_001\ntitle: Tier\nobject: enumeration\ntype: enumeration\n---\n\n\
              # EN_001: Tier\n\n## Values\n\n| Value | Description |\n|-------|-------------|\n{rows}"
         ),
     )

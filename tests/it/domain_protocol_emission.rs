@@ -32,7 +32,7 @@ const READING: &str = "---
 id: Reading
 title: Reading
 object: value_object
-type: FR
+type: value_object
 name: Reading
 ---
 
