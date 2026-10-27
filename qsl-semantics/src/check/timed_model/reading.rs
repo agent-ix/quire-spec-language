@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use qsl_forms::{
-    BinaryOperator, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans, NameForm,
-    TypeFormHead,
+    BinaryOperator, BinderQuery, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans,
+    NameForm, TypeFormHead,
 };
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Rational};
@@ -567,6 +567,18 @@ pub(crate) fn check_declaration(
                     });
                 }
             }
+            // A quantifier over a clock collection: its source is read as a
+            // place, and its body is checked where a call expands it
+            // (FR-230 "Quantified reads").
+            ExprNode::Query {
+                query: BinderQuery::Forall | BinderQuery::Exists,
+                source,
+                body: quantified,
+                ..
+            } if body.is_bearing_place(*source, declarations) => {
+                pending.push((*source, Position::Place));
+                pending.push((*quantified, Position::Other));
+            }
             ExprNode::Call { name, arguments } => {
                 let called = declarations.named(name);
                 if position != Position::Place
@@ -762,6 +774,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                         return Err(timed(TemporalCause::NotAPlaceExpression { span }));
                     }
                 },
+                ClockSlot::Bearing if matches!(type_form.head, TypeFormHead::Collection(_)) => {
+                    Argument::Path(self.site_collection(argument)?)
+                }
                 ClockSlot::Bearing => Argument::Path(self.site_record(type_form, argument)?),
                 ClockSlot::Data => {
                     if self.located.reads_clock(argument) {
@@ -821,6 +836,25 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             return Err(not_a_place());
         }
         Ok(path)
+    }
+
+    /// The collection path a call-site argument for a clock collection
+    /// parameter denotes: a place path `self.f…` to a collection of the
+    /// receiver holding clock places below its slot.
+    fn site_collection(&self, argument: ExprId) -> Result<Vec<PlaceStep>, CheckCause> {
+        let span = self.located.span(argument);
+        let path = super::self_path(self.located.form, argument)
+            .ok_or_else(|| timed(TemporalCause::NotAPlaceExpression { span }))?;
+        let collection = self.clocks.fields.iter().any(|clock| {
+            self.clocks.model.conforms(self.context, clock.owner)
+                && clock.path.starts_with(&path)
+                && matches!(clock.path.get(path.len()), Some(PlaceStep::Slot(_)))
+        });
+        if collection {
+            Ok(path)
+        } else {
+            Err(timed(TemporalCause::NotAPlaceExpression { span }))
+        }
     }
 
     /// The receiver path the place path at body node `root` starts from:
@@ -952,6 +986,19 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         {
             return Ok(term.clone());
         }
+        Ok(DataLiteral::Formed(Rc::new(self.grafted(frame, id)?)))
+    }
+
+    /// Body node `id` read at the call: each parameter replaced by its
+    /// argument (a data argument's term, `self.f…` for a path argument),
+    /// every node located at the call site.
+    ///
+    /// # Errors
+    ///
+    /// `clock-read-outside-constraint` at a clock parameter, which no data
+    /// term stands for.
+    fn grafted(&self, frame: &Frame<'_, '_>, id: ExprId) -> Result<ExpressionForm, CheckCause> {
+        let body = frame.body;
         let site_span = self.located.span(frame.site);
         let names: BTreeSet<&str> = frame.environment.keys().map(String::as_str).collect();
         let mut trees: Vec<(ExprId, Expression)> = Vec::new();
@@ -991,10 +1038,22 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             .ok_or_else(|| timed(self.located.outside(frame.site)))?;
         let spans = ExpressionSpans::at_point(&expression, site_span.start)
             .map_err(|_| timed(self.located.outside(frame.site)))?;
-        Ok(DataLiteral::Formed(Rc::new(ExpressionForm {
-            expression,
-            spans,
-        })))
+        Ok(ExpressionForm { expression, spans })
+    }
+
+    /// The disjunctive forms of the quantifier at body node `id` read at
+    /// the call, when it ranges over a clock collection of the receiver.
+    fn quantified(
+        &self,
+        frame: &Frame<'_, '_>,
+        id: ExprId,
+        budget: &mut PartBudget,
+    ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
+        let form = self.grafted(frame, id)?;
+        let Some(located) = Located::of(&form, self.clocks, self.context) else {
+            return Ok(None);
+        };
+        super::quantified::read(&located, located.root(), self.clocks, self.context, budget)
     }
 
     /// The expression a data term denotes.
@@ -1009,6 +1068,10 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => {
                 Ok(form.expression.clone())
             }
+            DataLiteral::Family(_) => Err(CheckCause::TimedNotChecked {
+                construct: crate::check::refusal::TimedConstruct::Clock,
+                span: self.located.span(self.located.root()),
+            }),
         }
     }
 
@@ -1248,6 +1311,22 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     |inner, root, stack, budget| self.boolean(inner, root, stack, budget),
                 )
             }
+            // A quantifier over a clock collection (FR-230 "Quantified
+            // reads"): read at the call site, its source the receiver's
+            // collection its argument names.
+            Some(ExprNode::Query {
+                query: BinderQuery::Forall | BinderQuery::Exists,
+                ..
+            }) => match self.quantified(frame, id, budget)? {
+                Some(read) => Ok(read),
+                None => {
+                    let literal = self.formed(frame, id)?;
+                    Ok((
+                        vec![(vec![(literal.clone(), true)], Vec::new())],
+                        vec![(vec![(literal, false)], Vec::new())],
+                    ))
+                }
+            },
             // A data predicate: read at the call site.
             _ => {
                 let literal = self.formed(frame, id)?;

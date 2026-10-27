@@ -80,8 +80,9 @@ pub use equivalence::{
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
-    OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
+    unaliased, AliasTypeRecord, DomainPackage, DomainPackageRecord, FieldMemberRecord,
+    Multiplicity, NativeValueType, OperationMemberRecord, RelationshipEnd, ScalarValueDomain,
+    SequenceTypeRecord, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -1221,7 +1222,10 @@ fn model_object_types(
                 // Clock is retained in the admitted domain package as a
                 // model place; it is not a QSL data field in the kernel's
                 // TypeEnvironment.
-                if matches!(field.value_type, ValueTypeRef::Clock) {
+                if matches!(
+                    sequence_items(&field.value_type, &records),
+                    ValueTypeRef::Clock
+                ) {
                     continue;
                 }
                 match model_field(
@@ -1258,6 +1262,7 @@ fn model_object_types(
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
                     }),
+                    Err(Unmapped::InDefinition) => {}
                 }
             }
             DomainPackageRecord::OperationMember(operation) => {
@@ -1298,6 +1303,7 @@ fn model_object_types(
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
                     }),
+                    Err(Unmapped::InDefinition) => {}
                 }
             }
             // State-machine clauses and context namespaces remain admitted
@@ -1321,8 +1327,31 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
+            // FR-230 "Units": an alias `target` or sequence `items` naming
+            // no unit refuses at the type definition, used or not.
+            DomainPackageRecord::SequenceType(SequenceTypeRecord {
+                key,
+                items: ValueTypeRef::Unit(name),
+            })
+            | DomainPackageRecord::AliasType(AliasTypeRecord {
+                key,
+                target: ValueTypeRef::Unit(name),
+            }) if !units.contains_key(name) => errors.push(AssemblyError {
+                cause: AssemblyCause::UnresolvedModelQuantityType {
+                    name: name.clone(),
+                    member_identity: key.node.clone(),
+                    member_path: match record {
+                        DomainPackageRecord::SequenceType(_) => "TypeDefinition.items",
+                        _ => "TypeDefinition.target",
+                    }
+                    .to_owned(),
+                },
+                span,
+            }),
+            DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {}
         }
     }
     let mut declarations = Vec::new();
@@ -1410,7 +1439,12 @@ fn model_object_types(
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
         // A record's clock fields are places, not data (FR-230 "Records,
         // tuples and unions"): its declaration lists the data fields only.
-        effective_fields.retain(|field| !matches!(field.value_type, ValueTypeRef::Clock));
+        effective_fields.retain(|field| {
+            !matches!(
+                sequence_items(&field.value_type, &records),
+                ValueTypeRef::Clock
+            )
+        });
         for field in effective_fields {
             match model_field(
                 field,
@@ -1452,6 +1486,7 @@ fn model_object_types(
                     cause: AssemblyCause::UnresolvedQuantityName { name },
                     span,
                 }),
+                Err(Unmapped::InDefinition) => {}
             }
         }
         let declared_supertypes: &[DeclarationKey] = match record {
@@ -1677,6 +1712,9 @@ enum Unmapped {
     },
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
+    /// A unit reference of an alias or sequence the member is typed by
+    /// names no unit: refused once, at that type definition.
+    InDefinition,
 }
 
 /// `field` as an object type's field: named by its member name, typed by
@@ -1713,6 +1751,33 @@ fn model_value_type(
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ValueType, Unmapped> {
+    // A package sequence type is the sequence of its items (QSpec FR-154),
+    // a chain of them nested sequences, and a package alias the type it
+    // aliases; one that returns to a type it passed is broken.
+    let (items, sequences) =
+        unaliased(value_type, |key| records.get(key).copied()).ok_or(Unmapped::Broken)?;
+    if !std::ptr::eq(items, value_type) {
+        let single = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        let mut element = model_value_type(
+            items,
+            single,
+            records,
+            identities,
+            meaning_handles,
+            variant_shapes,
+            units,
+        )?;
+        for _ in 0..sequences {
+            element =
+                ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None));
+        }
+        return with_multiplicity(element, multiplicity);
+    }
     let element = match value_type {
         ValueTypeRef::Clock => return Err(Unmapped::Unsupported),
         ValueTypeRef::Native(native) => match native {
@@ -1768,6 +1833,25 @@ fn model_value_type(
             None => return Err(Unmapped::Broken),
         },
     };
+    with_multiplicity(element, multiplicity)
+}
+
+/// The type `value_type` ends at through the package's sequence types and
+/// aliases: `value_type` itself when it names neither, or when the chain
+/// returns to a type it passed.
+fn sequence_items<'r>(
+    value_type: &'r ValueTypeRef,
+    records: &BTreeMap<&DeclarationKey, &'r DomainPackageRecord>,
+) -> &'r ValueTypeRef {
+    unaliased(value_type, |key| records.get(key).copied()).map_or(value_type, |(items, _)| items)
+}
+
+/// `element` held by a member of `multiplicity`: itself for `[1, 1]`, else
+/// the collection the multiplicity's order and uniqueness name.
+fn with_multiplicity(
+    element: ValueType,
+    multiplicity: Multiplicity,
+) -> Result<ValueType, Unmapped> {
     Ok(match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => element,
         (lower, upper) => {
@@ -1817,6 +1901,9 @@ fn model_field(
         units,
     )
     .map_err(|error| match error {
+        Unmapped::QuantityName(_) if matches!(field.value_type, ValueTypeRef::Package(_)) => {
+            Unmapped::InDefinition
+        }
         Unmapped::QuantityName(name) => Unmapped::QuantityType {
             name,
             member_identity: field.key.node.clone(),
@@ -1866,6 +1953,11 @@ fn model_operation(
             units,
         )
         .map_err(|error| match error {
+            Unmapped::QuantityName(_)
+                if matches!(parameter.value_type, ValueTypeRef::Package(_)) =>
+            {
+                Unmapped::InDefinition
+            }
             Unmapped::QuantityName(name) => Unmapped::QuantityType {
                 name,
                 member_identity: parameter.key.node.clone(),
@@ -1889,6 +1981,11 @@ fn model_operation(
                 units,
             )
             .map_err(|error| match error {
+                Unmapped::QuantityName(_)
+                    if matches!(result.value_type, ValueTypeRef::Package(_)) =>
+                {
+                    Unmapped::InDefinition
+                }
                 Unmapped::QuantityName(name) => Unmapped::QuantityType {
                     name,
                     member_identity: operation.key.node.clone(),
