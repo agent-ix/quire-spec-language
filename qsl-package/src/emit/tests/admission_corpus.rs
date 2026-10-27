@@ -86,6 +86,9 @@ enum Fixture {
     /// TC-1021: a function whose body refers to a declared protocol, under a
     /// selected protocol profile.
     ProtocolReference,
+    /// TC-1061: a protocol with two roles and a channel, whose queue the
+    /// emitter generates.
+    ProtocolChannels,
     /// TC-1028: `=` and `!=` over native `String`, `UUID` and `Timestamp`
     /// parameters.
     NativeScalars,
@@ -107,7 +110,7 @@ enum Fixture {
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 26] = [
+    const ALL: [Self; 27] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -127,6 +130,7 @@ impl Fixture {
         Self::CyclicEquality,
         Self::VariantType,
         Self::ProtocolReference,
+        Self::ProtocolChannels,
         Self::NativeScalars,
         Self::UnionNodes,
         Self::TemporalClause,
@@ -417,6 +421,14 @@ impl Fixture {
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
+            Self::ProtocolChannels => Emitted::placed(
+                modelled(
+                    &super::protocol_reference::channel_unit(),
+                    SPINE_MODEL_DOCUMENT,
+                    Vec::new(),
+                ),
+                vec![SPINE_MODEL_DOCUMENT],
+            ),
             Self::ProtocolReference => Emitted::placed(
                 modelled(
                     &super::protocol_reference::reference_unit(),
@@ -562,6 +574,8 @@ fn rows() -> Vec<Row> {
             F::ProtocolReference,
         ),
         row(K::Protocol(ProtocolForm::Role), F::ProtocolReference),
+        row(K::Protocol(ProtocolForm::Channel), F::ProtocolChannels),
+        row(K::Protocol(ProtocolForm::Queue), F::ProtocolChannels),
         row(K::Protocol(ProtocolForm::Control), F::ProtocolReference),
         row(K::Protocol(ProtocolForm::Obligation), F::ProtocolReference),
         row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
@@ -625,8 +639,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
-        (K::Protocol(ProtocolForm::Channel), NO_TAG),
-        (K::Protocol(ProtocolForm::Queue), NO_TAG),
         (K::Protocol(ProtocolForm::Compensation), NO_TAG),
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),

@@ -143,23 +143,35 @@ the protocol's qualified name.
 - The I2 reader returns the nodes it decodes in its fixed-depth types
   (FR-264), or the QSpec refusal with its locus.
 - S4 writes the rows above in stages (QSL-1121). A protocol with a selected
-  profile whose checked graph holds only a static role on a model type, a
-  `sequence` run tree, a `finish`, an `origin` or unguarded `each` activation
-  and a `scheduling` member emits the clause with its thirteen arguments in
-  order (every set it does not hold an empty Group), the `over` and trigger
-  binders at levels 0 and 1, the `finish` binder at the level that follows
-  them, and each `sequence` and `finish` node at its declaration path; the
-  `roles` set is ascending by node digest whatever the source order. A
-  protocol that holds any other construct refuses `unsupported_construct`/
-  `not-yet-implemented` at its declaration, once for each such construct and
-  naming it, and so does a reference to it: a replicated role or a channel,
-  relationship or queue (QSL-1125); a control other than `sequence`
-  (QSL-1126); a requirement or a compensation template (QSL-1127); a capture
-  or an `each` guard (QSL-1121e); a `terminal` member (QSL-1121f); a `finish`
-  constraint that calls a function or refers to a protocol (QSL-1121g); and a
-  role on a whole model (IR-874: the reader admits only the reference form
-  of the role's `model`, so the text form QSpec FR-465 specifies cannot be
-  proved admitted). A protocol is never written without a part of its graph.
+  profile whose checked graph holds only static and replicated roles on a
+  model type, channels with their queues, a `sequence` run
+  tree, a `finish`, an `origin` or unguarded `each` activation and a
+  `scheduling` member emits the clause with its thirteen arguments in order
+  (every set it does not hold an empty Group, `relationships` always), the `over` and trigger binders
+  at levels 0 and 1, a replicated role's binder and a FIFO channel's message
+  binder at the level that follows them, the `finish` binder at the level that
+  follows them, and each role, channel, `sequence` and `finish` node at its
+  declaration path and each queue with none; the `roles`,
+  `channels` and `queues` sets are ascending by node digest whatever the
+  source order. A protocol that holds any other construct refuses
+  `unsupported_construct`/`not-yet-implemented` at its declaration, once for
+  each such construct and naming it, and so does a reference to it: a control
+  other than `sequence` (QSL-1126); a requirement or a compensation template
+  (QSL-1127); a capture or an `each` guard (QSL-1121e); a `terminal` member
+  (QSL-1121f); a `finish` constraint that calls a function or refers to a
+  protocol (QSL-1121g); a `relationship` member (QSL-1141: a real model package
+  cannot name a relationship yet, so the `relationships` set is unproved
+  against the reader); a channel that carries a bounded scalar or collection
+  (QSL-1137: a `bounded_domain` node, which the reader does not admit as
+  `carries`; a quantity, a nominal enum, an `option`, an unbounded collection
+  and a declared record are admitted); a FIFO channel whose key type is not equality-stable
+  (QSL-1142: the reader accepts only Boolean, Integer, Rational, Decimal,
+  Text, String, UUID, Timestamp and enum scalars, references, and composites
+  of them, so a key that is or contains a bounded domain, a quantity, a float
+  or a model-owned type is refused); and a role on a whole model (IR-874: the reader admits
+  only the reference form of the role's `model`, so the text form QSpec FR-465
+  specifies cannot be proved admitted). A protocol is never written without a
+  part of its graph.
 
 ## Behavior
 
