@@ -65,7 +65,7 @@ false when they replay it.
 ### Timed states and moves
 
 - The clocks of a timed subject SHALL be one per object of the universe per
-  clock field (FR-230), each 0 in every initial state. FR-106 snapshots
+  clock field (FR-230), each present clock 0 in every initial state (FR-230 "Presence bit"). FR-106 snapshots
   carry no clock value.
 - **Delay.** A delay by an exact rational `d >= 0` SHALL take `(s, v)` to
   `(s, v + d)`. It SHALL be admissible when `d = 0`, or when `s` is not

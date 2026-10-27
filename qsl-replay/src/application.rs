@@ -869,10 +869,9 @@ mod tests {
     use super::*;
     use crate::spine::SuppliedLibrary;
     use ix_trace_rs::trace;
-    use quire_eval::{Body, ChildRequest, FamilyOutcome, Resume, Transition};
+    use quire_eval::{Body, BodyFailure, ChildRequest, FamilyOutcome, Resume, Transition};
     use quire_exact::{Cancel, CancelCause, Integer, LimitKind, Outcome, ScalarLimits, ValueType};
     use quire_semantic_value::call::InputRefusal;
-    use quire_semantic_value::catalog::InternalFault;
     use quire_semantic_value::location::Location;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -944,11 +943,7 @@ mod tests {
         child: Option<NodeKey>,
     }
     impl Body for HostBody {
-        fn resume(
-            &mut self,
-            input: Resume,
-            _meter: &mut Meter,
-        ) -> Result<Transition, InternalFault> {
+        fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
             Ok(match input {
                 Resume::Start(arguments) => match self.child {
                     Some(callee) => Transition::Call(ChildRequest {
@@ -1544,7 +1539,7 @@ mod tests {
                 &mut self,
                 input: Resume,
                 _meter: &mut Meter,
-            ) -> Result<Transition, InternalFault> {
+            ) -> Result<Transition, BodyFailure> {
                 match input {
                     Resume::Start(_) => {
                         self.started.fetch_add(1, Ordering::SeqCst);
@@ -1834,11 +1829,7 @@ mod tests {
         site: Location,
     }
     impl Body for SitedBody {
-        fn resume(
-            &mut self,
-            input: Resume,
-            _meter: &mut Meter,
-        ) -> Result<Transition, InternalFault> {
+        fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
             Ok(match (input, self.callee) {
                 (Resume::Start(arguments), Some(callee)) => Transition::Call(ChildRequest {
                     callee,
