@@ -684,6 +684,32 @@ impl AdmittedModel {
             .count()
     }
 
+    /// The content key of the package's sole state-machine declaration.
+    /// Refinement nodes use this key as their semantic type, independently
+    /// of the alias the checked unit gives the selected model.
+    pub(crate) fn state_machine_node_key(
+        &self,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Option<NodeKey> {
+        let mut machines = self.records.iter().filter_map(|(key, record)| {
+            matches!(record, DomainPackageRecord::StateMachine(_)).then_some(key)
+        });
+        let declaration = machines.next()?;
+        if machines.next().is_some() {
+            return None;
+        }
+        self.model_node_key(declaration, identity)
+    }
+
+    /// The declaring key of the package's sole state-machine record.
+    pub(crate) fn state_machine_declaration(&self) -> Option<DeclarationKey> {
+        let mut machines = self.records.iter().filter_map(|(key, record)| {
+            matches!(record, DomainPackageRecord::StateMachine(_)).then_some(key)
+        });
+        let declaration = machines.next()?.clone();
+        machines.next().is_none().then_some(declaration)
+    }
+
     /// Every operation owner of this package that `M::T::op` can name: an
     /// object type, a process or a state machine (FR-104, FR-115, FR-121),
     /// with its declaration key and effective identity.

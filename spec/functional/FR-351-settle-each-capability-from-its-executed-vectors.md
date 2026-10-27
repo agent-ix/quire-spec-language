@@ -24,9 +24,10 @@ executed in the same run (FR-350).
 
 - The per-vector outcomes of FR-350.
 - The scope: the capability ids the caller selects, or, when the caller
-  selects none, every capability the corpus lists whose applicability names
-  a QSL consumer type and a semantic profile in QSL's definition catalog
-  ([FR-350](FR-350-run-the-conformance-corpus-against-qsl.md)).
+  selects none, every capability in QSpec FR-336 `coverage.primary` whose
+  `applicability.consumer_types` includes a QSL consumer type and whose
+  `applicability.semantic_profiles` includes a profile in QSL's definition
+  catalog ([FR-350](FR-350-run-the-conformance-corpus-against-qsl.md)).
 
 ## Outputs
 
@@ -60,9 +61,10 @@ of the vectors that decided it.
   twice. Selection does not grant a new consumer type to its vectors. An
   explicitly selected capability with no QSL-applicable vectors is
   `uncovered`, even when its monitor-only vectors have recorded passes.
-- If the caller selects a capability id the corpus does not list, then the
-  runner SHALL refuse the run with `unknown_required_feature`/
-  `unknown-feature`, naming the id, before it executes any vector.
+- If the caller selects a `capability_id` absent from QSpec FR-336
+  `coverage.primary`, then the runner SHALL refuse the run with
+  `unknown_required_feature`/`unknown-feature`, naming the id, before it
+  executes any vector.
 
 ## Acceptance Criteria
 
