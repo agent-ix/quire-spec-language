@@ -20,7 +20,7 @@ use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::Cancel;
 
-use super::search::{ZoneCheckLimit, ZoneCheckOutcome, ZoneStop, ZoneUndecided};
+use super::search::{ZoneCheckLimit, ZoneCheckOutcome, ZoneReduction, ZoneStop, ZoneUndecided};
 
 /// The settlement method of an EN-6 record (FR-235).
 pub const ZONE_CERTIFIED: &str = "zone-certified";
@@ -139,7 +139,10 @@ impl ZoneCheckRecord {
 /// - V-7: `Stopped`, or a certificate check or replay a budget stopped, is
 ///   `Incomplete` naming the limit and its value, or `Cancelled` with
 ///   `cancel`'s cause;
-/// - V-8: an `Unsupported` disposition is `Unsupported` with its cause.
+/// - V-8: an `Unsupported` disposition is `Unsupported` with its cause,
+///   and a reduction EN-6 does not apply is `UnsupportedReduction`;
+/// - FR-160: a symmetry-reduced `Holds` is `Proved{Reduced, Uncertified}`,
+///   and `SymmetryBroken` is `Inconclusive`.
 pub fn settle_zone_check<S>(
     item: ZoneItem<'_, S>,
     package_id: &DigestRecord,
@@ -175,6 +178,40 @@ pub fn settle_zone_check<S>(
                 ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
             }
             ZoneCertificateVerdict::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
+        },
+        // FR-160 (QSpec FR-430): a symmetry-reduced proof, which no core
+        // checker reads. FR-235's map has no reduced row (spec gap
+        // STD-493); FR-160's is used.
+        ZoneCheckOutcome::HoldsReduced { reductions, .. } => ZoneCheckRecord::row(
+            TerminalValue::Proved {
+                basis: ProofBasis::Reduced {
+                    reductions: reductions.clone(),
+                },
+                certification: Certification::Uncertified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        ZoneCheckOutcome::Reduction { cause, .. } => match cause {
+            // V-8 (QSpec FR-430): a reduction EN-6 does not apply.
+            ZoneReduction::Unsupported { reduction } => ZoneCheckRecord::row(
+                TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                ResultLabel::Unsupported,
+                SettlementBasis::Unavailable,
+                Execution::Completed,
+                Truth::Unavailable,
+            ),
+            // FR-160's V-6 row.
+            ZoneReduction::SymmetryBroken { population, cause } => {
+                ZoneCheckRecord::inconclusive(InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: cause.clone(),
+                })
+            }
         },
         ZoneCheckOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
             // FR-127's V-6 rows, which FR-235 extends.

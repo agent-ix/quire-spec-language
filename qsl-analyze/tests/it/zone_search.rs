@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::Reductions;
 use qsl_analyze::zone_check::{
     certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
@@ -133,6 +134,16 @@ fn claim_occurrence(world: &World) -> OccurrenceKey {
 
 /// The first clause of `world`, decided by EN-6 under `limits`.
 pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
+    claim_with(world, limits, cancel, &Reductions::default())
+}
+
+/// [`claim`] selecting `reductions`.
+pub(crate) fn claim_with(
+    world: &World,
+    limits: ZoneCheckLimits,
+    cancel: &Cancel,
+    reductions: &Reductions,
+) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -149,6 +160,7 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
                 kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits,
+            reductions,
         },
         cancel,
     )
@@ -156,6 +168,11 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
 }
 
 pub(crate) fn deadlock(world: &World) -> Outcome {
+    deadlock_with(world, &Reductions::default())
+}
+
+/// [`deadlock`] selecting `reductions`.
+pub(crate) fn deadlock_with(world: &World, reductions: &Reductions) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -167,6 +184,7 @@ pub(crate) fn deadlock(world: &World) -> Outcome {
                 kind: ObligationKind::DeadlockFreedom,
             },
             limits: ZoneCheckLimits::default(),
+            reductions,
         },
         &Cancel::new(),
     )
@@ -191,6 +209,7 @@ fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
                 kind: ObligationKind::TimeLockFreedom,
             },
             limits,
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     )
@@ -1217,6 +1236,7 @@ fn a_request_obligation_must_be_its_items() {
                 kind: ObligationKind::DeadlockFreedom,
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     );
@@ -1230,6 +1250,7 @@ fn a_request_obligation_must_be_its_items() {
                 kind: ObligationKind::Authored(claim_occurrence(&world)),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     );
@@ -1284,6 +1305,7 @@ pub(crate) fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
                 kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     )
@@ -1440,6 +1462,7 @@ pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
                 kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     )

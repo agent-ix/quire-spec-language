@@ -44,6 +44,7 @@ use super::walk::{expand_enabled, stop};
 use super::BROKEN;
 use super::{ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
+use crate::simulation::reduction::Permutation;
 use crate::temporal::UndefinedCause;
 
 mod over_time;
@@ -457,6 +458,26 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// each object of its owner's universe, in canonical order.
     pub fn places(&self) -> &[ClockPlace] {
         &self.places
+    }
+
+    /// QSpec FR-430 "Reductions over a dense-time subject": the image of
+    /// each clock place under `permutation`, in place order. The place of
+    /// clock `c` on the object held under key `k` maps to the place of `c`
+    /// on the object held under the key `k` is mapped to; `None` when that
+    /// object has no such place.
+    pub fn place_images(&self, permutation: &Permutation) -> Option<Vec<usize>> {
+        self.places
+            .iter()
+            .map(|place| {
+                let population = &place.instance.population;
+                let key = permutation.image(population, &place.instance.key);
+                self.places.iter().position(|other| {
+                    other.clock == place.clock
+                        && other.instance.population == *population
+                        && other.instance.key == key
+                })
+            })
+            .collect()
     }
 
     /// The place of `clock` on `object`.

@@ -103,16 +103,26 @@ fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
 /// The package with clock fields `clocks` and `operations` (name, the
 /// fields it modifies).
 pub(crate) fn document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
-    document_with(clocks, operations, false)
+    document_with(clocks, operations, false, false)
+}
+
+/// [`document`] whose population is declared `symmetric` (FR-151).
+pub(crate) fn symmetric_document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
+    document_with(clocks, operations, false, true)
 }
 
 /// [`document`] whose first operation also takes `n: Integer`, an
 /// unbounded population root (FR-126).
 pub(crate) fn document_unbounded(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
-    document_with(clocks, operations, true)
+    document_with(clocks, operations, true, false)
 }
 
-fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: bool) -> Vec<u8> {
+fn document_with(
+    clocks: &[&str],
+    operations: &[(&str, &[&str])],
+    unbounded: bool,
+    symmetric: bool,
+) -> Vec<u8> {
     let call = ident("Call");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -164,6 +174,7 @@ fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: boo
             "identity": population, "displayName": population,
             "kind": {"module": PACKAGE, "name": "population"},
             "members": [call], "extent": "closed", "origin": origin(&population),
+            "symmetric": symmetric,
         }],
     })
     .to_string()
@@ -181,11 +192,18 @@ pub(crate) struct World {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: DocumentRef,
+    keys: Vec<String>,
 }
 
 /// `document` checked with `body` as its unit, under the model and the
 /// complete temporal (`t`) profiles and the header lines `profiles`.
 pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
+    world_over(document, profiles, body, &["c"])
+}
+
+/// [`world`] over the universe `keys`, each object in the snapshot with
+/// `phase` 0 and every Boolean false.
+pub(crate) fn world_over(document: &[u8], profiles: &str, body: &str, keys: &[&str]) -> World {
     let packages = package_input([document]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -232,11 +250,12 @@ pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
             "revision": "fixture:1"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("calls"), "complete": true, "objects": [{
-            "key": "c", "type": ident("Call"),
-            "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
-                "late": {"boolean": false}, "retried": {"boolean": false}},
-        }]}],
+        "populations": [{"population": ident("calls"), "complete": true,
+            "objects": keys.iter().map(|key| json!({
+                "key": key, "type": ident("Call"),
+                "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
+                    "late": {"boolean": false}, "retried": {"boolean": false}},
+            })).collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -254,6 +273,7 @@ pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         },
+        keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     }
 }
 
@@ -271,7 +291,7 @@ const METER: ScalarLimits = ScalarLimits {
 };
 
 impl World {
-    /// The model system over the universe `{c}`.
+    /// The model system over the world's universe.
     pub(crate) fn system(&self) -> ModelSystem<'_> {
         ModelSystem::new(self.request()).expect("the system admits")
     }
@@ -289,7 +309,7 @@ impl World {
                     package: PACKAGE.to_owned(),
                     node: ident("calls"),
                 },
-                keys: vec!["c".to_owned()],
+                keys: self.keys.clone(),
             }],
             observation: ObservationLimits::default(),
             expansion: ExpansionLimits {

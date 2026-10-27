@@ -239,6 +239,32 @@ impl Dbm {
         Ok(())
     }
 
+    /// The zone with clock `i` renamed to `image[i - 1] + 1` for each `i`
+    /// that `image` covers, every other clock (the reference clock first)
+    /// kept: QSpec FR-430's move of an object's clock indices to those of
+    /// the object a permutation maps it to. A permutation of the clocks
+    /// keeps the canonical form.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::ClockOutOfRange`] when an image is outside the matrix.
+    pub fn renamed(&self, image: &[usize]) -> Result<Self, DbmError> {
+        let to = |clock: usize| match clock.checked_sub(1).and_then(|place| image.get(place)) {
+            Some(place) => place + 1,
+            None => clock,
+        };
+        for clock in 1..self.dim {
+            self.in_range(to(clock))?;
+        }
+        let mut renamed = self.clone();
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                renamed.set(to(i), to(j), self.at(i, j).clone());
+            }
+        }
+        Ok(renamed)
+    }
+
     /// Reset `clock` to `value`.
     pub fn reset(&mut self, clock: usize, value: &BigInt) -> Result<(), DbmError> {
         self.in_range(clock)?;
