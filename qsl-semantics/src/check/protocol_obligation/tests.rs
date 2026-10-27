@@ -1158,6 +1158,7 @@ fn site(later: &[&str], template: Option<usize>) -> Site {
         bound: Vec::new(),
         input: None,
         later: later.iter().map(|name| (*name).to_owned()).collect(),
+        location: None,
     }
 }
 
