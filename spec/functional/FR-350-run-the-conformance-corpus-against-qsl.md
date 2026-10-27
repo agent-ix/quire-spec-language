@@ -13,6 +13,22 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-255
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-003
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-084
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-106
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-071
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-072
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-098
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-277
+    type: depends_on
 ---
 # FR-350: Run the complete-V1 conformance corpus against QSL
 
@@ -97,6 +113,90 @@ subject does not run does not cause that stage to run. Evaluation budgets
 retain the subject's accounting contract, including any override the
 FR-255 settings operation defines.
 
+### Corpus input adapters
+
+The files are test-harness adapters owned by QSpec FR-336. The runner SHALL
+map their contents to existing public operations and SHALL NOT add fields to
+those operations' product request wires.
+
+| Subject and operation | Required files | Existing contract |
+| --- | --- | --- |
+| `language` / `compile` | One or more `source` files, plus any existing `model` or `input` files required by that operation | FR-027 and the applicable input owner |
+| `tool` / `format` | One `source` file | FR-003 formatter entry point |
+| `runtime` / `run` | One `source` file, any existing model/library inputs required by FR-100, exactly one `call` JSON file, optionally one `population` file | `call` maps field-by-field to the typed `Call` owned by FR-100; `population` supplies its object context. |
+| `runtime` / `replay` | Exactly one `replay-request` JSON file and the `bytes` files it names | Request fields map one-to-one to FR-071 `ReplayRequestWire`; FR-098 executes it and FR-072 owns the result. |
+
+#### `call` input mapping
+
+The `call` JSON file has exactly `function`, `arguments` and `accounting`,
+as QSpec FR-336 `$defs.CallInput` specifies. Its mapping is:
+
+| Corpus field | Typed API field | Mapping |
+| --- | --- | --- |
+| `function` | `Call.function` | Pass the FR-100 function identity string unchanged. |
+| Each `arguments[*].parameter` | `CallArgument.parameter` | Pass the declared parameter name unchanged. |
+| Each `arguments[*].value` tagged `boolean` | `CallArgument.value` | `quire_exact::Value::Boolean(value)`. |
+| Each `arguments[*].value` tagged `integer` | `CallArgument.value` | Parse the canonical decimal under FR-038 and construct `quire_exact::Value::Integer`, with no floating-point conversion. |
+| Each `arguments[*].value` tagged `reference` | `CallArgument.value` | Construct the existing `ObjectReference` with the supplied universe, effective type and exact object identity. FR-100 admission still runs. |
+| Each `arguments[*].value` tagged `population` | `CallArgument.value` | Resolve `name` to the matching admitted population entry in the `population` file, then use its FR-089 `PopulationId` as `quire_exact::Value::Population`. The adapter SHALL NOT mint an id. |
+| `accounting` | `Call.accounting` | Parse each canonical decimal string as u64, then map the ten FR-100 `quire.value.accounting/v1` counters by their unchanged names and exact values. Reject overflow before constructing `Call`. Omitted counters use FR-100's defaults. |
+| (no corpus field) | `Call.supplied` | Use `SuppliedLimits::default()` under FR-277; this corpus input does not override supplied-value helper ceilings. |
+
+The runner SHALL preserve argument array order when constructing the `Call`;
+FR-100 then applies its declared-name binding and refusal precedence. The
+runner SHALL NOT route tagged values through native-run/1's signed-i64
+assignment encoding. Population tagged values are corpus-harness references
+only: native-run/1 itself still has no Population argument wire encoding.
+
+#### `population` object-context mapping
+
+The `population` file is the FR-106 `quire.state.snapshot/v1` document. Its
+`populations` array and each `objects` array retain authored order; an
+object's existing `key` is its fixture name and its `fields` use FR-106's
+closed tagged value grammar. The runner SHALL admit the complete document
+under FR-106 and the selected model through the FR-084/FR-089 population
+admission path. A tagged `population` call argument's `name` MUST equal
+exactly one `populations[*].population` declaration identity in the admitted
+document. The `PopulationId` comes from that admitted binding; the harness
+file and tag never mint, decode or substitute one. A missing or repeated
+name is an owning input refusal before S6a. The admitted object environment
+is passed to FR-100 `run` as its `&ObjectEnvironment` context.
+
+#### `replay-request` field mapping
+
+The `replay-request` JSON is a corpus-v1 harness adapter, not a new FR-071
+product wire. It has the same named request members and member values as
+`ReplayRequestWire`; each maps unchanged to the same-named typed field:
+
+| JSON member | `ReplayRequestWire` field |
+| --- | --- |
+| `profile_selections` | `profile_selections` |
+| `package_id` | `package_id` |
+| `source_digests` | `source_digests` |
+| `dependencies` | `dependencies` |
+| `replay_target` | `replay_target` |
+| `source` | `source` |
+| `obligation_identity` | `obligation_identity` |
+| `backend` | `backend` |
+| `state_environment` | `state_environment` |
+| `accounting_limits` | `accounting_limits` |
+| `stage_limits` | `stage_limits` |
+| `supplied_limits` | `supplied_limits` |
+| `object_environment` | `object_environment` |
+| `declared_domains` | `declared_domains` |
+| `byte_provision` | `byte_provision` |
+
+Each adapter `byte_provision` row is exactly
+`{digest_domain, digest, bytes_path}`. The first two values map to the
+existing provision tuple's optional domain and digest. `bytes_path` is
+relative to the directory containing the `replay-request` file and MUST
+resolve without `..` or an absolute path to exactly one `kind: bytes` path
+listed by that vector. The runner reads those bytes unchanged and constructs
+the tuple `(digest_domain, digest, bytes)`. The typed request contains no
+path. FR-071's closed-domain, digest, completeness and content checks remain
+authoritative. The runner passes the typed request to `qsl_replay::replay`
+and compares its FR-072 result using FR-286's outcome document encoding.
+
 ### Settlement
 
 If executing a vector panics, returns an internal fault, or cannot read a
@@ -169,6 +269,9 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-5 | Two runs over the same fixture corpus with the same build and limits give equal per-vector outcomes. Two identical successful vectors, each requiring the full configured budget, both pass in either corpus order. The corpus and its named input bytes are unchanged after execution, including its recorded results and coverage. | Test |
 | FR-350-AC-6 | One test starts four child `cargo test` processes over the determinism sample of the published QSpec corpus. Two run with `RUST_TEST_THREADS=1`. Two run with `RUST_TEST_THREADS=2`, and in each of those a second test runs the runner over the same sample at the same time, both starting at one barrier. Each child writes its FR-352 JSON report, and the output bytes of each `passed` outcome, to its own output directory. The parent finds the four reports byte-equal, and for each vector `passed` in all four children, finds its four output byte strings byte-equal. | Test |
 | FR-350-AC-7 | The runner's source starts no thread, uses no thread pool or async executor, and calls each vector's entry point only after the previous vector has settled. | Inspection |
+| FR-350-AC-8 | A `run` vector maps every `call` field as the table states, including Boolean, Integer, Reference and named Population arguments, all ten accounting counters/defaults and FR-277 default supplied limits. A canonical accounting decimal above `u64::MAX` fails before Call construction; invalid tagged values retain their input-adapter refusal or tool-failure. | Test (TC-875) |
+| FR-350-AC-9 | A `population` file is admitted under FR-106/FR-084, and each named Population argument resolves only to its actual admitted FR-089 binding. A missing or repeated population name refuses before S6a. Native-run/1 remains without a Population argument wire. | Test (TC-875) |
+| FR-350-AC-10 | A `replay` vector maps every same-named request member to FR-071 `ReplayRequestWire`; each `byte_provision.bytes_path` resolves to exactly one listed sibling `bytes` file whose raw bytes supply the matching digest entry. The typed request carries no path and reaches FR-098; its result settles under FR-072. Invalid paths and requests retain their owning refusal or per-vector tool-failure. | Test (TC-875) |
 
 ## Dependencies
 
