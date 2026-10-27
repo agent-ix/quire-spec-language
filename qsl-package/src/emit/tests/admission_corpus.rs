@@ -58,6 +58,8 @@ enum Fixture {
     ModelPopulation,
     /// A model selection whose domain package declares an inline relationship.
     RelationshipModel,
+    /// QSpec FR-375's legal row-empty model refinement.
+    RefinementV2Empty,
     /// A `Reference` to the systems interface `S::Sensor` of
     /// `tests/fixtures/systems-interface.semantic-ir.json`.
     SystemsInterface,
@@ -110,7 +112,7 @@ enum Fixture {
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 27] = [
+    const ALL: [Self; 28] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -119,6 +121,7 @@ impl Fixture {
         Self::SpineModel,
         Self::ModelPopulation,
         Self::RelationshipModel,
+        Self::RefinementV2Empty,
         Self::SystemsInterface,
         Self::ConfigVersion,
         Self::ExtentRecords,
@@ -278,12 +281,17 @@ const SYSTEMS_INTERFACE_UNIT: &str =
 struct Emitted {
     package: CheckedPackage,
     emission: Emission,
-    documents: Vec<&'static [u8]>,
+    documents: Vec<Vec<u8>>,
 }
 
 impl Emitted {
     /// `package` emitted placing each occurrence at its form span.
     fn placed(package: CheckedPackage, documents: Vec<&'static [u8]>) -> Self {
+        Self::placed_owned(package, documents.into_iter().map(<[u8]>::to_vec).collect())
+    }
+
+    /// `package` emitted against dynamically assembled model documents.
+    fn placed_owned(package: CheckedPackage, documents: Vec<Vec<u8>>) -> Self {
         Self {
             emission: emit_checked(&package).expect("the fixture emits"),
             package,
@@ -297,7 +305,7 @@ impl Emitted {
         Self {
             emission: emit(&package),
             package,
-            documents,
+            documents: documents.into_iter().map(<[u8]>::to_vec).collect(),
         }
     }
 }
@@ -347,6 +355,23 @@ impl Fixture {
                     RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
+            Self::RefinementV2Empty => {
+                let abstract_document = state_machine_document("example/refinement-abstract");
+                let concrete_document = state_machine_document("example/refinement-concrete");
+                let abstract_digest = document_digest(&abstract_document);
+                let concrete_digest = document_digest(&concrete_document);
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+                     model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
+                     model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+                     refinement R using inf abstract A concrete C {{}}\n"
+                );
+                let documents = vec![abstract_document, concrete_document];
+                Emitted::placed_owned(
+                    modelled_with_documents(&unit, &documents, Vec::new()),
+                    documents,
+                )
             }
             Self::SystemsInterface => {
                 let unit = format!(
@@ -451,6 +476,72 @@ fn document_digest(document: &[u8]) -> String {
     qsl_semantics::model::key::hex(digest)
 }
 
+/// The spine fixture's object package with one minimal, independent state
+/// machine added, under `package`'s identity.
+fn state_machine_document(package: &str) -> Vec<u8> {
+    let base = String::from_utf8(SPINE_MODEL_DOCUMENT.to_vec()).expect("fixture UTF-8");
+    let base = base.replace("acme/orders", package);
+    let mut document: serde_json::Value =
+        serde_json::from_str(&base).expect("the spine model document is JSON");
+    let identity = format!("ix://{package}/Lifecycle");
+    let state_identity = format!("ix://{package}/Lifecycle/Idle");
+    let operation_identity = format!("ix://{package}/Lifecycle/tick");
+    let transition_identity = format!("ix://{package}/Lifecycle/tick_transition");
+    let origin = |identity: &str| {
+        json!({"generated": {
+            "generatorIdentity": identity,
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [identity]
+        }})
+    };
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({
+            "kind": {"module": package, "name": "state_machine"},
+            "moduleVersion": "1.0.0",
+            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "construct": {
+                "identity": "none", "shape": "record",
+                "members": {"states": "required", "transitions": "required"},
+                "meaning": qsl_semantics::model::intake::meaning::STATE_MACHINE
+            }
+        }));
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .push(json!({
+            "identity": identity,
+            "displayName": "Lifecycle",
+            "kind": {"module": package, "name": "state_machine"},
+            "roles": [],
+            "origin": origin(&identity),
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [],
+            "fields": [],
+            "clauses": [],
+            "operations": [{
+                "identity": operation_identity,
+                "name": "tick",
+                "params": [], "pre": [], "post": [],
+                "frame": {"modifies": [], "creates": [], "deletes": []},
+                "origin": origin(&operation_identity)
+            }],
+            "states": [{"identity": state_identity, "name": "Idle", "origin": origin(&state_identity)}],
+            "transitions": [{
+                "identity": transition_identity,
+                "from": state_identity,
+                "to": state_identity,
+                "trigger": operation_identity,
+                "emits": [],
+                "origin": origin(&transition_identity)
+            }]
+        }));
+    serde_json::to_vec(&document).expect("the state-machine model serializes")
+}
+
 /// `unit` assembled against `document`, with `functions` added, checked
 /// and linked.
 fn modelled(
@@ -459,6 +550,22 @@ fn modelled(
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
     let packages = qsl_semantics::model::intake::package_input([document]);
+    let mut declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
+    declarations.functions.extend(functions);
+    CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
+    )
+}
+
+fn modelled_with_documents(
+    unit: &str,
+    documents: &[Vec<u8>],
+    functions: Vec<FunctionDeclaration>,
+) -> CheckedPackage {
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -555,6 +662,7 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::Predicate), F::FormsUnit),
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
+        row(K::Model(ModelForm::StateMachine), F::RefinementV2Empty),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
         row(K::Model(ModelForm::VariantType), F::VariantType),
         row(K::Model(ModelForm::RecordValueType), F::VariantType),
@@ -562,6 +670,7 @@ fn rows() -> Vec<Row> {
             K::Relation(RelationForm::Relationship),
             F::RelationshipModel,
         ),
+        row(K::Relation(RelationForm::Refinement), F::RefinementV2Empty),
         row(K::State(StateForm::StateClause), F::ConfigVersion),
         row(K::State(StateForm::Frame), F::ConfigVersion),
         row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
@@ -617,7 +726,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
         (K::Model(ModelForm::EventType), NO_RECORD_FORM),
-        (K::Model(ModelForm::StateMachine), NO_RECORD_FORM),
         (K::Model(ModelForm::Process), NO_RECORD_FORM),
         (K::Model(ModelForm::PersistenceInterface), NO_RECORD_FORM),
         (K::Model(ModelForm::Namespace), NO_RECORD_FORM),
@@ -625,11 +733,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::SystemsPort), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsConnection), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsAllocation), NO_RECORD_FORM),
-        (
-            K::Relation(RelationForm::Refinement),
-            "S3 refuses every `refinement` declaration RefinementNotEmitted (FR-135), so \
-             S4 writes no refinement node and no `refinement_step_rows` member",
-        ),
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),
@@ -894,6 +997,68 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
+/// The declaration occurrence is provenance rather than refinement identity:
+/// moving the authored declaration changes its source-map region while the
+/// refinement node and package identities stay fixed.
+#[trace("FR-375", "QSL-1102")]
+#[test]
+fn a_row_empty_refinement_identity_excludes_its_source_region() {
+    let abstract_document = state_machine_document("example/refinement-abstract");
+    let concrete_document = state_machine_document("example/refinement-concrete");
+    let abstract_digest = document_digest(&abstract_document);
+    let concrete_digest = document_digest(&concrete_document);
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
+         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+         refinement R using inf abstract A concrete C {{}}\n"
+    );
+    let documents = vec![abstract_document, concrete_document];
+    let compile = |source: &str| {
+        let package = modelled_with_documents(source, &documents, Vec::new());
+        let emission = emit_checked(&package).expect("the row-empty refinement emits");
+        let admitted = read(&Emitted {
+            package,
+            emission: emission.clone(),
+            documents: documents.clone(),
+        });
+        assert!(
+            admitted.is_ok(),
+            "the emitted refinement reads back: {admitted:?}"
+        );
+        emission
+    };
+    let first = compile(&unit);
+    let shifted = compile(&format!("// provenance-only prefix\n{unit}"));
+    let find_node = |emission: &Emission| {
+        nodes(&wire(emission))
+            .iter()
+            .find(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+            .expect("one refinement relation node")
+            .clone()
+    };
+    let first_node = find_node(&first);
+    let shifted_node = find_node(&shifted);
+    assert_eq!(first_node["node_id"], shifted_node["node_id"]);
+    assert_eq!(first.package.package_id(), shifted.package.package_id());
+    let declaration_region = |emission: &Emission, node: &Value| {
+        wire(emission)["source_map"]
+            .as_array()
+            .expect("source map")
+            .iter()
+            .find(|entry| entry["node_id"] == node["node_id"] && entry["role"] == "declaration")
+            .expect("declaration source entry")["regions"][0]
+            .clone()
+    };
+    let first_region = declaration_region(&first, &first_node);
+    let shifted_region = declaration_region(&shifted, &shifted_node);
+    assert_ne!(first_region["start"], shifted_region["start"]);
+    assert_eq!(
+        first_region["end"].as_u64().unwrap() - first_region["start"].as_u64().unwrap(),
+        shifted_region["end"].as_u64().unwrap() - shifted_region["start"].as_u64().unwrap()
+    );
+}
+
 /// Every node body of every package the admission corpus emits is in QSpec
 /// FR-322's stratified grammar, classified as Leaf, Group, Tuple, Member or
 /// Body by a walk of the emitted JSON (FR-264-AC-2's walk over the families
@@ -906,6 +1071,13 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
         for emitted in fixture.emit() {
             let written = wire(&emitted.emission);
             for node in nodes(&written) {
+                if node["node_tag"] == "relation" && node["semantic_form"] == "refinement" {
+                    // A refinement body's top level is the FR-375 closed
+                    // shape; its row terms are checked by the V2 reader's
+                    // refinement grammar, not the ordinary term stratum.
+                    assert_eq!(node["body"]["term"], "refinement");
+                    continue;
+                }
                 assert!(
                     qsl_semantics::check::stratum::is_stratified_body(&node["body"]),
                     "{fixture:?}: a written body is outside the stratified grammar: {}",
