@@ -403,7 +403,7 @@ impl<'d> Body<'d> {
 
 /// The bare-name nodes under `root` that name one of `names` free of every
 /// binder above them in the subtree: the occurrences of a parameter.
-fn free_occurrences<'n>(
+pub(super) fn free_occurrences<'n>(
     expression: &Expression,
     root: ExprId,
     names: &BTreeSet<&'n str>,
@@ -1006,7 +1006,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 .cut(*id, &BTreeMap::new())
                 .map(|form| form.expression)
                 .ok_or_else(|| timed(self.located.outside(*id))),
-            DataLiteral::Formed(form) => Ok(form.expression.clone()),
+            DataLiteral::Formed(form) | DataLiteral::Element(form, _) => {
+                Ok(form.expression.clone())
+            }
         }
     }
 
@@ -1277,6 +1279,7 @@ pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: S
     let constraint = |place: &Place, op: ClockOp| ClockConstraint {
         clock: place.clock,
         via: place.via.clone(),
+        slots: Vec::new(),
         op,
         bound: bound.clone(),
         span,
