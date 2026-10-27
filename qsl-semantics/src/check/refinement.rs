@@ -34,6 +34,8 @@ mod step_label;
 
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+
 pub use catalog::{RefinementCatalogClass, RefinementCatalogNode, RefinementClassCatalog};
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
@@ -566,6 +568,77 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
+    /// The typed V2 body and key for a row-empty model refinement.
+    /// Construction remains in the check core; the package writer can
+    /// serialize the checked body without depending on JSON or minting a
+    /// semantic identity.
+    pub fn v2_empty_model_emission(
+        &self,
+    ) -> Result<(NodeKey, quire_contract_model::CheckedTerm), RefinementV2EncodingError> {
+        let abstract_subject = self
+            .abstract_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let concrete_subject = self
+            .concrete_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let body = serde_json::json!({
+            "term": "refinement",
+            "abstract": {
+                "domain": quire_exact::NODE_KEY_DOMAIN,
+                "digest": abstract_subject.to_string()
+            },
+            "profile": {
+                "authority": "agent-ix",
+                "identity": self.profile.identity.as_str()
+            },
+            "populations": [],
+            "objects": [],
+            "steps": [],
+            "histories": [],
+            "assume": [],
+            "ensure": []
+        });
+        let typed_body = quire_contract_model::CheckedTerm::deserialize(body.clone())
+            .map_err(RefinementV2EncodingError::Body)?;
+        let identity = Self::v2_identity(concrete_subject, &body)?;
+        Ok((identity, typed_body))
+    }
+
+    /// QSpec FR-375's canonical relation-node identity construction.
+    fn v2_identity(
+        semantic_type: NodeKey,
+        body: &serde_json::Value,
+    ) -> Result<NodeKey, RefinementV2EncodingError> {
+        let preimage = serde_json::json!({
+            "version": "quire.refinement-node/v1",
+            "semantic_type": {
+                "domain": quire_exact::NODE_KEY_DOMAIN,
+                "digest": semantic_type.to_string()
+            },
+            "body": body
+        });
+        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .map_err(RefinementV2EncodingError::Identity)?;
+        Ok(NodeKey::from_digest(*digest.as_bytes()))
+    }
+
+    /// Whether this declaration is in the first V2 emission slice: a model
+    /// subject whose checked base body has no authored mappings. Later
+    /// slices admit mapped model and protocol subjects.
+    pub fn v2_empty_model_body(&self) -> bool {
+        self.abstract_side == AbstractSide::Model
+            && self.abstract_internal.is_empty()
+            && self.populations.is_empty()
+            && self.objects.is_empty()
+            && self.steps.is_empty()
+            && self.history.is_empty()
+            && self.concrete_fairness.is_empty()
+            && self.abstract_fairness.is_empty()
+            && self.class_catalog.is_none()
+            && self.abstract_subject_node.is_some()
+            && self.concrete_subject_node.is_some()
+    }
+
     /// FR-139: checks the bounds that depend on a population's universe
     /// size, once a request admits the concrete subject's `universes` and
     /// before exploration. Each `universes` entry is the number of objects of
@@ -629,6 +702,17 @@ impl CheckedRefinement {
             Err(refusals)
         }
     }
+}
+
+/// A row-empty refinement's checked V2 body could not be constructed.
+#[derive(Debug)]
+pub enum RefinementV2EncodingError {
+    /// The checked declaration has no selected model subject.
+    MissingSubject,
+    /// The FR-375 body is not admitted by the checked term vocabulary.
+    Body(serde_json::Error),
+    /// The FR-375 identity preimage could not be canonically encoded.
+    Identity(quire_canonical::Error),
 }
 
 /// `population A::p from C::q`, resolved.
@@ -884,6 +968,15 @@ pub struct CheckedRefinement {
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
     pub(crate) concrete_protocol: Option<NodeKey>,
+    /// The selected local state-machine nodes, filled from the checked model
+    /// selections after protocol refinement resolution.
+    pub(crate) abstract_subject_node: Option<NodeKey>,
+    pub(crate) concrete_subject_node: Option<NodeKey>,
+    pub(crate) abstract_subject_declaration: Option<DeclarationKey>,
+    pub(crate) concrete_subject_declaration: Option<DeclarationKey>,
+    /// The full authored declaration region used by the V2 relation-node
+    /// occurrence and source map.
+    pub(crate) declaration_span: Span,
 }
 
 impl CheckedRefinement {
@@ -944,6 +1037,31 @@ impl CheckedRefinement {
     /// concrete protocol"); `None` for a model subject.
     pub fn concrete_protocol(&self) -> Option<NodeKey> {
         self.concrete_protocol
+    }
+
+    /// The model node that keys this refinement's abstract state machine.
+    pub fn abstract_subject_node(&self) -> Option<NodeKey> {
+        self.abstract_subject_node
+    }
+
+    /// The model node that keys this refinement's concrete state machine.
+    pub fn concrete_subject_node(&self) -> Option<NodeKey> {
+        self.concrete_subject_node
+    }
+
+    /// The abstract state-machine's declaring package and record key.
+    pub fn abstract_subject_declaration(&self) -> Option<&DeclarationKey> {
+        self.abstract_subject_declaration.as_ref()
+    }
+
+    /// The concrete state-machine's declaring package and record key.
+    pub fn concrete_subject_declaration(&self) -> Option<&DeclarationKey> {
+        self.concrete_subject_declaration.as_ref()
+    }
+
+    /// The authored refinement declaration span.
+    pub fn declaration_span(&self) -> Span {
+        self.declaration_span
     }
 
     /// The complete checked class catalogs for a refinement whose subjects
@@ -1514,6 +1632,11 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_object_types,
         class_catalog,
         concrete_protocol: None,
+        abstract_subject_node: None,
+        concrete_subject_node: None,
+        abstract_subject_declaration: None,
+        concrete_subject_declaration: None,
+        declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
     // those refusals (FR-147 "Abstract side"); the refinement gives no check.

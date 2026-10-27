@@ -61,3 +61,42 @@ Round 1 was reviewed at head 3a89853d2 (fix commit 251591961).
 | FND-003 | fixed | EN-6 runs `check_model_bounds` before exploring anything and refuses `ZoneCheckRefusal::RequiresBound` (renamed from `Unbounded`) or `Extent`. `an_unbounded_root_requires_a_bound` (`Settles` over an `Rpc` whose `send` takes `n: Integer`) passes; qsl-analyze `zone_` is 87/87. |
 | FND-004 | fixed | `the_timed_claim_automaton_agrees_under_each_activation` runs 100 random formulas × 40 lassos, with the oracle "violated at some position". |
 | FND-005 | fixed | Deferral (c) is recorded on QSL-583 (comment 7ad71aa8) as remaining work that needs FR-236's stutter-delay lasso form. |
+
+## Dispositions, round 2 (head bfb19738a)
+
+
+Round 2, head bfb19738a. This round covers only the strengthened `on each` oracle.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | 12 unrollings is enough for this generator. Detail below. |
+
+**12 unrollings is enough.**
+- Under `on each`, `random_formula(.., 3, true)` puts past operators only at the leaves, through `random_past(stream, 1, nested=true)`. So past depth is 1, and windows come from `[0,1]`, `[0,2)`, `[0,0]` or unbounded.
+- A bounded window is below 2 ms. The shortest loop period is 1 quarter, so a window settles within 8 copies past loop entry, plus one.
+- An unbounded `once`, `historically` or `since` over atoms settles within one copy.
+- Future operators read the lasso exactly, so the automaton's clock constants and the future horizons do not add copies.
+- 12 copies cover 3 ms, which matches the doc comment's claim.
+
+**Measured.**
+- At head, all 18 `timed_trace` tests pass.
+- With copies set to 0, `the_timed_claim_automaton_agrees_under_each_activation` fails on `stamps [0,4,5], loop to 0 after 7` with an unsettled `once[0,2)`. So the old oracle missed real positions and the new one catches them.
+- With copies set to 2 or 8, the test passes.
+- All probes were reverted.
+
+**Note, not blocking.** The constant 12 depends on the generator, which allows past depth 1, windows below 2 ms and a shortest period of 1/4 ms. If the generator later nests past operators or widens windows, the count should be derived from the formula's summed past bounds divided by the lasso's period. As built, a fixed 12 is correct.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-004
+  outcome: fixed
+  after_excerpt: 'loop unrolled 12 times, the same timed word with every earlier copy
+
+    represented: a past window of at most 3 ms over a loop of at least
+
+    1/4 ms has settled by then.'
+```
+
++++

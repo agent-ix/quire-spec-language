@@ -155,6 +155,9 @@ fn settle_liveness(
                 }
             }
         }),
+        ModelCheckOutcome::RefutedIgnoringConstraints { .. } => {
+            Row::inconclusive(InconclusiveCause::RefutedIgnoringConstraints)
+        }
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         // The second phase of a refinement returns no other outcome.
         ModelCheckOutcome::Holds { .. }
