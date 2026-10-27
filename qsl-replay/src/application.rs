@@ -323,9 +323,7 @@ impl CheckedClosureHandle {
         let Some(composite) = graph.scope().types().composite(*key) else {
             return Err(NominalDeclarationRefusal::Inconsistent);
         };
-        if !composite_form_matches(*form, composite.shape()) {
-            return Err(NominalDeclarationRefusal::Inconsistent);
-        }
+        let declaration_form = nominal_declaration_form(*form, composite.shape())?;
         let reachable = reachable_composites(graph, &selection.signature)
             .map_err(|()| NominalDeclarationRefusal::Inconsistent)?;
         if !reachable.contains(key) {
@@ -377,11 +375,7 @@ impl CheckedClosureHandle {
             node: *checked_node,
             key: *key,
             qualified_name: qualified_name.to_vec(),
-            form: match form {
-                qsl_semantics::check::CompositeForm::Record => NominalDeclarationForm::Record,
-                qsl_semantics::check::CompositeForm::Tuple => NominalDeclarationForm::Tuple,
-                qsl_semantics::check::CompositeForm::Union => NominalDeclarationForm::Union,
-            },
+            form: declaration_form,
             members,
         })
     }
@@ -526,7 +520,7 @@ fn reachable_composites(
                     return Err(());
                 }
                 let composite = graph.scope().types().composite(*key).ok_or(())?;
-                if !composite_form_matches(*form, composite.shape()) {
+                if nominal_declaration_form(*form, composite.shape()).is_err() {
                     return Err(());
                 }
                 match composite.shape() {
@@ -566,11 +560,18 @@ fn reachable_composites(
     Ok(reachable)
 }
 
-fn composite_form_matches(
+fn nominal_declaration_form(
     form: qsl_semantics::check::CompositeForm,
     shape: &CompositeShape,
-) -> bool {
-    qsl_semantics::check::CompositeForm::from(shape) == form
+) -> Result<NominalDeclarationForm, NominalDeclarationRefusal> {
+    if qsl_semantics::check::CompositeForm::from(shape) != form {
+        return Err(NominalDeclarationRefusal::Inconsistent);
+    }
+    Ok(match form {
+        qsl_semantics::check::CompositeForm::Record => NominalDeclarationForm::Record,
+        qsl_semantics::check::CompositeForm::Tuple => NominalDeclarationForm::Tuple,
+        qsl_semantics::check::CompositeForm::Union => NominalDeclarationForm::Union,
+    })
 }
 
 /// The refusal for a node the caller's package lacks: its one actual owner, and
@@ -2431,17 +2432,26 @@ mod tests {
     #[trace("TC-1263", "FR-485-AC-14")]
     #[test]
     fn nominal_declaration_rejects_inconsistent_checked_form() {
-        assert!(!composite_form_matches(
-            qsl_semantics::check::CompositeForm::Union,
-            &CompositeShape::Record(vec![]),
-        ));
-        assert!(!composite_form_matches(
-            qsl_semantics::check::CompositeForm::Record,
-            &CompositeShape::Tuple(vec![]),
-        ));
-        assert!(!composite_form_matches(
-            qsl_semantics::check::CompositeForm::Tuple,
-            &CompositeShape::Union(vec![]),
-        ));
+        assert_eq!(
+            nominal_declaration_form(
+                qsl_semantics::check::CompositeForm::Union,
+                &CompositeShape::Record(vec![]),
+            ),
+            Err(NominalDeclarationRefusal::Inconsistent)
+        );
+        assert_eq!(
+            nominal_declaration_form(
+                qsl_semantics::check::CompositeForm::Record,
+                &CompositeShape::Tuple(vec![]),
+            ),
+            Err(NominalDeclarationRefusal::Inconsistent)
+        );
+        assert_eq!(
+            nominal_declaration_form(
+                qsl_semantics::check::CompositeForm::Tuple,
+                &CompositeShape::Union(vec![]),
+            ),
+            Err(NominalDeclarationRefusal::Inconsistent)
+        );
     }
 }
