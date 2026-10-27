@@ -651,7 +651,8 @@ pub fn items_with_evidence(
 }
 
 /// [`items_with_evidence`] for a request selecting `reductions` (FR-159):
-/// each `temporal-satisfaction` item's candidates are restricted to the backends advertising every
+/// each item's candidates, for a kind FR-159's preservation table reads,
+/// are restricted to the backends advertising every
 /// selected reduction ([`Registry::restrict_to_reductions`]), and an item
 /// the restriction leaves with none names the reduction it settles V-8 on
 /// ([`RequirementItem::unsupported_reduction`]).
@@ -700,15 +701,8 @@ pub fn items_with_reductions(
                 // FR-195: a probabilistic record always carries its
                 // evidence kind; one without has no backend to settle it.
                 CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
-            } else if requirements.kind() == Capability::TemporalSatisfaction {
-                // FR-382: reductions are a model-check item's; an item of
-                // any other kind is routed as if none were selected.
-                registry.restrict_to_reductions(
-                    candidates_of(requirements, evidence, registry, named),
-                    &selected,
-                )
             } else {
-                candidates_of(requirements, evidence, registry, named)
+                reduced_candidates(requirements, evidence, registry, named, &selected)
             },
             unsupported: requirements.unsupported().cloned(),
             evidence,
@@ -738,6 +732,37 @@ pub fn items_with_reductions(
         }
     }
     items
+}
+
+/// Whether FR-159's preservation table reads items of `kind`: a
+/// `temporal-satisfaction` item (the TP-1 to TP-4 forms and the
+/// deadlock-freedom item) and each half of a `refinement` item. The
+/// selection applies to them, and a reduction the table marks as not
+/// preserving settles `ReductionNotPreserving` in the engine's pre-check;
+/// an item of any other kind reads no reduction.
+fn reads_reductions(kind: Capability) -> bool {
+    matches!(
+        kind,
+        Capability::TemporalSatisfaction | Capability::Refinement
+    )
+}
+
+/// [`candidates_of`] restricted to the backends advertising every
+/// `selected` reduction, for an item of a kind the selection applies to
+/// ([`reads_reductions`]); unrestricted for any other.
+fn reduced_candidates(
+    requirements: &Requirements,
+    evidence: Option<EvidenceKind>,
+    registry: &Registry,
+    named: Option<&BackendId>,
+    selected: &std::collections::BTreeSet<ReductionKind>,
+) -> CandidateOutcome {
+    let outcome = candidates_of(requirements, evidence, registry, named);
+    if reads_reductions(requirements.kind()) {
+        registry.restrict_to_reductions(outcome, selected)
+    } else {
+        outcome
+    }
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
@@ -774,6 +799,72 @@ fn candidates_of(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    /// FR-159 "Capability" over FR-159-AC-2's table: a `refinement` item, as
+    /// a `temporal-satisfaction` one, is routed only to a backend
+    /// advertising every selected reduction, so with the one refinement
+    /// backend advertising no symmetry, the item selecting symmetry has no
+    /// candidate and names symmetry for V-8; with a backend advertising it
+    /// beside, the item routes there only. A `value-validity` item reads
+    /// no reduction and keeps its candidate.
+    #[trace("TC-583", "FR-159-AC-3")]
+    #[test]
+    fn a_refinement_item_is_restricted_by_its_requests_reductions() {
+        use crate::ManifestDigest;
+        use crate::{BackendDescriptor, Mode, ProviderOrigin};
+        let backend = |id: &str, byte: u8, reductions: &[ReductionKind]| {
+            BackendDescriptor::new(
+                crate::Candidate::new(BackendId::new(id)),
+                ProviderOrigin::Linked,
+                ManifestDigest::from_digest([byte; 32]),
+                [
+                    (Capability::Refinement, Mode::Bounded),
+                    (Capability::TemporalSatisfaction, Mode::Bounded),
+                    (Capability::ValueValidity, Mode::Bounded),
+                ],
+                Some(std::collections::BTreeSet::from([DomainKind::Collection])),
+                None,
+            )
+            .expect("a well-formed descriptor")
+            .with_reductions(reductions.iter().copied())
+        };
+        let symmetry = std::collections::BTreeSet::from([ReductionKind::Symmetry]);
+        let routed = |registry: &Registry, kind: Capability| {
+            let requirements = Requirements::new(kind, ClaimExtent::Bounded);
+            match reduced_candidates(&requirements, None, registry, None, &symmetry) {
+                CandidateOutcome::Candidates(set) => (
+                    set.candidates()
+                        .iter()
+                        .map(|candidate| candidate.id().as_str().to_owned())
+                        .collect::<Vec<_>>(),
+                    set.missing_reduction(),
+                ),
+                CandidateOutcome::UnknownBackend(id) => panic!("no backend is named: {id:?}"),
+            }
+        };
+        let mut registry = Registry::new();
+        registry
+            .register(backend("plain", 1, &[]))
+            .expect("registered");
+        for kind in [Capability::Refinement, Capability::TemporalSatisfaction] {
+            assert_eq!(
+                routed(&registry, kind),
+                (Vec::new(), Some(ReductionKind::Symmetry)),
+                "{kind:?}"
+            );
+        }
+        assert_eq!(
+            routed(&registry, Capability::ValueValidity),
+            (vec!["plain".to_owned()], None)
+        );
+        registry
+            .register(backend("reducing", 2, &[ReductionKind::Symmetry]))
+            .expect("registered");
+        assert_eq!(
+            routed(&registry, Capability::Refinement),
+            (vec!["reducing".to_owned()], None)
+        );
+    }
 
     fn node(fill: u8) -> WireNodeId {
         WireNodeId::from_digest([fill; 32])

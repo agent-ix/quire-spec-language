@@ -47,3 +47,41 @@ Ticket: QSL-1005. Head reviewed: 7f9a8e608, scoped to the diff against `origin/q
 ## Verdict
 
 **Not mergeable.** FND-001 turns a merge gate red, and FND-002 can drop a selected reduction. Both are small fixes inside this PR.
+
+## Dispositions, round 1 (head c400156b7)
+
+
+Round 1. Fix c400156b7.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | ADR-011's §6.1 crate map, its X-9 row and TC-390's qsl-route list now all name `quire-checked`. `family_outcome_layering` passes. |
+| FND-002 | fixed | One `Reductions` per request (`ModelRequest::reduced` / `RequestWriter::reduced`). Per-item authoring is gone, and every item carries its request's `selected()`. |
+
+**Can a constrained item be served by an unconstrained run?** No:
+- Within one request, all items share one selection, so the identity deduplication cannot mix selections.
+- Across requests, the AC-4 test writes `Low` and none as two `ModelRequest`s. Their identities are equal, as the AC requires, but each item carries its own request's selection: `[StateConstraint]` versus `[]`.
+- Nothing in the repo reuses a run or result by obligation identity. `ItemObligation` is read only by EN-6's zone certificates, and EN-6 advertises `symmetry` alone.
+
+**Verdict: mergeable.**
+
+Gates at c400156b7 (locked-build, jobs 4, `--all-features`, debug info off, QSPEC_DIR=qspec-e3d48d76):
+- fmt: exit 0.
+- qsl-analyze `reduction` / `partial_order` / `quotient` / `zone_` / `hyper_` / `statistical_`: 362/362.
+- qsl-route: 18 + 77.
+- root `family_outcome_layering` / `temporal_negotiation` / `request_builder`: 20/20, TC-390 included.
+- clippy on the four crates with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: '"qsl-semantics", "quire-checked", "quire-semantic-value",'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'pub fn reduced(reductions: Reductions) -> Self { Self { writer: RequestWriter::reduced(reductions), obligations: Vec::new() } }'
+```
+
++++
