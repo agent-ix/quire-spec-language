@@ -706,6 +706,21 @@ pub enum TimedDeclaration {
     TimeInvariant(TimeInvariantForm),
     /// `urgent ...`.
     Urgent(UrgentForm),
+    /// A `Clock` the unit's own source writes in a type position.
+    ClockType(ClockTypePosition),
+}
+
+/// A `Clock` the unit's own source writes in a type position (a parameter,
+/// result, record field, type alias target, tuple element, union payload or
+/// the argument of `Option` or a collection type), with the declaration
+/// that writes it (FR-230 "Timed facet gate").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockTypePosition {
+    /// The name of the function, predicate, record, tuple, union, alias or
+    /// clause whose type form writes `Clock`.
+    pub owner: String,
+    /// The span of the `Clock` type form.
+    pub span: Span,
 }
 
 impl TimedDeclaration {
@@ -714,6 +729,7 @@ impl TimedDeclaration {
             Self::TimeSource(_) => TimedConstruct::TimeSource,
             Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
             Self::Urgent(_) => TimedConstruct::Urgent,
+            Self::ClockType(_) => TimedConstruct::Clock,
         }
     }
 
@@ -722,6 +738,127 @@ impl TimedDeclaration {
             Self::TimeSource(form) => form.span,
             Self::TimeInvariant(form) => form.span,
             Self::Urgent(form) => form.span,
+            Self::ClockType(position) => position.span,
+        }
+    }
+
+    /// The declaration FR-230's facet gate names as the construct's owner:
+    /// the model for a `time` member, `time invariant` or `urgent`
+    /// declaration, and the declaration whose type form writes a `Clock`.
+    /// A `time invariant` or `urgent` declaration names no model: its owner
+    /// is `model`, the unit's timed model, and its own name only when the
+    /// unit has no one model it can belong to.
+    pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
+        match self {
+            Self::TimeSource(source) => &source.model.name,
+            Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
+            Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
+            Self::ClockType(position) => &position.owner,
+        }
+    }
+}
+
+/// The declarations among `forms` whose type forms are clock-bearing, by
+/// form index, each with its name and the span of every `Clock` it writes
+/// in source order (FR-230 "Timed facet gate"). S3 checks no clock-bearing
+/// declaration of the unit's own source as a value declaration: each
+/// `Clock` reaches S3 as a [`TimedDeclaration::ClockType`] and the
+/// declaration does not enter the value world. A declaration that names
+/// the declared type of a dropped one is dropped with it and writes no
+/// `Clock` of its own, so it receives no refusal of its own.
+fn clock_bearing_forms(forms: &[qsl_forms::ParsedForm]) -> BTreeMap<usize, (String, Vec<Span>)> {
+    /// Each declaration's name, the type name it declares (if any), and
+    /// every type form it writes.
+    fn type_forms(form: &DeclarationForm) -> Option<(String, Option<&str>, Vec<TypeForm>)> {
+        Some(match form {
+            DeclarationForm::Function(function) => {
+                let mut forms: Vec<TypeForm> = signature_type_forms(function)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                forms.extend(body_type_forms(function));
+                (function.name.clone(), None, forms)
+            }
+            DeclarationForm::Alias(alias) => (
+                alias.name.name.clone(),
+                Some(alias.name.name.as_str()),
+                vec![alias.target.clone()],
+            ),
+            DeclarationForm::Record(record) => (
+                record.name.name.clone(),
+                Some(record.name.name.as_str()),
+                record
+                    .fields
+                    .iter()
+                    .map(|field| field.type_form.clone())
+                    .collect(),
+            ),
+            DeclarationForm::Tuple(tuple) => (
+                tuple.name.name.clone(),
+                Some(tuple.name.name.as_str()),
+                tuple.elements.clone(),
+            ),
+            DeclarationForm::Union(union) => (
+                union.name.name.clone(),
+                Some(union.name.name.as_str()),
+                union
+                    .members
+                    .iter()
+                    .flat_map(|member| member.payload.iter().cloned())
+                    .collect(),
+            ),
+            DeclarationForm::StateClause(clause) => (
+                clause.name.name.clone(),
+                None,
+                expression_type_forms([&clause.body]),
+            ),
+            DeclarationForm::OperationBody(body) => (
+                body.label.name.clone(),
+                None,
+                expression_type_forms([&body.body]),
+            ),
+            _ => return None,
+        })
+    }
+    let read: Vec<_> = forms.iter().map(|form| type_forms(form.form())).collect();
+    let mut dropped: BTreeMap<usize, (String, Vec<Span>)> = BTreeMap::new();
+    let mut dropped_types: BTreeSet<&str> = BTreeSet::new();
+    // Each pass drops at least one more declaration or ends, so the loop
+    // runs at most once per declaration plus one.
+    loop {
+        let mut changed = false;
+        for (index, entry) in read.iter().enumerate() {
+            let Some((name, declares, written)) = entry else {
+                continue;
+            };
+            if dropped.contains_key(&index) {
+                continue;
+            }
+            let mut clocks = Vec::new();
+            let mut names_dropped = false;
+            let mut stack: Vec<&TypeForm> = written.iter().rev().collect();
+            while let Some(form) = stack.pop() {
+                match &form.head {
+                    TypeFormHead::Builtin(BuiltinType::Clock) => clocks.push(form.span),
+                    TypeFormHead::Name(named) if dropped_types.contains(named.name.as_str()) => {
+                        names_dropped = true;
+                    }
+                    _ => {}
+                }
+                stack.extend(form.arguments.iter().rev());
+            }
+            if clocks.is_empty() && !names_dropped {
+                continue;
+            }
+            clocks.sort_by_key(|span| span.start);
+            dropped.insert(index, (name.clone(), clocks));
+            if let Some(declared) = declares {
+                dropped_types.insert(declared);
+            }
+            changed = true;
+        }
+        if !changed {
+            return dropped;
         }
     }
 }
@@ -778,6 +915,7 @@ struct Unit {
 
 impl Unit {
     fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
+        let mut clock_bearing = clock_bearing_forms(&forms);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
@@ -801,7 +939,16 @@ impl Unit {
             task_sets: Vec::new(),
             state_graph_claims: Vec::new(),
         };
-        for form in forms {
+        for (index, form) in forms.into_iter().enumerate() {
+            if let Some((owner, clocks)) = clock_bearing.remove(&index) {
+                unit.timed.extend(clocks.into_iter().map(|span| {
+                    TimedDeclaration::ClockType(ClockTypePosition {
+                        owner: owner.clone(),
+                        span,
+                    })
+                }));
+                continue;
+            }
             let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),

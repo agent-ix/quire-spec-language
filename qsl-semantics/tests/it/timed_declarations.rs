@@ -6,6 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{AssemblyCause, CheckCause, TemporalCause, TimedConstruct};
+use qsl_semantics::value::HeaderLayer;
 use serde_json::json;
 
 use crate::model_operations::{
@@ -450,6 +451,68 @@ fn zero_tick_period_refuses_at_the_period() {
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::InvalidTickPeriod { .. }))), "{refusals:?}");
 }
 
+/// FR-230-AC-3's S3 half (TC-685 step 3): the tick source over
+/// `attemptUpdate` with period `rational(1,2) ms` checks to a tick source
+/// with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/
+/// `malformed-declaration` at the period; an operation name that resolves
+/// to nothing refuses `missing_declaration`/`missing-name` at the name. The
+/// S2 half is `qsl-forms`' `time_forms` test.
+#[trace("TC-685", "FR-230-AC-3")]
+#[test]
+fn tick_sources_check_and_refuse_at_their_spans() {
+    let units = "dimension Time;\nunit ms : Time = rational(1, 1);\n";
+    let temporal = "profile t = \"quire.temporal.complete/v1\";\n";
+    let body = format!(
+        "{units}time Config tick ConfigVersion::attemptUpdate period rational(1,2) ms unit ms;\n"
+    );
+    let checked = admit_and_assemble_with_profiles(&document(), temporal, &body)
+        .expect("S2 retains the tick form")
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the tick source checks");
+    let qsl_semantics::check::TimeSourceKind::Tick { period, .. } =
+        &checked.time_sources()[0].source
+    else {
+        panic!("a tick source: {:?}", checked.time_sources());
+    };
+    assert_eq!(
+        *period,
+        quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half")
+    );
+    for (line, code, tag, at) in [
+        (
+            "time Config tick ConfigVersion::attemptUpdate period 0 ms unit ms;\n",
+            Code::InvalidModelBinding,
+            "malformed-declaration",
+            "0 ms",
+        ),
+        (
+            "time Config tick ConfigVersion::absent period 1 ms unit ms;\n",
+            Code::MissingDeclaration,
+            "missing-name",
+            "ConfigVersion::absent",
+        ),
+    ] {
+        let body = format!("{units}{line}");
+        let refusals = admit_and_assemble_with_profiles(&document(), temporal, &body)
+            .expect("S2 retains the form")
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect_err("S3 refuses the tick source");
+        let [refusal] = refusals.as_slice() else {
+            panic!("{line}: one refusal: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("{line}: a timed refusal: {refusal:?}");
+        };
+        let (text, _) = config_unit_with_profiles(&document(), temporal, &body);
+        let span = cause.span();
+        assert_eq!(
+            (cause.code(), cause.tag(), &text[span.start..span.end]),
+            (code, tag, at),
+            "{line}"
+        );
+    }
+}
+
 #[trace("TC-685")]
 #[test]
 fn a_tick_period_with_zero_denominator_refuses_at_the_magnitude() {
@@ -589,20 +652,243 @@ fn each_timed_declaration_reaches_the_s3_facet_gate() {
     }
 }
 
-#[trace("TC-1078")]
+/// The declarations of FR-230-AC-7, each timed construct in source order.
+const UNSELECTED_TIMED: &str = "time Config dense unit ms;\n\
+     time invariant Deadline when { true } { self.x <= 3 ms }\n\
+     urgent Eager when { true };\n\
+     function f using v(c: Clock): Boolean pure { true }\n\
+     function g using v(): Clock pure { 0 }\n\
+     record Timer { x: Clock; n: Integer; }\n\
+     type Alias = Clock;\n\
+     type Maybe = Option<Clock>;\n\
+     tuple Pair(Clock, Integer);\n\
+     union Armed { On(Clock), Off }\n\
+     type Watches = Set<Clock>;\n";
+
+/// Each refusal of `refusals` as FR-230's facet gate refuses it: the
+/// construct, its owning declaration, the selected header layers and the
+/// byte offset of its span, after checking its code and required facet.
+fn facet_refusals(
+    refusals: &[qsl_semantics::check::CheckRefusal],
+) -> Vec<(TimedConstruct, String, Vec<HeaderLayer>, usize)> {
+    refusals
+        .iter()
+        .map(|refusal| {
+            assert_eq!(refusal.cause.code(), Code::UnsupportedConstruct);
+            assert_eq!(
+                refusal.cause.catalog_code().expect("catalog").cause(),
+                "declaration-form"
+            );
+            let CheckCause::Temporal(cause) = &refusal.cause else {
+                panic!("a facet refusal expected: {refusal:?}");
+            };
+            let TemporalCause::TimedFacetRequired {
+                construct,
+                owner,
+                selected,
+                required,
+                span,
+            } = &**cause
+            else {
+                panic!("a facet refusal expected: {cause:?}");
+            };
+            assert_eq!(*required, HeaderLayer::TemporalComplete);
+            (*construct, owner.clone(), selected.clone(), span.start)
+        })
+        .collect()
+}
+
+/// FR-230-AC-7 (TC-685 step 8): a unit whose header selects
+/// `quire.model.complete/v1` alone refuses its `time` member, `time
+/// invariant`, `urgent when` declaration and each `Clock` its own source
+/// writes in a type position (a parameter, a result, a record field, an
+/// alias target, the argument of `Option`, a tuple element, a union payload
+/// and a collection element), `unsupported_construct`/`declaration-form` at
+/// each span, in source order and every one, each with its family, its
+/// owning declaration (the model `Config` for the `time` member, the `time
+/// invariant` and the `urgent` declaration), the selected layers and the
+/// required facet, and no other refusal. A unit whose header selects
+/// `quire.value.complete/v1` alone refuses each `Clock` alike; S1 admits no
+/// unit without a `profile`, so that is the AC's no-`profile` vector.
+/// FR-230-AC-8 (TC-685 step 8): the unit of AC-7 with the header selection
+/// `profile t = "quire.temporal.complete/v1";` reaches S3 with its `time`
+/// member, `time invariant`, `urgent` declaration and each `Clock` in a type
+/// position, and S3 refuses none of them `unsupported_construct`/
+/// `declaration-form`: the facet gate passes them all. E3's resolution of
+/// the selection to the temporal layer is FR-110-AC-13's
+/// `qsl-replay` test, and every AC-1 to AC-5 test checks a unit selecting
+/// the layer. The same unit without the selection is AC-7's.
+#[trace("TC-685", "FR-230-AC-8")]
 #[test]
-fn source_clock_type_still_refuses_at_assembly() {
-    let body = "record R { x: Clock; }\n";
-    let refusal = admit_and_assemble_with_body(&document(), body)
-        .expect_err("a source Clock type has no checked representation yet");
-    let [error] = refusal.errors.as_slice() else {
-        panic!("one error expected: {:?}", refusal.errors);
+fn a_unit_selecting_the_timed_facet_passes_the_gate() {
+    let declarations = admit_and_assemble_with_profiles(
+        &clock_document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        SELECTED_TIMED,
+    )
+    .expect("S2 retains every grammar-valid timed form");
+    let refusals = declarations
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .err()
+        .unwrap_or_default();
+    let gated: Vec<_> = refusals
+        .iter()
+        .filter(|refusal| {
+            refusal.cause.catalog_code().map(|code| code.to_string())
+                == Some("unsupported_construct/declaration-form".to_owned())
+        })
+        .collect();
+    assert!(gated.is_empty(), "{gated:?}");
+    // Past the gate, only the source `Clock` positions, which S3 does not
+    // check yet, are refused.
+    assert!(
+        refusals.iter().all(|refusal| matches!(
+            refusal.cause,
+            CheckCause::TimedNotChecked {
+                construct: TimedConstruct::Clock,
+                ..
+            }
+        )),
+        "{refusals:?}"
+    );
+}
+
+/// AC-8's unit: AC-7's timed members over the clock `x`, and the `Clock`
+/// type positions a value of the facet checks.
+const SELECTED_TIMED: &str = "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+     time Config dense unit ms;\n\
+     time invariant Deadline when { true } { self.x <= 3 ms }\n\
+     urgent Eager when { true };\n\
+     function f using v(c: Clock): Boolean pure { true }\n\
+     record Timer { x: Clock; n: Integer; }\n\
+     type Alias = Clock;\n\
+     type Maybe = Option<Clock>;\n";
+
+#[trace("TC-685", "FR-230-AC-7")]
+#[test]
+fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
+    let declarations = admit_and_assemble_with_body(&document(), UNSELECTED_TIMED)
+        .expect("S2 retains every grammar-valid timed form");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("S3 requires the temporal facet");
+    let (text, _) = config_unit_with_body(&document(), UNSELECTED_TIMED);
+    let model = vec![HeaderLayer::ModelComplete];
+    let row = |construct, owner: &str, at: usize| (construct, owner.to_owned(), model.clone(), at);
+    let clocks = clock_offsets(&text);
+    assert_eq!(
+        facet_refusals(&refusals),
+        [
+            row(
+                TimedConstruct::TimeSource,
+                "Config",
+                offset(UNSELECTED_TIMED, "time Config")
+            ),
+            row(
+                TimedConstruct::TimeInvariant,
+                "Config",
+                offset(UNSELECTED_TIMED, "time invariant")
+            ),
+            row(
+                TimedConstruct::Urgent,
+                "Config",
+                offset(UNSELECTED_TIMED, "urgent Eager")
+            ),
+            row(TimedConstruct::Clock, "f", clocks[0]),
+            row(TimedConstruct::Clock, "g", clocks[1]),
+            row(TimedConstruct::Clock, "Timer", clocks[2]),
+            row(TimedConstruct::Clock, "Alias", clocks[3]),
+            row(TimedConstruct::Clock, "Maybe", clocks[4]),
+            row(TimedConstruct::Clock, "Pair", clocks[5]),
+            row(TimedConstruct::Clock, "Armed", clocks[6]),
+            row(TimedConstruct::Clock, "Watches", clocks[7]),
+        ]
+    );
+
+    // A header that selects `quire.value.complete/v1` alone, the least a
+    // unit's header selects (S1 requires one `profile`): the `Clock`
+    // positions refuse alike, naming that layer.
+    let clocks = "function f using v(c: Clock): Boolean pure { true }\n\
+                  record Timer { x: Clock; n: Integer; }\n\
+                  type Maybe = Option<Clock>;\n";
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n{clocks}"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "fr-230-ac-7", "fixture", "fixture:1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let refusals = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        qsl_semantics::model::intake::SelectedModels::default(),
+        Vec::new(),
+    )
+    .expect("the assembler retains each Clock for S3's gate")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect_err("S3 requires the temporal facet");
+    let clocks = clock_offsets(&text);
+    let value = |owner: &str, at: usize| {
+        (
+            TimedConstruct::Clock,
+            owner.to_owned(),
+            vec![HeaderLayer::ValueComplete],
+            at,
+        )
     };
     assert_eq!(
-        error.cause,
-        AssemblyCause::TimedNotChecked(TimedConstruct::Clock)
+        facet_refusals(&refusals),
+        [
+            value("f", clocks[0]),
+            value("Timer", clocks[1]),
+            value("Maybe", clocks[2])
+        ]
     );
-    assert_eq!(error.span.start, offset(body, "Clock"));
+}
+
+/// The byte offset of every `Clock` type written in `text`, in order.
+fn clock_offsets(text: &str) -> Vec<usize> {
+    text.match_indices("Clock")
+        .map(|(at, _)| at)
+        .filter(|at| !text[..*at].ends_with("native/"))
+        .collect()
+}
+
+/// FR-230 "Clock-typed positions": under the timed facet a `Clock` the
+/// unit's own source writes in a type position reaches S3 rather than
+/// refusing at assembly, and S3 refuses it as not checked yet, at the
+/// `Clock`.
+#[trace("TC-685")]
+#[test]
+fn a_source_clock_type_reaches_s3_under_the_timed_facet() {
+    let body = "record R { x: Clock; }\n";
+    let refusals = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("the assembler retains the Clock for S3")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect_err("a source Clock type has no checked form yet");
+    let [error] = refusals.as_slice() else {
+        panic!("one refusal expected: {refusals:?}");
+    };
+    assert!(
+        matches!(
+            error.cause,
+            CheckCause::TimedNotChecked {
+                construct: TimedConstruct::Clock,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
 }
 
 const SECONDS_AND_MILLISECONDS: &str =
