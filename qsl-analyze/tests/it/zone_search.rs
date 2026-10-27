@@ -1506,8 +1506,8 @@ fn going_late(deadline: u32, body: &str) -> World {
 /// read by the timed claim automaton, one clock per operator. With `go`
 /// forced by 2 ms, `eventually[0 ms, 3 ms] always[0 ms, 1 ms]
 /// holds(c.late)` holds; with it allowed until 4 ms, `go` after 7/2 ms
-/// refutes it, and the counterexample replays. A nested interval that does
-/// not start at a closed 0 is refused.
+/// refutes it, and the counterexample replays. A punctual interval the
+/// negation starts at many positions is refused.
 #[trace("TC-697")]
 #[test]
 fn a_nested_window_is_read_by_the_timed_claim_automaton() {
@@ -1528,6 +1528,46 @@ fn a_nested_window_is_read_by_the_timed_claim_automaton() {
     assert_eq!(
         request(&punctual).unwrap_err(),
         ZoneCheckRefusal::UnsupportedForm
+    );
+}
+
+/// [`going_late`] with a free `ping` that changes nothing.
+fn going_late_with_pings(deadline: u32, body: &str) -> World {
+    windowed(
+        &["x"],
+        &[("go", &["phase", "late"]), ("ping", &[])],
+        &format!(
+            "pre Go using v on M::Call::go {{ self.phase = 0 and self.x >= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 and self.late }}\n\
+             time invariant Hurry when {{ self.phase = 0 }} {{ self.x <= {deadline} ms }}\n"
+        ),
+        body,
+    )
+}
+
+/// FR-242's bounded copies on the zone product: the negation of
+/// `eventually[0 ms, 1 ms] always[1 ms, 2 ms] holds(c.late)` starts
+/// `eventually[1 ms, 2 ms]` at every position in its first millisecond,
+/// read by blocks of two clocks each. With `go` forced by 2 ms and nothing
+/// else, it holds, and the core accepts the certificate, rebuilding the
+/// blocks; with a free `ping` and `go` allowed until 4 ms, a `ping` before
+/// `go` within `[1 ms, 2 ms]` refutes it, and the counterexample replays.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn a_repeated_interval_is_read_by_bounded_copies() {
+    let body = "eventually[0 ms, 1 ms] always[1 ms, 2 ms] holds(c.late)";
+    let early = going_late(2, body);
+    let certificate = proved(claim(&early, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(
+        check(&early, &certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Accepted)
+    );
+    let pinged = going_late_with_pings(4, body);
+    let counterexample = violated(claim(&pinged, ZoneCheckLimits::default(), &Cancel::new()));
+    let settlement = crate::zone_replay::replay(&pinged, &counterexample).expect("replays");
+    assert!(
+        crate::zone_replay::reproduced(&settlement),
+        "{settlement:?}"
     );
 }
 

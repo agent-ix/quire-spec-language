@@ -1632,7 +1632,8 @@ impl<S: SubjectSystem> Run<'_, S> {
             | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
-            | AutomatonError::NestedIntervalShape
+            | AutomatonError::RepeatedPunctualInterval
+            | AutomatonError::ClockLimit { .. }
             | AutomatonError::ProfileNotTranslated { .. }
             | AutomatonError::Invariant { .. } => fault("monitor-steps").into(),
         }

@@ -11,18 +11,17 @@
 //! `c.level` at each position.
 
 use ix_trace_rs::trace;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::HashMap;
 
 use qsl_eval::automaton::{translate_position_negation, Atom, Letter, TimedClaim};
-use qsl_eval::simulation::model::ClockValuation;
 use qsl_eval::temporal::{
     evaluate, evaluate_timed_at, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
     TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    check_clauses, Activation, CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeSource,
-    PackageDeclarations, TemporalProfile, TimeSourceKind, SCALAR_LIMITS_UNLIMITED,
+    check_clauses, Activation, CheckedTemporalClause, ClockOp, FormulaNode, FormulaNodeId,
+    ModelTimeSource, PackageDeclarations, TemporalProfile, TimeSourceKind, SCALAR_LIMITS_UNLIMITED,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
@@ -714,25 +713,34 @@ impl Stream {
     }
 }
 
-/// An interval for a random operator: under a future operator one starting
-/// at a closed 0, or none; otherwise any.
-fn random_interval(stream: &mut Stream, nested: bool) -> &'static str {
-    if nested {
-        stream.pick(&["", "[0 ms, 1 ms]", "[0 ms, 2 ms)", "[0 ms, 0 ms]"])
-    } else {
-        stream.pick(&[
-            "",
-            "[0 ms, 1 ms]",
-            "[1 ms, 2 ms]",
-            "(0 ms, 1 ms]",
-            "(1 ms, 2 ms)",
-            "[1 ms, 1 ms]",
-        ])
-    }
+/// An interval for a random operator, of any shape: none, from a closed 0,
+/// from an open 0, from a positive lower end (wide and narrow against it),
+/// and punctual. A narrow one far from 0, whose copies run to ten clocks,
+/// is read form by form in
+/// [`the_repeated_interval_forms_agree_with_the_evaluator`] instead.
+fn random_interval(stream: &mut Stream) -> &'static str {
+    stream.pick(&[
+        "",
+        "[0 ms, 1 ms]",
+        "[0 ms, 2 ms)",
+        "[0 ms, 0 ms]",
+        "(0 ms, 1 ms]",
+        "(0 ms, 1 ms)",
+        "[1 ms, 2 ms]",
+        "(1 ms, 2 ms)",
+        "[1 ms, 3 ms)",
+        "(1 ms, 2 ms]",
+        "[1 ms, 1 ms]",
+    ])
+}
+
+/// The number of timed intervals written in `body`.
+fn intervals_in(body: &str) -> usize {
+    body.matches(" ms]").count() + body.matches(" ms)").count()
 }
 
 /// A random past-only formula over `p` and `q`.
-fn random_past(stream: &mut Stream, depth: u32, nested: bool) -> String {
+fn random_past(stream: &mut Stream, depth: u32) -> String {
     if depth == 0 || stream.below(3) == 0 {
         return stream
             .pick(&[
@@ -742,42 +750,39 @@ fn random_past(stream: &mut Stream, depth: u32, nested: bool) -> String {
             ])
             .to_owned();
     }
-    let interval = random_interval(stream, nested);
+    let interval = random_interval(stream);
     match stream.below(4) {
-        0 => format!(
-            "once{interval} ({})",
-            random_past(stream, depth - 1, nested)
-        ),
+        0 => format!("once{interval} ({})", random_past(stream, depth - 1)),
         1 => format!(
             "historically{interval} ({})",
-            random_past(stream, depth - 1, nested)
+            random_past(stream, depth - 1)
         ),
         2 => format!(
             "({}) since{interval} ({})",
-            random_past(stream, depth - 1, nested),
-            random_past(stream, depth - 1, nested)
+            random_past(stream, depth - 1),
+            random_past(stream, depth - 1)
         ),
         _ => format!(
             "({}) or ({})",
-            random_past(stream, depth - 1, nested),
-            random_past(stream, depth - 1, nested)
+            random_past(stream, depth - 1),
+            random_past(stream, depth - 1)
         ),
     }
 }
 
 /// A random timed formula over `p` (`c.level = 1`) and `q` (`c.level =
-/// 2`); `nested` under a future operator.
-fn random_formula(stream: &mut Stream, depth: u32, nested: bool) -> String {
+/// 2`).
+fn random_formula(stream: &mut Stream, depth: u32) -> String {
     if depth == 0 || stream.below(4) == 0 {
         return match stream.below(4) {
-            0 => random_past(stream, 1, nested),
+            0 => random_past(stream, 1),
             1 => "not holds(c.level = 2)".to_owned(),
             2 => "holds(c.level = 1)".to_owned(),
             _ => "holds(c.level = 2)".to_owned(),
         };
     }
-    let interval = random_interval(stream, nested);
-    let sub = |stream: &mut Stream| random_formula(stream, depth - 1, true);
+    let interval = random_interval(stream);
+    let sub = |stream: &mut Stream| random_formula(stream, depth - 1);
     match stream.below(8) {
         0 => format!("eventually{interval} ({})", sub(stream)),
         1 => format!("always{interval} ({})", sub(stream)),
@@ -785,20 +790,20 @@ fn random_formula(stream: &mut Stream, depth: u32, nested: bool) -> String {
         3 => format!("({}) release{interval} ({})", sub(stream), sub(stream)),
         4 => format!(
             "({}) and ({})",
-            random_formula(stream, depth - 1, nested),
-            random_formula(stream, depth - 1, nested)
+            random_formula(stream, depth - 1),
+            random_formula(stream, depth - 1)
         ),
         5 => format!(
             "({}) or ({})",
-            random_formula(stream, depth - 1, nested),
-            random_formula(stream, depth - 1, nested)
+            random_formula(stream, depth - 1),
+            random_formula(stream, depth - 1)
         ),
         6 => format!(
             "({}) implies ({})",
-            random_formula(stream, depth - 1, nested),
-            random_formula(stream, depth - 1, nested)
+            random_formula(stream, depth - 1),
+            random_formula(stream, depth - 1)
         ),
-        _ => format!("not ({})", random_formula(stream, depth - 1, nested)),
+        _ => format!("not ({})", random_formula(stream, depth - 1)),
     }
 }
 
@@ -818,11 +823,20 @@ fn claim_accepts(
     loop_start: usize,
     period: u64,
 ) -> bool {
+    // Every constant, in quarters of a ms; clock values past the ceiling
+    // are held one past it, which every guard reads alike.
+    let in_quarters = |value: &Rational| -> u64 {
+        let four = value.mul(&quarters(16));
+        assert!(four.is_integer(), "a constant in quarters of a ms");
+        four.numerator().to_u64().expect("a small constant")
+    };
     let ceiling = claim
         .all_constants()
-        .into_iter()
+        .iter()
+        .map(in_quarters)
         .max()
-        .unwrap_or_else(|| Rational::from_integer(Integer::zero()));
+        .unwrap_or(0);
+    let cap = u8::try_from(ceiling + 1).expect("a small ceiling");
     let clocks = claim.clock_count();
     // Clock values in quarters of a ms.
     let after = |position: usize| -> (usize, u64) {
@@ -832,106 +846,170 @@ fn claim_accepts(
             (loop_start, stamps[loop_start] + period - stamps[position])
         }
     };
-    type Key = (usize, usize, Vec<u64>);
+    // Each state's transitions at each position: target, guard in quarters
+    // and the reset clocks as a mask.
+    type Read = (usize, Vec<(usize, ClockOp, u64)>, u64);
+    let mut reads: HashMap<(usize, usize), Vec<Read>> = HashMap::new();
+    type Key = (usize, usize, Vec<u8>);
     let start = claim.initial().expect("the initial state");
-    let mut numbers: BTreeMap<Key, usize> = BTreeMap::new();
+    let mut numbers: HashMap<Key, usize> = HashMap::new();
     let mut nodes: Vec<Key> = Vec::new();
     let mut edges: Vec<Vec<usize>> = Vec::new();
-    let first = (0, start.index(), vec![0_u64; clocks]);
+    let first = (0, start.index(), vec![0_u8; clocks]);
     numbers.insert(first.clone(), 0);
     nodes.push(first);
     edges.push(Vec::new());
     let mut at = 0;
     while at < nodes.len() {
         let (position, q, values) = nodes[at].clone();
-        let state = claim.reached_state(q).expect("a reached state");
-        let valuation = ClockValuation::new(values.iter().copied().map(quarters).collect());
-        for edge in claim
-            .successors(state, word[position])
-            .expect("the automaton reads the letter")
-        {
-            if !edge
-                .guard
-                .iter()
-                .all(|constraint| constraint.holds(&valuation))
-            {
+        let transitions = reads.entry((q, position)).or_insert_with(|| {
+            let state = claim.reached_state(q).expect("a reached state");
+            claim
+                .successors(state, word[position])
+                .expect("the automaton reads the letter")
+                .into_iter()
+                .map(|edge| {
+                    let guard = edge
+                        .guard
+                        .iter()
+                        .map(|constraint| {
+                            (
+                                constraint.place(),
+                                constraint.op(),
+                                in_quarters(constraint.bound()),
+                            )
+                        })
+                        .collect();
+                    let mask = edge
+                        .resets
+                        .iter()
+                        .fold(0_u64, |mask, clock| mask | (1 << clock));
+                    (edge.target.index(), guard, mask)
+                })
+                .collect()
+        });
+        let (next, delay) = after(position);
+        for (target, guard, mask) in transitions.iter() {
+            let holds = guard.iter().all(|&(clock, op, bound)| {
+                let value = u64::from(values[clock]);
+                match op {
+                    ClockOp::Less => value < bound,
+                    ClockOp::LessOrEqual => value <= bound,
+                    ClockOp::Equal => value == bound,
+                    ClockOp::GreaterOrEqual => value >= bound,
+                    ClockOp::Greater => value > bound,
+                }
+            });
+            if !holds {
                 continue;
             }
-            let (next, delay) = after(position);
-            let moved: Vec<u64> = values
+            let moved: Vec<u8> = values
                 .iter()
                 .enumerate()
                 .map(|(clock, value)| {
-                    let base = if edge.resets.contains(&clock) {
+                    let base = if mask & (1 << clock) != 0 {
                         0
                     } else {
-                        *value
+                        u64::from(*value)
                     };
-                    let advanced = base + delay;
-                    // Past the ceiling every guard reads a value alike.
-                    if quarters(advanced) > ceiling {
-                        (0..).find(|q| quarters(*q) > ceiling).unwrap_or(advanced)
-                    } else {
-                        advanced
-                    }
+                    u8::try_from((base + delay).min(u64::from(cap))).expect("capped")
                 })
                 .collect();
-            let key = (next, edge.target.index(), moved);
-            let to = *numbers.entry(key.clone()).or_insert_with(|| {
+            let key = (next, *target, moved);
+            let count = nodes.len();
+            let to = *numbers.entry(key.clone()).or_insert(count);
+            if to == count {
                 nodes.push(key);
                 edges.push(Vec::new());
-                nodes.len() - 1
-            });
+            }
             edges[at].push(to);
         }
         at += 1;
     }
     // A cycle visiting every acceptance set: within one strongly connected
-    // component of the reachable graph, by mutual reachability.
-    let reach: Vec<BTreeSet<usize>> = (0..nodes.len())
-        .map(|from| {
-            let mut seen = BTreeSet::new();
-            let mut stack = edges[from].clone();
-            while let Some(node) = stack.pop() {
-                if seen.insert(node) {
-                    stack.extend(edges[node].iter().copied());
-                }
-            }
-            seen
-        })
-        .collect();
-    (0..nodes.len()).any(|root| {
-        if !reach[root].contains(&root) {
-            return false;
-        }
-        let component: Vec<usize> = reach[root]
-            .iter()
-            .copied()
-            .filter(|node| reach[*node].contains(&root))
-            .collect();
-        (0..claim.acceptance_set_count()).all(|set| {
-            component.iter().any(|&node| {
-                let q = claim.reached_state(nodes[node].1).expect("a reached state");
-                claim.is_accepting_in(set, q)
+    // component of the reachable graph that holds a cycle.
+    strongly_connected(&edges).into_iter().any(|component| {
+        let cyclic = component.len() > 1 || edges[component[0]].contains(&component[0]);
+        cyclic
+            && (0..claim.acceptance_set_count()).all(|set| {
+                component.iter().any(|&node| {
+                    let q = claim.reached_state(nodes[node].1).expect("a reached state");
+                    claim.is_accepting_in(set, q)
+                })
             })
-        })
     })
+}
+
+/// The strongly connected components of the graph `edges`, by Tarjan's
+/// algorithm without recursion.
+fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let count = edges.len();
+    let (mut index, mut low) = (vec![usize::MAX; count], vec![0; count]);
+    let (mut on_stack, mut stack) = (vec![false; count], Vec::new());
+    let (mut next, mut components) = (0, Vec::new());
+    for root in 0..count {
+        if index[root] != usize::MAX {
+            continue;
+        }
+        // Each frame: a node and its next edge.
+        let mut frames = vec![(root, 0)];
+        index[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(&mut (node, ref mut at)) = frames.last_mut() {
+            if let Some(&to) = edges[node].get(*at) {
+                *at += 1;
+                if index[to] == usize::MAX {
+                    index[to] = next;
+                    low[to] = next;
+                    next += 1;
+                    stack.push(to);
+                    on_stack[to] = true;
+                    frames.push((to, 0));
+                } else if on_stack[to] {
+                    low[node] = low[node].min(index[to]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                low[parent] = low[parent].min(low[node]);
+            }
+            if low[node] == index[node] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
+                    }
+                }
+                components.push(component);
+            }
+        }
+    }
+    components
 }
 
 /// FR-242 (TC-697): the timed claim automaton of the negation answers to
 /// the evaluator. For random timed-profile formulas over `p` and `q` that
-/// nest `eventually`, `always`, `until`, `release` and past operators (a
-/// nested interval starting at a closed 0, any interval at the origin), on
-/// random timed lassos of length at most 6 with stamps in steps of 1/4 ms,
-/// the automaton accepts a lasso exactly when the evaluator returns
-/// `false` on it.
+/// nest `eventually`, `always`, `until`, `release` and past operators with
+/// intervals of every shape at every depth, on random timed lassos of
+/// length at most 6 with stamps in steps of 1/4 ms, the automaton accepts a
+/// lasso exactly when the evaluator returns `false` on it. At least 40 of
+/// the 200 formulas start an interval operator at many positions with an
+/// interval not from a closed 0, read by bounded copies; a formula refused
+/// is one with a punctual interval started at many positions.
 #[trace("TC-697", "FR-242")]
 #[test]
 fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
     let mut stream = Stream(0x9e37_79b9_7f4a_7c15);
     let (mut formulas, mut held, mut violated) = (0, 0, 0);
+    let (mut copies, mut refused) = (0, 0);
     while formulas < 200 {
-        let body = random_formula(&mut stream, 3, false);
+        let body = random_formula(&mut stream, 3);
         if ![
             "eventually",
             "always",
@@ -950,9 +1028,15 @@ fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
         let mut claim = match TimedClaim::new(&fixture.clause, 1 << 20) {
             Ok(claim) => claim,
             Err(qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }) => continue,
+            Err(qsl_eval::automaton::AutomatonError::RepeatedPunctualInterval) => {
+                assert!(body.contains("[1 ms, 1 ms]"), "{body}");
+                refused += 1;
+                continue;
+            }
             Err(why) => panic!("{body}: {why}"),
         };
         formulas += 1;
+        copies += usize::from(claim.clock_count() > intervals_in(&body));
         let atom_levels = levels_of(&fixture, claim.atoms());
         for _ in 0..80 {
             let length = usize::try_from(stream.below(6) + 1).expect("small");
@@ -1008,6 +1092,102 @@ fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
         held > 100 && violated > 100,
         "{held} held, {violated} violated"
     );
+    assert!(copies >= 40, "{copies} formulas read by bounded copies");
+    assert!(refused > 0, "no repeated punctual interval drawn");
+}
+
+/// FR-242 (TC-697): MightyL's bounded copies, form by form. For an
+/// interval operator the negation starts at many positions with an
+/// interval not from a closed 0 (`eventually` and `always` from a positive
+/// lower end, narrow and wide, and from an open 0; `once` read at every
+/// position), on 1,000 random timed lassos (80 for the ten-clock
+/// `[2 ms, 3 ms)`) with stamps in steps of 1/4 ms and length at most 8, the automaton accepts exactly the lassos on which
+/// the evaluator returns `false`; each form needs more clocks than one per
+/// operator. A punctual interval started at many positions is refused.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_repeated_interval_forms_agree_with_the_evaluator() {
+    let mut stream = Stream(0x0dd5_eed5_1234_5678);
+    // The capacity-5 form, `[2 ms, 3 ms)` started at many positions with
+    // ten clocks, reads fewer lassos: its run graphs are the largest.
+    for (body, lassos) in [
+        ("eventually always[1 ms, 2 ms] holds(c.level = 2)", 1_000),
+        ("eventually always[2 ms, 3 ms) holds(c.level = 2)", 80),
+        ("eventually always (0 ms, 1 ms] holds(c.level = 2)", 1_000),
+        ("eventually always (holds(c.level = 1) implies eventually[1 ms, 2 ms] holds(c.level = 2))", 1_000),
+        ("eventually always (holds(c.level = 1) implies eventually(0 ms, 1 ms) holds(c.level = 2))", 1_000),
+        ("always (holds(c.level = 2) implies once[1 ms, 2 ms] holds(c.level = 1))", 1_000),
+        ("always (holds(c.level = 2) implies (holds(c.level = 1) since(1 ms, 2 ms] holds(c.level = 2)))", 1_000),
+    ] {
+        let fixture = timed(body);
+        let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
+        assert!(claim.clock_count() > intervals_in(body), "{body}");
+        let atom_levels = levels_of(&fixture, claim.atoms());
+        let (mut held, mut violated) = (0, 0);
+        for _ in 0..lassos {
+            let length = usize::try_from(stream.below(8) + 1).expect("small");
+            let loop_start = usize::try_from(stream.below(length as u64)).expect("small");
+            let mut stamps = vec![0_u64];
+            for _ in 1..length {
+                let last = *stamps.last().expect("a stamp");
+                stamps.push(last + stream.below(4));
+            }
+            let period = stamps[length - 1] - stamps[loop_start] + 1 + stream.below(4);
+            let levels: Vec<i64> = (0..length)
+                .map(|_| i64::try_from(stream.below(3)).expect("small"))
+                .collect();
+            let word: Vec<Letter> = levels
+                .iter()
+                .map(|level| letter_of(&atom_levels, *level))
+                .collect();
+            let trace = TimedTrace::lasso(
+                stamps.iter().copied().map(quarters).collect(),
+                u64::try_from(loop_start).expect("small"),
+                quarters(period),
+            )
+            .expect("a timed lasso");
+            let mut letters = Levels {
+                fixture: &fixture,
+                levels: levels.clone(),
+                undefined_at: None,
+            };
+            let refuted = match evaluate_timed_at(
+                &fixture.clause,
+                &trace,
+                TemporalPosition::new(0),
+                &mut letters,
+                &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+            )
+            .expect("the lasso is readable")
+            {
+                TemporalOutcome::Holds => false,
+                TemporalOutcome::Violated { .. } => true,
+                other => panic!("{body}: {other:?}"),
+            };
+            assert_eq!(
+                claim_accepts(&mut claim, &stamps, &word, loop_start, period),
+                refuted,
+                "{body} over stamps {stamps:?} (quarters), levels {levels:?}, loop to \
+                 {loop_start} after {period}"
+            );
+            held += usize::from(!refuted);
+            violated += usize::from(refuted);
+        }
+        assert!(
+            held > 0 && violated > 0,
+            "{body}: {held} held, {violated} violated"
+        );
+    }
+    for body in [
+        "eventually always[1 ms, 1 ms] holds(c.level = 2)",
+        "eventually (holds(c.level = 2) and once[1 ms, 1 ms] holds(c.level = 1))",
+    ] {
+        assert_eq!(
+            TimedClaim::new(&timed(body).clause, 1 << 20).err(),
+            Some(qsl_eval::automaton::AutomatonError::RepeatedPunctualInterval),
+            "{body}"
+        );
+    }
 }
 
 /// FR-242-AC-1 (TC-697): for each of `eventually[0 ms, 3 ms] holds(q)`,
@@ -1121,9 +1301,9 @@ fn letter_of(atom_levels: &[i64], level: i64) -> Letter {
 /// quarters after it: at position 0 under `on origin`; under `on each`, at
 /// some position. The evaluator reads a position past the represented
 /// trace at its settled loop copy, so the lasso is first written with its
-/// loop unrolled 12 times, the same timed word with every earlier copy
-/// represented: a past window of at most 3 ms over a loop of at least
-/// 1/4 ms has settled by then.
+/// loop unrolled, the same timed word with every earlier copy represented:
+/// `12 / period + 2` copies, after which a past window of at most 3 ms (12
+/// quarters) has settled.
 fn evaluator_refutes(
     fixture: &Fixture,
     body: &str,
@@ -1133,7 +1313,7 @@ fn evaluator_refutes(
     period: u64,
 ) -> bool {
     let each = matches!(fixture.clause.activation(), Activation::Each { .. });
-    let copies = if each { 12 } else { 0 };
+    let copies = if each { 12 / period + 2 } else { 0 };
     let (mut long_stamps, mut long_levels) = (stamps.to_vec(), levels.to_vec());
     for copy in 1..=copies {
         for at in loop_start..stamps.len() {
@@ -1254,11 +1434,14 @@ fn the_timed_claim_automaton_agrees_under_each_activation() {
     let mut stream = Stream(0x1650_eac4_0000_0002);
     let (mut formulas, mut held, mut violated) = (0, 0, 0);
     while formulas < 100 {
-        let body = random_formula(&mut stream, 3, true);
+        let body = random_formula(&mut stream, 3);
         let fixture = timed_on("on each (q: M::Counter)", &body);
         match TimedClaim::new(&fixture.clause, 1 << 20) {
             Ok(_) => {}
-            Err(qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }) => continue,
+            Err(
+                qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }
+                | qsl_eval::automaton::AutomatonError::RepeatedPunctualInterval,
+            ) => continue,
             Err(why) => panic!("{body}: {why}"),
         }
         formulas += 1;

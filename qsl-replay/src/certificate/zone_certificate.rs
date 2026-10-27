@@ -719,7 +719,8 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     Err(AutomatonError::StateLimit { limit }) => return Ok(automaton_stop(limit)),
                     Err(
                         AutomatonError::ProfileNotTranslated { .. }
-                        | AutomatonError::NestedIntervalShape,
+                        | AutomatonError::RepeatedPunctualInterval
+                        | AutomatonError::ClockLimit { .. },
                     ) => return Err(ZoneCertificateRefusal::UnsupportedItem),
                     Err(_) => return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton)),
                 };
