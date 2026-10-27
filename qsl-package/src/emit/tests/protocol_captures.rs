@@ -8,7 +8,7 @@ use super::protocol_graph::{checked, clause, model, occurrences, reads, target, 
 use super::protocol_reference::{clause_argument, node_by_id};
 use super::reachability::{lower_with, Lowered};
 use super::*;
-use qsl_semantics::check::{CheckCause, ObligationCause, ObligationStage};
+use qsl_semantics::check::{CheckCause, ObligationCause, ObligationStage, ProtocolAnchorCause};
 
 /// A record the trigger and the captures read.
 const TICK: &str = "record Tick { ready: Boolean; n: Integer; }\n";
@@ -318,6 +318,21 @@ fn a_guard_with_captures_and_two_protocols_with_the_same_captures_are_admitted()
     let other = one.replace("Flow", "Other");
     let both = format!("{one}{}", other.replacen(TICK, "", 1));
     let lowered = admitted(&both);
+    // The equal binder is one `parameter` node, placed at both captures
+    // (and at both reads of `t.n`'s initializer).
+    let binders: Vec<&Value> = nodes(&lowered.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "parameter")
+        .filter(|node| node["body"]["members"][0]["value"]["value"] == "a")
+        .collect();
+    let [binder] = binders[..] else {
+        panic!("one parameter node `a`: {binders:?}");
+    };
+    let names = occurrences(&lowered, binder);
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names
+        .iter()
+        .all(|(role, text)| *role == "expression" && *text == "a"));
     let clauses = nodes(&lowered.wire)
         .iter()
         .filter(|node| node["semantic_form"] == "protocol_clause")
@@ -339,6 +354,12 @@ fn a_capture_of_every_declared_type_is_admitted() {
         "Timestamp",
         "Option<Boolean>",
         "Sequence<Boolean>",
+        "Set<Boolean>",
+        "Bag<Boolean>",
+        "OrderedSet<Boolean>",
+        "Decimal[0, 10; 0, 2; nearest-even]",
+        "Rational[0, 10; 1, 1]",
+        "Float64",
         "Point",
         "Color",
         "Tick",
@@ -401,4 +422,99 @@ fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
             ..
         }
     ));
+}
+
+/// FR-464 "Level": a FIFO channel's message binder is introduced at the
+/// binders readable at the clause, so a binder named like `over`, the
+/// `each` trigger or a protocol capture refuses
+/// `ambiguous_declaration`/`ambiguous-name`, naming both binders, while a
+/// distinct name, the same name on another channel and a name that only a
+/// later control binder holds are admitted.
+#[test]
+fn a_fifo_binder_named_like_a_readable_binder_refuses() {
+    let text = |activation: &str, captures: &str, binder: &str| {
+        flow_with_channel(
+            activation,
+            captures,
+            &format!("fifo by ({binder}: Boolean) {{ {binder} }}"),
+        )
+    };
+    let causes = |text: &str| -> Vec<CheckCause> {
+        checked(text, false)
+            .expect_err(text)
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect()
+    };
+    let each = "on each (t: Tick)";
+    let captured = "capture k: Integer = input;";
+    for (activation, captures, binder) in [
+        ("on origin", "", "input"),
+        (each, "", "t"),
+        ("on origin", captured, "k"),
+        (each, captured, "input"),
+        (each, captured, "t"),
+        (each, captured, "k"),
+    ] {
+        let source = text(activation, captures, binder);
+        let causes = causes(&source);
+        let [CheckCause::ProtocolAnchor(cause)] = causes.as_slice() else {
+            panic!("one anchor refusal for {binder}: {causes:?}\n{source}");
+        };
+        let ProtocolAnchorCause::Ambiguous { name, loci, .. } = cause.as_ref() else {
+            panic!("an ambiguous refusal for {binder}: {cause:?}");
+        };
+        assert_eq!(name, binder);
+        let [earlier, later] = loci[..] else {
+            panic!("two loci: {loci:?}");
+        };
+        assert!(earlier.start < later.start);
+        assert_eq!(causes[0].code().as_str(), "ambiguous_declaration");
+        assert_eq!(causes[0].cause(), Some("ambiguous-name"));
+    }
+    // A distinct name is admitted, and so is one that only a record binder
+    // of the `run` tree or a template could hold.
+    for (activation, captures, binder) in [
+        ("on origin", "", "m"),
+        (each, captured, "m"),
+        (each, captured, "outcome"),
+    ] {
+        admitted(&text(activation, captures, binder));
+    }
+}
+
+/// A protocol `Flow` over [`TICK`] with `activation`, `captures`, two roles
+/// and the one channel `ordering`.
+fn flow_with_channel(activation: &str, captures: &str, ordering: &str) -> String {
+    format!(
+        "{TICK}protocol Flow using v over (input: Integer) {activation} {{\n\
+         {captures}\n\
+         role Buyer on M::Order;\n\
+         role Seller on M::Person;\n\
+         channel Pay from Buyer to Seller carries Boolean ordering {ordering} \
+         delivery unknown capacity 2 overflow block;\n\
+         run sequence Main {{ }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// FR-464: a capture initializer may read model state, through `over`; the
+/// reader admits it and the initializer depends on `over` alone.
+#[test]
+fn a_capture_reading_model_state_through_over_is_admitted() {
+    let lowered = admitted(
+        "protocol Flow using v over (order: M::Order) on origin {\n\
+         capture trail: Option<Reference<M::Order>> = deref(order).trail;\n\
+         role Buyer on M::Order;\n\
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n",
+    );
+    let wire = &lowered.wire;
+    let [(_, initializer)] = captures(wire)[..] else {
+        panic!("one capture");
+    };
+    let over = &clause_argument(clause(wire), "over")["target"];
+    assert!(reads(wire, target(wire, initializer), over));
 }

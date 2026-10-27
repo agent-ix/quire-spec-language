@@ -612,7 +612,7 @@ pub(super) fn checked(
 
 /// [`checked`] over the model document `document`, named by `package` and
 /// `version`.
-fn checked_package(
+pub(super) fn checked_package(
     document: Vec<u8>,
     (package, version): (&str, &str),
     text: &str,
@@ -665,6 +665,14 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         )
     };
     let main = "sequence Main { }";
+    // A second protocol, which the cases refer to.
+    let with_other = |text: String| {
+        format!(
+            "{text}protocol Other using v over (input: Boolean) on origin {{\n\
+             {BUYER}\nrun sequence Main {{ }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n}}\n"
+        )
+    };
     let carrying = |carries: &str| {
         format!(
             "{SELLER}\n{}",
@@ -703,6 +711,31 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             C::FinishReadsDeclaration,
             "QSL-1121g",
             plain("on origin", "", main, "ok()"),
+        ),
+        (
+            C::FinishReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain("on origin", "", main, "protocol Other")),
+        ),
+        (
+            C::CaptureReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain(
+                "on origin",
+                "capture c: Boolean = protocol Other;",
+                main,
+                "true",
+            )),
+        ),
+        (
+            C::ActivationGuardReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain(
+                "on each (g: M::Person) when (protocol Other)",
+                "",
+                main,
+                "true",
+            )),
         ),
         (
             C::ChannelCarriesBounded,
@@ -752,7 +785,13 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             "{text}"
         );
         let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
-        assert_eq!(clauses(&open), 0, "{construct:?} writes no clause node");
+        // Only the second protocol the case declares, if any, is written.
+        let others = text.matches("protocol Other using").count();
+        assert_eq!(
+            clauses(&open),
+            others,
+            "{construct:?} writes no clause node for Flow"
+        );
     }
 }
 
