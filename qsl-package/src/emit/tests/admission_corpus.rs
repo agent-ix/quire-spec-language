@@ -662,7 +662,6 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::Predicate), F::FormsUnit),
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
-        row(K::Model(ModelForm::StateMachine), F::RefinementV2Empty),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
         row(K::Model(ModelForm::VariantType), F::VariantType),
         row(K::Model(ModelForm::RecordValueType), F::VariantType),
@@ -722,6 +721,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (
             K::Expression(ExpressionForm::Reference),
             "a name read lowers to a reference term, not a node",
+        ),
+        (
+            K::Model(ModelForm::StateMachine),
+            "a refinement binds its model's model_root node, not a state-machine declaration node (FR-375)",
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
