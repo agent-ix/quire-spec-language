@@ -44,6 +44,7 @@ mod hyper_clause;
 mod identity_depth;
 mod large_cycle;
 mod navigation;
+mod owner_model;
 mod owners;
 mod population_bound;
 mod population_reference;
@@ -547,6 +548,13 @@ fn rebuilt_preimage_as(
     if !application {
         if let Some(owner) = node.get("owner") {
             preimage["owner"] = owner.clone();
+        }
+    }
+    // QSpec FR-464 "owner_model": a protocol clause's identity-bound edge
+    // enters its application preimage, read from the wire node.
+    if application {
+        if let Some(owner_model) = node.get("owner_model") {
+            preimage["owner_model"] = owner_model.clone();
         }
     }
     preimage

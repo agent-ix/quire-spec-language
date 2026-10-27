@@ -819,6 +819,12 @@ pub enum ProtocolConstruct {
     /// the node is written before the functions are, so the constraint
     /// cannot name them yet. QSL-1121g.
     FinishReadsDeclaration,
+    /// A clause whose `over` input is not a reference to an object type of a
+    /// selected model: there is no exact local model declaration node to
+    /// name as the clause's `owner_model`
+    /// (QSpec FR-464 "owner_model", FR-383), and the reader refuses a clause
+    /// without one. QSL-1147.
+    NoOwnerModel,
 }
 
 impl ProtocolConstruct {
@@ -835,6 +841,7 @@ impl ProtocolConstruct {
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
+            Self::NoOwnerModel => "QSL-1147",
         }
     }
 }

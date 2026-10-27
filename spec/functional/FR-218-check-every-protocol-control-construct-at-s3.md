@@ -249,6 +249,13 @@ FR-465-AC-9), and the subject builder binds it by construction (FR-205). A
 role on a whole model attempts, owns choices and repeats, and sends and
 receives as any static role does.
 
+S3 admits a protocol whatever its `over` type, but S4 writes a clause node only
+when `over` is a reference to an object type of a selected model, because QSpec
+FR-464 requires the clause's `owner_model` edge (FR-383). Any other `over`
+(a scalar, an `Option`, a collection) is refused at S4 as
+`unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` (planner
+ruling STD-498, QSL-1147); QSL-1165 tracks the follow-up.
+
 A role on a whole model is static only (QSpec FR-465: a replicated role draws
 its instances from a population of a model type, so its `model` is a
 reference). S3 SHALL refuse a replicated role over a model alias,
