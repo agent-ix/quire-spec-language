@@ -194,6 +194,20 @@ pub fn evaluate_state_predicate(
     over: Option<quire_exact::ObjectReference>,
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
+    evaluate_state_predicate_with(package, predicate, current, over, Vec::new(), meter)
+}
+
+/// [`evaluate_state_predicate`] with the slots after `over` bound to
+/// `further`, in order: the collection elements a timed guard part reads
+/// (FR-230 "Quantified reads").
+pub fn evaluate_state_predicate_with(
+    package: &CheckedPackage,
+    predicate: &impl qsl_semantics::check::StatePredicate,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    further: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
     let reads = std::collections::BTreeMap::new();
     Machine::with_pre(
         package.graph().scope(),
@@ -207,7 +221,10 @@ pub fn evaluate_state_predicate(
     .run(
         predicate.body(),
         predicate.slots(),
-        over.map(Value::Reference).into_iter().collect(),
+        over.map(Value::Reference)
+            .into_iter()
+            .chain(further)
+            .collect(),
     )
 }
 

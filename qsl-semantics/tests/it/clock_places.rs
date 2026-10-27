@@ -527,6 +527,18 @@ fn timer_collection(upper: Option<u64>, ordered: bool, unique: bool) -> Vec<u8> 
             .as_array_mut()
             .expect("Call fields")
             .push(held);
+        // `send` and `bump` also write `ts`.
+        for operation in document["types"][1]["operations"]
+            .as_array_mut()
+            .expect("operations")
+        {
+            if matches!(operation["name"].as_str(), Some("send" | "bump")) {
+                operation["frame"]["modifies"]
+                    .as_array_mut()
+                    .expect("frame")
+                    .push(json!(call("ts")));
+            }
+        }
     })
 }
 
@@ -641,6 +653,199 @@ fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
         assert_eq!(
             (cause.code(), cause.tag(), text.as_str()),
             (Code::InvalidTimedModel, "clock-read-outside-constraint", at),
+            "{clause}"
+        );
+    }
+}
+
+/// The guard parts of the first guard of `model`: for each, the elements
+/// its data predicate reads (field, slot) and its constraints (clock name,
+/// slots, op, bound).
+#[allow(clippy::type_complexity)]
+fn slot_parts(
+    model: &qsl_semantics::check::TimedModel,
+) -> Vec<(
+    bool,
+    Vec<(String, u64)>,
+    Vec<(String, Vec<u64>, ClockOp, String)>,
+)> {
+    model.guards()[0]
+        .parts()
+        .iter()
+        .map(|part| {
+            (
+                part.data().is_some(),
+                part.elements()
+                    .iter()
+                    .map(|element| (element.field().to_owned(), element.slot()))
+                    .collect(),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| {
+                        (
+                            model
+                                .clock(constraint.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            constraint.slots().to_vec(),
+                            constraint.op(),
+                            format!("{:?}", constraint.bound()),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Quantified reads" in a precondition:
+/// over `ts: Sequence<Timer>[0, 3]`, the guard `forall(e in self.ts: e.x <=
+/// 3 ms)` records one entry for each size 0 to 3, each with the data
+/// predicate `size(self.ts) = s` and `x <= 3` on each slot below `s` (none
+/// for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one
+/// convex part for each slot `j`, with the data predicate "holds slot `j`"
+/// and `n = 2` of the element at `j`, and `x >= 1` on slot `j`. A
+/// collection with no declared maximum refuses as not checked.
+#[trace("TC-685")]
+#[test]
+fn a_quantified_guard_records_one_entry_per_size_or_slot() {
+    let document = timer_collection(Some(3), true, false);
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             forall(e in self.ts: e.x <= 3 ms) }}\n"
+        ),
+    )
+    .expect("a forall guard checks");
+    let model = timed(&graph);
+    let bound = format!("{:?}", exact(3, 1));
+    let x = |slot: u64| {
+        (
+            "ts.[slot].x".to_owned(),
+            vec![slot],
+            ClockOp::LessOrEqual,
+            bound.clone(),
+        )
+    };
+    assert_eq!(
+        slot_parts(model),
+        [
+            (true, vec![], vec![]),
+            (true, vec![], vec![x(0)]),
+            (true, vec![], vec![x(0), x(1)]),
+            (true, vec![], vec![x(0), x(1), x(2)]),
+        ]
+    );
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             exists(e in self.ts: e.n = 2 and e.x >= 1 ms) }}\n"
+        ),
+    )
+    .expect("an exists guard checks");
+    let model = timed(&graph);
+    let one = format!("{:?}", exact(1, 1));
+    let at = |slot: u64| {
+        (
+            true,
+            vec![("ts".to_owned(), slot)],
+            vec![(
+                "ts.[slot].x".to_owned(),
+                vec![slot],
+                ClockOp::GreaterOrEqual,
+                one.clone(),
+            )],
+        )
+    };
+    assert_eq!(slot_parts(model), [at(0), at(1), at(2)]);
+    let unbounded = timer_collection(None, true, false);
+    let refusals = check(
+        &unbounded,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             forall(e in self.ts: e.x <= 3 ms) }}\n"
+        ),
+    )
+    .expect_err("an unbounded quantified guard is not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked { .. },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Resets by selection": `forall(e in
+/// self.ts: e.n > 1 implies e.x = 0 ms)` in `send`'s postcondition, whose
+/// frame names `ts`, records one reset of `ts.[slot].x` to 0 with the
+/// selection's data predicate `e.n > 1`; `forall(e in self.ts: e.x = 2 ms)`
+/// records one with no predicate, every held slot. An `exists` reset, a
+/// premise reading a clock and a reset under `reply`, whose frame does not
+/// name `ts`, refuse.
+#[trace("TC-685")]
+#[test]
+fn a_forall_reset_selects_the_slots_it_writes() {
+    let document = timer_collection(Some(3), true, false);
+    for (clause, value, predicate) in [
+        (
+            "forall(e in self.ts: e.n > 1 implies e.x = 0 ms)",
+            exact(0, 1),
+            true,
+        ),
+        ("forall(e in self.ts: e.x = 2 ms)", exact(2, 1), false),
+    ] {
+        let graph = check(
+            &document,
+            &format!("{UNITS}{DENSE}post R using v on Config::Call::send {{ {clause} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{clause}: {refusals:?}"));
+        let model = timed(&graph);
+        let [resets] = model.resets() else {
+            panic!("one postcondition resets: {:?}", model.resets());
+        };
+        let [reset] = resets.resets() else {
+            panic!("one reset: {:?}", resets.resets());
+        };
+        let selection = reset.selection().expect("a reset by selection");
+        assert_eq!(
+            (
+                model.clock(reset.clock()).expect("a clock").name(),
+                reset.value().clone(),
+                selection.field(),
+                selection.predicate().is_some(),
+            ),
+            ("ts.[slot].x", value, "ts", predicate),
+            "{clause}"
+        );
+    }
+    for (clause, tag, at) in [
+        (
+            "post R using v on Config::Call::send { exists(e in self.ts: e.x = 0 ms) }",
+            "clock-write",
+            "exists(e in self.ts: e.x = 0 ms)",
+        ),
+        (
+            "post R using v on Config::Call::send { forall(e in self.ts: e.x > 1 ms implies e.x = 0 ms) }",
+            "clock-read-outside-constraint",
+            "e.x",
+        ),
+        (
+            "post R using v on Config::Call::reply { forall(e in self.ts: e.x = 0 ms) }",
+            "clock-write",
+            "forall(e in self.ts: e.x = 0 ms)",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, tag, at),
             "{clause}"
         );
     }

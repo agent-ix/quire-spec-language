@@ -34,8 +34,8 @@ use quire_semantic_value::catalog::UndefinedReason;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::{
-    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ModelTimeSource, PlaceStep,
-    TimeSourceKind, TimedModel, Urgency,
+    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ElementBinding, ModelTimeSource,
+    PlaceStep, TimeSourceKind, TimedModel, Urgency,
 };
 
 use super::encode::declaration_text;
@@ -276,6 +276,11 @@ pub enum TimedSite {
         /// The declaration's name.
         name: String,
     },
+    /// A postcondition's reset by selection.
+    Reset {
+        /// The postcondition's name.
+        clause: String,
+    },
 }
 
 /// Why a timed move could not be decided.
@@ -380,12 +385,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .find(|source| source.model == model)
             .ok_or_else(missing)?;
         for guard in timed.guards() {
-            if guard
-                .parts()
-                .iter()
-                .filter_map(|part| part.data())
-                .any(|data| data.parameters().len() > 1)
-            {
+            // `self` and the elements the part reads; an operation
+            // parameter is read by no guard here.
+            if guard.parts().iter().any(|part| {
+                part.data()
+                    .is_some_and(|data| data.parameters().len() > 1 + part.elements().len())
+            }) {
                 return Err(TimedSubjectRefusal::ParameterizedGuard {
                     clause: guard.clause().to_owned(),
                 });
@@ -503,6 +508,21 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         self.places
             .iter()
             .position(|place| place.clock == clock && place.slots.is_empty() && place.holds(object))
+    }
+
+    /// The place of `clock` on `object` at the slots `slots`, one for each
+    /// collection on the clock's path.
+    fn place_at(&self, object: &ObjectReference, clock: ClockId, slots: &[u64]) -> Option<usize> {
+        self.places.iter().position(|place| {
+            place.clock == clock
+                && place.holds(object)
+                && place.slots.len() == slots.len()
+                && place
+                    .slots
+                    .iter()
+                    .zip(slots)
+                    .all(|(held, wanted)| u64::try_from(*held).is_ok_and(|held| held == *wanted))
+        })
     }
 
     /// Whether `place` has a value at `state`: `state` holds its object
@@ -754,13 +774,21 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     guards.push(guard.clause().to_owned());
                     let mut clause_parts = Vec::new();
                     for part in guard.parts() {
-                        let data = match part.data() {
-                            None => true,
-                            Some(data) => self.about_one(state, data, &vector.receiver, || {
-                                TimedSite::Guard {
-                                    clause: guard.clause().to_owned(),
-                                }
-                            })?,
+                        let data = match (
+                            part.data(),
+                            self.elements(state, &vector.receiver, part.elements()),
+                        ) {
+                            (None, _) => true,
+                            // A part reading a slot the collection does not
+                            // hold is not enabled.
+                            (Some(_), None) => false,
+                            (Some(data), Some(elements)) => {
+                                self.about_one(state, data, &vector.receiver, elements, || {
+                                    TimedSite::Guard {
+                                        clause: guard.clause().to_owned(),
+                                    }
+                                })?
+                            }
                         };
                         if data {
                             clause_parts.push(self.placed(
@@ -779,7 +807,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         })
                         .collect();
                 }
-                let mut resets: Vec<(usize, Rational)> = self
+                let mut resets: Vec<(usize, Rational)> = Vec::new();
+                for (clause, reset) in self
                     .model
                     .resets()
                     .iter()
@@ -787,14 +816,48 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         resets.operation().declaring == vector.declaring
                             && resets.operation().declaration.name() == vector.name
                     })
-                    .flat_map(|resets| resets.resets())
-                    .filter_map(|reset| {
-                        Some((
-                            self.place(&vector.receiver, reset.clock())?,
-                            reset.value().clone(),
-                        ))
-                    })
-                    .collect();
+                    .flat_map(|resets| resets.resets().iter().map(|reset| (resets.clause(), reset)))
+                {
+                    let Some(selection) = reset.selection() else {
+                        if let Some(place) = self.place(&vector.receiver, reset.clock()) {
+                            resets.push((place, reset.value().clone()));
+                        }
+                        continue;
+                    };
+                    // Each slot the pre-state holds whose element the
+                    // selection's predicate admits.
+                    for slot in 0_u64.. {
+                        let Some(place) = self.place_at(&vector.receiver, reset.clock(), &[slot])
+                        else {
+                            break;
+                        };
+                        let binding = ElementBinding::new(
+                            selection.name().to_owned(),
+                            selection.field().to_owned(),
+                            slot,
+                        );
+                        let Some(elements) =
+                            self.elements(state, &vector.receiver, std::slice::from_ref(&binding))
+                        else {
+                            continue;
+                        };
+                        let selected = match selection.predicate() {
+                            None => true,
+                            Some(predicate) => self.about_one(
+                                state,
+                                predicate,
+                                &vector.receiver,
+                                elements,
+                                || TimedSite::Reset {
+                                    clause: clause.to_owned(),
+                                },
+                            )?,
+                        };
+                        if selected {
+                            resets.push((place, reset.value().clone()));
+                        }
+                    }
+                }
                 // A clock whose object or slot the step makes live takes
                 // the constant of its write, 0 when the step writes none
                 // (QSpec FR-181 "Timed subjects").
@@ -854,7 +917,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .map(|constraint| {
                 let place = self
                     .holder(state, receiver, constraint.via())
-                    .and_then(|holder| self.place(&holder, constraint.clock()))
+                    .and_then(|holder| {
+                        self.place_at(&holder, constraint.clock(), constraint.slots())
+                    })
                     .filter(|place| {
                         constraint.via().is_empty()
                             || self
@@ -872,6 +937,54 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .collect()
     }
 
+    /// The element each of `elements` names of `object` at `state`: the
+    /// value its collection field holds at its slot; `None` when the
+    /// collection does not hold one of the slots.
+    fn elements(
+        &self,
+        state: &ModelSimState,
+        object: &ObjectReference,
+        elements: &[ElementBinding],
+    ) -> Option<Vec<quire_exact::Value>> {
+        if elements.is_empty() {
+            return Some(Vec::new());
+        }
+        let model = &self.system.model;
+        let stored = self.stored(state, object)?;
+        let fields = model.fields(&stored.type_identity).ok()??;
+        elements
+            .iter()
+            .map(|element| {
+                let field = fields.iter().find(|field| field.name == element.field())?;
+                let quire_exact::Value::Collection(collection) = stored.fields.get(&field.key)?
+                else {
+                    return None;
+                };
+                collection
+                    .elements()
+                    .get(usize::try_from(element.slot()).ok()?)
+                    .cloned()
+            })
+            .collect()
+    }
+
+    /// The stored object `object` names at `state`: held under its key in
+    /// the population whose objects its universe names.
+    fn stored<'t>(
+        &self,
+        state: &'t ModelSimState,
+        object: &ObjectReference,
+    ) -> Option<&'t qsl_semantics::model::state::StateObject> {
+        let model = &self.system.model;
+        state.state().populations.values().find_map(|objects| {
+            let stored = objects.get(object.object().as_str())?;
+            let reference = model
+                .object_reference(&stored.type_identity, object.object().as_str())
+                .ok()?;
+            (reference.universe() == object.universe()).then_some(stored)
+        })
+    }
+
     /// The object `object` reaches at `state` through the reference fields
     /// `via`, each a required single reference: `object` itself for none.
     fn holder(
@@ -886,15 +999,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let PlaceStep::Field(name) = step else {
                 return None;
             };
-            // The object is held under its key in the population whose
-            // objects its universe names.
-            let stored = state.state().populations.values().find_map(|objects| {
-                let stored = objects.get(at.object().as_str())?;
-                let reference = model
-                    .object_reference(&stored.type_identity, at.object().as_str())
-                    .ok()?;
-                (reference.universe() == at.universe()).then_some(stored)
-            })?;
+            let stored = self.stored(state, &at)?;
             let fields = model.fields(&stored.type_identity).ok()??;
             let field = fields.iter().find(|field| field.name == *name)?;
             match stored.fields.get(&field.key)? {
@@ -905,17 +1010,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         Some(at)
     }
 
-    /// `predicate` at `state` with `self` bound to `object`.
+    /// `predicate` at `state` with `self` bound to `object` and the slots
+    /// after it to `elements`.
     fn about_one(
         &self,
         state: &ModelSimState,
         predicate: &CheckedTimedPredicate,
         object: &ObjectReference,
+        elements: Vec<quire_exact::Value>,
         site: impl Fn() -> TimedSite,
     ) -> Result<bool, TimedStop> {
         let [reading] = &self
             .system
-            .state_predicates(state, &[(predicate, Some(object))])?[..]
+            .state_predicates_with(state, &[(predicate, Some(object), elements)])?[..]
         else {
             return Err(TimedStop::undecided(site(), object.clone(), None));
         };
