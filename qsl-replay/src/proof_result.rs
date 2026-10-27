@@ -72,6 +72,10 @@ pub enum ProofBasis {
         /// Completed unrolling depth.
         depth: u64,
     },
+    /// FR-235 (ADR-026 CF-4): EN-6's zone search completed with no
+    /// admitted violation and the core's checker accepted its zone
+    /// certificate (FR-245).
+    ZoneCertified,
     /// The property was established by induction.
     Inductive {
         /// Induction depth.
@@ -662,6 +666,13 @@ pub enum InconclusiveCause {
     /// none of: a harness defect. The agreement names the claim and the
     /// outcome, and no predicate verdict.
     ScalarAgrees(ScalarAgreement),
+    /// FR-235 (ADR-026 TD-6): EN-6 found no admitted violation, but no
+    /// initial state reaches a time-divergent behaviour, so the proof is
+    /// vacuous.
+    NoAdmittedBehaviour,
+    /// FR-235 (ADR-026 CT-2): EN-6 found a violating symbolic lasso, but no
+    /// concrete timed lasso through it was found.
+    LassoNotConcretized,
     /// AMC-rtb's high-mode criterion failed; the test is sufficient and
     /// not necessary, so it decides nothing (ADR-026 RT-6).
     SufficientTestFailed,
@@ -824,6 +835,8 @@ impl InconclusiveCause {
             Self::SolverInconclusive { .. } => "solver-inconclusive",
             Self::InsufficientHorizon { .. } => "insufficient-horizon",
             Self::SufficientTestFailed => "sufficient-test-failed",
+            Self::NoAdmittedBehaviour => "no-admitted-behaviour",
+            Self::LassoNotConcretized => "lasso-not-concretized",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
@@ -848,6 +861,8 @@ impl InconclusiveCause {
             | Self::VacuousMatch
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
+            | Self::NoAdmittedBehaviour
+            | Self::LassoNotConcretized
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }
@@ -982,6 +997,7 @@ impl TerminalValue {
                 basis:
                     ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
+                    | ProofBasis::ZoneCertified
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }

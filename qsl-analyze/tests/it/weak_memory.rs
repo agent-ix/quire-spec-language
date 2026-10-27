@@ -344,6 +344,7 @@ impl Case {
         let subject = self.subject(selection);
         ProtocolTraceSubject {
             model: ModelTraceSubject {
+                timed: None,
                 initial: vec![self.documents.initial.clone()],
                 universes: self.documents.universes(),
                 expansion: subject.model.simulation.expansion,

@@ -5,7 +5,7 @@
 //! symbolic in `[-8, 8]` or `∞`, applies one operation, and proves the
 //! operation free of overflow and panics and in agreement with the
 //! [`reference`](super::reference): pointwise for `close`, `constrain`,
-//! `reset` and `up`, where a symbolic point is in the result exactly when
+//! `reset`, `up` and `extrapolate`, where a symbolic point is in the result exactly when
 //! it is in the reference set; entry by entry for `includes` and the aLU
 //! test, against their plain-bound transcriptions.
 //!
@@ -169,6 +169,28 @@ fn alu_agrees_with_the_reference(dim: usize) {
     );
 }
 
+/// `extrapolate` keeps exactly the points of the reference's entrywise
+/// `Extra_M` rule, keeps every point of the zone, and leaves it canonical.
+fn extrapolate_agrees_with_the_reference(dim: usize) {
+    let (_, mut zone) = any_closed(dim);
+    let mut max = Vec::new();
+    for _ in 1..dim {
+        max.push(
+            kani::any::<bool>().then(|| kani::any_where(|c: &i64| (0..=MAX_BOUND).contains(c))),
+        );
+    }
+    let point = any_point(dim);
+    let inside = reference::zone_contains(&zone, &point, SCALE);
+    let expected = reference::extrapolate(&reference::raw_of(&zone), &max);
+    zone.extrapolate(&max).expect("one constant per clock");
+    let found = reference::zone_contains(&zone, &point, SCALE);
+    assert_eq!(found, expected.contains(&point, SCALE));
+    assert!(!inside || found);
+    let mut closed = zone.clone();
+    closed.close();
+    assert_eq!(closed, zone);
+}
+
 /// One harness per operation and dimension (and reset clock), so each runs
 /// over a matrix of fixed shape. A dimension of at most 3 is the harness input FR-245-AC-4
 /// names, not a limit of the checker.
@@ -203,4 +225,7 @@ harnesses! {
     alu_dim_1 => alu_agrees_with_the_reference(1);
     alu_dim_2 => alu_agrees_with_the_reference(2);
     alu_dim_3 => alu_agrees_with_the_reference(3);
+    extrapolate_dim_1 => extrapolate_agrees_with_the_reference(1);
+    extrapolate_dim_2 => extrapolate_agrees_with_the_reference(2);
+    extrapolate_dim_3 => extrapolate_agrees_with_the_reference(3);
 }

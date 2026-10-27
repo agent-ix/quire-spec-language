@@ -227,6 +227,7 @@ impl Unit {
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
+                    timed: None,
                     initial: vec![self.documents.initial.clone()],
                     universes: self.documents.universes(),
                     expansion: subject.model.simulation.expansion,

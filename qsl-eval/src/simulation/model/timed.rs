@@ -145,6 +145,13 @@ pub struct PlaceConstraint {
 }
 
 impl PlaceConstraint {
+    /// `place op bound`, over a place index the caller names: one of
+    /// [`TimedSystem::places`], or a clock an engine adds past them, such as
+    /// a claim automaton's horizon clock (FR-242).
+    pub fn new(place: usize, op: ClockOp, bound: Rational) -> Self {
+        Self { place, op, bound }
+    }
+
     /// The constrained place's index in [`TimedSystem::places`].
     pub fn place(&self) -> usize {
         self.place
@@ -178,6 +185,7 @@ pub struct GuardedStep {
     post: ModelSimState,
     parts: Vec<Vec<PlaceConstraint>>,
     resets: Vec<(usize, Rational)>,
+    guards: Vec<String>,
 }
 
 impl GuardedStep {
@@ -207,6 +215,12 @@ impl GuardedStep {
     /// whose every part's data predicate is false has none.
     pub fn parts(&self) -> &[Vec<PlaceConstraint>] {
         &self.parts
+    }
+
+    /// The names of the precondition clauses whose clock guards apply to
+    /// the step, in model order: what a guard refusal names (FR-237).
+    pub fn guards(&self) -> &[String] {
+        &self.guards
     }
 
     /// The resets, each a place and its new value, in source order.
@@ -526,6 +540,37 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         Ok(bounds)
     }
 
+    /// The name of the first time invariant, in model order, that applies
+    /// at `state`'s discrete state and whose bound `state`'s clocks break:
+    /// what a delay or target refusal names (FR-237). `None` when every
+    /// applying bound holds.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::invariants`].
+    pub fn broken_invariant(&self, state: &TimedState) -> Result<Option<String>, TimedStop> {
+        for invariant in self.model.invariants() {
+            let readings = self.about(
+                &state.discrete,
+                invariant.predicate(),
+                invariant.context(),
+                || TimedSite::Invariant {
+                    name: invariant.name().to_owned(),
+                },
+            )?;
+            for (object, holds) in readings {
+                if holds
+                    && !self
+                        .over(&object, invariant.bounds())
+                        .all(|bound| bound.holds(&state.clocks))
+                {
+                    return Ok(Some(invariant.name().to_owned()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// `constraints` over `object`'s places.
     fn over<'c>(
         &'c self,
@@ -603,6 +648,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     continue;
                 };
                 let mut parts = vec![Vec::new()];
+                let mut guards = Vec::new();
                 for guard in self.model.guards() {
                     let operation = guard.operation();
                     if operation.declaring != vector.declaring
@@ -610,6 +656,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     {
                         continue;
                     }
+                    guards.push(guard.clause().to_owned());
                     let mut clause_parts = Vec::new();
                     for part in guard.parts() {
                         let data = match part.data() {
@@ -670,6 +717,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     post: post.clone(),
                     parts,
                     resets,
+                    guards,
                 });
             }
         }
@@ -940,6 +988,22 @@ impl TimedBehaviour {
         delay: &Rational,
         transition: &ModelTransition,
     ) -> Result<(), MoveRefusal> {
+        self.advance_where(system, delay, |step, _| &step.transition == transition)
+    }
+
+    /// Delay by `delay`, then take the first enabled step that `accept`
+    /// accepts with the timed state it reaches: where one transition
+    /// identity has several successors, the one a replay recorded.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::advance`].
+    pub fn advance_where(
+        &mut self,
+        system: &TimedSystem<'_, '_>,
+        delay: &Rational,
+        accept: impl Fn(&GuardedStep, &TimedState) -> bool,
+    ) -> Result<(), MoveRefusal> {
         let last = self.last();
         let delayed = system
             .delay(&last.state, delay)?
@@ -947,7 +1011,7 @@ impl TimedBehaviour {
         let (step, state) = system
             .steps(&delayed)?
             .into_iter()
-            .find(|(step, _)| &step.transition == transition)
+            .find(|(step, state)| accept(step, state))
             .ok_or(MoveRefusal::Step)?;
         let stamp = last.stamp.add(delay).add(&system.tick_of(&step.operation));
         self.positions.push(TimedPosition {

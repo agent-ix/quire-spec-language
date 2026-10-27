@@ -144,6 +144,7 @@ impl Case {
             ),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
+                    timed: None,
                     initial: self.initial.clone(),
                     universes: universe(&["c"]),
                     expansion: ExpansionLimits {

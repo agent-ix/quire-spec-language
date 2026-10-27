@@ -205,6 +205,7 @@ impl World {
             request(&document(), self.documents.snapshots.iter(), &unit, id),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
+                    timed: None,
                     initial: self.initial.clone(),
                     universes: universe(&self.keys),
                     expansion: ExpansionLimits {

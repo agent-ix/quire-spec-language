@@ -428,6 +428,8 @@ impl ItemCause {
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::NoAdmittedBehaviour
+                | InconclusiveCause::LassoNotConcretized
                 | InconclusiveCause::SolverInconclusive { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {

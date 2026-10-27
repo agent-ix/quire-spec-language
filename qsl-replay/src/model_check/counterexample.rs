@@ -46,6 +46,20 @@ pub fn deadlock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, Occurr
     (node, occurrence)
 }
 
+/// The occurrence role of the derived time-lock-freedom item.
+const TIME_LOCK_FREEDOM_ROLE: &str = "time-lock-freedom";
+
+/// The envelope identity of the time-lock-freedom item of the package
+/// `package_id` (FR-232), as [`deadlock_freedom_clause`] names the
+/// deadlock-freedom item's: its node is the package's own identity and its
+/// occurrence key is that node with the role `time-lock-freedom` and
+/// ordinal 0.
+pub fn time_lock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
+    let node = WireNodeId::from_digest(*package_id.as_bytes());
+    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(TIME_LOCK_FREEDOM_ROLE), 0));
+    (node, occurrence)
+}
+
 /// The occurrence role of the derived race-freedom item.
 const RACE_FREEDOM_ROLE: &str = "race-freedom";
 
@@ -187,6 +201,10 @@ pub enum CounterexampleKind {
     Race(Race),
     /// An expression undefined at the prefix's last position.
     UndefinedEvaluation(UndefinedEvaluation),
+    /// The time-lock-freedom item (FR-232, ADR-026 TD-1): after the prefix
+    /// and [`TemporalCounterexample::final_delay`], the state admits no
+    /// time-divergent continuation.
+    TimeLock,
 }
 
 /// The loop of a liveness refutation (ADR-018 CX-1): where the behaviour
@@ -278,11 +296,11 @@ impl<T: SubjectTransition> TemporalCounterexample<T> {
 
     /// QSpec FR-364's `trace_position`: the prefix's last position for a
     /// formula and an undefined-evaluation counterexample, `None` for a
-    /// deadlock. A formula lasso is evaluated from its origin (ADR-018 §6),
-    /// so its position is 0.
+    /// deadlock and a time-lock. A formula lasso is evaluated from its
+    /// origin (ADR-018 §6), so its position is 0.
     pub fn trace_position(&self) -> Option<u64> {
         match (&self.kind, self.lasso) {
-            (CounterexampleKind::Deadlock, _) => None,
+            (CounterexampleKind::Deadlock | CounterexampleKind::TimeLock, _) => None,
             (CounterexampleKind::Formula, Some(_)) => Some(0),
             (
                 CounterexampleKind::Formula
