@@ -107,7 +107,7 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
     let lowered = admitted(&flow(
         "M::Order",
         "on origin",
-        "capture a: Integer = 1;\ncapture b: Integer = a * 2;",
+        "capture a: Option<Reference<M::Order>> = deref(input).trail;\ncapture b: Boolean = present(a);",
         "true",
     ));
     let wire = &lowered.wire;
@@ -118,14 +118,13 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
         panic!("two captures");
     };
     let (a, b) = (target(wire, a), target(wire, b));
-    assert_eq!(a["semantic_type"], b["semantic_type"]);
     assert_eq!(
         node_by_id(wire, &a["semantic_type"])["semantic_form"],
-        "integer"
+        "option"
     );
     // `a` reads `over` alone; `b` reads `a` alone.
     let (init_a, init_b) = (target(wire, init_a), target(wire, init_b));
-    assert!(!reads(wire, init_a, &over["target"]));
+    assert!(reads(wire, init_a, &over["target"]));
     assert!(!reads(wire, init_a, &b["node_id"]));
     assert!(reads(wire, init_b, &a["node_id"]));
     assert!(!reads(wire, init_b, &over["target"]));
@@ -141,8 +140,14 @@ fn origin_captures_emit_binders_in_slot_order_and_count_in_the_finish_level() {
         occurrences(&lowered, a),
         [("expression", "a"), ("expression", "a")]
     );
-    assert_eq!(occurrences(&lowered, init_a), [("expression", "1")]);
-    assert_eq!(occurrences(&lowered, init_b), [("expression", "a * 2")]);
+    assert_eq!(
+        occurrences(&lowered, init_a),
+        [("expression", "deref(input).trail")]
+    );
+    assert_eq!(
+        occurrences(&lowered, init_b),
+        [("expression", "present(a)")]
+    );
 }
 
 /// FR-464 "Level": under `on each` the first capture is level 2 (the count
@@ -340,35 +345,109 @@ fn a_guard_with_captures_and_two_protocols_with_the_same_captures_are_admitted()
     assert_eq!(clauses, 2);
 }
 
+/// The `acme/orders` document whose `Order` also carries the scalar fields
+/// `uid: UUID`, `at: Timestamp` and the optional
+/// `flag: Boolean`: the families QSL has no literal for are read through
+/// `over`.
+fn typed_orders_document() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&super::reachability::reachability_document()).unwrap();
+    let trail = document["types"][0]["fields"][0].clone();
+    let field = |name: &str, scalar: &str, presence: &str| {
+        let mut field = trail.clone();
+        field["identity"] = json!(format!("ix://acme/orders/Order/{name}"));
+        field["name"] = json!(name);
+        field["typeRef"] = json!(format!("ix://quire/native/{scalar}"));
+        field["presence"] = json!(presence);
+        field
+    };
+    let fields = document["types"][0]["fields"].as_array_mut().unwrap();
+    fields.push(field("uid", "UUID", "required"));
+    fields.push(field("at", "Timestamp", "required"));
+    fields.push(field("flag", "Boolean", "optional"));
+    serde_json::to_vec(&document).unwrap()
+}
+
 /// FR-465 "Role" / FR-464 `parameter`: a capture's declared type is the
 /// binder's type; every family the reader admits as a parameter's type is
-/// emitted and read back.
+/// emitted and read back. The clause's `over` is the owner-model reference
+/// (QSL-1147), so each type is initialized by a literal where QSL has one,
+/// and by a field of `over` otherwise. `Decimal[...]` `Text[...]` and `Float64`
+/// have neither and are asserted refused in the test below.
 #[test]
 fn a_capture_of_every_declared_type_is_admitted() {
     let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
-    // A capture initializer cannot read a scalar `over` (the clause's `over`
-    // is the owner-model reference, QSL-1147), so each type is initialized by
-    // a literal; the families without a literal form are covered by the
-    // `over`-read tests above.
-    for (declared, initial) in [
+    let cases = [
         ("Integer", "1"),
         ("Boolean", "true"),
         ("String", "\"text\""),
+        ("UUID", "deref(input).uid"),
+        ("Timestamp", "deref(input).at"),
+        ("Option<Boolean>", "deref(input).flag"),
+        ("Sequence<Boolean>", "sequence[true]"),
+        ("Set<Boolean>", "set[true]"),
+        ("Bag<Boolean>", "bag[true]"),
+        ("OrderedSet<Boolean>", "orderedSet[true]"),
+        ("Rational[0, 10; 1, 1]", "rational(1, 1)"),
+        ("Point", "Point { x: 1 }"),
+        ("Color", "Color::RED"),
+        ("Tick", "Tick { ready: true, n: 1 }"),
+        ("M::Order", "input"),
+        ("Quantity<m>", "1 m"),
+        ("Int[0, 5]", "1"),
+        ("Sequence<Boolean>[0, 3]", "sequence[true]"),
         ("Option<Reference<M::Order>>", "deref(input).trail"),
-    ] {
-        let text = format!(
-            "{declarations}protocol Flow using v over (input: M::Order) on origin {{\n\
-             capture c: {declared} = {initial};\n\
-             role Buyer on M::Order;\n\
-             run sequence Main {{ }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}\n"
-        );
-        let lowered = lower_with(model(), PROFILES, &text);
+    ];
+    for (declared, initial) in cases {
+        let text = capture_of(&declarations, declared, initial);
+        let lowered = lower_with(typed_orders_document(), PROFILES, &text);
         assert!(lowered.ir.is_ok(), "{declared}: {:?}", lowered.ir.err());
         assert!(lowered.verified, "{declared}");
         assert_eq!(binders(&lowered.wire), [pair("c", "1")], "{declared}");
     }
+}
+
+/// A protocol over `M::Order` with one capture `c: declared = initial`.
+fn capture_of(declarations: &str, declared: &str, initial: &str) -> String {
+    format!(
+        "{declarations}protocol Flow using v over (input: M::Order) on origin {{\n\
+         capture c: {declared} = {initial};\n\
+         role Buyer on M::Order;\n\
+         run sequence Main {{ }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// The capture types with no initializer QSL can write, named rather than
+/// dropped: `Decimal[...]` (S2 builds no `decimal(...)` value), `Text[...]` (a
+/// string literal is a `String`, refused at S3 as a type mismatch) and
+/// `Float64` (a float literal needs a floating-point profile the fixture
+/// does not select).
+#[test]
+fn the_capture_types_without_an_initializer_refuse_where_written() {
+    let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
+    let decimal = capture_of(
+        &declarations,
+        "Decimal[0, 10; 0, 2; nearest-even]",
+        "decimal(100, 2)",
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        format!("language \"ix:native\" edition \"1-draft\";\n{decimal}").as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert!(
+        qsl_forms::build_unit(&parsed).is_err(),
+        "decimal(...) has no S2 value"
+    );
+    let text = capture_of(&declarations, "Text[0, 5; nfc]", "\"abc\"");
+    assert!(
+        checked(&text, false).is_err(),
+        "a string literal is no Text"
+    );
 }
 
 /// FR-381 / FR-464 "Slots that bar model state": a guard that is not Boolean
@@ -391,12 +470,11 @@ fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
             .into_iter()
             .map(|refusal| refusal.cause)
             .collect();
-        // A guard reading `over` twice is refused at each read.
         let last = causes.pop();
-        let Some(CheckCause::ProtocolObligation(cause)) = &last else {
-            panic!("an obligation refusal for {guard}: {last:?}");
+        let (Some(CheckCause::ProtocolObligation(cause)), None) = (last, causes.pop()) else {
+            panic!("one obligation refusal for {guard}");
         };
-        (**cause).clone()
+        *cause
     };
     let ObligationCause::Clause { stage, cause, .. } = refusal("t.n") else {
         panic!("a clause refusal");
@@ -404,7 +482,7 @@ fn a_non_boolean_guard_and_a_guard_reading_over_refuse_at_the_check() {
     assert_eq!(stage, ObligationStage::ProtocolActivation);
     assert_eq!(*cause, CheckCause::NonBooleanRoot);
     assert!(matches!(
-        refusal("deref(input).trail = deref(input).trail"),
+        refusal("present(deref(input).trail)"),
         ObligationCause::ModelStateRead {
             stage: ObligationStage::ProtocolActivation,
             ..

@@ -256,8 +256,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
     });
 
     type Edit = Box<dyn Fn(&mut Value)>;
-    let nodes_of = |envelope: &mut Value| envelope["semantic_graph"]["nodes"].clone();
-    let _ = nodes_of;
     let cases: Vec<(&str, Edit, bool, String)> = vec![
         (
             "the edge is missing",
@@ -329,7 +327,7 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                 }
             }),
             true,
-            String::new(),
+            format!("MissingDeclaration at {clause_path}/owner_model (Some(MissingName))"),
         ),
     ];
     for (name, edit, rekey, expected) in cases {
@@ -345,17 +343,7 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
         }
         let found = verdict(&lowered, &envelope);
         assert_ne!(found, "admitted", "{name}");
-        if !expected.is_empty() {
-            assert_eq!(found, expected, "{name}");
-        } else {
-            // A target no node holds is refused at the edge or at the
-            // dependency that names it, before the clause is read.
-            assert!(
-                found.contains(&format!("{clause_path}/owner_model"))
-                    || found.contains(&format!("{clause_path}/dependencies")),
-                "{name}: {found}"
-            );
-        }
+        assert_eq!(found, expected, "{name}");
     }
 }
 
@@ -364,7 +352,7 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
 /// protocol is refused typed (`unsupported_construct`/`not-yet-implemented`,
 /// QSL-1147), once, and with the emission gate open writes no clause. The same
 /// protocol over an object type checks and writes the clause.
-#[trace("FR-383-AC-26", "TC-1063")]
+#[trace("FR-383-AC-27", "TC-1063")]
 #[test]
 fn an_over_input_that_is_no_object_type_refuses_typed_and_writes_no_clause() {
     let clauses = |graph: &qsl_semantics::check::CheckedGraph| {
