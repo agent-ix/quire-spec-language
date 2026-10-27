@@ -74,7 +74,9 @@ fn phase_type() -> Json {
     )
 }
 
-fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
+/// With `scoped`, the frame modifies `modifies` on the receiver only
+/// (`modifies_receiver`), as each object of a symmetric population needs.
+fn operation(name: &str, modifies: &[&str], unbounded: bool, scoped: bool) -> Json {
     let identity = ident(&format!("Call/{name}"));
     // With `unbounded`, a parameter `n: Integer`, an unbounded root.
     let params: Vec<Json> = unbounded
@@ -89,12 +91,17 @@ fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
         })
         .into_iter()
         .collect();
+    let fields: Vec<String> = modifies
+        .iter()
+        .map(|field| ident(&format!("Call/{field}")))
+        .collect();
     json!({
         "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
         "frame": {
-            "modifies": modifies.iter().map(|field| ident(&format!("Call/{field}"))).collect::<Vec<_>>(),
+            "modifies": if scoped { Vec::new() } else { fields.clone() },
+            "modifies_receiver": if scoped { fields } else { Vec::new() },
             "creates": [], "deletes": [],
         },
     })
@@ -151,7 +158,7 @@ fn document_with(
     let operations: Vec<Json> = operations
         .iter()
         .enumerate()
-        .map(|(at, (name, modifies))| operation(name, modifies, unbounded && at == 0))
+        .map(|(at, (name, modifies))| operation(name, modifies, unbounded && at == 0, symmetric))
         .collect();
     let population = ident("calls");
     json!({

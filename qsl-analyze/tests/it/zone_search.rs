@@ -198,6 +198,15 @@ pub(crate) fn time_lock_item(world: &World) -> Outcome {
 
 /// [`time_lock_item`] under `limits`.
 fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
+    time_lock_item_with(world, limits, &Reductions::default())
+}
+
+/// [`time_lock_item`] under `limits`, selecting `reductions`.
+pub(crate) fn time_lock_item_with(
+    world: &World,
+    limits: ZoneCheckLimits,
+    reductions: &Reductions,
+) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -209,7 +218,7 @@ fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
                 kind: ObligationKind::TimeLockFreedom,
             },
             limits,
-            reductions: &Reductions::default(),
+            reductions,
         },
         &Cancel::new(),
     )
@@ -253,6 +262,8 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "echo",
                 "work",
                 "spin",
+                "arm",
+                "disarm",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))
