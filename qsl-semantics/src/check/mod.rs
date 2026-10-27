@@ -288,7 +288,8 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
-    ClockTypePosition, TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
+    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse, TimedDeclaration,
+    TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
@@ -1295,17 +1296,33 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
-                        // A `Clock` the unit's own source writes in a type
-                        // position has no checked form yet (FR-230
-                        // "Clock-typed positions").
+                        // FR-230 "Clock-typed positions": a `Clock` in a
+                        // declared type position is admitted (the assembler
+                        // kept its declaration out of the value world); one
+                        // inside an expression has no checked form.
                         if let TimedDeclaration::ClockType(position) = form {
-                            return Some(CheckRefusal {
-                                location: root(Origin::Expression),
-                                cause: CheckCause::TimedNotChecked {
-                                    construct: TimedConstruct::Clock,
-                                    span: position.span,
-                                },
-                            });
+                            return match position.site {
+                                ClockSite::Declaration => None,
+                                // FR-230 "Records, tuples and unions": a
+                                // clock-bearing value read whole, or a
+                                // literal with a clock component outside a
+                                // reset.
+                                ClockSite::Expression(used) => Some(CheckRefusal {
+                                    location: root(Origin::Expression),
+                                    cause: CheckCause::Temporal(Box::new(match used {
+                                        ClockUse::Literal => TemporalCause::ClockWrite {
+                                            span: position.span,
+                                        },
+                                        ClockUse::Conversion
+                                        | ClockUse::Instances
+                                        | ClockUse::Accumulation => {
+                                            TemporalCause::ClockReadOutsideConstraint {
+                                                span: position.span,
+                                            }
+                                        }
+                                    })),
+                                }),
+                            };
                         }
                         // A time invariant and an `urgent` declaration are
                         // checked with the clauses they read (`timed_model`).
@@ -1343,6 +1360,8 @@ impl PackageDeclarations {
                     types: &self.types,
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
+                    clock_reading: &self.clock_reading,
+                    operation_bodies: &self.operation_bodies,
                     units: &units,
                     rational_bits: limits.rational_bits(),
                     nodes: limits.nodes(),
@@ -1500,6 +1519,12 @@ impl PackageDeclarations {
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
         .with_known_populations(refinement::population_names(&self.models))
+        .with_clock_reading(
+            self.clock_reading
+                .iter()
+                .map(|declaration| declaration.function.name.clone())
+                .collect(),
+        )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
         .with_model_selections(

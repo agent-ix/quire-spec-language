@@ -696,6 +696,10 @@ enum Declared {
     Enum,
 }
 
+mod clock_forms;
+
+pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse};
+
 /// A timed declaration with the complete S2 form and source span that S3
 /// needs to check it (FR-230).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -708,19 +712,6 @@ pub enum TimedDeclaration {
     Urgent(UrgentForm),
     /// A `Clock` the unit's own source writes in a type position.
     ClockType(ClockTypePosition),
-}
-
-/// A `Clock` the unit's own source writes in a type position (a parameter,
-/// result, record field, type alias target, tuple element, union payload or
-/// the argument of `Option` or a collection type), with the declaration
-/// that writes it (FR-230 "Timed facet gate").
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClockTypePosition {
-    /// The name of the function, predicate, record, tuple, union, alias or
-    /// clause whose type form writes `Clock`.
-    pub owner: String,
-    /// The span of the `Clock` type form.
-    pub span: Span,
 }
 
 impl TimedDeclaration {
@@ -754,111 +745,6 @@ impl TimedDeclaration {
             Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
             Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
             Self::ClockType(position) => &position.owner,
-        }
-    }
-}
-
-/// The declarations among `forms` whose type forms are clock-bearing, by
-/// form index, each with its name and the span of every `Clock` it writes
-/// in source order (FR-230 "Timed facet gate"). S3 checks no clock-bearing
-/// declaration of the unit's own source as a value declaration: each
-/// `Clock` reaches S3 as a [`TimedDeclaration::ClockType`] and the
-/// declaration does not enter the value world. A declaration that names
-/// the declared type of a dropped one is dropped with it and writes no
-/// `Clock` of its own, so it receives no refusal of its own.
-fn clock_bearing_forms(forms: &[qsl_forms::ParsedForm]) -> BTreeMap<usize, (String, Vec<Span>)> {
-    /// Each declaration's name, the type name it declares (if any), and
-    /// every type form it writes.
-    fn type_forms(form: &DeclarationForm) -> Option<(String, Option<&str>, Vec<TypeForm>)> {
-        Some(match form {
-            DeclarationForm::Function(function) => {
-                let mut forms: Vec<TypeForm> = signature_type_forms(function)
-                    .into_iter()
-                    .cloned()
-                    .collect();
-                forms.extend(body_type_forms(function));
-                (function.name.clone(), None, forms)
-            }
-            DeclarationForm::Alias(alias) => (
-                alias.name.name.clone(),
-                Some(alias.name.name.as_str()),
-                vec![alias.target.clone()],
-            ),
-            DeclarationForm::Record(record) => (
-                record.name.name.clone(),
-                Some(record.name.name.as_str()),
-                record
-                    .fields
-                    .iter()
-                    .map(|field| field.type_form.clone())
-                    .collect(),
-            ),
-            DeclarationForm::Tuple(tuple) => (
-                tuple.name.name.clone(),
-                Some(tuple.name.name.as_str()),
-                tuple.elements.clone(),
-            ),
-            DeclarationForm::Union(union) => (
-                union.name.name.clone(),
-                Some(union.name.name.as_str()),
-                union
-                    .members
-                    .iter()
-                    .flat_map(|member| member.payload.iter().cloned())
-                    .collect(),
-            ),
-            DeclarationForm::StateClause(clause) => (
-                clause.name.name.clone(),
-                None,
-                expression_type_forms([&clause.body]),
-            ),
-            DeclarationForm::OperationBody(body) => (
-                body.label.name.clone(),
-                None,
-                expression_type_forms([&body.body]),
-            ),
-            _ => return None,
-        })
-    }
-    let read: Vec<_> = forms.iter().map(|form| type_forms(form.form())).collect();
-    let mut dropped: BTreeMap<usize, (String, Vec<Span>)> = BTreeMap::new();
-    let mut dropped_types: BTreeSet<&str> = BTreeSet::new();
-    // Each pass drops at least one more declaration or ends, so the loop
-    // runs at most once per declaration plus one.
-    loop {
-        let mut changed = false;
-        for (index, entry) in read.iter().enumerate() {
-            let Some((name, declares, written)) = entry else {
-                continue;
-            };
-            if dropped.contains_key(&index) {
-                continue;
-            }
-            let mut clocks = Vec::new();
-            let mut names_dropped = false;
-            let mut stack: Vec<&TypeForm> = written.iter().rev().collect();
-            while let Some(form) = stack.pop() {
-                match &form.head {
-                    TypeFormHead::Builtin(BuiltinType::Clock) => clocks.push(form.span),
-                    TypeFormHead::Name(named) if dropped_types.contains(named.name.as_str()) => {
-                        names_dropped = true;
-                    }
-                    _ => {}
-                }
-                stack.extend(form.arguments.iter().rev());
-            }
-            if clocks.is_empty() && !names_dropped {
-                continue;
-            }
-            clocks.sort_by_key(|span| span.start);
-            dropped.insert(index, (name.clone(), clocks));
-            if let Some(declared) = declares {
-                dropped_types.insert(declared);
-            }
-            changed = true;
-        }
-        if !changed {
-            return dropped;
         }
     }
 }
@@ -906,6 +792,9 @@ struct Unit {
     hybrids: Vec<qsl_forms::HybridForm>,
     /// The timed declarations in source order, with their complete S2 forms.
     timed: Vec<TimedDeclaration>,
+    /// The unit's clock-reading declarations in source order (FR-230
+    /// "Clock-reading declarations"), held out of the value world.
+    clock_reading: Vec<ClockReadingDeclaration>,
     /// The task sets and the claims over them in source order (QSL FR-246).
     task_sets: Vec<super::task_set::TaskSetDeclaration>,
     /// Each state-graph claim's form, in source order, resolved by the
@@ -915,7 +804,7 @@ struct Unit {
 
 impl Unit {
     fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
-        let mut clock_bearing = clock_bearing_forms(&forms);
+        let mut clock_forms = clock_forms::classify(&forms);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
@@ -936,21 +825,32 @@ impl Unit {
             refinements: Vec::new(),
             hybrids: Vec::new(),
             timed: Vec::new(),
+            clock_reading: Vec::new(),
             task_sets: Vec::new(),
             state_graph_claims: Vec::new(),
         };
+        unit.timed.extend(
+            std::mem::take(&mut clock_forms.positions)
+                .into_iter()
+                .map(TimedDeclaration::ClockType),
+        );
         for (index, form) in forms.into_iter().enumerate() {
-            if let Some((owner, clocks)) = clock_bearing.remove(&index) {
-                unit.timed.extend(clocks.into_iter().map(|span| {
-                    TimedDeclaration::ClockType(ClockTypePosition {
-                        owner: owner.clone(),
-                        span,
-                    })
-                }));
-                continue;
-            }
             let span = form.span();
-            match form.into_form() {
+            let form = match clock_forms.dispositions.remove(&index) {
+                None => form.into_form(),
+                Some(clock_forms::Disposition::Drop) => continue,
+                Some(clock_forms::Disposition::Reading) => {
+                    if let DeclarationForm::Function(function) = form.into_form() {
+                        unit.clock_reading
+                            .push(clock_forms::reading(&clock_forms, *function));
+                    }
+                    continue;
+                }
+                Some(clock_forms::Disposition::DataPart) => {
+                    clock_forms::data_part(&clock_forms, form.into_form())
+                }
+            };
+            match form {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Alias(alias) => {
@@ -1046,6 +946,9 @@ impl Unit {
                 }
             }
         }
+        // The `Clock` type positions were listed first; FR-230's gate reads
+        // every timed construct in source order.
+        unit.timed.sort_by_key(|form| form.span().start);
         unit
     }
 
@@ -3464,6 +3367,16 @@ impl PackageDeclarations {
             ));
             declared_type_spans.insert(composite.name.name.clone(), composite.name.span);
         }
+        // Each clock-reading declaration's name, which locates a refusal of
+        // the declaration as a whole (`timed_model::prepare`).
+        for declaration in &unit.clock_reading {
+            if let Some(spans) = declaration.function.spans() {
+                declared_type_spans.insert(
+                    super::timed_model::clock_reading_site(&declaration.function.name),
+                    spans.declaration,
+                );
+            }
+        }
 
         // Each function's check-owned resolved signature.
         let mut signatures: Vec<ResolvedSignature> = Vec::with_capacity(unit.functions.len());
@@ -3896,6 +3809,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
+        package.clock_reading = unit.clock_reading;
         package.task_set_forms = unit.task_sets;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {

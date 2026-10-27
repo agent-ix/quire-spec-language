@@ -700,7 +700,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         );
     }
     match &first.cause {
-        CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
+        CheckCause::MissingName(name)
+        | CheckCause::AmbiguousName { name, .. }
+        | CheckCause::ClockReadingCall(name) => {
             message = format!("{message}: `{name}`");
         }
         // FR-104-AC-2: name the clause kind and, when the clause names one,
@@ -1376,6 +1378,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::ClockBoundNotConstant { .. } => {
                     format!("{message}: a clock is compared with a time quantity literal")
                 }
+                TemporalCause::NotAPlaceExpression { .. } => format!(
+                    "{message}: a `Clock` argument or result is a place expression, not a value"
+                ),
                 TemporalCause::ClockWrite { .. } => format!(
                     "{message}: the one write to a clock is a reset of a clock of the frame \
                      to a constant"

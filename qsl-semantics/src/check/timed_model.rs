@@ -50,6 +50,10 @@ use super::temporal_clause::{ModelTimeSource, TimeSourceKind};
 use super::time_units::{TimeScale, TimeUnits};
 use crate::family::CheckContext;
 
+mod reading;
+
+pub(crate) use reading::site as clock_reading_site;
+
 /// The index of a clock field in [`TimedModel::clocks`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClockId(usize);
@@ -192,10 +196,6 @@ impl ClockConstraint {
     /// The span of the constraint as written.
     pub fn span(&self) -> Span {
         self.span
-    }
-
-    fn with_op(&self, op: ClockOp) -> Self {
-        Self { op, ..self.clone() }
     }
 }
 
@@ -498,6 +498,12 @@ pub(crate) struct Inputs<'a> {
     pub(crate) types: &'a TypeEnvironment,
     pub(crate) time_sources: &'a [ModelTimeSource],
     pub(crate) timed_forms: &'a [TimedDeclaration],
+    /// The unit's clock-reading declarations (FR-230 "Clock-reading
+    /// declarations").
+    pub(crate) clock_reading: &'a [super::assemble::ClockReadingDeclaration],
+    /// The unit's operation bodies, which S3 does not type: a call of a
+    /// clock-reading declaration in one is refused here.
+    pub(crate) operation_bodies: &'a [super::OperationBodyDeclaration],
     pub(crate) units: &'a TimeUnits,
     pub(crate) rational_bits: u64,
     /// The package's expression-node limit, which bounds each guard's
@@ -525,6 +531,8 @@ struct Clocks<'a> {
     units: &'a TimeUnits,
     target: Option<TimeScale>,
     rational_bits: u64,
+    /// The unit's clock-reading declarations, whose calls read clocks.
+    declarations: &'a reading::Declarations<'a>,
 }
 
 impl Clocks<'_> {
@@ -682,6 +690,12 @@ impl<'f> Located<'f> {
         // parent is reached.
         for node in form.expression.iter() {
             let id = node.id();
+            // A call of a clock-reading declaration reads its clocks, at the
+            // call.
+            if clocks.declarations.is_call(&form.expression, id) {
+                first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
                 first[id.index()] = spans.get(id.index()).copied();
@@ -755,47 +769,32 @@ impl<'f> Located<'f> {
             _ => Err(TemporalCause::ClockBoundNotConstant { span }),
         }
     }
+}
 
-    /// The atomic clock constraint `id` is, when it compares a clock with a
-    /// constant.
-    fn atom(
-        &self,
-        id: ExprId,
-        clocks: &Clocks<'_>,
-    ) -> Result<Option<ClockConstraint>, TemporalCause> {
-        let Some(ExprNode::Binary {
-            operator,
-            left,
-            right,
-        }) = self.node(id)
-        else {
-            return Ok(None);
-        };
-        let Some(op) = ClockOp::of(*operator) else {
-            return Ok(None);
-        };
-        let span = self.span(id);
-        let (clock, op, constant) = match (self.clock(*left), self.clock(*right)) {
-            (Some(_), Some(_)) => return Err(TemporalCause::ClockComparison { span }),
-            (Some(clock), None) => (clock, op, *right),
-            (None, Some(clock)) => (clock, op.mirrored(), *left),
-            (None, None) => return Ok(None),
-        };
-        if self.reads_clock(constant) {
-            return Err(TemporalCause::ClockComparison { span });
+/// A data literal of a guard part (FR-230 "Clock constraints and guards").
+#[derive(Clone, Debug)]
+enum DataLiteral {
+    /// A clock-free node of the precondition itself.
+    Site(ExprId),
+    /// A data predicate or data argument of a clock-reading declaration's
+    /// body, read at the call: its parameters replaced by the call's
+    /// arguments, every node located at the call.
+    Formed(std::rc::Rc<ExpressionForm>),
+}
+
+impl PartialEq for DataLiteral {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Site(left), Self::Site(right)) => left == right,
+            (Self::Formed(left), Self::Formed(right)) => std::rc::Rc::ptr_eq(left, right),
+            _ => false,
         }
-        Ok(Some(ClockConstraint {
-            clock,
-            op,
-            bound: self.constant(constant, clocks)?,
-            span,
-        }))
     }
 }
 
-/// A disjunctive form: each part a list of data literals (node, positive)
-/// and a conjunction of clock constraints.
-type Dnf = Vec<(Vec<(ExprId, bool)>, Vec<ClockConstraint>)>;
+/// A disjunctive form: each part a list of data literals (literal,
+/// positive) and a conjunction of clock constraints.
+type Dnf = Vec<(Vec<(DataLiteral, bool)>, Vec<ClockConstraint>)>;
 
 /// The parts of a guard's disjunctive forms, counted against the package's
 /// node limit: a guard whose disjunctive form grows past it is refused, as
@@ -832,7 +831,7 @@ impl PartBudget {
             .flat_map(|(data, clocks)| {
                 right.iter().map(move |(more_data, more_clocks)| {
                     (
-                        data.iter().chain(more_data).copied().collect(),
+                        data.iter().chain(more_data).cloned().collect(),
                         clocks.iter().chain(more_clocks).cloned().collect(),
                     )
                 })
@@ -845,12 +844,61 @@ fn timed(cause: TemporalCause) -> CheckCause {
     CheckCause::Temporal(Box::new(cause))
 }
 
+/// The disjunctive forms, read positively and negated, of the atomic clock
+/// reading at node `id`: a comparison of a place expression with a
+/// constant, or a call of a clock-reading predicate, expanded. `None` when
+/// the node is neither.
+fn clock_atom(
+    located: &Located<'_>,
+    id: ExprId,
+    clocks: &Clocks<'_>,
+    context: EffectiveId,
+    budget: &mut PartBudget,
+) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
+    let expansion = reading::Expansion {
+        located,
+        clocks,
+        declarations: clocks.declarations,
+        context,
+    };
+    if let Some(read) = expansion.predicate(id, budget)? {
+        return Ok(Some(read));
+    }
+    let Some(ExprNode::Binary {
+        operator,
+        left,
+        right,
+    }) = located.node(id)
+    else {
+        return Ok(None);
+    };
+    let Some(op) = ClockOp::of(*operator) else {
+        return Ok(None);
+    };
+    let span = located.span(id);
+    let (places, op, constant) = match (
+        expansion.site_places(*left, budget)?,
+        expansion.site_places(*right, budget)?,
+    ) {
+        (Some(_), Some(_)) => return Err(timed(TemporalCause::ClockComparison { span })),
+        (Some(places), None) => (places, op, *right),
+        (None, Some(places)) => (places, op.mirrored(), *left),
+        (None, None) => return Ok(None),
+    };
+    if located.reads_clock(constant) {
+        return Err(timed(TemporalCause::ClockComparison { span }));
+    }
+    let bound = located.constant(constant, clocks).map_err(timed)?;
+    Ok(Some(reading::constraints(places, op, &bound, span)))
+}
+
 /// A precondition body's guard: its disjunctive form over clock constraints
 /// and maximal clock-free data subterms, and the polarity of each clock
 /// constraint node (true where read positively).
 fn guard(
     located: &Located<'_>,
     clocks: &Clocks<'_>,
+    context: EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<(Dnf, BTreeMap<ExprId, bool>), CheckCause> {
     let len = located.form.expression.len();
@@ -862,18 +910,12 @@ fn guard(
         let id = node.id();
         let (pos, neg) = if !located.reads_clock(id) {
             (
-                vec![(vec![(id, true)], Vec::new())],
-                vec![(vec![(id, false)], Vec::new())],
+                vec![(vec![(DataLiteral::Site(id), true)], Vec::new())],
+                vec![(vec![(DataLiteral::Site(id), false)], Vec::new())],
             )
-        } else if let Some(constraint) = located.atom(id, clocks).map_err(timed)? {
+        } else if let Some(read) = clock_atom(located, id, clocks, context, budget)? {
             atoms.insert(id);
-            let negated = constraint
-                .op
-                .negated()
-                .into_iter()
-                .map(|op| (Vec::new(), vec![constraint.with_op(op)]))
-                .collect();
-            (vec![(Vec::new(), vec![constraint])], negated)
+            read
         } else {
             match node.node() {
                 ExprNode::Binary {
@@ -972,15 +1014,28 @@ fn conjuncts(located: &Located<'_>) -> Vec<ExprId> {
 }
 
 /// The data predicate of one guard part: its literals, each cut from the
-/// clause body, in source order.
-fn part_predicate(located: &Located<'_>, literals: &[(ExprId, bool)]) -> Option<ExpressionForm> {
-    let mut literals: Vec<(ExprId, bool)> = literals.to_vec();
-    literals.sort_by_key(|(id, _)| located.span(*id).start);
+/// clause body or read at its call, in source order.
+fn part_predicate(
+    located: &Located<'_>,
+    literals: &[(DataLiteral, bool)],
+) -> Option<ExpressionForm> {
+    let mut literals: Vec<(DataLiteral, bool)> = literals.to_vec();
+    let start = |literal: &DataLiteral| match literal {
+        DataLiteral::Site(id) => located.span(*id).start,
+        DataLiteral::Formed(form) => form
+            .spans
+            .span(form.spans.root())
+            .map_or(0, |span| span.start),
+    };
+    literals.sort_by_key(|(literal, _)| start(literal));
     literals.dedup();
     let operands = literals
         .into_iter()
-        .map(|(id, positive)| {
-            let cut = located.form.cut(id, &BTreeMap::new())?;
+        .map(|(literal, positive)| {
+            let cut = match literal {
+                DataLiteral::Site(id) => located.form.cut(id, &BTreeMap::new())?,
+                DataLiteral::Formed(form) => (*form).clone(),
+            };
             if positive {
                 Some(cut)
             } else {
@@ -1101,7 +1156,7 @@ fn read_clause(
     let (leaves, read) = match clause.kind {
         StateClauseKind::Invariant => return Err(timed(located.outside(root))),
         StateClauseKind::Precondition => {
-            let (dnf, polarity) = guard(&located, clocks, budget)?;
+            let (dnf, polarity) = guard(&located, clocks, clause.context, budget)?;
             let parts = dnf
                 .into_iter()
                 .map(|(literals, clocks)| {
@@ -1272,6 +1327,21 @@ pub(crate) fn prepare(
     inputs: &Inputs<'_>,
     state_clauses: &mut [StateClauseDeclaration],
 ) -> Result<TimedDrafts, CheckRefusal> {
+    // FR-146 over the clock-reading declarations, which have no function
+    // node for the value checker's measure check to reach (FR-091-AC-30).
+    if let Some((cycle, name)) = reading::unmeasured_cycle(inputs.clock_reading) {
+        return Err(CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::TypeDeclaration {
+                    name: clock_reading_site(name),
+                },
+            ),
+            cause: CheckCause::UnprovedDecrease {
+                cycle,
+                obligation: super::refusal::MeasureObligation::MissingMeasure,
+            },
+        });
+    }
     prepare_models(inputs, state_clauses).map_err(refusal)
 }
 
@@ -1283,6 +1353,18 @@ fn prepare_models(
         limit: inputs.nodes,
         used: 0,
     };
+    // FR-230 "Clock-reading declarations": each body is checked once. A call
+    // this check does not expand reaches the value checker, which refuses it
+    // (`CheckCause::ClockReadingCall`).
+    let declarations = reading::Declarations::new(inputs.clock_reading, inputs.models);
+    for declaration in inputs.clock_reading {
+        reading::check_declaration(declaration, &declarations).map_err(timed)?;
+    }
+    for body in inputs.operation_bodies {
+        if let Some(span) = reading::first_call(&declarations, &body.body, &body.spans.body) {
+            return Err(timed(TemporalCause::ClockReadOutsideConstraint { span }));
+        }
+    }
     let source_of = |model: &AdmittedModel| {
         model.alias().and_then(|alias| {
             inputs
@@ -1309,6 +1391,7 @@ fn prepare_models(
             units: inputs.units,
             target,
             rational_bits: inputs.rational_bits,
+            declarations: &declarations,
         }
     };
     // A clock of a tick model refuses at its time declaration; one of an
