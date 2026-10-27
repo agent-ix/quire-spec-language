@@ -127,14 +127,21 @@ pub(super) struct ClockForms {
 impl ClockForms {
     /// Whether `form` is a pure clock type: it has no data part.
     pub(super) fn is_pure(&self, form: &TypeForm) -> bool {
-        match &form.head {
-            TypeFormHead::Builtin(BuiltinType::Clock) => true,
-            TypeFormHead::Name(name) => self.pure_aliases.contains(&name.name),
-            TypeFormHead::Builtin(BuiltinType::Option) | TypeFormHead::Collection(_) => {
-                !form.arguments.is_empty() && form.arguments.iter().all(|arg| self.is_pure(arg))
+        // An explicit stack: a type form may nest as deep as S1 admits.
+        let mut stack = vec![form];
+        while let Some(form) = stack.pop() {
+            match &form.head {
+                TypeFormHead::Builtin(BuiltinType::Clock) => {}
+                TypeFormHead::Name(name) if self.pure_aliases.contains(&name.name) => {}
+                TypeFormHead::Builtin(BuiltinType::Option) | TypeFormHead::Collection(_)
+                    if !form.arguments.is_empty() =>
+                {
+                    stack.extend(&form.arguments);
+                }
+                _ => return false,
             }
-            _ => false,
         }
+        true
     }
 
     /// Whether `form` holds a clock anywhere.
