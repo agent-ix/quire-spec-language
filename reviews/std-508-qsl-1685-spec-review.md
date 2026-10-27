@@ -64,6 +64,12 @@ on all 11 open PR heads.
 | FND-006 | medium | The new slot rule is stated for "the same position of a sequence" only, but `Set<E>` and `Bag<E>` of a clock-bearing non-pure-clock element (`Set<Timer>[0, 2]`, `Bag<Timer>[0, 2]`) are now finite by the same bullet and have clock slots (FR-230-AC-19 lists `Call.b.[slot]`). Which pre-state slot a candidate's element keeps (by data part, by ascending order, by count) is not stated, and AC-26/TC-1270 grant only `Set<Cfg>`, `Bag<Cfg>` and `Set<Clock>`, so no clock-bearing Set/Bag is pinned. State the matching rule (or that a clock-bearing Set/Bag element other than a bare clock stays unbounded until ruled) and add one case. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:462-470 | missing-requirement |
 | FND-007 | low | The new-slot rule says the added slot holds "a newly created clock at 0 in its declared unit (FR-230 \"Clocks and resets\")", but FR-230 states no creation value or default for a clock slot; `Fresh` there carries the constants of a written literal. The rule is the author's own, so cite it as this section's (as the tuple/clock-place bullet does) rather than as FR-230's. Not a contradiction with FR-230 (its Carried/Fresh provenance concerns a written conjunct, which the new text defers to). | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:467-470 | wrong-requirement |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-008 | low | `Set<Clock>` with no declared maximum is now a finite 2-value domain, but the record bullet's unbounded list still reads "a collection with no declared maximum" with no exception, and FR-215's "(`Integer`, `Text` or a collection with no declared maximum, for example)" and FR-097-AC-2's "each collection with no bound is exactly one unbounded domain" say the same, so a claim over a `Set<Clock>` would be classified unbounded there and finite here. Add "other than `Set<Clock>`" at the record bullet (one phrase); FR-215 is an example list and FR-097-AC-2 pre-exists (as with Text), so note them in the ticket. Non-blocking. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:434-436 | wrong-requirement |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -75,7 +81,10 @@ on all 11 open PR heads.
 | FND-005 | fixed | Rationale moved out of the SHALL bullets; list sentence now reads "sequence of a finite or clock element". |
 | FND-006 | still-open | medium: Set/Bag clock-slot matching undefined; see New findings. |
 | FND-007 | still-open | low: citation of FR-230 for a rule FR-230 does not state. |
+| FND-006 | fixed | Round 2: a Set/Bag candidate element is matched one to one to a pre-state element with equal non-clock components (bag duplicates in ascending order), keeps its clocks or the provenance reset, unmatched elements are Fresh at 0; AC-26 and step 5 grant Set<Timer>[0,2] (11 = 1+4+6) and Bag<Timer>[0,2] (15 = 1+4+10) and work the `{n 1}` to `{n 1, n 2}` carry example. |
+| FND-007 | fixed | Round 2: the bullet says the creation value is this section's own rule and FR-230 gives a created clock no value; the closing "tuple, ... rules above" bullet is back inside the list. |
+| FND-008 | still-open | low, non-blocking: unqualified "collection with no declared maximum" in the record bullet (and FR-215 / FR-097-AC-2 prose) vs the Set<Clock> finite exception. |
 
 ## Verdict
 
-Round 1: changes requested, narrow. FND-001 to FND-005 are fixed. Arithmetic verified: Set<Cfg>[0,1] 1+6 = 7; Set<Cfg>[0,2] 1+6+C(6,2)=15 = 22; Bag<Cfg>[0,2] 1+6+C(7,2)=21 = 28; Set<Clock>[0,2] p=1 gives C(1,0)+C(1,1)+C(1,2) = 2, matching FR-230 "Set<Clock> holding at most one element"; Bag p=1 gives N+1, matching FR-230 "one for each occurrence". Set, Bag and OrderedSet are QSL types (FR-230 "Clock collections", FR-106 spelling, TC-1171). Map and ordered set left unbounded with a follow-up note is acceptable. Count-then-ascending order for Set/Bag is consistent. quire validate passes; the scratch matrix lists FR-120-AC-22..26 rows.
+Round 2: PASS. FND-001 to FND-007 are fixed; FND-008 is low and non-blocking (add "other than `Set<Clock>`" at FR-120's record bullet). Verified: Set<Timer>[0,2] = 1+4+C(4,2) = 11; Bag<Timer>[0,2] = 1+4+C(5,2) = 15; Set<Clock> = 2 with or without a maximum (FR-230 "at most one element"); AC-26 and step 5 grant and expect each; the closing bullet is inside the list; `quire validate` passes; the scratch matrix lists FR-120-AC-22..26.
