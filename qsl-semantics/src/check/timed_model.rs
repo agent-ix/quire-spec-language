@@ -79,8 +79,9 @@ pub struct ClockField {
     field: DeclarationKey,
     path: Vec<PlaceStep>,
     name: String,
-    /// The clock alias the clock is typed by, when it is one.
-    alias: Option<DeclarationKey>,
+    /// The clock aliases the clock is typed by, each alias of an alias on
+    /// the chain.
+    aliases: Vec<DeclarationKey>,
 }
 
 impl ClockField {
@@ -2082,7 +2083,11 @@ fn clock_bounds(
         }
         let mut by_owner: BTreeMap<EffectiveId, Vec<ClockConstraint>> = BTreeMap::new();
         for (index, field) in clocks.fields.iter().enumerate() {
-            if bound.alias.is_some() && field.alias != bound.alias {
+            if bound
+                .alias
+                .as_ref()
+                .is_some_and(|alias| !field.aliases.contains(alias))
+            {
                 continue;
             }
             let slots = field
@@ -2236,7 +2241,7 @@ fn prepare_models(
                 field: place.field.clone(),
                 name: place.name(),
                 path: place.path.clone(),
-                alias: place.alias.clone(),
+                aliases: place.aliases.clone(),
             })
             .collect();
         let target = source_of(model)
@@ -2256,8 +2261,11 @@ fn prepare_models(
     // clause reads it.
     for model in inputs.models {
         let clocks = clocks_of(model);
-        let Some(field) = clocks.fields.first() else {
-            continue;
+        // A clock, or a bound on clocks (FR-230-AC-25), needs dense time.
+        let field = match (clocks.fields.first(), model.clock_bounds().next()) {
+            (Some(field), _) => field.name.clone(),
+            (None, Some(bound)) => bound.key.node.clone(),
+            (None, None) => continue,
         };
         let span = match source_of(model) {
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
@@ -2294,10 +2302,7 @@ fn prepare_models(
                 }),
         };
         if let Some(span) = span {
-            return Err(timed(TemporalCause::ClockWithoutDenseTime {
-                field: field.name.clone(),
-                span,
-            }));
+            return Err(timed(TemporalCause::ClockWithoutDenseTime { field, span }));
         }
     }
     let declarations: Vec<&TimedDeclaration> = inputs

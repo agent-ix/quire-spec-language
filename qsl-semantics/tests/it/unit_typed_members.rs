@@ -340,7 +340,7 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
         .map(|member| {
             (
                 member
-                    .field
+                    .member
                     .node
                     .rsplit('/')
                     .next()
@@ -357,10 +357,13 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
     let on_d = node("D/min");
     let expected: Vec<(String, String, &str, String)> = vec![
         ("a".to_owned(), on_ms.clone(), "max", "3".to_owned()),
+        // `measure`'s parameter `d` and its result, typed `ms`.
+        ("d".to_owned(), on_ms.clone(), "max", "3".to_owned()),
         ("d".to_owned(), on_ms.clone(), "max", "3".to_owned()),
         ("d".to_owned(), on_d.clone(), "min", "5".to_owned()),
         ("ds".to_owned(), on_ms.clone(), "max", "3".to_owned()),
         ("ds".to_owned(), on_d.clone(), "min", "5".to_owned()),
+        ("measure".to_owned(), on_ms.clone(), "max", "3".to_owned()),
     ];
     assert_eq!(read, expected);
 
@@ -387,19 +390,26 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
         bounds
             .iter()
             .find(|member| {
-                member.constraint.node == constraint && member.field.node.ends_with("/ds")
+                member.constraint.node == constraint && member.member.node.ends_with("/ds")
             })
             .expect("a ds bound")
-            .violation(&sequence)
+            .violation(&sequence, graph.scope().types())
     };
     assert_eq!(at(&on_d), Some(vec![PathStep::Index(1)]));
     assert_eq!(at(&on_ms), Some(vec![PathStep::Index(0)]));
     let on_a = bounds
         .iter()
-        .find(|member| member.field.node.ends_with("/a"))
+        .find(|member| member.member.node.ends_with("/a"))
         .expect("a's bound");
-    assert_eq!(on_a.violation(&quantity(3)), None, "equality satisfies");
-    assert_eq!(on_a.violation(&quantity(4)), Some(vec![]));
+    assert_eq!(
+        on_a.violation(&quantity(3), graph.scope().types()),
+        None,
+        "equality satisfies"
+    );
+    assert_eq!(
+        on_a.violation(&quantity(4), graph.scope().types()),
+        Some(vec![])
+    );
 
     let malformed = |on_alias: Vec<Value>| {
         let document = bounded_document(on_alias, vec![]);
@@ -435,6 +445,240 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
         refusal.contains("InvalidModelBinding")
             && refusal.contains("constraints[1]")
             && refusal.contains("operands"),
+        "{refusal}"
+    );
+}
+
+/// Part of FR-230-AC-26 (TC-685) and QSpec FR-154-AC-29, SR-1681001 CR
+/// FND-001, FND-003, FND-004 and SR-1681002 GA FND-002, FND-003: a `max`
+/// `"3"` on `ms` bounds a quantity a record holds (`ConfigVersion.sp: Span
+/// { d: ms }`, at the path `d`), and a `Span { d: 4 ms }` violates it at
+/// `d`; a `min` `"5"` on `ms` on `ConfigVersion` and a `max` `"3"` on `ms`
+/// on another object type `Other` refuse `malformed-declaration` at the
+/// later constraint; with the alias `E` of the alias `D` of `ms`, a bound on
+/// `D` bounds the members typed `D` and `E`, and one on `E` only those
+/// typed `E`; an alias whose chain ends at a record type refuses
+/// `malformed-declaration` at its `target`.
+#[trace("TC-685")]
+#[test]
+fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
+    use crate::model_operations::{wire_field, wire_type};
+    use qsl_semantics::model::observation::PathStep;
+    use qsl_semantics::model::state::StateModel;
+
+    let document = |edit: &dyn Fn(&mut Vec<Value>)| {
+        let mut document: Value = serde_json::from_slice(&document()).expect("JSON");
+        let types = document["types"].as_array_mut().expect("types");
+        edit(types);
+        let records = types
+            .iter()
+            .any(|definition| definition["kind"]["name"] == "value_record");
+        if records {
+            document["constructs"]
+                .as_array_mut()
+                .expect("constructs")
+                .push(crate::model_operations::wire_construct(
+                    "value_record",
+                    qsl_semantics::model::intake::meaning::RECORD_VALUE_TYPE,
+                    json!({}),
+                ));
+        }
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let owner = |types: &mut Vec<Value>| -> usize {
+        types
+            .iter()
+            .position(|definition| definition["identity"] == node("ConfigVersion"))
+            .expect("ConfigVersion")
+    };
+    let optional = |name: &str, type_ref: &str| {
+        wire_field(
+            &node(&format!("ConfigVersion/{name}")),
+            name,
+            type_ref,
+            "optional",
+            0,
+        )
+    };
+    let alias = |name: &str, target: &str, constraints: Vec<Value>| {
+        let mut alias = wire_type(
+            &node(name),
+            "unused",
+            json!({"target": target, "constraints": constraints}),
+        );
+        alias["kind"] = json!("alias");
+        alias
+    };
+    let admitted = |document: &[u8]| {
+        let (unit_text, packages) = config_unit(document);
+        let built = parse_and_build(&unit_text);
+        admit_unit(
+            &built.selections().models,
+            &packages,
+            ModelNormalizationLimits::default(),
+        )
+        .map(|_| packages)
+        .map_err(|refusal| format!("{refusal:?}"))
+    };
+    let bounds_of = |document: &[u8]| {
+        let packages = admitted(document).unwrap_or_else(|refusal| panic!("admits: {refusal}"));
+        let graph = admit_and_assemble_with_body(document, UNITS)
+            .expect("assembles")
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect("checks");
+        let model = StateModel::new(
+            graph.model_selections(),
+            graph.scope().types(),
+            &packages,
+            ModelNormalizationLimits::default(),
+        )
+        .expect("model views");
+        (graph, model.member_bounds())
+    };
+
+    // A quantity a record holds.
+    let in_record = document(&|types: &mut Vec<Value>| {
+        let span = node("Span");
+        let d = wire_field(
+            &format!("{span}/d"),
+            "d",
+            "ix://quire/unit/ms",
+            "required",
+            1,
+        );
+        types.push(wire_type(&span, "value_record", json!({"fields": [d]})));
+        let at = owner(types);
+        types[at]["constraints"] =
+            json!([bound("ConfigVersion", "max", "3", "ix://quire/unit/ms")]);
+        types[at]["fields"]
+            .as_array_mut()
+            .expect("fields")
+            .push(optional("sp", &span));
+    });
+    let (graph, bounds) = bounds_of(&in_record);
+    let [on_sp] = &bounds
+        .iter()
+        .filter(|bound| bound.member.node.ends_with("/sp"))
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one bound on sp: {bounds:?}");
+    };
+    assert_eq!(on_sp.path, ["d".to_owned()]);
+    let config = graph
+        .scope()
+        .types()
+        .object_types()
+        .map(|declaration| declaration.key())
+        .find(|key| graph.scope().types().attribute(*key, "sp").is_some())
+        .expect("ConfigVersion");
+    let sp = graph
+        .scope()
+        .types()
+        .attribute(config, "sp")
+        .expect("sp")
+        .field()
+        .value_type()
+        .clone();
+    let span = match &sp {
+        ValueType::Composite(span) => *span,
+        ValueType::Option(inner) => match &**inner {
+            ValueType::Composite(span) => *span,
+            other => panic!("sp is a record: {other:?}"),
+        },
+        ValueType::Collection(collection) => match collection.element() {
+            ValueType::Composite(span) => *span,
+            other => panic!("sp is a record: {other:?}"),
+        },
+        other => panic!("sp is a record: {other:?}"),
+    };
+    let ms = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([9; 32]));
+    let quantity = |magnitude: i64| {
+        quire_exact::Value::Quantity(quire_exact::Quantity::new(
+            quire_exact::Rational::new(
+                quire_exact::Integer::from(magnitude),
+                quire_exact::Integer::from(1_i64),
+            )
+            .expect("a rational"),
+            ms,
+        ))
+    };
+    let held = |magnitude: i64| {
+        quire_exact::from_admitted_slots(
+            span,
+            vec![quire_exact::FieldValue::Present(quantity(magnitude))].into_boxed_slice(),
+        )
+    };
+    let types = graph.scope().types();
+    assert_eq!(
+        on_sp.violation(&held(4), types),
+        Some(vec![PathStep::Field("d".to_owned())])
+    );
+    assert_eq!(on_sp.violation(&held(3), types), None);
+
+    // A crossed pair on two nodes.
+    let crossed = document(&|types: &mut Vec<Value>| {
+        let at = owner(types);
+        types[at]["constraints"] =
+            json!([bound("ConfigVersion", "min", "5", "ix://quire/unit/ms")]);
+        types.push(wire_type(
+            &node("Other"),
+            "object_type",
+            json!({"supertypes": [], "fields": [], "operations": [], "relationships": [],
+                "constraints": [bound("Other", "max", "3", "ix://quire/unit/ms")]}),
+        ));
+    });
+    let refusal = admitted(&crossed).expect_err("a crossed pair refuses");
+    assert!(
+        refusal.contains("InvalidModelBinding")
+            && refusal.contains("operands")
+            && refusal.contains(&node("Other")),
+        "{refusal}"
+    );
+
+    // An alias of an alias.
+    let chained = |on_d: Vec<Value>, on_e: Vec<Value>| {
+        document(&move |types: &mut Vec<Value>| {
+            types.push(alias("D", "ix://quire/unit/ms", on_d.clone()));
+            types.push(alias("E", &node("D"), on_e.clone()));
+            let at = owner(types);
+            let fields = types[at]["fields"].as_array_mut().expect("fields");
+            fields.push(optional("d", &node("D")));
+            fields.push(optional("e", &node("E")));
+        })
+    };
+    let members = |document: Vec<u8>| {
+        let (_, bounds) = bounds_of(&document);
+        let mut members: Vec<String> = bounds
+            .iter()
+            .map(|bound| {
+                bound
+                    .member
+                    .node
+                    .rsplit('/')
+                    .next()
+                    .expect("a name")
+                    .to_owned()
+            })
+            .collect();
+        members.sort();
+        members
+    };
+    assert_eq!(
+        members(chained(vec![bound("D", "max", "3", &node("D"))], vec![])),
+        ["d", "e"]
+    );
+    assert_eq!(
+        members(chained(vec![], vec![bound("E", "max", "3", &node("E"))])),
+        ["e"]
+    );
+    let dangling = document(&|types: &mut Vec<Value>| {
+        let span = node("Span");
+        types.push(wire_type(&span, "value_record", json!({"fields": []})));
+        types.push(alias("D", &span, vec![]));
+    });
+    let refusal = admitted(&dangling).expect_err("an alias of a record refuses");
+    assert!(
+        refusal.contains("InvalidModelBinding") && refusal.contains("target"),
         "{refusal}"
     );
 }

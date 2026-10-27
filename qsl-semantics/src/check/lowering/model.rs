@@ -76,9 +76,9 @@ pub(crate) struct PackagePlace {
     /// Whether an optional member (`presence: optional`, `Option<Clock>`)
     /// is on the path.
     pub(crate) optional: bool,
-    /// The clock alias the member holding the clock is typed by, directly
-    /// or as a sequence's items, when it is one.
-    pub(crate) alias: Option<DeclarationKey>,
+    /// The clock aliases the member holding the clock is typed by, directly
+    /// or as a sequence's items, each alias of an alias on the chain.
+    pub(crate) aliases: Vec<DeclarationKey>,
 }
 
 /// Whether `field` holds one value: multiplicity `[1, 1]`, not a collection.
@@ -1054,7 +1054,7 @@ impl AdmittedModel {
                 field: field.key.clone(),
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
-                alias: None,
+                aliases: Vec::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
         }
@@ -1089,12 +1089,17 @@ impl AdmittedModel {
         else {
             return;
         };
-        // The last alias on the way to the clock.
+        // Every alias on the way to the clock.
         let mut named = &field.value_type;
+        let mut steps = 0_usize;
         while let ValueTypeRef::Package(key) = named {
+            steps += 1;
+            if steps > self.records.len() {
+                break;
+            }
             named = match self.records.get(key) {
                 Some(DomainPackageRecord::AliasType(alias)) => {
-                    at.alias = Some(key.clone());
+                    at.aliases.push(key.clone());
                     &alias.target
                 }
                 Some(DomainPackageRecord::SequenceType(sequence)) if sequence.items != *named => {

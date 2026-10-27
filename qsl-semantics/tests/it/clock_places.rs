@@ -1676,3 +1676,131 @@ fn a_unit_alias_or_sequence_types_each_position_and_refuses_a_ghost_unit() {
         );
     }
 }
+
+/// Part of FR-230-AC-25 (TC-685), SR-1681002 GA FND-001 and SR-1681001 CR
+/// FND-004: a `max` `"3"` with `appliesTo` `ix://quire/native/Clock` on an
+/// object type with no clock field refuses
+/// `invalid_timed_model`/`clock-without-dense-time` under `time tick` and
+/// in an untimed unit, and checks under `time dense`; a keyword `format`
+/// and an operand `"abc"` refuse `invalid_model_binding`/
+/// `malformed-declaration` at the constraint; a `max` on the alias `Short`
+/// of the alias `Timeout` of `Clock` bounds the place typed `Short` and not
+/// the one typed `Timeout`, and one on `Timeout` bounds both.
+#[trace("TC-685")]
+#[test]
+fn a_clock_bound_needs_dense_time_and_reaches_through_aliases() {
+    let unclocked = |constraints: Vec<Value>| {
+        let mut document: Value =
+            serde_json::from_slice(&rpc_document_with(&[], false)).expect("JSON");
+        document["types"][1]["constraints"] = json!(constraints);
+        for operation in document["types"][1]["operations"]
+            .as_array_mut()
+            .expect("operations")
+        {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("a frame")
+                .retain(|entry| entry != &json!(call("x")));
+        }
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let on_clock = || {
+        vec![clock_constraint(
+            "Call",
+            "max",
+            "3",
+            "ix://quire/native/Clock",
+        )]
+    };
+    let tick = "time Config tick Config::Call::bump period 1 ms unit ms;\n";
+    for time in [tick, ""] {
+        let (cause, _) = refused(&unclocked(on_clock()), &format!("{UNITS}{time}"));
+        assert!(
+            matches!(
+                cause,
+                qsl_semantics::check::TemporalCause::ClockWithoutDenseTime { .. }
+            ),
+            "{time:?}: {cause:?}"
+        );
+        assert_eq!(cause.tag(), "clock-without-dense-time");
+    }
+    check(&unclocked(on_clock()), &format!("{UNITS}{DENSE}"))
+        .unwrap_or_else(|refusals| panic!("a dense bound checks: {refusals:?}"));
+    for (keyword, value) in [("format", "3"), ("max", "abc")] {
+        let malformed = std::panic::catch_unwind(|| {
+            check(
+                &unclocked(vec![clock_constraint(
+                    "Call",
+                    keyword,
+                    value,
+                    "ix://quire/native/Clock",
+                )]),
+                &format!("{UNITS}{DENSE}"),
+            )
+        });
+        let Err(panicked) = malformed else {
+            panic!("{keyword} {value}: intake refuses the constraint");
+        };
+        let message = panicked
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            message.contains("InvalidModelBinding") && message.contains("constraints"),
+            "{keyword} {value}: {message}"
+        );
+    }
+
+    let chained = |on_timeout: Vec<Value>, on_short: Vec<Value>| {
+        timer_document(move |document: &mut Value| {
+            let alias = |name: &str, target: &str, constraints: Vec<Value>| {
+                let mut node = wire_type(
+                    &package(name),
+                    "unused",
+                    json!({"target": target, "constraints": constraints}),
+                );
+                node["kind"] = json!("alias");
+                node
+            };
+            let types = document["types"].as_array_mut().expect("types");
+            types.push(alias("Timeout", "ix://quire/native/Clock", on_timeout));
+            types.push(alias("Short", &package("Timeout"), on_short));
+            let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+            fields.push(field("w", &package("Timeout")));
+            fields.push(field("s", &package("Short")));
+        })
+    };
+    let bounded = |document: Vec<u8>| {
+        let graph = check(&document, &format!("{UNITS}{DENSE}"))
+            .unwrap_or_else(|refusals| panic!("the bound checks: {refusals:?}"));
+        let model = timed(&graph);
+        let mut names: Vec<String> = model
+            .invariants()
+            .iter()
+            .flat_map(|invariant| invariant.bounds())
+            .map(|bound| {
+                model
+                    .clock(bound.clock())
+                    .expect("a clock")
+                    .name()
+                    .to_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        bounded(chained(
+            vec![],
+            vec![clock_constraint("Short", "max", "3", &package("Short"))]
+        )),
+        ["s"]
+    );
+    assert_eq!(
+        bounded(chained(
+            vec![clock_constraint("Timeout", "max", "3", &package("Timeout"))],
+            vec![]
+        )),
+        ["s", "w"]
+    );
+}
