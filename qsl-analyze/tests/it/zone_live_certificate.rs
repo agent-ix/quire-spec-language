@@ -323,3 +323,99 @@ fn a_divergence_part_must_cover_every_valuation() {
         )
     );
 }
+
+/// FR-245 (SR-1647001 FND-001): a strong reason's nested numbering must
+/// number a strict subset of its component, so the nesting is no deeper
+/// than the node count. `Serve`'s proof under `fair strong serve`, with
+/// its strong reason's nesting continued 200,000 levels deep by numberings
+/// that repeat the one above, rejects `Malformed` at `components` before
+/// any successor is recomputed, with no recursion over the depth.
+#[trace("TC-700")]
+#[test]
+fn a_strong_nesting_deeper_than_its_nodes_is_malformed() {
+    let fair = serve(">= 1 ms", "fair strong M::Call::serve;");
+    let certificate = proved(decide(&fair));
+    assert_eq!(
+        verdict(&fair, &certificate),
+        ZoneCertificateVerdict::Accepted
+    );
+    let (index, constraints, nested) = components(&certificate)
+        .reasons
+        .iter()
+        .enumerate()
+        .find_map(|(index, reason)| match reason {
+            ComponentReason::Strong {
+                constraints,
+                nested,
+            } => Some((index, constraints.clone(), nested.numbering.clone())),
+            _ => None,
+        })
+        .expect("a strong reason");
+    // Below the first nested level, each level numbers every node the
+    // level above numbers, into one strong component.
+    let flat: Vec<Option<usize>> = nested.iter().map(|at| at.map(|_| 0)).collect();
+    let mut chain = Components {
+        numbering: flat.clone(),
+        reasons: vec![ComponentReason::Acyclic],
+    };
+    for _ in 0..200_000 {
+        chain = Components {
+            numbering: flat.clone(),
+            reasons: vec![ComponentReason::Strong {
+                constraints: constraints.clone(),
+                nested: Box::new(chain),
+            }],
+        };
+    }
+    let mut deep = certificate.clone();
+    deep.components.as_mut().expect("components").reasons[index] = ComponentReason::Strong {
+        constraints,
+        nested: Box::new(chain),
+    };
+    assert_eq!(
+        verdict(&fair, &deep),
+        rejected(
+            CertificateRule::Malformed,
+            CertificateLocus::CertificateMember(CertificateMember::Components),
+        )
+    );
+}
+
+/// FR-245 (SR-1647001 FND-003): an edge that covers no recomputed
+/// successor proves nothing and hides nothing, so it is read and then
+/// ignored, but it is charged against `max_certificate_edges` like every
+/// listed edge. `Rpc`'s liveness proof padded with copies of an edge
+/// retargeted to a node it does not cover is still accepted, and stops at
+/// a limit its own edges fit under once the padding passes it.
+#[trace("TC-700")]
+#[test]
+fn padding_edges_are_charged_against_the_edge_limit() {
+    let rpc = response(4, "");
+    let certificate = proved(decide(&rpc));
+    let own = u64::try_from(certificate.edges.len()).expect("a small count");
+    let mut padded = certificate.clone();
+    let mut junk = certificate.edges[0].clone();
+    junk.to = certificate.nodes.len() - 1;
+    junk.from = certificate.nodes.len() - 1;
+    for _ in 0..64 {
+        padded.edges.push(junk.clone());
+    }
+    assert_eq!(verdict(&rpc, &padded), ZoneCertificateVerdict::Accepted);
+    let limits = CertificateCheckLimits {
+        max_certificate_edges: own,
+        ..CertificateCheckLimits::default()
+    };
+    assert_eq!(
+        check(&rpc, &certificate, limits),
+        Ok(ZoneCertificateVerdict::Accepted)
+    );
+    assert_eq!(
+        check(&rpc, &padded, limits),
+        Ok(ZoneCertificateVerdict::Stopped(
+            qsl_replay::IncompleteCause::LimitReached {
+                limit: qsl_replay::ModelCheckLimit::CertificateMaxEdges,
+                value: own,
+            }
+        ))
+    );
+}

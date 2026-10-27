@@ -169,6 +169,19 @@ pub struct Components {
     pub reasons: Vec<ComponentReason>,
 }
 
+impl Drop for Components {
+    /// Drops nested numberings without recursion: a crafted certificate
+    /// may nest strong reasons deeper than the stack (SR-1647001 FND-001).
+    fn drop(&mut self) {
+        let mut pending = std::mem::take(&mut self.reasons);
+        while let Some(reason) = pending.pop() {
+            if let ComponentReason::Strong { mut nested, .. } = reason {
+                pending.append(&mut nested.reasons);
+            }
+        }
+    }
+}
+
 /// Why a component holds no fair accepting cycle.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComponentReason {
@@ -286,6 +299,10 @@ pub struct CertificateCheckLimits {
     pub max_certificate_edges: u64,
     /// The most certificate bytes a check reads.
     pub max_certificate_bytes: u64,
+    /// The most states of the claim automaton the checker rebuilds itself
+    /// (ADR-018 LA-5): reaching it stops the check as EN-6's own
+    /// `max_automaton_states` stops the search (SR-1647001 FND-002).
+    pub max_automaton_states: u64,
 }
 
 impl Default for CertificateCheckLimits {
@@ -293,6 +310,7 @@ impl Default for CertificateCheckLimits {
         Self {
             max_certificate_edges: 1 << 24,
             max_certificate_bytes: 1 << 30,
+            max_automaton_states: crate::model_check::limits::DEFAULT_MAX_AUTOMATON_STATES,
         }
     }
 }
@@ -462,6 +480,15 @@ impl<O> From<ZoneError> for Halt<O> {
 
 type Step<T, O> = Result<T, Halt<O>>;
 
+/// The verdict of a check whose rebuilt claim automaton reached
+/// `max_automaton_states`, `limit`.
+fn automaton_stop(limit: u64) -> ZoneCertificateVerdict {
+    ZoneCertificateVerdict::Stopped(IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::MaxAutomatonStates,
+        value: limit,
+    })
+}
+
 fn fault<O>(fault: CheckerFault) -> Halt<O> {
     Halt::Refusal(ZoneCertificateRefusal::Fault(fault))
 }
@@ -564,7 +591,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     clause.formula(),
                     instances.len(),
                     timed.tick_period().cloned(),
-                    u64::MAX,
+                    limits.max_automaton_states,
                 )
                 .map_err(|_| ZoneCertificateRefusal::UnsupportedItem)?;
                 let pieces = match timed.tick_period() {
@@ -578,15 +605,23 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             } else {
                 // FR-240: any other clause, on the liveness product.
                 let mut automaton =
-                    translate_position_negation(clause, u64::MAX).map_err(|error| match error {
-                        AutomatonError::ProfileNotTranslated { .. } => {
-                            ZoneCertificateRefusal::UnsupportedItem
+                    match translate_position_negation(clause, limits.max_automaton_states) {
+                        Ok(automaton) => automaton,
+                        Err(AutomatonError::StateLimit { limit }) => {
+                            return Ok(automaton_stop(limit))
                         }
-                        _ => ZoneCertificateRefusal::Fault(CheckerFault::Automaton),
-                    })?;
-                let start = automaton
-                    .initial()
-                    .map_err(|_| ZoneCertificateRefusal::Fault(CheckerFault::Automaton))?;
+                        Err(AutomatonError::ProfileNotTranslated { .. }) => {
+                            return Err(ZoneCertificateRefusal::UnsupportedItem)
+                        }
+                        Err(_) => {
+                            return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton))
+                        }
+                    };
+                let start = match automaton.initial() {
+                    Ok(start) => start,
+                    Err(AutomatonError::StateLimit { limit }) => return Ok(automaton_stop(limit)),
+                    Err(_) => return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton)),
+                };
                 let mut operations = Vec::new();
                 for constraint in clause.fairness() {
                     let operation = constraint.operation();
@@ -636,6 +671,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         binds: BTreeMap::new(),
         read: Cell::new(0),
         max_edges: limits.max_certificate_edges,
+        max_automaton_states: limits.max_automaton_states,
     };
     match checker.check(limits) {
         Ok(()) => Ok(ZoneCertificateVerdict::Accepted),
@@ -712,6 +748,7 @@ struct Checker<'c, 'a, O> {
     /// divergence cycle again at each round of its repetition check.
     read: Cell<u64>,
     max_edges: u64,
+    max_automaton_states: u64,
 }
 
 impl<O> Checker<'_, '_, O> {
@@ -878,7 +915,10 @@ impl<O> Checker<'_, '_, O> {
             return malformed(CertificateMember::Nodes);
         }
         // The Büchi part for a liveness product, the divergence part for
-        // the time-lock-freedom item, each shaped to the nodes.
+        // the time-lock-freedom item, each shaped to the nodes. The
+        // time-lock item carries no component part, which FR-244's Büchi
+        // part text names (spec gap STD-493, comment 8eafddf9, item 1;
+        // SR-1647002 FND-003): its exact fixpoint is the stronger check.
         match (&certificate.components, live) {
             (Some(components), Some(_)) if numbering_ok(components, nodes) => {}
             (None, None) => {}
@@ -1018,7 +1058,8 @@ impl<O> Checker<'_, '_, O> {
         match read {
             Read::State(q) => Ok(q),
             Read::Atom(_) => Err(Halt::Refusal(ZoneCertificateRefusal::Undecided)),
-            Read::Fault(_) | Read::AutomatonStates => Err(fault(CheckerFault::Automaton)),
+            Read::AutomatonStates => Err(Halt::Verdict(automaton_stop(self.max_automaton_states))),
+            Read::Fault(_) => Err(fault(CheckerFault::Automaton)),
         }
     }
 
@@ -1628,7 +1669,10 @@ impl<O> Checker<'_, '_, O> {
     /// `admitted`: a path of valid edges from an initial node to a
     /// divergent target, recomputed in exact zones from the initial state,
     /// each held to its state's own invariants, so the path is one some
-    /// behaviour takes.
+    /// behaviour takes. It proves that a time-divergent behaviour exists,
+    /// as FR-244 TD-6 says, not that a fair one does: FR-240's vacuity
+    /// under fairness has no certificate part (spec gap STD-493, comment
+    /// 8eafddf9, item 3; SR-1647002 FND-002).
     fn admitted(&self) -> Step<(), O> {
         let witness = &self.certificate.admitted;
         let mut at = witness.start;
@@ -2108,39 +2152,73 @@ fn witness_bytes(witness: &DivergenceWitness) -> u64 {
 }
 
 /// [`certificate_bytes`] of a component numbering: each node's index and
-/// each reason, 8 per entry, nested numberings included.
+/// each reason, 8 per entry, nested numberings included. Read without
+/// recursion, however deep the nesting.
 fn components_bytes(components: &Components) -> u64 {
-    let entries = components
-        .numbering
-        .len()
-        .saturating_add(components.reasons.len());
-    let mut bytes = u64::try_from(entries).unwrap_or(u64::MAX).saturating_mul(8);
-    for reason in &components.reasons {
-        if let ComponentReason::Strong {
-            constraints,
-            nested,
-        } = reason
-        {
-            let listed = u64::try_from(constraints.len()).unwrap_or(u64::MAX);
-            bytes = bytes
-                .saturating_add(listed.saturating_mul(8))
-                .saturating_add(components_bytes(nested));
+    let mut bytes = 0_u64;
+    let mut pending = vec![components];
+    while let Some(components) = pending.pop() {
+        let entries = components
+            .numbering
+            .len()
+            .saturating_add(components.reasons.len());
+        bytes = bytes.saturating_add(u64::try_from(entries).unwrap_or(u64::MAX).saturating_mul(8));
+        for reason in &components.reasons {
+            if let ComponentReason::Strong {
+                constraints,
+                nested,
+            } = reason
+            {
+                let listed = u64::try_from(constraints.len()).unwrap_or(u64::MAX);
+                bytes = bytes.saturating_add(listed.saturating_mul(8));
+                pending.push(nested);
+            }
         }
     }
     bytes
 }
 
 /// Whether `components` numbers `nodes` nodes into its reasons, and each
-/// strong reason's nested numbering does too.
+/// strong reason's nested numbering does too, numbering a strict subset of
+/// that reason's component: the engine nests a strong reason only below a
+/// node that enables one of its constraints, which the nested numbering
+/// leaves out. Each level then numbers fewer nodes, so the nesting is no
+/// deeper than the node count (SR-1647001 FND-001). Read without
+/// recursion.
 fn numbering_ok(components: &Components, nodes: usize) -> bool {
-    components.numbering.len() == nodes
-        && components
-            .numbering
-            .iter()
-            .flatten()
-            .all(|&index| index < components.reasons.len())
-        && components.reasons.iter().all(|reason| match reason {
-            ComponentReason::Strong { nested, .. } => numbering_ok(nested, nodes),
-            ComponentReason::Acyclic | ComponentReason::Lacks(_) | ComponentReason::Weak(_) => true,
-        })
+    let mut pending = vec![components];
+    while let Some(components) = pending.pop() {
+        if components.numbering.len() != nodes {
+            return false;
+        }
+        let mut sizes = vec![0_usize; components.reasons.len()];
+        for &index in components.numbering.iter().flatten() {
+            match sizes.get_mut(index) {
+                Some(size) => *size += 1,
+                None => return false,
+            }
+        }
+        for (index, reason) in components.reasons.iter().enumerate() {
+            let ComponentReason::Strong { nested, .. } = reason else {
+                continue;
+            };
+            if nested.numbering.len() != nodes {
+                return false;
+            }
+            let mut numbered = 0_usize;
+            for (inner, outer) in nested.numbering.iter().zip(&components.numbering) {
+                if inner.is_some() {
+                    if *outer != Some(index) {
+                        return false;
+                    }
+                    numbered += 1;
+                }
+            }
+            if numbered >= sizes[index] {
+                return false;
+            }
+            pending.push(nested);
+        }
+    }
+    true
 }

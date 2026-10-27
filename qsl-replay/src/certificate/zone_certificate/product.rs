@@ -99,9 +99,11 @@ impl<'c> LiveClaim<'c> {
     }
 }
 
+/// The checker's automaton reads: its state limit stops the check; any
+/// other refusal is a fault of the checker's own.
 fn automaton<T, O>(result: Result<T, AutomatonError>) -> Step<T, O> {
     result.map_err(|error| match error {
-        AutomatonError::StateLimit { .. } => fault(CheckerFault::Automaton),
+        AutomatonError::StateLimit { limit } => super::Halt::Verdict(super::automaton_stop(limit)),
         _ => fault(CheckerFault::Automaton),
     })
 }
@@ -590,14 +592,25 @@ impl<O> Checker<'_, '_, O> {
                 }
             }
         }
-        self.reasons(components, None)
+        self.reasons(components)
     }
 
-    /// Each reason of `components` holds; a failure is located at the
-    /// component, or at `outer`, the enclosing component of a nested
-    /// numbering.
-    fn reasons(&self, components: &Components, outer: Option<usize>) -> Step<(), O> {
-        for (index, reason) in components.reasons.iter().enumerate() {
+    /// Each reason of `components` holds, a strong reason's nested
+    /// numbering read before the next reason; a failure is located at the
+    /// component, or, inside a nested numbering, at the outermost component
+    /// enclosing it. Read without recursion, however deep the nesting
+    /// (SR-1647001 FND-001).
+    fn reasons(&self, components: &Components) -> Step<(), O> {
+        // Each frame: a numbering, its outermost enclosing component, and
+        // its next reason.
+        let mut frames: Vec<(&Components, Option<usize>, usize)> = vec![(components, None, 0)];
+        while let Some(frame) = frames.last_mut() {
+            let (components, outer, index) = *frame;
+            let Some(reason) = components.reasons.get(index) else {
+                frames.pop();
+                continue;
+            };
+            frame.2 += 1;
             self.poll()?;
             let at = outer.unwrap_or(index);
             let fails = || {
@@ -651,7 +664,7 @@ impl<O> Checker<'_, '_, O> {
                         holds = self.nested(&members, constraints, nested)?;
                     }
                     if holds {
-                        self.reasons(nested, Some(at))?;
+                        frames.push((nested, Some(at), 0));
                     }
                     holds
                 }
