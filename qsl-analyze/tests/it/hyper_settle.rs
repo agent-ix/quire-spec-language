@@ -17,7 +17,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, Settlement};
-use qsl_analyze::model_check::{ModelCheckRefusal, Reductions};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::digest::WireNodeId;
@@ -31,6 +31,7 @@ use qsl_replay::{
     ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReplayRefusal, ResultLabel, RunStats,
     SettlementBasis, TerminalValue, Truth, UnavailabilityCause, UndecidedCause, EXPLICIT_STATE,
 };
+use qsl_route::reductions::Reductions;
 use qsl_route::request::items_from_requirements;
 use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, HyperForm, HyperUnsupported, RequirementRecord};

@@ -52,6 +52,7 @@
 
 pub mod deadlock;
 pub mod model_request;
+pub mod reductions;
 pub mod request;
 pub mod routing;
 

@@ -143,8 +143,8 @@ use super::fair_walk::{tree_path, FairModel};
 use super::graph::{
     retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
 };
-use super::reduce::Reductions;
 use lift::{through, Lifted};
+use qsl_route::reductions::Reductions;
 
 mod projected;
 mod single;

@@ -13,6 +13,7 @@ use qsl_foundation::RequestIndex;
 use qsl_semantics::family::Requirements;
 
 use crate::deadlock::{ItemObligation, ModelTemporalItem};
+use crate::reductions::Reductions;
 use crate::request::{RequestItem, RequestWriter};
 
 /// The items of one request over model subjects `S`, in index order, each
@@ -50,11 +51,28 @@ impl<S: Clone + Eq> ModelRequest<S> {
         item: &ModelTemporalItem<'_, S>,
         requirements: &Requirements,
     ) -> RequestIndex {
-        let obligation = item.obligation();
+        self.authored_reduced(item, requirements, &Reductions::default())
+    }
+
+    /// [`Self::authored`] selecting `reductions` (FR-159). The item carries
+    /// the selection for negotiation, and its obligation identity holds
+    /// the symmetry declarations and the partial-order selection beside the
+    /// subject, never the constraint ("Identity", FR-158): a reduced and an
+    /// unreduced request for one claim are two obligations and two indices,
+    /// and two requests differing only in their constraint are one.
+    pub fn authored_reduced(
+        &mut self,
+        item: &ModelTemporalItem<'_, S>,
+        requirements: &Requirements,
+        reductions: &Reductions,
+    ) -> RequestIndex {
+        let obligation = item.obligation().reduced(reductions);
         if let Some(index) = self.index_of(&obligation) {
             return index;
         }
-        let index = self.writer.item(item.occurrence.clone(), requirements);
+        let index = self
+            .writer
+            .reduced_item(item.occurrence.clone(), requirements, reductions);
         self.obligations.push(obligation);
         index
     }

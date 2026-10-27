@@ -274,7 +274,7 @@ fn a_capture_initializer_joins_the_activation_footprint() {
             },
             max_depth: None,
             limits: ModelCheckLimits::default(),
-            reductions: qsl_analyze::model_check::Reductions {
+            reductions: qsl_route::reductions::Reductions {
                 partial_order: true,
                 ..Default::default()
             },

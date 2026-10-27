@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     admit, generators, instance_groups, not_preserving, preserves, unoffered, ModelCheckRefusal,
-    Reductions, SymmetryDeclaration, TableForm,
+    SubjectContext, TableForm,
 };
 use qsl_eval::simulation::model::{explore_model, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
@@ -31,6 +31,8 @@ use qsl_replay::{
     ProofBasis, ReachedLimit, ReductionCause, ResultLabel, RunStats, SettlementBasis,
     SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause, UndefinedLocus,
 };
+use qsl_route::model_request::ModelRequest;
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::PropertyForm;
@@ -1262,4 +1264,47 @@ fn a_reduced_prefix_concretises_to_a_subject_path() {
     let unreduced = run(&world, None, Vec::new(), Reductions::default());
     assert_eq!(violation(&unreduced).prefix.len(), 6);
     assert!(reduced.stats().product_states < unreduced.stats().product_states);
+}
+
+/// FR-159-AC-4 (FR-159 "Identity"): over the annotated §7.1 subject, the
+/// request writer gives the request selecting `[[a, b, c]]` and the one
+/// selecting no reduction for the same claim different obligation
+/// identities, and so two items; partial-order reduction likewise. Two
+/// requests that differ only by the constraint `Low` versus none have one
+/// identity, and one item. The item carries its selection for
+/// negotiation.
+#[trace("TC-583", "FR-159-AC-4")]
+#[test]
+fn reductions_but_the_constraint_enter_the_obligation_identity() {
+    let world = cycle(true, &[[0, 0, 0]], &[infinite("always holds(x.v <= 2)")]);
+    let subject = world.subject();
+    let context = SubjectContext::new(&subject).expect("the package emits");
+    let [clause] = world.package.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+    let mut request = ModelRequest::new();
+    let mut write = |reductions: &Reductions| {
+        context
+            .author_reduced_clause(&mut request, clause, reductions)
+            .expect("the clause has a record")
+    };
+    let plain = write(&Reductions::default());
+    let symmetric = write(&symmetry(&[&["a", "b", "c"]]));
+    let ordered = write(&partial_order());
+    let constrained = write(&constraint("Low"));
+    let symmetric_again = write(&symmetry(&[&["a", "b", "c"]]));
+    assert_ne!(plain, symmetric);
+    assert_ne!(plain, ordered);
+    assert_ne!(symmetric, ordered);
+    assert_eq!(plain, constrained);
+    assert_eq!(symmetric, symmetric_again);
+    assert_eq!(request.items().len(), 3);
+    let obligation = |index| request.obligation(index).expect("written").clone();
+    assert_ne!(obligation(plain), obligation(symmetric));
+    assert_eq!(obligation(plain).subject, obligation(symmetric).subject);
+    assert_eq!(
+        request.items()[symmetric.get()].reductions(),
+        [ReductionKind::Symmetry]
+    );
+    assert!(request.items()[plain.get()].reductions().is_empty());
 }

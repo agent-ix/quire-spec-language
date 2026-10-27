@@ -60,12 +60,13 @@ use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
 use super::liveness::Liveness;
 use super::{scale_constants, Bound, Dbm, DbmError};
-use crate::model_check::{admit, closure, instance_groups, ClosureRefusal, Reductions};
+use crate::model_check::{admit, closure, instance_groups, ClosureRefusal};
 use qsl_eval::automaton::{
     position_automaton, AutomatonError, PositionAutomaton, Read, Stamp, WindowClaim, WindowFault,
     WindowRefusal,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use qsl_route::reductions::Reductions;
 
 /// FR-239's budgets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

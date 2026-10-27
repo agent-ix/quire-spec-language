@@ -17,6 +17,7 @@ use qsl_package::EmitRefusal;
 use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal};
 use qsl_route::deadlock::ModelTemporalItem;
 use qsl_route::model_request::ModelRequest;
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::TemporalClauseNode;
 
 /// Why [`SubjectContext::author_clause`] wrote no item.
@@ -82,6 +83,24 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
         request: &mut ModelRequest<SubjectIdentity>,
         clause: &TemporalClauseNode,
     ) -> Result<RequestIndex, RequestRefusal> {
+        self.author_reduced_clause(request, clause, &Reductions::default())
+    }
+
+    /// [`Self::author_clause`] selecting `reductions` (FR-159): the item
+    /// carries the selection, and its obligation identity holds the
+    /// symmetry declarations and the partial-order selection beside the
+    /// subject, never the constraint.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestRefusal::NoRequirementRecord`] when the package has no record
+    /// for the clause.
+    pub fn author_reduced_clause(
+        &self,
+        request: &mut ModelRequest<SubjectIdentity>,
+        clause: &TemporalClauseNode,
+        reductions: &Reductions,
+    ) -> Result<RequestIndex, RequestRefusal> {
         let package = self.subject.simulation.package.graph();
         let occurrence = node_occurrence(clause);
         let record = package.requirements().get(&occurrence).ok_or_else(|| {
@@ -94,6 +113,6 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             subject: &self.identity,
             package,
         };
-        Ok(request.authored(&item, record.requirements()))
+        Ok(request.authored_reduced(&item, record.requirements(), reductions))
     }
 }

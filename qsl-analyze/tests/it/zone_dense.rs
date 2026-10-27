@@ -4,7 +4,7 @@
 //! over time.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{admit, Reductions, SymmetryDeclaration};
+use qsl_analyze::model_check::admit;
 use qsl_analyze::zone_check::{
     canonical_symbolic_state, settle_zone_check, Bound, Dbm, ZoneCheckLimits, ZoneCheckOutcome,
     ZoneCheckRefusal, ZoneItem, ZoneReduction,
@@ -17,6 +17,7 @@ use qsl_replay::{
     InconclusiveCause, ProofBasis, SymmetryRefusal, TerminalValue, UnavailabilityCause,
     ZoneCertificateVerdict,
 };
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational};
 

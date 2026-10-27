@@ -47,11 +47,12 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::RequestIndex;
+use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
+use crate::reductions::Reductions;
 use crate::{CandidateOutcome, CandidateSet, EvidenceKind, ItemEvidence, Registry};
 use qsl_foundation::BackendId;
 
@@ -102,9 +103,18 @@ pub struct RequestItem {
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
     unsupported: Option<UnsupportedItem>,
+    reductions: Vec<ReductionKind>,
 }
 
 impl RequestItem {
+    /// The reductions the item selects, in the order symmetry,
+    /// partial-order, constraint (FR-159 Inputs), which negotiation routes
+    /// by ([`crate::Registry::restrict_to_reductions`]); empty for an
+    /// unreduced item.
+    pub fn reductions(&self) -> &[ReductionKind] {
+        &self.reductions
+    }
+
     /// This item's own request index.
     pub fn index(&self) -> RequestIndex {
         self.index
@@ -243,8 +253,23 @@ impl RequestWriter {
     /// `requirements` and no proof bounds. Its classification comes from
     /// the checked extent alone.
     pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
+        self.reduced_item(occurrence, requirements, &Reductions::default())
+    }
+
+    /// [`Self::item`] selecting `reductions` (FR-159 Inputs), which the
+    /// item carries for negotiation.
+    pub fn reduced_item(
+        &mut self,
+        occurrence: OccurrenceKey,
+        requirements: &Requirements,
+        reductions: &Reductions,
+    ) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(occurrence, requirements, extent, Vec::new())
+        let index = self.push(occurrence, requirements, extent, Vec::new());
+        if let Some(item) = self.items.last_mut() {
+            item.reductions = reductions.selected();
+        }
+        index
     }
 
     /// Write the bounded item for the claim at `occurrence` with
@@ -306,6 +331,7 @@ impl RequestWriter {
             extent,
             domains,
             unsupported: requirements.unsupported().cloned(),
+            reductions: Vec::new(),
         });
         index
     }
