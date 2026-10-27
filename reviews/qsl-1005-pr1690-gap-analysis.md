@@ -37,3 +37,53 @@ Ticket: QSL-1005. Head reviewed: 7f9a8e608. Method: each AC checked against its 
 ## Verdict
 
 **Not mergeable together with SR-1690001.** FND-001 here is a real gap in AC-3's second half and AC-5's routing half.
+
+## Dispositions, round 1 (head c400156b7)
+
+
+Round 1. Fix c400156b7.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `items_with_reductions` restricts each `temporal-satisfaction` item's candidates in the writer's real path. `RequirementItem::unsupported_reduction` names the V-8 reduction. `the_request_writer_restricts_each_item_by_its_reductions` covers it: EN-6 alone with POR gives V-8 `PartialOrder`; adding EN-1 routes to EN-1 only; symmetry keeps both. |
+| FND-002 | fixed | Without `QSPEC_DIR` the schema test panics ("QSPEC_DIR names the QSpec checkout...") and fails. I ran it with the variable unset. |
+| FND-003 | fixed | After `ReductionNotPreserving{PartialOrder, TP-2}`, `stats == RunStats::default()` is asserted. |
+| FND-004 (new) | low | Only `temporal-satisfaction` items are restricted. Details below. |
+
+**FND-004: restricting only `temporal-satisfaction` items.** This matches EN-1, which advertises `temporal-satisfaction` only, and FR-382's "a model-check request item carries `reductions`" for the claims and derived items. But FR-159's preservation table also covers a refinement item: POR is false for both halves, and symmetry is true. A refinement item in a request that selects symmetry is routed "as if none were selected", so a candidate that does not advertise symmetry could run it unreduced. That breaks FR-382's "never answers a reduced request by running unreduced". Not blocking. Either restrict every item kind the request's reductions apply to, or state in FR-159 / FR-382 which item kinds carry the selection. Refs: qsl-route/src/request.rs:703-709.
+
+**Verdict: mergeable.**
+
+Gates at c400156b7 (locked-build, jobs 4, `--all-features`, debug info off, QSPEC_DIR=qspec-e3d48d76):
+- fmt: exit 0.
+- qsl-analyze `reduction` / `partial_order` / `quotient` / `zone_` / `hyper_` / `statistical_`: 362/362.
+- qsl-route: 18 + 77.
+- root `family_outcome_layering` / `temporal_negotiation` / `request_builder`: 20/20, TC-390 included.
+- clippy on the four crates with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: '} else if requirements.kind() == Capability::TemporalSatisfaction { registry.restrict_to_reductions(candidates_of(requirements, evidence, registry, named), &selected)'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: '.expect("QSPEC_DIR names the QSpec checkout whose schema this reads");'
+- fnd: FND-003
+  outcome: fixed
+  after_excerpt: 'assert_eq!(*stats, RunStats::default());'
+findings:
+- fnd: FND-004
+  severity: low
+  confidence: medium
+  method: gap-analysis
+  check: coverage
+  artifact_id: FR-159
+  path: qsl-route/src/request.rs
+  lines: 703-709
+  finding: 'Only temporal-satisfaction items are restricted by the request''s reductions; FR-159''s preservation table covers refinement items too, which are routed as if none were selected. Restrict every kind the selection applies to, or state in FR-159/FR-382 which kinds carry it.'
+```
+
++++
