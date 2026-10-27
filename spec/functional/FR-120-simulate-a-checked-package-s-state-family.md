@@ -406,17 +406,14 @@ declared maximum `N`, every sequence of length 0 to `N` over its element
 domain. The rules below add the enum, the record and the tuple to that list;
 FR-120-AC-22 to FR-120-AC-25 pin them.
 
-- An enum SHALL be a finite domain, each member in declaration order. This is
-  the rule FR-215 states for a record field of enum type. It changes the outcome
-  for a bare enum operation parameter, result or granted field, which a
-  `domains()` that treats enum as unbounded lists as an unbounded root
-  (`RequiresBound`); the model path building that listing is QSL-580o's
-  implementation gap.
+- An enum SHALL be a finite domain, each member in declaration order, as a
+  bare operation parameter, result or granted field and as a component.
 - A record or tuple whose non-clock components all have a finite value domain
   by these rules SHALL be a finite value domain: every value that gives each
   non-clock component a value of its domain, with the first declared component
   most significant and each component in its own domain order (ADR-027 ST-11's
-  "finite record domain", stated for records by FR-215). Its size SHALL be the
+  "finite record domain"; FR-215 states the same order for a record of finite
+  fields). Its size SHALL be the
   product of its non-clock components' domain sizes.
 - A record field declared presence-optional (`name?: T`) SHALL range over
   absent, then each value of `T`, as `Option<T>` does.
@@ -441,9 +438,9 @@ FR-120-AC-22 to FR-120-AC-25 pin them.
   decimal, a quantity, a UUID or a Timestamp, for example. This is the
   narrowest reading where FR-230 does not say what a candidate holds for a
   clock slot or a union.
-- These rules give a record or tuple the same domain and order here and in
-  FR-215 for every component type except a union, which FR-215 enumerates for a
-  protocol attempt type and this section leaves unbounded.
+- The tuple, presence-optional field, clock-place, enum-as-parameter and union
+  rules above are this section's own; FR-215 states only the record of finite
+  fields and its order.
 
 ### Contract clauses
 
@@ -681,14 +678,14 @@ identity text of operation `op`.
 | FR-120-AC-20 | D10's `absent-key` form: with `pre PB1 using V on M::B::size { (lookup<M::A>(M::PX, self) absent undefined) = self }` and `pre PB2 using V on M::B::size { false }` over a closed population `PX` with no runtime members, a call of `size` for `d1` is `undefined` with reason `absent-key` after `dispatch.select` and `PB1`'s charges, with no `function.call`, and `PB2` and `PA` are not evaluated. With the two bodies' names swapped it is `undefined` with reason `precondition-false` after the false clause's and then `PA`'s charges, the lookup clause neither evaluated nor charged. | Test (TC-472) |
 | FR-120-AC-21 | FR-120-AC-6's runs with `CanInc`: under a meter budget whose `work_units` is 0 and every other counter at its default, the `Stopped` outcome's `ExpansionStop` names `EvaluationMeter` with counter `work_units`, the counter whose next charge was denied; with `max_candidates` 2 and `increment` with no clause, it names `MaxCandidates` and carries no counter. | Test (TC-472) |
 | FR-120-AC-22 | Over a model whose object type `Cell` (population `cells`, universe `{k1}`) declares `cfg: Cfg` (record `Cfg { on: Boolean, n: Int[0, 2] }`), `pr: Pr` (tuple `Pr(Boolean, Int[0, 1])`) and `w: Wrap` (record `Wrap { c: Cfg, o: Option<Boolean> }`), with an operation `put()` whose frame is `modifies cfg, pr, w` and no clause, each field's domain is finite and `domains()` lists no unbounded root for them. `cfg` has 6 values, ordered `on` first: (`false`, 0), (`false`, 1), (`false`, 2), (`true`, 0), (`true`, 1), (`true`, 2). `pr` has 4: (`false`, 0), (`false`, 1), (`true`, 0), (`true`, 1). `w` has 6 × 3 = 18 values, `c` first in `Cfg` order, `o` absent, then `false`, then `true`. An application of `put` from a state holding `k1` has 6 × 4 × 18 = 432 candidates, each counted against `max_candidates`. In a separate model, a granted field `oc: Option<Cfg>` has 7 values, and so has `sq: Sequence<Cfg>[0, 1]` (the empty sequence, then the 6 one-element sequences); a two-component record `R1 { c: Cfg, a: Boolean }` has 6 × 2 = 12. | Test (TC-1270) |
-| FR-120-AC-23 | Over an enum `Color` (`red`, `blue`, `green`): an operation parameter `c: Color`, an operation result of type `Color` and a granted field `col: Color` are each a finite domain of 3 values in declaration order, and `domains()` lists no unbounded root for them (before this criterion a bare enum is listed as unbounded and returns `RequiresBound`; this is a behaviour change). A record `Pick { col: Color, on: Boolean }` has 6 values, `col` most significant. A presence-optional field `note?: Boolean` of a record `Note { note?: Boolean, n: Int[0, 1] }` gives 3 × 2 = 6 values, `note` absent first. | Test (TC-1270) |
-| FR-120-AC-24 | Over a model declared `time dense unit ms` (FR-230; a `Clock` field is refused `invalid_timed_model`/`clock-without-dense-time` otherwise), with `ck: Timer` (record `Timer { x: Clock, n: Int[0, 3] }`) and `sw: Stopwatch` (record `Stopwatch { x: Clock, y: Clock }`) on `Cell`, and an operation `retime()` with frame `modifies ck, sw` and postcondition `self.ck = Timer { x: 0 ms, n: 3 }` (FR-230-AC-11): `domains()` lists a root for each of `ck` and `sw` and neither is unbounded. `Timer`'s domain is the 4 values of `n` ascending, `x` contributing no factor; `Stopwatch` has exactly one value; `Mix { t: Timer, b: Boolean }` has 4 × 2 = 8 values, `t` most significant. A successor of `retime` holds `ck.n` 3 and `x` reset, and `sw` keeps its pre-state clocks. With no postcondition, a candidate keeps each clock at its pre-state value. No candidate ranges over a value of `x`. A model that declares `Sequence<Timer>[0, 1]` or `Sequence<Clock>[0, 1]` as a granted field has an unbounded root for it. | Test (TC-1270) |
+| FR-120-AC-23 | Over an enum `Color` (`red`, `blue`, `green`): an operation parameter `c: Color`, an operation result of type `Color` and a granted field `col: Color` are each a finite domain of 3 values in declaration order, and `domains()` lists no unbounded root for them. A record `Pick { col: Color, on: Boolean }` has 6 values, `col` most significant. A presence-optional field `note?: Boolean` of a record `Note { note?: Boolean, n: Int[0, 1] }` gives 3 × 2 = 6 values, `note` absent first. | Test (TC-1270) |
+| FR-120-AC-24 | Over a model declared `time dense unit ms` (FR-230; a `Clock` field is refused `invalid_timed_model`/`clock-without-dense-time` otherwise), with `ck: Timer` (record `Timer { x: Clock, n: Int[0, 3] }`) `sw: Stopwatch` (record `Stopwatch { x: Clock, y: Clock }`) and `mx: Mix` (record `Mix { t: Timer, b: Boolean }`) on `Cell`, and an operation `retime()` with frame `modifies ck, sw, mx` and postcondition `self.ck = Timer { x: 0 ms, n: 3 }` (FR-230-AC-11): `domains()` lists a root for each of `ck`, `sw` and `mx` and none is unbounded. `Timer`'s domain is the 4 values of `n` ascending, `x` contributing no factor; `Stopwatch` has exactly one value; `mx` has 4 × 2 = 8 values, `t` most significant. A successor of `retime` holds `ck.n` 3 and `x` reset, and `sw` keeps its pre-state clocks. With no postcondition, a candidate keeps each clock at its pre-state value. No candidate ranges over a value of `x`. A model that declares `Sequence<Timer>[0, 1]` or `Sequence<Clock>[0, 1]` as a granted field has an unbounded root for it. | Test (TC-1270) |
 | FR-120-AC-25 | Over AC-22's model with `op: Open` (record `Open { n: Integer, b: Boolean }`), `tm: Tm` (record `Tm { x: Clock, k: Integer }`) and `wr: Wrap2` (record `Wrap2 { o: Open }`) added as fields, one at a time in a frame that grants it, and with a union field `u: U` (union `U { a, b(Boolean) }`) granted likewise: each of `op`, `tm`, `wr` and `u` is an unbounded domain in `domains()`, so `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming that field's `WireNodeId`, before any state is expanded. A clock component does not make `tm` bounded, and `Wrap2` is unbounded by its nested component. | Test (TC-1270) |
 ## Dependencies
 
 - [FR-215](FR-215-implement-protocolsystem-as-a-transitionsystem.md): the
   record value domain and its order for protocol binders (ADR-027 ST-2,
-  ST-11), which FR-120's record and tuple domain matches; FR-230 (clock
+  ST-11), whose order FR-120's record domain follows; FR-230 (clock
   places, record-literal reset).
 - QSpec FR-181, its exploration contract, typed canonical form and AC-4 to
   AC-6; QSpec FR-013 (frames, including its Behavior's `modifies`, `creates`

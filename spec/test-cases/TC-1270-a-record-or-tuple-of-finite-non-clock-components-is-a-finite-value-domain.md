@@ -43,8 +43,9 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    type `Color` and a granted field `col: Color`; then `Pick { col: Color, on:
    Boolean }` and `Note { note?: Boolean, n: Int[0, 1] }` as granted fields.
 3. Declare `time dense unit ms`. Add `ck: Timer` (`Timer { x: Clock, n: Int[0, 3] }`),
-   `sw: Stopwatch` (`Stopwatch { x: Clock, y: Clock }`) and `Mix { t: Timer, b:
-   Boolean }` on `Cell`, and `retime()` with frame `modifies ck, sw` and
+   `sw: Stopwatch` (`Stopwatch { x: Clock, y: Clock }`) and `mx: Mix`
+   (`Mix { t: Timer, b: Boolean }`) on `Cell`, and `retime()` with frame
+   `modifies ck, sw, mx` and
    postcondition `self.ck = Timer { x: 0 ms, n: 3 }`. Read each domain and
    expand the initial state; repeat with no postcondition. In another model,
    grant `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields.
@@ -64,12 +65,11 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   each counted against `max_candidates`. In the separate model, `oc` and `sq`
   have 7 values each and `R1` has 12.
 - Step 2: `c`, the result and `col` are finite, 3 values in declaration order,
-  no unbounded root (a change from a `domains()` that lists a bare enum as
-  unbounded); `Pick` has 6 values, `col` most significant; `Note` has 6, `note`
+  no unbounded root ; `Pick` has 6 values, `col` most significant; `Note` has 6, `note`
   absent first.
-- Step 3: `ck` and `sw` are roots and neither is unbounded. `Timer` has 4
+- Step 3: `ck`, `sw` and `mx` are roots and none is unbounded. `Timer` has 4
   values (`n` 0 to 3 ascending), no factor from `x`; `Stopwatch` has exactly
-  one value; `Mix` has 8, `t` most significant. The expansion has a successor
+  one value; `mx` has 8, `t` most significant. The expansion has a successor
   with `ck.n` 3 and `x` reset, `sw` unchanged, and no candidate ranges over a
   value of `x`. With no postcondition each clock keeps its pre-state value. The
   `Sequence<Timer>` and `Sequence<Clock>` fields are unbounded roots.
