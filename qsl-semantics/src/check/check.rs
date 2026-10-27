@@ -1544,12 +1544,14 @@ impl Scope {
                     ValueType::Float(_) => return true,
                     ValueType::Option(payload) => ty = payload,
                     ValueType::Collection(collection) => ty = collection.element(),
+                    ValueType::Map(map) => ty = map.values(),
                     ValueType::Boolean
                     | ValueType::Integer
                     | ValueType::Int(_)
                     | ValueType::Rational(_)
                     | ValueType::Decimal(_)
                     | ValueType::Quantity(_)
+                    | ValueType::BoundedQuantity(_)
                     | ValueType::Text(_)
                     | ValueType::String
                     | ValueType::Uuid
@@ -2571,6 +2573,7 @@ impl<'a> Typer<'a> {
                 }
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Map(map) => pending.push(map.values()),
                 ValueType::Boolean
                 | ValueType::Integer
                 | ValueType::Int(_)
@@ -2578,6 +2581,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Decimal(_)
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
+                | ValueType::BoundedQuantity(_)
                 | ValueType::Text(_)
                 | ValueType::String
                 | ValueType::Composite(_)
@@ -3043,13 +3047,16 @@ impl<'a> Typer<'a> {
                     ValueType::Decimal(target),
                 )
             }
-            ValueType::Float(_) | ValueType::Quantity(_) => return Err(ineligible(location)),
+            ValueType::Float(_) | ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
+                return Err(ineligible(location))
+            }
             ValueType::Boolean
             | ValueType::Text(_)
             | ValueType::Enum(_)
             | ValueType::Option(_)
             | ValueType::Composite(_)
             | ValueType::Collection(_)
+            | ValueType::Map(_)
             | ValueType::Reference(_)
             | ValueType::Population(_)
             | ValueType::Uuid
@@ -3079,6 +3086,7 @@ impl<'a> Typer<'a> {
             }
             ValueType::Option(element) => Self::holds_references(element),
             ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Map(map) => Self::holds_references(map.values()),
             ValueType::Population(_) => true,
             ValueType::Boolean
             | ValueType::Int(_)
@@ -3092,7 +3100,8 @@ impl<'a> Typer<'a> {
             | ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
-            | ValueType::Quantity(_) => false,
+            | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_) => false,
         }
     }
 
@@ -3101,6 +3110,7 @@ impl<'a> Typer<'a> {
             ValueType::Reference(_) => true,
             ValueType::Option(element) => Self::holds_references(element),
             ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Map(map) => Self::holds_references(map.values()),
             ValueType::Boolean
             | ValueType::Int(_)
             | ValueType::Integer
@@ -3114,6 +3124,7 @@ impl<'a> Typer<'a> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
             | ValueType::Population(_) => false,
         }
     }

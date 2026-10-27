@@ -801,6 +801,8 @@ impl TypeLeafWire {
             },
             ValueType::Option(_)
             | ValueType::Collection(_)
+            | ValueType::BoundedQuantity(_)
+            | ValueType::Map(_)
             | ValueType::Uuid
             | ValueType::Timestamp => return None,
         })

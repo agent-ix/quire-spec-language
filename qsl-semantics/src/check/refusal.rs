@@ -3171,6 +3171,7 @@ impl CheckRefusal {
             | IllTypedCause::AffineUnitArithmetic
             | IllTypedCause::DistinctUnits
             | IllTypedCause::MalformedDecimalType
+            | IllTypedCause::MalformedBoundedQuantityType
             | IllTypedCause::DistinctIeeeWidths
             | IllTypedCause::IeeeWithExactOperand
             | IllTypedCause::IeeeToNonRationalExact => IllTypedCause::TypeMismatch,

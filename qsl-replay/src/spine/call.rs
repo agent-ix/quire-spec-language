@@ -693,11 +693,13 @@ pub(crate) fn argument_value(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::Text(_)
         | ValueType::Enum(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)
-        | ValueType::Collection(_) => Err(wrong()),
+        | ValueType::Collection(_)
+        | ValueType::Map(_) => Err(wrong()),
     }
 }
 

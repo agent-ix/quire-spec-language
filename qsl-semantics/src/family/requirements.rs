@@ -360,8 +360,11 @@ pub fn classify_domains(
             ValueType::Population(None) => {
                 domains.insert(key(), DomainKind::Population);
             }
-            ValueType::Quantity(_) => {
+            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
                 domains.insert(key(), DomainKind::Quantity);
+            }
+            ValueType::Map(map) => {
+                pending.push(child(&position, 0, map.values(), None)?);
             }
             ValueType::Collection(collection) => {
                 if collection.bound().is_none() {

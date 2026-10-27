@@ -2294,3 +2294,25 @@ fn argument_value_binds_native_uuid_and_timestamp_values() {
         ));
     }
 }
+
+/// TC-927: a map type admits no value and a bounded quantity is a quantity
+/// leaf the call facade does not bind natively; both refuse as wrong kinds
+/// and neither panics.
+#[trace("TC-927")]
+#[test]
+fn argument_value_refuses_map_and_bounded_quantity_parameters() {
+    let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+        ValueType::Boolean,
+        None,
+    )));
+    let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+        quire_exact::BoundedQuantityType::new(quire_exact::UnitId::compound([5; 32]), None, None)
+            .expect("an unbounded bounded quantity type"),
+    ));
+    for value_type in [map, bounded] {
+        assert!(matches!(
+            argument_value(1, Value::Boolean(true), &value_type).map_err(|refusal| *refusal),
+            Err(RunRefusal::WrongValueKind { position: 1 })
+        ));
+    }
+}

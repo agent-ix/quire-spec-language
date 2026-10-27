@@ -2085,6 +2085,7 @@ fn witness_type(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::String
         | ValueType::Text(_)
         | ValueType::Enum(_)
@@ -2094,9 +2095,11 @@ fn witness_type(
         | ValueType::Reference(_)
         | ValueType::Uuid
         | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
-        ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-            parameter,
-        })),
+        ValueType::Map(_) | ValueType::Population(_) => {
+            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+                parameter,
+            }))
+        }
     }
 }
 

@@ -1854,6 +1854,18 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
             }
         }
         ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
+        ValueType::BoundedQuantity(bounded) => format!("BoundedQuantity[{}]", bounded.unit()),
+        ValueType::Map(map) => {
+            let values = value_type_source(map.values());
+            match map.bound() {
+                Some(bound) => format!(
+                    "Map<Text, {values}>[{}, {}]",
+                    bound.minimum(),
+                    bound.maximum()
+                ),
+                None => format!("Map<Text, {values}>"),
+            }
+        }
         ValueType::Text(text) => format!(
             "Text[{}, {}; {}]",
             text.min(),
@@ -1918,6 +1930,26 @@ mod tests {
         let message = check_message(&[refusal]);
         assert!(message.contains("temporal claim"), "{message}");
         assert!(!message.contains("in a `hybrid` declaration"), "{message}");
+    }
+
+    /// TC-927: a map and a bounded quantity spell their kind in a refusal.
+    #[trace("TC-927")]
+    #[test]
+    fn map_and_bounded_quantity_types_have_a_source_spelling() {
+        let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            ValueType::Boolean,
+            None,
+        )));
+        assert_eq!(super::value_type_source(&map), "Map<Text, Boolean>");
+        let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(
+                quire_exact::UnitId::compound([5; 32]),
+                None,
+                None,
+            )
+            .expect("an unbounded bounded quantity type"),
+        ));
+        assert!(super::value_type_source(&bounded).starts_with("BoundedQuantity["));
     }
 
     #[trace("TC-1065", "FR-218-AC-31")]

@@ -31,6 +31,7 @@ pub(super) fn kind_of(declared: &ValueType) -> Option<Kind> {
         | ValueType::Decimal(_)
         | ValueType::Float(_) => Some(Kind::Real),
         ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid
@@ -39,6 +40,7 @@ pub(super) fn kind_of(declared: &ValueType) -> Option<Kind> {
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
+        | ValueType::Map(_)
         | ValueType::Reference(_)
         | ValueType::Population(_) => None,
     }

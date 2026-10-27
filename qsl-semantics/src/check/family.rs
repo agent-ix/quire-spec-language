@@ -324,6 +324,20 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_str("quantity");
                 encode_quantity_unit(out, *unit);
             }
+            ValueType::BoundedQuantity(bounded) => {
+                out.write_str("bounded-quantity");
+                encode_quantity_unit(out, bounded.unit());
+                // Bound presence is part of the type (QExact FR-387).
+                for bound in [bounded.min(), bounded.max()] {
+                    match bound {
+                        Some(bound) => {
+                            out.write_str("bounded");
+                            out.write_str(&bound.magnitude().to_string());
+                        }
+                        None => out.write_str("unbounded"),
+                    }
+                }
+            }
             ValueType::Text(text_type) => {
                 out.write_str("text");
                 out.write_u64(text_type.min());
@@ -352,6 +366,12 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_str(collection_kind_tag(collection_type.kind()));
                 bounds.push(collection_type.bound());
                 current = collection_type.element();
+                continue;
+            }
+            ValueType::Map(map_type) => {
+                out.write_str("map");
+                bounds.push(map_type.bound());
+                current = map_type.values();
                 continue;
             }
             ValueType::Reference(key) => {
@@ -938,7 +958,9 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             | ValueType::Timestamp => return true,
             ValueType::Option(payload) => current = payload,
             ValueType::Collection(collection) => current = collection.element(),
+            ValueType::Map(map) => current = map.values(),
             ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
             | ValueType::Enum(_)
             | ValueType::Composite(_)
             | ValueType::Reference(_)
