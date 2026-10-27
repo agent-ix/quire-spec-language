@@ -2634,6 +2634,7 @@ version = "0.1.0"
 dependencies = [
  "arch-lint",
  "ix-trace-rs",
+ "jsonschema 0.17.1",
  "logos",
  "proc-macro2",
  "qsl-cst",
@@ -2644,6 +2645,7 @@ dependencies = [
  "qsl-string-edge",
  "serde",
  "serde_json",
+ "serde_json_canonicalizer",
  "syn 2.0.119",
  "tempfile",
  "thiserror",
