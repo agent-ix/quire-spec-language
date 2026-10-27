@@ -318,40 +318,40 @@ ill-formed use.
   contains `value(p) ~ c` SHALL record the data predicate `present(p)` with the
   convex part. A time invariant `when P { value(p) <= c }` SHALL bound `p`'s
   clock only at states where `P` holds, and `P` establishes `present(p)`.
-- **Presence bit.** The checked form SHALL give every guarded place a
-  **presence bit** that the evaluators of FR-120 and FR-231 hold, one for each
-  guarded place of each object, in the state and in the state key; this
-  requirement states the contract that S3 records, and those requirements own
-  the evaluation. A guarded place that has a snapshot member on its path (an
-  `Option<Timer>`, whose data FR-106 carries, and a union case, whose value
-  carries its `member`, QSpec FR-181) takes its bit from that member, so that
-  the bit and the data never disagree. A guarded place whose only content is a
-  clock (`Option<Clock>`, a slot of `Sequence<Option<Clock>>`) has no snapshot
-  member, so its initial bit ranges over absent and present; this is an
-  over-approximation, sound for every-behaviour families and optimistic for
-  possibility families, and the number of initial states grows as 2 to the
-  power of the guarded pure-clock places, times the count ranges of "Initial
-  element count". `present(p)` of a guarded place SHALL check as a `Boolean`
-  data predicate over that bit, read through the data-predicate path and never
+- **Presence bit.** Every guarded place SHALL have a **presence**, which
+  `present(p)` reads; this requirement states the contract that S3 records, and
+  FR-120 and FR-231 own the evaluation. A guarded place that has a snapshot
+  member on its path (an `Option<Timer>`, whose data FR-106 carries, a union
+  case, whose value carries its `member`, QSpec FR-181, and a collection slot,
+  whose liveness is the collection's own size) SHALL read its presence from
+  that data or member and SHALL hold no bit. Only a guarded place with no
+  snapshot member (an `Option<Clock>`, including an element of
+  `Sequence<Option<Clock>>`) SHALL hold a **presence bit**, one for each such
+  place of each object, in the state and in the state key, and its initial bit
+  SHALL range over absent and present; this is an over-approximation, sound
+  for every-behaviour families and optimistic for possibility families, and the
+  number of initial states grows as 2 to the power of those places, times the
+  count ranges of "Initial element count". `present(p)` of a guarded place SHALL check as a `Boolean`
+  data predicate over the place's presence (its bit or its data), read through the data-predicate path and never
   as a clock read; the recorded guard carries it as a data predicate of its
-  convex part. A write that makes the place present (`self.v = c`) sets the bit
-  and resets the clock to `c`. A **drop** (`self.v = absent`, another union
-  case, or the removal of the slot) sets the bit false and leaves the dropped
+  convex part. A write that makes the place present (`self.v = c`) sets the presence
+  (the bit, or the data) and resets the clock to `c`. A **drop** (`self.v = absent`, another union
+  case, or the removal of the slot) sets the presence false and leaves the dropped
   clock **unconstrained**: no zone constraint, time invariant bound or elapse
   applies to it, it has no valuation, and a later write that makes it present
   resets it afresh. "Every present clock is 0 in every initial state" (QSpec
   FR-415, FR-231, FR-239's zero valuation) therefore reads over the present
-  clocks only. **State-key form.** A presence bit is held only for a **live** guarded place
-  that has **no snapshot member**: an `Option<Clock>` (as a field, a record or
-  tuple component, or a collection element). A place whose presence comes from
-  data (an `Option<Timer>`, a union case, a collection slot, whose liveness is
-  the collection's own size) has no bit and its state-key encoding is
-  unchanged, so no existing state key changes. The bit is encoded in the
+  clocks only. **State-key form.** A presence bit SHALL be held only for a **live** guarded
+  place that has **no snapshot member**: an `Option<Clock>` (as a field, a
+  record or tuple component, or a collection element). A place whose presence
+  comes from data has no bit, and its state-key encoding SHALL be unchanged, so
+  no state key of a data-backed place changes; an `Option<Clock>` field gains
+  its option shell. The bit SHALL be encoded in the
   object's `record` (FR-120) by the place's own `Option` shell: an
   `Option<Clock>` value encodes as `{"type":"option","value":null}` when absent
   and `{"type":"option","value":{"type":"tuple","name":"Clock","components":[]}}`
-  when present, so QSL's `semantic` stays the map of FR-120. The bits of a
-  collection are those of its live elements only, in the collection's own
+  when present, so QSL's `semantic` SHALL stay the map of FR-120. The bits of a
+  collection SHALL be those of its live elements only, in the collection's own
   order, so a variable-size or unbounded collection has exactly as many bits as
   it has live `Option<Clock>` elements, and a dropped slot has none.
 - **Parameters.** A call argument for a `Clock` parameter, or a parameter of a
@@ -532,7 +532,7 @@ ill-formed use.
   `Option<Reference<Clock>>` is absent or one place. The checker SHALL admit `ref(p)`, for `p` a
   place expression, as a data term whose value is the place `p` denotes, and `deref(r)` for `r` a
   `Reference<Clock>` as a place expression. A `deref(r)` SHALL check as one place for each place
-  `r` can denote (every place of the model whose type is the clock type the reference targets),
+  `r` can denote (every place of the model whose type is the clock type the reference targets, except a place under a `Map` value, which has no place id),
   each with the data condition `r = ref(place)`, and a constraint over it SHALL record the
   disjunction of those guarded constraints, as a path through a reference field does. A
   `deref(r)` of an absent `Option<Reference<Clock>>`, or of a reference to a slot place, SHALL be
@@ -716,8 +716,8 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-38 | For `time M dense unit u` and `time M tick O period p unit u`, S3 resolves model alias `M` against the selected package and retains its alias and unique checked semantic-node `NodeKey` on the checked time source. A package with no semantic node denoted by `M` refuses `missing_declaration`/`missing-name` at `M`; a package with multiple candidate semantic model nodes refuses `ambiguous_declaration`/`ambiguous-name` at `M`, regardless of declaration or graph order. With exactly one candidate, the emitted timed-model root's `model` reference is that node. | Test |
 | FR-230-AC-39 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]`, `present(self.v)` checks as a `Boolean` operand of `and` and `not`, is recorded as a data predicate of the convex part and never as a clock constraint, and `value(self.v) >= 1 ms` without it refuses `undefined_expression`/`unproved-presence`. | Test |
 | FR-230-AC-40 | `self.v = 0 ms` records a make-present of `v` with reset 0; `self.v = absent` records a drop that leaves `v` with no zone constraint, so a time invariant `when present(self.v) { value(self.v) <= 3 ms }` places no bound at a state where `v` was dropped. | Test |
-| FR-230-AC-41 | For `Option<Timer>` and a union case `Armed(Clock)` the presence bit of the place equals the snapshot's data or `member`; for `v` and each slot of `q` no snapshot member exists and the initial bit takes both values, giving `2` initial states for `v` alone. | Test |
-| FR-230-AC-42 | In a model with `v: Option<Clock>`, `q: Sequence<Option<Clock>>[0, 2]`, `o: Option<Timer>` and a union case `Armed(Clock)`, only `v` and the live elements of `q` carry a presence bit, encoded by their `option` shell as `{"type":"option","value":null}` (absent) or `{"type":"option","value":{"type":"tuple","name":"Clock","components":[]}}` (present); `semantic` stays a map; a one-element `q` has one bit and a dropped slot none; the keys of `o`, `Armed` and a model with no `Option<Clock>` are unchanged; two states that differ only in one bit have different state keys. | Test |
+| FR-230-AC-41 | `present(...)` of `Option<Timer>`, of a union case `Armed(Clock)` and of a slot of `q` is read from the snapshot's data, `member` or the collection's size, and those places hold no bit; `v: Option<Clock>` and each `Option<Clock>` element of `q` hold a bit whose initial value takes both values, giving `2` initial states for `v` alone. | Test |
+| FR-230-AC-42 | In a model with `v: Option<Clock>`, `q: Sequence<Option<Clock>>[0, 2]`, `o: Option<Timer>` and a union case `Armed(Clock)`, only `v` and the live `Option<Clock>` elements of `q` carry a presence bit, encoded by their `option` shell as `{"type":"option","value":null}` (absent) or `{"type":"option","value":{"type":"tuple","name":"Clock","components":[]}}` (present); `semantic` stays a map; a one-element `q` has one bit and a dropped slot none; the keys of `o`, `Armed`, the slots of `q` and a model with no `Option<Clock>` are unchanged; two states that differ only in one bit have different state keys. | Test |
 | FR-230-AC-43 | In FR-230-AC-24's model, `ref(self.x)` of `Call1` and of `Call2` have different place ids, `ref(self.q[0])` and `ref(self.q[1])` have different place ids, `ref(self.m[k])` over a `Map` value refuses `ill_typed`/`type-mismatch`, `ref(self.x) = ref(other.x)` is false for two calls and true for one call, and the id of `Call1.x` is the text `place/v1/<h(owner)>/<h(node key)>/-` while that of `Call1.q[1]` ends `/1`. | Test |
 | FR-230-AC-44 | A place id is stored in a field, a parameter, a result, a record component and a `Sequence<Reference<Clock>>` element and reads back equal; `=` over two ids is a data read, `<` refuses `ill_typed`/`operator-ineligible`; the id of `ref(self.q[0])` is unchanged after a reorder of `q`; and a package `reference` instance is QSpec FR-181's `reference` value whose `object_type` is the Clock type's effective id and whose `identity` is the hex of the id text. | Test |
 | FR-230-AC-45 | A snapshot `Reference<Clock>` whose identity is not of the `place/v1/...` form, or names an owner object or `clock_place` the package and universe do not contain, refuses `invalid_runtime_input`/`invalid-value`. | Test |
