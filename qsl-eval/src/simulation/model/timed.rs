@@ -312,6 +312,15 @@ pub enum TimedStop {
         /// The bound, `model_check.max_clocks`.
         max_clocks: u64,
     },
+    /// A broken invariant of the place listing: the state holds an element
+    /// whose clocks have no place, though its live clocks are within
+    /// `max_clocks`. Never stepped over.
+    UnplacedElement {
+        /// The state's live clocks.
+        live: u64,
+        /// Those with a place.
+        placed: u64,
+    },
 }
 
 /// A timed member's predicate with no truth value at a state.
@@ -486,10 +495,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             held.insert(owner, pairs.clone());
             Ok(pairs)
         };
-        // The clocks one element of each collection with no declared maximum
-        // holds, by owner and the path through that collection's slot: each
-        // clock below it times the declared maxima of the collections
-        // between.
+        // The fewest clocks one element of each collection with no declared
+        // maximum holds, by owner and the path through that collection's
+        // slot: each clock below it times the declared minima of the
+        // collections between. Listing `max_clocks` over it slots, every
+        // state within `max_clocks` has a place for each live clock.
         let mut per_element: std::collections::BTreeMap<(EffectiveId, Vec<PlaceStep>), u64> =
             std::collections::BTreeMap::new();
         for (_, field) in timed.clock_fields() {
@@ -509,7 +519,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let below = path[at + 1..]
                 .iter()
                 .filter_map(|step| match step {
-                    PlaceStep::Slot(shape) => shape.max,
+                    PlaceStep::Slot(shape) => Some(shape.min),
                     PlaceStep::Field(_) => None,
                 })
                 .fold(1_u64, u64::saturating_mul);
@@ -659,11 +669,25 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// [`TimedStop::MaxClocks`] when the live clocks of `state` exceed
     /// `max_clocks`.
+    ///
+    /// # Errors
+    ///
+    /// [`TimedStop::UnplacedElement`] when a live clock has no place: the
+    /// listing is sized so that this never happens within the bound.
     fn within_max_clocks(&self, state: &ModelSimState) -> Result<(), TimedStop> {
-        if self.live_clocks(state) > self.max_clocks.get() {
+        let live = self.live_clocks(state);
+        if live > self.max_clocks.get() {
             return Err(TimedStop::MaxClocks {
                 max_clocks: self.max_clocks.get(),
             });
+        }
+        let placed = self
+            .places
+            .iter()
+            .filter(|place| self.live(place, state))
+            .count() as u64;
+        if placed < live {
+            return Err(TimedStop::UnplacedElement { live, placed });
         }
         Ok(())
     }

@@ -2272,3 +2272,81 @@ fn a_family_product_is_charged_against_max_candidates() {
         Some(qsl_eval::simulation::ExpansionLimit::MaxCandidates)
     );
 }
+
+/// `timer_document` with a record `Holder { ts: Timer [0, 2] }` and a field
+/// `hs: Sequence<Holder>` with no declared maximum.
+fn holders_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let holder = ident("Holder");
+    let mut ts = wire_field("ts", &ident("Timer"));
+    let identity = format!("{holder}/ts");
+    ts["identity"] = json!(identity);
+    ts["origin"] = origin(&identity);
+    ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+    let mut hs = wire_field("hs", &holder);
+    hs["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(hs);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-19 (TC-685), SR-1676001 round 2 CR FND-001: over `hs:
+/// Sequence<Holder>` with no declared maximum, `Holder { ts: Timer [0, 2]
+/// }`, an element holds as few as no clocks, so `hs` lists `max_clocks`
+/// slots and every state within the bound has a place for each live clock.
+/// With `max_clocks` 11, three holders of one `Timer` each (9 live clocks:
+/// `t.x`, `t.y`, `x` and two for each `Timer`) and four (11) step with every
+/// live clock placed, and five (13) stop `MaxClocks`; with `max_clocks` 15
+/// six holders (15) step.
+#[trace("TC-685")]
+#[test]
+fn an_unbounded_collection_of_records_places_every_live_clock() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let holder =
+        json!({"record": {"type": ident("Holder"), "fields": {"ts": {"sequence": [timer("1")]}}}});
+    for (holders, max_clocks, steps) in
+        [(3, 11, true), (4, 11, true), (5, 11, false), (6, 15, true)]
+    {
+        let world = world_holding(
+            holders_document(),
+            "",
+            &only(
+                &["send"],
+                "post Send using v on M::Call::send { self.phase = 1 }\n",
+            ),
+            json!({"t": timer("0"), "hs": {"sequence": vec![holder.clone(); holders]}}),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::with_max_clocks(
+            &held,
+            "M",
+            std::num::NonZeroU64::new(max_clocks).expect("positive"),
+        )
+        .expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let live = timed.live_clocks(initial.discrete());
+        assert_eq!(live, 3 + 2 * holders as u64);
+        let placed = timed
+            .places()
+            .iter()
+            .filter(|place| timed.live(place, initial.discrete()))
+            .count() as u64;
+        let stepped = timed.steps(initial);
+        if steps {
+            assert_eq!(placed, live, "{holders} holders at {max_clocks}");
+            assert!(
+                !stepped.expect("the state steps").is_empty(),
+                "{holders} holders at {max_clocks}"
+            );
+        } else {
+            assert_eq!(stepped.err(), Some(TimedStop::MaxClocks { max_clocks }));
+        }
+    }
+}
