@@ -54,3 +54,14 @@ Ticket: QSL-583. Head: d853a40f8. Method: a manual check of each AC against its 
 | `a_liveness_claim_over_no_admitted_behaviour_is_undecided` | TC-695 | correct (partial AC-4, untagged) |
 | `a_liveness_refutation_is_a_timed_lasso` | FR-236-AC-3 | correct |
 | `an_unsatisfiable_loop_has_no_delays` | TC-696 | correct (partial AC-4, untagged) |
+
+## Dispositions
+
+Round 1, head f3d9e57a9.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `enabledness_reads_the_target_time_invariants` covers a fairness-constrained step whose target holds a time invariant: an idle tail and a `ping` loop, under weak and strong fairness, each Violated and replayed. |
+| FND-002 | fixed | `the_position_negation_answers_to_the_timed_evaluator` in qsl-eval's `timed_trace` tests compares the automaton with `evaluate_timed_at` on every lasso of 1 to 4 positions over three levels. |
+| FND-003 | fixed | FR-240-AC-1 now uses a `reply` self-loop that changes nothing and resets no clock. The coder's caveat holds: an operation has one guard, and a clock cannot be read in a postcondition (FR-230), so the loop's `x < 1` cannot be a per-outcome guard. `reply` is therefore guarded `self.inflight`, and the loop is enabled at `x < 1` as the AC names and later under the server deadline `x <= 3`, which still bounds it to Zeno. The result is `Holds`. The test checks what the AC is about. |
+| FND-004 | fixed | QSL-583 comment a66180e8 assigns FR-241-AC-4 end to end to QSL-583c and records the solver half covered here. |
