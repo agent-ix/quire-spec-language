@@ -158,7 +158,7 @@ impl ModelSystem<'_> {
     ///
     /// [`crate::simulation::EncodingRefusal`] when `value` has no encoding.
     pub fn value_key(&self, value: &Value) -> Result<Vec<u8>, crate::simulation::EncodingRefusal> {
-        key::canonical_bytes(&encode::value_enc(value), identity_limits())
+        key::canonical_bytes(&encode::value_enc(value, self.typing()), identity_limits())
     }
 
     /// Whether the object type `concrete` is `ancestor` or a subtype of it;
@@ -208,8 +208,10 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelState,
     ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
-        let (key, digest) =
-            key::state_key(&encode::model_key(&self.model, state), identity_limits())?;
+        let (key, digest) = key::state_key(
+            &encode::model_key(&self.model, state, self.typing()),
+            identity_limits(),
+        )?;
         Ok((key.as_bytes().to_vec(), digest))
     }
 

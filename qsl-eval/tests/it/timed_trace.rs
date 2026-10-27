@@ -1118,6 +1118,16 @@ fn the_repeated_interval_forms_agree_with_the_evaluator() {
         ("eventually always (holds(c.level = 1) implies eventually(0 ms, 1 ms) holds(c.level = 2))", 1_000),
         ("always (holds(c.level = 2) implies once[1 ms, 2 ms] holds(c.level = 1))", 1_000),
         ("always (holds(c.level = 2) implies (holds(c.level = 1) since(1 ms, 2 ms] holds(c.level = 2)))", 1_000),
+        // Forced starts, which pin a `release` block's `m + 1` copies and
+        // an `until`'s `2m + 1`, and the both-open `floor + 1`. The
+        // ten-clock `always(1 ms, 2 ms)` and `always[2 ms, 3 ms]` forced
+        // starts take minutes per hundred lassos and pin no bound these
+        // forms leave free.
+        ("eventually (holds(c.level = 1) and eventually[1 ms, 2 ms] holds(c.level = 2))", 1_000),
+        ("eventually (holds(c.level = 1) and eventually(1 ms, 2 ms) holds(c.level = 2))", 1_000),
+        ("eventually (holds(c.level = 1) and eventually[2 ms, 3 ms] holds(c.level = 2))", 500),
+        ("eventually (holds(c.level = 1) and always[1 ms, 2 ms] holds(c.level = 2))", 500),
+        ("eventually always(1 ms, 2 ms) holds(c.level = 2)", 80),
     ] {
         let fixture = timed(body);
         let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
@@ -1185,6 +1195,20 @@ fn the_repeated_interval_forms_agree_with_the_evaluator() {
         assert_eq!(
             TimedClaim::new(&timed(body).clause, 1 << 20).err(),
             Some(qsl_eval::automaton::AutomatonError::RepeatedPunctualInterval),
+            "{body}"
+        );
+    }
+    // More clocks than the construction builds: `[32 ms, 33 ms]` started
+    // at many positions takes 65 `until` blocks of two clocks, and
+    // `[100 ms, 101 ms]` is refused before its copies are counted, naming
+    // the lower bound of two clocks for each of its at least 100 blocks.
+    for (body, clocks) in [
+        ("eventually always[32 ms, 33 ms] holds(c.level = 2)", 130),
+        ("eventually always[100 ms, 101 ms] holds(c.level = 2)", 200),
+    ] {
+        assert_eq!(
+            TimedClaim::new(&timed(body).clause, 1 << 20).err(),
+            Some(qsl_eval::automaton::AutomatonError::ClockLimit { clocks, limit: 64 }),
             "{body}"
         );
     }

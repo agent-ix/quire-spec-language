@@ -6,6 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{AssemblyCause, CheckCause, TemporalCause, TimedConstruct};
+use qsl_semantics::value::HeaderLayer;
 use serde_json::json;
 
 use crate::model_operations::{
@@ -24,8 +25,13 @@ fn document() -> Vec<u8> {
 }
 
 fn clock_document() -> Vec<u8> {
+    clock_document_over(document())
+}
+
+/// `document` with the clock field `ConfigVersion.x`.
+fn clock_document_over(document: Vec<u8>) -> Vec<u8> {
     let mut document: serde_json::Value =
-        serde_json::from_slice(&document()).expect("the fixture is JSON");
+        serde_json::from_slice(&document).expect("the fixture is JSON");
     let owner = "ix://example/config-version/ConfigVersion";
     let field = config_version_identity("x");
     let mut clock = wire_field(&field, "x", "ix://quire/native/Clock", "required", 1);
@@ -214,7 +220,7 @@ fn a_source_without_base_time_refuses_before_looking_up_the_unit() {
 #[trace("TC-685")]
 #[test]
 fn derived_duration_is_not_the_base_time_dimension() {
-    let body = "dimension Time;\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\ntime Config dense unit d;\n";
+    let body = "dimension Time;\nunit s : Time = rational(1, 1);\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\ntime Config dense unit d;\n";
     let declarations = admit_and_assemble_with_profiles(
         &document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
@@ -450,6 +456,68 @@ fn zero_tick_period_refuses_at_the_period() {
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::InvalidTickPeriod { .. }))), "{refusals:?}");
 }
 
+/// FR-230-AC-3's S3 half (TC-685 step 3): the tick source over
+/// `attemptUpdate` with period `rational(1,2) ms` checks to a tick source
+/// with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/
+/// `malformed-declaration` at the period; an operation name that resolves
+/// to nothing refuses `missing_declaration`/`missing-name` at the name. The
+/// S2 half is `qsl-forms`' `time_forms` test.
+#[trace("TC-685", "FR-230-AC-3")]
+#[test]
+fn tick_sources_check_and_refuse_at_their_spans() {
+    let units = "dimension Time;\nunit ms : Time = rational(1, 1);\n";
+    let temporal = "profile t = \"quire.temporal.complete/v1\";\n";
+    let body = format!(
+        "{units}time Config tick ConfigVersion::attemptUpdate period rational(1,2) ms unit ms;\n"
+    );
+    let checked = admit_and_assemble_with_profiles(&document(), temporal, &body)
+        .expect("S2 retains the tick form")
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the tick source checks");
+    let qsl_semantics::check::TimeSourceKind::Tick { period, .. } =
+        &checked.time_sources()[0].source
+    else {
+        panic!("a tick source: {:?}", checked.time_sources());
+    };
+    assert_eq!(
+        *period,
+        quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half")
+    );
+    for (line, code, tag, at) in [
+        (
+            "time Config tick ConfigVersion::attemptUpdate period 0 ms unit ms;\n",
+            Code::InvalidModelBinding,
+            "malformed-declaration",
+            "0 ms",
+        ),
+        (
+            "time Config tick ConfigVersion::absent period 1 ms unit ms;\n",
+            Code::MissingDeclaration,
+            "missing-name",
+            "ConfigVersion::absent",
+        ),
+    ] {
+        let body = format!("{units}{line}");
+        let refusals = admit_and_assemble_with_profiles(&document(), temporal, &body)
+            .expect("S2 retains the form")
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect_err("S3 refuses the tick source");
+        let [refusal] = refusals.as_slice() else {
+            panic!("{line}: one refusal: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("{line}: a timed refusal: {refusal:?}");
+        };
+        let (text, _) = config_unit_with_profiles(&document(), temporal, &body);
+        let span = cause.span();
+        assert_eq!(
+            (cause.code(), cause.tag(), &text[span.start..span.end]),
+            (code, tag, at),
+            "{line}"
+        );
+    }
+}
+
 #[trace("TC-685")]
 #[test]
 fn a_tick_period_with_zero_denominator_refuses_at_the_magnitude() {
@@ -589,20 +657,246 @@ fn each_timed_declaration_reaches_the_s3_facet_gate() {
     }
 }
 
-#[trace("TC-1078")]
+/// The declarations of FR-230-AC-7, each timed construct in source order.
+const UNSELECTED_TIMED: &str = "time Config dense unit ms;\n\
+     time invariant Deadline when { true } { self.x <= 3 ms }\n\
+     urgent Eager when { true };\n\
+     function f using v(c: Clock): Boolean pure { true }\n\
+     function g using v(): Clock pure { 0 }\n\
+     record Timer { x: Clock; n: Integer; }\n\
+     type Alias = Clock;\n\
+     type Maybe = Option<Clock>;\n\
+     tuple Pair(Clock, Integer);\n\
+     union Armed { On(Clock), Off }\n\
+     type Watches = Set<Clock>;\n";
+
+/// Each refusal of `refusals` as FR-230's facet gate refuses it: the
+/// construct, its owning declaration, the selected header layers and the
+/// byte offset of its span, after checking its code and required facet.
+fn facet_refusals(
+    refusals: &[qsl_semantics::check::CheckRefusal],
+) -> Vec<(TimedConstruct, String, Vec<HeaderLayer>, usize)> {
+    refusals
+        .iter()
+        .map(|refusal| {
+            assert_eq!(refusal.cause.code(), Code::UnsupportedConstruct);
+            assert_eq!(
+                refusal.cause.catalog_code().expect("catalog").cause(),
+                "declaration-form"
+            );
+            let CheckCause::Temporal(cause) = &refusal.cause else {
+                panic!("a facet refusal expected: {refusal:?}");
+            };
+            let TemporalCause::TimedFacetRequired {
+                construct,
+                owner,
+                selected,
+                required,
+                span,
+            } = &**cause
+            else {
+                panic!("a facet refusal expected: {cause:?}");
+            };
+            assert_eq!(*required, HeaderLayer::TemporalComplete);
+            (*construct, owner.clone(), selected.clone(), span.start)
+        })
+        .collect()
+}
+
+/// FR-230-AC-7 (TC-685 step 8): a unit whose header selects
+/// `quire.model.complete/v1` alone refuses its `time` member, `time
+/// invariant`, `urgent when` declaration and each `Clock` its own source
+/// writes in a type position (a parameter, a result, a record field, an
+/// alias target, the argument of `Option`, a tuple element, a union payload
+/// and a collection element), `unsupported_construct`/`declaration-form` at
+/// each span, in source order and every one, each with its family, its
+/// owning declaration (the model `Config` for the `time` member, the `time
+/// invariant` and the `urgent` declaration), the selected layers and the
+/// required facet, and no other refusal. A unit whose header selects
+/// `quire.value.complete/v1` alone refuses each `Clock` alike; S1 admits no
+/// unit without a `profile`, so that is the AC's no-`profile` vector.
+/// FR-230-AC-8 (TC-685 step 8): the unit of AC-7 with the header selection
+/// `profile t = "quire.temporal.complete/v1";` reaches S3 with its `time`
+/// member, `time invariant`, `urgent` declaration and each `Clock` in a type
+/// position, and S3 refuses none of them `unsupported_construct`/
+/// `declaration-form` or otherwise: the facet gate passes them all and each
+/// checks. E3's resolution of
+/// the selection to the temporal layer is FR-110-AC-13's
+/// `qsl-replay` test, and every AC-1 to AC-5 test checks a unit selecting
+/// the layer. The same unit without the selection is AC-7's.
+#[trace("TC-685", "FR-230-AC-8")]
 #[test]
-fn source_clock_type_still_refuses_at_assembly() {
-    let body = "record R { x: Clock; }\n";
-    let refusal = admit_and_assemble_with_body(&document(), body)
-        .expect_err("a source Clock type has no checked representation yet");
-    let [error] = refusal.errors.as_slice() else {
-        panic!("one error expected: {:?}", refusal.errors);
+fn a_unit_selecting_the_timed_facet_passes_the_gate() {
+    let declarations = admit_and_assemble_with_profiles(
+        &clock_document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        SELECTED_TIMED,
+    )
+    .expect("S2 retains every grammar-valid timed form");
+    declarations
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the facet admits every timed member: {refusals:?}"));
+}
+
+/// AC-8's unit: AC-7's timed members over the clock `x`, and the `Clock`
+/// type positions a value of the facet checks.
+const SELECTED_TIMED: &str = "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+     time Config dense unit ms;\n\
+     time invariant Deadline when { true } { self.x <= 3 ms }\n\
+     urgent Eager when { true };\n\
+     function f using v(c: Clock): Boolean pure { true }\n\
+     record Timer { x: Clock; n: Integer; }\n\
+     type Alias = Clock;\n\
+     type Maybe = Option<Clock>;\n";
+
+#[trace("TC-685", "FR-230-AC-7")]
+#[test]
+fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
+    let declarations = admit_and_assemble_with_body(&document(), UNSELECTED_TIMED)
+        .expect("S2 retains every grammar-valid timed form");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("S3 requires the temporal facet");
+    let (text, _) = config_unit_with_body(&document(), UNSELECTED_TIMED);
+    let model = vec![HeaderLayer::ModelComplete];
+    let row = |construct, owner: &str, at: usize| (construct, owner.to_owned(), model.clone(), at);
+    let clocks = clock_offsets(&text);
+    assert_eq!(
+        facet_refusals(&refusals),
+        [
+            row(
+                TimedConstruct::TimeSource,
+                "Config",
+                offset(UNSELECTED_TIMED, "time Config")
+            ),
+            row(
+                TimedConstruct::TimeInvariant,
+                "Config",
+                offset(UNSELECTED_TIMED, "time invariant")
+            ),
+            row(
+                TimedConstruct::Urgent,
+                "Config",
+                offset(UNSELECTED_TIMED, "urgent Eager")
+            ),
+            row(TimedConstruct::Clock, "f", clocks[0]),
+            row(TimedConstruct::Clock, "g", clocks[1]),
+            row(TimedConstruct::Clock, "Timer", clocks[2]),
+            row(TimedConstruct::Clock, "Alias", clocks[3]),
+            row(TimedConstruct::Clock, "Maybe", clocks[4]),
+            row(TimedConstruct::Clock, "Pair", clocks[5]),
+            row(TimedConstruct::Clock, "Armed", clocks[6]),
+            row(TimedConstruct::Clock, "Watches", clocks[7]),
+        ]
+    );
+
+    // A header that selects `quire.value.complete/v1` alone, the least a
+    // unit's header selects (S1 requires one `profile`): the `Clock`
+    // positions refuse alike, naming that layer.
+    let clocks = "function f using v(c: Clock): Boolean pure { true }\n\
+                  record Timer { x: Clock; n: Integer; }\n\
+                  type Maybe = Option<Clock>;\n";
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n{clocks}"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "fr-230-ac-7", "fixture", "fixture:1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let refusals = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        qsl_semantics::model::intake::SelectedModels::default(),
+        Vec::new(),
+    )
+    .expect("the assembler retains each Clock for S3's gate")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect_err("S3 requires the temporal facet");
+    let clocks = clock_offsets(&text);
+    let value = |owner: &str, at: usize| {
+        (
+            TimedConstruct::Clock,
+            owner.to_owned(),
+            vec![HeaderLayer::ValueComplete],
+            at,
+        )
     };
     assert_eq!(
-        error.cause,
-        AssemblyCause::TimedNotChecked(TimedConstruct::Clock)
+        facet_refusals(&refusals),
+        [
+            value("f", clocks[0]),
+            value("Timer", clocks[1]),
+            value("Maybe", clocks[2])
+        ]
     );
-    assert_eq!(error.span.start, offset(body, "Clock"));
+}
+
+/// The byte offset of every `Clock` type written in `text`, in order.
+fn clock_offsets(text: &str) -> Vec<usize> {
+    text.match_indices("Clock")
+        .map(|(at, _)| at)
+        .filter(|at| !text[..*at].ends_with("native/"))
+        .collect()
+}
+
+/// FR-230 "Records, tuples and unions": under the timed facet a
+/// clock-bearing value read whole refuses `clock-read-outside-constraint`
+/// at its type, here as the target of `convert`, as the type of
+/// `allInstances` and as an accumulation's type, and a literal of a
+/// clock-bearing record outside a reset refuses `clock-write` at the
+/// literal; S3 checks no other construct of their declarations, and a
+/// `Clock` in a declared type position is admitted.
+#[trace("TC-685")]
+#[test]
+fn a_clock_bearing_value_inside_an_expression_refuses_by_its_use() {
+    let body = "invariant B using v on Config::ConfigVersion at current { \
+                convert<Clock>(self) = convert<Clock>(self) }\n\
+                record R { x: Clock; n: Integer; }\n\
+                invariant C using v on Config::ConfigVersion at current { \
+                count<R>(r in allInstances<R>(Config::config_history): true) = 0 }\n\
+                function mk using v(): Integer pure { let r = R { x: 0 ms, n: 1 } in r.n }\n";
+    let refusals = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &format!("dimension Time;\nunit ms : Time = rational(1, 1);\n{body}"),
+    )
+    .expect("the assembler retains each clock-bearing use for S3")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect_err("no clock rule admits these uses");
+    let found: Vec<(&str, usize)> = refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
+            CheckCause::Temporal(cause) => match **cause {
+                TemporalCause::ClockReadOutsideConstraint { span } => ("read", span.start),
+                TemporalCause::ClockWrite { span } => ("write", span.start),
+                ref other => panic!("a clock refusal expected: {other:?}"),
+            },
+            other => panic!("a clock refusal expected: {other:?}"),
+        })
+        .collect();
+    let (text, _) = config_unit_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &format!("dimension Time;\nunit ms : Time = rational(1, 1);\n{body}"),
+    );
+    let clocks = clock_offsets(&text);
+    let at = |needle: &str| text.find(needle).expect("in the unit");
+    assert_eq!(
+        found,
+        [
+            ("read", clocks[0]),
+            ("read", clocks[1]),
+            ("read", at("R>(r in")),
+            ("read", at("R>(Config::")),
+            ("write", at("R { x: 0 ms")),
+        ]
+    );
 }
 
 const SECONDS_AND_MILLISECONDS: &str =
@@ -938,5 +1232,441 @@ fn a_second_delay_of_one_operation_refuses_at_the_second_declaration() {
     assert_eq!(
         (code, tag, at.as_str()),
         (Code::InvalidModelBinding, "malformed-declaration", second)
+    );
+}
+
+/// The fixture package as `identity`, with a base dimension `Time` and the
+/// units `(name, target, scale)`, and the clock field `ConfigVersion.x` when
+/// `clocked` (a tick model's package must hold no clock).
+pub(crate) fn time_package(
+    identity: &str,
+    clocked: bool,
+    units: &[(&str, Option<&str>, &str)],
+) -> Vec<u8> {
+    // A clocked package's `attemptUpdate` also writes `x`.
+    let base = if clocked {
+        let mut operation = attempt_update_modifies_version_number();
+        operation["frame"]["modifies"]
+            .as_array_mut()
+            .expect("a modifies list")
+            .push(json!(config_version_identity("x")));
+        clock_document_over(config_version_document(
+            operation,
+            Vec::new(),
+            Vec::new(),
+            json!([]),
+        ))
+    } else {
+        document()
+    };
+    let mut package: serde_json::Value = serde_json::from_str(
+        &String::from_utf8(base)
+            .expect("UTF-8")
+            .replace("example/config-version", identity),
+    )
+    .expect("the renamed fixture is JSON");
+    let origin = package["types"][0]["origin"].clone();
+    let time = format!("ix://{identity}/dimension/Time");
+    package["dimensions"] = json!([{
+        "identity": time, "name": "Time", "base": true, "terms": [], "origin": origin,
+    }]);
+    package["units"] = units
+        .iter()
+        .map(|(name, target, scale)| {
+            let mut unit = json!({
+                "identity": format!("ix://{identity}/unit/{name}"), "name": name,
+                "dimension": time, "scale": scale, "offset": "0", "origin": origin,
+            });
+            if let Some(target) = target {
+                unit["target"] = json!(format!("ix://{identity}/unit/{target}"));
+            }
+            unit
+        })
+        .collect();
+    serde_json::to_vec(&package).expect("JSON")
+}
+
+/// `R` (`Time`, root `s`, `ms` of `1/1000`), clocked unless the body
+/// declares a tick source.
+fn rpc(body: &str) -> (&'static str, &'static str, Vec<u8>) {
+    (
+        "R",
+        "example/config-version",
+        time_package(
+            "example/config-version",
+            !body.contains(" tick "),
+            &[("s", None, "1"), ("ms", Some("s"), "1/1000")],
+        ),
+    )
+}
+
+/// `F` (`Time`, root `sec` only).
+fn flow() -> (&'static str, &'static str, Vec<u8>) {
+    (
+        "F",
+        "example/flow",
+        time_package("example/flow", false, &[("sec", None, "1")]),
+    )
+}
+
+/// `G` (`Time`, root `msec`, `sec` of `1000`).
+fn clock_package() -> (&'static str, &'static str, Vec<u8>) {
+    (
+        "G",
+        "example/clock",
+        time_package(
+            "example/clock",
+            false,
+            &[("msec", None, "1"), ("sec", Some("msec"), "1000")],
+        ),
+    )
+}
+
+/// The unit selecting `packages` (alias, identity, document) under the timed
+/// facet, with a source `Time` and `s` and then `body`, and its S3 outcome;
+/// the unit's text for locating refusals.
+fn check_selected(
+    packages: &[(&str, &str, Vec<u8>)],
+    body: &str,
+) -> (
+    String,
+    Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>>,
+) {
+    let (text, assembled) = assemble_selected(packages, body);
+    let checked = assembled
+        .unwrap_or_else(|refusal| panic!("the unit assembles: {refusal:?}"))
+        .with_unwritten_timed_members()
+        .check(quire_semantic_value::checking::CheckingLimits::default());
+    (text, checked)
+}
+
+/// [`check_selected`]'s unit, assembled.
+fn assemble_selected(
+    packages: &[(&str, &str, Vec<u8>)],
+    body: &str,
+) -> (
+    String,
+    Result<qsl_semantics::check::PackageDeclarations, qsl_semantics::check::AssemblyRefusal>,
+) {
+    assemble_selected_as(("test", "fr-230-time-owners"), packages, body)
+}
+
+/// [`assemble_selected`] under the source owner `(authority, identity)`.
+pub(crate) fn assemble_selected_as(
+    (authority, identity): (&str, &str),
+    packages: &[(&str, &str, Vec<u8>)],
+    body: &str,
+) -> (
+    String,
+    Result<qsl_semantics::check::PackageDeclarations, qsl_semantics::check::AssemblyRefusal>,
+) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_unit, package_input};
+    let inputs = package_input(packages.iter().map(|(_, _, bytes)| bytes.as_slice()));
+    let selections: String = packages
+        .iter()
+        .map(|(alias, identity, bytes)| {
+            let digest = inputs
+                .iter()
+                .find(|(_, document)| *document == bytes)
+                .map(|(digest, _)| qsl_semantics::model::key::hex(digest))
+                .expect("a supplied document");
+            format!(
+                "model {alias} = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n"
+            )
+        })
+        .collect();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n\
+         profile tt = \"quire.temporal.timed/v1\";\n\
+         {selections}dimension Time;\nunit s : Time = rational(1, 1);\n{body}\n"
+    );
+    let built = crate::model_operations::parse_and_build(&text);
+    let models = admit_unit(
+        &built.selections().models,
+        &inputs,
+        ModelNormalizationLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("I1 admits the packages: {refusal:?}"));
+    let raw = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new(authority, identity, "fixture", "fixture:1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit")
+    .source()
+    .reference()
+    .clone();
+    let assembled =
+        qsl_semantics::check::PackageDeclarations::assemble(raw, built, models, Vec::new());
+    (text, assembled)
+}
+
+/// The unit selecting `R` and `F`, with `body`.
+fn check_two(
+    body: &str,
+) -> (
+    String,
+    Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>>,
+) {
+    check_selected(&[rpc(body), flow()], body)
+}
+
+/// The one time-quantity refusal of `body` over `packages`: its code, tag
+/// and the text it is located at.
+fn time_refusal(packages: &[(&str, &str, Vec<u8>)], body: &str) -> (Code, &'static str, String) {
+    let (text, checked) = check_selected(packages, body);
+    let refusals = checked.expect_err("refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("{body}: one refusal: {refusals:?}");
+    };
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("{body}: a timed refusal: {refusal:?}");
+    };
+    let span = cause.span();
+    (
+        cause.code(),
+        cause.tag(),
+        text[span.start..span.end].to_owned(),
+    )
+}
+
+/// FR-230-AC-18 (TC-685 step 7): with `R` (`Time`, `s`, `ms`) and `F`
+/// (`Time`, `sec`) both selected and a source `Time` with `s`, and no
+/// dimension equivalence, `time R dense unit R::ms` checks over `R`'s
+/// `Time`, and `x <= 3 R::ms` and, under `unit R::ms`, `period
+/// rational(1,2) R::s` check;
+/// `time R dense unit F::sec` checks over `F`'s `Time`, and `time R dense
+/// unit s` over the source `Time`. Under `R::ms`, `x <= 3 F::sec` and
+/// `x <= 3 s` refuse `ill_typed`/`type-mismatch` at the constant, and under
+/// `time R tick ... unit R::ms` (over a variant of `R` with no clock) the
+/// period `1 F::sec` refuses at the period;
+/// a unit `len` of a base dimension `Length` and a unit of a derived
+/// `Duration = Time` refuse `time dense unit` `ill_typed`/`type-mismatch`.
+/// FR-142's conversion refuses the same way on the other paths that read a
+/// time quantity: a task's `wcet 1 F::sec` at the quantity and a timed
+/// interval bound `3 F::sec` at its unit.
+/// The three models' package identities are `qsl-package`'s
+/// `three_time_dimensions_give_three_package_identities`.
+#[trace("TC-685", "FR-230-AC-18")]
+#[test]
+fn time_dimensions_of_different_owners_do_not_mix() {
+    let source_of = |body: &str| {
+        let (_, checked) = check_two(body);
+        let graph = checked.unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+        let [source] = graph.time_sources() else {
+            panic!("one time source");
+        };
+        (source.time_dimension, source.unit.clone())
+    };
+    let (rpc_time, _) = source_of("time R dense unit R::ms;");
+    let (flow_time, _) = source_of("time R dense unit F::sec;");
+    let (own_time, _) = source_of("time R dense unit s;");
+    assert_ne!(rpc_time, flow_time);
+    assert_ne!(rpc_time, own_time);
+    assert_ne!(flow_time, own_time);
+
+    let (_, checked) = check_two(
+        "time R dense unit R::ms;\n\
+         pre P using v on R::ConfigVersion::attemptUpdate { self.x <= 3 R::ms }\n",
+    );
+    checked.expect("a constant of R's Time checks");
+    let (_, checked) = check_two(
+        "time R tick R::ConfigVersion::attemptUpdate period rational(1,2) R::s unit R::ms;\n",
+    );
+    checked.expect("a period of R's Time checks");
+
+    for (body, at) in [
+        (
+            "time R dense unit R::ms;\n\
+             pre P using v on R::ConfigVersion::attemptUpdate { self.x <= 3 F::sec }\n",
+            "3 F::sec",
+        ),
+        (
+            "time R dense unit R::ms;\n\
+             pre P using v on R::ConfigVersion::attemptUpdate { self.x <= 3 s }\n",
+            "3 s",
+        ),
+        (
+            "time R tick R::ConfigVersion::attemptUpdate period 1 F::sec unit R::ms;\n",
+            "1 F::sec",
+        ),
+        (
+            "dimension Length;\nunit len : Length = rational(1, 1);\ntime R dense unit len;\n",
+            "len",
+        ),
+        (
+            "time R dense unit R::ms;\n\
+             taskset Ctl {\n\
+             task a periodic 4 R::ms deadline 4 R::ms wcet 1 F::sec priority 1 lo;\n\
+             }\n",
+            "1 F::sec",
+        ),
+        (
+            "time R dense unit R::ms;\n\
+             temporal C using tt over (c: R::ConfigVersion) clock \"model-time\" on origin \
+             { eventually[0 R::ms, 3 F::sec] holds(c.versionNumber = 2) }\n",
+            "F::sec",
+        ),
+        (
+            "dimension Duration = Time;\nunit d : Duration = rational(1, 1);\n\
+             time R dense unit d;\n",
+            "d",
+        ),
+    ] {
+        let (text, checked) = check_two(body);
+        let refusals = checked.expect_err("refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("{body}: one refusal: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("{body}: a timed refusal: {refusal:?}");
+        };
+        let span = cause.span();
+        assert_eq!(
+            (cause.code(), cause.tag(), &text[span.start..span.end]),
+            (Code::IllTyped, "type-mismatch", at),
+            "{body}"
+        );
+    }
+}
+
+/// The clock bound of `body`'s one guard and the value of its one reset, in
+/// the model's unit.
+fn guard_and_reset(
+    packages: &[(&str, &str, Vec<u8>)],
+    body: &str,
+) -> (quire_exact::Rational, quire_exact::Rational) {
+    let (_, checked) = check_selected(packages, body);
+    let graph = checked.unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    let model = graph.timed_model("R").expect("R's timed model");
+    let [guard] = model.guards() else {
+        panic!("one guard");
+    };
+    let [part] = guard.parts() else {
+        panic!("one convex part");
+    };
+    let [bound] = part.clocks() else {
+        panic!("one clock constraint");
+    };
+    let [resets] = model.resets() else {
+        panic!("one resetting clause");
+    };
+    let [reset] = resets.resets() else {
+        panic!("one reset");
+    };
+    (bound.bound().clone(), reset.value().clone())
+}
+
+/// The period of `body`'s one tick source.
+fn tick_period(packages: &[(&str, &str, Vec<u8>)], body: &str) -> quire_exact::Rational {
+    let (_, checked) = check_selected(packages, body);
+    let graph = checked.unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    match &graph.time_sources()[0].source {
+        qsl_semantics::check::TimeSourceKind::Tick { period, .. } => period.clone(),
+        other => panic!("a tick source: {other:?}"),
+    }
+}
+
+fn whole(value: i64) -> quire_exact::Rational {
+    quire_exact::Rational::from_integer(value.into())
+}
+
+const GUARDED: &str = "time R dense unit R::ms;\n\
+     pre P using v on R::ConfigVersion::attemptUpdate { self.x <= BOUND }\n\
+     post Q using v on R::ConfigVersion::attemptUpdate { self.x = RESET }\n";
+
+fn guarded(equivalence: &str, bound: &str, reset: &str) -> String {
+    format!(
+        "{equivalence}\n{}",
+        GUARDED.replace("BOUND", bound).replace("RESET", reset)
+    )
+}
+
+/// Part of FR-230-AC-27 (TC-685 step 16): over AC-18's `R` and `F` with
+/// `dimension R::Time ~ F::Time by 1 R::s = 1 F::sec;` (root ratio 1),
+/// under `time R dense unit R::ms` the bound `x <= 3 F::sec` converts to
+/// `3000`, a reset of `x` to `2 F::sec` to `2000`, and `time R tick ...
+/// period 1 F::sec unit R::ms` checks with period `1000`; `x <= 3 s` over
+/// the unrelated source `Time` still refuses `ill_typed`/`type-mismatch` at
+/// the constant, and the units `len` of `Length` and `d` of `Duration =
+/// Time` still refuse `time dense unit`. The identity half (three package
+/// identities, and one that differs without the equivalence) waits on
+/// STD-493 item 9: no checked timed member reaches S4, and QSpec FR-322's
+/// closed `scalar_type` forms in IR do not yet hold `dimension_equivalence`.
+#[trace("TC-685")]
+#[test]
+fn an_equivalence_of_equal_roots_converts_the_other_owners_time() {
+    const EQUIVALENT: &str = "dimension R::Time ~ F::Time by 1 R::s = 1 F::sec;";
+    let packages = |body: &str| [rpc(body), flow()];
+    let body = guarded(EQUIVALENT, "3 F::sec", "2 F::sec");
+    assert_eq!(
+        guard_and_reset(&packages(&body), &body),
+        (whole(3000), whole(2000))
+    );
+    let tick = format!(
+        "{EQUIVALENT}\ntime R tick R::ConfigVersion::attemptUpdate period 1 F::sec unit R::ms;"
+    );
+    assert_eq!(tick_period(&packages(&tick), &tick), whole(1000));
+    for (body, at) in [
+        (guarded(EQUIVALENT, "3 s", "0 R::ms"), "3 s"),
+        (
+            format!(
+                "{EQUIVALENT}\ndimension Length;\nunit len : Length = rational(1, 1);\n\
+                 time R dense unit len;"
+            ),
+            "len",
+        ),
+        (
+            format!(
+                "{EQUIVALENT}\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\n\
+                 time R dense unit d;"
+            ),
+            "d",
+        ),
+    ] {
+        assert_eq!(
+            time_refusal(&packages(&body), &body),
+            (Code::IllTyped, "type-mismatch", at.to_owned()),
+            "{body}"
+        );
+    }
+}
+
+/// Part of FR-230-AC-28 (TC-685 step 16): with `R` and `G` (root `msec`, `sec` of
+/// `1000`) and `dimension R::Time ~ G::Time by 1 R::s = 1000 G::msec;`
+/// (root ratio 1000), under `time R dense unit R::ms` the bound `x <= 3
+/// G::msec` converts to `3`, a reset to `2000 G::msec` to `2000`, and a
+/// tick period of `1 G::sec` to `1000`; with `by 1 R::s = 1 G::msec` (root
+/// ratio 1) the same bound converts to `3000`; `x <= 3 s` over the source
+/// `Time` refuses `ill_typed`/`type-mismatch`. The identity half waits on
+/// STD-493 item 9, as AC-27's.
+#[trace("TC-685")]
+#[test]
+fn an_equivalence_of_unequal_roots_carries_its_root_ratio() {
+    const THOUSAND: &str = "dimension R::Time ~ G::Time by 1 R::s = 1000 G::msec;";
+    const ONE: &str = "dimension R::Time ~ G::Time by 1 R::s = 1 G::msec;";
+    let packages = |body: &str| [rpc(body), clock_package()];
+    let body = guarded(THOUSAND, "3 G::msec", "2000 G::msec");
+    assert_eq!(
+        guard_and_reset(&packages(&body), &body),
+        (whole(3), whole(2000))
+    );
+    let tick = format!(
+        "{THOUSAND}\ntime R tick R::ConfigVersion::attemptUpdate period 1 G::sec unit R::ms;"
+    );
+    assert_eq!(tick_period(&packages(&tick), &tick), whole(1000));
+    let body = guarded(ONE, "3 G::msec", "0 R::ms");
+    assert_eq!(
+        guard_and_reset(&packages(&body), &body),
+        (whole(3000), whole(0))
+    );
+    let body = guarded(THOUSAND, "3 s", "0 R::ms");
+    assert_eq!(
+        time_refusal(&packages(&body), &body),
+        (Code::IllTyped, "type-mismatch", "3 s".to_owned())
     );
 }

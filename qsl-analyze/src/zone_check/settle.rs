@@ -242,6 +242,7 @@ pub fn settle_zone_check<S>(
                     ZoneCheckLimit::MaxZoneBytes(value) => {
                         (ModelCheckLimit::ZoneMaxZoneBytes, value)
                     }
+                    ZoneCheckLimit::MaxClocks(value) => (ModelCheckLimit::MaxClocks, value),
                 };
                 ZoneCheckRecord::incomplete(IncompleteCause::LimitReached { limit, value })
             }

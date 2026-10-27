@@ -1867,6 +1867,7 @@ pub fn check_clauses(
         &package.units,
         package.nominal_spans.keys().copied(),
         &package.models,
+        &package.dimension_equivalences,
         package.identity,
     );
     let declarations = TemporalDeclarations {

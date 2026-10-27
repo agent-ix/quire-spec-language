@@ -113,6 +113,9 @@ pub struct TimedReplay {
     /// or a non-local time-lock (FR-101's `max_states` and
     /// `max_transitions`).
     pub exploration: qsl_eval::simulation::Limits,
+    /// The bound on a state's live clocks the counterexample was found
+    /// under (QSpec FR-415, `model_check.max_clocks`).
+    pub max_clocks: std::num::NonZeroU64,
 }
 
 /// What forbids a delay in a timed counterexample (FR-231 "Delay").
@@ -708,7 +711,7 @@ pub fn replay_model_trace(
             });
             match &subject.timed {
                 Some(reading) => timed::settle(
-                    &timed::timed_subject(&system, &reading.model)?,
+                    &timed::timed_subject(&system, &reading.model, reading.max_clocks)?,
                     envelope.family_payload(),
                     formula,
                     &reading.exploration,

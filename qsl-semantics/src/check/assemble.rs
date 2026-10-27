@@ -30,10 +30,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
-    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind,
-    TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm, UrgentForm,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionEquivalenceForm, DimensionForm,
+    EnumForm, ExprNode, Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit,
+    PopulationBoundForm, RecordFieldForm, StateClauseForm, TerminalDeclarationForm,
+    TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm,
+    UrgentForm,
 };
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -69,13 +70,19 @@ use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
+mod equivalence;
 mod units;
+
+pub use equivalence::{
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
+};
 
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
-    OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
+    unaliased, AliasTypeRecord, DomainPackage, DomainPackageRecord, FieldMemberRecord,
+    Multiplicity, NativeValueType, OperationMemberRecord, RelationshipEnd, ScalarValueDomain,
+    SequenceTypeRecord, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -159,8 +166,6 @@ impl Default for AssemblyLimits {
 /// declarations").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TopologyFault {
-    /// A derived dimension whose normalized terms are empty.
-    EmptyDerivedDimension,
     /// A unit whose scale is zero.
     ZeroScale,
     /// A targetless unit whose scale is not one or whose offset is not
@@ -298,6 +303,25 @@ pub enum AssemblyCause {
     /// [`AssemblyLimits::decimal_scale`] (`s3.decimal_scale`); `actual` is
     /// `u128::MAX` when the scale does not fit a `u64`.
     DecimalScaleLimit(LimitExceeded),
+    /// A dimension equivalence refused past name resolution (QSpec FR-142
+    /// "Dimension equivalence" steps 3 to 7), naming what it retains.
+    DimensionEquivalence {
+        /// Which step refused.
+        fault: EquivalenceFault,
+        /// The declarations, units, dimensions or values the step retains.
+        retained: Vec<EquivalenceRetained>,
+    },
+    /// FR-142's base-dimension rule: a base dimension with no unit, here or
+    /// in the package that declares it, that a local unit's dimension
+    /// carries in its normalized map.
+    UnanchoredBaseDimension {
+        /// The base dimension: a source dimension's name, or a package
+        /// dimension's FCD identity.
+        dimension: String,
+        /// The first local unit, in source order, whose dimension carries
+        /// it.
+        unit: String,
+    },
     /// A unit-graph topology error, naming the declarations it concerns.
     UnitGraphTopology {
         /// Which check refused.
@@ -490,12 +514,14 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
-            Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                Code::MissingDeclaration
+            }
             Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
             }
-            Self::QuantityCycle { .. } => Code::InvalidPackage,
+            Self::QuantityCycle { .. } | Self::DimensionEquivalence { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
@@ -577,12 +603,19 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
-            Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                "missing-name"
+            }
             Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
             }
             Self::QuantityCycle { .. } => "definition-cycle",
+            Self::DimensionEquivalence { fault, .. } => match fault {
+                EquivalenceFault::Conflicting => "conflicting-definition",
+                EquivalenceFault::Incompatible => "incompatible-definition",
+                EquivalenceFault::InvalidValue => "invalid-value",
+            },
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
@@ -696,6 +729,10 @@ enum Declared {
     Enum,
 }
 
+mod clock_forms;
+
+pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse};
+
 /// A timed declaration with the complete S2 form and source span that S3
 /// needs to check it (FR-230).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -706,6 +743,8 @@ pub enum TimedDeclaration {
     TimeInvariant(TimeInvariantForm),
     /// `urgent ...`.
     Urgent(UrgentForm),
+    /// A `Clock` the unit's own source writes in a type position.
+    ClockType(ClockTypePosition),
 }
 
 impl TimedDeclaration {
@@ -714,6 +753,7 @@ impl TimedDeclaration {
             Self::TimeSource(_) => TimedConstruct::TimeSource,
             Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
             Self::Urgent(_) => TimedConstruct::Urgent,
+            Self::ClockType(_) => TimedConstruct::Clock,
         }
     }
 
@@ -722,6 +762,22 @@ impl TimedDeclaration {
             Self::TimeSource(form) => form.span,
             Self::TimeInvariant(form) => form.span,
             Self::Urgent(form) => form.span,
+            Self::ClockType(position) => position.span,
+        }
+    }
+
+    /// The declaration FR-230's facet gate names as the construct's owner:
+    /// the model for a `time` member, `time invariant` or `urgent`
+    /// declaration, and the declaration whose type form writes a `Clock`.
+    /// A `time invariant` or `urgent` declaration names no model: its owner
+    /// is `model`, the unit's timed model, and its own name only when the
+    /// unit has no one model it can belong to.
+    pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
+        match self {
+            Self::TimeSource(source) => &source.model.name,
+            Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
+            Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
+            Self::ClockType(position) => &position.owner,
         }
     }
 }
@@ -730,6 +786,7 @@ impl TimedDeclaration {
 struct Unit {
     aliases: Vec<AliasForm>,
     dimensions: Vec<DimensionForm>,
+    equivalences: Vec<DimensionEquivalenceForm>,
     units: Vec<UnitForm>,
     composites: Vec<Composite>,
     enums: Vec<EnumForm>,
@@ -769,6 +826,9 @@ struct Unit {
     hybrids: Vec<qsl_forms::HybridForm>,
     /// The timed declarations in source order, with their complete S2 forms.
     timed: Vec<TimedDeclaration>,
+    /// The unit's clock-reading declarations in source order (FR-230
+    /// "Clock-reading declarations"), held out of the value world.
+    clock_reading: Vec<ClockReadingDeclaration>,
     /// The task sets and the claims over them in source order (QSL FR-246).
     task_sets: Vec<super::task_set::TaskSetDeclaration>,
     /// Each state-graph claim's form, in source order, resolved by the
@@ -777,10 +837,12 @@ struct Unit {
 }
 
 impl Unit {
-    fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
+    fn new(forms: Vec<qsl_forms::ParsedForm>, package_bearing: BTreeSet<String>) -> Self {
+        let mut clock_forms = clock_forms::classify(&forms, package_bearing);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
+            equivalences: Vec::new(),
             units: Vec::new(),
             composites: Vec::new(),
             enums: Vec::new(),
@@ -798,12 +860,32 @@ impl Unit {
             refinements: Vec::new(),
             hybrids: Vec::new(),
             timed: Vec::new(),
+            clock_reading: Vec::new(),
             task_sets: Vec::new(),
             state_graph_claims: Vec::new(),
         };
-        for form in forms {
+        unit.timed.extend(
+            std::mem::take(&mut clock_forms.positions)
+                .into_iter()
+                .map(TimedDeclaration::ClockType),
+        );
+        for (index, form) in forms.into_iter().enumerate() {
             let span = form.span();
-            match form.into_form() {
+            let form = match clock_forms.dispositions.remove(&index) {
+                None => form.into_form(),
+                Some(clock_forms::Disposition::Drop) => continue,
+                Some(clock_forms::Disposition::Reading) => {
+                    if let DeclarationForm::Function(function) = form.into_form() {
+                        unit.clock_reading
+                            .push(clock_forms::reading(&clock_forms, *function));
+                    }
+                    continue;
+                }
+                Some(clock_forms::Disposition::DataPart) => {
+                    clock_forms::data_part(&clock_forms, form.into_form())
+                }
+            };
+            match form {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Alias(alias) => {
@@ -825,6 +907,9 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
+                DeclarationForm::DimensionEquivalence(equivalence) => {
+                    unit.equivalences.push(*equivalence)
+                }
                 DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
@@ -899,6 +984,9 @@ impl Unit {
                 }
             }
         }
+        // The `Clock` type positions were listed first; FR-230's gate reads
+        // every timed construct in source order.
+        unit.timed.sort_by_key(|form| form.span().start);
         unit
     }
 
@@ -1134,7 +1222,10 @@ fn model_object_types(
                 // Clock is retained in the admitted domain package as a
                 // model place; it is not a QSL data field in the kernel's
                 // TypeEnvironment.
-                if matches!(field.value_type, ValueTypeRef::Clock) {
+                if matches!(
+                    sequence_items(&field.value_type, &records),
+                    ValueTypeRef::Clock
+                ) {
                     continue;
                 }
                 match model_field(
@@ -1171,6 +1262,7 @@ fn model_object_types(
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
                     }),
+                    Err(Unmapped::InDefinition) => {}
                 }
             }
             DomainPackageRecord::OperationMember(operation) => {
@@ -1211,6 +1303,7 @@ fn model_object_types(
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
                     }),
+                    Err(Unmapped::InDefinition) => {}
                 }
             }
             // State-machine clauses and context namespaces remain admitted
@@ -1234,8 +1327,31 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
+            // FR-230 "Units": an alias `target` or sequence `items` naming
+            // no unit refuses at the type definition, used or not.
+            DomainPackageRecord::SequenceType(SequenceTypeRecord {
+                key,
+                items: ValueTypeRef::Unit(name),
+            })
+            | DomainPackageRecord::AliasType(AliasTypeRecord {
+                key,
+                target: ValueTypeRef::Unit(name),
+            }) if !units.contains_key(name) => errors.push(AssemblyError {
+                cause: AssemblyCause::UnresolvedModelQuantityType {
+                    name: name.clone(),
+                    member_identity: key.node.clone(),
+                    member_path: match record {
+                        DomainPackageRecord::SequenceType(_) => "TypeDefinition.items",
+                        _ => "TypeDefinition.target",
+                    }
+                    .to_owned(),
+                },
+                span,
+            }),
+            DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {}
         }
     }
     let mut declarations = Vec::new();
@@ -1321,6 +1437,14 @@ fn model_object_types(
             })
             .collect();
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
+        // A record's clock fields are places, not data (FR-230 "Records,
+        // tuples and unions"): its declaration lists the data fields only.
+        effective_fields.retain(|field| {
+            !matches!(
+                sequence_items(&field.value_type, &records),
+                ValueTypeRef::Clock
+            )
+        });
         for field in effective_fields {
             match model_field(
                 field,
@@ -1362,6 +1486,7 @@ fn model_object_types(
                     cause: AssemblyCause::UnresolvedQuantityName { name },
                     span,
                 }),
+                Err(Unmapped::InDefinition) => {}
             }
         }
         let declared_supertypes: &[DeclarationKey] = match record {
@@ -1587,6 +1712,9 @@ enum Unmapped {
     },
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
+    /// A unit reference of an alias or sequence the member is typed by
+    /// names no unit: refused once, at that type definition.
+    InDefinition,
 }
 
 /// `field` as an object type's field: named by its member name, typed by
@@ -1623,6 +1751,33 @@ fn model_value_type(
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ValueType, Unmapped> {
+    // A package sequence type is the sequence of its items (QSpec FR-154),
+    // a chain of them nested sequences, and a package alias the type it
+    // aliases; one that returns to a type it passed is broken.
+    let (items, sequences) =
+        unaliased(value_type, |key| records.get(key).copied()).ok_or(Unmapped::Broken)?;
+    if !std::ptr::eq(items, value_type) {
+        let single = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        let mut element = model_value_type(
+            items,
+            single,
+            records,
+            identities,
+            meaning_handles,
+            variant_shapes,
+            units,
+        )?;
+        for _ in 0..sequences {
+            element =
+                ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None));
+        }
+        return with_multiplicity(element, multiplicity);
+    }
     let element = match value_type {
         ValueTypeRef::Clock => return Err(Unmapped::Unsupported),
         ValueTypeRef::Native(native) => match native {
@@ -1678,6 +1833,25 @@ fn model_value_type(
             None => return Err(Unmapped::Broken),
         },
     };
+    with_multiplicity(element, multiplicity)
+}
+
+/// The type `value_type` ends at through the package's sequence types and
+/// aliases: `value_type` itself when it names neither, or when the chain
+/// returns to a type it passed.
+fn sequence_items<'r>(
+    value_type: &'r ValueTypeRef,
+    records: &BTreeMap<&DeclarationKey, &'r DomainPackageRecord>,
+) -> &'r ValueTypeRef {
+    unaliased(value_type, |key| records.get(key).copied()).map_or(value_type, |(items, _)| items)
+}
+
+/// `element` held by a member of `multiplicity`: itself for `[1, 1]`, else
+/// the collection the multiplicity's order and uniqueness name.
+fn with_multiplicity(
+    element: ValueType,
+    multiplicity: Multiplicity,
+) -> Result<ValueType, Unmapped> {
     Ok(match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => element,
         (lower, upper) => {
@@ -1727,6 +1901,9 @@ fn model_field(
         units,
     )
     .map_err(|error| match error {
+        Unmapped::QuantityName(_) if matches!(field.value_type, ValueTypeRef::Package(_)) => {
+            Unmapped::InDefinition
+        }
         Unmapped::QuantityName(name) => Unmapped::QuantityType {
             name,
             member_identity: field.key.node.clone(),
@@ -1776,6 +1953,11 @@ fn model_operation(
             units,
         )
         .map_err(|error| match error {
+            Unmapped::QuantityName(_)
+                if matches!(parameter.value_type, ValueTypeRef::Package(_)) =>
+            {
+                Unmapped::InDefinition
+            }
             Unmapped::QuantityName(name) => Unmapped::QuantityType {
                 name,
                 member_identity: parameter.key.node.clone(),
@@ -1799,6 +1981,11 @@ fn model_operation(
                 units,
             )
             .map_err(|error| match error {
+                Unmapped::QuantityName(_)
+                    if matches!(result.value_type, ValueTypeRef::Package(_)) =>
+                {
+                    Unmapped::InDefinition
+                }
                 Unmapped::QuantityName(name) => Unmapped::QuantityType {
                     name,
                     member_identity: operation.key.node.clone(),
@@ -2630,27 +2817,53 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let mut unit = Unit::new(forms);
+        // The models and the one meter their admission counted on; checking
+        // continues that meter into the conformance stage.
+        let (models, model_meter) = models.into().into_parts();
+        // FR-230 "Clock-typed positions": a package record type that holds a
+        // clock is clock-bearing where the unit's own source writes it.
+        let package_bearing: BTreeSet<String> = selections
+            .models
+            .iter()
+            .filter_map(|selection| {
+                let model = models.iter().find(|model| model.alias == selection.alias)?;
+                Some(
+                    AdmittedModel::from_view(&model.view)
+                        .with_alias(&selection.alias)
+                        .clock_bearing_record_names(),
+                )
+            })
+            .flatten()
+            .collect();
+        let mut unit = Unit::new(forms, package_bearing);
         // FR-393: retain the parsed timed forms through S2. FR-230 checks
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
         let quantity_owners = OwnerSelection::new([owner.node_owner()]);
-        let quantity_result = units::assemble(
-            &unit.dimensions,
-            &unit.units,
-            &owner,
-            &quantity_owners,
-            limits,
+        // The selected packages' dimensions, which a source dimension's
+        // terms may name.
+        let imported = units::Imported::new(
+            &selections
+                .models
+                .iter()
+                .filter_map(|selection| {
+                    let model = models.iter().find(|model| model.alias == selection.alias)?;
+                    Some((
+                        AdmittedModel::from_view(&model.view).with_alias(&selection.alias),
+                        selection.span,
+                    ))
+                })
+                .collect::<Vec<_>>(),
+            limits.identity,
         );
+        let quantity_result =
+            units::assemble(&unit.dimensions, &unit.units, &imported, &owner, limits);
         let model_units = quantity_result
             .as_ref()
             .ok()
             .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
             .unwrap_or_default();
-        // The models and the one meter their admission counted on; checking
-        // continues that meter into the conformance stage.
-        let (models, model_meter) = models.into().into_parts();
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
@@ -2936,13 +3149,46 @@ impl PackageDeclarations {
             }
         }
 
-        // The unit's dimensions and units, admitted under its owner.
+        // The unit's dimensions and units, admitted under its owner, and its
+        // dimension equivalences over them and those of its selected
+        // packages, in FR-091's phases: the base pairs before the first
+        // dimension turn, every other pair after the last.
         let owners = quantity_owners;
-        let quantities = match quantity_result {
-            Ok(quantities) => Some(quantities),
-            Err(found) => {
-                errors.extend(found);
-                None
+        let (quantities, equivalences) = match quantity_result {
+            Ok(quantities) => {
+                let equivalences = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Admitted(&quantities),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::All,
+                )
+                .unwrap_or_else(|found| {
+                    errors.extend(found);
+                    Vec::new()
+                });
+                (Some(quantities), equivalences)
+            }
+            Err(refused) => {
+                let base = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Provisional(&refused.provisional),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::Base,
+                )
+                .err()
+                .unwrap_or_default();
+                // A base-pair refusal comes before the first turn, so it
+                // stands in for the turns' topology defects.
+                let topology_only = refused.topology && !base.is_empty();
+                if !topology_only {
+                    errors.extend(refused.errors);
+                }
+                errors.extend(base);
+                (None, Vec::new())
             }
         };
 
@@ -3317,6 +3563,16 @@ impl PackageDeclarations {
             ));
             declared_type_spans.insert(composite.name.name.clone(), composite.name.span);
         }
+        // Each clock-reading declaration's name, which locates a refusal of
+        // the declaration as a whole (`timed_model::prepare`).
+        for declaration in &unit.clock_reading {
+            if let Some(spans) = declaration.function.spans() {
+                declared_type_spans.insert(
+                    super::timed_model::clock_reading_site(&declaration.function.name),
+                    spans.declaration,
+                );
+            }
+        }
 
         // Each function's check-owned resolved signature.
         let mut signatures: Vec<ResolvedSignature> = Vec::with_capacity(unit.functions.len());
@@ -3535,6 +3791,12 @@ impl PackageDeclarations {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
         }
+        for equivalence in &equivalences {
+            package
+                .nominal_spans
+                .insert(equivalence.key, equivalence.span);
+        }
+        package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
@@ -3749,6 +4011,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
+        package.clock_reading = unit.clock_reading;
         package.task_set_forms = unit.task_sets;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {

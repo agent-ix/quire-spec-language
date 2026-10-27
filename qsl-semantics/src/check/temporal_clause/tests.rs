@@ -75,6 +75,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         &package.units,
         package.nominal_spans.keys().copied(),
         &package.models,
+        &package.dimension_equivalences,
         package.identity,
     );
     let scope = Scope::new(

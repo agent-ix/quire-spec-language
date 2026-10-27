@@ -112,6 +112,14 @@ pub enum DbmError {
     /// A reset of the reference clock, which is fixed at 0.
     #[error("the reference clock cannot be reset")]
     ResetReferenceClock,
+    /// A renaming mapped two clocks to one, so it is no permutation.
+    #[error("the renaming maps clocks {first} and {second} to one clock")]
+    NotAPermutation {
+        /// The lower clock mapped twice.
+        first: usize,
+        /// The higher.
+        second: usize,
+    },
     /// Two matrices of different dimensions were compared.
     #[error("DBMs of dimension {left} and {right} cannot be compared")]
     DimensionMismatch {
@@ -247,14 +255,24 @@ impl Dbm {
     ///
     /// # Errors
     ///
-    /// [`DbmError::ClockOutOfRange`] when an image is outside the matrix.
+    /// [`DbmError::ClockOutOfRange`] when an image is outside the matrix,
+    /// and [`DbmError::NotAPermutation`] when two clocks have one image, so
+    /// that no row is overwritten.
     pub fn renamed(&self, image: &[usize]) -> Result<Self, DbmError> {
         let to = |clock: usize| match clock.checked_sub(1).and_then(|place| image.get(place)) {
             Some(place) => place + 1,
             None => clock,
         };
-        for clock in 1..self.dim {
-            self.in_range(to(clock))?;
+        let mut from = vec![None; self.dim];
+        for clock in 0..self.dim {
+            let target = to(clock);
+            self.in_range(target)?;
+            if let Some(first) = from[target].replace(clock) {
+                return Err(DbmError::NotAPermutation {
+                    first,
+                    second: clock,
+                });
+            }
         }
         let mut renamed = self.clone();
         for i in 0..self.dim {

@@ -108,7 +108,12 @@ productions! {
     CompleteUnit, Header, Profile, ImportDeclaration, Model, Declaration,
     TypeReference, QualifiedName, ModelName, TypeName, OperationName, ParameterType,
     RoundingMode, TextProfile,
-    DimensionDeclaration, DimensionTerm, UnitDeclaration, EnumDeclaration,
+    DimensionDeclaration, DimensionTerm,
+    #[doc = "`dimension <qualified-name> ~ <qualified-name> by <ratio-term> = <ratio-term> ;`: a dimension equivalence (QSpec FR-142 \"Dimension equivalence\")."]
+    DimensionEquivalence,
+    #[doc = "`(<uint> | <exact-number>) <qualified-name>`: one side of a dimension equivalence's `by` clause."]
+    RatioTerm,
+    UnitDeclaration, EnumDeclaration,
     EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
     FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,

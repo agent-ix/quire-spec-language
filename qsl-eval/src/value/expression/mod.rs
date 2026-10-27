@@ -14,6 +14,7 @@
 mod causes;
 mod clause_set;
 mod closure;
+pub mod collection_write;
 mod evaluate;
 mod family;
 mod s6a;
@@ -194,6 +195,20 @@ pub fn evaluate_state_predicate(
     over: Option<quire_exact::ObjectReference>,
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
+    evaluate_state_predicate_with(package, predicate, current, over, Vec::new(), meter)
+}
+
+/// [`evaluate_state_predicate`] with the slots after `over` bound to
+/// `further`, in order: the collection elements a timed guard part reads
+/// (FR-230 "Quantified reads").
+pub fn evaluate_state_predicate_with(
+    package: &CheckedPackage,
+    predicate: &impl qsl_semantics::check::StatePredicate,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    further: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
     let reads = std::collections::BTreeMap::new();
     Machine::with_pre(
         package.graph().scope(),
@@ -207,7 +222,10 @@ pub fn evaluate_state_predicate(
     .run(
         predicate.body(),
         predicate.slots(),
-        over.map(Value::Reference).into_iter().collect(),
+        over.map(Value::Reference)
+            .into_iter()
+            .chain(further)
+            .collect(),
     )
 }
 
@@ -855,6 +873,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         invocation: &qsl_semantics::model::observation::AdmittedInvocation<'_>,
         meter: &mut Meter,
     ) -> Result<FrameEvaluation, CallFailure>;
+
+    /// FR-230 "Collection-valued writes": over `observations`, the
+    /// collection the postcondition `clause`'s top-level conjunct
+    /// `self.field = E` writes, `E` checked as `written`, and the
+    /// provenance of each of its slots. `None` when the clause has no such
+    /// conjunct.
+    ///
+    /// Refuses as [`Self::evaluate_clause`] does for an unknown clause or
+    /// mismatched observations.
+    fn evaluate_collection_write(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        field: &str,
+        written: &qsl_semantics::check::Written,
+        meter: &mut Meter,
+    ) -> Result<Option<collection_write::WrittenCollection>, CallFailure>;
 }
 
 /// What evaluating one state clause over its admitted observations reads
@@ -1430,6 +1465,18 @@ impl CheckedPackageEvaluation for CheckedPackage {
             claim,
         )
         .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_collection_write(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        field: &str,
+        written: &qsl_semantics::check::Written,
+        meter: &mut Meter,
+    ) -> Result<Option<collection_write::WrittenCollection>, CallFailure> {
+        let setup = ClauseSetup::of(self, clause, observations)?;
+        collection_write::evaluate(self.graph(), &setup, field, written, meter)
     }
 
     fn evaluate_frame(

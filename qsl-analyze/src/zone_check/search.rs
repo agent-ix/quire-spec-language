@@ -131,13 +131,13 @@ pub struct ZoneCheckRequest<'r, 's, 'a, S> {
 /// (FR-159, QSpec FR-430).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZoneReduction {
-    /// ADR-018 V-8: a selected reduction EN-6 does not apply: partial-order
-    /// reduction or a state constraint over any item (QSpec FR-430), or
+    /// ADR-018 V-8: a selected reduction EN-6 does not apply. Over any
+    /// item, partial-order reduction or a state constraint (QSpec FR-430),
+    /// named first in the order partial-order, constraint; failing that,
     /// symmetry over an item decided on the liveness product or by the
     /// time-lock search, which do not read a symmetry-reduced graph.
     Unsupported {
-        /// The first such reduction, in the order symmetry, partial-order,
-        /// constraint.
+        /// The reduction.
         reduction: ReductionKind,
     },
     /// FR-151: the initial states are not closed under a declaration's
@@ -161,6 +161,9 @@ pub enum ZoneCheckLimit {
     MaxAutomatonStates(u64),
     /// `max_zone_bytes`.
     MaxZoneBytes(u64),
+    /// The timed subject's `max_clocks` (QSpec FR-415 "Cardinality bound"):
+    /// a state's live clocks exceed it.
+    MaxClocks(u64),
 }
 
 /// Why a run stopped with no verdict.
@@ -330,9 +333,10 @@ pub enum ZoneCheckOutcome<S> {
 /// Why EN-6 does not take the request.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ZoneCheckRefusal {
-    /// The clause is of no profile EN-6 reads, or a TT-2 window's negation
+    /// The clause is of no profile EN-6 reads, a TT-2 window's negation
     /// starts a punctual interval at many positions, which no timed
-    /// automaton reads (FR-242; Alur and Dill, 1994).
+    /// automaton reads (FR-242; Alur and Dill, 1994), or its claim
+    /// automaton needs more clocks than the construction builds.
     #[error("the clause is of no form EN-6 decides")]
     UnsupportedForm,
     /// The subject has an unbounded population root (FR-239, FR-126):
@@ -354,6 +358,11 @@ pub enum ZoneCheckRefusal {
     /// The clause's negation automaton could not be built (FR-240).
     #[error("the clause's automaton could not be built: {0}")]
     Automaton(AutomatonError),
+    /// A step of the model writes a clock collection whole, so a clock may
+    /// move between slots (FR-230 "Collection-valued writes"), and EN-6's
+    /// zones map no carried clock between places yet.
+    #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
+    CarriedClocks,
     /// A symmetry declaration does not admit (FR-151).
     #[error(transparent)]
     Symmetry(SymmetryRefusal),
@@ -438,6 +447,9 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
+    if request.subject.writes_collections() {
+        return Err(ZoneCheckRefusal::CarriedClocks);
+    }
     // QSpec FR-430: EN-6 applies symmetry and no other reduction, so a
     // request selecting partial-order reduction or a state constraint
     // settles V-8 before anything is read, naming the first in the order
@@ -454,9 +466,18 @@ pub fn check_timed_model<S: Clone>(
     // explored, as FR-126 states.
     let system = request.subject.system();
     check_model_bounds(system, BOUND_POSITIONS).map_err(not_simulated)?;
+    let mut symmetric = !reductions.symmetry.is_empty();
+    // EN-6 applies symmetry to its search only: the time-lock search and
+    // the liveness product read the unreduced graph's edges, so an item
+    // decided by either settles V-8 naming symmetry, as an unapplied
+    // reduction does, before its declarations are admitted.
+    if symmetric && reads_unreduced_graph(&request)? {
+        return Ok(reduced(ZoneReduction::Unsupported {
+            reduction: ReductionKind::Symmetry,
+        }));
+    }
     // FR-151: the declarations admit, and the initial states are closed
     // under their group.
-    let symmetric = !reductions.symmetry.is_empty();
     let group = admit(system, &reductions.symmetry).map_err(ZoneCheckRefusal::Symmetry)?;
     let closed = closure(system, &group).map_err(|refusal| match refusal {
         ClosureRefusal::Encoding(_) => ZoneCheckRefusal::Fault("state-key"),
@@ -471,6 +492,9 @@ pub fn check_timed_model<S: Clone>(
     let plans = match request.item {
         ZoneCheckItem::Clause { clause, .. } => {
             let instances = system.instances(&clause.over().1).map_err(not_simulated)?;
+            // With no instance there is no orbit to reduce: the item runs
+            // unreduced, so its proof is certified.
+            symmetric &= !instances.is_empty();
             if symmetric {
                 instance_groups(Some(&instances), &group)
                     .into_iter()
@@ -499,15 +523,6 @@ pub fn check_timed_model<S: Clone>(
     let mut proved = None;
     for plan in plans {
         let (judged, window, live) = judge_plan(&request, plan.instances)?;
-        if symmetric && matches!(judged, Judged::Liveness(_) | Judged::TimeLockFreedom) {
-            // QSpec FR-430 applies symmetry to EN-6's search; the liveness
-            // product and the time-lock search read the unreduced graph's
-            // edges, so they refuse the reduction before any state is
-            // explored.
-            return Ok(reduced(ZoneReduction::Unsupported {
-                reduction: ReductionKind::Symmetry,
-            }));
-        }
         let automaton_constants = live
             .as_ref()
             .map_or_else(Vec::new, PositionAutomaton::all_constants);
@@ -568,11 +583,43 @@ pub fn check_timed_model<S: Clone>(
             certificate: Box::new(proof.proving(request.obligation)),
             stats: total,
         },
+        // Unreachable by design: a run under a selected symmetry sets
+        // `reduced`, whose proof is always `HoldsReduced`.
         Some(_) => return Err(ZoneCheckRefusal::Fault("reduced-certificate")),
         None => ZoneCheckOutcome::HoldsReduced {
             reductions: applied,
             stats: total,
         },
+    })
+}
+
+/// Whether `request`'s item is decided on a graph EN-6 does not reduce:
+/// the time-lock-freedom item, or a clause with no TT-1 atom and no flat
+/// TT-2 window, which the liveness product decides (FR-240).
+fn reads_unreduced_graph<S>(
+    request: &ZoneCheckRequest<'_, '_, '_, S>,
+) -> Result<bool, ZoneCheckRefusal> {
+    Ok(match request.item {
+        ZoneCheckItem::TimeLockFreedom => true,
+        ZoneCheckItem::DeadlockFreedom => false,
+        ZoneCheckItem::Clause { clause, .. } => {
+            if qsl_eval::automaton::invariant_atom(clause).is_some() {
+                false
+            } else {
+                let instances = request
+                    .subject
+                    .system()
+                    .instances(&clause.over().1)
+                    .map_err(not_simulated)?;
+                flat_window(
+                    clause,
+                    instances.len(),
+                    request.subject.tick_period().cloned(),
+                    request.limits.max_automaton_states,
+                )?
+                .is_none()
+            }
+        }
     })
 }
 
@@ -637,14 +684,15 @@ fn judge_plan<'r, S>(
                 // interval through FR-242's timed claim automaton (TT-3,
                 // TT-4, and a TT-2 window nesting one interval operator
                 // under another). A punctual interval started at many
-                // positions has no timed automaton; a claim needing more
-                // clocks than the construction builds is refused by name.
+                // positions has no timed automaton, and a claim needing
+                // more clocks than the construction builds is no form EN-6
+                // decides: both are `UnsupportedForm`, as the FR-245
+                // checker reads them (`UnsupportedItem`).
                 let automaton = position_automaton(clause, request.limits.max_automaton_states)
                     .map_err(|error| match error {
                         AutomatonError::ProfileNotTranslated { .. }
-                        | AutomatonError::RepeatedPunctualInterval => {
-                            ZoneCheckRefusal::UnsupportedForm
-                        }
+                        | AutomatonError::RepeatedPunctualInterval
+                        | AutomatonError::ClockLimit { .. } => ZoneCheckRefusal::UnsupportedForm,
                         other => ZoneCheckRefusal::Automaton(other),
                     })?;
                 live = Some(automaton);
@@ -890,7 +938,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     pub(super) fn timed<T>(&self, result: Result<T, TimedStop>) -> Result<T, Halt> {
-        result.map_err(|stop| self.undecided(ZoneUndecided::UndecidedSuccessor(stop)))
+        result.map_err(|stop| match stop {
+            TimedStop::MaxClocks { max_clocks } => self.stop(ZoneStop::LimitReached(
+                ZoneCheckLimit::MaxClocks(max_clocks),
+            )),
+            stop => self.undecided(ZoneUndecided::UndecidedSuccessor(stop)),
+        })
     }
 
     pub(super) fn scaled(&self, value: &Rational) -> BigInt {
@@ -2021,7 +2074,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             .places()
             .iter()
             .zip(&concrete.last_clocks)
-            .filter(|(place, _)| place.present(&state))
+            .filter(|(place, _)| self.timed.live(place, &state))
             .map(|(_, value)| value.clone())
             .collect();
         let (kind, over_binding, fairness) = match badness {

@@ -94,9 +94,9 @@ pub use state_predicate::PredicateReading;
 pub(crate) use symbolic::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
 pub use timed::{
-    BehaviourLetters, ClockPlace, ClockValuation, DelayInterval, GuardedStep, MoveRefusal,
-    PlaceConstraint, TimeLock, TimedBehaviour, TimedPosition, TimedSite, TimedState, TimedStop,
-    TimedSubjectRefusal, TimedSystem, TimedTerminalClass,
+    BehaviourLetters, BehaviourReading, ClockPlace, ClockValuation, DelayInterval, GuardedStep,
+    MoveRefusal, PlaceConstraint, TimeLock, TimedBehaviour, TimedPosition, TimedSite, TimedState,
+    TimedStop, TimedSubjectRefusal, TimedSystem, TimedTerminalClass, DEFAULT_MAX_CLOCKS,
 };
 pub(crate) use walk::{Applied, Budget};
 
@@ -202,6 +202,20 @@ pub struct StepEffect {
     pub changed: Vec<FieldChange>,
     /// The canonical text of the transition's result, or `None`.
     pub result: Option<String>,
+    /// The receiver's clock collections the step wrote whole (FR-230
+    /// "Collection-valued writes"), each with the provenance of every slot
+    /// of its post-state value.
+    pub written: Vec<WrittenSlots>,
+}
+
+/// A clock collection a step wrote whole, and where each of its post-state
+/// slots comes from.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenSlots {
+    /// The receiver's collection field.
+    pub field: String,
+    /// One provenance for each slot of the post-state value, in slot order.
+    pub provenance: Vec<crate::value::Provenance>,
 }
 
 /// How a clause evaluation that decided no Boolean ended (FR-120 "Contract
@@ -427,6 +441,9 @@ pub struct ModelSystem<'a> {
     declaring: std::sync::Mutex<BTreeMap<DeclarationKey, Option<Vec<ObjectReference>>>>,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
+    /// QSpec FR-154's unit bounds on fields, each an invariant of every
+    /// state, in ascending constraint order.
+    member_bounds: Vec<qsl_semantics::model::state::MemberBound>,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -451,6 +468,12 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// The declarations every value of this system is encoded under: the
+    /// package's record, tuple, union and variant types (FR-181).
+    pub(crate) fn typing(&self) -> encode::Typing<'a> {
+        encode::Typing::with_variants(self.types, self.package.graph().scope().variant_types())
+    }
+
     /// Check the universes, then admit each initial document in the given
     /// order, returning the first failure (FR-120 "Initial states").
     ///
@@ -608,6 +631,16 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        let mut member_bounds = model.member_bounds();
+        member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
+        // A field's bounds, read on each state; a parameter's and a result's
+        // are read where an invocation supplies them.
+        member_bounds.retain(|bound| {
+            fields
+                .values()
+                .flatten()
+                .any(|field| field.key == bound.member)
+        });
         let system = Self {
             over: match selections {
                 [only] => Some(only.identity.clone()),
@@ -630,6 +663,7 @@ impl<'a> ModelSystem<'a> {
             footprints: footprints::FootprintCache::default(),
             declaring: std::sync::Mutex::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
+            member_bounds,
         };
         system.check_rewards()?;
         Ok(system)
@@ -647,7 +681,7 @@ impl<'a> ModelSystem<'a> {
         state: &ModelSimState,
     ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
         let (key, digest) = crate::simulation::key::state_key(
-            &encode::model_key(&self.model, &state.state),
+            &encode::model_key(&self.model, &state.state, self.typing()),
             identity_limits(),
         )?;
         Ok((key.as_bytes().to_vec(), digest))
@@ -1101,7 +1135,7 @@ impl TransitionSystem for ModelSystem<'_> {
     }
 
     fn key(&self, state: &Self::State) -> Self::Key {
-        encode::model_key(&self.model, &state.state)
+        encode::model_key(&self.model, &state.state, self.typing())
     }
 
     fn successors(

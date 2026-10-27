@@ -433,6 +433,74 @@ pub struct ScalarTypeRecord {
     pub domain: ScalarValueDomain,
 }
 
+/// A package `sequence` type (FCD's core kind `sequence`, QSpec FR-154): the
+/// unbounded sequence of its `items`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SequenceTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The element type.
+    pub items: ValueTypeRef,
+}
+
+/// A package `alias` of a clock or a unit (FCD's core kind `alias`, FCD
+/// #315): the type its `target` names, under its own name (QSL FR-230
+/// "Clocks and resets", FR-230-AC-17).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AliasTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The aliased type: `Clock` or a unit.
+    pub target: ValueTypeRef,
+}
+
+/// A package constraint `min` or `max` on clocks or on a unit (FCD #315,
+/// QSL FR-230 "Clock constraints on a type", QSpec FR-154 "Unit bounds"):
+/// on the alias it names, or on every member of `Clock` or of the unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueBoundRecord {
+    /// The constraint's own original declaration key.
+    pub key: DeclarationKey,
+    /// The type that declares the constraint.
+    pub owner: DeclarationKey,
+    /// The alias it applies to; `None` for every member of `target`.
+    pub alias: Option<DeclarationKey>,
+    /// What it bounds: [`ValueTypeRef::Clock`] or a [`ValueTypeRef::Unit`].
+    pub target: ValueTypeRef,
+    /// `max`, an upper bound, or `min`, a lower bound.
+    pub upper: bool,
+    /// The bound, an exact rational number: of the model's time unit for a
+    /// clock, never negative; of the unit for a unit.
+    pub value: quire_exact::Rational,
+}
+
+/// The type `value_type` names through the package's aliases and sequence
+/// types (QSpec FR-154): the type it ends at, and how many sequences it
+/// passes on the way. `None` for a chain that returns to a type it passed.
+pub(crate) fn unaliased<'r>(
+    mut value_type: &'r ValueTypeRef,
+    record: impl Fn(&DeclarationKey) -> Option<&'r DomainPackageRecord>,
+) -> Option<(&'r ValueTypeRef, usize)> {
+    let mut passed: Vec<&DeclarationKey> = Vec::new();
+    let mut sequences = 0;
+    while let ValueTypeRef::Package(key) = value_type {
+        let next = match record(key) {
+            Some(DomainPackageRecord::SequenceType(sequence)) => {
+                sequences += 1;
+                &sequence.items
+            }
+            Some(DomainPackageRecord::AliasType(alias)) => &alias.target,
+            _ => break,
+        };
+        if passed.contains(&key) {
+            return None;
+        }
+        passed.push(key);
+        value_type = next;
+    }
+    Some((value_type, sequences))
+}
+
 /// One operation parameter: `{key, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationParameterRecord {
@@ -756,6 +824,9 @@ pub struct PackageDimensionRecord {
     pub name: String,
     /// Whether this is a base dimension (`terms` is empty).
     pub base: bool,
+    /// A derived dimension's terms: each named dimension's original FCD
+    /// identity and its exponent, in authored order.
+    pub terms: Vec<(DeclarationKey, quire_exact::Integer)>,
 }
 
 /// A domain package's unit edge, retained for owner-qualified time-unit
@@ -845,6 +916,12 @@ pub enum DomainPackageRecord {
     PersistenceInterface(PersistenceInterfaceRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
+    /// A package sequence type (QSpec FR-154).
+    SequenceType(SequenceTypeRecord),
+    /// A package alias of a clock or a unit (FCD #315).
+    AliasType(AliasTypeRecord),
+    /// A `min` or `max` constraint on clocks (FCD #315).
+    ValueBound(ValueBoundRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
@@ -876,6 +953,9 @@ impl DomainPackageRecord {
             Self::Namespace(record) => &record.key,
             Self::PersistenceInterface(record) => &record.key,
             Self::ScalarType(record) => &record.key,
+            Self::SequenceType(record) => &record.key,
+            Self::AliasType(record) => &record.key,
+            Self::ValueBound(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
