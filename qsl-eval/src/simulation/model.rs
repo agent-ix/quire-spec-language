@@ -441,6 +441,10 @@ pub struct ModelSystem<'a> {
     declaring: std::sync::Mutex<BTreeMap<DeclarationKey, Option<Vec<ObjectReference>>>>,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
+    /// The fields that hold a collection of clocks or of a clock-bearing
+    /// type: unbounded domains (STD-508), written only by FR-230's
+    /// collection-valued writes.
+    pub(crate) clock_collections: BTreeSet<DeclarationKey>,
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
     /// state, in ascending constraint order.
     member_bounds: Vec<qsl_semantics::model::state::MemberBound>,
@@ -631,6 +635,13 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        let clock_collections: BTreeSet<DeclarationKey> = graph
+            .timed_models()
+            .iter()
+            .flat_map(|timed| timed.clocks())
+            .filter(|clock| clock.slots().next().is_some())
+            .map(|clock| clock.field().clone())
+            .collect();
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
         // A field's bounds, read on each state; a parameter's and a result's
@@ -664,6 +675,7 @@ impl<'a> ModelSystem<'a> {
             declaring: std::sync::Mutex::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
+            clock_collections,
         };
         system.check_rewards()?;
         Ok(system)
@@ -863,6 +875,10 @@ impl<'a> ModelSystem<'a> {
                 || domain::enumerable(value_type)
             {
                 value_type.clone()
+            } else if domain::finite(value_type, self.types) {
+                // A finite enum, record or tuple (STD-508), its extent
+                // read whole.
+                ValueType::Boolean
             } else {
                 ValueType::Integer
             };
@@ -933,6 +949,13 @@ impl<'a> ModelSystem<'a> {
             .collect();
         for key in &granted {
             if let Some(value_type) = field_types.get(key) {
+                // A collection of clocks or of a clock-bearing type is
+                // unbounded (STD-508, FR-230's slot provenance).
+                let value_type = if self.clock_collections.contains(key) {
+                    &ValueType::Integer
+                } else {
+                    value_type
+                };
                 root(declaration_enc(key), value_type);
             }
         }

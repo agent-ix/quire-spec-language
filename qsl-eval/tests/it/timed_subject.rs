@@ -12,9 +12,11 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
-    BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest, ModelSystem,
-    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedStop, TimedSystem,
+    check_model_bounds, BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest,
+    ModelSystem, MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedStop,
+    TimedSystem,
 };
+use qsl_eval::simulation::{NotSimulated, BOUND_POSITIONS};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -2606,4 +2608,354 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
             .map(|posts| posts.len()),
         not_computed.map(|_: ()| 0)
     );
+}
+
+/// TC-1270: a scalar type `Int[0, max]` named `name`.
+fn int_type(name: &str, max: u64) -> Json {
+    let identity = ident(name);
+    let constraint = |keyword: &str, value: String| {
+        json!({
+            "identity": format!("{identity}/constraints/{keyword}"), "keyword": keyword,
+            "operands": {"value": value}, "appliesTo": "ix://quire/native/Integer",
+            "diagnosticCode": format!("bound.{keyword}"), "origin": origin(&identity),
+        })
+    };
+    wire_type(
+        &identity,
+        "value_type",
+        json!({"scalar": "integer",
+            "constraints": [constraint("min", "0".to_owned()), constraint("max", max.to_string())]}),
+    )
+}
+
+/// TC-1270: a record type `name` with `fields` (name, type, optional).
+fn record_type(name: &str, fields: &[(&str, &str, bool)]) -> Json {
+    let identity = ident(name);
+    let fields: Vec<Json> = fields
+        .iter()
+        .map(|(field, type_ref, optional)| {
+            let mut member = wire_field(field, type_ref);
+            let member_identity = format!("{identity}/{field}");
+            member["identity"] = json!(member_identity);
+            member["origin"] = origin(&member_identity);
+            if *optional {
+                member["presence"] = json!("optional");
+            }
+            member
+        })
+        .collect();
+    wire_type(&identity, "value_record", json!({"fields": fields}))
+}
+
+/// TC-1270's fixture over `timer_document`: the types `types`, the fields
+/// `fields` on `Call` (name, type, optional, multiplicity), `work` granting
+/// `work` and `tick` granting `tick`, an enum `Color` and an `Int[0, 2]`
+/// and `Int[0, 1]` when `colors`.
+fn cells_document(
+    types: Vec<Json>,
+    fields: Vec<(&str, String, Option<Json>)>,
+    work: &[&str],
+    tick: &[&str],
+) -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let color = ident("Color");
+    let case = |name: &str, line: u64| {
+        json!({"identity": ident(&format!("variant/Color-{name}")), "name": name,
+            "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3}}})
+    };
+    let all = document["types"].as_array_mut().expect("types");
+    all.push(int_type("Int2", 2));
+    all.push(int_type("Int1", 1));
+    all.push(wire_type(
+        &color,
+        "mode",
+        json!({"variants": [case("red", 10), case("blue", 11), case("green", 12)]}),
+    ));
+    all.extend(types);
+    for (name, type_ref, multiplicity) in fields {
+        let mut member = wire_field(name, &type_ref);
+        if let Some(multiplicity) = multiplicity {
+            member["multiplicity"] = multiplicity;
+        }
+        all[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(member);
+    }
+    for operation in all[1]["operations"].as_array_mut().expect("operations") {
+        let granted: &[&str] = match operation["name"].as_str() {
+            Some("work") => work,
+            Some("tick") => tick,
+            _ => continue,
+        };
+        operation["frame"]["modifies"] = json!(granted
+            .iter()
+            .map(|field| ident(&format!("Call/{field}")))
+            .collect::<Vec<_>>());
+    }
+    let constructs = document["constructs"].as_array_mut().expect("constructs");
+    constructs.push(json!({
+        "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
+        "manifestDigest": PLACEHOLDER,
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// The successors `operation` has from the initial state of `world`, each
+/// as the debug text of `field`'s value.
+fn granted_values(world: &World, operation: &str, field: &str) -> Vec<String> {
+    use qsl_eval::simulation::TransitionSystem;
+    let held = system(world);
+    let initial = held.initial().remove(0);
+    let key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident(&format!("Call/{field}")),
+    };
+    held.successors(&initial)
+        .expect("the state expands")
+        .successors
+        .into_iter()
+        .filter(|(transition, _)| format!("{transition:?}").contains(&format!("Call/{operation}")))
+        .map(|(_, post)| {
+            post.state()
+                .populations
+                .values()
+                .find_map(|objects| objects.get("c"))
+                .and_then(|object| object.fields.get(&key))
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_else(|| "absent".to_owned())
+        })
+        .collect()
+}
+
+/// FR-120-AC-22, FR-120-AC-23 and FR-120-AC-24 (TC-1270): over `Call`, a
+/// granted `cfg: Cfg { on: Boolean, n: Int[0, 2] }` has 6 values, `on`
+/// most significant; `w: Wrap { c: Cfg, o?: Boolean }` 18; `r1: R1 { c:
+/// Cfg, a: Boolean }` 12; a granted `col: Color` 3 in declaration order;
+/// `pick: Pick { col: Color, on: Boolean }` 6 and `note: Note { note?:
+/// Boolean, n: Int[0, 1] }` 6, `note` absent first; `t: Timer { x, y:
+/// Clock; n: Phase }` 4, its clocks no factor; `sw: Stopwatch { x, y:
+/// Clock }` one value; `mx: Mix { t: Timer, b: Boolean }` 8. No such field
+/// is an unbounded root, so the model passes FR-120's requires-bound check;
+/// a granted `Sequence<Timer>[0, 1]` is an unbounded root. Not covered: the
+/// tuple `Pr` and the `Option<Cfg>`/`Sequence<Cfg>` vectors' tuple
+/// siblings, which a domain package cannot declare (STD-493 item 16).
+#[trace("TC-1270")]
+#[test]
+fn a_record_of_finite_components_is_a_finite_domain() {
+    let int2 = ident("Int2");
+    let int1 = ident("Int1");
+    let color = ident("Color");
+    let types = vec![
+        record_type(
+            "Cfg",
+            &[
+                ("on", "ix://quire/native/Boolean", false),
+                ("n", &int2, false),
+            ],
+        ),
+        record_type(
+            "Wrap",
+            &[
+                ("c", &ident("Cfg"), false),
+                ("o", "ix://quire/native/Boolean", true),
+            ],
+        ),
+        record_type(
+            "R1",
+            &[
+                ("c", &ident("Cfg"), false),
+                ("a", "ix://quire/native/Boolean", false),
+            ],
+        ),
+        record_type(
+            "Pick",
+            &[
+                ("col", &color, false),
+                ("on", "ix://quire/native/Boolean", false),
+            ],
+        ),
+        record_type(
+            "Note",
+            &[
+                ("note", "ix://quire/native/Boolean", true),
+                ("n", &int1, false),
+            ],
+        ),
+        record_type(
+            "Stopwatch",
+            &[
+                ("x", "ix://quire/native/Clock", false),
+                ("y", "ix://quire/native/Clock", false),
+            ],
+        ),
+        record_type(
+            "Mix",
+            &[
+                ("t", &ident("Timer"), false),
+                ("b", "ix://quire/native/Boolean", false),
+            ],
+        ),
+    ];
+    let cfg = |on: bool, n: u8| {
+        json!({"record": {"type": ident("Cfg"), "fields": {
+        "on": {"boolean": on}, "n": {"integer": n.to_string()}}}})
+    };
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let initial = json!({
+        "t": timer.clone(),
+        "cfg": cfg(false, 0),
+        "w": {"record": {"type": ident("Wrap"), "fields": {"c": cfg(false, 0), "o": {"absent": {}}}}},
+        "r1": {"record": {"type": ident("R1"), "fields": {"c": cfg(false, 0), "a": {"boolean": false}}}},
+        "col": {"variant": {"type": color, "case": "red"}},
+        "pick": {"record": {"type": ident("Pick"), "fields": {
+            "col": {"variant": {"type": color, "case": "red"}}, "on": {"boolean": false}}}},
+        "note": {"record": {"type": ident("Note"), "fields": {"note": {"absent": {}}, "n": {"integer": "0"}}}},
+        "sw": {"record": {"type": ident("Stopwatch"), "fields": {}}},
+        "mx": {"record": {"type": ident("Mix"), "fields": {"t": timer, "b": {"boolean": false}}}},
+    });
+    let fields = vec![
+        ("cfg", ident("Cfg"), None),
+        ("w", ident("Wrap"), None),
+        ("r1", ident("R1"), None),
+        ("col", color.clone(), None),
+        ("pick", ident("Pick"), None),
+        ("note", ident("Note"), None),
+        ("sw", ident("Stopwatch"), None),
+        ("mx", ident("Mix"), None),
+    ];
+    let counts = |granted: &str| {
+        let world = world_holding(
+            cells_document(types.clone(), fields.clone(), &[granted], &[]),
+            "",
+            &only(&["work"], ""),
+            initial.clone(),
+        );
+        let held = system(&world);
+        check_model_bounds(&held, BOUND_POSITIONS)
+            .unwrap_or_else(|refusal| panic!("{granted} is bounded: {refusal:?}"));
+        granted_values(&world, "work", granted)
+    };
+    let values = counts("cfg");
+    assert_eq!(values.len(), 6, "{values:#?}");
+    // `on` most significant: false for the first three, `n` ascending.
+    assert!(
+        values[..3]
+            .iter()
+            .all(|value| value.contains("Boolean(false)")),
+        "{values:#?}"
+    );
+    assert!(values[3..]
+        .iter()
+        .all(|value| value.contains("Boolean(true)")));
+    assert_eq!(counts("w").len(), 18);
+    assert_eq!(counts("r1").len(), 12);
+    let colors = counts("col");
+    assert_eq!(colors.len(), 3);
+    assert!(
+        colors[0].contains("rank: 0") && colors[2].contains("rank: 2"),
+        "{colors:?}"
+    );
+    assert_eq!(counts("pick").len(), 6);
+    let notes = counts("note");
+    assert_eq!(notes.len(), 6);
+    assert!(notes[0].contains("Absent"), "{notes:?}");
+    assert_eq!(counts("t").len(), 4);
+    assert_eq!(counts("sw").len(), 1);
+    assert_eq!(counts("mx").len(), 8);
+
+    // A clock-bearing collection is unbounded.
+    let world = world_holding(
+        cells_document(
+            types.clone(),
+            vec![(
+                "ts",
+                ident("Timer"),
+                Some(json!({"lower": 0, "upper": 1, "ordered": true, "unique": false})),
+            )],
+            &["ts"],
+            &[],
+        ),
+        "",
+        &only(&["work"], ""),
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
+            "ts": {"sequence": []}}),
+    );
+    let held = system(&world);
+    assert!(matches!(
+        check_model_bounds(&held, BOUND_POSITIONS),
+        Err(NotSimulated::RequiresBound(_))
+    ));
+}
+
+/// FR-120-AC-25 (TC-1270): a granted record with an unbounded non-clock
+/// component, `op: Open { n: Integer, b: Boolean }`, `tm: Tm { x: Clock, k:
+/// Integer }` (its clock does not bound it) and `wr: Wrap2 { o: Open }`, is
+/// an unbounded root: `explore_model` returns `NotSimulated::RequiresBound`
+/// naming one domain, before any state is expanded. Not covered: the union
+/// `U { a, b(Boolean) }`, whose payload case QSL's package intake refuses
+/// (`Variant.payloadType`).
+#[trace("TC-1270", "FR-120-AC-25")]
+#[test]
+fn a_record_with_an_unbounded_component_requires_a_bound() {
+    let types = vec![
+        record_type(
+            "Open",
+            &[
+                ("n", "ix://quire/native/Integer", false),
+                ("b", "ix://quire/native/Boolean", false),
+            ],
+        ),
+        record_type(
+            "Tm",
+            &[
+                ("x", "ix://quire/native/Clock", false),
+                ("k", "ix://quire/native/Integer", false),
+            ],
+        ),
+        record_type("Wrap2", &[("o", &ident("Open"), false)]),
+    ];
+    let open = json!({"record": {"type": ident("Open"), "fields": {
+        "n": {"integer": "0"}, "b": {"boolean": false}}}});
+    let initial = json!({
+        "t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
+        "op": open.clone(),
+        "tm": {"record": {"type": ident("Tm"), "fields": {"k": {"integer": "0"}}}},
+        "wr": {"record": {"type": ident("Wrap2"), "fields": {"o": open}}},
+    });
+    for granted in ["op", "tm", "wr"] {
+        let world = world_holding(
+            cells_document(
+                types.clone(),
+                vec![
+                    ("op", ident("Open"), None),
+                    ("tm", ident("Tm"), None),
+                    ("wr", ident("Wrap2"), None),
+                ],
+                &[granted],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            initial.clone(),
+        );
+        let held = system(&world);
+        let explored = qsl_eval::simulation::model::explore_model(
+            &held,
+            BOUND_POSITIONS,
+            qsl_eval::simulation::Limits::default(),
+            || false,
+        );
+        let Err(NotSimulated::RequiresBound(bound)) = explored else {
+            panic!("{granted} requires a bound: {explored:?}");
+        };
+        assert_eq!(
+            format!("{:?}", bound.domains).matches("Node").count(),
+            1,
+            "{granted}: {:?}",
+            bound.domains
+        );
+    }
 }

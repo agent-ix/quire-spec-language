@@ -198,6 +198,42 @@ impl Space {
     }
 }
 
+/// Whether `value_type` is, or holds at any depth, a union.
+fn holds_union(value_type: &ValueType, types: &TypeEnvironment) -> bool {
+    let mut pending = vec![value_type];
+    let mut visited: Vec<NodeKey> = Vec::new();
+    while let Some(value_type) = pending.pop() {
+        match value_type {
+            ValueType::Option(payload) => pending.push(payload),
+            ValueType::Collection(collection) => pending.push(collection.element()),
+            ValueType::Composite(declaration) => {
+                if visited.contains(declaration) {
+                    continue;
+                }
+                visited.push(*declaration);
+                match types
+                    .composite(*declaration)
+                    .map(CompositeDeclaration::shape)
+                {
+                    Some(CompositeShape::Union(_)) => return true,
+                    Some(CompositeShape::Record(fields)) => {
+                        pending.extend(fields.iter().map(|field| field.value_type()));
+                    }
+                    Some(CompositeShape::Tuple(positions)) => pending.extend(positions.iter()),
+                    None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether `value_type` has a finite FR-120 value domain ([`Domain::of`]).
+pub(crate) fn finite(value_type: &ValueType, types: &TypeEnvironment) -> bool {
+    Domain::of(value_type, &[], types).is_some()
+}
+
 /// Whether [`composite_values`] and [`Domain`] together enumerate `value_type`:
 /// a type FR-120 enumerates, or an enum, record, tuple or union of finite
 /// fields (ADR-027 ST-11: the records of a template's attempt type).
@@ -319,49 +355,11 @@ pub(super) enum Domain {
     /// A random parameter's support, in declared order (FR-187, ADR-024
     /// PM-1): its finite domain whatever its declared type.
     Listed(Vec<Value>),
-    /// An enum, or a record, tuple or union of finite components, as a
-    /// field's domain ([`Domain::of_field`]).
+    /// An enum, or a record or tuple of finite components.
     Space(Box<Space>),
 }
 
 impl Domain {
-    /// The domain of a field of declared type `value_type`: [`Self::of`],
-    /// and for an enum, or a record, tuple or union whose data components
-    /// all have finite domains, its finite space (ADR-027 ST-11). A clock
-    /// component is a place, not a component of the value (FR-230), so it
-    /// has no part in the space. QSL enumerates such a field pending
-    /// FR-120's text, which names every other type an unbounded domain
-    /// (STD-493 item 21).
-    pub(super) fn of_field(
-        value_type: &ValueType,
-        objects: &[ObjectReference],
-        types: &TypeEnvironment,
-    ) -> Option<Self> {
-        match value_type {
-            ValueType::Composite(_) | ValueType::Enum(_) => {
-                Space::of(value_type, objects, types, &mut Vec::new())
-                    .map(|space| Self::Space(Box::new(space)))
-            }
-            ValueType::Option(payload) => Some(Self::Option {
-                payload_type: (**payload).clone(),
-                inner: Box::new(Self::of_field(payload, objects, types)?),
-            }),
-            ValueType::Collection(collection) => {
-                let bound = collection.bound()?;
-                if collection.kind() != CollectionKind::Sequence {
-                    return None;
-                }
-                Some(Self::Sequence {
-                    collection: (**collection).clone(),
-                    element: Box::new(Self::of_field(collection.element(), objects, types)?),
-                    min: bound.minimum(),
-                    max: bound.maximum(),
-                })
-            }
-            other => Self::of(other, objects, types),
-        }
-    }
-
     /// The domain of `value_type`, where a `Reference<T>` ranges over the
     /// members of `objects` whose most-specific type conforms to `T`.
     /// `None` when `value_type` is not [`enumerable`].
@@ -383,6 +381,14 @@ impl Domain {
                 payload_type: (**payload).clone(),
                 inner: Box::new(Self::of(payload, objects, types)?),
             }),
+            // FR-120 "Applications" (STD-508): an enum, and a record or
+            // tuple whose components all have a finite domain, the first
+            // declared most significant; a clock component is a place, not a
+            // component of the checked value. A union stays unbounded.
+            ValueType::Enum(_) | ValueType::Composite(_) if !holds_union(value_type, types) => {
+                Space::of(value_type, objects, types, &mut Vec::new())
+                    .map(|space| Self::Space(Box::new(space)))
+            }
             ValueType::Reference(target) => Some(Self::Reference(
                 objects
                     .iter()

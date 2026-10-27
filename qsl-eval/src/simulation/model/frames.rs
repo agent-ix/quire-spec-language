@@ -652,7 +652,9 @@ impl Run<'_, '_, '_> {
                 {
                     continue;
                 }
-                let domain = Domain::of_field(&field.value_type, &post_references, system.types)
+                let domain = (!system.clock_collections.contains(&field.key))
+                    .then(|| Domain::of(&field.value_type, &post_references, system.types))
+                    .flatten()
                     .ok_or_else(|| stop(BROKEN))?;
                 dimensions.push(Dimension {
                     population: member.population.clone(),
@@ -875,7 +877,9 @@ impl Run<'_, '_, '_> {
                 // A field with no finite domain (an `Integer`, a string, an
                 // unbounded collection) is bounded by no frame that grants it,
                 // so it cannot be written here.
-                let Some(domain) = Domain::of_field(&field.value_type, &references, system.types)
+                let Some(domain) = (!system.clock_collections.contains(&field.key))
+                    .then(|| Domain::of(&field.value_type, &references, system.types))
+                    .flatten()
                 else {
                     continue;
                 };
@@ -1227,6 +1231,29 @@ impl Run<'_, '_, '_> {
         let references = self.walk.references();
         let effect = self.application.declaration.effect();
         // Clock-bearing collections are written by `collection_writes`.
+        // A clock collection whose slots a reset by selection resets keeps
+        // its data: FR-230's reset writes the clocks of the slots it
+        // selects, and the frame grants the collection for them.
+        let selected: BTreeSet<&DeclarationKey> = system
+            .package
+            .graph()
+            .timed_models()
+            .iter()
+            .flat_map(|model| {
+                model
+                    .resets()
+                    .iter()
+                    .filter(|resets| {
+                        self.postconditions
+                            .iter()
+                            .any(|info| resets.clause() == info.name)
+                    })
+                    .flat_map(|resets| resets.resets())
+                    .filter(|reset| reset.selection().is_some())
+                    .filter_map(|reset| model.clock(reset.clock()))
+                    .map(|clock| clock.field())
+            })
+            .collect();
         let carried: BTreeSet<&str> = system
             .package
             .graph()
@@ -1249,7 +1276,9 @@ impl Run<'_, '_, '_> {
                 .ok_or_else(|| stop(BROKEN))?;
             let fields = system.fields.get(type_key).ok_or_else(|| stop(BROKEN))?;
             for field in fields {
-                if Domain::of_field(&field.value_type, &references, system.types).is_some()
+                if (!system.clock_collections.contains(&field.key)
+                    && Domain::of(&field.value_type, &references, system.types).is_some())
+                    || (receiver && selected.contains(&field.key))
                     || carried.contains(field.name.as_str())
                 {
                     continue;
