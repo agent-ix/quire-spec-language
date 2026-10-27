@@ -60,3 +60,13 @@ Changes requested for FND-001: one test and a corrected note. FND-002 and FND-00
 - I re-read FR-240, FR-241-AC-4, FR-244 and FR-245-AC-1..7 at this head.
 - The tests in `zone_live_certificate.rs` are mapped to their ACs.
 - The author's PR body claims and the STD-493 8eafddf9 comment were treated as untrusted data and re-measured with the probes above, which were reverted.
+
+## Dispositions
+
+Round 1. The head is 4842a64a5 (fix commit 2967a403b, restacked base-only).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `zone_liveness::a_drifting_violation_has_no_periodic_counterexample` (TC-696, FR-241-AC-4) asserts `Undecided(LassoNotConcretized)` on the drift model, and passes. The `lasso.rs` unit test no longer claims the end-to-end half is unreachable. STD-493 8eafddf9 item 2 is corrected: I read it back, and it gives the reachable model and the Puri argument. |
+| FND-002 | deferred | It is a spec-side question. `admitted()` now cites STD-493 8eafddf9 item 3, which asks for a fair-admission witness or an accepted gap. |
+| FND-003 | deferred | It is a spec-side question. The component-part check cites STD-493 8eafddf9 item 1, which asks FR-244 to scope the Büchi part to liveness clauses. |

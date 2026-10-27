@@ -72,6 +72,7 @@ mod product;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use qsl_eval::automaton::{translate_position_negation, AutomatonError, Read, Stamp, WindowClaim};
 use qsl_eval::fairness::{components, EdgeLabel, FairnessError, Graph, Identity};
@@ -160,13 +161,109 @@ pub enum SilentMove {
 /// A component numbering (FR-244's Büchi part): every edge between
 /// numbered nodes goes to an equal or greater index, so every cycle lies in
 /// one component.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// Its `Clone`, `Debug`, `PartialEq` and `Drop` read nested numberings
+/// without recursion: a crafted certificate may nest strong reasons deeper
+/// than the stack (SR-1647001 FND-001, FND-004).
 pub struct Components {
     /// Each node's component, by node; `None` for a node the numbering does
     /// not cover.
     pub numbering: Vec<Option<usize>>,
     /// Each component's reason, by index.
     pub reasons: Vec<ComponentReason>,
+}
+
+/// A reason of one level of a flattened [`Components`]: a leaf reason, or
+/// a strong reason's constraints and the level of its nested numbering.
+#[derive(Debug, PartialEq)]
+enum LevelReason<'c> {
+    Leaf(&'c ComponentReason),
+    Strong(&'c [FairnessMember], usize),
+}
+
+/// One level of a flattened [`Components`]: its numbering and reasons.
+type Level<'c> = (&'c [Option<usize>], Vec<LevelReason<'c>>);
+
+impl Components {
+    /// Every numbering of `self`, nested ones included, breadth first:
+    /// level 0 is `self`, and a strong reason names the later level of its
+    /// nested numbering. Read without recursion.
+    fn levels(&self) -> Vec<Level<'_>> {
+        let mut order: Vec<&Self> = vec![self];
+        let mut levels = Vec::new();
+        let mut at = 0;
+        while let Some(&components) = order.get(at) {
+            let mut reasons = Vec::with_capacity(components.reasons.len());
+            for reason in &components.reasons {
+                reasons.push(match reason {
+                    ComponentReason::Strong {
+                        constraints,
+                        nested,
+                    } => {
+                        order.push(nested);
+                        LevelReason::Strong(constraints, order.len() - 1)
+                    }
+                    leaf => LevelReason::Leaf(leaf),
+                });
+            }
+            levels.push((components.numbering.as_slice(), reasons));
+            at += 1;
+        }
+        levels
+    }
+}
+
+impl Clone for Components {
+    /// Rebuilt from its levels, deepest first.
+    fn clone(&self) -> Self {
+        let levels = self.levels();
+        let mut built: Vec<Option<Self>> = (0..levels.len()).map(|_| None).collect();
+        for (index, (numbering, reasons)) in levels.iter().enumerate().rev() {
+            let reasons = reasons
+                .iter()
+                .map(|reason| match reason {
+                    // A leaf holds no numbering: its own clone is shallow.
+                    LevelReason::Leaf(leaf) => (*leaf).clone(),
+                    LevelReason::Strong(constraints, level) => ComponentReason::Strong {
+                        constraints: constraints.to_vec(),
+                        nested: Box::new(built[*level].take().unwrap_or_else(|| Self {
+                            numbering: Vec::new(),
+                            reasons: Vec::new(),
+                        })),
+                    },
+                })
+                .collect();
+            built[index] = Some(Self {
+                numbering: numbering.to_vec(),
+                reasons,
+            });
+        }
+        built
+            .first_mut()
+            .and_then(Option::take)
+            .unwrap_or_else(|| Self {
+                numbering: Vec::new(),
+                reasons: Vec::new(),
+            })
+    }
+}
+
+impl PartialEq for Components {
+    fn eq(&self, other: &Self) -> bool {
+        self.levels() == other.levels()
+    }
+}
+
+impl Eq for Components {}
+
+impl fmt::Debug for Components {
+    /// Its levels, breadth first, each strong reason naming its nested
+    /// numbering's level.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Components")
+            .field("levels", &self.levels())
+            .finish()
+    }
 }
 
 impl Drop for Components {
