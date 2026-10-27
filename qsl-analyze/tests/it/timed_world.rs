@@ -74,10 +74,23 @@ fn phase_type() -> Json {
     )
 }
 
-fn operation(name: &str, modifies: &[&str]) -> Json {
+fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
     let identity = ident(&format!("Call/{name}"));
+    // With `unbounded`, a parameter `n: Integer`, an unbounded root.
+    let params: Vec<Json> = unbounded
+        .then(|| {
+            let parameter = format!("{identity}/n");
+            json!({
+                "identity": parameter, "name": "n", "typeRef": "ix://quire/native/Integer",
+                "presence": "required", "nullable": false, "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": origin(&parameter),
+            })
+        })
+        .into_iter()
+        .collect();
     json!({
-        "identity": identity, "name": name, "params": [], "pre": [], "post": [],
+        "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
         "frame": {
@@ -90,6 +103,16 @@ fn operation(name: &str, modifies: &[&str]) -> Json {
 /// The package with clock fields `clocks` and `operations` (name, the
 /// fields it modifies).
 pub(crate) fn document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
+    document_with(clocks, operations, false)
+}
+
+/// [`document`] whose first operation also takes `n: Integer`, an
+/// unbounded population root (FR-126).
+pub(crate) fn document_unbounded(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
+    document_with(clocks, operations, true)
+}
+
+fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: bool) -> Vec<u8> {
     let call = ident("Call");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -117,7 +140,8 @@ pub(crate) fn document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u
     );
     let operations: Vec<Json> = operations
         .iter()
-        .map(|(name, modifies)| operation(name, modifies))
+        .enumerate()
+        .map(|(at, (name, modifies))| operation(name, modifies, unbounded && at == 0))
         .collect();
     let population = ident("calls");
     json!({
@@ -249,7 +273,12 @@ const METER: ScalarLimits = ScalarLimits {
 impl World {
     /// The model system over the universe `{c}`.
     pub(crate) fn system(&self) -> ModelSystem<'_> {
-        ModelSystem::new(ModelSimulationRequest {
+        ModelSystem::new(self.request()).expect("the system admits")
+    }
+
+    /// FR-120's request of [`Self::system`].
+    pub(crate) fn request(&self) -> ModelSimulationRequest<'_> {
+        ModelSimulationRequest {
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
@@ -267,7 +296,6 @@ impl World {
                 max_candidates: 1_000_000,
             },
             meter: METER,
-        })
-        .expect("the system admits")
+        }
     }
 }

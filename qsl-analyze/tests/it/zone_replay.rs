@@ -10,8 +10,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    settle_zone_check, ZoneCertificateCheck, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRecord,
-    ZoneItem, ZoneStats,
+    settle_zone_check, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRecord, ZoneItem, ZoneStats,
 };
 use qsl_eval::simulation::model::{TimedState, TimedSystem};
 use qsl_eval::simulation::Limits;
@@ -23,7 +22,7 @@ use qsl_replay::{
     DisagreementCause, IncompleteCause, InconclusiveCause, Lasso, ModelCheckLimit, ModelStep,
     ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceValue, ProofBasis,
     ReplayRefusal, ResultLabel, SettlementBasis, StrongFairnessHint, TemporalCounterexample,
-    TerminalValue, UnavailabilityCause,
+    TerminalValue, UnavailabilityCause, ZoneCertificateVerdict,
 };
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::{Cancel, Rational, Undefined};
@@ -33,7 +32,7 @@ use quire_semantic_value::fairness::FairnessKind;
 use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_search::{
     claim, delays, exact, lock, operations, retried_at, rpc, rpc_variant, short_of_data_claim,
-    ticker, violated, windowed, Outcome, INFINITE, TIMED,
+    stall, stall_resetting, ticker, time_lock_item, violated, windowed, Outcome, INFINITE, TIMED,
 };
 
 /// Replay `payload` over `world`'s timed subject: as its first clause's
@@ -68,14 +67,14 @@ fn replay_with_hints(
     )
 }
 
-fn replay(
+pub(crate) fn replay(
     world: &World,
     payload: &TemporalCounterexample,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     replay_on(world, payload, false, &Limits::default())
 }
 
-fn reproduced(settlement: &ModelTraceSettlement) -> bool {
+pub(crate) fn reproduced(settlement: &ModelTraceSettlement) -> bool {
     matches!(settlement, ModelTraceSettlement::Reproduced { .. })
 }
 
@@ -155,8 +154,8 @@ fn whole(value: i64) -> Rational {
 /// 0, `timeout` after 3 and `reply` after 0 over `Rpc` with `T = 3 ms`,
 /// replays to `reproduced-with-evaluated-witness` at trace position 3: the
 /// delay 3 is admissible under `x <= 3` and `x <= T`, and the guards
-/// `x >= 3` and `x >= 1` hold after it. Not covered: the `Settles` half,
-/// a TT-3 claim that EN-6 decides with MightyL (QSL-583).
+/// `x >= 3` and `x >= 1` hold after it. The `Settles` half is
+/// `crate::zone_mitl::settles_is_proved_and_its_strict_variant_refuted`.
 #[trace("TC-692")]
 #[test]
 fn a_late_reply_replays_with_its_delays() {
@@ -324,8 +323,132 @@ fn an_undefined_evaluation_replays_at_its_time() {
     assert!(parity(&settlement), "{settlement:?}");
 }
 
+/// `Stall`'s non-local time-lock counterexample with `final_delay`
+/// `delay`: an empty stem.
+fn stalled(world: &World, delay: Rational) -> TemporalCounterexample {
+    TemporalCounterexample {
+        over_binding: None,
+        fairness: Vec::new(),
+        final_delay: Some(delay),
+        ..payload(world, Vec::new(), CounterexampleKind::TimeLock, None)
+    }
+}
+
+/// Part of FR-237-AC-4 (TC-692): the `Stall` model's non-local time-lock
+/// counterexample (stem empty, `final_delay` 1/2) reproduces by fresh
+/// exploration finding no quiescent state and no cycle with positive
+/// delay; against the variant with `ping` resetting `x` it settles
+/// `inconclusive`, `ReplayParity`; an exploration limit stops it (V-7).
+/// With `final_delay` 1 the last state `x = 1` admits no positive delay
+/// while `ping` is enabled, so it takes the non-local arm and reproduces.
+/// EN-6's own `Stall` counterexample (FR-240), whose final delay is the
+/// least one, 0 by FR-241, reproduces and settles `refuted`,
+/// `closed-scope`. Replaying one envelope twice gives equal results. Not
+/// covered: a limit of one state, which `Stall`'s closure, one symbolic
+/// state with `ping` looping on it, never exceeds; the transition limit
+/// stops it instead (spec gap STD-493).
+#[trace("TC-692")]
+#[test]
+fn a_non_local_time_lock_reproduces_by_fresh_exploration() {
+    let world = stall();
+    let reproduced_lock = ModelTraceSettlement::Reproduced {
+        value: ModelTraceValue::Truth(false),
+        trace_position: None,
+    };
+    let half = stalled(&world, exact(1, 2));
+    let settlement = replay_on(&world, &half, true, &Limits::default()).expect("replays");
+    assert_eq!(settlement, reproduced_lock);
+    assert_eq!(
+        replay_on(&world, &half, true, &Limits::default()).expect("replays"),
+        settlement
+    );
+
+    let resetting = stall_resetting();
+    let settlement = replay_on(
+        &resetting,
+        &stalled(&resetting, exact(1, 2)),
+        true,
+        &Limits::default(),
+    )
+    .expect("replays");
+    assert!(parity(&settlement), "{settlement:?}");
+    let record = settle(
+        &ZoneCheckOutcome::Violated {
+            counterexample: Box::new(half.clone()),
+            stats: ZoneStats::default(),
+        },
+        ZoneCertificateVerdict::Accepted,
+        Ok(settlement),
+    );
+    assert!(
+        matches!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+        ),
+        "{record:?}"
+    );
+
+    let one = Limits {
+        max_states: 1,
+        ..Limits::default()
+    };
+    assert_eq!(
+        replay_on(&world, &half, true, &one).expect("replays"),
+        reproduced_lock
+    );
+    let none = Limits {
+        max_transitions: 0,
+        ..Limits::default()
+    };
+    let settlement = replay_on(&world, &half, true, &none).expect("replays");
+    assert!(
+        matches!(
+            settlement,
+            ModelTraceSettlement::Stopped {
+                reached: qsl_replay::ReachedLimit {
+                    limit: ModelCheckLimit::MaxTransitions,
+                    value: 0,
+                },
+                ..
+            }
+        ),
+        "{settlement:?}"
+    );
+    let record = settle(
+        &ZoneCheckOutcome::Violated {
+            counterexample: Box::new(half),
+            stats: ZoneStats::default(),
+        },
+        ZoneCertificateVerdict::Accepted,
+        Ok(settlement),
+    );
+    assert!(
+        matches!(record.value, TerminalValue::Incomplete(_)),
+        "{record:?}"
+    );
+
+    let at_bound = stalled(&world, exact(1, 1));
+    assert_eq!(
+        replay_on(&world, &at_bound, true, &Limits::default()).expect("replays"),
+        reproduced_lock
+    );
+
+    let outcome = time_lock_item(&world);
+    let found = violated(outcome.clone());
+    assert_eq!(found, stalled(&world, exact(0, 1)));
+    let record = settle_zone_check(
+        ZoneItem::Outcome(&outcome),
+        &package_id(),
+        &Cancel::new(),
+        |_| ZoneCertificateVerdict::Accepted,
+        |payload| replay_on(&world, payload, true, &Limits::default()).map(replayed),
+    );
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(record.basis, SettlementBasis::ClosedScope);
+}
+
 /// `Lock` with `ping` resetting `x` when `resets`.
-fn lock_resetting(resets: bool) -> World {
+pub(crate) fn lock_resetting(resets: bool) -> World {
     if !resets {
         return lock();
     }
@@ -394,7 +517,7 @@ fn package() -> qsl_semantics::library::PackageId {
     qsl_semantics::library::PackageId::of_preimage(b"zone-replay")
 }
 
-fn package_id() -> DigestRecord {
+pub(crate) fn package_id() -> DigestRecord {
     package().record()
 }
 
@@ -411,7 +534,7 @@ fn replayed(settlement: ModelTraceSettlement) -> ModelTraceReplayResult {
 /// `result`.
 fn settle(
     outcome: &Outcome,
-    check: ZoneCertificateCheck,
+    check: ZoneCertificateVerdict,
     result: Result<ModelTraceSettlement, ReplayRefusal>,
 ) -> ZoneCheckRecord {
     settle_zone_check(
@@ -433,7 +556,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     let four = rpc(4);
     let proof = claim(&four, ZoneCheckLimits::default(), &Cancel::new());
     // V-1.
-    let record = settle(&proof, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&proof, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Proved {
@@ -455,10 +578,10 @@ fn each_timed_verdict_row_settles_as_stated() {
     let at = CertificateLocus::Entry { index: 0 };
     let record = settle(
         &proof,
-        ZoneCertificateCheck::Rejected {
+        ZoneCertificateVerdict::Rejected(qsl_replay::CertificateRejection {
             rule,
             at: at.clone(),
-        },
+        }),
         Err(fault()),
     );
     assert_eq!(
@@ -478,7 +601,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 9,
     };
-    let record = settle(&proof, ZoneCertificateCheck::Stopped(limit), Err(fault()));
+    let record = settle(&proof, ZoneCertificateVerdict::Stopped(limit), Err(fault()));
     assert_eq!(record.value, TerminalValue::Incomplete(limit));
     assert_eq!(record.value.category(), Category::Incomplete);
 
@@ -491,7 +614,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(reproduced.clone()),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -511,7 +634,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Inconclusive(cause.clone())),
     );
     assert_eq!(
@@ -520,7 +643,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     );
     let refused =
         ReplayRefusal::ModelTrace(Box::new(ModelTraceRefusal::LoopZeroDelay { entry: 0 }));
-    let record = settle(&refuted, ZoneCertificateCheck::Accepted, Err(refused));
+    let record = settle(&refuted, ZoneCertificateVerdict::Accepted, Err(refused));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::InvalidRuntimeInput))
@@ -531,7 +654,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&refuted),
         &qsl_semantics::library::PackageId::of_preimage(b"another").record(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Ok(replayed(reproduced.clone())),
     );
     assert_eq!(
@@ -546,7 +669,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&cancelled),
         &package_id(),
         &cancel,
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Err(fault()),
     );
     assert!(
@@ -579,7 +702,7 @@ fn each_timed_verdict_row_settles_as_stated() {
     }
 }
 
-fn fault() -> ReplayRefusal {
+pub(crate) fn fault() -> ReplayRefusal {
     ReplayRefusal::Fault(quire_semantic_value::catalog::InternalFault::new(
         "test",
         "not-called",
@@ -602,7 +725,7 @@ fn a_timed_refutation_settles_through_its_replay() {
             ZoneItem::Outcome(outcome),
             &package_id(),
             &Cancel::new(),
-            |_| ZoneCertificateCheck::Accepted,
+            |_| ZoneCertificateVerdict::Accepted,
             |payload| replay(&three, payload).map(replayed),
         )
     };
@@ -630,15 +753,13 @@ fn a_timed_refutation_settles_through_its_replay() {
     assert_eq!(record.label, ResultLabel::Inconclusive);
 
     let locked = strict("> 3");
-    let outcome: Outcome = ZoneCheckOutcome::Violated {
-        counterexample: Box::new(time_lock(&locked)),
-        stats: ZoneStats::default(),
-    };
+    let outcome = time_lock_item(&locked);
+    assert_eq!(violated(outcome.clone()), time_lock(&locked));
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |payload| replay_on(&locked, payload, true, &Limits::default()).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -666,7 +787,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         "always holds(true)",
     );
     let outcome = claim(&stall, ZoneCheckLimits::default(), &Cancel::new());
-    let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoAdmittedBehaviour)
@@ -687,7 +808,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         ZoneItem::Unsupported(&disposed),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |_| Err(fault()),
     );
     assert_eq!(record.label, ResultLabel::Unsupported);
@@ -702,7 +823,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         ..ZoneCheckLimits::default()
     };
     let stopped = claim(&rpc(4), tight, &Cancel::new());
-    let record = settle(&stopped, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&stopped, ZoneCertificateVerdict::Accepted, Err(fault()));
     let limit = IncompleteCause::LimitReached {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 2,
@@ -730,7 +851,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateCheck::Accepted,
+        |_| ZoneCertificateVerdict::Accepted,
         |payload| replay(&world, payload).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -752,7 +873,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
     );
 
     let locked = claim(&ticker(true), ZoneCheckLimits::default(), &Cancel::new());
-    let record = settle(&locked, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&locked, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoAdmittedBehaviour)
@@ -768,7 +889,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
 #[test]
 fn a_window_short_of_data_settles_inconclusive() {
     let outcome = short_of_data_claim(&retried_at("rational(5, 2) ms"));
-    let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+    let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor)
@@ -1135,7 +1256,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
             cause,
             stats: ZoneStats::default(),
         };
-        let record = settle(&outcome, ZoneCertificateCheck::Accepted, Err(fault()));
+        let record = settle(&outcome, ZoneCertificateVerdict::Accepted, Err(fault()));
         assert_eq!(
             record.value,
             TerminalValue::Inconclusive(InconclusiveCause::LassoNotConcretized)
@@ -1158,7 +1279,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
     };
     let record = settle(
         &refuted,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Stopped {
             reached,
             count: Some(1),
@@ -1203,7 +1324,7 @@ fn the_remaining_timed_rows_settle_as_stated() {
     };
     let record = settle(
         &deadlock,
-        ZoneCertificateCheck::Accepted,
+        ZoneCertificateVerdict::Accepted,
         Ok(ModelTraceSettlement::Reproduced {
             value: ModelTraceValue::Truth(false),
             trace_position: None,
@@ -1218,4 +1339,128 @@ fn the_remaining_timed_rows_settle_as_stated() {
             Category::Violation
         )
     );
+}
+
+/// A one-object model `model` over `clocks` and `operations`, with the
+/// claim `always holds(true)`, which replay of a derived item reads past.
+fn trap_world(time: &str, clocks: &[&str], operations: &[(&str, &[&str])], model: &str) -> World {
+    world(
+        &document(clocks, operations),
+        INFINITE,
+        &format!(
+            "{time}{model}temporal Any using inf over (c: M::Call) clock \"model-steps\" on \
+             origin {{ always holds(true) }}\n"
+        ),
+    )
+}
+
+/// EN-6's time-lock counterexample over `world`, which replay reproduces.
+fn reproduced_time_lock(world: &World) -> TemporalCounterexample {
+    let counterexample = violated(time_lock_item(world));
+    assert_eq!(counterexample.kind, CounterexampleKind::TimeLock);
+    assert_eq!(
+        replay_on(world, &counterexample, true, &Limits::default()).expect("replays"),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: None,
+        }
+    );
+    counterexample
+}
+
+/// FR-240's search over trapped valuations of every shape, each reported
+/// lock replayed (FR-237):
+/// - a diagonal trap reached by a step: `r` resets `x`, and `go` needs
+///   `x >= 2` before `y` reaches 3, so after `r` at `y > 1` only `r`
+///   loops;
+/// - an open boundary: `go` leaves while `x < 1`, so from `x = 1` on, held
+///   to `x <= 2`, only `ping` loops: the least delay into the trap is 1;
+/// - a Zeno reset loop: `ping` resets `x` under `x <= 0`, so time never
+///   passes;
+/// - a tick source: after `work`, only `spin` loops and no tick comes.
+#[trace("TC-695")]
+#[test]
+fn trapped_valuations_of_every_shape_are_found() {
+    let diagonal = trap_world(
+        DENSE,
+        &["x", "y"],
+        &[("go", &["phase"]), ("r", &["x"])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x >= 2 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre R using v on M::Call::r { self.phase = 0 }\n\
+         post Reset using v on M::Call::r { self.x = 0 ms }\n\
+         time invariant Hold when { self.phase = 0 } { self.y <= 3 ms }\n",
+    );
+    let found = reproduced_time_lock(&diagonal);
+    assert_eq!(found.prefix.len(), 1);
+    assert!(found.prefix[0].transition.operation().contains("Call/r\""));
+
+    let open = trap_world(
+        DENSE,
+        &["x"],
+        &[("go", &["phase"]), ("ping", &[])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x < 1 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre Ping using v on M::Call::ping { self.phase = 0 }\n\
+         time invariant Hold when { self.phase = 0 } { self.x <= 2 ms }\n",
+    );
+    let found = reproduced_time_lock(&open);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(1)));
+
+    let zeno = trap_world(
+        DENSE,
+        &["x"],
+        &[("ping", &["x"])],
+        "post Pinged using v on M::Call::ping { self.x = 0 ms }\n\
+         time invariant Frozen when { true } { self.x <= 0 ms }\n",
+    );
+    let found = reproduced_time_lock(&zeno);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(0)));
+
+    let ticks = trap_world(
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         time M tick M::Call::tick period 1 ms unit ms;\n",
+        &[],
+        &[("work", &["phase"]), ("tick", &[]), ("spin", &[])],
+        "pre Tick using v on M::Call::tick { self.phase = 0 }\n\
+         pre Work using v on M::Call::work { self.phase = 0 }\n\
+         post Worked using v on M::Call::work { self.phase = 1 }\n\
+         pre Spin using v on M::Call::spin { self.phase = 1 }\n",
+    );
+    let found = reproduced_time_lock(&ticks);
+    assert_eq!(found.prefix.len(), 1);
+    assert!(found.prefix[0]
+        .transition
+        .operation()
+        .contains("Call/work\""));
+}
+
+/// FR-240's order: at one node a local time-lock comes before a non-local
+/// one, and the first lock in canonical order is reported. Where `go`
+/// leaves while `x < 1` and nothing else is enabled under `x <= 2`, the
+/// valuations from 1 are trapped and `x = 2` is a local time-lock: the
+/// local one is reported, after delay 2. Over the time-locked `Ticker`,
+/// whose last state holds a local time-lock, the initial node's trap comes
+/// first.
+#[trace("TC-695")]
+#[test]
+fn a_local_lock_comes_first_at_a_node_and_the_first_node_first() {
+    let both = trap_world(
+        DENSE,
+        &["x"],
+        &[("go", &["phase"])],
+        "pre Go using v on M::Call::go { self.phase = 0 and self.x < 1 ms }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         time invariant Hold when { self.phase = 0 } { self.x <= 2 ms }\n",
+    );
+    let found = reproduced_time_lock(&both);
+    assert!(found.prefix.is_empty());
+    assert_eq!(found.final_delay, Some(whole(2)));
+
+    let first = violated(time_lock_item(&ticker(true)));
+    assert!(first.prefix.is_empty());
+    assert_eq!(first.final_delay, Some(whole(0)));
 }

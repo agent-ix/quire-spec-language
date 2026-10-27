@@ -104,8 +104,8 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, LawRole, LeafTerm, NodeTag,
-    NominalNode, OperationLaw, Owner, SemanticNode,
+    AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
+    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -225,6 +225,19 @@ pub enum EmitRefusal {
     /// A typed timed model cannot be serialized with its available literals.
     #[error("typed timed-model writer invariant: {0}")]
     TimedModelWriterInvariant(&'static str),
+    /// A checked refinement has no selected subject key to bind.
+    #[error("a checked refinement has no selected state-machine subject node")]
+    RefinementSubjectNotEmitted,
+    /// The refinement identity preimage exceeded the emitter's canonical
+    /// encoding limit or could not be encoded.
+    #[error("the checked refinement identity preimage could not be encoded")]
+    RefinementIdentityEncoding,
+    /// A checked refinement is not supported by the current emission slice.
+    #[error("the checked refinement body is not supported by the current V2 emission slice")]
+    RefinementNotEmitted,
+    /// A checked refinement's declaration occurrence has no original source region.
+    #[error("the checked refinement declaration has no source region")]
+    UnlocatedRefinementDeclaration,
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -249,7 +262,12 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
-            Self::TimedModelWriterInvariant(_) => Code::RuntimeInvariant,
+            Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
+                Code::RuntimeInvariant
+            }
+            Self::RefinementIdentityEncoding => Code::OutputFailure,
+            Self::RefinementNotEmitted => Code::UnsupportedConstruct,
+            Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
         }
     }
 
@@ -260,6 +278,7 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Some("not-yet-implemented")
             }
+            Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -267,7 +286,10 @@ impl EmitRefusal {
             | Self::Abstraction(_)
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
-            | Self::TimedModelWriterInvariant(_) => None,
+            | Self::TimedModelWriterInvariant(_)
+            | Self::RefinementSubjectNotEmitted
+            | Self::RefinementIdentityEncoding
+            | Self::UnlocatedRefinementDeclaration => None,
         }
     }
 }
@@ -1046,6 +1068,115 @@ fn source_map(
     Ok((entries, sources))
 }
 
+/// The first FR-375 emission slice: the complete row-empty model refinement
+/// body. Mapped refinements are added by later slices; this body is legal in
+/// its own right and its identity is bound to the concrete state-machine
+/// declaration.
+fn empty_model_refinement_node(
+    refinement: &CheckedRefinement,
+    region: &SourceRegion,
+) -> Result<(CheckedSemanticNodeV2, Vec<CheckedSourceMapEntry>), EmitRefusal> {
+    let abstract_node = node_id(
+        refinement
+            .abstract_subject_node()
+            .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
+    );
+    let concrete_node = node_id(
+        refinement
+            .concrete_subject_node()
+            .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
+    );
+    let (identity, typed_body) =
+        refinement
+            .v2_empty_model_emission()
+            .map_err(|error| match error {
+                qsl_semantics::check::RefinementV2EncodingError::MissingSubject => {
+                    EmitRefusal::RefinementSubjectNotEmitted
+                }
+                qsl_semantics::check::RefinementV2EncodingError::Body(_)
+                | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
+                    EmitRefusal::RefinementIdentityEncoding
+                }
+            })?;
+    let semantic_type = concrete_node;
+    let id = node_id(identity);
+    let declaration = CheckedOccurrence {
+        role: CheckedOccurrenceRole::Declaration,
+        ordinal: 0,
+    };
+    let generated = CheckedOccurrence {
+        role: CheckedOccurrenceRole::Generated,
+        ordinal: 0,
+    };
+    let source = source_artifact(region.source());
+    let source_region = CheckedSourceRegion {
+        source,
+        start: region.start(),
+        end: region.end(),
+    };
+    let occurrences = vec![declaration.clone(), generated.clone()];
+    let source_entries = [declaration, generated]
+        .into_iter()
+        .map(|occurrence| CheckedSourceMapEntry {
+            node_id: id.clone(),
+            role: occurrence.role,
+            ordinal: occurrence.ordinal,
+            regions: vec![source_region.clone()],
+        })
+        .collect();
+    let mut dependencies = vec![abstract_node];
+    dependencies.sort();
+    dependencies.dedup();
+    Ok((
+        CheckedSemanticNodeV2 {
+            node_id: id,
+            schema_version: GRAPH_V2.into(),
+            node_tag: CheckedNodeTag::Relation.as_wire().into(),
+            semantic_form: "refinement".into(),
+            semantic_type,
+            dependencies,
+            occurrences,
+            recursion_group: None,
+            nominal_identity_preimage: None,
+            declaration: None,
+            owner: None,
+            body: typed_body,
+        },
+        source_entries,
+    ))
+}
+
+/// A state-machine declaration selected from a checked domain package. The
+/// model record's content key is independent of the local alias.
+fn refinement_subject_node(
+    declaration: &quire_checked::key::DeclarationKey,
+    key: NodeKey,
+) -> CheckedSemanticNodeV2 {
+    let id = node_id(key);
+    CheckedSemanticNodeV2 {
+        node_id: id.clone(),
+        schema_version: GRAPH_V2.into(),
+        node_tag: CheckedNodeTag::Model.as_wire().into(),
+        semantic_form: "state_machine".into(),
+        semantic_type: id,
+        dependencies: Vec::new(),
+        occurrences: vec![CheckedOccurrence {
+            role: CheckedOccurrenceRole::Type,
+            ordinal: 0,
+        }],
+        recursion_group: None,
+        nominal_identity_preimage: None,
+        declaration: None,
+        owner: Some(CheckedNodeOwner::Model {
+            identity: declaration.package.as_str().into(),
+            node: declaration.node.as_str().into(),
+        }),
+        body: CheckedTerm::Aggregate {
+            members: Vec::new(),
+        },
+    }
+}
+
 /// `origin`'s role as FR-322 spells it.
 fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRole, EmitRefusal> {
     crate::checked_v2::occurrence_role(origin.role().as_str()).ok_or_else(|| {
@@ -1506,7 +1637,7 @@ fn emit_package_inner(
         .values()
         .filter(|candidate| !dropped.contains(&candidate.id))
         .collect();
-    if kept.is_empty() {
+    if kept.is_empty() && graph.refinements().is_empty() {
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
@@ -1522,6 +1653,57 @@ fn emit_package_inner(
         )
         .collect::<Result<Vec<_>, _>>()?;
     let mut nodes = wire_nodes;
+    let mut emitted_refinements = Vec::new();
+    for refinement in graph.refinements() {
+        if !refinement.v2_empty_model_body() {
+            return Err(EmitRefusal::RefinementNotEmitted);
+        }
+        let region = graph
+            .refinement_declaration_region(refinement)
+            .filter(|region| region.start() < region.end())
+            .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
+        for (declaration, key) in [
+            (
+                refinement.abstract_subject_declaration(),
+                refinement.abstract_subject_node(),
+            ),
+            (
+                refinement.concrete_subject_declaration(),
+                refinement.concrete_subject_node(),
+            ),
+        ] {
+            let declaration = declaration.ok_or(EmitRefusal::RefinementSubjectNotEmitted)?;
+            let key = key.ok_or(EmitRefusal::RefinementSubjectNotEmitted)?;
+            let node = refinement_subject_node(declaration, key);
+            if !nodes
+                .iter()
+                .any(|existing| existing.node_id == node.node_id)
+            {
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: node.node_id.clone(),
+                    role: CheckedOccurrenceRole::Type,
+                    ordinal: 0,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(region.source()),
+                        start: region.start(),
+                        end: region.end(),
+                    }],
+                });
+                let insertion = nodes.partition_point(|existing| {
+                    existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
+                });
+                nodes.insert(insertion, node);
+            }
+        }
+        let (node, entries) = empty_model_refinement_node(refinement, &region)?;
+        let insertion = nodes.partition_point(|existing| {
+            existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
+        });
+        nodes.insert(insertion, node.clone());
+        source_map.extend(entries);
+        sources.insert(source_artifact(region.source()));
+        emitted_refinements.push(refinement);
+    }
     if !graph.time_sources().is_empty() {
         let text_type = literal_type(&nodes, "text")
             .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
@@ -1709,7 +1891,19 @@ fn emit_package_inner(
         }
         rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
     }
-    let (profile_selections, mut laws) = split_laws(&order);
+    let (mut profile_selections, mut laws) = split_laws(&order);
+    for refinement in emitted_refinements {
+        let selection = CheckedSelection {
+            role: CheckedSelectionRole::TemporalProfile,
+            definition: CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: refinement.profile().identity.as_str().into(),
+            },
+        };
+        if !profile_selections.contains(&selection) {
+            profile_selections.push(selection);
+        }
+    }
     // The IEEE trigger includes a declared float with no IEEE application.
     // Keep the selected, admitted policy even when no node needs its law.
     if let Some(profile) = graph.scope().ieee_profile_selection() {
