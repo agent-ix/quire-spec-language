@@ -378,10 +378,10 @@ impl Checker<'_, '_> {
             SlotOwner::Node(_) | SlotOwner::Clause => None,
         };
         let mut nodes = self.nodes;
-        // The `finish` constraint is lowered into the protocol's `finish`
-        // node, so its tree is rooted at that node's own site (FR-096); every
-        // other slot keeps the clause location.
-        let finish_location = match slot.owner {
+        // The `finish` constraint and a role's `until` term are lowered into
+        // their own node, so each tree is rooted at that node's own site
+        // (FR-096); every other slot keeps the clause location.
+        let site_location = match slot.owner {
             SlotOwner::Node(node) => self
                 .protocol
                 .declarations
@@ -393,12 +393,16 @@ impl Checker<'_, '_> {
                         ProtocolSite::FinishBody(&declaration.name.name),
                     )
                 }),
-            SlotOwner::Clause | SlotOwner::Role(_) => None,
+            SlotOwner::Role(role) => self.protocol.roles.get(role).map(|role| {
+                protocol_location(
+                    &self.protocol.name.name,
+                    ProtocolSite::RoleUntil(&role.name.name),
+                )
+            }),
+            SlotOwner::Clause => None,
         };
         let declarations = ClauseDeclarations {
-            location: finish_location
-                .as_ref()
-                .unwrap_or(self.declarations.location),
+            location: site_location.as_ref().unwrap_or(self.declarations.location),
             ..*self.declarations
         };
         let typed = type_body(

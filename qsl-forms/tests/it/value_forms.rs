@@ -128,6 +128,8 @@ fn show(expression: ExprRef<'_>) -> String {
     let head = match expression.node() {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
+        ExprNode::Float32(bits) => format!("float32({bits:08x})"),
+        ExprNode::Float64(bits) => format!("float64({bits:016x})"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
         ExprNode::Quantity(quantity) => {
             format!(
@@ -578,16 +580,6 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
             "size<Int[0, 1]>(c)",
         ),
         ("null", Production::Primary, "null"),
-        (
-            "float32(bits: 0x00000000)",
-            Production::FloatValue,
-            "float32(bits: 0x00000000)",
-        ),
-        (
-            "float64(bits: 0x0000000000000000)",
-            Production::FloatValue,
-            "float64(bits: 0x0000000000000000)",
-        ),
     ];
     for (source, production, construct) in cases {
         let (text, cause, span) = refusal(&format!(
@@ -601,6 +593,23 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         assert_eq!(cause.catalog_code(), Code::UnsupportedConstruct);
         assert_eq!(span, Some(span_of(&text, construct)), "{source}");
     }
+}
+
+/// FR-397-AC-20: bit-pattern literals retain their exact width and bits.
+#[trace("FR-397-AC-20", "TC-1091")]
+#[test]
+fn ieee_bit_literals_build_with_exact_bits() {
+    let (_, function) = body("float32(bits: 0x80000000) + float32(bits: 0x00000000)");
+    let children = function.body.root().children();
+    assert!(matches!(function.body.root_node(), ExprNode::Binary { .. }));
+    assert!(matches!(children[0].node(), ExprNode::Float32(0x8000_0000)));
+    assert!(matches!(children[1].node(), ExprNode::Float32(0)));
+
+    let (_, function) = body("float64(bits: 0x7ff8000000000001)");
+    assert!(matches!(
+        function.body.root_node(),
+        ExprNode::Float64(0x7ff8_0000_0000_0001)
+    ));
 }
 
 /// TC-1046 C14 (FR-365 Inputs): a qualified third argument stays refused at

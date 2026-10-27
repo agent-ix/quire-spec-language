@@ -532,6 +532,10 @@ pub enum ExprNode {
     Boolean(bool),
     /// An integer literal.
     Integer(Integer),
+    /// The exact bits of `float32(bits: 0xHHHHHHHH)`.
+    Float32(u32),
+    /// The exact bits of `float64(bits: 0xHHHHHHHHHHHHHHHH)`.
+    Float64(u64),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
     /// A quantity literal such as `5 ms` (FR-393): the magnitude and the
@@ -829,6 +833,8 @@ impl ExprNode {
                 .collect(),
             Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Float32(_)
+            | Self::Float64(_)
             | Self::Rational(..)
             | Self::Quantity(_)
             | Self::String(_)
@@ -934,6 +940,8 @@ impl ExprNode {
             } => vec![accumulator, binder],
             Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Float32(_)
+            | Self::Float64(_)
             | Self::Rational(..)
             | Self::Quantity(_)
             | Self::String(_)
@@ -1006,6 +1014,8 @@ impl ExprNode {
             },
             Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Float32(_)
+            | Self::Float64(_)
             | Self::Rational(..)
             | Self::Quantity(_)
             | Self::String(_)
@@ -1055,6 +1065,8 @@ impl ExprNode {
             }
             Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Float32(_)
+            | Self::Float64(_)
             | Self::Rational(..)
             | Self::Quantity(_)
             | Self::String(_)
@@ -1289,6 +1301,16 @@ impl Expression {
     /// An integer literal.
     pub fn integer(value: impl Into<Integer>) -> Self {
         Self::single(ExprNode::Integer(value.into()))
+    }
+
+    /// The exact bits of a `float32(bits: ..)` value literal.
+    pub fn float32_bits(bits: u32) -> Self {
+        Self::single(ExprNode::Float32(bits))
+    }
+
+    /// The exact bits of a `float64(bits: ..)` value literal.
+    pub fn float64_bits(bits: u64) -> Self {
+        Self::single(ExprNode::Float64(bits))
     }
 
     /// A quoted text literal holding the decoded scalar sequence `text`.
@@ -1881,6 +1903,16 @@ impl Expression {
             tree: self,
             id: ExprId(index),
             node,
+        })
+    }
+
+    /// Whether this tree contains an IEEE bit-pattern literal.
+    pub fn contains_ieee_literal(&self) -> bool {
+        self.iter().any(|expression| {
+            matches!(
+                expression.node(),
+                ExprNode::Float32(_) | ExprNode::Float64(_)
+            )
         })
     }
 }

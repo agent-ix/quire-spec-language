@@ -5191,6 +5191,7 @@ mod call_site;
 mod call_site_owners;
 mod clause_paths;
 mod clause_set;
+mod consequent_events;
 mod frame;
 mod frame_occurrence_region;
 mod frame_replay;
