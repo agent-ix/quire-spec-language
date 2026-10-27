@@ -311,6 +311,11 @@ pub(super) fn derive(
             ValueType::Option(payload) => {
                 pending.push(child(&position, 0, payload, None)?);
             }
+            // A map is type-only (FR-386): it admits no value, so it
+            // declares no domain of its own; its value type is followed.
+            ValueType::Map(map) => {
+                pending.push(child(&position, 0, map.values(), None)?);
+            }
             ValueType::Composite(declaration) => {
                 let mut open = &position.composites;
                 let mut recursive = None;
@@ -354,6 +359,7 @@ pub(super) fn derive(
             | ValueType::String
             | ValueType::Text(_)
             | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
             | ValueType::Reference(_)
             | ValueType::Population(_)
             | ValueType::Uuid

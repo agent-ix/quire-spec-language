@@ -29,6 +29,8 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::Map(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid

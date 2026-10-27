@@ -379,6 +379,7 @@ fn holds_reference(
             holds
         }
         ValueType::Population(_) => true,
+        ValueType::Map(map) => holds_reference(map.values(), types, visiting),
         ValueType::Boolean
         | ValueType::Int(_)
         | ValueType::Integer
@@ -386,6 +387,7 @@ fn holds_reference(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid

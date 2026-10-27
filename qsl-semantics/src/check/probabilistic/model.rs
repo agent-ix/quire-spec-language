@@ -1028,6 +1028,9 @@ impl Pass<'_, '_> {
         match self.typed_reward(form, &parameters, &location, cx, nodes) {
             Ok((body, slots)) => {
                 let typed = body.root().value_type();
+                // A `BoundedQuantity` reward type is a conservative refusal:
+                // no source form builds the type yet (QSL-1155), and the
+                // reward arithmetic has no bound-checked accumulation.
                 if !matches!(
                     typed,
                     ValueType::Integer | ValueType::Int(_) | ValueType::Quantity(_)
