@@ -178,7 +178,9 @@ impl ModelSystem<'_> {
             let parameters = application.declaration.parameters();
             let domains = parameters
                 .iter()
-                .map(|(_, value_type)| Domain::of(value_type, &references, self.types))
+                .map(|(_, value_type)| {
+                    Domain::of(value_type, &references, self.types, &self.record_orders)
+                })
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| stop(BROKEN))?;
             let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
@@ -226,8 +228,8 @@ impl ModelSystem<'_> {
             .into_iter()
             .map(|row| row.reference)
             .collect();
-        let domain =
-            Domain::of(result_type, &references, self.types).ok_or_else(|| stop(BROKEN))?;
+        let domain = Domain::of(result_type, &references, self.types, &self.record_orders)
+            .ok_or_else(|| stop(BROKEN))?;
         if domain.len() > super::RESULT_ORDER_LIMIT {
             return Err(stop(crate::simulation::model::EXHAUSTED));
         }
@@ -281,7 +283,7 @@ impl ModelSystem<'_> {
             .zip(request.arguments)
             .map(|((_, value_type), supplied)| match supplied {
                 Some(_) => Ok(None),
-                None => Domain::of(value_type, &references, self.types)
+                None => Domain::of(value_type, &references, self.types, &self.record_orders)
                     .map(Some)
                     .ok_or_else(|| stop(BROKEN)),
             })

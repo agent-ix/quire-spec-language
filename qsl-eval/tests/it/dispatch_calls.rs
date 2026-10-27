@@ -1952,6 +1952,7 @@ fn type_identities_hold_only_type_level_declarations() {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }));
     let view = bridge_view(&domain_package);
     let expected: BTreeMap<DeclarationKey, EffectiveId> = ["model.A", "model.B"]
@@ -2695,6 +2696,7 @@ fn checked_dispatch_operation_refuses_a_target_with_only_a_receiver_scoped_effec
                 presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
+                position: 0,
             }));
         match not_a_query_refusal(&domain_package) {
             DispatchBridgeRefusal::NotAQuery(refusal) => {

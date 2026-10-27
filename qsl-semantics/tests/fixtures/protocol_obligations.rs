@@ -47,8 +47,7 @@ fn field(owner: &str, name: &str, value_type: ValueTypeRef) -> DomainPackageReco
         },
         presence: quire_exact::Presence::Required,
         subsets: Vec::new(),
-        redefines: None,
-    })
+        redefines: None, position: 0, })
 }
 
 fn record(name: &str) -> DomainPackageRecord {

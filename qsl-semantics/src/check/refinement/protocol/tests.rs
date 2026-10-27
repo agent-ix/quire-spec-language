@@ -88,6 +88,7 @@ fn abstract_model() -> SelectedModel {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
     ];
     let operation = |name: &str, parameters: Vec<OperationParameterRecord>| {

@@ -98,6 +98,7 @@ impl Fixture {
                 presence: quire_exact::Presence::Required,
                 subsets: decl.subsets.iter().map(|target| key(target)).collect(),
                 redefines: decl.redefines.map(key),
+                position: 0,
             })
         }));
         DomainPackage::new(DomainPackageRef::fixture("n01"), records)

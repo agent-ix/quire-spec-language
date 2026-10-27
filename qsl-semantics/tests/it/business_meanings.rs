@@ -297,6 +297,7 @@ fn normalization_owner_package() -> DomainPackage {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         })
     };
     let op = |owner: &str, name: &str| {

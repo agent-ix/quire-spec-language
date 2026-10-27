@@ -131,6 +131,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 presence: Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
+                position: 0,
             }),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: advance,
@@ -1408,6 +1409,7 @@ fn presence_field(multiplicity: Multiplicity, presence: Presence) -> FieldMember
         presence,
         subsets: Vec::new(),
         redefines: None,
+        position: 0,
     }
 }
 

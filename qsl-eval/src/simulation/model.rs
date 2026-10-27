@@ -448,6 +448,9 @@ pub struct ModelSystem<'a> {
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
     /// state, in ascending constraint order.
     member_bounds: Vec<qsl_semantics::model::state::MemberBound>,
+    /// Each record's slots in declaration order, for its enumerated domain
+    /// (FR-120, FR-215).
+    pub(crate) record_orders: domain::RecordOrders,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -642,6 +645,7 @@ impl<'a> ModelSystem<'a> {
             .filter(|clock| clock.slots().next().is_some())
             .map(|clock| clock.field().clone())
             .collect();
+        let record_orders = domain::record_orders(types, &model.record_orders());
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
         // A field's bounds, read on each state; a parameter's and a result's
@@ -676,6 +680,7 @@ impl<'a> ModelSystem<'a> {
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             clock_collections,
+            record_orders,
         };
         system.check_rewards()?;
         Ok(system)

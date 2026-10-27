@@ -404,6 +404,11 @@ pub struct FieldMemberRecord {
     /// inherited field or operation this member redefines, or `None` when
     /// it declares no redefinition. An inline property of the field itself.
     pub redefines: Option<DeclarationKey>,
+    /// This field's position in its owner's `fields` array: its declaration
+    /// order, which orders a record's components in an enumerated value
+    /// domain (FR-120, FR-215). Data only: slot order, keys and digests
+    /// stay name-sorted.
+    pub position: usize,
 }
 
 /// The value domain carried by a scalar type declaration.

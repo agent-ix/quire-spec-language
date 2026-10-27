@@ -3152,6 +3152,7 @@ fn read_field_member(
     owner_identity: &str,
     field: &Value,
     at: &str,
+    position: usize,
 ) -> Result<FieldMemberRecord, ModelRefusal> {
     let ctx = NodeCtx::new(field, at);
     let node = ctx.str_field("identity")?;
@@ -3195,6 +3196,7 @@ fn read_field_member(
         presence,
         subsets,
         redefines,
+        position,
     })
 }
 
@@ -3243,6 +3245,7 @@ pub(super) fn read_object_type(
             node,
             field,
             &format!("{fields_at}[{position}]"),
+            position,
         )?));
     }
     let operations_at = format!("{at}.operations");
@@ -3345,6 +3348,7 @@ pub(super) fn read_record_value_type(
             node,
             field,
             &format!("{fields_at}[{position}]"),
+            position,
         )?));
     }
     let operations_at = format!("{at}.operations");
@@ -7726,6 +7730,7 @@ mod tests {
             "ix://acme/orders/Note",
             &field,
             "$.fields[0]",
+            0,
         )
         .expect_err("textProfile on a String member");
         assert_eq!(refusal.code, Code::UnsupportedConstruct);
@@ -8837,6 +8842,7 @@ mod tests {
             "ix://acme/orders/Widget",
             &field,
             "$.types[0].fields[0]",
+            0,
         )
         .expect_err("an unrecognized presence value refuses rather than admitting it");
         assert_eq!(refusal.code, Code::InvalidModelBinding);
@@ -8863,6 +8869,7 @@ mod tests {
             "ix://acme/orders/Widget",
             &field,
             "$.types[0].fields[0]",
+            0,
         )
         .expect_err("a missing presence refuses rather than admitting it");
         assert_eq!(refusal.code, Code::InvalidModelBinding);
@@ -8886,6 +8893,7 @@ mod tests {
             "ix://acme/orders/Widget",
             &field,
             "$.types[0].fields[0]",
+            0,
         )
         .expect_err("a non-string presence refuses rather than admitting it");
         assert_eq!(refusal.code, Code::InvalidModelBinding);

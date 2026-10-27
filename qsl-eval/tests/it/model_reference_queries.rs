@@ -100,6 +100,7 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
         presence: quire_exact::Presence::Required,
         subsets: Vec::new(),
         redefines: None,
+        position: 0,
     })
 }
 

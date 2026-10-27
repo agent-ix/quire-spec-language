@@ -2576,6 +2576,23 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
                 .collect::<Vec<_>>()
         })
     };
+    // FR-120-AC-25: each of these fields is an unbounded root, so an
+    // analysis settles `NotSimulated::RequiresBound` before expanding.
+    {
+        let world = world_holding(
+            document.clone(),
+            "",
+            &only(&["send"], ""),
+            json!({"t": timer.clone(), "h": holder("0"), "ds": {"sequence": []},
+                "count": {"integer": "3"}}),
+        );
+        let held = system(&world);
+        let Err(NotSimulated::RequiresBound(bound)) = check_model_bounds(&held, BOUND_POSITIONS)
+        else {
+            panic!("h, ds and count require a bound");
+        };
+        assert_eq!(format!("{:?}", bound.domains).matches("Node {").count(), 3);
+    }
     let not_computed = Err(qsl_eval::simulation::ExpansionStop {
         cause: CatalogCode::new("unsupported_construct", "write-not-computed"),
         limit: None,
@@ -2684,6 +2701,9 @@ fn cells_document(
             .push(member);
     }
     for operation in all[1]["operations"].as_array_mut().expect("operations") {
+        // No operation creates a `Call`, so only the fields a frame names
+        // are granted.
+        operation["frame"]["creates"] = json!([]);
         let granted: &[&str] = match operation["name"].as_str() {
             Some("work") => work,
             Some("tick") => tick,
@@ -2952,10 +2972,59 @@ fn a_record_with_an_unbounded_component_requires_a_bound() {
             panic!("{granted} requires a bound: {explored:?}");
         };
         assert_eq!(
-            format!("{:?}", bound.domains).matches("Node").count(),
+            format!("{:?}", bound.domains).matches("Node {").count(),
             1,
             "{granted}: {:?}",
             bound.domains
         );
     }
+}
+
+/// Part of FR-120-AC-23 (TC-1270): an operation parameter `c: Color` and a
+/// result of type `Color` (`red`, `blue`, `green`) are finite domains, so
+/// the model passes FR-120's requires-bound check, and `work` (no clause,
+/// granting nothing) has one successor for each parameter value, its result
+/// the first of its domain in canonical order.
+#[trace("TC-1270")]
+#[test]
+fn an_enum_parameter_and_result_are_finite() {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let mut document: Json =
+        serde_json::from_slice(&cells_document(vec![], vec![], &[], &[])).expect("JSON");
+    let color = ident("Color");
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        if operation["name"] == "work" {
+            let identity = ident("Call/work/c");
+            operation["params"] = json!([{
+                "identity": identity, "origin": origin(&identity), "name": "c",
+                "typeRef": color, "presence": "required", "nullable": false,
+                "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            }]);
+            operation["returns"] = json!({"typeRef": color, "nullable": false,
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true}});
+        }
+    }
+    let world = world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(&["work"], ""),
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}}}),
+    );
+    let held = system(&world);
+    check_model_bounds(&held, BOUND_POSITIONS)
+        .unwrap_or_else(|refusal| panic!("an enum is bounded: {refusal:?}"));
+    let initial = held.initial().remove(0);
+    let work = held
+        .successors(&initial)
+        .expect("the state expands")
+        .successors
+        .iter()
+        .filter(|(transition, _)| format!("{transition:?}").contains("Call/work"))
+        .count();
+    assert_eq!(work, 3);
 }

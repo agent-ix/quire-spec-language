@@ -103,7 +103,7 @@ fn argument_domains(
                 .support(application.declaring, &application.name, position)
             {
                 Some(support) => Some(Domain::Listed(support.values())),
-                None => Domain::of(value_type, &references, system.types),
+                None => Domain::of(value_type, &references, system.types, &system.record_orders),
             }
         })
         .collect::<Option<Vec<_>>>()
@@ -653,7 +653,14 @@ impl Run<'_, '_, '_> {
                     continue;
                 }
                 let domain = (!system.clock_collections.contains(&field.key))
-                    .then(|| Domain::of(&field.value_type, &post_references, system.types))
+                    .then(|| {
+                        Domain::of(
+                            &field.value_type,
+                            &post_references,
+                            system.types,
+                            &system.record_orders,
+                        )
+                    })
                     .flatten()
                     .ok_or_else(|| stop(BROKEN))?;
                 dimensions.push(Dimension {
@@ -878,7 +885,14 @@ impl Run<'_, '_, '_> {
                 // unbounded collection) is bounded by no frame that grants it,
                 // so it cannot be written here.
                 let Some(domain) = (!system.clock_collections.contains(&field.key))
-                    .then(|| Domain::of(&field.value_type, &references, system.types))
+                    .then(|| {
+                        Domain::of(
+                            &field.value_type,
+                            &references,
+                            system.types,
+                            &system.record_orders,
+                        )
+                    })
                     .flatten()
                 else {
                     continue;
@@ -1017,8 +1031,13 @@ impl Run<'_, '_, '_> {
         let Some(result_type) = self.application.declaration.result() else {
             return Ok(None);
         };
-        let domain = Domain::of(result_type, post_references, self.walk.system.types)
-            .ok_or_else(|| stop(BROKEN))?;
+        let domain = Domain::of(
+            result_type,
+            post_references,
+            self.walk.system.types,
+            &self.walk.system.record_orders,
+        )
+        .ok_or_else(|| stop(BROKEN))?;
         if domain.len() > RESULT_ORDER_LIMIT {
             return Err(stop(EXHAUSTED));
         }
@@ -1277,7 +1296,13 @@ impl Run<'_, '_, '_> {
             let fields = system.fields.get(type_key).ok_or_else(|| stop(BROKEN))?;
             for field in fields {
                 if (!system.clock_collections.contains(&field.key)
-                    && Domain::of(&field.value_type, &references, system.types).is_some())
+                    && Domain::of(
+                        &field.value_type,
+                        &references,
+                        system.types,
+                        &system.record_orders,
+                    )
+                    .is_some())
                     || (receiver && selected.contains(&field.key))
                     || carried.contains(field.name.as_str())
                 {

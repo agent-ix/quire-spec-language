@@ -85,11 +85,17 @@ impl<'a> ModelSystem<'a> {
             .map(|row| row.reference)
             .collect();
         if let quire_exact::ValueType::Composite(_) | quire_exact::ValueType::Enum(_) = value_type {
-            return super::domain::composite_values(value_type, &references, self.types, || {
-                budget.charge()
-            });
+            return super::domain::composite_values(
+                value_type,
+                &references,
+                self.types,
+                &self.record_orders,
+                || budget.charge(),
+            );
         }
-        let Some(domain) = super::domain::Domain::of(value_type, &references, self.types) else {
+        let Some(domain) =
+            super::domain::Domain::of(value_type, &references, self.types, &self.record_orders)
+        else {
             return Ok(None);
         };
         let mut values = Vec::new();
