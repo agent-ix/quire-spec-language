@@ -1531,6 +1531,7 @@ pub(super) fn model_node_content(
     form: &'static str,
 ) -> NodeContent {
     NodeContent {
+        owner_model: None,
         node_tag,
         semantic_form: form,
         semantic_type: None,
@@ -2000,6 +2001,7 @@ impl<'a> Lowering<'a> {
                 key,
                 bytes,
                 NodeContent {
+                    owner_model: None,
                     node_tag: NodeTag::ScalarType,
                     semantic_form,
                     semantic_type,

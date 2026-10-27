@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-071
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-323
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-072
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-098
@@ -167,39 +169,68 @@ is passed to FR-100 `run` as its `&ObjectEnvironment` context.
 
 #### `replay-request` field mapping
 
-The `replay-request` JSON is a corpus-v1 harness adapter, not a new FR-071
-product wire. It has the same named request members and member values as
-`ReplayRequestWire`; each maps unchanged to the same-named typed field:
+A `replay-request` file SHALL validate against QSpec FR-336's
+`$defs.ReplayRequest` before adaptation. It is corpus-v1 harness data, not a
+new FR-071 product wire. Its 15 top-level members map to `ReplayRequestWire`
+field-for-field:
 
-| JSON member | `ReplayRequestWire` field |
-| --- | --- |
-| `profile_selections` | `profile_selections` |
-| `package_id` | `package_id` |
-| `source_digests` | `source_digests` |
-| `dependencies` | `dependencies` |
-| `replay_target` | `replay_target` |
-| `source` | `source` |
-| `obligation_identity` | `obligation_identity` |
-| `backend` | `backend` |
-| `state_environment` | `state_environment` |
-| `accounting_limits` | `accounting_limits` |
-| `stage_limits` | `stage_limits` |
-| `supplied_limits` | `supplied_limits` |
-| `object_environment` | `object_environment` |
-| `declared_domains` | `declared_domains` |
-| `byte_provision` | `byte_provision` |
+| Corpus member | FR-071 type field | Adapter mapping |
+| --- | --- | --- |
+| `profile_selections` | `profile_selections` | Ordered `{profile, value}` `ProfileSelection` records. |
+| `package_id` | `package_id` | FR-323 `package.package_id` digest record, split to the typed optional digest domain and digest text. |
+| `source_digests` | `source_digests` | Ordered source records with the four FR-001 labels and digest domain/digest. |
+| `dependencies` | `dependencies` | Ordered `{identity, package_id, sources}` records; values follow FR-323. |
+| `replay_target` | `replay_target` | Request target with FR-323 target members and the request-only fields described below. |
+| `source` | `source` | FR-323 `ReplaySource` `witness` or `input` arm. |
+| `obligation_identity` | `obligation_identity` | Decode 64 lowercase hex characters to 32 bytes. |
+| `backend` | `backend` | Carry the backend identity string unchanged. |
+| `state_environment` | `state_environment` | Preserve ordered two-string pairs as stored. |
+| `accounting_limits` | `accounting_limits` | Map all ten FR-255 scalar counters; parse canonical unsigned decimal strings to `u64`. |
+| `stage_limits` | `stage_limits` | Preserve FR-255 setting-name keys; parse each canonical unsigned decimal value to `u64`, then use the existing closed setting decoder. |
+| `supplied_limits` | `supplied_limits` | Map `null` to the typed default/absence input; otherwise parse the complete three-field FR-323 object to `SuppliedLimits`. |
+| `object_environment` | `object_environment` | Map `null` or the FR-106 identity labels plus `sha256-jcs:<hex>` digest string to `ObjectEnvironmentRef`. |
+| `declared_domains` | `declared_domains` | Map each structural `DeclaredDomain` to the existing `ProofBound` domain, optional kind, and finite bound. |
+| `byte_provision` | `byte_provision` | Resolve each `bytes_path`, read raw bytes, and construct the typed `(digest_domain, digest, bytes)` entry. |
 
-Each adapter `byte_provision` row is exactly
-`{digest_domain, digest, bytes_path}`. The first two values map to the
-existing provision tuple's optional domain and digest. `bytes_path` is
-relative to the directory containing the `replay-request` file and MUST
-resolve without `..` or an absolute path to exactly one `kind: bytes` path
-listed by that vector. The runner reads those bytes unchanged and constructs
-the tuple `(digest_domain, digest, bytes)`. The typed request contains no
-path. FR-071's closed-domain, digest, completeness and content checks remain
-authoritative. The runner passes the typed request to `qsl_replay::replay`
-and compares its FR-072 result using FR-286's outcome document encoding.
+`source` accepts `{"kind":"witness","transcript":...}` or
+`{"kind":"input","assignments":[...]}`, the FR-323 `ReplaySource`
+Witness/Input arms. A witness's transcript is parsed by `Witness::parse`;
+its decoded values are not duplicated in the input. An input assignment has
+`parameter` (the 64-hex node id) and `value`; values use FR-336's closed
+structural `WitnessValue` union and bind by parameter node id, never array
+position. Other `ReplaySource` variants are outside this corpus adapter's
+v1 replay input.
 
+`replay_target.members` carries exactly one FR-323 target: a function's
+qualified name, `frame_operation: {object, operation}`, or a state clause's
+qualified name. The `RequestTargetWire` wrapper additionally requires
+`arguments` (boolean), `occurrence_key` (null or `{node_id, role, ordinal}`)
+and `over` (null or `{population, key}`). Each maps field-for-field; ordinal
+is parsed from its canonical unsigned decimal string. FR-323 target
+validation and FR-071 refusal precedence remain authoritative.
+
+For scalar accounting limits, each of `integer_bits`, `decimal_digits`,
+`scale_expansion`, `text_input_bytes`, `text_scalars`, `normalized_scalars`,
+`unit_edges`, `value_occurrences`, `work_units`, and `result_units` is
+required and parsed as `u64`. Stage-limit unknown names continue to refuse
+through FR-255; the adapter does not discard them. Every structural object
+and tagged value is closed, every tagged variant uses its FR-336 `kind`, and
+unknown members are refused before constructing `ReplayRequestWire`.
+
+The vector's `expected.value` for replay uses FR-323's result envelope
+`results` member with exactly the single result corresponding to the request's
+one obligation. The nested result is the FR-072 typed replay result, including
+its Witness/Input arm and typed settlement; the adapter compares typed
+members, not debug or display text. `expected.disposition: refusal` continues
+to use FR-336's ordinary refusal record.
+
+Each `byte_provision` row is exactly `{digest_domain, digest, bytes_path}`.
+The path is relative to the vector directory and MUST resolve
+to exactly one vector file listed as `kind: bytes`; absolute, missing,
+unlisted and parent-traversing paths refuse before request construction. The
+adapter reads raw bytes and supplies the tuple keyed by the row's digest.
+The path never enters `ReplayRequestWire`; FR-071 digest, completeness and
+content validation remain authoritative.
 ### Settlement
 
 If executing a vector panics, returns an internal fault, or cannot read a
@@ -243,13 +274,22 @@ for a `passed` vector the bytes its subject's entry point returned, SHALL be
 the same whatever number of other threads the calling process runs, so
 state shared between vectors or between threads cannot change a result.
 
-For a `passed` vector the compared output bytes are:
+Settlement compares the subject's typed result with `expected.value`. The
+bytes used for determinism are a separate observation and are never substituted
+for that expected value. For replay, the adapter SHALL map the FR-072
+`ReplayResult` into the FR-323 envelope `{"results":[one FR-072 result]}` for
+settlement. Separately, determinism compares the raw FR-286 outcome-document
+bytes returned by two executions of the same replay request; those bytes are
+compared only with each other, never with `expected.value`.
 
-| Entry point | Output bytes |
-| --- | --- |
-| `compile` | the encoded checked package |
-| `run`, `replay` | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
-| `format` | the formatted text |
+For a `passed` vector, settlement and determinism use these representations:
+
+| Entry point | Value compared with `expected.value` for settlement | Output bytes compared between repeated executions for determinism |
+| --- | --- | --- |
+| `compile` | the encoded checked package | the encoded checked package |
+| `run` | the typed result defined by its public entry point | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
+| `replay` | the FR-323 `{"results":[one FR-072 result]}` envelope mapped from the typed FR-072 `ReplayResult` | the raw FR-286 outcome-document bytes |
+| `format` | the formatted text | the formatted text |
 
 Vector ids are ordered bytewise on their id strings, as FR-075 orders
 `BackendId`s. This is also the ascending vector-id order of the FR-352
