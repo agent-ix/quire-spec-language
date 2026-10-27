@@ -81,6 +81,98 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     outcome
 }
 
+/// Evaluates the source IEEE square-root intrinsic at the selected width and
+/// rounding mode.
+fn sqrt(float: &str, operand: u64) -> Outcome<Value> {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function root using v(a: {float}): {float} pure {{ quire::value::ieee::sqrt(a) }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits the floating type");
+    declarations.ieee_profile = Some(ieee_profile());
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("root").expect("root is an identifier"),
+            vec![Value::Float(IeeeValue::binary64(operand))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("a kernel outcome, not {:?}", evaluation.outcome);
+    };
+    outcome
+}
+
+/// Evaluates same-width IEEE equality through source lowering.
+fn equal(left: u64, right: u64, operator: &str) -> Outcome<Value> {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function compare using v(a: Float64[nearest-even], b: Float64[nearest-even]): Boolean pure {{ a {operator} b }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits the floating type");
+    declarations.ieee_profile = Some(ieee_profile());
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("compare").expect("compare is an identifier"),
+            vec![
+                Value::Float(IeeeValue::binary64(left)),
+                Value::Float(IeeeValue::binary64(right)),
+            ],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("a kernel outcome, not {:?}", evaluation.outcome);
+    };
+    outcome
+}
+
 fn bits(outcome: Outcome<Value>) -> u64 {
     match outcome {
         Outcome::Completed(Value::Float(float)) => float.bits(),
@@ -125,6 +217,42 @@ fn the_evaluator_applies_the_rounding_mode_the_float_type_carries() {
         }
         other => panic!("strict exact refuses an inexact sum, not {other:?}"),
     }
+}
+
+#[trace("TC-1091", "FR-397-AC-15", "FR-397-AC-20")]
+#[test]
+fn ieee_sqrt_rounds_and_refuses_inexact_results_in_exact_mode() {
+    assert_eq!(
+        bits(sqrt("Float64[nearest-even]", 0x4000_0000_0000_0000)),
+        0x3ff6_a09e_667f_3bcd,
+    );
+    assert_eq!(
+        bits(sqrt("Float64", 0x4010_0000_0000_0000)),
+        0x4000_0000_0000_0000,
+    );
+    assert!(matches!(
+        sqrt("Float64", 0x4000_0000_0000_0000),
+        Outcome::Refused(Refusal::IeeeNotExact { .. })
+    ));
+}
+
+/// FR-397-AC-20: IEEE equality is numeric, so signed zero is equal and NaN
+/// is unequal even to the same NaN payload.
+#[trace("FR-397-AC-20", "FR-322-AC-112")]
+#[test]
+fn ieee_equality_uses_numeric_equal_and_not_bit_identity() {
+    assert!(matches!(
+        equal(0x0000_0000_0000_0000, 0x8000_0000_0000_0000, "="),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert!(matches!(
+        equal(0x7ff8_0000_0000_0001, 0x7ff8_0000_0000_0001, "!="),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert!(matches!(
+        equal(0x3ff0_0000_0000_0000, 0x4000_0000_0000_0000, "="),
+        Outcome::Completed(Value::Boolean(false))
+    ));
 }
 
 /// QSpec FR-322:564 pins the rounding mode by operand type: operands of the

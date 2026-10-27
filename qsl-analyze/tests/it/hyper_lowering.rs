@@ -9,13 +9,13 @@ use qsl_eval::hyper::{
     StepMatch,
 };
 use qsl_eval::model_subject::AtomStop;
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
+use qsl_eval::simulation::model::{ClauseOutcome, ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_semantics::check::{operation_text, FormulaNode, FormulaNodeId, StepRead};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{LimitKind, Meter, Undefined};
+use quire_exact::{LimitKind, Meter, Refusal, Undefined};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::counter::{UNLIMITED, ZERO};
@@ -118,6 +118,36 @@ fn an_atom_is_evaluated_over_its_components_and_is_deterministic() {
     for kind in LimitKind::ALL {
         assert_eq!(untouched.consumed(kind), 0, "{kind:?}");
     }
+}
+
+/// FR-487-AC-12: an exact square root that is not representable refuses at
+/// the checked hyper atom and reaches the letters boundary as the kernel
+/// outcome.
+#[trace("TC-1264", "FR-487-AC-12", "FR-397-AC-20")]
+#[test]
+fn an_exact_sqrt_refusal_reaches_the_hyper_atom_boundary() {
+    let declaration = "hyper Root using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         { always (holds(v.l @ a = v.l @ b) and \
+         holds(quire::value::ieee::sqrt(float64(bits: 0x4000000000000000)) = \
+         float64(bits: 0x3ff6a09e667f3bcd))) }";
+    let world = World::new(Vault::Secure, false, &[(0, 0)], declaration);
+    let system = system(&world);
+    let initial = system.initial();
+    let [state] = &initial[..] else {
+        panic!("one initial state");
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let outcome = read(&world, atom(&world, 1), &[state, state], &mut meter);
+    assert!(
+        matches!(
+            outcome,
+            Err(AtomStop::Refused(ClauseOutcome::KernelRefused(
+                Refusal::IeeeNotExact { .. }
+            )))
+        ),
+        "{outcome:?}"
+    );
 }
 
 /// FR-487-AC-3: a divisor that is zero in one component is undefined there.

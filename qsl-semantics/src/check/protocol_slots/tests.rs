@@ -614,13 +614,14 @@ fn the_reference_protocols_check_with_their_edges() {
     );
 }
 
-/// FR-092-AC-18, FR-383: a replicated role (and the capture, the `terminal`
-/// and the channels of the same protocols) is never checked to a package
-/// without its node: the production check refuses it `NotEmitted`, naming the
-/// construct and the ticket that writes it.
+/// FR-092-AC-18, FR-383: the constructs of a replicated-role protocol whose
+/// node is not written yet (its `event` and `check` controls and its capture)
+/// are never checked to a package without their nodes: the production check
+/// refuses each `NotEmitted`, naming the construct and the ticket that writes
+/// it, and the replicated role itself is not among them.
 #[trace("FR-092-AC-18", "FR-383-AC-1")]
 #[test]
-fn a_replicated_role_refuses_the_protocol_naming_its_ticket() {
+fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
     let constructs = |text: &str| -> Vec<ProtocolConstruct> {
         let text = text.replacen(
             "model M",
@@ -643,11 +644,10 @@ fn a_replicated_role_refuses_the_protocol_naming_its_ticket() {
     assert_eq!(
         found,
         [
-            ProtocolConstruct::ReplicatedRoles,
             ProtocolConstruct::Control("event"),
             ProtocolConstruct::Control("check"),
             ProtocolConstruct::Captures
         ]
     );
-    assert_eq!(found[0].tracking(), "QSL-1125");
+    assert_eq!(found[0].tracking(), "QSL-1126");
 }
