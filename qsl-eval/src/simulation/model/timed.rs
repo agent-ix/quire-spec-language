@@ -38,6 +38,8 @@ use qsl_semantics::check::{
     PlaceStep, QuantifiedFamily, SlotRef, TimeSourceKind, TimedModel, Urgency,
 };
 
+use quire_checked::key::DeclarationKey;
+
 use super::encode::declaration_text;
 use super::state_predicate::PredicateReading;
 use super::walk::{expand_enabled, stop};
@@ -819,14 +821,88 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         // A slot the initial state does not hold is not live; its value is
         // reset when the slot becomes live.
         let zero = ClockValuation(vec![zero(); self.places.len()]);
-        self.system
-            .initial
-            .iter()
-            .map(|discrete| TimedState {
-                discrete: discrete.clone(),
+        let mut discrete: Vec<(u64, ModelSimState)> = Vec::new();
+        for state in &self.system.initial {
+            discrete.extend(self.unbounded_counts(state));
+        }
+        // Ascending count (FR-230 "Initial element count"), each base
+        // state's own order kept among equal counts.
+        discrete.sort_by_key(|(added, _)| *added);
+        discrete
+            .into_iter()
+            .map(|(_, discrete)| TimedState {
+                discrete,
                 clocks: zero.clone(),
             })
             .collect()
+    }
+
+    /// `state` with each element count of a pure-clock collection with no
+    /// declared maximum ranging up from its `min` (FR-230 "Initial element
+    /// count"), each with the elements it adds: every distribution of `k`
+    /// added elements over the counts, for `k` = 0, 1, … while the live
+    /// clocks stay within `max_clocks`, then one state past the bound, at
+    /// which the analysis stops `limit-reached`. Every element adds one live
+    /// clock, so every distribution of one `k` is within the bound or none
+    /// is.
+    fn unbounded_counts(&self, state: &ModelSimState) -> Vec<(u64, ModelSimState)> {
+        let holders: Vec<(DeclarationKey, String, DeclarationKey, u64)> = self
+            .system
+            .clock_counts
+            .iter()
+            .filter(|(_, _, _, max)| max.is_none())
+            .flat_map(|(type_key, field, min, _)| {
+                state
+                    .state
+                    .populations
+                    .iter()
+                    .flat_map(move |(population, objects)| {
+                        objects
+                            .iter()
+                            .filter(move |(_, object)| object.type_identity == *type_key)
+                            .map(move |(key, _)| {
+                                (population.clone(), key.clone(), field.key.clone(), *min)
+                            })
+                    })
+            })
+            .collect();
+        if holders.is_empty() {
+            return vec![(0, state.clone())];
+        }
+        let grown = |added: &[u64]| {
+            let mut next = state.clone();
+            for ((population, key, field, min), extra) in holders.iter().zip(added) {
+                let Some(object) = next
+                    .state
+                    .populations
+                    .get_mut(population)
+                    .and_then(|objects| objects.get_mut(key))
+                else {
+                    continue;
+                };
+                object.fields.insert(
+                    field.clone(),
+                    quire_exact::Value::Integer(Integer::from(min.saturating_add(*extra))),
+                );
+            }
+            next
+        };
+        let mut states = Vec::new();
+        for total in 0_u64.. {
+            let level: Vec<ModelSimState> = distributions(total, holders.len())
+                .iter()
+                .map(|added| grown(added))
+                .collect();
+            let Some(first) = level.first() else {
+                break;
+            };
+            if self.live_clocks(first) > self.max_clocks.get() {
+                states.push((total, first.clone()));
+                break;
+            }
+            states.extend(level.into_iter().map(|state| (total, state)));
+        }
+        states
     }
 
     /// Each predicate at `state` about each object of `context`'s universe:
@@ -2296,4 +2372,24 @@ fn at_slot(binding: &ElementBinding, slot: u64) -> ElementBinding {
     } else {
         binding.clone()
     }
+}
+
+/// Every way to distribute `total` over `parts` counts, in lexicographic
+/// order.
+fn distributions(total: u64, parts: usize) -> Vec<Vec<u64>> {
+    let Some(rest) = parts.checked_sub(1) else {
+        return if total == 0 {
+            vec![Vec::new()]
+        } else {
+            Vec::new()
+        };
+    };
+    let mut all = Vec::new();
+    for first in 0..=total {
+        for mut tail in distributions(total - first, rest) {
+            tail.insert(0, first);
+            all.push(tail);
+        }
+    }
+    all
 }

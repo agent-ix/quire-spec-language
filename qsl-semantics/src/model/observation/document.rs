@@ -1622,7 +1622,34 @@ fn admit_native(
         }
         // Type fit (check 6) refuses every other pairing before any length,
         // naming no member (FR-106-AC-35).
-        _ => Err(admission_record(
+        (
+            NativeKind::String
+            | NativeKind::Uuid
+            | NativeKind::Timestamp
+            | NativeKind::Text
+            | NativeKind::Quantity
+            | NativeKind::Rational
+            | NativeKind::Decimal,
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::BoundedQuantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Option(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Collection(_)
+            | quire_exact::ValueType::Map(_)
+            | quire_exact::ValueType::Reference(_)
+            | quire_exact::ValueType::Population(_),
+        ) => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),

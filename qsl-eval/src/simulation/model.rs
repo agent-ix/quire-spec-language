@@ -447,7 +447,16 @@ pub struct ModelSystem<'a> {
     /// Each record's slots in declaration order, for its enumerated domain
     /// (FR-120, FR-215).
     pub(crate) record_orders: domain::RecordOrders,
+    /// The element-count members of the pure-clock collections (FR-230
+    /// "Initial element count"): each object type holding one, the member,
+    /// and the collection's `min` and `max` (`None` with no declared
+    /// maximum).
+    pub(crate) clock_counts: Vec<ClockCount>,
 }
+
+/// One element-count member of a pure-clock collection: the object type
+/// holding it, the member, and the count's `min` and `max`.
+pub(crate) type ClockCount = (DeclarationKey, StateField, u64, Option<u64>);
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
     AdmissionFailure::Refused(record(code, cause, fields))
@@ -634,12 +643,14 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
-        // FR-120-AC-26 (STD-508 ruling): a collection of bare clocks holds no
-        // data, so its element count is an eval-side member of each object's
-        // state, `[min, max]` (a `Set<Clock>` at most 1), rooted, enumerated
-        // and read by the slot places like a field. It is in no written or
-        // admitted document. An initial state ranges over every count.
-        let mut counts: Vec<(DeclarationKey, StateField, u64, Option<u64>)> = Vec::new();
+        // FR-120-AC-26, FR-230 "Initial element count": a collection of bare
+        // clocks holds no data, so its element count is an eval-side member
+        // of each object's state, `[min, max]` (a `Set` or `OrderedSet` at
+        // most 1), rooted, enumerated and read by the slot places like a
+        // field. It is in no written or admitted document. An initial state
+        // ranges over every count; with no declared maximum, the timed
+        // subject ranges it up to `max_clocks` (`TimedSystem::initial`).
+        let mut counts: Vec<ClockCount> = Vec::new();
         for timed in graph.timed_models() {
             for clock in timed.clocks() {
                 let [qsl_semantics::check::PlaceStep::Field(name), qsl_semantics::check::PlaceStep::Slot(shape)] =
@@ -647,7 +658,9 @@ impl<'a> ModelSystem<'a> {
                 else {
                     continue;
                 };
-                let max = if shape.unique && !shape.ordered {
+                // A set's elements differ in their data part, which a bare
+                // clock lacks (FR-120's `p` = 1).
+                let max = if shape.unique {
                     Some(shape.max.unwrap_or(1).min(1))
                 } else {
                     shape.max
@@ -729,6 +742,7 @@ impl<'a> ModelSystem<'a> {
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             record_orders,
+            clock_counts: counts,
         };
         system.check_rewards()?;
         Ok(system)
@@ -1001,6 +1015,16 @@ impl<'a> ModelSystem<'a> {
             })
             .collect();
         for key in &granted {
+            // A pure-clock collection's count with no declared maximum is
+            // bounded by `max_clocks`, not by a domain (FR-230 "Initial
+            // element count").
+            let unbounded_count = self
+                .clock_counts
+                .iter()
+                .any(|(_, field, _, max)| field.key == *key && max.is_none());
+            if unbounded_count {
+                continue;
+            }
             if let Some(value_type) = field_types.get(key) {
                 root(declaration_enc(key), value_type);
             }
@@ -1497,14 +1521,12 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
 
 /// Each of `initial` with every combination of the clock-collection counts
 /// `counts` on each object of the count's type: every count from `min` to
-/// `max`, or `min` alone with no maximum (such a root requires a bound).
-fn with_clock_counts(
-    initial: Vec<ModelSimState>,
-    counts: &[(DeclarationKey, StateField, u64, Option<u64>)],
-) -> Vec<ModelSimState> {
+/// `max`, none when `min` exceeds `max`, or `min` alone with no maximum
+/// (the timed subject ranges it further).
+fn with_clock_counts(initial: Vec<ModelSimState>, counts: &[ClockCount]) -> Vec<ModelSimState> {
     let mut states = initial;
     for (type_key, field, min, max) in counts {
-        let range = *min..=max.unwrap_or(*min).max(*min);
+        let range = *min..=max.unwrap_or(*min);
         let mut next = Vec::new();
         for state in states {
             let holders: Vec<(DeclarationKey, String)> = state
