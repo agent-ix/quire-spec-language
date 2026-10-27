@@ -11,11 +11,11 @@ use super::reachability::{lower_package, lower_with, Lowered};
 use super::*;
 use qsl_semantics::check::{CheckRefusal, ProtocolConstruct};
 
-const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
+pub(super) const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
 
 /// The `acme/orders` document of TC-1054 (`Order`, `Rush`, `Person` and the
 /// populations `orders` and `people`).
-fn model() -> Vec<u8> {
+pub(super) fn model() -> Vec<u8> {
     document()
 }
 
@@ -57,12 +57,12 @@ fn channel(name: &str, ends: (&str, &str), ordering: &str, delivery: &str, bound
     )
 }
 
-fn clause(wire: &Value) -> &Value {
+pub(super) fn clause(wire: &Value) -> &Value {
     node_of(wire, "protocol", "protocol_clause")
 }
 
 /// The node the reference `term` names.
-fn target<'w>(wire: &'w Value, term: &Value) -> &'w Value {
+pub(super) fn target<'w>(wire: &'w Value, term: &Value) -> &'w Value {
     assert_eq!(term["term"], "reference", "{term}");
     node_by_id(wire, &term["target"])
 }
@@ -92,7 +92,7 @@ fn ascending(nodes: &[&Value]) -> Vec<String> {
 
 /// The value of the argument `name` of `node`, after checking the
 /// operator's argument names and order.
-fn argument<'n>(node: &'n Value, names: &[&str], name: &str) -> &'n Value {
+pub(super) fn argument<'n>(node: &'n Value, names: &[&str], name: &str) -> &'n Value {
     let arguments = node["body"]["arguments"].as_array().unwrap();
     let actual: Vec<&str> = arguments
         .iter()
@@ -117,7 +117,7 @@ fn lit(term: &Value) -> &str {
 }
 
 /// The `name` member of the Group `group`.
-fn member<'g>(group: &'g Value, name: &str) -> &'g Value {
+pub(super) fn member<'g>(group: &'g Value, name: &str) -> &'g Value {
     assert_eq!(group["term"], "aggregate", "{group}");
     group["members"]
         .as_array()
@@ -140,7 +140,7 @@ fn member_names(group: &Value) -> Vec<&str> {
 }
 
 /// The `(role, region text)` of each occurrence of `node`.
-fn occurrences<'l>(lowered: &'l Lowered, node: &Value) -> Vec<(&'l str, &'l str)> {
+pub(super) fn occurrences<'l>(lowered: &'l Lowered, node: &Value) -> Vec<(&'l str, &'l str)> {
     lowered.wire["source_map"]
         .as_array()
         .unwrap()
@@ -413,7 +413,7 @@ fn replicated_roles_emit_their_population_maximum_binder_and_lifetime() {
 }
 
 /// Whether `node` reaches `wanted` through its dependencies.
-fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
+pub(super) fn reads(wire: &Value, node: &Value, wanted: &Value) -> bool {
     let mut pending = vec![node];
     let mut seen = BTreeSet::new();
     while let Some(node) = pending.pop() {
@@ -603,7 +603,7 @@ fn every_channel_premise_changes_the_clause_key() {
 
 /// The check of `text` over [`model`], with the unwritten-construct emission
 /// gate open or closed.
-fn checked(
+pub(super) fn checked(
     text: &str,
     open: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
@@ -612,7 +612,7 @@ fn checked(
 
 /// [`checked`] over the model document `document`, named by `package` and
 /// `version`.
-fn checked_package(
+pub(super) fn checked_package(
     document: Vec<u8>,
     (package, version): (&str, &str),
     text: &str,
@@ -665,6 +665,14 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         )
     };
     let main = "sequence Main { }";
+    // A second protocol, which the cases refer to.
+    let with_other = |text: String| {
+        format!(
+            "{text}protocol Other using v over (input: Boolean) on origin {{\n\
+             {BUYER}\nrun sequence Main {{ }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n}}\n"
+        )
+    };
     let carrying = |carries: &str| {
         format!(
             "{SELLER}\n{}",
@@ -685,14 +693,14 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             plain("on origin", "role W on M;", main, "true"),
         ),
         (
-            C::Captures,
-            "QSL-1121e",
-            plain("on origin", "capture c: Boolean = input;", main, "true"),
+            C::CaptureReadsDeclaration,
+            "QSL-1121g",
+            plain("on origin", "capture c: Boolean = ok();", main, "true"),
         ),
         (
-            C::ActivationGuard,
-            "QSL-1121e",
-            plain("on each (g: M::Person) when (true)", "", main, "true"),
+            C::ActivationGuardReadsDeclaration,
+            "QSL-1121g",
+            plain("on each (g: M::Person) when (ok())", "", main, "true"),
         ),
         (
             C::Terminal,
@@ -703,6 +711,31 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             C::FinishReadsDeclaration,
             "QSL-1121g",
             plain("on origin", "", main, "ok()"),
+        ),
+        (
+            C::FinishReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain("on origin", "", main, "protocol Other")),
+        ),
+        (
+            C::CaptureReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain(
+                "on origin",
+                "capture c: Boolean = protocol Other;",
+                main,
+                "true",
+            )),
+        ),
+        (
+            C::ActivationGuardReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain(
+                "on each (g: M::Person) when (protocol Other)",
+                "",
+                main,
+                "true",
+            )),
         ),
         (
             C::ChannelCarriesBounded,
@@ -752,12 +785,18 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             "{text}"
         );
         let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
-        assert_eq!(clauses(&open), 0, "{construct:?} writes no clause node");
+        // Only the second protocol the case declares, if any, is written.
+        let others = text.matches("protocol Other using").count();
+        assert_eq!(
+            clauses(&open),
+            others,
+            "{construct:?} writes no clause node for Flow"
+        );
     }
 }
 
 /// Declarations the `carries` cases use: a record, a nominal enum and a unit.
-const CARRIED: &str = "record Point { x: Integer; }\nenum Color { RED, GREEN }\n\
+pub(super) const CARRIED: &str = "record Point { x: Integer; }\nenum Color { RED, GREEN }\n\
                        dimension Length;\nunit m : Length = rational(1, 1);\n";
 
 /// A `Flow` of two roles and a channel over `carries` and `ordering`,
