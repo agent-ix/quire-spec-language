@@ -90,6 +90,14 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
     let written = nodes(&wire);
     for node in written {
         let id = node["node_id"]["digest"].as_str().unwrap();
+        if node["semantic_form"] == "model_root" {
+            // A root is derived from its selection row, not lowered from a
+            // checked node (FR-322-AC-134).
+            let selected = wire["lock"]["model_selections"].as_array().unwrap();
+            assert!(selected.iter().any(|row| node["owner"]
+                == json!({"kind": "model_root", "identity": row["identity"], "digest": row["digest"]})));
+            continue;
+        }
         assert_eq!(
             node.get("owner").cloned(),
             expected[id],

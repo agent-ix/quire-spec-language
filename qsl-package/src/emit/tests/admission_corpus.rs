@@ -937,6 +937,20 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .or_default()
             .push("admitted by the typed timed-model writer (TC-367)".to_owned());
     }
+    // The emitter appends one `model_root` per model selection (QSpec
+    // FR-322-AC-134); every model-bearing fixture's read-back admits it.
+    classified
+        .entry(CheckedNodeKind::Model(ModelForm::ModelRoot))
+        .or_default()
+        .push("admitted: emitted for each model selection (FR-322-AC-134)".to_owned());
+    // QSL assembles dimension equivalences for unit conversion but lowers no
+    // node for one.
+    classified
+        .entry(CheckedNodeKind::ScalarType(
+            ScalarTypeForm::DimensionEquivalence,
+        ))
+        .or_default()
+        .push("not emitted: QSL lowers no dimension-equivalence node".to_owned());
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))

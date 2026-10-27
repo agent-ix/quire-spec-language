@@ -569,6 +569,11 @@ impl<'g> Candidate<'g> {
                 dependencies.insert(unit.dimension_node_id.clone());
                 dependencies.extend(unit.target_unit_node_id.clone());
             }
+            Some(NominalIdentityPreimage::DimensionEquivalence(equivalence)) => {
+                // QSpec FR-322: an equivalence depends on exactly the two
+                // dimension nodes it relates.
+                dependencies.extend(equivalence.dimension_node_ids.iter().cloned());
+            }
             Some(NominalIdentityPreimage::EnumDeclaration(_)) | None => {}
         }
         let mut names = dependencies.clone();
@@ -1353,6 +1358,83 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
     Ok(candidate.candidate_node_id().clone())
 }
 
+/// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
+/// domain package, in `model_selections` order, one self-typed `model` node
+/// keyed by the selection's identity and digest alone, appended after every
+/// other node, with one `generated` source-map entry appended after every
+/// other entry. The selection records no selecting occurrence, so the entry's
+/// region is the first byte of the checked unit (QSpec: the entry is a
+/// producer assertion no reader verifies, and the published regions are
+/// one-byte placeholders).
+fn append_model_roots(
+    selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+    source: &RawSourceRef,
+    nodes: &mut Vec<CheckedSemanticNodeV2>,
+    source_map: &mut Vec<CheckedSourceMapEntry>,
+) -> Result<(), EmitRefusal> {
+    for selection in selections {
+        let root = model_root_node(&selection.identity, &hex(&selection.digest))?;
+        source_map.push(CheckedSourceMapEntry {
+            node_id: root.node_id.clone(),
+            role: CheckedOccurrenceRole::Generated,
+            ordinal: 0,
+            regions: vec![CheckedSourceRegion {
+                source: source_artifact(source),
+                start: 0,
+                end: 1,
+            }],
+        });
+        nodes.push(root);
+    }
+    Ok(())
+}
+
+/// The `model_root` node for one selection row, keyed through IR's public
+/// producer API. Its key depends on the row alone.
+fn model_root_node(identity: &str, digest: &str) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
+    let placeholder = CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: "model-root".into(),
+    };
+    let mut node = CheckedSemanticNodeV2 {
+        owner_model: None,
+        node_id: placeholder.clone(),
+        schema_version: GRAPH_V2.into(),
+        node_tag: CheckedNodeTag::Model.as_wire().into(),
+        semantic_form: "model_root".into(),
+        semantic_type: placeholder,
+        dependencies: Vec::new(),
+        occurrences: vec![CheckedOccurrence {
+            role: CheckedOccurrenceRole::Generated,
+            ordinal: 0,
+        }],
+        recursion_group: None,
+        nominal_identity_preimage: None,
+        declaration: None,
+        owner: Some(CheckedNodeOwner::ModelRoot {
+            identity: identity.into(),
+            digest: digest.into(),
+        }),
+        body: CheckedTerm::Aggregate {
+            members: Vec::new(),
+        },
+    };
+    let candidates = derive_structural_candidates(
+        std::slice::from_ref(&node),
+        crate::checked::EMIT_LIMITS.max_bytes(),
+        u64::MAX,
+    )
+    .map_err(encoding)?;
+    let [candidate] = candidates.nodes() else {
+        return Err(EmitRefusal::TimedModelWriterInvariant(
+            "a model root must have one structural identity",
+        ));
+    };
+    node.node_id = candidate.candidate_node_id().clone();
+    node.semantic_type = node.node_id.clone();
+    Ok(node)
+}
+
 /// The unique digest-ascending reference targets directly named by a body.
 fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
     let mut targets = body
@@ -1953,6 +2035,12 @@ fn emit_package_inner(
         }
         rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
     }
+    append_model_roots(
+        graph.model_selections(),
+        graph.source(),
+        &mut nodes,
+        &mut source_map,
+    )?;
     let (mut profile_selections, mut laws) = split_laws(&order);
     for refinement in emitted_refinements {
         let selection = CheckedSelection {
