@@ -338,3 +338,179 @@ impl World {
         }
     }
 }
+
+/// `document` (a package of this fixture) as the package `package`: every
+/// identity under `test/timed` moved under `package`, for a second model of
+/// one unit.
+pub(crate) fn renamed_package(document: &[u8], package: &str) -> Vec<u8> {
+    String::from_utf8(document.to_vec())
+        .expect("the fixture writes UTF-8")
+        .replace(PACKAGE, package)
+        .into_bytes()
+}
+
+/// A unit over two packages of this fixture and its snapshots: the model
+/// `A` (`abstract_package`) and the model `M` (`test/timed`), each with the
+/// one object `c` (`phase` 0, every Boolean false).
+pub(crate) struct Refining {
+    pub(crate) package: CheckedPackage,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    /// `M`'s initial state.
+    pub(crate) concrete_initial: DocumentRef,
+    /// `A`'s initial state.
+    pub(crate) abstract_initial: DocumentRef,
+}
+
+/// The unit over the abstract model `A`, the package `abstract_document`
+/// names, and the concrete model `M`, `concrete_document`, with `body`
+/// under the model, temporal and infinite-trace (`inf`) profiles; its
+/// refusals when S3 refuses it, each with the text at its region.
+pub(crate) fn refining(
+    abstract_document: &[u8],
+    concrete_document: &[u8],
+    body: &str,
+) -> Result<Refining, Vec<(String, String, String)>> {
+    let packages = package_input([abstract_document, concrete_document]);
+    let digest_of = |document: &[u8]| {
+        packages
+            .iter()
+            .find(|(_, bytes)| bytes.as_slice() == document)
+            .map(|(digest, _)| hex(digest))
+            .expect("the package is provisioned")
+    };
+    let abstract_package = serde_json::from_slice::<Json>(abstract_document).expect("JSON")
+        ["package"]["identity"]
+        .as_str()
+        .expect("an identity")
+        .to_owned();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"{abstract_package}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+        digest_of(abstract_document),
+        digest_of(concrete_document),
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "fr-430", "fixture", "1"),
+        "fr-430.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selections admit")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the kept operation clauses parse");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .with_unwritten_timed_members()
+    .with_unwritten_refinements();
+    let regions = declarations.regions();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .map_err(|refusals| {
+            refusals
+                .into_iter()
+                .map(|refusal| {
+                    let at = regions
+                        .refusal_region(&refusal)
+                        .map_or_else(String::new, |region| {
+                            let start = usize::try_from(region.start()).expect("a start");
+                            let end = usize::try_from(region.end()).expect("an end");
+                            unit[start..end].to_owned()
+                        });
+                    (
+                        refusal.cause.code().as_str().to_owned(),
+                        refusal.cause.cause().unwrap_or_default().to_owned(),
+                        at,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })?;
+    let mut snapshots = BTreeMap::new();
+    let mut snapshot = |package: &str, document: &[u8], name: &str| {
+        let digest = packages
+            .iter()
+            .find(|(_, bytes)| bytes.as_slice() == document)
+            .map(|(digest, _)| hex(digest))
+            .expect("the package is provisioned");
+        let identity = |suffix: &str| format!("ix://{package}/{suffix}");
+        let snapshot = json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
+                "revision": "fixture:1"},
+            "observation": "current",
+            "model": {"identity": package, "version": "1.0.0",
+                "digest": format!("sha256-jcs:{digest}")},
+            "anchor": {"kind": "initialization", "name": "start"},
+            "populations": [{"population": identity("calls"), "complete": true,
+                "objects": [{"key": "c", "type": identity("Call"),
+                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
+                        "late": {"boolean": false}, "retried": {"boolean": false}}}]}],
+        });
+        let bytes = snapshot.to_string().into_bytes();
+        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+            .expect("canonical fixture")
+            .as_bytes();
+        snapshots.insert(digest, bytes);
+        DocumentRef {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "fixture:1".to_owned(),
+            digest,
+        }
+    };
+    let abstract_initial = snapshot(&abstract_package, abstract_document, "a0");
+    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0");
+    Ok(Refining {
+        package: CheckedPackage::link(graph),
+        packages,
+        snapshots,
+        concrete_initial,
+        abstract_initial,
+    })
+}
+
+impl Refining {
+    /// FR-120's request of the concrete model `M` over the universe `{c}`.
+    pub(crate) fn concrete_request(&self) -> ModelSimulationRequest<'_> {
+        ModelSimulationRequest {
+            package: &self.package,
+            packages: &self.packages,
+            normalization: ModelNormalizationLimits::default(),
+            snapshots: &self.snapshots,
+            initial: vec![self.concrete_initial.clone()],
+            universes: vec![PopulationUniverse {
+                population: DeclarationKey {
+                    package: PACKAGE.to_owned(),
+                    node: ident("calls"),
+                },
+                keys: vec!["c".to_owned()],
+            }],
+            observation: ObservationLimits::default(),
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+            meter: METER,
+        }
+    }
+}

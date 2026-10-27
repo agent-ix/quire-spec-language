@@ -257,6 +257,21 @@ pub enum RefinementCause {
         /// The selected profile identity.
         profile: String,
     },
+    /// The abstract model is timed: it declares a time source (QSpec FR-430
+    /// "Timed refinement"): `unsupported_construct`/`declaration-form` at
+    /// the refinement's abstract model reference.
+    TimedAbstract {
+        /// The abstract model's alias.
+        model: String,
+    },
+    /// A row reads a clock field of the concrete model, so the mapped
+    /// abstract state would not be a function of the discrete state alone
+    /// (QSpec FR-430 "Timed refinement"): `unsupported_construct`/
+    /// `expression-form` at the read.
+    ClockRead {
+        /// The clock field read.
+        field: String,
+    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -338,7 +353,9 @@ impl RefinementCause {
             },
             Self::Unsupported { .. }
             | Self::UnsupportedRowForm { .. }
-            | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
+            | Self::AbstractRelationships { .. }
+            | Self::TimedAbstract { .. }
+            | Self::ClockRead { .. } => Code::UnsupportedConstruct,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -362,8 +379,10 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
-            Self::UnsupportedRowForm { .. } => Some("expression-form"),
-            Self::AbstractRelationships { .. } => Some("declaration-form"),
+            Self::UnsupportedRowForm { .. } | Self::ClockRead { .. } => Some("expression-form"),
+            Self::AbstractRelationships { .. } | Self::TimedAbstract { .. } => {
+                Some("declaration-form")
+            }
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -1517,6 +1536,17 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         );
         return (RefinementCheck::Refused(findings.refusals), nodes);
     }
+    // QSpec FR-430: a timed concrete model refines an untimed abstract one;
+    // a timed abstract model has no reading as a refinement's abstract side.
+    if env.timed_models.contains(&abstract_side.alias) {
+        findings.refuse(
+            abstract_alias.span,
+            RefinementCause::TimedAbstract {
+                model: abstract_side.alias.to_owned(),
+            },
+        );
+        return (RefinementCheck::Refused(findings.refusals), nodes);
+    }
     let subject = match &form.abstract_side {
         AbstractSideForm::Model(_) => ListSubject::Model,
         AbstractSideForm::Protocol { clause, .. } => resolve_protocol(
@@ -1715,6 +1745,9 @@ pub(crate) struct RefinementEnv<'e> {
     /// Whether an abstract protocol header is intentionally deferred because
     /// another unit refusal stops the check before protocol clauses run.
     pub(crate) defer_abstract_protocol_resolution: bool,
+    /// The aliases of the unit's timed models: those a `time` declaration
+    /// names (QSpec FR-430).
+    pub(crate) timed_models: &'e [&'e str],
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1898,6 +1931,43 @@ struct Checker<'c, 'a> {
 /// The first expression form in a refinement row that the governing
 /// infinite-trace profile does not admit, with the token span and the layer
 /// that admits it (QSpec FR-375 "Row layers").
+/// The first read of a clock field of `concrete` in `expression`, in
+/// source order, with its span (QSpec FR-430 "Timed refinement"): a field
+/// access whose member is the field of one of the model's clock places. A
+/// row's operands are the concrete object and the step's parameters, whose
+/// values hold no clock (FR-230), so a member named as a clock field is
+/// read as one.
+fn clock_read(expression: &ExpressionForm, concrete: &AdmittedModel) -> Option<(String, Span)> {
+    let places = concrete.clock_places();
+    if places.is_empty() {
+        return None;
+    }
+    let mut read = None;
+    super::layer::visit_located(
+        &expression.expression,
+        &expression.spans,
+        expression
+            .spans
+            .at(&[])
+            .unwrap_or(Span { start: 0, end: 0 }),
+        |node, span| {
+            let qsl_forms::ExprNode::Field { field, .. } = node else {
+                return None;
+            };
+            places
+                .iter()
+                .any(|place| {
+                    matches!(
+                        place.path.first(),
+                        Some(super::lowering::PlaceStep::Field(name)) if name == field
+                    )
+                })
+                .then(|| read = Some((field.clone(), span)))
+        },
+    );
+    read
+}
+
 fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
     let lock = DefinitionLock::pinned();
     let required: std::collections::BTreeSet<_> = lock
@@ -2441,6 +2511,11 @@ impl<'c, 'a> Checker<'c, 'a> {
         if let Some((layer, span)) = unsupported_row_form(expression) {
             self.findings
                 .refuse(span, RefinementCause::UnsupportedRowForm { layer });
+            return None;
+        }
+        if let Some((field, span)) = clock_read(expression, self.concrete_side.model) {
+            self.findings
+                .refuse(span, RefinementCause::ClockRead { field });
             return None;
         }
         let declarations = self.declarations;

@@ -81,6 +81,7 @@ mod statistical_witness_replay;
 mod strong_fairness;
 mod strong_hint;
 mod time_lock_item;
+mod timed_refinement;
 mod timed_world;
 mod tso_fairness;
 mod units;
