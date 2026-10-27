@@ -102,6 +102,7 @@ mod tc235_business_meanings;
 mod temporal_fairness;
 #[cfg(feature = "test-support")]
 mod terminal_declarations;
+#[cfg(feature = "test-support")]
 mod timed_declarations;
 #[cfg(feature = "test-support")]
 mod timed_intervals;
