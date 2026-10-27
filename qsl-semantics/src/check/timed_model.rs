@@ -37,6 +37,7 @@ use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, Rational, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 
+pub use self::collection_write::{CollectionWrite, Written};
 use super::assemble::TimedDeclaration;
 use super::ir::{CheckedBody, CheckedNode};
 use super::lowering::{strictly_below, AdmittedModel, CollectionShape, PlaceStep};
@@ -51,6 +52,7 @@ use super::temporal_clause::{ModelTimeSource, TimeSourceKind};
 use super::time_units::{TimeScale, TimeUnits};
 use crate::family::CheckContext;
 
+mod collection_write;
 mod quantified;
 mod reading;
 
@@ -432,6 +434,7 @@ pub struct ClockResets {
     clause: String,
     operation: ClauseOperation,
     resets: Vec<ClockReset>,
+    writes: Vec<CollectionWrite>,
 }
 
 impl ClockResets {
@@ -448,6 +451,12 @@ impl ClockResets {
     /// The resets, in source order.
     pub fn resets(&self) -> &[ClockReset] {
         &self.resets
+    }
+
+    /// The writes of clock collection fields, in source order (FR-230
+    /// "Collection-valued writes").
+    pub fn writes(&self) -> &[CollectionWrite] {
+        &self.writes
     }
 }
 
@@ -655,6 +664,7 @@ struct ResetsDraft {
     operation: ClauseOperation,
     context: EffectiveId,
     resets: Vec<ResetDraft>,
+    writes: Vec<CollectionWrite>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -1413,7 +1423,7 @@ enum ClauseClocks {
     /// A precondition's guard parts.
     Guard(Vec<PartDraft>),
     /// A postcondition's resets.
-    Resets(Vec<ResetDraft>),
+    Resets(Vec<ResetDraft>, Vec<CollectionWrite>),
 }
 
 /// What a postcondition's resets cut from its body: each reset conjunct,
@@ -1426,6 +1436,7 @@ struct ResetCut {
     /// The clock-bearing record literals the resets consumed.
     literals: BTreeSet<ExprId>,
     resets: Vec<ResetDraft>,
+    writes: Vec<CollectionWrite>,
 }
 
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
@@ -1461,8 +1472,33 @@ fn resets(
             right,
         }) = located.node(conjunct)
         else {
-            return Err(nested_write(located, conjunct));
+            return Err(nested_write(located, conjunct, clocks, clause.context));
         };
+        if let Some((field, element)) =
+            collection_write::collection_field(located, *left, clocks, clause.context)
+        {
+            let key = clocks
+                .fields
+                .iter()
+                .find(|clock| {
+                    clock.path.first() == element.first()
+                        && clocks.model.conforms(clause.context, clock.owner)
+                })
+                .map(|clock| &clock.field);
+            let writing = collection_write::Writing {
+                record: RecordWrite {
+                    located,
+                    context: clause.context,
+                    clocks,
+                    written: &written,
+                    span,
+                },
+                element,
+            };
+            let write = writing.write(field, key, *right, &mut cut)?;
+            cut.writes.push(write);
+            continue;
+        }
         if clocks.bears(located.form, *left, clause.context) {
             let Some(ExprNode::Record { .. }) = located.node(*right) else {
                 return Err(located.outside(*right));
@@ -1484,7 +1520,7 @@ fn resets(
             if !located.reads_clock(*left) && located.reads_clock(*right) {
                 return Err(located.outside(*right));
             }
-            return Err(nested_write(located, conjunct));
+            return Err(nested_write(located, conjunct, clocks, clause.context));
         };
         if located.reads_clock(*right) {
             return Err(TemporalCause::ClockWrite { span });
@@ -1547,6 +1583,27 @@ impl RecordWrite<'_, '_, '_> {
         literal: ExprId,
         cut: &mut ResetCut,
     ) -> Result<(), TemporalCause> {
+        let mut components = Vec::new();
+        self.components(path, literal, cut, &mut components)?;
+        cut.resets.extend(
+            components
+                .into_iter()
+                .map(|(clock, value, span)| ResetDraft::single(clock, value, span)),
+        );
+        Ok(())
+    }
+
+    /// The clock components of the record literal `literal` written at
+    /// `self.<path>`, each clock with its constant and the constant's span,
+    /// as [`Self::resets`] reads them; the constants are cut from the
+    /// literal, which stays a data write.
+    fn components(
+        &self,
+        path: Vec<PlaceStep>,
+        literal: ExprId,
+        cut: &mut ResetCut,
+        out: &mut Vec<(ClockId, Rational, Span)>,
+    ) -> Result<(), TemporalCause> {
         let located = self.located;
         let Some(ExprNode::Record { fields, .. }) = located.node(literal) else {
             return Err(TemporalCause::ClockWrite {
@@ -1601,10 +1658,9 @@ impl RecordWrite<'_, '_, '_> {
                     return Err(TemporalCause::ClockWrite { span: self.span });
                 }
                 cut.removed.insert(*value);
-                cut.resets
-                    .push(ResetDraft::single(ClockId(index), constant, value_span));
+                out.push((ClockId(index), constant, value_span));
             } else if bears {
-                self.resets(below, *value, cut)?;
+                self.components(below, *value, cut, out)?;
             }
         }
         Ok(())
@@ -1614,7 +1670,12 @@ impl RecordWrite<'_, '_, '_> {
 /// A postcondition's clock read under `conjunct` that is no top-level reset:
 /// `clock-write` at an equation `self.x = e` that sets a clock, such as one nested under
 /// `implies`, and otherwise `clock-read-outside-constraint` at the read.
-fn nested_write(located: &Located<'_>, conjunct: ExprId) -> TemporalCause {
+fn nested_write(
+    located: &Located<'_>,
+    conjunct: ExprId,
+    clocks: &Clocks<'_>,
+    context: EffectiveId,
+) -> TemporalCause {
     let mut pending = vec![conjunct];
     while let Some(id) = pending.pop() {
         if let Some(ExprNode::Binary {
@@ -1623,7 +1684,11 @@ fn nested_write(located: &Located<'_>, conjunct: ExprId) -> TemporalCause {
             ..
         }) = located.node(id)
         {
-            if located.clock(*left).is_some() {
+            // A clock, or a clock collection written whole (FR-230
+            // "Collection-valued writes").
+            if located.clock(*left).is_some()
+                || collection_write::collection_field(located, *left, clocks, context).is_some()
+            {
                 return TemporalCause::ClockWrite {
                     span: located.span(id),
                 };
@@ -1681,7 +1746,20 @@ fn read_clause(
     }
     let mut removed = BTreeSet::new();
     let (leaves, read) = match clause.kind {
-        StateClauseKind::Invariant => return Err(timed(located.outside(root))),
+        StateClauseKind::Invariant => {
+            // A clock collection written whole anywhere but in a
+            // postcondition (FR-230 "Collection-valued writes").
+            let written = located.form.expression.iter().find(|node| {
+                matches!(node.node(), ExprNode::Binary { operator: BinaryOperator::Equal, left, .. }
+                    if collection_write::collection_field(&located, *left, clocks, clause.context).is_some())
+            });
+            if let Some(node) = written {
+                return Err(timed(TemporalCause::ClockWrite {
+                    span: located.span(node.id()),
+                }));
+            }
+            return Err(timed(located.outside(root)));
+        }
         StateClauseKind::Precondition => {
             if let Some(span) = stray_literal(&located, clocks, &BTreeSet::new()) {
                 return Err(timed(TemporalCause::ClockWrite { span }));
@@ -1726,7 +1804,7 @@ fn read_clause(
                 return Err(timed(TemporalCause::ClockWrite { span }));
             }
             removed = cut.removed;
-            (cut.leaves, ClauseClocks::Resets(cut.resets))
+            (cut.leaves, ClauseClocks::Resets(cut.resets, cut.writes))
         }
     };
     let rewritten = form
@@ -2060,13 +2138,16 @@ fn prepare_models(
                     }
                     guards.push((index, parts));
                 }
-                ClauseClocks::Resets(written) => {
-                    if let (false, Some(operation)) = (written.is_empty(), &clause.operation) {
+                ClauseClocks::Resets(written, writes) => {
+                    if let (false, Some(operation)) =
+                        (written.is_empty() && writes.is_empty(), &clause.operation)
+                    {
                         resets.push(ResetsDraft {
                             clause: clause.name.clone(),
                             operation: operation.clone(),
                             context: clause.context,
                             resets: written,
+                            writes,
                         });
                     }
                 }
@@ -2347,6 +2428,7 @@ pub(crate) fn check(
                 clause: written.clause,
                 operation: written.operation,
                 resets: checked,
+                writes: written.writes,
             });
         }
         models.push(TimedModel {
