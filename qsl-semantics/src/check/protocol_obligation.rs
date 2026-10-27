@@ -39,6 +39,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::check::{bind_parameters, Scope, StateContext, Typer};
 use super::facts::Definedness;
 use super::ir::{CheckedBody, NodeKind};
+use super::lowering::{protocol_location, ProtocolSite};
 use super::observation::Observations;
 use super::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
@@ -346,6 +347,10 @@ struct Site {
     /// The captures of this stage written at or after the one being
     /// checked.
     later: Vec<String>,
+    /// The root location the expression's tree is rooted at, where the
+    /// expression is lowered into a node of its own (FR-096); `None` keeps
+    /// the clause location.
+    location: Option<Location>,
 }
 
 impl Site {
@@ -575,6 +580,7 @@ impl Checker<'_, '_> {
             bound: Vec::new(),
             input: None,
             later: Vec::new(),
+            location: None,
         };
         let protocol_captures = |site: &mut Site, count: usize| {
             for (capture, declared) in protocol.captures.iter().zip(&types.captures).take(count) {
@@ -584,10 +590,20 @@ impl Checker<'_, '_> {
         let Some(template) = template else {
             match stage {
                 ObligationStage::ProtocolActivation => {
+                    site.location = Some(protocol_location(
+                        &protocol.name.name,
+                        ProtocolSite::ActivationGuard,
+                    ));
                     site.bind_pair(&types.activation);
                     site.bind_input(&types.input);
                 }
                 ObligationStage::ProtocolCapture => {
+                    site.location = protocol.captures.get(position).map(|capture| {
+                        protocol_location(
+                            &protocol.name.name,
+                            ProtocolSite::CaptureInitializer(&capture.parameter.name.name),
+                        )
+                    });
                     site.bind_input(&types.input);
                     site.bind_pair(&types.activation);
                     protocol_captures(&mut site, position);
@@ -1106,7 +1122,11 @@ impl Checker<'_, '_> {
         cx: &mut CheckContext<'_, Scope>,
     ) -> Option<CheckedBody> {
         let mut nodes = self.nodes;
-        let typed = type_body(form, &site.bound, goal, self.input, &mut nodes, cx);
+        let declarations = ClauseDeclarations {
+            location: site.location.as_ref().unwrap_or(self.input.location),
+            ..*self.input
+        };
+        let typed = type_body(form, &site.bound, goal, &declarations, &mut nodes, cx);
         self.nodes = nodes;
         let body = match typed {
             Ok(body) => body,

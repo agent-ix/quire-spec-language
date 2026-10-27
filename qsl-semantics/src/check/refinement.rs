@@ -34,6 +34,8 @@ mod step_label;
 
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+
 pub use catalog::{RefinementCatalogClass, RefinementCatalogNode, RefinementClassCatalog};
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
@@ -72,7 +74,7 @@ use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::state_clause::{observation_of, ClauseDeclarations, ClauseOperation};
 use crate::family::CheckContext;
 use crate::model::clause_observation::Observation;
-use crate::model::domain_package::PopulationRecord;
+use crate::model::domain_package::{DomainPackageRef, PopulationRecord};
 use crate::model::intake::type_identity_segment;
 use crate::model::operation::OperationLookup;
 use crate::value::definition::DefinitionLock;
@@ -255,30 +257,6 @@ pub enum RefinementCause {
         /// The selected profile identity.
         profile: String,
     },
-    /// A refinement's subject package declares no `state_machine`, so the
-    /// emission gate of the check has no state-machine record to select as
-    /// the refinement's subject (analysis consumers that keep unwritten
-    /// refinements never reach it): its
-    /// node (QSpec FR-375) is keyed over a state-machine node and anchors
-    /// its step operations on it, which an object-type model has none of
-    /// (FR-136-AC-12): `unsupported_construct`/`declaration-form`.
-    NoStateMachineSubject {
-        /// Which side of the refinement.
-        side: SubjectSide,
-        /// The side's model alias.
-        alias: String,
-    },
-    /// A refinement's subject package declares several `state_machine`
-    /// records, so the emission gate of the check cannot tell which one the refinement is over
-    /// (FR-136-AC-12): `ambiguous_declaration`/`ambiguous-name`.
-    AmbiguousStateMachineSubject {
-        /// Which side of the refinement.
-        side: SubjectSide,
-        /// The side's model alias.
-        alias: String,
-        /// How many state machines the package declares.
-        count: usize,
-    },
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -330,15 +308,6 @@ pub enum RefinementCause {
     Check(CheckCause),
 }
 
-/// Which side of a refinement a subject refusal is about.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SubjectSide {
-    /// The abstract model.
-    Abstract,
-    /// The concrete model.
-    Concrete,
-}
-
 /// A refusal of a refinement declaration, at the span of the row or name it
 /// is about.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -369,9 +338,7 @@ impl RefinementCause {
             },
             Self::Unsupported { .. }
             | Self::UnsupportedRowForm { .. }
-            | Self::NoStateMachineSubject { .. }
             | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
-            Self::AmbiguousStateMachineSubject { .. } => Code::AmbiguousDeclaration,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -396,10 +363,7 @@ impl RefinementCause {
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
             Self::UnsupportedRowForm { .. } => Some("expression-form"),
-            Self::AbstractRelationships { .. } | Self::NoStateMachineSubject { .. } => {
-                Some("declaration-form")
-            }
-            Self::AmbiguousStateMachineSubject { .. } => Some("ambiguous-name"),
+            Self::AbstractRelationships { .. } => Some("declaration-form"),
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -566,6 +530,77 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
+    /// The typed V2 body and key for a row-empty model refinement.
+    /// Construction remains in the check core; the package writer can
+    /// serialize the checked body without depending on JSON or minting a
+    /// semantic identity.
+    pub fn v2_empty_model_emission(
+        &self,
+    ) -> Result<(NodeKey, quire_contract_model::CheckedTerm), RefinementV2EncodingError> {
+        let abstract_subject = self
+            .abstract_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let concrete_subject = self
+            .concrete_subject_node
+            .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let body = serde_json::json!({
+            "term": "refinement",
+            "abstract": {
+                "domain": quire_exact::NODE_KEY_DOMAIN,
+                "digest": abstract_subject.to_string()
+            },
+            "profile": {
+                "authority": "agent-ix",
+                "identity": self.profile.identity.as_str()
+            },
+            "populations": [],
+            "objects": [],
+            "steps": [],
+            "histories": [],
+            "assume": [],
+            "ensure": []
+        });
+        let typed_body = quire_contract_model::CheckedTerm::deserialize(body.clone())
+            .map_err(RefinementV2EncodingError::Body)?;
+        let identity = Self::v2_identity(concrete_subject, &body)?;
+        Ok((identity, typed_body))
+    }
+
+    /// QSpec FR-375's canonical relation-node identity construction.
+    fn v2_identity(
+        semantic_type: NodeKey,
+        body: &serde_json::Value,
+    ) -> Result<NodeKey, RefinementV2EncodingError> {
+        let preimage = serde_json::json!({
+            "version": "quire.refinement-node/v1",
+            "semantic_type": {
+                "domain": quire_exact::NODE_KEY_DOMAIN,
+                "digest": semantic_type.to_string()
+            },
+            "body": body
+        });
+        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .map_err(RefinementV2EncodingError::Identity)?;
+        Ok(NodeKey::from_digest(*digest.as_bytes()))
+    }
+
+    /// Whether this declaration is in the first V2 emission slice: a model
+    /// subject whose checked base body has no authored mappings. Later
+    /// slices admit mapped model and protocol subjects.
+    pub fn v2_empty_model_body(&self) -> bool {
+        self.abstract_side == AbstractSide::Model
+            && self.abstract_internal.is_empty()
+            && self.populations.is_empty()
+            && self.objects.is_empty()
+            && self.steps.is_empty()
+            && self.history.is_empty()
+            && self.concrete_fairness.is_empty()
+            && self.abstract_fairness.is_empty()
+            && self.class_catalog.is_none()
+            && self.abstract_subject_node.is_some()
+            && self.concrete_subject_node.is_some()
+    }
+
     /// FR-139: checks the bounds that depend on a population's universe
     /// size, once a request admits the concrete subject's `universes` and
     /// before exploration. Each `universes` entry is the number of objects of
@@ -631,6 +666,17 @@ impl CheckedRefinement {
     }
 }
 
+/// A row-empty refinement's checked V2 body could not be constructed.
+#[derive(Debug)]
+pub enum RefinementV2EncodingError {
+    /// The checked declaration has no selected model subject.
+    MissingSubject,
+    /// The FR-375 body is not admitted by the checked term vocabulary.
+    Body(serde_json::Error),
+    /// The FR-375 identity preimage could not be canonically encoded.
+    Identity(quire_canonical::Error),
+}
+
 /// `population A::p from C::q`, resolved.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationRow {
@@ -643,7 +689,8 @@ pub struct PopulationRow {
     pub concrete_population: DeclarationKey,
 }
 
-/// `field = e` of an object row, resolved.
+/// `field = e` of an object row, resolved against an object type or a
+/// state-machine field set.
 #[derive(Debug)]
 pub struct FieldRow {
     /// The abstract field.
@@ -652,7 +699,8 @@ pub struct FieldRow {
     pub expression: CheckedRow,
 }
 
-/// `object A::T from C::U { ... }`, resolved.
+/// `object A::T from C::U { ... }`, resolved for an object type or a
+/// state-machine field set.
 #[derive(Debug)]
 pub struct ObjectRow {
     /// The abstract object type.
@@ -863,9 +911,15 @@ pub struct CheckedRefinement {
     pub(crate) name: String,
     pub(crate) profile: ProfileSelection,
     pub(crate) abstract_model: String,
+    /// The canonical selected package for the abstract side; its identity
+    /// and digest are independent of the source alias (FR-135).
+    pub(crate) abstract_model_selection: DomainPackageRef,
     pub(crate) abstract_side: AbstractSide,
     pub(crate) abstract_internal: Vec<AbstractStepClass>,
     pub(crate) concrete_model: String,
+    /// The canonical selected package for the concrete side; its identity
+    /// and digest are independent of the source alias (FR-135).
+    pub(crate) concrete_model_selection: DomainPackageRef,
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
@@ -884,6 +938,15 @@ pub struct CheckedRefinement {
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
     pub(crate) concrete_protocol: Option<NodeKey>,
+    /// The selected local state-machine nodes, filled from the checked model
+    /// selections after protocol refinement resolution.
+    pub(crate) abstract_subject_node: Option<NodeKey>,
+    pub(crate) concrete_subject_node: Option<NodeKey>,
+    pub(crate) abstract_subject_declaration: Option<DeclarationKey>,
+    pub(crate) concrete_subject_declaration: Option<DeclarationKey>,
+    /// The full authored declaration region used by the V2 relation-node
+    /// occurrence and source map.
+    pub(crate) declaration_span: Span,
 }
 
 impl CheckedRefinement {
@@ -902,6 +965,11 @@ impl CheckedRefinement {
         &self.abstract_model
     }
 
+    /// The selected package identity and digest for the abstract model.
+    pub fn abstract_model_selection(&self) -> &DomainPackageRef {
+        &self.abstract_model_selection
+    }
+
     /// The abstract subject: the model, or a protocol clause of it (FR-147).
     pub fn abstract_side(&self) -> &AbstractSide {
         &self.abstract_side
@@ -918,6 +986,11 @@ impl CheckedRefinement {
     /// The concrete model's alias, the declaring package's.
     pub fn concrete_model(&self) -> &str {
         &self.concrete_model
+    }
+
+    /// The selected package identity and digest for the concrete model.
+    pub fn concrete_model_selection(&self) -> &DomainPackageRef {
+        &self.concrete_model_selection
     }
 
     /// The population rows, in source order.
@@ -944,6 +1017,31 @@ impl CheckedRefinement {
     /// concrete protocol"); `None` for a model subject.
     pub fn concrete_protocol(&self) -> Option<NodeKey> {
         self.concrete_protocol
+    }
+
+    /// The model node that keys this refinement's abstract state machine.
+    pub fn abstract_subject_node(&self) -> Option<NodeKey> {
+        self.abstract_subject_node
+    }
+
+    /// The model node that keys this refinement's concrete state machine.
+    pub fn concrete_subject_node(&self) -> Option<NodeKey> {
+        self.concrete_subject_node
+    }
+
+    /// The abstract state-machine's declaring package and record key.
+    pub fn abstract_subject_declaration(&self) -> Option<&DeclarationKey> {
+        self.abstract_subject_declaration.as_ref()
+    }
+
+    /// The concrete state-machine's declaring package and record key.
+    pub fn concrete_subject_declaration(&self) -> Option<&DeclarationKey> {
+        self.concrete_subject_declaration.as_ref()
+    }
+
+    /// The authored refinement declaration span.
+    pub fn declaration_span(&self) -> Span {
+        self.declaration_span
     }
 
     /// The complete checked class catalogs for a refinement whose subjects
@@ -1053,11 +1151,18 @@ pub(crate) fn history_names(declarations: &[RefinementDeclaration]) -> Vec<Strin
         .collect()
 }
 
-/// One object type of a model.
+/// One field-bearing declaration a refinement can map.
 struct ObjectType {
     name: String,
     id: EffectiveId,
     key: DeclarationKey,
+    kind: RefinementTypeKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RefinementTypeKind {
+    ObjectType,
+    StateMachine,
 }
 
 impl<'a> Side<'a> {
@@ -1091,9 +1196,34 @@ impl<'a> Side<'a> {
                         .to_owned(),
                     id,
                     key: key.clone(),
+                    kind: RefinementTypeKind::ObjectType,
                 })
             })
             .collect()
+    }
+
+    /// Every object-type or state-machine field set a refinement can map.
+    fn refinement_types(&self, types: &TypeEnvironment) -> Result<Vec<ObjectType>, &'static str> {
+        let mut found = self.object_types(types)?;
+        found.extend(
+            self.model
+                .state_machine_types()
+                .map(|(key, id)| {
+                    let name = types
+                        .object_type(id)
+                        .ok_or("admitted-state-machine-is-in-the-type-environment")?
+                        .name()
+                        .to_owned();
+                    Ok(ObjectType {
+                        name,
+                        id,
+                        key: key.clone(),
+                        kind: RefinementTypeKind::StateMachine,
+                    })
+                })
+                .collect::<Result<Vec<_>, &'static str>>()?,
+        );
+        Ok(found)
     }
 }
 
@@ -1444,6 +1574,8 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         .object_types()
         .map(|(_, id)| id)
         .collect();
+    let abstract_model_selection = checker.abstract_side.model.selection().clone();
+    let concrete_model_selection = checker.concrete_side.model.selection().clone();
     let class_catalog = match catalog::build(catalog::CatalogBuildInput {
         concrete_alias: checker.concrete_side.alias,
         concrete_model: checker.concrete_side.model,
@@ -1479,6 +1611,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         name: form.name.name.clone(),
         profile: declaration.selection.clone(),
         abstract_model: abstract_alias.name.clone(),
+        abstract_model_selection,
         abstract_side: match &form.abstract_side {
             AbstractSideForm::Model(_) => AbstractSide::Model,
             AbstractSideForm::Protocol { clause, .. } => AbstractSide::Protocol {
@@ -1492,6 +1625,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
             classes
         },
         concrete_model: form.concrete.name.clone(),
+        concrete_model_selection,
         populations,
         objects,
         steps: Vec::new(),
@@ -1514,6 +1648,11 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_object_types,
         class_catalog,
         concrete_protocol: None,
+        abstract_subject_node: None,
+        concrete_subject_node: None,
+        abstract_subject_declaration: None,
+        concrete_subject_declaration: None,
+        declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
     // those refusals (FR-147 "Abstract side"); the refinement gives no check.
@@ -1964,6 +2103,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             .collect();
         types
             .iter()
+            .filter(|object| object.kind == RefinementTypeKind::ObjectType)
             .filter(|object| {
                 members
                     .iter()
@@ -1980,11 +2120,11 @@ impl<'c, 'a> Checker<'c, 'a> {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Vec<ObjectRow> {
         let abstract_types = {
-            let found = self.abstract_side.object_types(self.types());
+            let found = self.abstract_side.refinement_types(self.types());
             self.or_fault(found)
         };
         let concrete_types = {
-            let found = self.concrete_side.object_types(self.types());
+            let found = self.concrete_side.refinement_types(self.types());
             self.or_fault(found)
         };
         let abstract_populations = {
@@ -2040,40 +2180,47 @@ impl<'c, 'a> Checker<'c, 'a> {
             let (Some(target), Some(source)) = (target, source) else {
                 continue;
             };
-            // The abstract type must belong to an abstract population, and
-            // the concrete type to that population's concrete source.
-            let admitting: Vec<&Population<'_>> = abstract_populations
-                .iter()
-                .filter(|population| {
-                    self.admitted(population, &abstract_types)
-                        .contains(&target.id)
-                })
-                .collect();
-            if admitting.is_empty() {
-                self.findings.malformed(&row.target.name, row.target.span);
-                continue;
-            }
-            let sources: Vec<&Population<'_>> = mapped
-                .iter()
-                .filter(|(abstract_population, _)| {
-                    admitting
-                        .iter()
-                        .any(|admitting| admitting.record.key == abstract_population.record.key)
-                })
-                .map(|(_, concrete_population)| *concrete_population)
-                .collect();
-            if !sources.is_empty()
-                && !sources.iter().any(|population| {
-                    population
-                        .record
-                        .member_types
-                        .iter()
-                        .filter_map(|key| self.concrete_side.model.effective_id(key))
-                        .any(|member| self.types().conforms(source.id, member))
-                })
-            {
+            if target.kind != source.kind {
                 self.findings.malformed(&row.source.name, row.source.span);
                 continue;
+            }
+            if target.kind == RefinementTypeKind::ObjectType {
+                // An object-type mapping is admitted through the paired
+                // populations; a state-machine field set is not population
+                // bound (FR-135, QSpec FR-375).
+                let admitting: Vec<&Population<'_>> = abstract_populations
+                    .iter()
+                    .filter(|population| {
+                        self.admitted(population, &abstract_types)
+                            .contains(&target.id)
+                    })
+                    .collect();
+                if admitting.is_empty() {
+                    self.findings.malformed(&row.target.name, row.target.span);
+                    continue;
+                }
+                let sources: Vec<&Population<'_>> = mapped
+                    .iter()
+                    .filter(|(abstract_population, _)| {
+                        admitting
+                            .iter()
+                            .any(|admitting| admitting.record.key == abstract_population.record.key)
+                    })
+                    .map(|(_, concrete_population)| *concrete_population)
+                    .collect();
+                if !sources.is_empty()
+                    && !sources.iter().any(|population| {
+                        population
+                            .record
+                            .member_types
+                            .iter()
+                            .filter_map(|key| self.concrete_side.model.effective_id(key))
+                            .any(|member| self.types().conforms(source.id, member))
+                    })
+                {
+                    self.findings.malformed(&row.source.name, row.source.span);
+                    continue;
+                }
             }
             if let Some(first) = first_rows.get(&target.id) {
                 self.findings.refuse(
@@ -2107,6 +2254,20 @@ impl<'c, 'a> Checker<'c, 'a> {
                 }
             }
         }
+        for machine in abstract_types
+            .iter()
+            .filter(|ty| ty.kind == RefinementTypeKind::StateMachine)
+        {
+            if !first_rows.contains_key(&machine.id) && reported.insert(machine.id) {
+                self.findings.refuse(
+                    form.name.span,
+                    RefinementCause::MissingRow {
+                        class: RowClass::Object,
+                        name: machine.name.clone(),
+                    },
+                );
+            }
+        }
 
         self.maps_complete = self.findings.refusals.len() == self.baseline;
         let mut objects = Vec::new();
@@ -2118,8 +2279,9 @@ impl<'c, 'a> Checker<'c, 'a> {
         objects
     }
 
-    /// The object type of `types` that `name` spells; a name that spells
-    /// one of `others` is malformed, and one that spells neither is missing.
+    /// The refinable declaration of `types` that `name` spells; a name that
+    /// spells one of `others` is malformed, and one that spells neither is
+    /// missing.
     fn type_named<'t>(
         &mut self,
         name: &qsl_forms::NameForm,
@@ -3055,41 +3217,6 @@ fn relaxed_conforms(types: &TypeEnvironment, actual: &ValueType, required: &Valu
         }
         _ => conforms(types, actual, required),
     }
-}
-
-/// The refusal for a checked refinement whose subject package has not
-/// exactly one state machine to select (FR-136-AC-12), `None` when it has one.
-pub(crate) fn subject_refusal(
-    refinement: &CheckedRefinement,
-    span: Span,
-    state_machines: impl Fn(&str) -> usize,
-) -> Option<CheckRefusal> {
-    let sides = [
-        (SubjectSide::Abstract, refinement.abstract_model.as_str()),
-        (SubjectSide::Concrete, refinement.concrete_model.as_str()),
-    ];
-    sides.into_iter().find_map(|(side, alias)| {
-        let cause = match state_machines(alias) {
-            1 => return None,
-            0 => RefinementCause::NoStateMachineSubject {
-                side,
-                alias: alias.to_owned(),
-            },
-            count => RefinementCause::AmbiguousStateMachineSubject {
-                side,
-                alias: alias.to_owned(),
-                count,
-            },
-        };
-        Some(CheckRefusal {
-            location: Location::root(Origin::Expression),
-            cause: CheckCause::Refinement(Box::new(RefinementRefusal {
-                refinement: refinement.name.clone(),
-                span,
-                cause,
-            })),
-        })
-    })
 }
 
 /// The refusal for a `refinement` declaration that checks but that no S4

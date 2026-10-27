@@ -44,6 +44,11 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
 9. Read the headers `abstract Spec::Twice concrete Impl` and `abstract Spec
    concrete Impl`; check a refinement whose step rows name one protocol clause
    of `Impl`, and one whose rows name none.
+10. Give `Spec` and `Impl` one `state_machine` declaration each, with a
+    `value` field on each, and map them with one `object` row and no
+    `population` row. Remove that row, duplicate it, and pair the abstract
+    machine with a concrete object type. Also check `CasRefinesCounter` over
+    its object-type-only models.
 
 Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
 
@@ -67,3 +72,10 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   the `protocol` token naming `quire.protocol.complete/v1`.
 - Step 9: the protocol and model subjects of the two headers; `concrete_protocol`
   naming the clause for the first refinement and absent for the second.
+- Step 10: the machine fields check through one `ObjectRow` without a
+  population row; omitting the row refuses `missing_declaration`/`missing-name`
+  naming the abstract machine; duplicating it refuses
+  `invalid_model_binding`/`conflicting-binding`; pairing a machine with an
+  object type refuses `invalid_model_binding`/`malformed-declaration`.
+  `CasRefinesCounter` checks through its existing population and object rows
+  and has no state-machine requirement.

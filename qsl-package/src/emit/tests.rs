@@ -48,6 +48,7 @@ mod owners;
 mod population_bound;
 mod population_reference;
 mod probabilistic;
+mod protocol_captures;
 mod protocol_graph;
 mod protocol_reference;
 mod reachability;
@@ -1379,6 +1380,10 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         Encoding,
         TimedModelNodeSetMismatch,
         TimedModelWriterInvariant,
+        RefinementSubjectNotEmitted,
+        RefinementIdentityEncoding,
+        RefinementNotEmitted,
+        UnlocatedRefinementDeclaration,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1391,6 +1396,12 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
             Err(EmitRefusal::TimedModelNodeSetMismatch) => Seen::TimedModelNodeSetMismatch,
             Err(EmitRefusal::TimedModelWriterInvariant(_)) => Seen::TimedModelWriterInvariant,
+            Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
+            Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
+            Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
+            Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
+                Seen::UnlocatedRefinementDeclaration
+            }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
