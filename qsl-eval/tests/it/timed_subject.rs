@@ -1502,9 +1502,15 @@ fn peer_guarded_work(declaration: &str, guard: &str, holds: bool) {
 /// `[0, upper]` (`None`: unbounded), ordered and not unique: the package
 /// form of `Sequence<Timer>`.
 fn timer_sequence_document(upper: Option<u64>) -> Vec<u8> {
+    timer_collection_document(upper, true, false)
+}
+
+/// [`timer_sequence_document`] whose `ts` is `ordered` and `unique` as
+/// given: the package form of `Set<Timer>` or `Bag<Timer>` as well.
+fn timer_collection_document(upper: Option<u64>, ordered: bool, unique: bool) -> Vec<u8> {
     let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
     let mut held = wire_field("ts", &ident("Timer"));
-    held["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+    held["multiplicity"] = json!({"lower": 0, "ordered": ordered, "unique": unique});
     if let Some(upper) = upper {
         held["multiplicity"]["upper"] = json!(upper);
     }
@@ -1624,4 +1630,46 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
         TimedSystem::new(&unbounded_system, "M"),
         Err(TimedSubjectRefusal::UnboundedCollection { clock }) if clock == "ts.[slot].x"
     ));
+}
+
+/// Part of FR-230-AC-19 (TC-685), SR-1655002 FND-004: a `Set<Timer>[0, 3]`
+/// and a `Bag<Timer>[0, 3]` holding two elements list three slots of
+/// `ts.[slot].x` per object, of which slots 0 and 1 are live.
+#[trace("TC-685")]
+#[test]
+fn a_set_or_bag_of_records_holds_a_clock_per_held_slot() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    for (unique, kind) in [(true, "set"), (false, "bag")] {
+        let world = world_holding(
+            timer_collection_document(Some(3), false, unique),
+            "",
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+            json!({"t": timer("0"), "ts": {kind: [timer("1"), timer("2")]}}),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let live: Vec<(Vec<usize>, bool)> = timed
+            .places()
+            .iter()
+            .filter(|place| {
+                timed.model().clock(place.clock()).map(|clock| clock.name()) == Some("ts.[slot].x")
+            })
+            .map(|place| {
+                (
+                    place.slots().to_vec(),
+                    timed.live(place, initial.discrete()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            live,
+            [(vec![0], true), (vec![1], true), (vec![2], false)],
+            "{kind}"
+        );
+    }
 }

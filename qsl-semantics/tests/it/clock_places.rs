@@ -580,7 +580,7 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
             .expect("t.x");
         assert_eq!(single.bound(), Some(1));
         // `t.x`, `u.x` and `x`, one each, and the slots of `ts`.
-        assert_eq!(model.dimension(place.owner()), 3 + upper.unwrap_or(0));
+        assert_eq!(model.dimension(place.owner()), Some(3 + upper.unwrap_or(0)));
     }
 }
 
@@ -588,8 +588,9 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
 /// over a `Timer` collection `ts`, `size(self.ts)`, a data field of an
 /// element read through a traversal (`size(filter(e in self.ts: e.n > 1))`)
 /// are data reads and check; an element's clock read in a traversal body
-/// (`filter` and `count` over `e.x`), an element read whole (`e`), `=` over the collection and
-/// `contains` compare or read clocks and refuse
+/// (`filter` and `count` over `e.x`), an element read whole (`e`), `=`
+/// and `!=` over the collection or over `filter` results, `contains` and
+/// `convert` compare or read clocks and refuse
 /// `clock-read-outside-constraint` at the read.
 #[trace("TC-685")]
 #[test]
@@ -621,6 +622,20 @@ fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
             "pre E using v on Config::Call::reply { contains(self.ts, self.t) }",
             "self.ts",
         ),
+        (
+            "pre E using v on Config::Call::reply { self.ts != self.ts }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { filter(e in self.ts: e.n > 1) = filter(e in self.ts: e.n > 2) }",
+            "filter(e in self.ts: e.n > 1)",
+        ),
+        (
+            "pre E using v on Config::Call::reply { size(convert<Set<Config::Timer>[0, 3]>(self.ts)) > 0 }",
+            // The conversion's target, a collection of the clock-bearing
+            // record, is where the comparison of elements is named.
+            "Set<Config::Timer>[0, 3]",
+        ),
     ] {
         let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
         assert_eq!(
@@ -629,4 +644,41 @@ fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
             "{clause}"
         );
     }
+}
+
+/// Part of FR-230-AC-19 (TC-685), the record part of a nested collection:
+/// with a record `Holder { ts: Timer [0, 2] }` held by `Call.hs` of
+/// multiplicity `[0, 3]`, the place `hs.[slot].ts.[slot].x` has two slot
+/// steps and the static bound `3 * 2`.
+#[trace("TC-685")]
+#[test]
+fn a_collection_in_a_collection_bounds_its_place_by_the_product() {
+    let document = timer_document(|document: &mut Value| {
+        let holder = package("Holder");
+        let mut ts = wire_field(
+            &format!("{holder}/ts"),
+            "ts",
+            &package("Timer"),
+            "required",
+            0,
+        );
+        ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+        let mut hs = field("hs", &holder);
+        hs["multiplicity"] = json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        types[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(hs);
+    });
+    let graph = check(&document, &format!("{UNITS}{DENSE}")).expect("a nested collection checks");
+    let model = timed(&graph);
+    let place = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "hs.[slot].ts.[slot].x")
+        .unwrap_or_else(|| panic!("the nested place: {:?}", model.clocks()));
+    assert_eq!(place.slots().count(), 2);
+    assert_eq!(place.bound(), Some(6));
 }
