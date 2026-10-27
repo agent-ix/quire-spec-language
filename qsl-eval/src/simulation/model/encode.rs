@@ -434,7 +434,10 @@ pub(super) fn value_enc_with(
 /// Whether two values have the same typed canonical form. A value with no
 /// form equals nothing. Two records, tuples or unions are compared
 /// component by component, which is what their forms compare: one
-/// declaration, one member, and the same component at each slot.
+/// declaration, one member, and the same component at each slot. Two enum
+/// members are compared by variant and rank, which is what an enum's form
+/// names; options and collections, which may hold any of these, element by
+/// element.
 pub(super) fn values_equal(left: &Value, right: &Value) -> bool {
     let slot_equal = |left: &FieldValue, right: &FieldValue| match (left, right) {
         (FieldValue::Present(left), FieldValue::Present(right)) => values_equal(left, right),
@@ -461,9 +464,40 @@ pub(super) fn values_equal(left: &Value, right: &Value) -> bool {
                     .zip(right.payload())
                     .all(|(left, right)| values_equal(left, right))
         }
-        (Value::Composite(_) | Value::Union(_), _) | (_, Value::Composite(_) | Value::Union(_)) => {
-            false
+        (Value::Enum(left), Value::Enum(right)) => left == right,
+        (Value::Option(left), Value::Option(right)) => {
+            left.payload_type() == right.payload_type()
+                && match (left.payload(), right.payload()) {
+                    (Some(left), Some(right)) => values_equal(left, right),
+                    (None, None) => true,
+                    _ => false,
+                }
         }
+        (Value::Collection(left), Value::Collection(right)) => {
+            left.collection_type() == right.collection_type()
+                && left.elements().len() == right.elements().len()
+                && left
+                    .elements()
+                    .iter()
+                    .zip(right.elements())
+                    .all(|(left, right)| values_equal(left, right))
+        }
+        (
+            Value::Composite(_)
+            | Value::Union(_)
+            | Value::Enum(_)
+            | Value::Option(_)
+            | Value::Collection(_),
+            _,
+        )
+        | (
+            _,
+            Value::Composite(_)
+            | Value::Union(_)
+            | Value::Enum(_)
+            | Value::Option(_)
+            | Value::Collection(_),
+        ) => false,
         _ => {
             let (left, right) = (untyped_value_enc(left), untyped_value_enc(right));
             !matches!(
@@ -796,7 +830,7 @@ mod tests {
             format!(r#"{{"type":"option","value":{}}}"#, record("7"))
         );
         let set = from_admitted(
-            CollectionType::new(CollectionKind::Set, tag_type, None),
+            CollectionType::new(CollectionKind::Set, tag_type.clone(), None),
             vec![tag(7), tag(10)],
         );
         assert_eq!(
@@ -811,6 +845,20 @@ mod tests {
         );
         assert!(values_equal(&tag(7), &tag(7)));
         assert!(!values_equal(&tag(7), &tag(10)));
+        // Options and collections of records, and enum members, compare
+        // element by element and by variant and rank (SR-1646005).
+        let other = quire_exact::OptionValue::from_admitted(tag_type.clone(), Some(tag(10)));
+        assert!(values_equal(&option, &option.clone()));
+        assert!(!values_equal(&option, &other));
+        assert!(values_equal(&set, &set.clone()));
+        let member = |rank| {
+            Value::Enum(quire_exact::EnumMember::new(
+                quire_exact::VariantId::from_digest([0xfd; 32]),
+                rank,
+            ))
+        };
+        assert!(values_equal(&member(0), &member(0)));
+        assert!(!values_equal(&member(0), &member(1)));
     }
 
     /// FR-120-AC-16 / FR-189-AC-15: a quantity keeps its exact magnitude and

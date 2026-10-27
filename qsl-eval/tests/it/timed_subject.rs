@@ -1306,3 +1306,71 @@ fn a_record_holding_state_steps() {
             .expect("the post state has a digest");
     }
 }
+
+/// Part of FR-230-AC-11 (TC-685), SR-1646005: a record holding an enum
+/// data field compares by case, so an operation whose frame does not grant
+/// the record keeps it unchanged and steps. With `Timer { x; y: Clock; n:
+/// Phase; m: Mode }` and `Call.t = Timer { n: 0, m: A }`, `reply`, whose
+/// frame does not name `t`, is offered alongside `send`, whose frame does.
+#[trace("TC-685")]
+#[test]
+fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let mode = ident("Mode");
+    let case = |name: &str, line: u64| {
+        json!({"identity": ident(&format!("variant/Mode-{name}")), "name": name,
+            "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3}}})
+    };
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &mode,
+        "mode",
+        json!({"variants": [case("A", 10), case("B", 11)]}),
+    ));
+    let timer = types
+        .iter_mut()
+        .find(|ty| ty["identity"] == ident("Timer"))
+        .expect("Timer");
+    let identity = format!("{}/m", ident("Timer"));
+    let mut member = wire_field("m", &mode);
+    member["identity"] = json!(identity);
+    member["origin"] = origin(&identity);
+    timer["fields"].as_array_mut().expect("fields").push(member);
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({
+            "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
+            "manifestDigest": PLACEHOLDER,
+            "construct": {"identity": "none", "shape": "enumeration",
+                "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
+    let world = world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {
+            "n": {"integer": "0"},
+            "m": {"variant": {"type": mode, "case": "A"}},
+        }}}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let offered: Vec<String> = timed
+        .guarded_steps(initial.discrete())
+        .expect("the state expands")
+        .iter()
+        .map(|step| step.operation().to_owned())
+        .collect();
+    for name in ["reply", "send"] {
+        let suffix = format!("Call/{name}\"");
+        assert!(
+            offered.iter().any(|operation| operation.contains(&suffix)),
+            "`{name}` is offered: {offered:?}"
+        );
+    }
+}
