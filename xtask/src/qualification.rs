@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SettingLimits;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -19,10 +20,67 @@ const CORPUS_FILE: &str = "complete-v1.json";
 const SCHEMA_FILE: &str = "proposals/conformance-corpus-v1/schema.json";
 const QSL_VERSION: &str = "0.2.0";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QualificationOption {
+    Text,
+    Corpus,
+    Capability,
+    Limit,
+}
+
+impl QualificationOption {
+    fn parse(value: &str) -> Option<Self> {
+        match value.as_bytes() {
+            b"--text" => Some(Self::Text),
+            b"--corpus" => Some(Self::Corpus),
+            b"--capability" => Some(Self::Capability),
+            b"--limit" => Some(Self::Limit),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum CorpusVersion {
+    #[serde(rename = "quire.conformance-corpus/v1")]
+    CompleteV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum InputKind {
+    Source,
+    Model,
+    Input,
+    Call,
+    ObjectContext,
+    Population,
+    ReplayRequest,
+    Bytes,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ConsumerType {
+    Language,
+    Runtime,
+    Tool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum Operation {
+    Compile,
+    Run,
+    Replay,
+    Format,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Corpus {
-    contract_version: String,
+    contract_version: CorpusVersion,
     vectors: Vec<Vector>,
     results: Vec<CorpusResult>,
     coverage: Coverage,
@@ -60,7 +118,7 @@ struct CriterionRollup {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConsumerRollup {
-    consumer_type: String,
+    consumer_type: ConsumerType,
     capability_ids: Vec<String>,
 }
 
@@ -74,7 +132,7 @@ struct Capability {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CapabilityApplicability {
-    consumer_types: Vec<String>,
+    consumer_types: Vec<ConsumerType>,
     semantic_profiles: Vec<String>,
 }
 
@@ -95,14 +153,14 @@ struct Vector {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Subject {
-    consumer_type: String,
-    operation: String,
+    consumer_type: ConsumerType,
+    operation: Operation,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VectorApplicability {
-    consumer_types: Vec<String>,
+    consumer_types: Vec<ConsumerType>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,7 +172,7 @@ struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InputFile {
-    kind: String,
+    kind: InputKind,
     path: String,
 }
 
@@ -277,7 +335,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                 cap.applicability
                     .consumer_types
                     .iter()
-                    .any(|kind| qsl_consumer(kind))
+                    .any(|kind| qsl_consumer(*kind))
                     && cap
                         .applicability
                         .semantic_profiles
@@ -406,14 +464,14 @@ fn parse_args(operands: &[OsString]) -> Result<Args> {
     let mut index = 0;
     while index < operands.len() {
         let option = operands[index].to_str().ok_or(Error::Usage(USAGE))?;
-        match option {
-            "--text" if !text => text = true,
-            "--corpus" if corpus.is_none() => {
+        match QualificationOption::parse(option) {
+            Some(QualificationOption::Text) if !text => text = true,
+            Some(QualificationOption::Corpus) if corpus.is_none() => {
                 index += 1;
                 let value = operands.get(index).ok_or(Error::Usage(USAGE))?;
                 corpus = Some(PathBuf::from(value));
             }
-            "--capability" => {
+            Some(QualificationOption::Capability) => {
                 index += 1;
                 capabilities.push(
                     operands
@@ -423,7 +481,7 @@ fn parse_args(operands: &[OsString]) -> Result<Args> {
                         .to_owned(),
                 );
             }
-            "--limit" => {
+            Some(QualificationOption::Limit) => {
                 index += 1;
                 limits.push(
                     operands
@@ -460,7 +518,7 @@ fn qspec_dir(workspace_root: &Path) -> Result<PathBuf> {
 }
 
 fn validate_semantics(corpus: &Corpus) -> Result<()> {
-    if corpus.contract_version != "quire.conformance-corpus/v1" {
+    if corpus.contract_version != CorpusVersion::CompleteV1 {
         return Err(Error::QualificationRefusal(
             "/contract_version: expected quire.conformance-corpus/v1".to_owned(),
         ));
@@ -500,9 +558,12 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
                     vector.id, file.path
                 )));
             }
-            if !matches!(file.kind.as_str(), "source" | "model" | "input") {
+            if !matches!(
+                file.kind,
+                InputKind::Source | InputKind::Model | InputKind::Input
+            ) {
                 return Err(Error::QualificationRefusal(format!(
-                    "vector {} has unknown input kind {}",
+                    "vector {} has unsupported input kind {:?}",
                     vector.id, file.kind
                 )));
             }
@@ -540,7 +601,7 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
         for capability_id in &rollup.capability_ids {
             if !capabilities.contains(capability_id) {
                 return Err(Error::QualificationRefusal(format!(
-                    "consumer rollup {} references unknown capability {}",
+                    "consumer rollup {:?} references unknown capability {}",
                     rollup.consumer_type, capability_id
                 )));
             }
@@ -579,13 +640,18 @@ fn qsl_profiles() -> BTreeSet<String> {
     profiles
 }
 
-fn qsl_consumer(value: &str) -> bool {
-    matches!(value, "language" | "runtime" | "tool")
+fn qsl_consumer(value: ConsumerType) -> bool {
+    matches!(
+        value,
+        ConsumerType::Language | ConsumerType::Runtime | ConsumerType::Tool
+    )
 }
 fn is_qsl_subject(subject: &Subject) -> bool {
     matches!(
-        (subject.consumer_type.as_str(), subject.operation.as_str()),
-        ("language", "compile") | ("runtime", "run" | "replay") | ("tool", "format")
+        (subject.consumer_type, subject.operation),
+        (ConsumerType::Language, Operation::Compile)
+            | (ConsumerType::Runtime, Operation::Run | Operation::Replay)
+            | (ConsumerType::Tool, Operation::Format)
     )
 }
 
@@ -600,7 +666,7 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                 return vector_failure(
                     vector,
                     expected,
-                    "tool-failure",
+                    VectorOutcome::ToolFailure,
                     json!({"code":"input-io","message":"input resolves outside the corpus root","path":input.path}),
                 )
             }
@@ -608,7 +674,7 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                 return vector_failure(
                     vector,
                     expected,
-                    "tool-failure",
+                    VectorOutcome::ToolFailure,
                     json!({"code":"input-io","message":error.to_string(),"path":input.path}),
                 )
             }
@@ -619,19 +685,23 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                 return vector_failure(
                     vector,
                     expected,
-                    "tool-failure",
+                    VectorOutcome::ToolFailure,
                     json!({"code":"input-io","message":error.to_string(),"path":input.path}),
                 )
             }
         };
         inputs.push((input, bytes));
     }
-    let source = vector.input.files.iter().find(|file| file.kind == "source");
+    let source = vector
+        .input
+        .files
+        .iter()
+        .find(|file| file.kind == InputKind::Source);
     let Some(source) = source else {
         return vector_failure(
             vector,
             expected,
-            "tool-failure",
+            VectorOutcome::ToolFailure,
             json!({"code":"missing-input","message":"subject requires a source input"}),
         );
     };
@@ -642,11 +712,8 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         .expect("source input was read before execution");
     let identity =
         qsl_foundation::SourceIdentity::new("agent-ix", &source.path, "qualification", "1");
-    let result = match (
-        vector.subject.consumer_type.as_str(),
-        vector.subject.operation.as_str(),
-    ) {
-        ("language", "compile") => {
+    let result = match (vector.subject.consumer_type, vector.subject.operation) {
+        (ConsumerType::Language, Operation::Compile) => {
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
             match qsl_replay::compile_package(
                 identity,
@@ -672,7 +739,7 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                 ),
             }
         }
-        ("tool", "format") => {
+        (ConsumerType::Tool, Operation::Format) => {
             match qsl_cst::parse(identity, &source.path, bytes, limits.spine.source) {
                 Ok(parsed) => match qsl_cst::format::format_with_limits(&parsed, limits.format) {
                     Ok(formatted) => (json!(formatted), Some(formatted), None),
@@ -696,14 +763,14 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
             return vector_failure(
                 vector,
                 expected,
-                "tool-failure",
+                VectorOutcome::ToolFailure,
                 json!({"code":"qualification_adapter_unavailable","cause":"the corpus-v1 input kind needed by this operation is not yet admitted"}),
             )
         }
     };
     let (actual, _output, fault) = result;
     let outcome = if let Some(fault) = fault {
-        return vector_failure(vector, expected, "tool-failure", fault);
+        return vector_failure(vector, expected, VectorOutcome::ToolFailure, fault);
     } else {
         settle_vector(&expected, &actual)
     };
@@ -718,18 +785,12 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
 fn vector_failure(
     vector: &Vector,
     expected: Expected,
-    outcome: &str,
+    outcome: VectorOutcome,
     actual: Value,
 ) -> VectorReport {
-    let parsed = match outcome {
-        "tool-failure" => VectorOutcome::ToolFailure,
-        "unsupported" => VectorOutcome::Unsupported,
-        "incomplete" => VectorOutcome::Incomplete,
-        _ => VectorOutcome::Failed,
-    };
     VectorReport {
         id: vector.id.clone(),
-        outcome: parsed,
+        outcome,
         expected,
         actual,
     }
@@ -745,8 +806,11 @@ fn settle_vector(expected: &Expected, actual: &Value) -> VectorOutcome {
             VectorOutcome::Passed
         }
         _ if matches!(
-            actual.get("code").and_then(Value::as_str),
-            Some("unknown_required_feature" | "unsupported_projection")
+            actual
+                .get("code")
+                .and_then(Value::as_str)
+                .and_then(Code::from_code),
+            Some(Code::UnknownRequiredFeature | Code::UnsupportedProjection)
         ) =>
         {
             VectorOutcome::Unsupported
@@ -754,7 +818,10 @@ fn settle_vector(expected: &Expected, actual: &Value) -> VectorOutcome {
         _ if actual
             .get("code")
             .and_then(Value::as_str)
-            .is_some_and(|code| code.contains("limit") || code == "resource_exhausted") =>
+            .and_then(Code::from_code)
+            .is_some_and(|code| {
+                matches!(code, Code::ResourceExhausted | Code::StageLimitExceeded)
+            }) =>
         {
             VectorOutcome::Incomplete
         }
