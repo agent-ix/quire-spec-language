@@ -164,10 +164,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
   type's value domain: every record that gives each field a value of that
   field's value domain. A field's value domain is FR-120's for its type; for a
   field of an enum type, each member in declaration order; for a field of a
-  record type, that record type's value domain by this rule. A field of type
-  `Clock` is a clock place (FR-230), not part of the value domain: it
-  contributes no factor and does not make the record unbounded. FR-120 gives
-  the same domain and order to a record or tuple field of a model. The records SHALL
+  record type, that record type's value domain by this rule. The records SHALL
   be ordered with the first declared field most significant, each field in its
   own domain order. The protocol system SHALL enumerate this domain for every
   binder of an `event`, `send`, `receive`, `finish`, `cattempt` and `activate`
