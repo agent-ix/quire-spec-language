@@ -84,6 +84,8 @@ impl Ty {
             ValueType::Decimal(_) => Self::Decimal,
             ValueType::Float(_) => Self::Float,
             ValueType::Quantity(unit) => Self::Quantity(*unit),
+            // FR-127 item 6: a bounded quantity compares as `Quantity<u>`.
+            ValueType::BoundedQuantity(bounded) => Self::Quantity(bounded.unit()),
             ValueType::Text(_) | ValueType::String => Self::Text,
             other => Self::Value(other.clone()),
         }

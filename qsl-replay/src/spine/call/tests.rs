@@ -2294,3 +2294,26 @@ fn argument_value_binds_native_uuid_and_timestamp_values() {
         ));
     }
 }
+
+/// FR-367-AC-4: a mistyped argument refuses `WrongValueKind` at its
+/// position. A map type admits no value (quire-exact FR-386) and a bounded
+/// quantity has no native binding here (quire-exact FR-387), so an argument
+/// for either is mistyped and neither panics.
+#[trace("TC-1053", "FR-367-AC-4")]
+#[test]
+fn argument_value_refuses_map_and_bounded_quantity_parameters() {
+    let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+        ValueType::Boolean,
+        None,
+    )));
+    let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+        quire_exact::BoundedQuantityType::new(quire_exact::UnitId::compound([5; 32]), None, None)
+            .expect("an unbounded bounded quantity type"),
+    ));
+    for value_type in [map, bounded] {
+        assert!(matches!(
+            argument_value(1, Value::Boolean(true), &value_type).map_err(|refusal| *refusal),
+            Err(RunRefusal::WrongValueKind { position: 1 })
+        ));
+    }
+}
