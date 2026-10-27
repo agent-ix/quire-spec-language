@@ -914,9 +914,6 @@ pub enum TimedConstruct {
     Response,
     /// A `release` declaration (QSpec FR-419, QSL FR-249).
     Release,
-    /// An argument for a clock-bearing parameter other than `Clock`: a
-    /// record, tuple, union, optional or collection place (FR-230).
-    ClockBearingArgument,
     /// A clock-reading declaration whose expansion reaches its own call
     /// (FR-230 "Clock-reading declarations").
     RecursiveClockReading,
@@ -938,7 +935,6 @@ impl TimedConstruct {
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
             Self::Release => "a `release` declaration",
-            Self::ClockBearingArgument => "a clock-bearing argument other than a clock",
             Self::RecursiveClockReading => "a recursive clock-reading declaration",
             Self::ReferencedClock => "a clock of another object",
         }

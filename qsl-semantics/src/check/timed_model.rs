@@ -39,7 +39,8 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use super::assemble::TimedDeclaration;
 use super::ir::{CheckedBody, CheckedNode};
-use super::lowering::AdmittedModel;
+use super::lowering::{strictly_below, AdmittedModel, PlaceStep};
+use super::refusal::TimedConstruct;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{
     check_clause, population_of, ClauseDeclarations, ClauseOperation, ClauseView, PopulationDomain,
@@ -65,27 +66,37 @@ impl ClockId {
     }
 }
 
-/// One clock field of a timed model's object type (FR-230 `ClockField`).
-/// Every object of the type holds its own clock of the field.
+/// One clock place of a timed model's object type (FR-230 `ClockField`,
+/// "Places"): an object's clock field, or a clock below one of its fields
+/// along a path of record fields. Every object of the type
+/// holds its own clock of the place.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockField {
     owner: EffectiveId,
     field: DeclarationKey,
+    path: Vec<PlaceStep>,
     name: String,
 }
 
 impl ClockField {
-    /// The object type that declares the field.
+    /// The object type that declares the place's field.
     pub fn owner(&self) -> EffectiveId {
         self.owner
     }
 
-    /// The field's declaration key in its domain package.
+    /// The declaration key of the object's field the place is under, the
+    /// member an operation's frame names to reset it.
     pub fn field(&self) -> &DeclarationKey {
         &self.field
     }
 
-    /// The field's member name.
+    /// The path from the object to the clock, the object's field first.
+    pub fn path(&self) -> &[PlaceStep] {
+        &self.path
+    }
+
+    /// The place's path written with `.` between its steps: the field's
+    /// member name for a clock field.
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -536,20 +547,28 @@ struct Clocks<'a> {
 }
 
 impl Clocks<'_> {
-    /// The clock `self.f` reads at `id` of `form`, for a clause about
-    /// `context`.
+    /// The clock place the path `self.f.g…` reads at `id` of `form`, for a
+    /// clause about `context`.
     fn read(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
-        let ExprNode::Field { operand, field } = form.expression.get(id)?.node() else {
-            return None;
-        };
-        if !matches!(form.expression.get(*operand)?.node(), ExprNode::SelfRef) {
-            return None;
-        }
-        let key = self.model.clock_field(context, field)?;
+        let path = self_path(form, id)?;
         self.fields
             .iter()
-            .position(|clock| &clock.field == key)
+            .position(|clock| clock.path == path && self.model.conforms(context, clock.owner))
             .map(ClockId)
+    }
+
+    /// Whether the path `self.f…` at `id` of `form` is a value holding clock
+    /// places below it: a clock-bearing record or union value.
+    fn bears(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> bool {
+        self_path(form, id).is_some_and(|path| self.bears_path(&path, context))
+    }
+
+    /// Whether the value an object of type `context` holds at `path` is
+    /// clock-bearing: a clock place lies strictly below it.
+    fn bears_path(&self, path: &[PlaceStep], context: EffectiveId) -> bool {
+        self.fields.iter().any(|clock| {
+            strictly_below(&clock.path, path) && self.model.conforms(context, clock.owner)
+        })
     }
 
     /// Whether node `id` of `form` reads a clock through a path other than
@@ -671,6 +690,26 @@ impl Clocks<'_> {
     }
 }
 
+/// The record-field path `f.g…` of `self.f.g…` at `id` of `form`, the
+/// object's field first; `None` when `id` is no such path.
+fn self_path(form: &ExpressionForm, id: ExprId) -> Option<Vec<PlaceStep>> {
+    let mut path = Vec::new();
+    let mut at = id;
+    loop {
+        match form.expression.get(at)?.node() {
+            ExprNode::Field { operand, field } => {
+                path.push(PlaceStep::Field(field.clone()));
+                at = *operand;
+            }
+            ExprNode::SelfRef if !path.is_empty() => {
+                path.reverse();
+                return Some(path);
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// One expression form with the span of each node and what each node reads
 /// of the clocks.
 struct Located<'f> {
@@ -711,6 +750,21 @@ impl<'f> Located<'f> {
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
                 first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
+            // A clock-bearing value read whole is a read no constraint takes;
+            // a data field of one (`self.t.n`) reads no clock.
+            if clocks.bears(form, id, context) {
+                first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
+            // A data field of a clock-bearing record (`self.t.n`) reads no
+            // clock; any other path is decided below.
+            if self_path(form, id).is_some_and(|path| {
+                path.split_last().is_some_and(|(_, record)| {
+                    !record.is_empty() && clocks.bears_path(record, context)
+                })
+            }) {
                 continue;
             }
             // A clock read through another path is a read, though no
@@ -1068,20 +1122,34 @@ enum ClauseClocks {
     Resets(Vec<ClockReset>),
 }
 
+/// What a postcondition's resets cut from its body: each reset conjunct,
+/// replaced by `true`, and each clock component of a record literal written
+/// whole, removed from the literal.
+#[derive(Default)]
+struct ResetCut {
+    leaves: BTreeMap<ExprId, ExprNode>,
+    removed: BTreeSet<ExprId>,
+    /// The clock-bearing record literals the resets consumed.
+    literals: BTreeSet<ExprId>,
+    resets: Vec<ClockReset>,
+}
+
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
-/// writes a clock of the operation's frame.
+/// writes a clock of the operation's frame, and each `self.f = R { … }`
+/// writing a clock-bearing record whole, whose clock components are resets
+/// and whose data components stay a data write (FR-230 "Records, tuples
+/// and unions").
 fn resets(
     located: &Located<'_>,
     clause: &StateClauseDeclaration,
     clocks: &Clocks<'_>,
-) -> Result<(BTreeMap<ExprId, ExprNode>, Vec<ClockReset>), TemporalCause> {
+) -> Result<ResetCut, TemporalCause> {
     let written: BTreeSet<&DeclarationKey> = clause
         .operation
         .iter()
         .flat_map(|operation| operation.declaration.effect().written_fields())
         .collect();
-    let mut leaves = BTreeMap::new();
-    let mut resets = Vec::new();
+    let mut cut = ResetCut::default();
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {
             continue;
@@ -1095,7 +1163,27 @@ fn resets(
         else {
             return Err(nested_write(located, conjunct));
         };
+        if clocks.bears(located.form, *left, clause.context) {
+            let Some(ExprNode::Record { .. }) = located.node(*right) else {
+                return Err(located.outside(*right));
+            };
+            let Some(path) = self_path(located.form, *left) else {
+                return Err(located.outside(*left));
+            };
+            RecordWrite {
+                located,
+                context: clause.context,
+                clocks,
+                written: &written,
+                span,
+            }
+            .resets(path, *right, &mut cut)?;
+            continue;
+        }
         let Some(clock) = located.clock(*left) else {
+            if !located.reads_clock(*left) && located.reads_clock(*right) {
+                return Err(located.outside(*right));
+            }
             return Err(nested_write(located, conjunct));
         };
         if located.reads_clock(*right) {
@@ -1115,10 +1203,115 @@ fn resets(
         if !in_frame {
             return Err(TemporalCause::ClockWrite { span });
         }
-        leaves.insert(conjunct, ExprNode::Boolean(true));
-        resets.push(ClockReset { clock, value, span });
+        cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+        cut.resets.push(ClockReset { clock, value, span });
     }
-    Ok((leaves, resets))
+    Ok(cut)
+}
+
+/// One postcondition conjunct `self.f = literal` writing a clock-bearing
+/// record: the clause, the receiver's type, the model's clocks, the fields
+/// the operation's frame writes and the conjunct's span.
+struct RecordWrite<'w, 'f, 'c> {
+    located: &'w Located<'f>,
+    context: EffectiveId,
+    clocks: &'w Clocks<'c>,
+    written: &'w BTreeSet<&'w DeclarationKey>,
+    span: Span,
+}
+
+impl RecordWrite<'_, '_, '_> {
+    /// The clock places of the receiver at `path` or strictly below it.
+    fn places_below<'p>(
+        &'p self,
+        path: &'p [PlaceStep],
+    ) -> impl Iterator<Item = (usize, &'p ClockField)> + 'p {
+        self.clocks
+            .fields
+            .iter()
+            .enumerate()
+            .filter(move |(_, clock)| {
+                strictly_below(&clock.path, path)
+                    && self.clocks.model.conforms(self.context, clock.owner)
+            })
+    }
+
+    /// The resets of `self.<path> = literal`: each clock component of the
+    /// record literal a reset of its place to its constant, each
+    /// clock-bearing component a literal read the same way, each data
+    /// component kept. A literal that leaves out a clock component writes
+    /// that clock no constant, which no reset admits (`clock-write`).
+    fn resets(
+        &self,
+        path: Vec<PlaceStep>,
+        literal: ExprId,
+        cut: &mut ResetCut,
+    ) -> Result<(), TemporalCause> {
+        let located = self.located;
+        let Some(ExprNode::Record { fields, .. }) = located.node(literal) else {
+            return Err(TemporalCause::ClockWrite {
+                span: located.span(literal),
+            });
+        };
+        cut.literals.insert(literal);
+        let named: BTreeSet<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
+        let omitted = self.places_below(&path).any(|(_, clock)| {
+            clock
+                .path
+                .get(path.len())
+                .is_some_and(|PlaceStep::Field(component)| !named.contains(component.as_str()))
+        });
+        if omitted {
+            return Err(TemporalCause::ClockWrite {
+                span: located.span(literal),
+            });
+        }
+        for (name, initializer) in fields {
+            let mut below = path.clone();
+            below.push(PlaceStep::Field(name.clone()));
+            let place = self
+                .places_below(&path)
+                .find(|(_, clock)| clock.path == below)
+                .map(|(index, _)| index);
+            let bears = self.places_below(&below).next().is_some();
+            let qsl_forms::FieldInitializer::Value(value) = initializer else {
+                if place.is_some() || bears {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                continue;
+            };
+            if let Some(index) = place {
+                if located.reads_clock(*value) {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                let value_span = located.span(*value);
+                let constant = match located.constant(*value, self.clocks) {
+                    Ok(constant) => constant,
+                    Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                        return Err(TemporalCause::ClockWrite { span: value_span })
+                    }
+                    Err(cause) => return Err(cause),
+                };
+                let in_frame = self
+                    .clocks
+                    .fields
+                    .get(index)
+                    .is_some_and(|field| self.written.contains(&field.field));
+                if !in_frame {
+                    return Err(TemporalCause::ClockWrite { span: self.span });
+                }
+                cut.removed.insert(*value);
+                cut.resets.push(ClockReset {
+                    clock: ClockId(index),
+                    value: constant,
+                    span: value_span,
+                });
+            } else if bears {
+                self.resets(below, *value, cut)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A postcondition's clock read under `conjunct` that is no top-level reset:
@@ -1146,6 +1339,27 @@ fn nested_write(located: &Located<'_>, conjunct: ExprId) -> TemporalCause {
     located.outside(conjunct)
 }
 
+/// The span of the first record literal of a clock-bearing type that is not
+/// one of `consumed`, the literals a reset writes: a literal with a clock
+/// component is checked only as a reset (FR-230 "Records, tuples and
+/// unions").
+fn stray_literal(
+    located: &Located<'_>,
+    clocks: &Clocks<'_>,
+    consumed: &BTreeSet<ExprId>,
+) -> Option<Span> {
+    located
+        .form
+        .expression
+        .iter()
+        .filter(|node| !consumed.contains(&node.id()))
+        .filter(|node| {
+            matches!(node.node(), ExprNode::Record { name, .. } if clocks.model.literal_bears_clock(name))
+        })
+        .map(|node| located.span(node.id()))
+        .min_by_key(|span| span.start)
+}
+
 /// One state clause, its clocks read out: a precondition's guard parts or a
 /// postcondition's resets, and the clause body with each clock constraint
 /// and reset replaced by the Boolean it contributes to the data reading.
@@ -1163,11 +1377,18 @@ fn read_clause(
     };
     let root = located.root();
     if !located.reads_clock(root) {
+        if let Some(span) = stray_literal(&located, clocks, &BTreeSet::new()) {
+            return Err(timed(TemporalCause::ClockWrite { span }));
+        }
         return Ok(ClauseClocks::None);
     }
+    let mut removed = BTreeSet::new();
     let (leaves, read) = match clause.kind {
         StateClauseKind::Invariant => return Err(timed(located.outside(root))),
         StateClauseKind::Precondition => {
+            if let Some(span) = stray_literal(&located, clocks, &BTreeSet::new()) {
+                return Err(timed(TemporalCause::ClockWrite { span }));
+            }
             let (dnf, polarity) = guard(&located, clocks, clause.context, budget)?;
             let parts = dnf
                 .into_iter()
@@ -1190,12 +1411,16 @@ fn read_clause(
             (leaves, ClauseClocks::Guard(parts))
         }
         StateClauseKind::Postcondition => {
-            let (leaves, resets) = resets(&located, clause, clocks).map_err(timed)?;
-            (leaves, ClauseClocks::Resets(resets))
+            let cut = resets(&located, clause, clocks).map_err(timed)?;
+            if let Some(span) = stray_literal(&located, clocks, &cut.literals) {
+                return Err(timed(TemporalCause::ClockWrite { span }));
+            }
+            removed = cut.removed;
+            (cut.leaves, ClauseClocks::Resets(cut.resets))
         }
     };
     let rewritten = form
-        .cut(root, &leaves)
+        .cut_removing(root, &leaves, &removed)
         .ok_or_else(|| timed(located.outside(root)))?;
     clause.body = rewritten.expression;
     clause.spans.body = rewritten.spans;
@@ -1386,12 +1611,13 @@ fn prepare_models(
         })
     };
     let clocks_of = |model| {
-        let fields = AdmittedModel::clock_fields(model)
-            .into_iter()
-            .map(|(owner, field, name)| ClockField {
-                owner,
-                field: field.clone(),
-                name: name.to_owned(),
+        let fields = AdmittedModel::clock_places(model)
+            .iter()
+            .map(|place| ClockField {
+                owner: place.owner,
+                field: place.field.clone(),
+                name: place.name(),
+                path: place.path.clone(),
             })
             .collect();
         let target = source_of(model)
@@ -1415,7 +1641,22 @@ fn prepare_models(
             continue;
         };
         let span = match source_of(model) {
-            Some(source) if matches!(source.source, TimeSourceKind::Dense) => continue,
+            Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
+                // A place under an optional member or in a clock collection
+                // is guarded or live by a presence FR-230 does not yet give
+                // S3 a reading of (STD-493 item 17, QSpec FR-415 "Clock
+                // collections").
+                if AdmittedModel::clock_places(model)
+                    .iter()
+                    .any(|place| place.optional || place.collection)
+                {
+                    return Err(CheckCause::TimedNotChecked {
+                        construct: TimedConstruct::Clock,
+                        span: source.span,
+                    });
+                }
+                continue;
+            }
             Some(source) => Some(source.span),
             None => state_clauses
                 .iter()

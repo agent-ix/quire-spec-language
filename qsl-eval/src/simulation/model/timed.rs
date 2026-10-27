@@ -832,7 +832,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// FR-236's post-state digest of `state`: the canonical identity of its
     /// model state (FR-181's `simulation-state`) together with its exact
-    /// clock valuation, each clock named by its object and field. A clock of
+    /// clock valuation, each clock named by its object, the field it is
+    /// under and its path below the object (FR-230 "Places"). A clock of
     /// an object the state does not hold has no value and is left out
     /// (STD-493's byte form).
     ///
@@ -850,20 +851,29 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .zip(state.clocks.values())
             .filter(|(place, _)| place.present(&state.discrete))
             .map(|(place, value)| {
-                let field = self
-                    .model
-                    .clock(place.clock)
-                    .map_or(super::encode::Enc::Null, |field| {
-                        super::encode::declaration_enc(field.field())
-                    });
+                let (field, path) = self.model.clock(place.clock).map_or(
+                    (super::encode::Enc::Null, super::encode::Enc::Null),
+                    |field| {
+                        (
+                            super::encode::declaration_enc(field.field()),
+                            super::encode::Enc::Array(
+                                field.path().iter().map(place_step_enc).collect(),
+                            ),
+                        )
+                    },
+                );
                 super::encode::Enc::tagged(
                     "clock",
                     vec![
                         ("object", super::encode::reference_enc(&place.object)),
                         ("field", field),
+                        ("path", path),
                         (
                             "value",
-                            super::encode::value_enc(&quire_exact::Value::Rational(value.clone())),
+                            super::encode::value_enc(
+                                &quire_exact::Value::Rational(value.clone()),
+                                self.system.typing(),
+                            ),
                         ),
                     ],
                 )
@@ -874,7 +884,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             vec![
                 (
                     "state",
-                    super::encode::model_key(&self.system.model, state.discrete.state()).0,
+                    super::encode::model_key(
+                        &self.system.model,
+                        state.discrete.state(),
+                        self.system.typing(),
+                    )
+                    .0,
                 ),
                 ("clocks", super::encode::Enc::Array(clocks)),
             ],
@@ -1196,4 +1211,13 @@ impl<L: crate::model_subject::ModelLetters> crate::temporal::TemporalLetters
             .letters
             .captures(self.instance, self.state_at(position), meter)?)
     }
+}
+
+/// One step of a clock place's path in the state digest's byte form.
+fn place_step_enc(step: &qsl_semantics::check::PlaceStep) -> super::encode::Enc {
+    let qsl_semantics::check::PlaceStep::Field(name) = step;
+    super::encode::Enc::tagged(
+        "field",
+        vec![("name", super::encode::Enc::text(name.as_str()))],
+    )
 }

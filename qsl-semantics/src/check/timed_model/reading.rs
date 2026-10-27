@@ -35,7 +35,9 @@ use super::{
 };
 use crate::check::assemble::{ClockReadingDeclaration, ClockSlot};
 use crate::check::lowering::AdmittedModel;
+use crate::check::lowering::PlaceStep;
 use crate::check::refusal::{CheckCause, TemporalCause, TimedConstruct};
+use quire_checked::key::DeclarationKey;
 
 /// The places a place expression can denote, each with the data literals
 /// that select it.
@@ -81,14 +83,50 @@ impl<'r> Declarations<'r> {
         )
     }
 
-    /// Whether some object type of a model holds a clock field `field`:
-    /// `self.field` reads a clock.
-    fn names_clock(&self, field: &str) -> bool {
-        self.models.iter().any(|model| {
-            model
-                .clock_fields()
+    /// What the path `steps` below `root` reaches.
+    fn path_kind(&self, root: &PathRoot, steps: &[PlaceStep]) -> PathKind {
+        let places: Vec<Vec<PlaceStep>> = match root {
+            PathRoot::Object(object) => self
+                .models
                 .iter()
-                .any(|(_, _, name)| *name == field)
+                .flat_map(|model| {
+                    model
+                        .clock_places()
+                        .iter()
+                        .filter(|place| {
+                            object.is_none_or(|object| model.conforms(object, place.owner))
+                        })
+                        .map(|place| place.path.clone())
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+            PathRoot::Record(model, key) => self
+                .models
+                .get(*model)
+                .map(|model| model.record_clock_paths(key))
+                .unwrap_or_default(),
+        };
+        if places.iter().any(|place| place.as_slice() == steps) {
+            PathKind::Clock
+        } else if places
+            .iter()
+            .any(|place| crate::check::lowering::strictly_below(place, steps))
+        {
+            PathKind::Bearing
+        } else {
+            PathKind::Data
+        }
+    }
+
+    /// The package record type a parameter's written type names, with the
+    /// index of its model, when it names one that holds a clock.
+    fn record_type(&self, written: &qsl_forms::TypeForm) -> Option<(usize, DeclarationKey)> {
+        let TypeFormHead::Name(name) = &written.head else {
+            return None;
+        };
+        self.models.iter().enumerate().find_map(|(index, model)| {
+            let key = model.record_named(name)?;
+            (!model.record_clock_paths(key).is_empty()).then(|| (index, key.clone()))
         })
     }
 
@@ -107,12 +145,33 @@ impl<'r> Declarations<'r> {
     }
 }
 
+/// Where a place path of a body starts.
+enum PathRoot {
+    /// An object: `self` (`None`, any object type) or an object parameter.
+    Object(Option<EffectiveId>),
+    /// A record parameter, by its model's index and its record type.
+    Record(usize, DeclarationKey),
+}
+
+/// What a place path reaches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PathKind {
+    /// A clock place.
+    Clock,
+    /// A value holding clock places below it.
+    Bearing,
+    /// A data value.
+    Data,
+}
+
 /// A declaration's parameter: its name, how it is read, and the object
-/// type it is typed by, when it is one.
+/// type or clock-bearing package record type it is typed by, when it is
+/// one.
 struct Parameter<'d> {
     name: &'d str,
     slot: ClockSlot,
     object: Option<EffectiveId>,
+    record: Option<(usize, DeclarationKey)>,
 }
 
 /// The parameter a body node names, when it is a bare name of one.
@@ -139,6 +198,7 @@ fn parameter<'d>(
         object: declarations
             .object_type(type_form)
             .map(|(_, object)| object),
+        record: declarations.record_type(type_form),
     })
 }
 
@@ -184,23 +244,59 @@ impl<'d> Body<'d> {
         parameter(declarations, self.declaration, self.node(id)?)
     }
 
-    /// Whether node `id` reads a clock field directly: `self.x`, or `o.x`
-    /// for an object parameter `o` whose type holds a clock field `x`.
-    fn is_clock_field(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
-        let Some(ExprNode::Field { operand, field }) = self.node(id) else {
-            return false;
+    /// The place path at `id`: the field steps of `r.f.g…` and the node `r`
+    /// they start from, `self` or a parameter. `None` when `id` is no field
+    /// path.
+    fn path(&self, id: ExprId) -> Option<(ExprId, Vec<PlaceStep>)> {
+        let mut steps = Vec::new();
+        let mut at = id;
+        while let Some(ExprNode::Field { operand, field }) = self.node(at) {
+            steps.push(PlaceStep::Field(field.clone()));
+            at = *operand;
+        }
+        if steps.is_empty() {
+            return None;
+        }
+        steps.reverse();
+        Some((at, steps))
+    }
+
+    /// What the place path at `id` reaches, when it is one from `self`, an
+    /// object parameter or a clock-bearing record parameter.
+    fn path_kind(&self, id: ExprId, declarations: &Declarations<'_>) -> Option<PathKind> {
+        let (root, steps) = self.path(id)?;
+        let root = match self.node(root)? {
+            ExprNode::SelfRef => PathRoot::Object(None),
+            ExprNode::Name(_) => {
+                let parameter = self.parameter(declarations, root)?;
+                match (parameter.object, parameter.record) {
+                    (Some(object), _) => PathRoot::Object(Some(object)),
+                    (None, Some((model, key))) => PathRoot::Record(model, key),
+                    (None, None) => return None,
+                }
+            }
+            _ => return None,
         };
-        match self.node(*operand) {
-            Some(ExprNode::SelfRef) => declarations.names_clock(field),
+        Some(declarations.path_kind(&root, &steps))
+    }
+
+    /// Whether node `id` reads a clock place directly: `self.x`, `o.x` of an
+    /// object parameter or `r.x` of a record parameter, through record
+    /// fields.
+    fn is_clock_field(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
+        self.path_kind(id, declarations) == Some(PathKind::Clock)
+    }
+
+    /// Whether node `id` can be the argument for a clock-bearing parameter:
+    /// a clock-bearing parameter, or a place path to a clock-bearing value.
+    fn is_bearing_place(&self, id: ExprId, declarations: &Declarations<'_>) -> bool {
+        match self.node(id) {
             Some(ExprNode::Name(_)) => self
-                .parameter(declarations, *operand)
-                .and_then(|parameter| parameter.object)
-                .is_some_and(|object| {
-                    declarations
-                        .models
-                        .iter()
-                        .any(|model| model.clock_field(object, field).is_some())
-                }),
+                .parameter(declarations, id)
+                .is_some_and(|parameter| parameter.slot == ClockSlot::Bearing),
+            Some(ExprNode::Field { .. }) => {
+                self.path_kind(id, declarations) == Some(PathKind::Bearing)
+            }
             _ => false,
         }
     }
@@ -254,7 +350,12 @@ impl<'d> Body<'d> {
                 ExprNode::Name(_) => self
                     .parameter(declarations, id)
                     .is_some_and(|parameter| parameter.slot != ClockSlot::Data),
-                ExprNode::Field { .. } => self.is_clock_field(id, declarations),
+                ExprNode::Field { .. } => match self.path_kind(id, declarations) {
+                    Some(PathKind::Clock | PathKind::Bearing) => true,
+                    // A data field of a clock-bearing value reads no clock.
+                    Some(PathKind::Data) => continue,
+                    None => false,
+                },
                 ExprNode::Call { name, .. } => declarations.named(name).is_some(),
                 _ => false,
             };
@@ -427,12 +528,16 @@ pub(crate) fn check_declaration(
                 pending.push((*then, Position::Place));
                 pending.push((*otherwise, Position::Place));
             }
-            ExprNode::Field { .. }
-                if position != Position::Place && body.is_clock_field(id, declarations) =>
-            {
-                return Err(TemporalCause::ClockReadOutsideConstraint {
-                    span: body.span(id),
-                });
+            ExprNode::Field { .. } if body.path_kind(id, declarations).is_some() => {
+                // A clock or clock-bearing value is read only as a place; a
+                // data field of one is a data read.
+                if body.path_kind(id, declarations) != Some(PathKind::Data)
+                    && position != Position::Place
+                {
+                    return Err(TemporalCause::ClockReadOutsideConstraint {
+                        span: body.span(id),
+                    });
+                }
             }
             ExprNode::Call { name, arguments } => {
                 let called = declarations.named(name);
@@ -447,15 +552,19 @@ pub(crate) fn check_declaration(
                     let slot = called
                         .and_then(|called| called.parameters.get(index).copied())
                         .unwrap_or(ClockSlot::Data);
-                    let read = if slot == ClockSlot::Data {
-                        Position::Other
-                    } else {
-                        if !body.is_place(*argument, declarations) {
+                    let place = match slot {
+                        ClockSlot::Data => None,
+                        ClockSlot::Clock => Some(body.is_place(*argument, declarations)),
+                        ClockSlot::Bearing => Some(body.is_bearing_place(*argument, declarations)),
+                    };
+                    let read = match place {
+                        None => Position::Other,
+                        Some(true) => Position::Place,
+                        Some(false) => {
                             return Err(TemporalCause::NotAPlaceExpression {
                                 span: body.span(*argument),
-                            });
+                            })
                         }
-                        Position::Place
                     };
                     pending.push((*argument, read));
                 }
@@ -475,9 +584,9 @@ pub(crate) fn check_declaration(
 enum Argument {
     /// The places a clock argument can denote.
     Places(Places),
-    /// `self` for an object parameter: a clock field of the parameter is a
-    /// clock of the receiver.
-    Receiver,
+    /// A place path below the receiver: `self` (no steps) for an object
+    /// parameter, or a clock-bearing record value for a record parameter.
+    Path(Vec<PlaceStep>),
     /// A data argument: the call-site term it is, and its value as a
     /// constant time quantity, or why it is none.
     Value {
@@ -619,9 +728,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                         return Err(timed(TemporalCause::NotAPlaceExpression { span }));
                     }
                 },
-                ClockSlot::Bearing => {
-                    return Err(not_checked(TimedConstruct::ClockBearingArgument, span))
-                }
+                ClockSlot::Bearing => Argument::Path(self.site_record(type_form, argument)?),
                 ClockSlot::Data => {
                     if self.located.reads_clock(argument) {
                         return Err(timed(self.located.outside(argument)));
@@ -629,7 +736,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     let receiver = matches!(self.located.node(argument), Some(ExprNode::SelfRef))
                         && self.declarations.object_type(type_form).is_some();
                     if receiver {
-                        Argument::Receiver
+                        Argument::Path(Vec::new())
                     } else {
                         Argument::Value {
                             term: DataLiteral::Site(argument),
@@ -641,6 +748,55 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             bound.insert(name.clone(), read);
         }
         Ok(bound)
+    }
+
+    /// The record path a call-site argument for a clock-bearing parameter of
+    /// type `type_form` denotes: a place path `self.f…` to a value of that
+    /// record type.
+    fn site_record(
+        &self,
+        type_form: &qsl_forms::TypeForm,
+        argument: ExprId,
+    ) -> Result<Vec<PlaceStep>, CheckCause> {
+        let span = self.located.span(argument);
+        let not_a_place = || timed(TemporalCause::NotAPlaceExpression { span });
+        let Some((_, expected)) = self.declarations.record_type(type_form) else {
+            // A clock-bearing type of the unit's own source: no place of the
+            // model holds one.
+            return Err(not_a_place());
+        };
+        let path = super::self_path(self.located.form, argument).ok_or_else(not_a_place)?;
+        if self.clocks.model.record_at(self.context, &path) != Some(&expected) {
+            return Err(not_a_place());
+        }
+        Ok(path)
+    }
+
+    /// The receiver path the place path at body node `root` starts from:
+    /// none for `self`, an object or record parameter's argument path.
+    fn prefix(&self, frame: &Frame<'_, '_>, root: ExprId) -> Result<Vec<PlaceStep>, CheckCause> {
+        let body = frame.body;
+        match body.node(root) {
+            Some(ExprNode::SelfRef) => Ok(Vec::new()),
+            Some(ExprNode::Name(_)) => match body
+                .parameter(self.declarations, root)
+                .and_then(|parameter| frame.environment.get(parameter.name))
+            {
+                Some(Argument::Path(prefix)) => Ok(prefix.clone()),
+                // A clock of another object: a place through a reference
+                // (FR-230-AC-10's `peer_clock`).
+                Some(Argument::Value { .. }) => Err(not_checked(
+                    TimedConstruct::ReferencedClock,
+                    body.span(root),
+                )),
+                _ => Err(timed(TemporalCause::NotAPlaceExpression {
+                    span: body.span(root),
+                })),
+            },
+            _ => Err(timed(TemporalCause::NotAPlaceExpression {
+                span: body.span(root),
+            })),
+        }
     }
 
     /// The arguments of a call written in a body, by parameter name of the
@@ -665,10 +821,29 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             let read = match slot {
                 ClockSlot::Clock => Argument::Places(self.places(frame, argument, stack, budget)?),
                 ClockSlot::Bearing => {
-                    return Err(not_checked(
-                        TimedConstruct::ClockBearingArgument,
-                        body.span(argument),
-                    ))
+                    if let Some(passed) = body
+                        .parameter(self.declarations, argument)
+                        .and_then(|parameter| frame.environment.get(parameter.name))
+                    {
+                        passed.clone()
+                    } else {
+                        let (root, steps) = body.path(argument).ok_or_else(|| {
+                            timed(TemporalCause::NotAPlaceExpression {
+                                span: body.span(argument),
+                            })
+                        })?;
+                        let mut path = self.prefix(frame, root)?;
+                        path.extend(steps);
+                        let expected = self.declarations.record_type(type_form);
+                        if expected.as_ref().map(|(_, key)| key)
+                            != self.clocks.model.record_at(self.context, &path)
+                        {
+                            return Err(timed(TemporalCause::NotAPlaceExpression {
+                                span: body.span(argument),
+                            }));
+                        }
+                        Argument::Path(path)
+                    }
                 }
                 ClockSlot::Data => {
                     if let Some(passed) = body
@@ -679,7 +854,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     } else if matches!(body.node(argument), Some(ExprNode::SelfRef))
                         && self.declarations.object_type(type_form).is_some()
                     {
-                        Argument::Receiver
+                        Argument::Path(Vec::new())
                     } else {
                         let constant = match body.node(argument) {
                             Some(ExprNode::Quantity(quantity)) => self.clocks.quantity(quantity),
@@ -728,13 +903,18 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         }
         let site_span = self.located.span(frame.site);
         let names: BTreeSet<&str> = frame.environment.keys().map(String::as_str).collect();
-        let self_tree = Expression::self_ref();
         let mut trees: Vec<(ExprId, Expression)> = Vec::new();
-        let mut receivers: Vec<ExprId> = Vec::new();
         for (occurrence, name) in free_occurrences(body.expression(), id, &names) {
             match frame.environment.get(name) {
                 Some(Argument::Value { term, .. }) => trees.push((occurrence, self.term(term)?)),
-                Some(Argument::Receiver) => receivers.push(occurrence),
+                // `self.f…`: the receiver's value at the path.
+                Some(Argument::Path(path)) => trees.push((
+                    occurrence,
+                    path.iter().fold(Expression::self_ref(), |operand, step| {
+                        let PlaceStep::Field(field) = step;
+                        Expression::field(operand, field.clone())
+                    }),
+                )),
                 // A clock parameter read as data was refused above.
                 Some(Argument::Places(_)) | None => {
                     return Err(timed(TemporalCause::ClockReadOutsideConstraint {
@@ -746,7 +926,6 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         let grafts: BTreeMap<ExprId, &Expression> = trees
             .iter()
             .map(|(occurrence, tree)| (*occurrence, tree))
-            .chain(receivers.iter().map(|occurrence| (*occurrence, &self_tree)))
             .collect();
         let expression = body
             .expression()
@@ -795,35 +974,16 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 Some(Argument::Places(places)) => Ok(places.clone()),
                 _ => Err(not_a_place()),
             },
-            Some(ExprNode::Field { operand, field }) => {
-                let receiver = match body.node(*operand) {
-                    Some(ExprNode::SelfRef) => true,
-                    Some(ExprNode::Name(_)) => match body
-                        .parameter(self.declarations, *operand)
-                        .and_then(|parameter| frame.environment.get(parameter.name))
-                    {
-                        Some(Argument::Receiver) => true,
-                        // A clock of another object: a place through a
-                        // reference (FR-230-AC-10's `peer_clock`).
-                        Some(Argument::Value { .. }) => {
-                            return Err(not_checked(TimedConstruct::ReferencedClock, body.span(id)))
-                        }
-                        Some(Argument::Places(_)) | None => false,
-                    },
-                    _ => false,
-                };
-                if !receiver {
-                    return Err(not_a_place());
-                }
+            Some(ExprNode::Field { .. }) => {
+                let (root, steps) = body.path(id).ok_or_else(not_a_place)?;
+                let mut path = self.prefix(frame, root)?;
+                path.extend(steps);
                 let clock = self
                     .clocks
-                    .model
-                    .clock_field(self.context, field)
-                    .and_then(|key| {
-                        self.clocks
-                            .fields
-                            .iter()
-                            .position(|clock| &clock.field == key)
+                    .fields
+                    .iter()
+                    .position(|clock| {
+                        clock.path == path && self.clocks.model.conforms(self.context, clock.owner)
                     })
                     .map(ClockId)
                     .ok_or_else(not_a_place)?;

@@ -109,7 +109,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         )
         .map_err(|_| broken())?;
         if let FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome {
-            let enc = value_enc(value);
+            let enc = value_enc(value, self.model.typing());
             return Ok(Ok(QueueKey {
                 channel,
                 fifo: Some(FifoKey {
@@ -174,7 +174,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 vec![
                     ("send", Enc::text(text.clone())),
                     ("thread", path.enc()),
-                    ("payload", value_enc(&payload)),
+                    ("payload", value_enc(&payload, self.model.typing())),
                 ],
             );
             let entry = Entry {
@@ -225,11 +225,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             };
             let record = SendRecord::new(
                 channel.name.clone(),
-                value_enc(&payload),
+                value_enc(&payload, self.model.typing()),
                 outcome,
                 displaced.as_ref().map(|(entry, _)| entry.enc.clone()),
             );
-            let enc = value_enc(&payload);
+            let enc = value_enc(&payload, self.model.typing());
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             store(target, key, queue);
@@ -310,7 +310,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 continue;
             }
             let payload = entry.payload.clone();
-            let enc = value_enc(&payload);
+            let enc = value_enc(&payload, self.model.typing());
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             let mut queue = target.queues.get(&at.0).cloned().unwrap_or_default();

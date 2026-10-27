@@ -345,7 +345,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             if at_bound {
                 continue;
             }
-            let enc = value_enc(&record);
+            let enc = value_enc(&record, self.model.typing());
             let trigger = Bound {
                 value: Some(record),
                 enc: enc.clone(),

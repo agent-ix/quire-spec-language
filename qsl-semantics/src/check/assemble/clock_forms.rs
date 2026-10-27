@@ -119,6 +119,9 @@ pub(super) struct ClockForms {
     pub(super) pure_aliases: BTreeSet<String>,
     /// The declared type names that are clock-bearing.
     pub(super) bearing_types: BTreeSet<String>,
+    /// The selected models' record types that hold a clock, as the source
+    /// writes them (`M::T`).
+    pub(super) package_bearing: BTreeSet<String>,
     /// The declared aliases of the clock type itself: an alias chain that
     /// ends in `Clock`.
     pub(super) clock_aliases: BTreeSet<String>,
@@ -150,7 +153,12 @@ impl ClockForms {
         while let Some(form) = stack.pop() {
             match &form.head {
                 TypeFormHead::Builtin(BuiltinType::Clock) => return true,
-                TypeFormHead::Name(name) if self.bearing_types.contains(&name.name) => return true,
+                TypeFormHead::Name(name)
+                    if self.bearing_types.contains(&name.name)
+                        || self.package_bearing.contains(&name.name) =>
+                {
+                    return true
+                }
                 _ => {}
             }
             stack.extend(&form.arguments);
@@ -346,13 +354,17 @@ fn clocks<'f>(forms: impl IntoIterator<Item = &'f TypeForm>) -> Vec<Span> {
 }
 
 /// Classify the clock-bearing declarations among `forms`.
-pub(super) fn classify(forms: &[qsl_forms::ParsedForm]) -> ClockForms {
+pub(super) fn classify(
+    forms: &[qsl_forms::ParsedForm],
+    package_bearing: BTreeSet<String>,
+) -> ClockForms {
     let read: Vec<Option<Written<'_>>> = forms.iter().map(|form| written(form.form())).collect();
     let mut classified = ClockForms {
         dispositions: BTreeMap::new(),
         positions: Vec::new(),
         pure_aliases: BTreeSet::new(),
         bearing_types: BTreeSet::new(),
+        package_bearing,
         clock_aliases: BTreeSet::new(),
     };
     // The alias and composite names that are pure or bearing, to a fixed

@@ -193,7 +193,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             frame.extend(captures.iter().map(|bound| bound.value.clone()));
             match self.decide_template(template, initializer, frame, next)? {
                 Decided::Value(value) => captures.push(Bound {
-                    enc: value_enc(&value),
+                    enc: value_enc(&value, self.model.typing()),
                     value: Some(value),
                 }),
                 Decided::Undecided(finding) => {
@@ -267,7 +267,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 frame.extend(Self::captured(&registration, usize::MAX));
                 match self.decide_template(template, initializer, frame, next)? {
                     Decided::Value(value) => registration.captures.push(Bound {
-                        enc: value_enc(&value),
+                        enc: value_enc(&value, self.model.typing()),
                         value: Some(value),
                     }),
                     Decided::Undecided(finding) => {
@@ -392,7 +392,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     key.clone(),
                     applied.transition.clone(),
                     reference_enc(&applied.receiver),
-                    applied.arguments.iter().map(value_enc).collect(),
+                    applied
+                        .arguments
+                        .iter()
+                        .map(|value| value_enc(value, self.model.typing()))
+                        .collect(),
                     record.enc.clone(),
                 );
                 // A compensation thread is no branch thread of any `parallel`,

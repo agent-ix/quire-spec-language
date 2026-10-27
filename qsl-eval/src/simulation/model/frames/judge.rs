@@ -192,7 +192,7 @@ impl ModelSystem<'_> {
                     })
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| stop(BROKEN))?;
-                if transition_of(row, application, &args)? != *transition {
+                if transition_of(row, application, &args, self.typing())? != *transition {
                     continue;
                 }
                 let result = self.result_of(application, post)?;
@@ -233,7 +233,7 @@ impl ModelSystem<'_> {
         }
         for index in 0..domain.len() {
             let value = domain.nth(index).ok_or_else(|| stop(BROKEN))?;
-            if Some(text_of(&value)?.as_str()) == recorded {
+            if Some(text_of(&value, self.typing())?.as_str()) == recorded {
                 return Ok(Some(Some(value)));
             }
         }
@@ -321,7 +321,7 @@ impl ModelSystem<'_> {
                 })
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| stop(BROKEN))?;
-            let transition = transition_of(row, application, &args)?;
+            let transition = transition_of(row, application, &args, self.typing())?;
             let transition_bytes =
                 quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))?;
             let run = Run {

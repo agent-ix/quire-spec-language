@@ -5867,6 +5867,39 @@ mod tests {
         assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
     }
 
+    /// Part of FR-230-AC-26 (TC-685), its reference half: a package
+    /// `reference` whose `target` is the unit `ix://quire/unit/ms` names no
+    /// object type, so FCD's validator refuses it and the reader reports
+    /// `invalid_model_binding`/`malformed-declaration` at
+    /// `TypeDefinition.target`. Not covered: the alias `Level` of a unit
+    /// with `min`/`max` constraints, which waits on FCD.
+    #[trace("TC-685")]
+    #[test]
+    fn a_reference_to_a_unit_refuses_at_its_target() {
+        let reference = wire_type(
+            "ix://acme/orders/Level",
+            serde_json::json!("reference"),
+            serde_json::json!({"target": "ix://quire/unit/ms"}),
+        );
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([reference]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", &parse_document(document.as_bytes()))
+            .expect_err("a reference to a unit is no reference");
+        let [refusal] = &refusals[..] else {
+            panic!("one refusal: {refusals:?}");
+        };
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert_eq!(refusal.cause.as_str(), "malformed-declaration");
+        let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusal.cause else {
+            panic!("a malformed declaration: {refusal:?}");
+        };
+        assert_eq!(*member, MemberPath::type_definition().name("target"));
+    }
+
     #[trace("TC-897", "FR-056-AC-17")]
     #[test]
     fn reads_native_timestamp_alias_through_domain_package_intake() {

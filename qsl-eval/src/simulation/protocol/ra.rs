@@ -73,7 +73,7 @@ use super::race::{
 };
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::{map_enc, value_enc, Enc};
+use crate::simulation::model::encode::{map_enc, untyped_value_enc, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// A message's or an SC event's id: stable inside one state lineage, never
@@ -537,7 +537,7 @@ impl RaComponent {
                     cell: cell.cell.clone(),
                     messages: vec![Message {
                         id,
-                        enc: value.as_ref().map_or(Enc::Null, value_enc),
+                        enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
                         value,
                         view: View::default(),
                         attached: false,
@@ -655,7 +655,7 @@ impl RaComponent {
                 slot,
                 Message {
                     id,
-                    enc: value.as_ref().map_or(Enc::Null, value_enc),
+                    enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
                     value,
                     view: View::default(),
                     attached,

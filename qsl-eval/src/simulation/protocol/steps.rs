@@ -762,7 +762,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             )? {
                 continue;
             }
-            let enc = value_enc(&value);
+            let enc = value_enc(&value, self.model.typing());
             let mut next = state.clone();
             Self::bind(
                 Self::instance_mut(&mut next, ordinal)?,
@@ -1210,7 +1210,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .and(applied.result.as_ref())
                 .map(|result| Bound {
                     value: Some(result.clone()),
-                    enc: value_enc(result),
+                    enc: value_enc(result, self.model.typing()),
                 });
             if let Some(constraint) = attempt.constraint {
                 let mut frame = self.frame(instance, path, node);
@@ -1240,7 +1240,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             ("receiver", reference_enc(&applied.receiver)),
                             (
                                 "arguments",
-                                Enc::Array(applied.arguments.iter().map(value_enc).collect()),
+                                Enc::Array(
+                                    applied
+                                        .arguments
+                                        .iter()
+                                        .map(|value| value_enc(value, self.model.typing()))
+                                        .collect(),
+                                ),
                             ),
                         ],
                     ),
@@ -1261,7 +1267,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     text.clone(),
                     applied.transition.clone(),
                     reference_enc(&applied.receiver),
-                    applied.arguments.iter().map(value_enc).collect(),
+                    applied
+                        .arguments
+                        .iter()
+                        .map(|value| value_enc(value, self.model.typing()))
+                        .collect(),
                 )
                 .choosing(chosen.choice);
                 if matches!(access.class, AccessClass::Load | AccessClass::Rmw) {
@@ -1448,8 +1458,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             None => None,
         };
         let unchanged = shared.is_some_and(|shared| {
-            observed.cell(shared.cell).map(value_enc)
-                == applied.state.cell(shared.cell).map(value_enc)
+            observed
+                .cell(shared.cell)
+                .map(|value| value_enc(value, self.model.typing()))
+                == applied
+                    .state
+                    .cell(shared.cell)
+                    .map(|value| value_enc(value, self.model.typing()))
         });
         Ok(Access {
             class: if *class == AccessClass::Rmw && unchanged {
@@ -1516,7 +1531,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     StepKind::Finish,
                     path.clone(),
                     finish.text.clone(),
-                    value_enc(&record),
+                    value_enc(&record, self.model.typing()),
                 ),
                 next,
             ));

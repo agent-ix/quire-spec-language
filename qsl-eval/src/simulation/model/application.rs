@@ -63,7 +63,7 @@ impl<'a> ModelSystem<'a> {
     /// The `semantic` member of `state`'s key (FR-120 "State, state key and
     /// anchor"), the member a protocol state's key shares (ADR-027 PS-8).
     pub(crate) fn semantic_enc(&self, state: &ModelSimState) -> super::encode::Enc {
-        super::encode::semantic_enc(&self.model, &state.state)
+        super::encode::semantic_enc(&self.model, &state.state, self.typing())
     }
 
     /// Every value of `value_type` over the objects of `state`, in FR-120's
