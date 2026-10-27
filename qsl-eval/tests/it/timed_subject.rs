@@ -2761,8 +2761,8 @@ fn granted_values(world: &World, operation: &str, field: &str) -> Vec<String> {
 /// Clock; n: Phase }` 4, its clocks no factor; `sw: Stopwatch { x, y:
 /// Clock }` one value; `mx: Mix { t: Timer, b: Boolean }` 8; `oc?: Cfg`
 /// and `sq: Cfg [0, 1]` 7 each. No such field
-/// is an unbounded root, so the model passes FR-120's requires-bound check;
-/// a granted `Sequence<Timer>[0, 1]` is an unbounded root. Not covered: the
+/// is an unbounded root, so the model passes FR-120's requires-bound check.
+/// Not covered: the
 /// tuple `Pr`, which a domain package cannot declare.
 #[trace("TC-1270")]
 #[test]
@@ -2897,29 +2897,6 @@ fn a_record_of_finite_components_is_a_finite_domain() {
     assert_eq!(counts("mx").len(), 8);
     assert_eq!(counts("oc").len(), 7);
     assert_eq!(counts("sq").len(), 7);
-
-    // A clock-bearing collection is unbounded.
-    let world = world_holding(
-        cells_document(
-            types.clone(),
-            vec![(
-                "ts",
-                ident("Timer"),
-                Some(json!({"lower": 0, "upper": 1, "ordered": true, "unique": false})),
-            )],
-            &["ts"],
-            &[],
-        ),
-        "",
-        &only(&["work"], ""),
-        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
-            "ts": {"sequence": []}}),
-    );
-    let held = system(&world);
-    assert!(matches!(
-        check_model_bounds(&held, BOUND_POSITIONS),
-        Err(NotSimulated::RequiresBound(_))
-    ));
 }
 
 /// FR-120-AC-25 (TC-1270): a granted record with an unbounded non-clock
@@ -3194,4 +3171,257 @@ fn a_unit_bound_is_checked_on_supplied_and_stepped_quantities() {
         "{violated:?}"
     );
     assert_eq!(findings("self.ds = sequence[2 ms]"), Vec::new());
+}
+
+/// A multiplicity `{lower, upper, ordered, unique}`; no `upper` when `max`
+/// is `None`.
+fn shape(max: Option<u64>, ordered: bool, unique: bool) -> Json {
+    match max {
+        Some(max) => json!({"lower": 0, "upper": max, "ordered": ordered, "unique": unique}),
+        None => json!({"lower": 0, "ordered": ordered, "unique": unique}),
+    }
+}
+
+/// The empty value of a collection of `shape`.
+fn empty(ordered: bool, unique: bool) -> Json {
+    match (ordered, unique) {
+        (true, false) => json!({"sequence": []}),
+        (false, true) => json!({"set": []}),
+        _ => json!({"bag": []}),
+    }
+}
+
+/// FR-120-AC-26 (TC-1270): a granted sequence, set or bag with a declared
+/// maximum over a finite element is a finite domain, clock components
+/// adding no factor: `Sequence<Cfg>[0, 2]` 43 (`[]`, then `[c0]` to `[c5]`,
+/// then `[c0, c0]`, `[c0, c1]`, ...), `Sequence<Timer>[0, 2]` 21 and `[0,
+/// 3]` 85 (`Timer`'s `n` is `Int[0, 3]`), `Sequence<Tick>[0, 3]` 4,
+/// `Set<Cfg>[0, 1]` 7 and `[0, 2]` 22, ordered by count and then ascending
+/// `Cfg`, `Bag<Cfg>[0, 2]` 28, `Set<Timer>[0, 2]` 11 and `Bag<Timer>[0, 2]`
+/// 15. `Sequence<Open>[0, 1]` and `Sequence<Cfg>`, `Set<Cfg>` with no
+/// declared maximum are unbounded roots. Not covered: `Sequence<Clock>`,
+/// `Sequence<Option<Clock>>` and `Set<Clock>`, whose fields hold no data in
+/// the checked package, a `Reference<Clock>` field and a `Map`, which a
+/// domain package here cannot declare.
+#[trace("TC-1270")]
+#[test]
+fn a_bounded_collection_of_finite_elements_is_a_finite_domain() {
+    let int2 = ident("Int2");
+    let types = vec![
+        record_type(
+            "Cfg",
+            &[
+                ("on", "ix://quire/native/Boolean", false),
+                ("n", &int2, false),
+            ],
+        ),
+        record_type("Tick", &[("x", "ix://quire/native/Clock", false)]),
+        record_type(
+            "Open",
+            &[
+                ("n", "ix://quire/native/Integer", false),
+                ("b", "ix://quire/native/Boolean", false),
+            ],
+        ),
+    ];
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let granted = |element: &str, max: Option<u64>, ordered: bool, unique: bool| {
+        let world = world_holding(
+            cells_document(
+                types.clone(),
+                vec![("g", ident(element), Some(shape(max, ordered, unique)))],
+                &["g"],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer.clone(), "g": empty(ordered, unique)}),
+        );
+        let held = system(&world);
+        let bounded = check_model_bounds(&held, BOUND_POSITIONS).is_ok();
+        let values = bounded.then(|| granted_values(&world, "work", "g"));
+        values
+    };
+    let sequence = |element, max| granted(element, Some(max), true, false);
+    let set = |element, max| granted(element, Some(max), false, true);
+    let bag = |element, max| granted(element, Some(max), false, false);
+    let count = |values: Option<Vec<String>>| values.map(|values| values.len());
+
+    let cfg = sequence("Cfg", 2).expect("bounded");
+    assert_eq!(cfg.len(), 43);
+    let elements = |value: &str| value.matches("CompositeValue").count();
+    let n = |value: &str, k: u8| value.matches(&format!("Integer(Integer({k}))")).count();
+    let falses = |value: &str| value.matches("Boolean(false)").count();
+    // `[]`, then `[c0]` = (false, 0) and `[c1]` = (false, 1), then `[c0,
+    // c0]` and `[c0, c1]`.
+    assert_eq!(elements(&cfg[0]), 0);
+    assert_eq!(
+        (elements(&cfg[1]), n(&cfg[1], 0), falses(&cfg[1])),
+        (1, 1, 1)
+    );
+    assert_eq!(
+        (elements(&cfg[2]), n(&cfg[2], 1), falses(&cfg[2])),
+        (1, 1, 1)
+    );
+    assert_eq!(
+        (elements(&cfg[7]), n(&cfg[7], 0), falses(&cfg[7])),
+        (2, 2, 2)
+    );
+    assert_eq!((elements(&cfg[8]), n(&cfg[8], 0), n(&cfg[8], 1)), (2, 1, 1));
+    assert_eq!(count(sequence("Timer", 2)), Some(21));
+    assert_eq!(count(sequence("Timer", 3)), Some(85));
+    assert_eq!(count(sequence("Tick", 3)), Some(4));
+    assert_eq!(count(set("Cfg", 1)), Some(7));
+    let sets = set("Cfg", 2).expect("bounded");
+    assert_eq!(sets.len(), 22);
+    assert_eq!(elements(&sets[0]), 0);
+    assert_eq!(elements(&sets[6]), 1);
+    assert_eq!(elements(&sets[7]), 2);
+    assert_eq!(count(bag("Cfg", 2)), Some(28));
+    assert_eq!(count(set("Timer", 2)), Some(11));
+    assert_eq!(count(bag("Timer", 2)), Some(15));
+    assert_eq!(sequence("Open", 1), None);
+    assert_eq!(granted("Cfg", None, true, false), None);
+    assert_eq!(granted("Cfg", None, false, true), None);
+}
+
+/// FR-120-AC-26 (TC-1270): no candidate ranges over a clock slot. From a
+/// pre-state `ts = [Timer { n: 1 }]` whose `x` is 5 ms, a granted
+/// `Sequence<Timer>[0, 2]`'s candidate `[n 1, n 2]` holds `x` 5 ms in slot
+/// 0 and a fresh 0 ms in slot 1; a granted `Set<Timer>[0, 2]` from `{ n 1 }`
+/// at 5 ms gives the candidate `{n 1, n 2}` `x` 5 ms for `n 1` (matched by
+/// equal `n`) and 0 ms for `n 2`, and `{n 2}` 0 ms, and `{n 0, n 1}` 0 ms
+/// for `n 0` and 5 ms for `n 1`, carried from slot 0 to slot 1.
+#[trace("TC-1270")]
+#[test]
+fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let rational =
+        |value: i64| Rational::new(Integer::from(value), Integer::from(1_i64)).expect("a rational");
+    // Each `work` successor from `g` holding `Timer { n: 1 }` with `x` at 5
+    // ms: the element `n` and the `x` of each slot of `g`, in slot order.
+    let successors = |ordered: bool| {
+        let held = if ordered {
+            json!({"sequence": [timer("1")]})
+        } else {
+            json!({"set": [timer("1")]})
+        };
+        let world = world_holding(
+            cells_document(
+                vec![],
+                vec![("g", ident("Timer"), Some(shape(Some(2), ordered, !ordered)))],
+                &["g"],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer("0"), "g": held}),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let later = TimedState::new(
+            initial.discrete().clone(),
+            initial.clocks().delayed(&rational(5)),
+        );
+        let key = DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: ident("Call/g"),
+        };
+        let mut found: Vec<Vec<(String, Rational)>> = Vec::new();
+        for (step, next) in timed.steps(&later).expect("the state expands") {
+            if !step.operation().contains("Call/work\"") {
+                continue;
+            }
+            let Some(quire_exact::Value::Collection(collection)) = next
+                .discrete()
+                .state()
+                .populations
+                .values()
+                .find_map(|objects| objects.get("c"))
+                .and_then(|object| object.fields.get(&key))
+            else {
+                panic!("g holds a collection");
+            };
+            let mut slots: Vec<(usize, Rational)> = timed
+                .places()
+                .iter()
+                .zip(next.clocks().values())
+                .filter(|(place, _)| timed.live(place, next.discrete()))
+                .filter(|(place, _)| {
+                    timed.model().clock(place.clock()).is_some_and(|clock| {
+                        clock.name().starts_with("g.") && clock.name().ends_with(".x")
+                    })
+                })
+                .map(|(place, value)| (place.slots()[0], value.clone()))
+                .collect();
+            slots.sort();
+            found.push(
+                slots
+                    .into_iter()
+                    .map(|(slot, value)| {
+                        let element = format!("{:?}", collection.elements()[slot]);
+                        let n = element
+                            .split("Integer(Integer(")
+                            .nth(1)
+                            .and_then(|rest| rest.split(')').next())
+                            .unwrap_or_default()
+                            .to_owned();
+                        (n, value)
+                    })
+                    .collect(),
+            );
+        }
+        found
+    };
+    let pair = |n: &str, x: i64| (n.to_owned(), rational(x));
+    let sequences = successors(true);
+    assert!(
+        sequences.contains(&vec![pair("1", 5), pair("2", 0)]),
+        "{sequences:?}"
+    );
+    assert!(
+        sequences.contains(&vec![pair("2", 5), pair("1", 0)]),
+        "{sequences:?}"
+    );
+    assert!(sequences.contains(&vec![]), "{sequences:?}");
+    let sets = successors(false);
+    assert!(sets.contains(&vec![pair("1", 5), pair("2", 0)]), "{sets:?}");
+    assert!(sets.contains(&vec![pair("2", 0)]), "{sets:?}");
+    assert!(sets.contains(&vec![pair("0", 0), pair("1", 5)]), "{sets:?}");
+    assert!(sets.contains(&vec![pair("1", 5)]), "{sets:?}");
+}
+
+/// FR-120-AC-26 (TC-1270) end to end through EN-1: a model whose `work`
+/// grants `ts: Sequence<Timer>[0, 3]` and constrains nothing explores
+/// exhaustively, with no requires-bound refusal, to the 85 values of `ts`.
+#[trace("TC-1270")]
+#[test]
+fn exploration_reaches_every_value_of_a_bounded_clock_collection() {
+    use qsl_eval::simulation::model::explore_model;
+    use qsl_eval::simulation::Limits;
+    use qsl_eval::simulation::Outcome;
+
+    let world = world_holding(
+        cells_document(
+            vec![],
+            vec![("ts", ident("Timer"), Some(shape(Some(3), true, false)))],
+            &["ts"],
+            &[],
+        ),
+        "",
+        &only(&["work"], ""),
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
+            "ts": {"sequence": []}}),
+    );
+    let held = system(&world);
+    let exploration =
+        explore_model(&held, BOUND_POSITIONS, Limits::default(), || false).expect("explores");
+    let Outcome::Exhaustive(stats) = &exploration.outcome else {
+        panic!("an exhaustive run: {:?}", exploration.outcome);
+    };
+    assert_eq!(stats.states, 85);
 }

@@ -234,6 +234,7 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "echo",
                 "work",
                 "spin",
+                "grow",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))

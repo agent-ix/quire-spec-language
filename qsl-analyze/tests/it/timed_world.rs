@@ -170,6 +170,44 @@ fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: boo
     .into_bytes()
 }
 
+/// [`document`] with the record `Timer { x: Clock; n: Phase }` and the
+/// field `ts: Timer [0, max]`, a sequence (FR-230 "Clock collections").
+pub(crate) fn timers_document(max: u64, operations: &[(&str, &[&str])]) -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&document(&[], operations)).expect("JSON");
+    let timer = ident("Timer");
+    let member = |name: &str, type_ref: &str| {
+        let identity = format!("{timer}/{name}");
+        json!({
+            "identity": identity, "name": name, "typeRef": type_ref, "presence": "required",
+            "nullable": false, "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": origin(&identity),
+        })
+    };
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(
+            json!({"kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
+            "manifestDigest": PLACEHOLDER,
+            "construct": {"identity": "none", "shape": "record", "members": {},
+                "meaning": meaning::RECORD_VALUE_TYPE}}),
+        );
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &timer,
+        "value_record",
+        json!({"fields": [member("x", "ix://quire/native/Clock"), member("n", &ident("Phase"))]}),
+    ));
+    let mut ts = wire_field("ts", &timer);
+    ts["multiplicity"] = json!({"lower": 0, "upper": max, "ordered": true, "unique": false});
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(ts);
+    document.to_string().into_bytes()
+}
+
 /// The time units and a dense source for `M`, in ms.
 pub(crate) const DENSE: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
      unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n";
@@ -186,6 +224,11 @@ pub(crate) struct World {
 /// `document` checked with `body` as its unit, under the model and the
 /// complete temporal (`t`) profiles and the header lines `profiles`.
 pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
+    world_holding(document, profiles, body, &json!({}))
+}
+
+/// [`world`] whose `c` also holds the fields `extra`.
+pub(crate) fn world_holding(document: &[u8], profiles: &str, body: &str, extra: &Json) -> World {
     let packages = package_input([document]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -226,6 +269,11 @@ pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
     .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
         "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
+        "late": {"boolean": false}, "retried": {"boolean": false}});
+    for (name, value) in extra.as_object().expect("extra fields") {
+        fields[name] = value.clone();
+    }
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -233,9 +281,7 @@ pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("calls"), "complete": true, "objects": [{
-            "key": "c", "type": ident("Call"),
-            "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
-                "late": {"boolean": false}, "retried": {"boolean": false}},
+            "key": "c", "type": ident("Call"), "fields": fields,
         }]}],
     });
     let bytes = snapshot.to_string().into_bytes();

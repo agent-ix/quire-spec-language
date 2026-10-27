@@ -1112,7 +1112,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         }
                     }
                 }
-                let carries = self.written(&vector.receiver, post, &mut resets);
+                let mut carries = self.written(&vector.receiver, post, &mut resets);
+                self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
                 // A clock whose object or slot the step makes live takes
                 // the constant of its write, 0 when the step writes none
                 // (QSpec FR-181 "Timed subjects").
@@ -1208,6 +1209,105 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             }
         }
         carries
+    }
+
+    /// The clocks of each set or bag of clock-bearing elements on `receiver`
+    /// that the step to `post` changes and does not write whole (FR-120
+    /// "collection domains", FR-120-AC-26): each post-state element is
+    /// matched to a pre-state element with equal data, one to one in
+    /// ascending slot order, and keeps its clocks (a carry where its slot
+    /// moved); an element with no match is fresh, each clock at 0. A clock
+    /// below a nested collection is not matched here.
+    fn matched(
+        &self,
+        receiver: &ObjectReference,
+        state: &ModelSimState,
+        post: &ModelSimState,
+        resets: &mut Vec<(usize, Rational)>,
+        carries: &mut Vec<(usize, usize)>,
+    ) {
+        let written: Vec<&str> = post
+            .reached_by()
+            .map(|effect| {
+                effect
+                    .written
+                    .iter()
+                    .map(|written| written.field.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut heads: Vec<&str> = Vec::new();
+        for (_, field) in self.model.clock_fields() {
+            if let [PlaceStep::Field(head), PlaceStep::Slot(shape), ..] = field.path() {
+                if !shape.ordered
+                    && !written.contains(&head.as_str())
+                    && !heads.contains(&head.as_str())
+                {
+                    heads.push(head);
+                }
+            }
+        }
+        for head in heads {
+            let path = [head.to_owned()];
+            let (Some(before), Some(after)) = (
+                self.collection(state, receiver, &path),
+                self.collection(post, receiver, &path),
+            ) else {
+                continue;
+            };
+            let equal = super::encode::values_equal;
+            if before.elements().len() == after.elements().len()
+                && before
+                    .elements()
+                    .iter()
+                    .zip(after.elements())
+                    .all(|(left, right)| equal(left, right))
+            {
+                continue;
+            }
+            let mut used = vec![false; before.elements().len()];
+            let sources: Vec<Option<usize>> = after
+                .elements()
+                .iter()
+                .map(|element| {
+                    let found = before
+                        .elements()
+                        .iter()
+                        .enumerate()
+                        .position(|(index, held)| !used[index] && equal(held, element))?;
+                    used[found] = true;
+                    Some(found)
+                })
+                .collect();
+            let clocks: Vec<ClockId> = self
+                .model
+                .clock_fields()
+                .filter(|(_, field)| {
+                    matches!(field.path(), [PlaceStep::Field(name), PlaceStep::Slot(_), rest @ ..]
+                        if name == head && !rest.iter().any(|step| matches!(step, PlaceStep::Slot(_))))
+                })
+                .map(|(clock, _)| clock)
+                .collect();
+            for (slot, source) in sources.into_iter().enumerate() {
+                let Ok(slot) = u64::try_from(slot) else {
+                    break;
+                };
+                for clock in &clocks {
+                    let Some(to) = self.place_at(receiver, *clock, &[slot]) else {
+                        continue;
+                    };
+                    match source.and_then(|from| u64::try_from(from).ok()) {
+                        Some(from) if from == slot => {}
+                        Some(from) => {
+                            if let Some(from) = self.place_at(receiver, *clock, &[from]) {
+                                carries.push((to, from));
+                            }
+                        }
+                        None => resets.push((to, zero())),
+                    }
+                }
+            }
+        }
     }
 
     /// The clock of the collection `from` at the path below its slot that

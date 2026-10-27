@@ -404,6 +404,17 @@ pub(super) enum Domain {
         min: u64,
         max: u64,
     },
+    /// A `Set` (`repeat` false) or a `Bag` (`repeat` true) with a declared
+    /// maximum (FR-120-AC-26): its values by element count, then each
+    /// count's combinations of ascending element indices, the smallest
+    /// element most significant.
+    Combinations {
+        collection: CollectionType,
+        element: Box<Domain>,
+        min: u64,
+        max: u64,
+        repeat: bool,
+    },
     /// A random parameter's support, in declared order (FR-187, ADR-024
     /// PM-1): its finite domain whatever its declared type.
     Listed(Vec<Value>),
@@ -449,17 +460,29 @@ impl Domain {
                     .cloned()
                     .collect(),
             )),
+            // FR-120-AC-26: a sequence, set or bag with a declared maximum
+            // over a finite element; an ordered set stays unbounded.
             ValueType::Collection(collection) => {
                 let bound = collection.bound()?;
-                if collection.kind() != CollectionKind::Sequence {
-                    return None;
+                let element = Box::new(Self::of(collection.element(), objects, types, orders)?);
+                let (collection, min, max) =
+                    ((**collection).clone(), bound.minimum(), bound.maximum());
+                match collection.kind() {
+                    CollectionKind::Sequence => Some(Self::Sequence {
+                        collection,
+                        element,
+                        min,
+                        max,
+                    }),
+                    CollectionKind::Set | CollectionKind::Bag => Some(Self::Combinations {
+                        repeat: collection.kind() == CollectionKind::Bag,
+                        collection,
+                        element,
+                        min,
+                        max,
+                    }),
+                    CollectionKind::OrderedSet => None,
                 }
-                Some(Self::Sequence {
-                    collection: (**collection).clone(),
-                    element: Box::new(Self::of(collection.element(), objects, types, orders)?),
-                    min: bound.minimum(),
-                    max: bound.maximum(),
-                })
             }
             _ => None,
         }
@@ -480,6 +503,18 @@ impl Domain {
                 let base = element.len();
                 (*min..=*max).fold(0u128, |total, length| {
                     total.saturating_add(power(base, length))
+                })
+            }
+            Self::Combinations {
+                element,
+                min,
+                max,
+                repeat,
+                ..
+            } => {
+                let base = element.len();
+                (*min..=*max).fold(0u128, |total, count| {
+                    total.saturating_add(combinations(base, u128::from(count), *repeat))
                 })
             }
         }
@@ -543,8 +578,82 @@ impl Domain {
                 }
                 None
             }
+            Self::Combinations {
+                collection,
+                element,
+                min,
+                max,
+                repeat,
+            } => {
+                let base = element.len();
+                let mut remaining = index;
+                for count in *min..=*max {
+                    let count = u128::from(count);
+                    let total = combinations(base, count, *repeat);
+                    if remaining >= total {
+                        remaining -= total;
+                        continue;
+                    }
+                    // Unrank the ascending index combination: each position
+                    // takes the least index whose completions cover
+                    // `remaining`.
+                    let mut indices = Vec::new();
+                    let mut least = 0u128;
+                    for position in 0..count {
+                        let left = count - position - 1;
+                        let mut candidate = least;
+                        loop {
+                            if candidate >= base {
+                                return None;
+                            }
+                            let after = if *repeat { candidate } else { candidate + 1 };
+                            let completions = combinations(base - after, left, *repeat);
+                            if remaining < completions {
+                                break;
+                            }
+                            remaining -= completions;
+                            candidate += 1;
+                        }
+                        indices.push(candidate);
+                        least = if *repeat { candidate } else { candidate + 1 };
+                    }
+                    let elements = indices
+                        .into_iter()
+                        .map(|digit| element.nth(digit))
+                        .collect::<Option<Vec<Value>>>()?;
+                    return Some(from_admitted(collection.clone(), elements));
+                }
+                None
+            }
         }
     }
+}
+
+/// The number of `count`-element subsets of `base` values, or of
+/// `count`-element multisets when `repeat`, saturating at `u128::MAX`.
+fn combinations(base: u128, count: u128, repeat: bool) -> u128 {
+    let pool = if repeat {
+        match (base + count).checked_sub(1) {
+            Some(pool) => pool,
+            None => return u128::from(count == 0),
+        }
+    } else {
+        base
+    };
+    if count > pool {
+        return 0;
+    }
+    let count = count.min(pool - count);
+    let mut total = 1u128;
+    for step in 0..count {
+        // Exact at every step: the product of `step + 1` consecutive
+        // integers is divisible by `(step + 1)!`.
+        total = match total.checked_mul(pool - step) {
+            Some(product) => product / (step + 1),
+            None => return u128::MAX,
+        };
+    }
+    total
 }
 
 /// Every combination of digits `0..radix` for a list of radices, the last

@@ -652,17 +652,13 @@ impl Run<'_, '_, '_> {
                 {
                     continue;
                 }
-                let domain = (!system.clock_collections.contains(&field.key))
-                    .then(|| {
-                        Domain::of(
-                            &field.value_type,
-                            &post_references,
-                            system.types,
-                            &system.record_orders,
-                        )
-                    })
-                    .flatten()
-                    .ok_or_else(|| stop(BROKEN))?;
+                let domain = Domain::of(
+                    &field.value_type,
+                    &post_references,
+                    system.types,
+                    &system.record_orders,
+                )
+                .ok_or_else(|| stop(BROKEN))?;
                 dimensions.push(Dimension {
                     population: member.population.clone(),
                     key: member.key.clone(),
@@ -884,17 +880,12 @@ impl Run<'_, '_, '_> {
                 // A field with no finite domain (an `Integer`, a string, an
                 // unbounded collection) is bounded by no frame that grants it,
                 // so it cannot be written here.
-                let Some(domain) = (!system.clock_collections.contains(&field.key))
-                    .then(|| {
-                        Domain::of(
-                            &field.value_type,
-                            &references,
-                            system.types,
-                            &system.record_orders,
-                        )
-                    })
-                    .flatten()
-                else {
+                let Some(domain) = Domain::of(
+                    &field.value_type,
+                    &references,
+                    system.types,
+                    &system.record_orders,
+                ) else {
                     continue;
                 };
                 let mut different: Option<Option<Value>> = None;
@@ -1295,14 +1286,13 @@ impl Run<'_, '_, '_> {
                 .ok_or_else(|| stop(BROKEN))?;
             let fields = system.fields.get(type_key).ok_or_else(|| stop(BROKEN))?;
             for field in fields {
-                if (!system.clock_collections.contains(&field.key)
-                    && Domain::of(
-                        &field.value_type,
-                        &references,
-                        system.types,
-                        &system.record_orders,
-                    )
-                    .is_some())
+                if Domain::of(
+                    &field.value_type,
+                    &references,
+                    system.types,
+                    &system.record_orders,
+                )
+                .is_some()
                     || (receiver && selected.contains(&field.key))
                     || carried.contains(field.name.as_str())
                 {
