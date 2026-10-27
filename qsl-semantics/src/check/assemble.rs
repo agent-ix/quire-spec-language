@@ -696,6 +696,10 @@ enum Declared {
     Enum,
 }
 
+mod clock_forms;
+
+pub use clock_forms::{ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse};
+
 /// A timed declaration with the complete S2 form and source span that S3
 /// needs to check it (FR-230).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -706,6 +710,8 @@ pub enum TimedDeclaration {
     TimeInvariant(TimeInvariantForm),
     /// `urgent ...`.
     Urgent(UrgentForm),
+    /// A `Clock` the unit's own source writes in a type position.
+    ClockType(ClockTypePosition),
 }
 
 impl TimedDeclaration {
@@ -714,6 +720,7 @@ impl TimedDeclaration {
             Self::TimeSource(_) => TimedConstruct::TimeSource,
             Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
             Self::Urgent(_) => TimedConstruct::Urgent,
+            Self::ClockType(_) => TimedConstruct::Clock,
         }
     }
 
@@ -722,6 +729,22 @@ impl TimedDeclaration {
             Self::TimeSource(form) => form.span,
             Self::TimeInvariant(form) => form.span,
             Self::Urgent(form) => form.span,
+            Self::ClockType(position) => position.span,
+        }
+    }
+
+    /// The declaration FR-230's facet gate names as the construct's owner:
+    /// the model for a `time` member, `time invariant` or `urgent`
+    /// declaration, and the declaration whose type form writes a `Clock`.
+    /// A `time invariant` or `urgent` declaration names no model: its owner
+    /// is `model`, the unit's timed model, and its own name only when the
+    /// unit has no one model it can belong to.
+    pub(super) fn owner<'a>(&'a self, model: Option<&'a str>) -> &'a str {
+        match self {
+            Self::TimeSource(source) => &source.model.name,
+            Self::TimeInvariant(invariant) => model.unwrap_or(&invariant.name.name),
+            Self::Urgent(urgent) => model.unwrap_or(&urgent.name.name),
+            Self::ClockType(position) => &position.owner,
         }
     }
 }
@@ -769,6 +792,9 @@ struct Unit {
     hybrids: Vec<qsl_forms::HybridForm>,
     /// The timed declarations in source order, with their complete S2 forms.
     timed: Vec<TimedDeclaration>,
+    /// The unit's clock-reading declarations in source order (FR-230
+    /// "Clock-reading declarations"), held out of the value world.
+    clock_reading: Vec<ClockReadingDeclaration>,
     /// The task sets and the claims over them in source order (QSL FR-246).
     task_sets: Vec<super::task_set::TaskSetDeclaration>,
     /// Each state-graph claim's form, in source order, resolved by the
@@ -778,6 +804,7 @@ struct Unit {
 
 impl Unit {
     fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
+        let mut clock_forms = clock_forms::classify(&forms);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
@@ -798,12 +825,32 @@ impl Unit {
             refinements: Vec::new(),
             hybrids: Vec::new(),
             timed: Vec::new(),
+            clock_reading: Vec::new(),
             task_sets: Vec::new(),
             state_graph_claims: Vec::new(),
         };
-        for form in forms {
+        unit.timed.extend(
+            std::mem::take(&mut clock_forms.positions)
+                .into_iter()
+                .map(TimedDeclaration::ClockType),
+        );
+        for (index, form) in forms.into_iter().enumerate() {
             let span = form.span();
-            match form.into_form() {
+            let form = match clock_forms.dispositions.remove(&index) {
+                None => form.into_form(),
+                Some(clock_forms::Disposition::Drop) => continue,
+                Some(clock_forms::Disposition::Reading) => {
+                    if let DeclarationForm::Function(function) = form.into_form() {
+                        unit.clock_reading
+                            .push(clock_forms::reading(&clock_forms, *function));
+                    }
+                    continue;
+                }
+                Some(clock_forms::Disposition::DataPart) => {
+                    clock_forms::data_part(&clock_forms, form.into_form())
+                }
+            };
+            match form {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Alias(alias) => {
@@ -899,6 +946,9 @@ impl Unit {
                 }
             }
         }
+        // The `Clock` type positions were listed first; FR-230's gate reads
+        // every timed construct in source order.
+        unit.timed.sort_by_key(|form| form.span().start);
         unit
     }
 
@@ -3317,6 +3367,16 @@ impl PackageDeclarations {
             ));
             declared_type_spans.insert(composite.name.name.clone(), composite.name.span);
         }
+        // Each clock-reading declaration's name, which locates a refusal of
+        // the declaration as a whole (`timed_model::prepare`).
+        for declaration in &unit.clock_reading {
+            if let Some(spans) = declaration.function.spans() {
+                declared_type_spans.insert(
+                    super::timed_model::clock_reading_site(&declaration.function.name),
+                    spans.declaration,
+                );
+            }
+        }
 
         // Each function's check-owned resolved signature.
         let mut signatures: Vec<ResolvedSignature> = Vec::with_capacity(unit.functions.len());
@@ -3749,6 +3809,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
+        package.clock_reading = unit.clock_reading;
         package.task_set_forms = unit.task_sets;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {

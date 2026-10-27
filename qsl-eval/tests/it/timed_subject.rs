@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal, PopulationUniverse,
-    TimedBehaviour, TimedSystem,
+    BehaviourReading, ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal,
+    PopulationUniverse, TimedBehaviour, TimedState, TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -422,11 +422,57 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
+/// FR-236-AC-1's digest half (TC-691): over `Rpc` with `T = 3 ms`, the steps of
+/// `NoLateReply`'s counterexample, `send` after 0, `timeout` after 3 and
+/// `reply` after 0, reach post-states whose FR-236 digest changes when only
+/// the resulting clock value changes, and is equal for an equal timed state.
+/// The counterexample's steps and delays are the zone search's
+/// (`qsl-analyze` `zone_search`), which writes this digest as each step's
+/// `post_state`; its steps, delays and `trace_position` are asserted there.
+#[trace("TC-691", "FR-236-AC-1")]
+#[test]
+fn a_timed_post_state_digest_changes_with_its_clock_value_alone() {
+    let world = world(&rpc_unit(3, ""));
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let mut behaviour = TimedBehaviour::new(initial.clone());
+    for (operation, delay) in [("send", 0), ("timeout", 3), ("reply", 0)] {
+        let step = transition(&timed, &behaviour, operation);
+        behaviour
+            .advance(&timed, &exact(delay, 1), &step)
+            .unwrap_or_else(|refusal| panic!("{operation} after {delay}: {refusal:?}"));
+    }
+    let posts: Vec<_> = behaviour.positions()[1..]
+        .iter()
+        .map(|position| position.state().clone())
+        .collect();
+    assert_eq!(posts.len(), 3);
+    for (index, post) in posts.iter().enumerate() {
+        let digest = timed.state_digest(post).expect("a digest");
+        assert_eq!(
+            timed.state_digest(&post.clone()).expect("a digest"),
+            digest,
+            "step {index}: an equal timed state has an equal digest"
+        );
+        let shifted = TimedState::new(post.discrete().clone(), post.clocks().delayed(&exact(1, 2)));
+        assert_ne!(
+            timed.state_digest(&shifted).expect("a digest"),
+            digest,
+            "step {index}: only the clock value changed"
+        );
+    }
+    assert_eq!(posts[0].clocks().values(), [exact(0, 1)]);
+    assert_eq!(posts[1].clocks().values(), [exact(3, 1)]);
+}
+
 /// Part of FR-231-AC-2 (TC-686): with `urgent when { self.phase = 1 }`, no
 /// positive delay is admissible after `send`; the `Replied` state is
 /// quiescent and the waiting one is not. The idle-tail reading is the next
 /// test's.
-#[trace("TC-686")]
+#[trace("TC-686", "FR-231-AC-2")]
 #[test]
 fn an_urgent_state_admits_no_positive_delay() {
     let urgent = world(&rpc_unit(4, "urgent Eager when { self.phase = 1 };"));
@@ -478,10 +524,9 @@ fn an_urgent_state_admits_no_positive_delay() {
 /// quiescent `Replied` state reads under the timed profile as its stutter
 /// step repeated after positive delays, so `always holds(c.phase != 1)` is
 /// true from position 2 and false from position 1; the closed reading ends
-/// at position 2, and one ending at the waiting state has no idle tail. Not
-/// covered: the closed reading under a unit selecting the event-position
-/// profile.
-#[trace("TC-686")]
+/// at position 2. The event-position reading is
+/// `under_event_position_the_execution_closes_at_its_last_position`.
+#[trace("TC-686", "FR-231-AC-2")]
 #[test]
 fn a_quiescent_end_reads_as_an_idle_tail() {
     use qsl_eval::model_subject::ModelInstance;
@@ -508,7 +553,14 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
         .advance(&timed, &exact(1, 1), &reply)
         .expect("reply");
 
-    let trace = behaviour.timed_trace(&timed, true).expect("a timed lasso");
+    // The clause's own profile chooses the idle tail.
+    let node = &world.package.graph().temporal_clauses()[0];
+    let BehaviourReading::Timed(trace) = behaviour
+        .clause_reading(&timed, node.clause().profile())
+        .expect("a timed lasso")
+    else {
+        panic!("the timed profile reads time stamps");
+    };
     assert!(trace.is_lasso());
     let closed = behaviour
         .timed_trace(&timed, false)
@@ -516,7 +568,6 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
     assert!(!closed.is_lasso());
     assert_eq!(closed.stamps().len(), 3);
 
-    let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("the clause has letters");
     let instance = ModelInstance {
         population: DeclarationKey {
@@ -538,6 +589,98 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
     };
     assert_eq!(at(2), TemporalOutcome::Holds);
     assert!(matches!(at(1), TemporalOutcome::Violated { .. }));
+}
+
+/// Part of FR-231-AC-2 (TC-686): in a unit selecting
+/// `quire.temporal.event-position.false-extension/v1`, the behaviour `send`
+/// then `reply` of `Rpc` closes at position 2: the clause's profile reads it
+/// as the closed trace of its three positions, with no loop (under
+/// infinite-trace the same behaviour is the lasso looping on position 2),
+/// and over it `always[0,1] holds(c.phase = 2)` is violated at position 2,
+/// not pending: false extension reads no position 3, where the idle tail
+/// would repeat `Replied`, while `always[0,0] holds(c.phase = 2)` holds
+/// there.
+#[trace("TC-686", "FR-231-AC-2")]
+#[test]
+fn under_event_position_the_execution_closes_at_its_last_position() {
+    use qsl_eval::model_subject::ModelInstance;
+    use qsl_eval::simulation::model::BehaviourLetters;
+    use qsl_eval::temporal::{evaluate_at, TemporalOutcome, TemporalPosition, TemporalTrace};
+
+    let world = world_with(
+        "profile ep = \"quire.temporal.event-position.false-extension/v1\";\n",
+        &rpc_unit(
+            4,
+            "temporal Stays using ep over (c: M::Call) clock \"model-steps\" on origin \
+             { always[0,1] holds(c.phase = 2) }\n\
+             temporal Here using ep over (c: M::Call) clock \"model-steps\" on origin \
+             { always[0,0] holds(c.phase = 2) }",
+        ),
+    );
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+    for (operation, delay) in [("send", 0), ("reply", 1)] {
+        let step = transition(&timed, &behaviour, operation);
+        behaviour
+            .advance(&timed, &exact(delay, 1), &step)
+            .expect("the step is admitted");
+    }
+    let closed = behaviour
+        .timed_trace(&timed, false)
+        .expect("a closed timed trace");
+    assert!(!closed.is_lasso());
+    assert_eq!(closed.stamps(), [exact(0, 1), exact(0, 1), exact(1, 1)]);
+
+    let instance = ModelInstance {
+        population: DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: ident("calls"),
+        },
+        key: "c".to_owned(),
+    };
+    let reading = |clause: usize| {
+        let node = &world.package.graph().temporal_clauses()[clause];
+        behaviour
+            .clause_reading(&timed, node.clause().profile())
+            .expect("a closed reading")
+    };
+    assert_eq!(
+        reading(0),
+        BehaviourReading::Untimed(TemporalTrace::Finite { len: 3 })
+    );
+    assert_eq!(
+        behaviour
+            .clause_reading(&timed, qsl_semantics::check::TemporalProfile::InfiniteTrace)
+            .expect("an idle tail"),
+        BehaviourReading::Untimed(TemporalTrace::Lasso {
+            prefix: 2,
+            loop_len: 1
+        })
+    );
+    let at = |clause: usize, position: u64| {
+        let node = &world.package.graph().temporal_clauses()[clause];
+        let letters = system.clause_letters(node).expect("the clause has letters");
+        let mut letters = BehaviourLetters::new(&letters, &instance, &behaviour);
+        let BehaviourReading::Untimed(trace) = reading(clause) else {
+            panic!("an untimed reading");
+        };
+        evaluate_at(
+            node.clause(),
+            trace,
+            TemporalPosition::new(position),
+            &mut letters,
+            &mut quire_exact::Meter::new(METER),
+        )
+        .expect("evaluated")
+    };
+    assert!(
+        matches!(at(0, 2), TemporalOutcome::Violated { .. }),
+        "{:?}",
+        at(0, 2)
+    );
+    // Position 2 itself reads `Replied`.
+    assert_eq!(at(1, 2), TemporalOutcome::Holds);
 }
 
 /// FR-231-AC-3: under `time M tick M::Call::tick period 5 ms unit ms`,
@@ -587,19 +730,25 @@ fn a_tick_source_stamps_positions_by_tick_count() {
     assert_eq!(timed.tick_period(), Some(&exact(5, 1)));
 }
 
-/// Part of FR-230-AC-4 (TC-685): 64 package clock fields over a universe of
-/// 100 objects are 6,400 clock places, each 0 initially. The guard's convex
-/// parts and the `10^40 ms` constant are S3's (qsl-semantics `timed_model`).
-#[trace("TC-685")]
+/// FR-230-AC-4's subject half (TC-685 step 4): a model with 64 package
+/// clock fields over a universe of 100 objects has 6,400 clock places, each
+/// 0 initially, and its guard `x <= 10^40 ms` checks with no refusal and
+/// reads the exact constant. The S2 forms are `qsl-forms`' and the convex
+/// parts `qsl-semantics`' `timed_model` tests.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn every_object_holds_its_own_clock_of_every_clock_field() {
     let names: Vec<String> = (0..63).map(|index| format!("c{index:02}")).collect();
     let extra: Vec<&str> = names.iter().map(String::as_str).collect();
+    let huge = format!("1{}", "0".repeat(40));
     let world = world_over(
         clocked_document(true, &extra),
         "",
-        "dimension Time;\nunit s : Time = rational(1, 1);\n\
-         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+        &format!(
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n\
+             pre Big using v on M::Call::work {{ self.x <= {huge} ms }}\n"
+        ),
     );
     let keys: Vec<String> = std::iter::once("c".to_owned())
         .chain((1..100).map(|index| format!("k{index:03}")))
@@ -609,6 +758,13 @@ fn every_object_holds_its_own_clock_of_every_clock_field() {
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     assert_eq!(timed.model().clocks().len(), 64);
     assert_eq!(timed.places().len(), 6_400);
+    let [guard] = timed.model().guards() else {
+        panic!("one guard: {:?}", timed.model().guards());
+    };
+    assert_eq!(
+        guard.parts()[0].clocks()[0].bound().numerator().to_string(),
+        huge
+    );
     let initial = timed.initial().remove(0);
     assert!(initial
         .clocks()

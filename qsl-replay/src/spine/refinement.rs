@@ -321,6 +321,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::MissingQualifiedName(_)
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
+        | CheckCause::ClockReadingCall(_)
         | CheckCause::AmbiguousName { .. }
         | CheckCause::AmbiguousMember(_)
         | CheckCause::AmbiguousQualified(_)

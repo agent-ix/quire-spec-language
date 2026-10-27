@@ -466,6 +466,9 @@ pub struct PackageDeclarations {
     /// The complete timed declaration forms S2 built, in source order for
     /// FR-230's S3 check and located refusals.
     pub timed_forms: Vec<super::assemble::TimedDeclaration>,
+    /// FR-230: the unit's clock-reading declarations in source order, which
+    /// have no checked node; S3 checks each body and expands each call.
+    pub clock_reading: Vec<super::assemble::ClockReadingDeclaration>,
     /// The `taskset`, `schedulable` and `response` forms S2 built, in source
     /// order, for QSL FR-246's S3 check.
     pub task_set_forms: Vec<super::task_set::TaskSetDeclaration>,
@@ -657,6 +660,7 @@ impl PackageDeclarations {
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             timed_forms: Vec::new(),
+            clock_reading: Vec::new(),
             task_set_forms: Vec::new(),
             time_sources: Vec::new(),
             profile_selections: Vec::new(),
@@ -816,6 +820,10 @@ pub struct Scope {
     /// refuse `unsupported_construct`/`expression-form` where no refinement
     /// reads them (FR-139).
     pub(crate) known_populations: Vec<String>,
+    /// The names of the unit's clock-reading declarations (FR-230): a call
+    /// of one that reaches the value checker is outside every place that
+    /// admits it.
+    clock_reading: BTreeSet<String>,
     /// The names of the history fields the unit's refinements declare
     /// (FR-138). A field of that name is the refinement's own, so a state
     /// clause that reads it refuses `missing-name`.
@@ -1029,6 +1037,7 @@ impl Scope {
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
+            clock_reading: BTreeSet::new(),
             history_names: Vec::new(),
             complete_model: false,
             model_selections: BTreeMap::new(),
@@ -1122,6 +1131,17 @@ impl Scope {
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
         self
+    }
+
+    pub(crate) fn with_clock_reading(mut self, names: BTreeSet<String>) -> Self {
+        self.clock_reading = names;
+        self
+    }
+
+    /// Whether `name` names a clock-reading declaration of the unit
+    /// (FR-230), which has no function node.
+    pub(crate) fn is_clock_reading(&self, name: &str) -> bool {
+        self.clock_reading.contains(name)
     }
 
     pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {

@@ -914,6 +914,15 @@ pub enum TimedConstruct {
     Response,
     /// A `release` declaration (QSpec FR-419, QSL FR-249).
     Release,
+    /// An argument for a clock-bearing parameter other than `Clock`: a
+    /// record, tuple, union, optional or collection place (FR-230).
+    ClockBearingArgument,
+    /// A clock-reading declaration whose expansion reaches its own call
+    /// (FR-230 "Clock-reading declarations").
+    RecursiveClockReading,
+    /// A clock of an object other than the receiver, reached through a
+    /// reference (FR-230 "Parameters").
+    ReferencedClock,
 }
 
 impl TimedConstruct {
@@ -929,6 +938,9 @@ impl TimedConstruct {
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
             Self::Release => "a `release` declaration",
+            Self::ClockBearingArgument => "a clock-bearing argument other than a clock",
+            Self::RecursiveClockReading => "a recursive clock-reading declaration",
+            Self::ReferencedClock => "a clock of another object",
         }
     }
 }
@@ -1247,6 +1259,13 @@ pub enum TemporalCause {
     /// exact time quantity literal. Located at the bound.
     ClockBoundNotConstant {
         /// The bound's span.
+        span: Span,
+    },
+    /// FR-230 "Clock-typed positions": an argument for a `Clock` parameter,
+    /// or the body of a function whose result is `Clock`, that is no place
+    /// expression. `ill_typed`/`type-mismatch`, located at it.
+    NotAPlaceExpression {
+        /// The argument's or the body's span.
         span: Span,
     },
     /// FR-230 "Clocks and resets": a write to a clock that is not a reset
@@ -1721,6 +1740,13 @@ pub enum TimeUnitCause {
         /// The unit as written.
         name: String,
     },
+    /// The unit is a time unit of a base `Time` dimension other than the
+    /// model's time dimension, with no admitted equivalence between them
+    /// (QSpec FR-142 "Dimensions of different owners").
+    OtherTimeDimension {
+        /// The unit as written.
+        name: String,
+    },
     /// The unit's composed offset to its root is not zero.
     AffineUnit {
         /// The unit as written.
@@ -1728,6 +1754,29 @@ pub enum TimeUnitCause {
         /// The composed offset.
         offset: quire_exact::Rational,
     },
+}
+
+impl TimeUnitCause {
+    /// The cause's catalog code: an unresolved name is a missing
+    /// declaration, a unit that is no time unit of the model is ill typed.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => Code::MissingDeclaration,
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => Code::IllTyped,
+        }
+    }
+
+    /// The cause's catalog tag.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => "missing-name",
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => "type-mismatch",
+        }
+    }
 }
 
 impl TemporalCause {
@@ -1751,6 +1800,7 @@ impl TemporalCause {
             | Self::ClockComparison { span }
             | Self::NegativeClockConstant { span }
             | Self::ClockBoundNotConstant { span }
+            | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
@@ -1864,16 +1914,9 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
-            Self::UnitlessTimedBound { .. } => Code::IllTyped,
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    Code::MissingDeclaration
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    Code::IllTyped
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.code(),
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
             Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
@@ -1949,16 +1992,9 @@ impl TemporalCause {
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
-            Self::UnitlessTimedBound { .. } => "type-mismatch",
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    "missing-name"
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    "type-mismatch"
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.tag(),
         }
     }
 }
@@ -2361,6 +2397,11 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// `invalid_timed_model` / `clock-read-outside-constraint`: a call of the
+    /// named clock-reading declaration outside an operation precondition, a
+    /// time invariant body or another clock-reading declaration (FR-230
+    /// "Clock-reading declarations"), located at the call.
+    ClockReadingCall(String),
     /// `missing_declaration` / `missing-name` for a qualified source name.
     MissingQualifiedName(qsl_forms::NameForm),
     /// `missing_declaration` / `missing-name` for the population segment of
@@ -2912,6 +2953,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
+            Self::ClockReadingCall(_) => Code::InvalidTimedModel,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2986,6 +3028,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
+            Self::ClockReadingCall(_) => Some("clock-read-outside-constraint"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
