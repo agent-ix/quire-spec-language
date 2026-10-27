@@ -116,6 +116,19 @@ fn reset_agrees_with_the_reference(dim: usize, clock: usize) {
     assert_eq!(closed, zone);
 }
 
+/// `free` gives exactly the points of the eliminated reference, and leaves
+/// the zone canonical.
+fn free_agrees_with_the_reference(dim: usize, clock: usize) {
+    let (raw, mut zone) = any_closed(dim);
+    let point = any_point(dim);
+    zone.free(clock).expect("a clock other than the reference");
+    let expected = reference::constraints_hold(raw.free_constraints(clock), &point, SCALE);
+    assert_eq!(reference::zone_contains(&zone, &point, SCALE), expected);
+    let mut closed = zone.clone();
+    closed.close();
+    assert_eq!(closed, zone);
+}
+
 /// `up` gives exactly the points of the eliminated reference, and leaves
 /// the zone canonical.
 fn up_agrees_with_the_reference(dim: usize) {
@@ -216,6 +229,9 @@ harnesses! {
     reset_dim_2 => reset_agrees_with_the_reference(2, 1);
     reset_dim_3_clock_1 => reset_agrees_with_the_reference(3, 1);
     reset_dim_3_clock_2 => reset_agrees_with_the_reference(3, 2);
+    free_dim_2 => free_agrees_with_the_reference(2, 1);
+    free_dim_3_clock_1 => free_agrees_with_the_reference(3, 1);
+    free_dim_3_clock_2 => free_agrees_with_the_reference(3, 2);
     up_dim_1 => up_agrees_with_the_reference(1);
     up_dim_2 => up_agrees_with_the_reference(2);
     up_dim_3 => up_agrees_with_the_reference(3);

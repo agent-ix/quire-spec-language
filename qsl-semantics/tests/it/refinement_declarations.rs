@@ -535,6 +535,7 @@ pub(crate) fn assemble(
 }
 
 /// A refusal with the text of the unit it is located at.
+#[derive(Debug)]
 struct Refused {
     refusal: CheckRefusal,
     at: String,
@@ -654,6 +655,15 @@ fn cas_refines_counter() -> String {
     .to_owned()
 }
 
+/// Add refinement rows before the declaration's closing brace.
+fn with_refinement_rows(mut body: String, rows: &str) -> String {
+    let closing = body
+        .rfind('}')
+        .expect("a refinement body ends with a brace");
+    body.insert_str(closing, rows);
+    body
+}
+
 /// `body` with the one occurrence of `from` replaced by `to`.
 pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     assert_eq!(body.matches(from).count(), 1, "{from} occurs once");
@@ -693,6 +703,22 @@ fn the_counter_refinement_checks_to_one_population_and_one_object_row() {
     assert_eq!(refinement.name(), "CasRefinesCounter");
     assert_eq!(refinement.abstract_model(), "Spec");
     assert_eq!(refinement.concrete_model(), "Impl");
+    assert_eq!(
+        refinement.abstract_model_selection(),
+        graph
+            .model_selections()
+            .iter()
+            .find(|selection| selection.identity == SPEC)
+            .expect("selected abstract package")
+    );
+    assert_eq!(
+        refinement.concrete_model_selection(),
+        graph
+            .model_selections()
+            .iter()
+            .find(|selection| selection.identity == CAS)
+            .expect("selected concrete package")
+    );
 
     let [population] = refinement.populations() else {
         panic!("one population row: {:?}", refinement.populations());
@@ -1673,8 +1699,8 @@ fn a_strong_row_checks_as_strong() {
 
 /// A checked `refinement` declaration is refused at package build until S4
 /// writes it, so a package is never built with an identity equal to the same
-/// package without it; over object-type models the refusal names the missing
-/// state-machine subject (FR-136-AC-12).
+/// package without it; object-type-only models reach this emission refusal
+/// without a synthetic state-machine subject (FR-136-AC-12).
 #[trace("TC-540")]
 #[test]
 fn a_checked_refinement_refuses_not_emitted_at_package_build() {
@@ -1693,7 +1719,7 @@ fn a_checked_refinement_refuses_not_emitted_at_package_build() {
             .iter()
             .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
             .collect::<Vec<_>>(),
-        [(Code::UnsupportedConstruct, Some("declaration-form"))]
+        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
     );
 }
 
@@ -1782,7 +1808,13 @@ fn an_integer_range_must_lie_inside_the_range_it_defines() {
 
 /// `package` document `bytes` with a one-state `state_machine` named `name`
 /// added beside its types.
-fn with_machine(bytes: &[u8], package: &str, name: &str) -> Vec<u8> {
+/// `package` document with a state machine declaring `fields`.
+fn with_machine_fields(
+    bytes: &[u8],
+    package: &str,
+    name: &str,
+    fields: &[(&str, &str)],
+) -> Vec<u8> {
     let mut document: Value = serde_json::from_slice(bytes).expect("a document");
     let idle = node(package, &format!("{name}/Idle"));
     let tick = node(package, &format!("{name}/tick"));
@@ -1792,7 +1824,12 @@ fn with_machine(bytes: &[u8], package: &str, name: &str) -> Vec<u8> {
         name,
         "state_machine",
         json!({
-            "supertypes": [], "fields": [], "clauses": [],
+            "supertypes": [],
+            "fields": fields
+                .iter()
+                .map(|(field_name, type_ref)| field(package, name, field_name, type_ref))
+                .collect::<Vec<_>>(),
+            "clauses": [],
             "operations": [{
                 "identity": tick, "name": "tick", "params": [], "pre": [], "post": [],
                 "frame": {"modifies": [], "creates": [], "deletes": []},
@@ -1830,124 +1867,61 @@ fn emission_refusal(models: &[(&str, &str, &[u8])]) -> CheckRefusal {
     refusals.remove(0)
 }
 
-/// FR-136-AC-12: a refinement over object-type models, which declare no
-/// `state_machine`, is refused by name at its abstract side, not as
-/// `not-yet-implemented`; the `terminal` beside it is emitted.
+/// FR-136-AC-12: object-type-only model subjects are not rejected for lacking
+/// a state-machine anchor; the unwritten mapped refinement remains refused
+/// until its V2 emitter slice is available.
 #[trace("TC-541", "FR-136-AC-12")]
 #[test]
-fn a_refinement_over_object_type_models_is_refused_for_its_missing_state_machine() {
+fn an_object_type_only_refinement_subject_reaches_the_existing_emission_gate() {
     let (spec, cas) = counters();
     let models = [("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])];
     let refusal = emission_refusal(&models);
-    let CheckCause::Refinement(refusal) = &refusal.cause else {
-        panic!("a named refinement refusal: {refusal:?}");
-    };
-    assert_eq!(refusal.refinement, "CasRefinesCounter");
-    assert_eq!(
+    assert!(matches!(
         refusal.cause,
-        RefinementCause::NoStateMachineSubject {
-            side: qsl_semantics::check::SubjectSide::Abstract,
-            alias: "Spec".to_owned(),
-        }
-    );
-    assert_eq!(
-        (refusal.cause.code(), refusal.cause.cause()),
-        (Code::UnsupportedConstruct, Some("declaration-form"))
-    );
-    // The concrete side is named once the abstract side has its machine.
-    let spec = with_machine(&spec, SPEC, "SpecMachine");
-    let refusal = emission_refusal(&[("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])]);
-    let CheckCause::Refinement(refusal) = &refusal.cause else {
-        panic!("a named refinement refusal: {refusal:?}");
-    };
-    assert_eq!(
-        refusal.cause,
-        RefinementCause::NoStateMachineSubject {
-            side: qsl_semantics::check::SubjectSide::Concrete,
-            alias: "Impl".to_owned(),
-        }
-    );
+        CheckCause::RefinementNotEmitted { ref name, .. }
+            if name == "CasRefinesCounter"
+    ));
 }
 
-/// FR-136-AC-12: two `state_machine` records on one side are ambiguous, and
-/// exactly one on each side leaves only the generic not-emitted refusal.
+/// FR-136-AC-12: several state machines are selected by explicit rows rather
+/// than refused as an ambiguous subject.
 #[trace("TC-541", "FR-136-AC-12")]
 #[test]
-fn a_refinement_subject_needs_exactly_one_state_machine_per_side() {
+fn several_state_machines_are_not_an_ambiguous_refinement_subject() {
     let (spec, cas) = counters();
     let (spec, cas) = (
-        with_machine(&spec, SPEC, "SpecMachine"),
-        with_machine(&cas, CAS, "ImplMachine"),
+        with_machine_fields(&spec, SPEC, "SpecMachine", &[("value", INTEGER)]),
+        with_machine_fields(&cas, CAS, "ImplMachine", &[("value", INTEGER)]),
     );
-    let refusal = emission_refusal(&[("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])]);
+    let one = with_refinement_rows(
+        cas_refines_counter(),
+        "object Spec::SpecMachine from Impl::ImplMachine { value = self.value; }\n",
+    );
+    let (_, declarations) = assemble("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &one);
+    let refusal = declarations
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("the refinement is not emitted")[0]
+        .clone();
     assert!(
         matches!(refusal.cause, CheckCause::RefinementNotEmitted { .. }),
         "{refusal:?}"
     );
-    let twice = with_machine(&spec, SPEC, "SpecMachineToo");
-    let refusal = emission_refusal(&[("Spec", SPEC, &twice[..]), ("Impl", CAS, &cas[..])]);
-    let CheckCause::Refinement(refusal) = &refusal.cause else {
-        panic!("a named refinement refusal: {refusal:?}");
-    };
-    assert_eq!(
-        refusal.cause,
-        RefinementCause::AmbiguousStateMachineSubject {
-            side: qsl_semantics::check::SubjectSide::Abstract,
-            alias: "Spec".to_owned(),
-            count: 2,
-        }
+    let twice = with_machine_fields(&spec, SPEC, "SpecMachineToo", &[("value", INTEGER)]);
+    let two = with_refinement_rows(
+        cas_refines_counter(),
+        "object Spec::SpecMachine from Impl::ImplMachine { value = self.value; }\n\
+         object Spec::SpecMachineToo from Impl::ImplMachine { value = self.value; }\n",
     );
-    assert_eq!(
-        (refusal.cause.code(), refusal.cause.cause()),
-        (Code::AmbiguousDeclaration, Some("ambiguous-name"))
-    );
-}
-
-/// The cause of the named refinement refusal `refusal` is.
-fn subject_cause(refusal: &CheckRefusal) -> &RefinementCause {
-    let CheckCause::Refinement(refusal) = &refusal.cause else {
-        panic!("a named refinement refusal: {refusal:?}");
-    };
-    &refusal.cause
-}
-
-/// FR-136-AC-12: the concrete side's several machines are ambiguous, a count
-/// above two is reported as counted, and when both sides are bad the abstract
-/// side is the one reported.
-#[trace("TC-541", "FR-136-AC-12")]
-#[test]
-fn the_subject_refusal_names_the_concrete_side_the_count_and_the_abstract_side_first() {
-    use qsl_semantics::check::SubjectSide;
-    let (spec, cas) = counters();
-    let spec1 = with_machine(&spec, SPEC, "SpecMachine");
-    let cas2 = with_machine(
-        &with_machine(&cas, CAS, "ImplMachine"),
-        CAS,
-        "ImplMachineToo",
-    );
-    let refusal = emission_refusal(&[("Spec", SPEC, &spec1[..]), ("Impl", CAS, &cas2[..])]);
-    assert_eq!(
-        subject_cause(&refusal),
-        &RefinementCause::AmbiguousStateMachineSubject {
-            side: SubjectSide::Concrete,
-            alias: "Impl".to_owned(),
-            count: 2,
-        }
-    );
-    let spec3 = with_machine(
-        &with_machine(&spec1, SPEC, "SpecMachineToo"),
-        SPEC,
-        "SpecMachineThree",
-    );
-    let refusal = emission_refusal(&[("Spec", SPEC, &spec3[..]), ("Impl", CAS, &cas[..])]);
-    assert_eq!(
-        subject_cause(&refusal),
-        &RefinementCause::AmbiguousStateMachineSubject {
-            side: SubjectSide::Abstract,
-            alias: "Spec".to_owned(),
-            count: 3,
-        },
-        "both sides are bad (the concrete has none): the abstract is reported first"
+    let (_, declarations) = assemble("", &[("Spec", SPEC, &twice), ("Impl", CAS, &cas)], &two);
+    let refusal = declarations
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("the refinement is not emitted")[0]
+        .clone();
+    assert!(
+        matches!(refusal.cause, CheckCause::RefinementNotEmitted { .. }),
+        "machine multiplicity is not a subject refusal: {refusal:?}"
     );
 }
 
@@ -1958,6 +1932,85 @@ fn the_subject_refusal_names_the_concrete_side_the_count_and_the_abstract_side_f
 fn a_build_keeping_unwritten_refinements_raises_no_subject_refusal() {
     let graph = checked_counter(&cas_refines_counter());
     assert_eq!(graph.refinements().len(), 1);
+}
+
+/// FR-135-AC-11 / QSpec FR-375-AC-24: state-machine fields map through the
+/// existing object-row checker without a population binding.
+#[trace("TC-540", "TC-541", "FR-135-AC-11", "FR-136-AC-12")]
+#[test]
+fn state_machine_fields_are_checked_by_population_independent_object_rows() {
+    let (spec, cas) = counters();
+    let spec = with_machine_fields(&spec, SPEC, "SpecMachine", &[("value", INTEGER)]);
+    let cas = with_machine_fields(&cas, CAS, "ImplMachine", &[("value", INTEGER)]);
+    let body = with_refinement_rows(
+        cas_refines_counter(),
+        "object Spec::SpecMachine from Impl::ImplMachine { value = self.value; }\n",
+    );
+    let graph = check_with("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body)
+        .expect("one explicit machine field-set row checks without a population row");
+    let refinement = graph.refinements().first().expect("one checked refinement");
+    assert_eq!(refinement.objects().len(), 2);
+    let machine_row = refinement
+        .objects()
+        .iter()
+        .find(|row| row.abstract_type.node.ends_with("SpecMachine"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the state-machine row is retained: {:?}",
+                refinement.objects()
+            )
+        });
+    assert!(machine_row.concrete_type.node.ends_with("ImplMachine"));
+    assert_eq!(machine_row.fields.len(), 1);
+    assert!(machine_row.fields[0]
+        .field
+        .node
+        .ends_with("SpecMachine/value"));
+}
+
+/// FR-135-AC-11: missing, duplicate and mixed-kind machine rows retain their
+/// named typed refusals.
+#[trace("TC-540", "FR-135-AC-11")]
+#[test]
+fn state_machine_rows_report_missing_duplicate_and_mixed_kinds() {
+    let (spec, cas) = counters();
+    let spec = with_machine_fields(&spec, SPEC, "SpecMachine", &[("value", INTEGER)]);
+    let cas = with_machine_fields(&cas, CAS, "ImplMachine", &[("value", INTEGER)]);
+    let models = [("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])];
+
+    let missing = refused(&models, &cas_refines_counter());
+    assert!(
+        missing.iter().any(|found| matches!(
+            found.refinement(),
+            RefinementCause::MissingRow { class: RowClass::Object, name }
+                if name == "Spec::SpecMachine"
+        )),
+        "missing machine row is named: {missing:?}"
+    );
+
+    let row = "object Spec::SpecMachine from Impl::ImplMachine { value = self.value; }\n";
+    let duplicate = with_refinement_rows(cas_refines_counter(), &format!("{row}{row}"));
+    let duplicate = refused(&models, &duplicate);
+    assert!(
+        duplicate.iter().any(|found| matches!(
+            found.refinement(),
+            RefinementCause::Conflicting { name, .. } if name == "Spec::SpecMachine"
+        )),
+        "duplicate machine rows conflict: {duplicate:?}"
+    );
+
+    let mixed = with_refinement_rows(
+        cas_refines_counter(),
+        "object Spec::SpecMachine from Impl::Counter { value = self.value; }\n",
+    );
+    let mixed = refused(&models, &mixed);
+    assert!(
+        mixed.iter().any(|found| matches!(
+            found.refinement(),
+            RefinementCause::Malformed { name } if name == "Impl::Counter"
+        )),
+        "mixed machine/object types are malformed: {mixed:?}"
+    );
 }
 
 /// A unit holding a `terminal` declaration and a refinement refuses only the
@@ -1976,7 +2029,7 @@ fn only_the_refinement_beside_a_terminal_is_refused() {
         .check(CheckingLimits::default())
         .expect_err("the refinement is not emitted yet");
     assert!(
-        matches!(refusals[0].cause, CheckCause::Refinement(_)),
+        matches!(refusals[0].cause, CheckCause::RefinementNotEmitted { .. }),
         "{refusals:?}"
     );
     assert_eq!(refusals.len(), 1, "{refusals:?}");

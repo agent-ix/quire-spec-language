@@ -34,7 +34,9 @@ Use ADR-025 §10's message-passing shape.
 7. Under `ra` and under `tso`, run thread `a` loading `x` non-atomically then
    storing `x := 1` with `release`, and thread `b` running `fetch_add(1)` on
    `x` with the precondition `x.v = 1`, so it reads only `a`'s store, with
-   `ordering acquire`, then `relaxed`.
+   `ordering acquire`, then `relaxed`. The RMW is not enabled in the initial
+   state; check that the request still carries one `RaceFreedom` item in both
+   orderings.
 
 Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 
@@ -56,4 +58,5 @@ Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 - Step 7: `proved` with the `acquire` RMW under both models; `refuted`, the
   RMW against `a`'s load being the only race, with
   `Race{location: x}`, `earlier` `a`'s load and `later` the RMW, with the
-  `relaxed` RMW.
+  `relaxed` RMW. Each request carries exactly one `RaceFreedom` item although
+  the RMW is disabled in the initial state.

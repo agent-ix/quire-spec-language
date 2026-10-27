@@ -123,7 +123,7 @@ impl ClockField {
 
 /// The comparison of an atomic clock constraint `x ~ c` (FR-230
 /// `ClockOp`).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ClockOp {
     /// `x < c`.
     Less,
