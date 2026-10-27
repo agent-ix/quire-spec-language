@@ -883,6 +883,9 @@ pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunR
             "spine-run-supplies-admitted-name-and-arity",
         ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
+        // `run` uses the checked interpreter, not a registered host body;
+        // the public application facade returns body failures unchanged.
+        CallFailure::Body(_) => unreachable!("spine run registers no host bodies"),
         CallFailure::Storage { parameter, failure } => Box::new(RunRefusal::Storage {
             position: parameter,
             failure,
