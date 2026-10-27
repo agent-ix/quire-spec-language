@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#9a84e6548ce2f5c7d949eef592574be22b13705a"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#8b49bd487cc2de387524ad270aa2193277d77965"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -2634,6 +2634,7 @@ version = "0.1.0"
 dependencies = [
  "arch-lint",
  "ix-trace-rs",
+ "jsonschema 0.17.1",
  "logos",
  "proc-macro2",
  "qsl-cst",
@@ -2644,6 +2645,7 @@ dependencies = [
  "qsl-string-edge",
  "serde",
  "serde_json",
+ "serde_json_canonicalizer",
  "syn 2.0.119",
  "tempfile",
  "thiserror",

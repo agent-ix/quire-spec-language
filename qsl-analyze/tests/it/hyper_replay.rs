@@ -956,7 +956,7 @@ fn a_witness_set_beside_a_step_whose_universal_match_is_undefined_reproduces_not
 /// `l = 1` and `h = 1`: a protocol reference is a clause no stage evaluates
 /// (FR-308), and the guard reaches it only there.
 const REFUSED: Vault = Vault::Custom(
-    "protocol Fill using v over (input: Boolean) on origin { role R on V::Vault; run sequence Main { } finish End as (outcome: Boolean) { true }; }\n\
+    "protocol Fill using v over (input: V::Vault) on origin { role R on V::Vault; run sequence Main { } finish End as (outcome: Boolean) { true }; }\n\
      pre Guard using v on V::Vault::step { self.l = 0 or self.h = 0 or protocol Fill }\n\
      post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
 );

@@ -2950,7 +2950,7 @@ fn conformance_shipped_projection_cases_are_refused_and_admitted_once_removed() 
 /// [`Code::UnknownProfile`], located at the law's definition.
 fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
     let application_key = |node: &Value| {
-        package_id_digest(&json!({
+        let mut preimage = json!({
             "version": "quire.application-node/v1",
             "node_tag": node["node_tag"],
             "semantic_form": node["semantic_form"],
@@ -2958,7 +2958,12 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
             "declaration": node.get("declaration").cloned().unwrap_or(Value::Null),
             "recursion": Value::Null,
             "body": node["body"],
-        }))
+        });
+        // A protocol clause's identity-bound owner edge (FR-464, FR-322).
+        if let Some(owner_model) = node.get("owner_model") {
+            preimage["owner_model"] = owner_model.clone();
+        }
+        package_id_digest(&preimage)
     };
     let nodes_of = |package: &Value| {
         package["semantic_graph"]["nodes"]
@@ -3615,7 +3620,7 @@ pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
 /// `semantic_graph.nodes`: the hashed projection is derived from them. Every
 /// `identity_preimage` field is left as the envelope's own, so a frame-only
 /// mutation changes no other identity input.
-fn refresh_frame_identity(envelope: &mut Value) {
+pub(crate) fn refresh_frame_identity(envelope: &mut Value) {
     envelope["package_id"]["digest"] = json!(derived_package_id(envelope).hex());
 }
 
@@ -4225,5 +4230,20 @@ fn published_extension_definitions_conform_to_their_schema_and_pairing() {
                 production["keyword"]
             );
         }
+    }
+}
+
+/// IR FR-038-AC-292: a `wrong_snapshot` envelope (a `choice`/`repeat` decision
+/// reading a fact outside its role's visible set) reaches QSL as the typed
+/// `wrong_snapshot` code, not as a generic invalid package.
+#[test]
+fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
+    use quire_contract_model::CheckedPackageRefusalCode as Ir;
+    for (ir, qsl) in [
+        (Ir::WrongSnapshot, Code::WrongSnapshot),
+        (Ir::IllTyped, Code::IllTyped),
+        (Ir::InvalidPackage, Code::InvalidPackage),
+    ] {
+        assert_eq!(super::map_refusal_code(ir), qsl);
     }
 }

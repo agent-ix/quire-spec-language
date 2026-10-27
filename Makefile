@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
+.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -61,6 +61,11 @@ checked-input:
 # reports anything but success (exit 0).
 refinement-versioning:
 	cargo run --package xtask -- refinement versioning tests/fixtures/refinement/versioning/
+
+# FR-353: run complete-V1 conformance qualification against the published corpus.
+qualify:
+	@test -n "$(CORPUS)" || { echo "usage: make qualify CORPUS=<dir>" >&2; exit 2; }
+	cargo run --package xtask -- qualify --corpus "$(CORPUS)"
 
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through

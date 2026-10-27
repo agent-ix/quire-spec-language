@@ -13,7 +13,7 @@ fn protocol_nodes_under(
 ) -> [(quire_exact::NodeKey, Vec<u8>); 2] {
     let (_, mut assembled) = assemble(
         "function refers using v(): Boolean pure { protocol Flow }\n\
-         protocol Flow using v over (input: Boolean) on origin {\n\
+         protocol Flow using v over (input: M::Actor) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main { }\n\
          finish End as (outcome: Boolean) { true };\n\
