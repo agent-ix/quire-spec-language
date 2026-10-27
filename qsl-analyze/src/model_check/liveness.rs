@@ -92,7 +92,8 @@ use qsl_eval::fairness::{
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    protocol_constraints, MemoryModel, ProtocolFairness, ProtocolSystem, ProtocolTransition,
+    protocol_constraints, FairnessOrigin, MemoryModel, ProtocolFairness, ProtocolSystem,
+    ProtocolTransition,
 };
 use qsl_eval::simulation::{
     Bounded, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit,
@@ -234,6 +235,7 @@ pub(super) fn check(
             clause,
             letters,
             fairness: clause.fairness(),
+            diagnostic_fairness: None,
             bindings: &bindings,
             memory_bound: None,
             root_cancelled,
@@ -273,13 +275,19 @@ pub(super) fn check(
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] as [`check`] returns it.
+#[derive(Clone, Copy)]
+pub(super) struct ProtocolLivenessOptions {
+    pub(super) limits: qsl_replay::ModelCheckLimits,
+    pub(super) ignore_memory_constraints: bool,
+}
+
 pub(super) fn check_protocol<M: MemoryModel>(
     subject: &ProtocolSubject<'_>,
     system: &ProtocolSystem<'_, M>,
     memory_bound: Option<MemoryBound>,
     item: ModelCheckItem<'_>,
     max_depth: Option<usize>,
-    limits: qsl_replay::ModelCheckLimits,
+    options: ProtocolLivenessOptions,
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
     let ModelCheckItem::Clause { clause, letters } = item else {
@@ -293,7 +301,21 @@ pub(super) fn check_protocol<M: MemoryModel>(
             Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
             Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
         };
-    let fairness = system.fairness_set(clause.fairness())?;
+    let full_fairness = system.fairness_set(clause.fairness())?;
+    let fairness: Vec<_> = if options.ignore_memory_constraints {
+        full_fairness
+            .iter()
+            .filter(|member| member.origin() != FairnessOrigin::Memory)
+            .cloned()
+            .collect()
+    } else {
+        full_fairness.clone()
+    };
+    let diagnostic_fairness = (options.ignore_memory_constraints
+        && full_fairness
+            .iter()
+            .any(|member| member.origin() == FairnessOrigin::Memory))
+    .then_some(full_fairness.as_slice());
     let bindings: Vec<Binding> = model
         .instances(&clause.over().1)
         .map_err(not_simulated)?
@@ -311,6 +333,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
             clause,
             letters,
             fairness: &fairness,
+            diagnostic_fairness,
             bindings: &bindings,
             memory_bound,
             root_cancelled,
@@ -323,7 +346,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
                         model,
                         cancel,
                         SubjectKind::Protocol,
-                        limits.max_automaton_states,
+                        options.limits.max_automaton_states,
                     )
                 },
             },
@@ -331,7 +354,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
         RunRequest {
             max_depth,
             partial_order: false,
-            limits,
+            limits: options.limits,
             meter: simulation.meter,
             max_candidates: simulation.expansion.max_candidates,
         },
@@ -346,6 +369,9 @@ struct Bound<'r, S: LiveSubject> {
     clause: &'r CheckedTemporalClause,
     letters: &'r dyn ModelLetters,
     fairness: &'r [Fair<S>],
+    /// The original protocol fairness set when memory members are omitted
+    /// for diagnostic liveness. Certificates and diagnostics use this set.
+    diagnostic_fairness: Option<&'r [Fair<S>]>,
     bindings: &'r [Binding],
     /// The memory bound a protocol subject runs under, which a bound-limited
     /// state reaches (ADR-025 MB-4).
@@ -410,6 +436,7 @@ fn decide_bindings<S: LiveSubject>(
         system,
         clause: bound.clause,
         fairness: bound.fairness,
+        diagnostic_fairness: bound.diagnostic_fairness,
         letters: bound.letters,
         bindings: bound.bindings,
         memory_bound: bound.memory_bound,
@@ -1397,6 +1424,7 @@ impl From<ModelCheckRefusal> for LoopStop {
 /// What the second phase found in one graph.
 enum Second<T: SubjectTransition> {
     Lasso(Box<TemporalCounterexample<T>>),
+    IgnoringConstraints,
     Cancelled(CancelCause),
     /// A limit stopped the annotated quotient's analysis or the lasso's
     /// concretisation.
@@ -1419,6 +1447,7 @@ struct Run<'r, S: LiveSubject> {
     clause: &'r CheckedTemporalClause,
     /// The clause's fairness set over the subject (FR-123, FR-212).
     fairness: &'r [Fair<S>],
+    diagnostic_fairness: Option<&'r [Fair<S>]>,
     letters: &'r dyn ModelLetters,
     bindings: &'r [Binding],
     memory_bound: Option<MemoryBound>,
@@ -1441,6 +1470,12 @@ struct Run<'r, S: LiveSubject> {
 }
 
 impl<'r, S: LiveSubject> Run<'r, S> {
+    /// Fairness set retained with counterexamples and consumed by any
+    /// certificate, independent of a diagnostic search selection.
+    fn recorded_fairness(&self) -> &[Fair<S>] {
+        self.diagnostic_fairness.unwrap_or(self.fairness)
+    }
+
     fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome<Tr<S>>, ModelCheckRefusal> {
         let mut explored = Vec::with_capacity(self.bindings.len());
         // The finding that ranks first so far, with its depth: a later
@@ -1529,6 +1564,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         // tie.
         let mut cut = false;
         let mut shortest: Option<Box<TemporalCounterexample<Tr<S>>>> = None;
+        let mut ignored_fairness_lasso = false;
         for run in &explored {
             cut |= run.dead_cut
                 || run
@@ -1545,6 +1581,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                         shortest = Some(counterexample);
                     }
                 }
+                Second::IgnoringConstraints => ignored_fairness_lasso = true,
                 Second::Cancelled(source) => {
                     return Ok(stopped(
                         IncompleteCause::Cancelled { source },
@@ -1578,6 +1615,11 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         if let Some(counterexample) = shortest {
             return Ok(ModelCheckOutcome::Violated {
                 counterexample,
+                stats: totals.stats(),
+            });
+        }
+        if ignored_fairness_lasso {
+            return Ok(ModelCheckOutcome::RefutedIgnoringConstraints {
                 stats: totals.stats(),
             });
         }
@@ -2137,7 +2179,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             initial_state,
             prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
-            fairness: self.fairness.to_vec(),
+            fairness: self.recorded_fairness().to_vec(),
             kind,
             lasso: None,
             blocked: Vec::new(),
@@ -2184,7 +2226,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             initial_state,
             prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
-            fairness: self.fairness.to_vec(),
+            fairness: self.recorded_fairness().to_vec(),
             kind,
             lasso: None,
             blocked: Vec::new(),
@@ -2279,6 +2321,33 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         let Some(passing) = Analysis::first_fair_in(&analyses) else {
             return Ok(Second::NoneFair);
         };
+        if let Some(full_fairness) = self.diagnostic_fairness {
+            let full_model = FairModel::build(self.system, full_fairness, run)?;
+            let full_vertices: BTreeSet<Vertex> = full_model.graph.vertices().collect();
+            let full_analyses = match analyze(
+                &full_model.graph,
+                &full_vertices,
+                &full_model.constraints,
+                self.cancel,
+            ) {
+                Ok(analyses) => analyses,
+                Err(FairnessError::Cancelled) => return self.cancelled(),
+                Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                    return Err(fault("the-fairness-graph-is-built-from-retained-states"))
+                }
+            };
+            let Some(full_passing) = Analysis::first_fair_in(&full_analyses) else {
+                return Ok(Second::IgnoringConstraints);
+            };
+            let component: BTreeSet<Vertex> = full_passing.vertices().iter().copied().collect();
+            let Some(entry) = full_passing.vertices().first().copied() else {
+                return Err(fault("a-component-has-a-vertex"));
+            };
+            let walk = full_model.greedy_loop(&component, full_passing.removed(), entry)?;
+            let loop_edges = full_model.loop_edges(&walk)?;
+            let entry = ProductStateId(entry.index());
+            return self.lasso(run, entry, |_| Ok(loop_edges));
+        }
         let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
@@ -2377,7 +2446,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 initial_state,
                 prefix: self.steps_of(lift),
                 over_binding: Some(run.binding.instance.clone()),
-                fairness: self.fairness.to_vec(),
+                fairness: self.recorded_fairness().to_vec(),
                 kind: CounterexampleKind::Formula,
                 lasso: Some(Lasso {
                     entry: entry_index,

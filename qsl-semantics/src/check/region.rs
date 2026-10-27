@@ -428,6 +428,20 @@ impl PackageDeclarations {
 }
 
 impl CheckedGraph {
+    /// FR-375: the full declaration occurrence of a checked refinement.
+    /// Its source span is retained by the checker rather than reconstructed
+    /// from the refinement's normalized body.
+    pub fn refinement_declaration_region(
+        &self,
+        refinement: &super::CheckedRefinement,
+    ) -> Option<SourceRegion> {
+        region(
+            &self.source,
+            self.embedding.as_deref(),
+            refinement.declaration_span(),
+        )
+    }
+
     /// The own declaration span of a function parameter occurrence. Reads
     /// of the same keyed parameter in a body have their expression locations.
     pub fn parameter_span(

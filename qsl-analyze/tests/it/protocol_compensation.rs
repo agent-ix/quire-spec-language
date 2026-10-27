@@ -1540,6 +1540,7 @@ fn requires_bound(attempts: &str) -> Vec<(Vec<u32>, DomainKind)> {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     );
