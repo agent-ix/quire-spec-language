@@ -250,7 +250,7 @@ impl ClockConstraint {
 
 /// A checked Boolean predicate of a timed model: a guard part's data
 /// predicate, a time invariant's or an `urgent when`'s predicate.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedTimedPredicate {
     parameters: Vec<(String, ValueType)>,
     body: CheckedBody,
@@ -366,7 +366,7 @@ impl ClockGuard {
 
 /// A reset `self.x = c` of one clock of an operation's receiver, or of the
 /// clock of each slot a `forall` selects (FR-230 "Resets by selection").
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClockReset {
     clock: ClockId,
     value: Rational,
@@ -378,7 +378,7 @@ pub struct ClockReset {
 /// each slot the collection holds at the pre-state whose element satisfies
 /// `P`, every held slot when `P` is absent. A slot not selected keeps its
 /// value.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SlotSelection {
     field: String,
     name: String,
@@ -427,7 +427,7 @@ impl ClockReset {
 }
 
 /// The resets one postcondition writes.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClockResets {
     clause: String,
     operation: ClauseOperation,
@@ -593,7 +593,8 @@ impl TimedModel {
 /// One guard part before its data predicate is typed.
 struct PartDraft {
     data: Option<ExpressionForm>,
-    elements: Vec<ElementBinding>,
+    /// Each element the data predicate reads, with its quantifier's span.
+    elements: Vec<(ElementBinding, Span)>,
     clocks: Vec<ClockConstraint>,
 }
 
@@ -1139,7 +1140,8 @@ enum DataLiteral {
     Formed(std::rc::Rc<ExpressionForm>),
     /// A data predicate of a quantifier's body read at one slot: the binder
     /// renamed to the element binding's name.
-    Element(std::rc::Rc<ExpressionForm>, ElementBinding),
+    /// The span is the quantifier's.
+    Element(std::rc::Rc<ExpressionForm>, ElementBinding, Span),
 }
 
 impl DataLiteral {
@@ -1147,7 +1149,7 @@ impl DataLiteral {
     fn form(&self) -> Option<&ExpressionForm> {
         match self {
             Self::Site(_) => None,
-            Self::Formed(form) | Self::Element(form, _) => Some(form),
+            Self::Formed(form) | Self::Element(form, ..) => Some(form),
         }
     }
 }
@@ -1156,8 +1158,12 @@ impl PartialEq for DataLiteral {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Site(left), Self::Site(right)) => left == right,
-            (Self::Formed(left), Self::Formed(right))
-            | (Self::Element(left, _), Self::Element(right, _)) => std::rc::Rc::ptr_eq(left, right),
+            (Self::Formed(left), Self::Formed(right)) => std::rc::Rc::ptr_eq(left, right),
+            // One element's literal: the same binding and the same
+            // predicate over it. Two literals of one slot are distinct.
+            (Self::Element(left, left_binding, _), Self::Element(right, right_binding, _)) => {
+                left_binding == right_binding && left.expression == right.expression
+            }
             _ => false,
         }
     }
@@ -1416,7 +1422,7 @@ fn part_predicate(
         .map(|(literal, positive)| {
             let cut = match &literal {
                 DataLiteral::Site(id) => located.form.cut(*id, &BTreeMap::new())?,
-                DataLiteral::Formed(form) | DataLiteral::Element(form, _) => (**form).clone(),
+                DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => (**form).clone(),
             };
             if positive {
                 Some(cut)
@@ -1720,15 +1726,15 @@ fn read_clause(
                                 .ok_or_else(|| timed(located.outside(root)))?,
                         )
                     };
-                    let mut elements: Vec<ElementBinding> = Vec::new();
+                    let mut elements: Vec<(ElementBinding, Span)> = Vec::new();
                     for (literal, _) in &literals {
-                        if let DataLiteral::Element(_, binding) = literal {
-                            if !elements.contains(binding) {
-                                elements.push(binding.clone());
+                        if let DataLiteral::Element(_, binding, span) = literal {
+                            if !elements.iter().any(|(held, _)| held == binding) {
+                                elements.push((binding.clone(), *span));
                             }
                         }
                     }
-                    elements.sort_by_key(|binding| binding.slot);
+                    elements.sort_by_key(|(binding, _)| binding.slot);
                     Ok(PartDraft {
                         data,
                         elements,
@@ -2254,13 +2260,9 @@ pub(crate) fn check(
                 let binders = part
                     .elements
                     .iter()
-                    .map(|binding| {
-                        let span = clause
-                            .spans
-                            .body
-                            .span(clause.spans.body.root())
-                            .unwrap_or(Span { start: 0, end: 0 });
-                        let element = element_type(checking, clause.context, &binding.field, span)?;
+                    .map(|(binding, span)| {
+                        let element =
+                            element_type(checking, clause.context, &binding.field, *span)?;
                         Ok((binding.name.clone(), element))
                     })
                     .collect::<Result<Vec<_>, CheckRefusal>>()?;
@@ -2287,7 +2289,11 @@ pub(crate) fn check(
                 };
                 checked.push(ConvexPart {
                     data,
-                    elements: part.elements,
+                    elements: part
+                        .elements
+                        .into_iter()
+                        .map(|(binding, _)| binding)
+                        .collect(),
                     clocks: part.clocks,
                 });
             }
