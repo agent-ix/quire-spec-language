@@ -2692,8 +2692,10 @@ fn cells_document(
     all.extend(types);
     for (name, type_ref, multiplicity) in fields {
         let mut member = wire_field(name, &type_ref);
-        if let Some(multiplicity) = multiplicity {
-            member["multiplicity"] = multiplicity;
+        match multiplicity {
+            Some(Json::String(presence)) => member["presence"] = json!(presence),
+            Some(multiplicity) => member["multiplicity"] = multiplicity,
+            None => {}
         }
         all[1]["fields"]
             .as_array_mut()
@@ -2757,11 +2759,11 @@ fn granted_values(world: &World, operation: &str, field: &str) -> Vec<String> {
 /// `pick: Pick { col: Color, on: Boolean }` 6 and `note: Note { note?:
 /// Boolean, n: Int[0, 1] }` 6, `note` absent first; `t: Timer { x, y:
 /// Clock; n: Phase }` 4, its clocks no factor; `sw: Stopwatch { x, y:
-/// Clock }` one value; `mx: Mix { t: Timer, b: Boolean }` 8. No such field
+/// Clock }` one value; `mx: Mix { t: Timer, b: Boolean }` 8; `oc?: Cfg`
+/// and `sq: Cfg [0, 1]` 7 each. No such field
 /// is an unbounded root, so the model passes FR-120's requires-bound check;
 /// a granted `Sequence<Timer>[0, 1]` is an unbounded root. Not covered: the
-/// tuple `Pr` and the `Option<Cfg>`/`Sequence<Cfg>` vectors' tuple
-/// siblings, which a domain package cannot declare (STD-493 item 16).
+/// tuple `Pr`, which a domain package cannot declare.
 #[trace("TC-1270")]
 #[test]
 fn a_record_of_finite_components_is_a_finite_domain() {
@@ -2835,6 +2837,8 @@ fn a_record_of_finite_components_is_a_finite_domain() {
         "note": {"record": {"type": ident("Note"), "fields": {"note": {"absent": {}}, "n": {"integer": "0"}}}},
         "sw": {"record": {"type": ident("Stopwatch"), "fields": {}}},
         "mx": {"record": {"type": ident("Mix"), "fields": {"t": timer, "b": {"boolean": false}}}},
+        "sq": {"sequence": []},
+        "oc": {"absent": {}},
     });
     let fields = vec![
         ("cfg", ident("Cfg"), None),
@@ -2845,6 +2849,12 @@ fn a_record_of_finite_components_is_a_finite_domain() {
         ("note", ident("Note"), None),
         ("sw", ident("Stopwatch"), None),
         ("mx", ident("Mix"), None),
+        ("oc", ident("Cfg"), Some(json!("optional"))),
+        (
+            "sq",
+            ident("Cfg"),
+            Some(json!({"lower": 0, "upper": 1, "ordered": true, "unique": false})),
+        ),
     ];
     let counts = |granted: &str| {
         let world = world_holding(
@@ -2885,6 +2895,8 @@ fn a_record_of_finite_components_is_a_finite_domain() {
     assert_eq!(counts("t").len(), 4);
     assert_eq!(counts("sw").len(), 1);
     assert_eq!(counts("mx").len(), 8);
+    assert_eq!(counts("oc").len(), 7);
+    assert_eq!(counts("sq").len(), 7);
 
     // A clock-bearing collection is unbounded.
     let world = world_holding(
