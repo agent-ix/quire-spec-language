@@ -19,6 +19,7 @@ use crate::error::{Error, Result};
 /// `qsl-eval` (ADR-011 §7.3 X-8), `qsl-route` (ADR-011 §7.3 X-9),
 /// `qsl-replay` (ADR-011 §7.3 X-10 -- each extracted §6.1 layer crate adds its
 /// own entry here the same way), `qsl-analyze` (ADR-011 §7.3 X-12),
+/// `qsl-inspect` (the typed inspection CLI),
 /// `qsl-bench` (the benchmark harness) and `qsl-string-edge` (the scanner
 /// scans itself), and `checked-closure-consumer` (the standalone compile-fail
 /// consumer fixture).
@@ -37,6 +38,7 @@ fn crate_roots() -> Vec<PathBuf> {
         "qsl-route/src",
         "qsl-replay/src",
         "qsl-analyze/src",
+        "qsl-inspect/src",
         "qsl-bench/src",
         "qsl-string-edge/src",
         "tests/fixtures/checked-closure-consumer/src",

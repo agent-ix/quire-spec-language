@@ -101,7 +101,9 @@ use serde::Deserialize;
 
 use ix_trace_rs::string_edge;
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::source::provenance::{
+    OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
+};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
@@ -113,7 +115,7 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
     HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
 };
-use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
+use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -238,6 +240,9 @@ pub enum EmitRefusal {
     /// A checked refinement's declaration occurrence has no original source region.
     #[error("the checked refinement declaration has no source region")]
     UnlocatedRefinementDeclaration,
+    /// The emitted source correspondence could not be represented in-process.
+    #[error("the emitted source map violated its typed correspondence invariant")]
+    SourceMapInvariant,
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -268,6 +273,7 @@ impl EmitRefusal {
             Self::RefinementIdentityEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
+            Self::SourceMapInvariant => Code::RuntimeInvariant,
         }
     }
 
@@ -289,7 +295,8 @@ impl EmitRefusal {
             | Self::TimedModelWriterInvariant(_)
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
-            | Self::UnlocatedRefinementDeclaration => None,
+            | Self::UnlocatedRefinementDeclaration
+            | Self::SourceMapInvariant => None,
         }
     }
 }
@@ -336,6 +343,10 @@ pub struct Emission {
     /// these bytes are read back as a dependency's import view (ADR-015 D-1
     /// step 6).
     pub(crate) evidence: CheckedPackageEvidence,
+    /// FR-322's feature-level report retained as typed data for inspection.
+    pub(crate) capability_report: Vec<CheckedCapability>,
+    /// The exact source correspondence emitted with these package bytes.
+    pub(crate) source_map: PackageSourceMap,
 }
 
 impl Emission {
@@ -354,6 +365,16 @@ impl Emission {
     /// reads the bytes itself adds the domain package documents.
     pub fn evidence(&self) -> &CheckedPackageEvidence {
         &self.evidence
+    }
+
+    /// The FR-322 feature-level capability report, in the emitted order.
+    pub fn capability_report(&self) -> &[CheckedCapability] {
+        &self.capability_report
+    }
+
+    /// The source map emitted with these package bytes.
+    pub fn source_map(&self) -> &PackageSourceMap {
+        &self.source_map
     }
 }
 
@@ -1072,6 +1093,35 @@ fn source_map(
     Ok((entries, sources))
 }
 
+/// The exact typed source map represented by the just-built v2 entries.
+fn inspection_source_map(
+    entries: &[CheckedSourceMapEntry],
+) -> Result<PackageSourceMap, EmitRefusal> {
+    let mut mapped = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let node = WireNodeId::from_hex(entry.node_id.digest.as_ref())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let key = OccurrenceKey::new(
+            node,
+            Origin::new(
+                Role::new(crate::checked_v2::role_spelling(&entry.role)),
+                entry.ordinal,
+            ),
+        );
+        let mut regions = Vec::with_capacity(entry.regions.len());
+        for region in &entry.regions {
+            let source = crate::checked_v2::raw_source_ref(&region.source)
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+            regions.push(
+                SourceRegion::new(source, region.start, region.end)
+                    .map_err(|_| EmitRefusal::SourceMapInvariant)?,
+            );
+        }
+        mapped.push((key, regions));
+    }
+    PackageSourceMap::from_entries(mapped).map_err(|_| EmitRefusal::SourceMapInvariant)
+}
+
 /// The first FR-375 emission slice: the complete row-empty model refinement
 /// body. Mapped refinements are added by later slices; this body is legal in
 /// its own right and its identity is bound to the concrete state-machine
@@ -1400,6 +1450,7 @@ pub fn emit_timed_models(
     let lock = base.lock().clone();
     let mut source_map = base.source_map().to_vec();
     rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+    let inspection_source_map = inspection_source_map(&source_map)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -1437,6 +1488,8 @@ pub fn emit_timed_models(
         package,
         omitted: Vec::new(),
         evidence: own_evidence(&lock),
+        capability_report,
+        source_map: inspection_source_map,
     })
 }
 
@@ -1945,6 +1998,7 @@ fn emit_package_inner(
         graph_version: GRAPH_V2.into(),
         nodes,
     };
+    let inspection_source_map = inspection_source_map(&source_map)?;
     let preimage = CheckedPackageIdentityPreimageRefV2 {
         version: IDENTITY_PREIMAGE_V2,
         edition: &edition,
@@ -1984,6 +2038,8 @@ fn emit_package_inner(
         package,
         omitted,
         evidence,
+        capability_report: capability_report.to_vec(),
+        source_map: inspection_source_map,
     })
 }
 
