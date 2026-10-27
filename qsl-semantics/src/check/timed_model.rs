@@ -646,9 +646,21 @@ impl Clocks<'_> {
         let value = self
             .units
             .convert(&magnitude, &quantity.unit.name, target)
-            .map_err(|cause| TemporalCause::TimeQuantity {
-                cause: Box::new(cause),
-                span: quantity.unit.span,
+            .map_err(|cause| {
+                // A unit of another time dimension refuses at the constant;
+                // a unit that is no time unit, at the unit.
+                let span = if matches!(
+                    cause,
+                    super::refusal::TimeUnitCause::OtherTimeDimension { .. }
+                ) {
+                    quantity.span
+                } else {
+                    quantity.unit.span
+                };
+                TemporalCause::TimeQuantity {
+                    cause: Box::new(cause),
+                    span,
+                }
             })?;
         if value.numerator().is_negative() {
             return Err(TemporalCause::NegativeClockConstant {

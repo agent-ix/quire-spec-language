@@ -1740,6 +1740,13 @@ pub enum TimeUnitCause {
         /// The unit as written.
         name: String,
     },
+    /// The unit is a time unit of a base `Time` dimension other than the
+    /// model's time dimension, with no admitted equivalence between them
+    /// (QSpec FR-142 "Dimensions of different owners").
+    OtherTimeDimension {
+        /// The unit as written.
+        name: String,
+    },
     /// The unit's composed offset to its root is not zero.
     AffineUnit {
         /// The unit as written.
@@ -1747,6 +1754,29 @@ pub enum TimeUnitCause {
         /// The composed offset.
         offset: quire_exact::Rational,
     },
+}
+
+impl TimeUnitCause {
+    /// The cause's catalog code: an unresolved name is a missing
+    /// declaration, a unit that is no time unit of the model is ill typed.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => Code::MissingDeclaration,
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => Code::IllTyped,
+        }
+    }
+
+    /// The cause's catalog tag.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => "missing-name",
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => "type-mismatch",
+        }
+    }
 }
 
 impl TemporalCause {
@@ -1886,14 +1916,7 @@ impl TemporalCause {
             Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
             Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    Code::MissingDeclaration
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    Code::IllTyped
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.code(),
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
             Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
@@ -1971,14 +1994,7 @@ impl TemporalCause {
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
             Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    "missing-name"
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    "type-mismatch"
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.tag(),
         }
     }
 }
