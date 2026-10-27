@@ -28,11 +28,11 @@ use qsl_foundation::{Code, MemoryModelName, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     check_protocol_closure, check_protocol_components, compile_package, replay_protocol_trace,
-    CertificateRule, ClosureRefusal, ComponentCertificate, CounterexampleKind, DependencyInput,
-    Lasso, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelStep, ModelTraceRefusal, ModelTraceSubject, ProofCertificate,
-    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
-    TemporalCertificateCheck, TemporalCounterexample,
+    settle_protocol_check, CertificateRule, ClosureRefusal, ComponentCertificate,
+    CounterexampleKind, DependencyInput, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
+    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceRefusal,
+    ModelTraceSubject, ProofCertificate, ProtocolCertificateRequest, ProtocolTraceSubject,
+    ReplayLimits, ReplayRefusal, TemporalCertificateCheck, TemporalCounterexample,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
@@ -141,6 +141,15 @@ impl Unit {
         selection: &[MemorySelection],
         max_store_buffer: Option<u64>,
     ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+        self.check_with_ignored_memory(selection, max_store_buffer, false)
+    }
+
+    fn check_with_ignored_memory(
+        &self,
+        selection: &[MemorySelection],
+        max_store_buffer: Option<u64>,
+        ignore_memory_constraints: bool,
+    ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
         check_protocol(
             ProtocolCheckRequest {
                 subject: self.subject(selection),
@@ -150,6 +159,7 @@ impl Unit {
                 max_messages: None,
                 max_live_instances: None,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints,
             },
             &Cancel::new(),
         )
@@ -549,6 +559,62 @@ fn eventually_the_load_reads_the_flushed_store() {
     assert!(stats.product_states > 0, "{stats:?}");
 }
 
+/// FR-228-AC-10 / FR-127-AC-17: ignoring memory fairness may reveal the
+/// store-buffer lasso as a separate diagnostic, never a replayable refutation
+/// or proof. The default request still takes the component-certificate path.
+#[trace("TC-673")]
+#[test]
+fn ignoring_memory_fairness_returns_a_non_replayable_diagnostic() {
+    let unit = Unit::new(&spin_run(), SETTLES, &IS_ONE);
+    assert!(matches!(
+        unit.check(&unit.tso(), None)
+            .expect("the default request checks"),
+        ModelCheckOutcome::Holds {
+            certificate: ProofCertificate::Component(_),
+            ..
+        }
+    ));
+
+    let outcome = unit
+        .check_with_ignored_memory(&unit.tso(), None, true)
+        .expect("the diagnostic request checks");
+    assert!(
+        matches!(
+            outcome,
+            ModelCheckOutcome::RefutedIgnoringConstraints { .. }
+        ),
+        "the unflushed lasso is diagnostic only: {outcome:?}"
+    );
+
+    let source = unit_text(&unit.body).into_bytes();
+    let package_id = compile_package(
+        SourceIdentity::new("agent-ix", "litmus", "git", "1"),
+        "litmus.native",
+        &source,
+        [document().as_slice()],
+        &DependencyInput::default(),
+        qsl_replay::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles")
+    .package_id();
+    let record = settle_protocol_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &package_id,
+        &unit.certificate_request(&unit.tso(), unit.item()),
+        &Cancel::new(),
+        |_| panic!("a diagnostic lasso must not enter standard replay"),
+    );
+    assert!(matches!(
+        record.value,
+        qsl_replay::TerminalValue::Inconclusive(
+            qsl_replay::InconclusiveCause::RefutedIgnoringConstraints
+        )
+    ));
+    assert!(record.counterexample.is_none());
+}
+
 /// FR-339's checker over a protocol subject: `Spin`'s component certificate
 /// is accepted by `check_protocol_components`; the same components reversed
 /// are `BackwardEdge` and none at all are `NotPartition`; a certificate whose
@@ -638,6 +704,22 @@ fn a_false_liveness_claim_over_tso_is_refuted_with_the_memory_constraints() {
     );
     unit.replay(&unit.tso(), counterexample.as_ref().clone())
         .expect("the fair lasso replays");
+
+    let ignored_selection = unit
+        .check_with_ignored_memory(&unit.tso(), None, true)
+        .expect("the diagnostic selection checks");
+    let ModelCheckOutcome::Violated {
+        counterexample: ignored_counterexample,
+        ..
+    } = ignored_selection
+    else {
+        panic!(
+            "a lasso satisfying original fairness stays on ordinary replay: {ignored_selection:?}"
+        );
+    };
+    assert!(ignored_counterexample.fairness.contains(&flush("w")));
+    unit.replay(&unit.tso(), ignored_counterexample.as_ref().clone())
+        .expect("a full-fairness lasso uses ordinary replay");
 }
 
 /// ADR-025 MK-2 (TC-672): the unflushed lasso over `Spin`, in which `w`'s buffer

@@ -626,6 +626,9 @@ pub enum InconclusiveCause {
     UndecidedSuccessor,
     /// The subject supplies no initial state.
     NoInitialState,
+    /// A liveness lasso exists only after memory-origin fairness constraints
+    /// are omitted. It is diagnostic evidence, never a refutation or proof.
+    RefutedIgnoringConstraints,
     /// The item has zero instances (FR-125).
     NoInstance,
     /// `match-undetermined` (ADR-023 HV-4): a hyper item's `match` block was
@@ -809,6 +812,7 @@ impl InconclusiveCause {
             Self::InductionNotClosed { .. } => "induction-not-closed",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
+            Self::RefutedIgnoringConstraints => "refuted-ignoring-constraints",
             Self::NoInstance => "no-instance",
             Self::MatchUndetermined => "match-undetermined",
             Self::VacuousMatch => "vacuous-match",
@@ -838,6 +842,7 @@ impl InconclusiveCause {
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
+            | Self::RefutedIgnoringConstraints
             | Self::NoInstance
             | Self::MatchUndetermined
             | Self::VacuousMatch

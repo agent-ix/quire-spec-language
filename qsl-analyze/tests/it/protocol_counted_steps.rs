@@ -106,6 +106,7 @@ impl Case {
                 max_messages: None,
                 max_live_instances: None,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
             },
             &Cancel::new(),
         )

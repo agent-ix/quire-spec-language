@@ -108,6 +108,7 @@ impl Case {
                 max_messages: None,
                 max_live_instances: None,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
             },
             &Cancel::new(),
         )
@@ -1298,6 +1299,7 @@ fn a_protocol_model_check_is_deterministic() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     )
@@ -1730,6 +1732,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     )
@@ -2033,6 +2036,7 @@ fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     )

@@ -423,6 +423,7 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
+                | InconclusiveCause::RefutedIgnoringConstraints
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined

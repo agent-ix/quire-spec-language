@@ -192,6 +192,12 @@ pub enum ModelCheckOutcome<T: SubjectTransition = ModelTransition> {
         /// The run's counts.
         stats: RunStats,
     },
+    /// A protocol liveness lasso exists only after omitting memory-origin
+    /// fairness constraints. This diagnostic carries no replayable witness.
+    RefutedIgnoringConstraints {
+        /// The run's counts.
+        stats: RunStats,
+    },
     /// The run completed its search horizon with no counterexample (V-5).
     BoundReached {
         /// The horizon `max_depth`.
@@ -228,6 +234,7 @@ impl<T: SubjectTransition> ModelCheckOutcome<T> {
             | Self::Memory { stats, .. }
             | Self::RecoveryView { stats, .. }
             | Self::Violated { stats, .. }
+            | Self::RefutedIgnoringConstraints { stats }
             | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }
             | Self::Stopped { stats, .. } => *stats,
