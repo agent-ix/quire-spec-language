@@ -216,6 +216,27 @@ impl<'t> Typing<'t> {
             variants,
         }
     }
+
+    /// The present value of the record field `name` of the record value
+    /// `value`; `None` when `value` is no record, the field is absent or
+    /// its declaration is not in these types.
+    pub(crate) fn component<'v>(&self, value: &'v Value, name: &str) -> Option<&'v Value> {
+        let Value::Composite(composite) = value else {
+            return None;
+        };
+        let Some(CompositeShape::Record(fields)) = self
+            .types?
+            .composite(composite.declaration())
+            .map(CompositeDeclaration::shape)
+        else {
+            return None;
+        };
+        let position = fields.iter().position(|field| field.name() == name)?;
+        match composite.slots().get(position)? {
+            FieldValue::Present(value) => Some(value),
+            FieldValue::Absent | FieldValue::Null => None,
+        }
+    }
 }
 
 /// FR-181's typed canonical form of `value`, its records, tuples, unions and

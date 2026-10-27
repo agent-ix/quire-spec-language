@@ -31,12 +31,15 @@ use super::footprints::ReadCheck;
 use super::walk::{stop, Applied, Budget, ContractFinding, Row, Selected, Walk};
 use super::{
     handler_anchor, identity_limits, state_document, Application, ClauseInfo, FieldChange,
-    ModelFinding, ModelSimState, StepEffect, BROKEN, EXHAUSTED,
+    ModelFinding, ModelSimState, StepEffect, WrittenSlots, BROKEN, EXHAUSTED,
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
+use crate::value::{CheckedPackageEvaluation, Provenance, WrittenCollection};
 use qsl_foundation::digest::DigestRecord;
+use qsl_semantics::check::CollectionWrite;
+use quire_exact::Meter;
 use quire_semantic_value::catalog::CatalogCode;
 
 /// The most values a result domain may hold and still be put in canonical
@@ -674,7 +677,7 @@ impl Run<'_, '_, '_> {
                 return Err(stop(BROKEN));
             };
             self.complete(
-                candidate,
+                self.collection_writes(candidate, &delta)?,
                 &delta,
                 &post_references,
                 budget,
@@ -990,6 +993,7 @@ impl Run<'_, '_, '_> {
             deleted,
             changed,
             result: None,
+            written: Vec::new(),
         })
     }
 
@@ -1089,11 +1093,135 @@ impl Run<'_, '_, '_> {
         Ok(verdict)
     }
 
+    /// `candidate` with every clock collection the application's
+    /// postconditions write whole (FR-230 "Collection-valued writes") set to
+    /// the value its write computes, and the provenance of each written
+    /// slot. A record collection has no value domain to enumerate (FR-120),
+    /// so the write is computed rather than chosen; a frame that does not
+    /// grant the field leaves it to the postcondition to decide.
+    ///
+    /// # Errors
+    ///
+    /// A [`COLLECTION_WRITE`] stop when a write cannot be computed from the
+    /// pre-state: it reads the collection it carries from in the post-state
+    /// (STD-493 item 28), an evaluation it needs has no value, or its value
+    /// changes with the written field. Such a step is never dropped silently.
+    fn collection_writes(
+        &self,
+        mut candidate: ModelState,
+        delta: &Delta,
+    ) -> Result<(ModelState, Vec<WrittenSlots>), ExpansionStop> {
+        let system = self.walk.system;
+        let mut written: Vec<WrittenSlots> = Vec::new();
+        for info in self.postconditions {
+            let writes = system
+                .package
+                .graph()
+                .timed_models()
+                .iter()
+                .flat_map(|model| model.resets())
+                .filter(|resets| resets.clause() == info.name)
+                .flat_map(|resets| resets.writes());
+            for write in writes {
+                if written.iter().any(|done| done.field == write.field()) {
+                    continue;
+                }
+                let field_key = system
+                    .fields
+                    .get(
+                        system
+                            .model
+                            .type_key(self.row.type_id())
+                            .ok_or_else(|| stop(BROKEN))?,
+                    )
+                    .and_then(|fields| fields.iter().find(|field| field.name == write.field()))
+                    .map(|field| field.key.clone())
+                    .ok_or_else(|| stop(BROKEN))?;
+                let (value, _) = self.computed(&candidate, delta, info, write)?;
+                let mut next = candidate.clone();
+                next.populations
+                    .get_mut(&self.row.population)
+                    .and_then(|objects| objects.get_mut(&self.row.key))
+                    .ok_or_else(|| stop(BROKEN))?
+                    .fields
+                    .insert(field_key, value.clone());
+                if self.decide(&next)?.is_err() {
+                    continue;
+                }
+                // Computed again over the state it writes: a write that is a
+                // function of the pre-state computes the same value.
+                let (again, occurrences) = self.computed(&next, delta, info, write)?;
+                if !values_equal(&again, &value) {
+                    return Err(stop(COLLECTION_WRITE));
+                }
+                let provenance =
+                    slot_provenance(&value, occurrences).ok_or_else(|| stop(BROKEN))?;
+                written.push(WrittenSlots {
+                    field: write.field().to_owned(),
+                    provenance,
+                });
+                candidate = next;
+            }
+        }
+        Ok((candidate, written))
+    }
+
+    /// The value `write` of the postcondition `info` computes with
+    /// `candidate` as the post-state, and its occurrences.
+    fn computed(
+        &self,
+        candidate: &ModelState,
+        delta: &Delta,
+        info: &ClauseInfo,
+        write: &CollectionWrite,
+    ) -> Result<(Value, Vec<(Value, Provenance)>), ExpansionStop> {
+        let system = self.walk.system;
+        let state_key = encode::model_key(&system.model, candidate, system.typing());
+        let (_, digest) =
+            key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
+        let post = system
+            .model
+            .observation(candidate, state_document(&digest))
+            .map_err(|_| stop(BROKEN))?;
+        let effect = self.effect_of(candidate, delta)?;
+        let observations = AdmittedObservations {
+            usage: AdmissionUsage::default(),
+            clause: info.identity,
+            current: None,
+            pre: Some(self.walk.observation.clone()),
+            post: Some(post),
+            self_object: self.row.reference.clone(),
+            invocation: None,
+            self_kind: SelfKind::Object,
+            receiver_pre: None,
+            receiver_post: None,
+            parameters: self.args.to_vec(),
+            result: None,
+            created: effect.created,
+            deleted: effect.deleted,
+        };
+        match system.package.evaluate_collection_write(
+            &info.qualified,
+            &observations,
+            write.field(),
+            write.written(),
+            &mut Meter::new(system.meter),
+        ) {
+            Ok(Some(WrittenCollection::Computed { value, occurrences })) => {
+                Ok((value, occurrences))
+            }
+            Ok(None) => Err(stop(BROKEN)),
+            Ok(Some(WrittenCollection::ReadsPostState | WrittenCollection::Undecided(_)))
+            | Err(_) => Err(stop(COLLECTION_WRITE)),
+        }
+    }
+
     /// Pair `candidate` with each result and keep it as a successor when some
-    /// pair's effective postcondition is true.
+    /// pair's effective postcondition is true, its effect naming the
+    /// collections `written`.
     fn complete(
         &self,
-        candidate: ModelState,
+        (candidate, written): (ModelState, Vec<WrittenSlots>),
         delta: &Delta,
         post_references: &[ObjectReference],
         budget: &mut Budget,
@@ -1101,6 +1229,7 @@ impl Run<'_, '_, '_> {
         successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
         let mut effect = self.effect_of(&candidate, delta)?;
+        effect.written = written;
         let ordered = self.result_order(post_references)?;
         let picks: Vec<Option<u128>> = match &ordered {
             None => vec![None],
@@ -1220,4 +1349,32 @@ fn collect_references<'v>(value: &'v Value, out: &mut Vec<&'v ObjectReference>) 
         | Value::Composite(_)
         | Value::Union(_) => {}
     }
+}
+
+/// A collection write that cannot be computed from the pre-state (FR-230
+/// "Collection-valued writes"): the step is refused, never dropped.
+pub(crate) const COLLECTION_WRITE: CatalogCode =
+    CatalogCode::new("unsupported_construct", "collection-write-not-computed");
+
+/// The provenance of each slot of `value`: the `k`-th slot equal to a value
+/// is the `k`-th occurrence equal to it, so a `Set` or `OrderedSet` keeps
+/// the first of equal occurrences and a `Bag` or `Sequence` keeps them all,
+/// by value and never by spelling. `None` when a slot is no occurrence.
+fn slot_provenance(
+    value: &Value,
+    mut occurrences: Vec<(Value, Provenance)>,
+) -> Option<Vec<Provenance>> {
+    let Value::Collection(collection) = value else {
+        return None;
+    };
+    collection
+        .elements()
+        .iter()
+        .map(|element| {
+            let position = occurrences
+                .iter()
+                .position(|(occurrence, _)| values_equal(occurrence, element))?;
+            Some(occurrences.remove(position).1)
+        })
+        .collect()
 }

@@ -202,6 +202,20 @@ pub struct StepEffect {
     pub changed: Vec<FieldChange>,
     /// The canonical text of the transition's result, or `None`.
     pub result: Option<String>,
+    /// The receiver's clock collections the step wrote whole (FR-230
+    /// "Collection-valued writes"), each with the provenance of every slot
+    /// of its post-state value.
+    pub written: Vec<WrittenSlots>,
+}
+
+/// A clock collection a step wrote whole, and where each of its post-state
+/// slots comes from.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenSlots {
+    /// The receiver's collection field.
+    pub field: String,
+    /// One provenance for each slot of the post-state value, in slot order.
+    pub provenance: Vec<crate::value::Provenance>,
 }
 
 /// How a clause evaluation that decided no Boolean ended (FR-120 "Contract

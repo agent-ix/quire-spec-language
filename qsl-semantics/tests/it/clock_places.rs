@@ -4,7 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{ClockOp, PlaceStep};
+use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::{json, Value};
 
@@ -287,12 +287,12 @@ fn a_record_parameter_reads_its_clock_by_path() {
 }
 
 /// Part of FR-230-AC-14 (TC-685 step 16) and FR-230 "Records, tuples and
-/// unions": a `Timer` held by an optional field (`o?: Timer`) or a
-/// collection field (`ts: Timer` of multiplicity `[0, 3]`, the package form
-/// of `ts: Sequence<Timer>`) under a dense source is a guarded or
-/// collection place S3 does not check yet (STD-493 item 17), refused at the
-/// time declaration; under a tick source and with no time source the
-/// collection refuses `clock-without-dense-time` as a single field does.
+/// unions": a `Timer` held by an optional field (`o?: Timer`) under a dense
+/// source is a guarded place S3 does not check yet (STD-493 item 17),
+/// refused at the time declaration; under a tick source and with no time
+/// source a collection field (`ts: Timer` of multiplicity `[0, 3]`, the
+/// package form of `ts: Sequence<Timer>`) refuses
+/// `clock-without-dense-time` as a single field does.
 #[trace("TC-685")]
 #[test]
 fn a_record_clock_under_an_optional_or_collection_field() {
@@ -308,22 +308,21 @@ fn a_record_clock_under_an_optional_or_collection_field() {
                 .push(held);
         })
     };
-    for document in [with("o", "optional", 1), with("ts", "required", 3)] {
-        let refusals = check(&document, &format!("{UNITS}{DENSE}")).expect_err("not checked");
-        assert!(
-            matches!(
-                refusals.as_slice(),
-                [qsl_semantics::check::CheckRefusal {
-                    cause: qsl_semantics::check::CheckCause::TimedNotChecked {
-                        construct: qsl_semantics::check::TimedConstruct::Clock,
-                        ..
-                    },
+    let refusals =
+        check(&with("o", "optional", 1), &format!("{UNITS}{DENSE}")).expect_err("not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked {
+                    construct: qsl_semantics::check::TimedConstruct::Clock,
                     ..
-                }]
-            ),
-            "{refusals:?}"
-        );
-    }
+                },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
     let collection = {
         let mut document: Value = serde_json::from_slice(&with("ts", "required", 3)).expect("JSON");
         without_own_clock(&mut document);
@@ -511,4 +510,565 @@ fn a_negated_peer_clock_keeps_its_reference_and_other_references_refuse() {
             (Code::IllTyped, "type-mismatch", reader),
         );
     }
+}
+
+/// A [`timer_document`] whose `Call` also holds `ts: Timer` of
+/// multiplicity `[0, upper]` (`None`: unbounded), `ordered` and `unique` as
+/// given: the package form of `Sequence<Timer>`, `OrderedSet<Timer>`,
+/// `Set<Timer>` or `Bag<Timer>`.
+fn timer_collection(upper: Option<u64>, ordered: bool, unique: bool) -> Vec<u8> {
+    timer_document(move |document: &mut Value| {
+        let mut held = field("ts", &package("Timer"));
+        held["multiplicity"] = json!({"lower": 0, "ordered": ordered, "unique": unique});
+        if let Some(upper) = upper {
+            held["multiplicity"]["upper"] = json!(upper);
+        }
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(held);
+        // `send` and `bump` also write `ts`.
+        for operation in document["types"][1]["operations"]
+            .as_array_mut()
+            .expect("operations")
+        {
+            if matches!(operation["name"].as_str(), Some("send" | "bump")) {
+                operation["frame"]["modifies"]
+                    .as_array_mut()
+                    .expect("frame")
+                    .push(json!(call("ts")));
+            }
+        }
+    })
+}
+
+/// Part of FR-230-AC-19 and FR-230-AC-23 (TC-685), the record parts: a
+/// `Timer` collection field `ts` under a dense source checks; its clock is
+/// the place `ts.[slot].x`, its path the field `ts`, a `Slot` step of the
+/// field's shape, then `x`, under the object field `ts`. The static clock
+/// count of the place is the declared maximum, `3` for `[0, 3]`, and none
+/// for `[0, *]`; the static clock dimension of one `Call` is `1 + 1 + 1`
+/// (`t.x`, `u.x`, `x`) plus `3`, or plus nothing when `ts` is unbounded. Not covered: a `Map<Text, Timer>` field and its key rule,
+/// which the domain package cannot declare (it has no map type), and the
+/// `Clock`-element collections (IR-1036).
+#[trace("TC-685")]
+#[test]
+fn a_record_collection_holds_one_clock_place_per_slot() {
+    for (upper, ordered, unique) in [
+        (Some(3), true, false),
+        (Some(3), true, true),
+        (Some(3), false, true),
+        (Some(3), false, false),
+        (None, true, false),
+    ] {
+        let document = timer_collection(upper, ordered, unique);
+        let graph = check(&document, &format!("{UNITS}{DENSE}")).expect("a collection checks");
+        let model = timed(&graph);
+        let place = model
+            .clocks()
+            .iter()
+            .find(|clock| clock.name() == "ts.[slot].x")
+            .unwrap_or_else(|| panic!("the slot place: {:?}", model.clocks()));
+        assert_eq!(
+            place.path(),
+            [
+                PlaceStep::Field("ts".to_owned()),
+                PlaceStep::Slot(CollectionShape {
+                    ordered,
+                    unique,
+                    min: 0,
+                    max: upper,
+                }),
+                PlaceStep::Field("x".to_owned()),
+            ]
+        );
+        assert_eq!(place.field().node, package("Call/ts"));
+        assert_eq!(place.bound(), upper);
+        assert_eq!(place.slots().count(), 1);
+        let single = model
+            .clocks()
+            .iter()
+            .find(|clock| clock.name() == "t.x")
+            .expect("t.x");
+        assert_eq!(single.bound(), Some(1));
+        // `t.x`, `u.x` and `x`, one each, and the slots of `ts`.
+        assert_eq!(model.dimension(place.owner()), Some(3 + upper.unwrap_or(0)));
+    }
+}
+
+/// Part of FR-230-AC-21 (TC-685), the record parts of "Element identity":
+/// over a `Timer` collection `ts`, `size(self.ts)`, a data field of an
+/// element read through a traversal (`size(filter(e in self.ts: e.n > 1))`)
+/// are data reads and check; an element's clock read in a traversal body
+/// (`filter` and `count` over `e.x`), an element read whole (`e`), `=`
+/// and `!=` over the collection or over `filter` results, `contains` and
+/// `convert` compare or read clocks and refuse
+/// `clock-read-outside-constraint` at the read.
+#[trace("TC-685")]
+#[test]
+fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
+    let document = timer_collection(Some(3), true, false);
+    let body = format!(
+        "{UNITS}{DENSE}pre D using v on Config::Call::bump {{ size(self.ts) < 3 }}\n\
+         pre E using v on Config::Call::reply {{ size(filter(e in self.ts: e.n > 1)) = 0 }}\n"
+    );
+    check(&document, &body).expect("data reads of a clock collection check");
+    for (clause, at) in [
+        (
+            "pre E using v on Config::Call::reply { size(filter(e in self.ts: e.x >= 1 ms)) = 0 }",
+            "e.x",
+        ),
+        (
+            "pre E using v on Config::Call::reply { count<Config::VersionNumber>(e in self.ts: e.x >= 1 ms) = 0 }",
+            "e.x",
+        ),
+        (
+            "pre E using v on Config::Call::reply { exists(e in self.ts: e = self.t) }",
+            "e",
+        ),
+        (
+            "pre E using v on Config::Call::reply { self.ts = self.ts }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { contains(self.ts, self.t) }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { self.ts != self.ts }",
+            "self.ts",
+        ),
+        (
+            "pre E using v on Config::Call::reply { filter(e in self.ts: e.n > 1) = filter(e in self.ts: e.n > 2) }",
+            "filter(e in self.ts: e.n > 1)",
+        ),
+        (
+            "pre E using v on Config::Call::reply { size(convert<Set<Config::Timer>[0, 3]>(self.ts)) > 0 }",
+            // The conversion's target, a collection of the clock-bearing
+            // record, is where the comparison of elements is named.
+            "Set<Config::Timer>[0, 3]",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "clock-read-outside-constraint", at),
+            "{clause}"
+        );
+    }
+}
+
+/// The guard parts of the first guard of `model`: for each, the elements
+/// its data predicate reads (field, slot) and its constraints (clock name,
+/// slots, op, bound).
+#[allow(clippy::type_complexity)]
+fn slot_parts(
+    model: &qsl_semantics::check::TimedModel,
+) -> Vec<(
+    bool,
+    Vec<(String, u64)>,
+    Vec<(String, Vec<u64>, ClockOp, String)>,
+)> {
+    model.guards()[0]
+        .parts()
+        .iter()
+        .map(|part| {
+            (
+                part.data().is_some(),
+                part.elements()
+                    .iter()
+                    .map(|element| (element.field().to_owned(), element.slot()))
+                    .collect(),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| {
+                        (
+                            model
+                                .clock(constraint.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            constraint.slots().to_vec(),
+                            constraint.op(),
+                            format!("{:?}", constraint.bound()),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Quantified reads" in a precondition:
+/// over `ts: Sequence<Timer>[0, 3]`, the guard `forall(e in self.ts: e.x <=
+/// 3 ms)` records one entry for each size 0 to 3, each with the data
+/// predicate `size(self.ts) = s` and `x <= 3` on each slot below `s` (none
+/// for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one
+/// convex part for each slot `j`, with the data predicate "holds slot `j`"
+/// and `n = 2` of the element at `j`, and `x >= 1` on slot `j`. A
+/// collection with no declared maximum refuses as not checked.
+#[trace("TC-685")]
+#[test]
+fn a_quantified_guard_records_one_entry_per_size_or_slot() {
+    let document = timer_collection(Some(3), true, false);
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             forall(e in self.ts: e.x <= 3 ms) }}\n"
+        ),
+    )
+    .expect("a forall guard checks");
+    let model = timed(&graph);
+    let bound = format!("{:?}", exact(3, 1));
+    let x = |slot: u64| {
+        (
+            "ts.[slot].x".to_owned(),
+            vec![slot],
+            ClockOp::LessOrEqual,
+            bound.clone(),
+        )
+    };
+    assert_eq!(
+        slot_parts(model),
+        [
+            (true, vec![], vec![]),
+            (true, vec![], vec![x(0)]),
+            (true, vec![], vec![x(0), x(1)]),
+            (true, vec![], vec![x(0), x(1), x(2)]),
+        ]
+    );
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             exists(e in self.ts: e.n = 2 and e.x >= 1 ms) }}\n"
+        ),
+    )
+    .expect("an exists guard checks");
+    let model = timed(&graph);
+    let one = format!("{:?}", exact(1, 1));
+    let at = |slot: u64| {
+        (
+            true,
+            vec![("ts".to_owned(), slot)],
+            vec![(
+                "ts.[slot].x".to_owned(),
+                vec![slot],
+                ClockOp::GreaterOrEqual,
+                one.clone(),
+            )],
+        )
+    };
+    assert_eq!(slot_parts(model), [at(0), at(1), at(2)]);
+    let unbounded = timer_collection(None, true, false);
+    let refusals = check(
+        &unbounded,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             forall(e in self.ts: e.x <= 3 ms) }}\n"
+        ),
+    )
+    .expect_err("an unbounded quantified guard is not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked { .. },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Resets by selection": `forall(e in
+/// self.ts: e.n > 1 implies e.x = 0 ms)` in `send`'s postcondition, whose
+/// frame names `ts`, records one reset of `ts.[slot].x` to 0 with the
+/// selection's data predicate `e.n > 1`; `forall(e in self.ts: e.x = 2 ms)`
+/// records one with no predicate, every held slot. An `exists` reset, a
+/// premise reading a clock and a reset under `reply`, whose frame does not
+/// name `ts`, refuse.
+#[trace("TC-685")]
+#[test]
+fn a_forall_reset_selects_the_slots_it_writes() {
+    let document = timer_collection(Some(3), true, false);
+    for (clause, value, predicate) in [
+        (
+            "forall(e in self.ts: e.n > 1 implies e.x = 0 ms)",
+            exact(0, 1),
+            true,
+        ),
+        ("forall(e in self.ts: e.x = 2 ms)", exact(2, 1), false),
+    ] {
+        let graph = check(
+            &document,
+            &format!("{UNITS}{DENSE}post R using v on Config::Call::send {{ {clause} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{clause}: {refusals:?}"));
+        let model = timed(&graph);
+        let [resets] = model.resets() else {
+            panic!("one postcondition resets: {:?}", model.resets());
+        };
+        let [reset] = resets.resets() else {
+            panic!("one reset: {:?}", resets.resets());
+        };
+        let selection = reset.selection().expect("a reset by selection");
+        assert_eq!(
+            (
+                model.clock(reset.clock()).expect("a clock").name(),
+                reset.value().clone(),
+                selection.field(),
+                selection.predicate().is_some(),
+            ),
+            ("ts.[slot].x", value, "ts", predicate),
+            "{clause}"
+        );
+    }
+    for (clause, tag, at) in [
+        (
+            "post R using v on Config::Call::send { exists(e in self.ts: e.x = 0 ms) }",
+            "clock-write",
+            "exists(e in self.ts: e.x = 0 ms)",
+        ),
+        (
+            "post R using v on Config::Call::send { forall(e in self.ts: e.x > 1 ms implies e.x = 0 ms) }",
+            "clock-read-outside-constraint",
+            "e.x",
+        ),
+        (
+            "post R using v on Config::Call::reply { forall(e in self.ts: e.x = 0 ms) }",
+            "clock-write",
+            "forall(e in self.ts: e.x = 0 ms)",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, tag, at),
+            "{clause}"
+        );
+    }
+}
+
+/// [`timer_collection`]`(Some(3), true, false)` whose `Call` also holds
+/// `st: Timer` of multiplicity `[0, 2]`, unordered and unique: the package
+/// form of `Set<Timer>`, written by `send`.
+fn timer_sequence_and_set() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&timer_collection(Some(3), true, false)).expect("JSON");
+    let mut held = field("st", &package("Timer"));
+    held["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": false, "unique": true});
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(held);
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        if operation["name"] == "send" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("frame")
+                .push(json!(call("st")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-20 (TC-685), "Collection-valued writes":
+/// - `self.ts = filter(e in pre(self.ts): e.n > 1)` writes each surviving
+///   element carried from its slot of the pre-state; a bare `self.ts` on
+///   the right is recorded as read in the post-state (FR-104, STD-493 item
+///   28);
+/// - `self.ts = map(e in pre(self.ts): e)` carries the element its binder
+///   `e` names;
+/// - `self.ts = sequence[Timer { x: 0 ms, n: 9 }]` writes a fresh element
+///   with `x = 0`, and the checked body keeps the data `9` and drops the
+///   clock constant;
+/// - `self.st = set[Timer { x: 0 ms, n: 1 }, Timer { x: 5 ms, n: 1 }]`
+///   records both occurrences: which are equal is decided on their values
+///   when the write executes (SR-1662001 FND-003).
+///
+/// These refuse:
+/// - `clock-write` at the occurrence for a component reading a clock
+///   (`Timer { x: self.x, n: 1 }`);
+/// - `clock-write` when `ts` is written in an invariant, under a `let`,
+///   or by `reply`, whose frame does not name `ts`;
+/// - `conflicting-clock-write` at the later write when one postcondition
+///   writes `ts` twice, or writes it and resets a clock of it.
+///
+/// Not covered: `Timer { x: self.ts[0].x, n: 1 }`, whose selection has no
+/// S2 form (STD-493 item 24), and AC-20's `flatten(sequence[sequence[..],
+/// self.ts])`: a collection literal under `flatten` has no expected type,
+/// so the value typer refuses it `AmbiguousLiteral`.
+#[trace("TC-685")]
+#[test]
+fn a_collection_write_records_the_provenance_of_each_occurrence() {
+    use qsl_semantics::check::Written;
+
+    let document = timer_sequence_and_set();
+    let written = |clause: &str| -> (Vec<(String, Written)>, Vec<String>) {
+        let graph = check(
+            &document,
+            &format!("{UNITS}{DENSE}post Q using v on Config::Call::send {{ {clause} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{clause}: {refusals:?}"));
+        let model = timed(&graph);
+        let writes = model
+            .resets()
+            .iter()
+            .flat_map(|resets| resets.writes())
+            .map(|write| (write.field().to_owned(), write.written().clone()))
+            .collect();
+        let mut literals = Vec::new();
+        let mut pending = vec![graph.state_clause("Q").expect("Q").body()];
+        while let Some(node) = pending.pop() {
+            if matches!(node.kind(), qsl_semantics::check::NodeKind::Literal(_)) {
+                literals.push(crate::timed_model::shown(node));
+            }
+            pending.extend(node.children());
+        }
+        literals.sort();
+        (writes, literals)
+    };
+    let base = check(&document, &format!("{UNITS}{DENSE}")).expect("the model checks");
+    let clock = |name: &str| {
+        timed(&base)
+            .clock_fields()
+            .find(|(_, clock)| clock.name() == name)
+            .map(|(id, _)| id)
+            .unwrap_or_else(|| panic!("{name}"))
+    };
+    let field = |pre: bool| Written::Field {
+        field: "ts".to_owned(),
+        pre,
+    };
+    assert_eq!(
+        written("self.ts = filter(e in pre(self.ts): e.n > 1)").0,
+        [("ts".to_owned(), Written::Filter(Box::new(field(true))))]
+    );
+    assert_eq!(
+        written("self.ts = filter(e in self.ts: e.n > 1)").0,
+        [("ts".to_owned(), Written::Filter(Box::new(field(false))))]
+    );
+    assert_eq!(
+        written("self.ts = map(e in pre(self.ts): e)").0,
+        [(
+            "ts".to_owned(),
+            Written::Map {
+                source: Box::new(field(true)),
+                body: Box::new(Written::Element("e".to_owned())),
+            }
+        )]
+    );
+    let (writes, literals) = written("self.ts = sequence[Config::Timer { x: 0 ms, n: 9 }]");
+    assert_eq!(
+        writes,
+        [(
+            "ts".to_owned(),
+            Written::Literal {
+                kind: quire_exact::CollectionKind::Sequence,
+                occurrences: vec![Written::Fresh(vec![(clock("ts.[slot].x"), exact(0, 1))])],
+            }
+        )]
+    );
+    assert_eq!(literals, ["9"], "the data component stays a data write");
+    assert_eq!(
+        written("self.st = set[Config::Timer { x: 0 ms, n: 1 }, Config::Timer { x: 5 ms, n: 1 }]")
+            .0,
+        [(
+            "st".to_owned(),
+            Written::Literal {
+                kind: quire_exact::CollectionKind::Set,
+                occurrences: vec![
+                    Written::Fresh(vec![(clock("st.[slot].x"), exact(0, 1))]),
+                    Written::Fresh(vec![(clock("st.[slot].x"), exact(5, 1))]),
+                ],
+            }
+        )]
+    );
+    for (clause, at) in [
+        (
+            "post Q using v on Config::Call::send { self.ts = sequence[Config::Timer { x: self.x, n: 1 }] }",
+            "Config::Timer { x: self.x, n: 1 }",
+        ),
+        (
+            "post Q using v on Config::Call::send { let s = self.ts in self.ts = s }",
+            "self.ts = s",
+        ),
+        (
+            "post Q using v on Config::Call::reply { self.ts = self.ts }",
+            "self.ts = self.ts",
+        ),
+        (
+            "invariant I using v on Config::Call at current { self.ts = self.ts }",
+            "self.ts = self.ts",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "clock-write", at),
+            "{clause}"
+        );
+    }
+    for (clause, at) in [
+        (
+            "self.ts = filter(e in pre(self.ts): e.n > 1) and self.ts = pre(self.ts)",
+            "self.ts = pre(self.ts)",
+        ),
+        (
+            "self.ts = pre(self.ts) and forall(e in self.ts: e.x = 0 ms)",
+            "forall(e in self.ts: e.x = 0 ms)",
+        ),
+    ] {
+        let (cause, text) = refused(
+            &document,
+            &format!("{UNITS}{DENSE}post Q using v on Config::Call::send {{ {clause} }}\n"),
+        );
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "conflicting-clock-write", at),
+            "{clause}"
+        );
+    }
+}
+
+/// Part of FR-230-AC-19 (TC-685), the record part of a nested collection:
+/// with a record `Holder { ts: Timer [0, 2] }` held by `Call.hs` of
+/// multiplicity `[0, 3]`, the place `hs.[slot].ts.[slot].x` has two slot
+/// steps and the static bound `3 * 2`.
+#[trace("TC-685")]
+#[test]
+fn a_collection_in_a_collection_bounds_its_place_by_the_product() {
+    let document = timer_document(|document: &mut Value| {
+        let holder = package("Holder");
+        let mut ts = wire_field(
+            &format!("{holder}/ts"),
+            "ts",
+            &package("Timer"),
+            "required",
+            0,
+        );
+        ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+        let mut hs = field("hs", &holder);
+        hs["multiplicity"] = json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        types[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(hs);
+    });
+    let graph = check(&document, &format!("{UNITS}{DENSE}")).expect("a nested collection checks");
+    let model = timed(&graph);
+    let place = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "hs.[slot].ts.[slot].x")
+        .unwrap_or_else(|| panic!("the nested place: {:?}", model.clocks()));
+    assert_eq!(place.slots().count(), 2);
+    assert_eq!(place.bound(), Some(6));
 }

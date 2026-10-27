@@ -403,7 +403,7 @@ impl<'d> Body<'d> {
 
 /// The bare-name nodes under `root` that name one of `names` free of every
 /// binder above them in the subtree: the occurrences of a parameter.
-fn free_occurrences<'n>(
+pub(super) fn free_occurrences<'n>(
     expression: &Expression,
     root: ExprId,
     names: &BTreeSet<&'n str>,
@@ -959,13 +959,20 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             match frame.environment.get(name) {
                 Some(Argument::Value { term, .. }) => trees.push((occurrence, self.term(term)?)),
                 // `self.f…`: the receiver's value at the path.
-                Some(Argument::Path(path)) => trees.push((
-                    occurrence,
-                    path.iter().fold(Expression::self_ref(), |operand, step| {
-                        let PlaceStep::Field(field) = step;
-                        Expression::field(operand, field.clone())
-                    }),
-                )),
+                Some(Argument::Path(path)) => {
+                    let mut tree = Expression::self_ref();
+                    for step in path {
+                        // An argument path names a single record or object,
+                        // never a collection slot.
+                        let PlaceStep::Field(field) = step else {
+                            return Err(timed(TemporalCause::NotAPlaceExpression {
+                                span: body.span(occurrence),
+                            }));
+                        };
+                        tree = Expression::field(tree, field.clone());
+                    }
+                    trees.push((occurrence, tree));
+                }
                 // A clock parameter read as data was refused above.
                 Some(Argument::Places(_)) | None => {
                     return Err(timed(TemporalCause::ClockReadOutsideConstraint {
@@ -999,7 +1006,9 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 .cut(*id, &BTreeMap::new())
                 .map(|form| form.expression)
                 .ok_or_else(|| timed(self.located.outside(*id))),
-            DataLiteral::Formed(form) => Ok(form.expression.clone()),
+            DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => {
+                Ok(form.expression.clone())
+            }
         }
     }
 
@@ -1270,6 +1279,7 @@ pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: S
     let constraint = |place: &Place, op: ClockOp| ClockConstraint {
         clock: place.clock,
         via: place.via.clone(),
+        slots: Vec::new(),
         op,
         bound: bound.clone(),
         span,

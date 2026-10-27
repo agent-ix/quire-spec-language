@@ -399,7 +399,7 @@ pub use state_graph_claim::{
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
 
-pub use lowering::PlaceStep;
+pub use lowering::{CollectionShape, PlaceStep};
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
@@ -409,7 +409,8 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp, ClockReset,
-    ClockResets, ConvexPart, TimeInvariant, TimedModel, Urgency,
+    ClockResets, CollectionWrite, ConvexPart, ElementBinding, SlotSelection, TimeInvariant,
+    TimedModel, Urgency, Written,
 };
 
 /// A checked function.

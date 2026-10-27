@@ -468,10 +468,12 @@ fn close_loop(
     let last_clocks = last.state.clocks().values();
     for (place, (at_entry, at_end)) in entry_clocks.iter().zip(last_clocks).enumerate() {
         let reset = looped.iter().any(|position| {
-            position
-                .step
-                .as_ref()
-                .is_some_and(|step| step.resets().iter().any(|(reset, _)| *reset == place))
+            position.step.as_ref().is_some_and(|step| {
+                // A carried place takes another place's value: the step
+                // sets it, as a reset does.
+                step.resets().iter().any(|(reset, _)| *reset == place)
+                    || step.carries().iter().any(|(carried, _)| *carried == place)
+            })
         });
         let closes = if reset {
             at_entry == at_end
