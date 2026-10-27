@@ -77,6 +77,7 @@ pub mod spine;
 pub mod statistical;
 mod supplied_limits;
 mod target;
+mod timed;
 mod witness;
 
 pub use admitted::{
@@ -159,10 +160,10 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, undefined_finding, ClaimPredicate,
-    CounterexampleKind, Lasso, MappingSite, ModelStep, ObservedTemporalCounterexample,
-    ObservedTemporalKind, ObservedTemporalStep, Race, TemporalCounterexample, TimedPoint,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
+    ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep, Race,
+    TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
 pub use model_check::graph_replay::{replay_model_graph, replay_model_graph_with_cancel};
@@ -202,10 +203,13 @@ pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTrac
 pub use model_check::refinement_settle::{
     settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
 };
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use model_check::replay::replay_timed_counterexample;
 pub use model_check::replay::{
-    replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,
+    replay_model_trace, replay_protocol_trace, DelayBar, ModelTraceRefusal, ModelTraceReplayResult,
     ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
-    StrongFairnessHint,
+    StrongFairnessHint, TimedReplay,
 };
 pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,

@@ -27,10 +27,10 @@ use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
-const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace/v1\";\n";
-const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
+pub(crate) const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace/v1\";\n";
+pub(crate) const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
 
-fn rpc_document() -> Vec<u8> {
+pub(crate) fn rpc_document() -> Vec<u8> {
     document(
         &["x"],
         &[
@@ -44,7 +44,7 @@ fn rpc_document() -> Vec<u8> {
 
 /// ADR-026 §11's `Rpc` with client deadline `t` ms and the claim
 /// `NoLateReply` under infinite-trace.
-fn rpc(t: u32) -> World {
+pub(crate) fn rpc(t: u32) -> World {
     rpc_claim(
         t,
         INFINITE,
@@ -55,7 +55,20 @@ fn rpc(t: u32) -> World {
 
 /// ADR-026 §11's `Rpc` with client deadline `t` ms, under the profile
 /// lines `profiles`, with `claim` as its one temporal clause.
-fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
+pub(crate) fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
+    rpc_variant(t, ">= 1", ">=", profiles, claim)
+}
+
+/// [`rpc_claim`] with `reply` guarded by `self.x {reply} ms` and `timeout`
+/// by `self.x {timeout} {t} ms`: ADR-026 §11's strict-guard variant is
+/// `("> 3", ">")`.
+pub(crate) fn rpc_variant(
+    t: u32,
+    reply: &str,
+    timeout: &str,
+    profiles: &str,
+    claim: &str,
+) -> World {
     world(
         &rpc_document(),
         profiles,
@@ -64,12 +77,12 @@ fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
              pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
              post Send using v on M::Call::send {{ \
                  self.phase = 1 and self.inflight and not self.late and self.x = 0 ms }}\n\
-             pre Reply using v on M::Call::reply {{ self.inflight and self.x >= 1 ms }}\n\
+             pre Reply using v on M::Call::reply {{ self.inflight and self.x {reply} ms }}\n\
              post Replied using v on M::Call::reply {{ not self.inflight and \
                  self.late = (pre(self.phase) = 3) and \
                  (pre(self.phase) = 1 implies self.phase = 2) and \
                  (pre(self.phase) != 1 implies self.phase = pre(self.phase)) }}\n\
-             pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x >= {t} ms }}\n\
+             pre Timeout using v on M::Call::timeout {{ self.phase = 1 and self.x {timeout} {t} ms }}\n\
              post TimedOut using v on M::Call::timeout {{ self.phase = 3 }}\n\
              pre Reset using v on M::Call::reset {{ \
                  not self.inflight and (self.phase = 2 or self.phase = 3) }}\n\
@@ -81,15 +94,15 @@ fn rpc_claim(t: u32, profiles: &str, claim: &str) -> World {
     )
 }
 
-fn exact(numerator: i64, denominator: i64) -> Rational {
+pub(crate) fn exact(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a rational")
 }
 
 /// The subject every item here is over.
-const SUBJECT: &str = "c";
+pub(crate) const SUBJECT: &str = "c";
 
 /// An outcome over [`SUBJECT`].
-type Outcome = ZoneCheckOutcome<&'static str>;
+pub(crate) type Outcome = ZoneCheckOutcome<&'static str>;
 
 /// The occurrence of the claim each world's first clause is.
 fn claim_occurrence() -> OccurrenceKey {
@@ -100,7 +113,7 @@ fn claim_occurrence() -> OccurrenceKey {
 }
 
 /// The first clause of `world`, decided by EN-6 under `limits`.
-fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
+pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -141,14 +154,14 @@ fn deadlock(world: &World) -> Outcome {
     .expect("EN-6 takes the item")
 }
 
-fn violated(outcome: Outcome) -> TemporalCounterexample {
+pub(crate) fn violated(outcome: Outcome) -> TemporalCounterexample {
     match outcome {
         ZoneCheckOutcome::Violated { counterexample, .. } => *counterexample,
         other => panic!("expected a violation, got {other:?}"),
     }
 }
 
-fn delays(counterexample: &TemporalCounterexample) -> Vec<Rational> {
+pub(crate) fn delays(counterexample: &TemporalCounterexample) -> Vec<Rational> {
     counterexample
         .prefix
         .iter()
@@ -156,7 +169,7 @@ fn delays(counterexample: &TemporalCounterexample) -> Vec<Rational> {
         .collect()
 }
 
-fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
+pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
     counterexample
         .prefix
         .iter()
@@ -342,7 +355,7 @@ fn budgets_and_cancellation_stop_the_search() {
 /// The `Ticker` model: `step` while `n < 2` (here `phase`) needs `x >= 1`,
 /// resets `x` and increments `n`; the time invariant `x <= 1` applies while
 /// `n < 2`, or always when `locked`.
-fn ticker(locked: bool) -> World {
+pub(crate) fn ticker(locked: bool) -> World {
     ticker_with(locked, "always holds(6 mod (2 - c.phase) >= 0)")
 }
 
@@ -612,7 +625,7 @@ fn a_tight_budget_stops_a_divergence_check() {
 /// The `Lock` model of FR-244-AC-4: `go` moves `A` (`0`) to `B` (`1`) with
 /// no guard, `x <= 1 ms` while in `B`, and `ping`, enabled in `B`, changes
 /// no data field; the claim is `always holds(c.phase = 0)`.
-fn lock() -> World {
+pub(crate) fn lock() -> World {
     world(
         &document(&["x"], &[("go", &["phase"]), ("ping", &[])]),
         INFINITE,
@@ -1051,7 +1064,12 @@ fn a_request_obligation_must_be_its_items() {
 /// `body` as the clause `W` under the timed profile, read over model time
 /// on origin, over a model with clocks `clocks` and `operations` whose
 /// constraints are `model`.
-fn windowed(clocks: &[&str], operations: &[(&str, &[&str])], model: &str, body: &str) -> World {
+pub(crate) fn windowed(
+    clocks: &[&str],
+    operations: &[(&str, &[&str])],
+    model: &str,
+    body: &str,
+) -> World {
     windowed_under(DENSE, clocks, operations, model, body)
 }
 
@@ -1097,7 +1115,7 @@ fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
 }
 
 /// `go` sets `retried` at exactly `at` ms, after which nothing happens.
-fn retried_at(at: &str) -> World {
+pub(crate) fn retried_at(at: &str) -> World {
     retried_at_with(at, "eventually[2 ms, 2 ms] holds(c.retried)")
 }
 
@@ -1218,11 +1236,22 @@ fn a_window_short_of_data_is_insufficient_data_not_holds() {
         "{reference:?}"
     );
 
+    match short_of_data_claim(&world) {
+        ZoneCheckOutcome::Undecided {
+            cause: ZoneUndecided::InsufficientData(_),
+            ..
+        } => {}
+        other => panic!("expected InsufficientData, got {other:?}"),
+    }
+}
+
+/// The first clause of `world` put to EN-6 over [`ShortOfData`] letters.
+pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("letters");
-    let outcome = check_timed_model(
+    check_timed_model(
         ZoneCheckRequest {
             subject: &timed,
             item: ZoneCheckItem::Clause {
@@ -1237,14 +1266,7 @@ fn a_window_short_of_data_is_insufficient_data_not_holds() {
         },
         &Cancel::new(),
     )
-    .expect("EN-6 takes the claim");
-    match outcome {
-        ZoneCheckOutcome::Undecided {
-            cause: ZoneUndecided::InsufficientData(_),
-            ..
-        } => {}
-        other => panic!("expected InsufficientData, got {other:?}"),
-    }
+    .expect("EN-6 takes the claim")
 }
 
 /// FR-242-AC-3: over ADR-026 §11's `Rpc` (TC-697's fixture), `always
@@ -1577,7 +1599,7 @@ fn an_undefined_atom_inside_a_window_refutes_it() {
 
 /// The model in which no step is ever enabled: every behaviour stays at
 /// its initial state, `retried` false throughout.
-fn idle(body: &str) -> World {
+pub(crate) fn idle(body: &str) -> World {
     windowed(
         &[],
         &[("go", &["phase"])],

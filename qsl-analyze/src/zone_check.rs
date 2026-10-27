@@ -13,6 +13,7 @@ mod dbm;
 mod divergence;
 mod scale;
 mod search;
+mod settle;
 mod window;
 
 pub use certificate::{
@@ -23,5 +24,8 @@ pub use scale::{scale_constants, ScaledConstants};
 pub use search::{
     check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
     ZoneCheckRefusal, ZoneCheckRequest, ZoneStats, ZoneStop, ZoneUndecided,
+};
+pub use settle::{
+    settle_zone_check, ZoneCertificateCheck, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED,
 };
 pub use window::bounded_window_verdict;
