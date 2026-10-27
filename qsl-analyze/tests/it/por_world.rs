@@ -571,6 +571,7 @@ impl Fixture {
                 snapshots: &self.snapshots,
             },
             &ModelTraceSubject {
+                timed: None,
                 initial: self.initial.clone(),
                 universes: self.universes(),
                 expansion: ExpansionLimits {

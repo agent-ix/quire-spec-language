@@ -241,3 +241,93 @@ fn tc_700_checker_zone_refuses_out_of_shape_operations() {
         })
     );
 }
+
+/// `Extra_M` drops what only separates values above a clock's constant, so
+/// a clock that grows without bound reaches finitely many zones: 0, 1, 2
+/// and every value above 2. On two clocks at `x = 5, y = 1`, both
+/// constants 2, `y - x` becomes `< -2` and `x`'s upper bound and `x - y`
+/// are dropped, while the closure tightens `x`'s weakened lower bound back
+/// through `y` to `x > 3`. Part of FR-237's fresh exploration (TC-692).
+/// Not covered: the exploration itself, tested through the replay.
+#[trace("TC-692")]
+#[test]
+fn extrapolation_bounds_the_zones_of_a_growing_clock() {
+    let point = |values: &[i64]| {
+        let mut zone = Zone::<Integer>::zero(values.len() + 1);
+        for (clock, value) in values.iter().enumerate() {
+            zone.reset(clock + 1, &Integer::from(*value))
+                .expect("a clock");
+        }
+        zone
+    };
+    let mut seen: Vec<Zone> = Vec::new();
+    for value in 0..10 {
+        let mut zone = point(&[value]);
+        zone.extrapolate(&[Some(Integer::from(2_i64))])
+            .expect("one constant per clock");
+        if !seen.contains(&zone) {
+            seen.push(zone);
+        }
+    }
+    assert_eq!(seen.len(), 4);
+    let above = seen.last().expect("a zone");
+    assert_eq!(above.bound(1, 0), Ok(None));
+    assert_eq!(above.bound(0, 1), Ok(Some((Integer::from(-2_i64), true))));
+
+    let mut two = point(&[5, 1]);
+    two.extrapolate(&[Some(Integer::from(2_i64)), Some(Integer::from(2_i64))])
+        .expect("one constant per clock");
+    assert_eq!(two.bound(0, 1), Ok(Some((Integer::from(-3_i64), true))));
+    assert_eq!(two.bound(2, 1), Ok(Some((Integer::from(-2_i64), true))));
+    assert_eq!(two.bound(1, 0), Ok(None));
+    assert_eq!(two.bound(1, 2), Ok(None));
+    assert_eq!(two.bound(2, 0), Ok(Some((Integer::from(1_i64), false))));
+    assert_eq!(two.bound(0, 2), Ok(Some((Integer::from(-1_i64), false))));
+    assert_eq!(
+        two.extrapolate(&[None]),
+        Err(ZoneError::ExtrapolationLength { max: 1, clocks: 2 })
+    );
+}
+
+/// `extrapolate` against the reference's entrywise `Extra_M` on 600 seeded
+/// zones of dimension at most 3 with bounds in `[-4, 4]` and constants in
+/// `[0, 4]` or none: a grid point is in the extrapolated zone exactly when
+/// it satisfies the reference's bounds, every point of the zone stays in
+/// it, and the result is canonical.
+#[trace("TC-692")]
+#[test]
+fn extrapolation_agrees_with_the_reference_on_a_grid() {
+    const S: i64 = 3;
+    let mut rng = Seeded(0x5eed_0692);
+    for _ in 0..600 {
+        let dim = usize::try_from(rng.below(3) + 1).expect("a small dimension");
+        let points = grid(dim, 10 * S);
+        let raw = rng.raw(dim, 4);
+        let mut zone: Zone = raw.to_zone();
+        zone.close();
+        let before: Vec<bool> = points
+            .iter()
+            .map(|p| reference::zone_contains(&zone, p, S))
+            .collect();
+        let max: Vec<Option<i64>> = (1..dim)
+            .map(|_| (rng.below(3) > 0).then(|| rng.constant(4).abs()))
+            .collect();
+        let expected = reference::extrapolate(&reference::raw_of(&zone), &max);
+        let mut extrapolated = zone.clone();
+        extrapolated
+            .extrapolate(&max.iter().map(|m| m.map(Integer::from)).collect::<Vec<_>>())
+            .expect("one constant per clock");
+        for (p, inside) in points.iter().zip(&before) {
+            let found = reference::zone_contains(&extrapolated, p, S);
+            assert_eq!(
+                found,
+                expected.contains(p, S),
+                "extrapolate {raw:?} under {max:?} at {p:?}"
+            );
+            assert!(!inside || found, "{raw:?} loses {p:?} under {max:?}");
+        }
+        let mut closed = extrapolated.clone();
+        closed.close();
+        assert_eq!(closed, extrapolated, "canonical after {max:?}");
+    }
+}

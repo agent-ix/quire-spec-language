@@ -11,15 +11,20 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_eval::hyper::HyperSlot;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::check::{check_hyper_clauses, CheckedHyper, FormulaNode, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
-use quire_exact::{FieldValue, Integer, Meter, NodeKey, Outcome, ScalarLimits, Value};
+use quire_exact::{
+    FieldValue, Integer, Meter, NodeKey, ObjectId, ObjectReference, Outcome, ScalarLimits,
+    UniverseId, Value,
+};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::object_closure::ObjectClosure;
 
 #[path = "../../../qsl-semantics/tests/support/child_composite.rs"]
 mod fixture;
@@ -48,16 +53,31 @@ fn package_from(document: &serde_json::Value, declarations: &str) -> CheckedPack
 }
 
 fn package_over(document: &serde_json::Value, alias: &str, declarations: &str) -> CheckedPackage {
+    CheckedPackage::link(
+        declarations_over(document, alias, declarations)
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
+    )
+}
+
+fn declarations_over(
+    document: &serde_json::Value,
+    alias: &str,
+    declarations: &str,
+) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one model package");
     };
+    let model_version = document["package"]["version"]
+        .as_str()
+        .expect("the model package version");
     let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?} version {model_version:?} digest \"sha256-jcs:{digest}\";\n\
          {declarations}\n",
         package = fixture::PACKAGE,
     );
@@ -80,6 +100,157 @@ fn package_over(document: &serde_json::Value, alias: &str, declarations: &str) -
         ModelNormalizationLimits::default(),
     )
     .expect("I1 admits the fixture package");
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .expect("assembly succeeds")
+}
+
+fn package(declarations: &str) -> CheckedPackage {
+    package_as("M", declarations)
+}
+
+/// FR-487-AC-9's evaluation half: the reference chain and both scoped
+/// component reads are evaluated from the checked atom over separate object
+/// environments.
+#[trace("TC-1264", "FR-487-AC-9")]
+#[test]
+fn an_indexed_reference_chain_evaluates_in_its_selected_component() {
+    let (package_a, clause_a) = linked_ledger_clause("a");
+    let (package_b, clause_b) = linked_ledger_clause("b");
+    let types = package_a.graph().scope().types();
+    let ledger_type = types
+        .object_types()
+        .find(|declaration| declaration.name() == "M::ConfigVersion")
+        .expect("ConfigVersion's object declaration")
+        .key();
+    let universe = UniverseId::from_digest([0x31; 32]);
+    let first = ObjectReference::new(
+        universe,
+        ledger_type,
+        ObjectId::new("n1").expect("object key"),
+    );
+    let second = ObjectReference::new(
+        universe,
+        ledger_type,
+        ObjectId::new("n2").expect("object key"),
+    );
+    let environment = |linked: bool, second_level: i64| {
+        let next = if linked {
+            FieldValue::Present(Value::Reference(second.clone()))
+        } else {
+            FieldValue::Absent
+        };
+        let closure = ObjectClosure::new(
+            types,
+            [
+                (
+                    first.clone(),
+                    vec![
+                        ("versionNumber", FieldValue::Present(int(1))),
+                        ("parent", next),
+                    ],
+                ),
+                (
+                    second.clone(),
+                    vec![
+                        ("versionNumber", FieldValue::Present(int(second_level))),
+                        ("parent", FieldValue::Absent),
+                    ],
+                ),
+            ],
+            &[],
+        )
+        .expect("the linked ledgers form a closed object environment");
+        ObjectEnvironment::new(closure)
+    };
+    let component_a = environment(true, 1);
+    let component_b = environment(false, 0);
+    let evaluate = |package: &CheckedPackage, clause: &qsl_semantics::check::CheckedHyperClause| {
+        let atom_index = clause
+            .body()
+            .nodes()
+            .iter()
+            .position(|node| matches!(node, FormulaNode::Holds { .. }))
+            .expect("one holds atom");
+        let atom = clause
+            .body()
+            .node_id(atom_index)
+            .expect("the atom has a stable id");
+        let mut meter = Meter::new(UNLIMITED);
+        let result = package
+            .evaluate_hyper_holds(
+                clause,
+                atom,
+                vec![
+                    HyperSlot::Bound(Value::Reference(first.clone())),
+                    HyperSlot::Bound(Value::Reference(first.clone())),
+                ],
+                &[&component_a, &component_b],
+                &mut meter,
+            )
+            .expect("the checked hyper atom evaluates");
+        match result.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => value,
+            other => panic!("a Boolean atom result, not {other:?}"),
+        }
+    };
+    assert!(
+        evaluate(&package_a, &clause_a),
+        "`@ a` reads n1 -> n2.versionNumber=1"
+    );
+    assert!(
+        !evaluate(&package_b, &clause_b),
+        "`@ b` reads its absent n1.parent"
+    );
+}
+
+fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::CheckedHyperClause) {
+    let source_document = include_str!("../../../examples/config-version/model.semantic-ir.json")
+        .replace("example/config-version", fixture::PACKAGE);
+    let document: serde_json::Value =
+        serde_json::from_str(&source_document).expect("the model fixture is JSON");
+    let body = format!(
+        "hyper Linked using inf over behaviours (v: M::ConfigVersion) forall trace a of M forall trace b of M {{ always holds((let r = v.parent in present(r) and deref(value(r)).versionNumber = 1) @ {trace}) }}\n"
+    );
+    let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
+    let packages = package_input([bytes.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one model package");
+    };
+    let model_version = document["package"]["version"]
+        .as_str()
+        .expect("the model package version");
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model M = {package:?} version {model_version:?} digest \"sha256-jcs:{}\";\n{body}",
+        qsl_semantics::model::key::hex(digest),
+        package = fixture::PACKAGE,
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "hyper-linked-ledger", "fixture", "1"),
+        "hyper-linked-ledger.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the hyper fixture");
+    assert!(
+        parsed.is_admissible(),
+        "{:?}\n{source}",
+        parsed.diagnostics()
+    );
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the hyper fixture");
+    let selected = admit_unit(
+        &unit.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -87,15 +258,19 @@ fn package_over(document: &serde_json::Value, alias: &str, declarations: &str) -
         Vec::new(),
     )
     .expect("assembly succeeds");
-    CheckedPackage::link(
-        declarations
-            .check(CheckingLimits::default())
-            .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
+    let checked = check_hyper_clauses(&declarations);
+    let graph = declarations_over(
+        &document,
+        "M",
+        "function noop using v(): Boolean pure { true }\n",
     )
-}
-
-fn package(declarations: &str) -> CheckedPackage {
-    package_as("M", declarations)
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the linked-reference unit checks: {refusals:?}"));
+    let package = CheckedPackage::link(graph);
+    let [Ok(CheckedHyper::Behaviours(clause))] = checked.as_slice() else {
+        panic!("one checked behaviours clause: {checked:?}");
+    };
+    (package, clause.as_ref().clone())
 }
 
 /// The declaration key of the model record `name`.
