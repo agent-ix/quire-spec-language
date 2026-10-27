@@ -307,23 +307,22 @@ fn an_undefined_position_refutes_a_liveness_claim() {
     assert!(reproduced(&settlement), "{settlement:?}");
 }
 
-/// FR-240 reads a clause over positions only where that is its meaning: a
-/// timed-profile liveness clause with a timed interval counts time, which
-/// FR-242's timed automata read, so EN-6 refuses it as a form it does not
-/// decide yet.
+/// FR-242's TT-4 behaviour: a timed-profile liveness clause with a timed
+/// interval is read by FR-242's timed claim automaton on the liveness
+/// product. Over a model that `ping`s freely, `always eventually[0 ms,
+/// 3 ms] holds(true)` holds and `always eventually[0 ms, 3 ms]
+/// holds(false)` is refuted by a lasso that replays.
 #[trace("TC-695")]
 #[test]
-fn a_timed_interval_outside_a_window_is_refused() {
-    let world = windowed(
-        &["x"],
-        &[("ping", &[])],
-        "",
-        "always eventually[0 ms, 3 ms] holds(true)",
-    );
-    assert_eq!(
-        crate::zone_search::request(&world).err(),
-        Some(qsl_analyze::zone_check::ZoneCheckRefusal::UnsupportedForm)
-    );
+fn a_timed_liveness_clause_is_decided() {
+    let free = |body: &str| windowed(&["x"], &[("ping", &[])], "", body);
+    assert!(holds(&decide(&free(
+        "always eventually[0 ms, 3 ms] holds(true)"
+    ))));
+    let never = free("always eventually[0 ms, 3 ms] holds(false)");
+    let counterexample = violated(decide(&never));
+    let settlement = replay(&never, &counterexample).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
 }
 
 /// FR-240 "Vacuity" under fairness: `ping` resets `x` under `x <= 1 ms`

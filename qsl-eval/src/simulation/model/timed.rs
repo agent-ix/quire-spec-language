@@ -137,7 +137,7 @@ impl TimedState {
 }
 
 /// An atomic clock constraint over one clock place.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PlaceConstraint {
     place: usize,
     op: ClockOp,

@@ -47,8 +47,8 @@ use super::divergence::Escape;
 use super::liveness::Liveness;
 use super::{scale_constants, Bound, Dbm, DbmError};
 use qsl_eval::automaton::{
-    translate_position_negation, AutomatonError, PropertyAutomaton, Read, Stamp, WindowClaim,
-    WindowFault, WindowRefusal,
+    position_automaton, AutomatonError, PositionAutomaton, Read, Stamp, WindowClaim, WindowFault,
+    WindowRefusal,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 
@@ -81,8 +81,9 @@ impl Default for ZoneCheckLimits {
 pub enum ZoneCheckItem<'a> {
     /// A TT-1 clause `always holds(A)` whose atom reads the model state, a
     /// TT-2 `BoundedWindow` clause read on origin (FR-242), or any other
-    /// infinite-trace or timed-profile clause with no timed interval, read
-    /// over positions (FR-240).
+    /// infinite-trace or timed-profile clause, read over positions (FR-240),
+    /// through FR-242's timed claim automaton when it has a timed
+    /// interval.
     Clause {
         /// The checked clause.
         clause: &'a CheckedTemporalClause,
@@ -258,17 +259,12 @@ pub enum ZoneCheckOutcome<S> {
 /// Why EN-6 does not take the request.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ZoneCheckRefusal {
-    /// The clause is of no profile EN-6 reads, or a timed-profile clause
-    /// with an interval that is not a TT-2 `BoundedWindow`: TT-3 and TT-4
-    /// with intervals translate by MightyL (FR-242), which this engine does
-    /// not build yet.
+    /// The clause is of no profile EN-6 reads, or a timed operator nested
+    /// under a future operator has an interval that does not start at a
+    /// closed 0, which FR-242's claim automaton does not translate (spec
+    /// gap STD-493).
     #[error("the clause is of no form EN-6 decides")]
     UnsupportedForm,
-    /// A TT-2 clause has an interval operator under another temporal
-    /// operator, which needs a clock per activation beyond the one horizon
-    /// clock (FR-242).
-    #[error("a TT-2 clause nests an interval operator under another")]
-    NestedWindow,
     /// The clause's `over` instances are not finite.
     #[error("the clause's instances are not finite")]
     Unbounded,
@@ -291,8 +287,7 @@ pub enum ZoneCheckRefusal {
 impl From<WindowRefusal> for ZoneCheckRefusal {
     fn from(refusal: WindowRefusal) -> Self {
         match refusal {
-            WindowRefusal::UnsupportedForm => Self::UnsupportedForm,
-            WindowRefusal::NestedWindow => Self::NestedWindow,
+            WindowRefusal::UnsupportedForm | WindowRefusal::NestedWindow => Self::UnsupportedForm,
             WindowRefusal::FormulaNode | WindowRefusal::Broken(_) => Self::Fault("window-formula"),
         }
     }
@@ -389,17 +384,14 @@ pub fn check_timed_model<S: Clone>(
                     letters,
                     instances: instances()?,
                 })
-            } else if matches!(
-                clause.timed_form(),
-                Some(TimedPropertyForm::BoundedWindow { .. })
-            ) {
+            } else if let Some(claim) = flat_window(
+                clause,
+                instances()?.len(),
+                request.subject.tick_period().cloned(),
+                request.limits.max_automaton_states,
+            )? {
                 let instances = instances()?;
-                window = Some(WindowClaim::new(
-                    clause.formula(),
-                    instances.len(),
-                    request.subject.tick_period().cloned(),
-                    request.limits.max_automaton_states,
-                )?);
+                window = Some(claim);
                 Judged::Claim(Claim {
                     clause,
                     atom: None,
@@ -412,15 +404,15 @@ pub fn check_timed_model<S: Clone>(
             ) {
                 // FR-240: any other clause is decided on the liveness
                 // product, which reads it over positions; one with a timed
-                // interval needs FR-242's timed automata.
-                let automaton =
-                    translate_position_negation(clause, request.limits.max_automaton_states)
-                        .map_err(|error| match error {
-                            AutomatonError::ProfileNotTranslated { .. } => {
-                                ZoneCheckRefusal::UnsupportedForm
-                            }
-                            other => ZoneCheckRefusal::Automaton(other),
-                        })?;
+                // interval through FR-242's timed claim automaton (TT-3,
+                // TT-4, and a TT-2 window nesting one interval operator
+                // under another).
+                let automaton = position_automaton(clause, request.limits.max_automaton_states)
+                    .map_err(|error| match error {
+                        AutomatonError::ProfileNotTranslated { .. }
+                        | AutomatonError::NestedIntervalShape => ZoneCheckRefusal::UnsupportedForm,
+                        other => ZoneCheckRefusal::Automaton(other),
+                    })?;
                 live = Some(automaton);
                 Judged::Liveness(Claim {
                     clause,
@@ -435,7 +427,17 @@ pub fn check_timed_model<S: Clone>(
         ZoneCheckItem::DeadlockFreedom => Judged::DeadlockFreedom,
         ZoneCheckItem::TimeLockFreedom => Judged::TimeLockFreedom,
     };
-    let mut run = Run::new(request.subject, judged, window, request.limits, cancel);
+    let automaton_constants = live
+        .as_ref()
+        .map_or_else(Vec::new, PositionAutomaton::all_constants);
+    let mut run = Run::new(
+        request.subject,
+        judged,
+        window,
+        &automaton_constants,
+        request.limits,
+        cancel,
+    );
     run.live = live;
     let searched = match run.search() {
         Ok(searched) => searched,
@@ -510,7 +512,7 @@ pub(super) struct Run<'r, 's, 'a> {
     pub(super) window: Option<WindowClaim>,
     /// The negation automaton of a clause FR-240's liveness product
     /// decides.
-    pub(super) live: Option<PropertyAutomaton>,
+    pub(super) live: Option<PositionAutomaton>,
     /// The pieces of the horizon axis a TT-2 position is read on, computed
     /// once: under a tick source, one, since the automaton keeps the stamp.
     pub(super) pieces: Vec<(Vec<PlaceConstraint>, Rational)>,
@@ -546,10 +548,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         timed: &'r TimedSystem<'s, 'a>,
         judged: Judged<'r>,
         window: Option<WindowClaim>,
+        automaton_constants: &[Rational],
         limits: ZoneCheckLimits,
         cancel: &'r Cancel,
     ) -> Self {
-        let (scale, mut lower, mut upper) = scaled_bounds(timed, window.as_ref());
+        let (scale, mut lower, mut upper) =
+            scaled_bounds(timed, window.as_ref(), automaton_constants);
         if matches!(judged, Judged::DeadlockFreedom | Judged::TimeLockFreedom) {
             // The deadlock-freedom and time-lock-freedom items read
             // valuations whose absence of behaviour the aLU simulation does
@@ -1574,6 +1578,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 target,
                 step,
                 position,
+                position_resets: Vec::new(),
                 before: None,
                 piece: None,
                 silent: false,
@@ -1812,6 +1817,7 @@ pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError
 fn scaled_bounds(
     timed: &TimedSystem<'_, '_>,
     window: Option<&WindowClaim>,
+    automaton_constants: &[Rational],
 ) -> (BigInt, Vec<Option<BigInt>>, Vec<Option<BigInt>>) {
     let model = timed.model();
     let mut constants = vec![Rational::from_integer(quire_exact::Integer::one())];
@@ -1862,6 +1868,8 @@ fn scaled_bounds(
     constants.extend(upper.iter().flatten().cloned());
     let horizon: Vec<Rational> = window.map_or_else(Vec::new, |window| window.constants().to_vec());
     constants.extend(horizon.iter().cloned());
+    // A timed claim automaton's interval ends are exact at the scale too.
+    constants.extend(automaton_constants.iter().cloned());
     let factor = scale_constants(&constants).factor().clone();
     let max = |values: &[Rational]| values.iter().max().map(|value| scaled(value, &factor));
     let mut lower: Vec<Option<BigInt>> = timed
@@ -1911,4 +1919,26 @@ fn widen(value: usize) -> u64 {
 /// Time 0.
 fn zero_stamp() -> Rational {
     Rational::from_integer(quire_exact::Integer::zero())
+}
+
+/// FR-242's TT-2 automaton of a `BoundedWindow` clause over `instances`
+/// instances that nests no interval operator under another; `None` for any
+/// other clause, which the liveness product reads.
+fn flat_window(
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    instances: usize,
+    period: Option<Rational>,
+    max_states: u64,
+) -> Result<Option<WindowClaim>, ZoneCheckRefusal> {
+    if !matches!(
+        clause.timed_form(),
+        Some(TimedPropertyForm::BoundedWindow { .. })
+    ) {
+        return Ok(None);
+    }
+    match WindowClaim::new(clause.formula(), instances, period, max_states) {
+        Ok(claim) => Ok(Some(claim)),
+        Err(WindowRefusal::NestedWindow) => Ok(None),
+        Err(refusal) => Err(refusal.into()),
+    }
 }

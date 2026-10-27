@@ -154,8 +154,8 @@ fn whole(value: i64) -> Rational {
 /// 0, `timeout` after 3 and `reply` after 0 over `Rpc` with `T = 3 ms`,
 /// replays to `reproduced-with-evaluated-witness` at trace position 3: the
 /// delay 3 is admissible under `x <= 3` and `x <= T`, and the guards
-/// `x >= 3` and `x >= 1` hold after it. Not covered: the `Settles` half,
-/// a TT-3 claim that EN-6 decides with MightyL (QSL-583).
+/// `x >= 3` and `x >= 1` hold after it. The `Settles` half is
+/// `crate::zone_mitl::settles_is_proved_and_its_strict_variant_refuted`.
 #[trace("TC-692")]
 #[test]
 fn a_late_reply_replays_with_its_delays() {
