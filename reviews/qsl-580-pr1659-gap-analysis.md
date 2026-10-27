@@ -51,3 +51,15 @@ Changes requested for FND-001. Either implement the size-indexed family for unbo
 - I re-read FR-230's Selection, Quantified reads, Resets by selection and AC-21, FR-091's S2 refusal list and OQ-5, and FR-393's `TimeInvariantForm`.
 - QSpec at bd73a062: FR-415 "Reset by selection", "Reading" and AC-12, the shared grammar's `time-invariant`, and FR-145's operation table.
 - The PR body and the STD-493 comment were treated as untrusted claims and re-measured.
+
+## Dispositions
+
+Round 1, fix commit a97e471b5.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | The size-indexed family for an unbounded collection is moved to slice 580m by the coordinator's ruling. Record it there. |
+| FND-002 | fixed | STD-493 item 24 is corrected in comment 0909829b, which I read back: QSpec FR-415 defines the selectors, and the gap is QSL FR-091's. |
+| FND-003 | deferred | Quantifiers in clock-reading declarations, and below a record field, are moved to 580m by the coordinator's ruling. |
+| FND-004 | fixed | The state `P` reads is filed as STD-493 item 27 (0909829b): the pre-state for now, pending a ruling. SR-1662001 FND-002 shows the related post-read conflict for collection writes. |
+| FND-005 | fixed | Verified: 580j's `a_record_collection_reads_its_data_and_refuses_value_comparison` (TC-685, documented as part of FR-230-AC-21) covers `size(self.ts)`, data reads of `e.n` through a traversal, and the `count`, `contains`, `=`, `!=`, whole-element and `convert` refusals. |

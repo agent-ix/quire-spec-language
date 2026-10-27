@@ -63,3 +63,16 @@ Mergeable on code grounds; no code bug found. See SR-1659002 for the spec-covera
   - an unbounded `Set`;
   - the eval-side reset with and without a shrinking data conjunct.
 - Baseline tests pass: qsl-eval `--test it` 763 of 763, and qsl-semantics `--test it` 1306 (all but my own reverted probe).
+
+## Dispositions
+
+Round 1. The fix commit is a97e471b5. The range from 4a7649df9 also carries 580j's fix commits from below, which are out of scope here. Checked in a fresh worktree and target under locked-build at jobs 4:
+- qsl-semantics `clock_places`: 12/12 passed.
+- qsl-eval `timed_subject`: 22/22 passed.
+- clippy `-p qsl-semantics -p qsl-eval --all-targets --all-features -D warnings`: exit 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `element_clock` no longer requires a field step, so the bare binder matches a `[Field, Slot]` place, and `e >= 1 ms` over a `Bag<Clock>` can be a constraint or a reset. It stays latent until the IR admits a bare clock collection (IR-1036). |
+| FND-002 | fixed | `Clone` and `PartialEq` are derived again on `ClockReset`, `ClockResets`, `SlotSelection` and `CheckedTimedPredicate`. `Eq` is not derived, which is correct because `CheckedBody` has no `Eq`. Two `DataLiteral::Element` values are now equal exactly when they have the same binding and the same renamed expression: semantically the same predicate over the same element, so equality and contradiction detection in the DNF stay sound. |
+| FND-003 | fixed | Each element binding carries its quantifier's span, and `element_type` refuses there. No new test pins the span; low. |
