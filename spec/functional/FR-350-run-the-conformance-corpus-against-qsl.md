@@ -287,7 +287,7 @@ For a `passed` vector, settlement and determinism use these representations:
 | Entry point | Value compared with `expected.value` for settlement | Output bytes compared between repeated executions for determinism |
 | --- | --- | --- |
 | `compile` | the encoded checked package | the encoded checked package |
-| `run` | the FR-323 result envelope containing the typed FR-072 result | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
+| `run` | the typed result defined by its public entry point | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
 | `replay` | the FR-323 `{"results":[one FR-072 result]}` envelope mapped from the typed FR-072 `ReplayResult` | the raw FR-286 outcome-document bytes |
 | `format` | the formatted text | the formatted text |
 
