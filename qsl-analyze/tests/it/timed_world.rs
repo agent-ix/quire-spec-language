@@ -249,7 +249,12 @@ const METER: ScalarLimits = ScalarLimits {
 impl World {
     /// The model system over the universe `{c}`.
     pub(crate) fn system(&self) -> ModelSystem<'_> {
-        ModelSystem::new(ModelSimulationRequest {
+        ModelSystem::new(self.request()).expect("the system admits")
+    }
+
+    /// FR-120's request of [`Self::system`].
+    pub(crate) fn request(&self) -> ModelSimulationRequest<'_> {
+        ModelSimulationRequest {
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
@@ -267,7 +272,6 @@ impl World {
                 max_candidates: 1_000_000,
             },
             meter: METER,
-        })
-        .expect("the system admits")
+        }
     }
 }

@@ -173,7 +173,7 @@ fn evaluator_holds(subject: &Subject, word: &[Letter], trace: TemporalTrace) -> 
 
 /// Whether `gba` accepts the lasso `word`, whose loop starts at `prefix`: a
 /// reachable cycle of the product visits every acceptance set.
-fn accepts(gba: &Gba, word: &[Letter], prefix: usize) -> bool {
+pub(crate) fn accepts(gba: &Gba, word: &[Letter], prefix: usize) -> bool {
     let after = |position: usize| {
         if position + 1 == word.len() {
             prefix

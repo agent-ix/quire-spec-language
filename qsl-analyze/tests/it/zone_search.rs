@@ -5,25 +5,26 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use num_bigint::BigInt;
 use qsl_analyze::zone_check::{
-    bounded_window_verdict, check_timed_model, Bound, CertEdge, Dbm, DivergentTarget,
-    ZoneCertificate, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
+    certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PlaceConstraint, TimedSystem};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedSystem};
 use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
 };
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_replay::{CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedLocus};
+use qsl_replay::{
+    check_zone_certificate, CertEdge, CertificateCheckLimits, CertifiedItem, CounterexampleKind,
+    DivergentTarget, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
+    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
+};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
-use qsl_semantics::check::{ClockOp, FormulaNode, FormulaNodeId};
-use quire_exact::{Cancel, Integer, Meter, Origin, Rational, Role, Undefined};
+use qsl_semantics::check::{FormulaNode, FormulaNodeId};
+use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
 
 use crate::timed_world::{document, world, World, DENSE};
 
@@ -31,15 +32,19 @@ pub(crate) const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace
 pub(crate) const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
 
 pub(crate) fn rpc_document() -> Vec<u8> {
-    document(
-        &["x"],
-        &[
-            ("send", &["phase", "inflight", "late", "x"]),
-            ("reply", &["phase", "inflight", "late"]),
-            ("timeout", &["phase"]),
-            ("reset", &["phase"]),
-        ],
-    )
+    rpc_document_with(&[])
+}
+
+/// [`rpc_document`] with the operations `extra` after `Rpc`'s own.
+pub(crate) fn rpc_document_with(extra: &[(&str, &[&str])]) -> Vec<u8> {
+    let mut operations: Vec<(&str, &[&str])> = vec![
+        ("send", &["phase", "inflight", "late", "x"]),
+        ("reply", &["phase", "inflight", "late"]),
+        ("timeout", &["phase"]),
+        ("reset", &["phase"]),
+    ];
+    operations.extend_from_slice(extra);
+    document(&["x"], &operations)
 }
 
 /// ADR-026 §11's `Rpc` with client deadline `t` ms and the claim
@@ -69,8 +74,25 @@ pub(crate) fn rpc_variant(
     profiles: &str,
     claim: &str,
 ) -> World {
+    rpc_model(&rpc_document(), t, reply, timeout, profiles, claim)
+}
+
+/// `Rpc` over `document`, which declares at least its operations, with
+/// `claim` holding any further model text and the temporal clause.
+pub(crate) fn rpc_world(document: &[u8], t: u32, profiles: &str, claim: &str) -> World {
+    rpc_model(document, t, ">= 1", ">=", profiles, claim)
+}
+
+fn rpc_model(
+    document: &[u8],
+    t: u32,
+    reply: &str,
+    timeout: &str,
+    profiles: &str,
+    claim: &str,
+) -> World {
     world(
-        &rpc_document(),
+        document,
         profiles,
         &format!(
             "{DENSE}\
@@ -104,12 +126,9 @@ pub(crate) const SUBJECT: &str = "c";
 /// An outcome over [`SUBJECT`].
 pub(crate) type Outcome = ZoneCheckOutcome<&'static str>;
 
-/// The occurrence of the claim each world's first clause is.
-fn claim_occurrence() -> OccurrenceKey {
-    OccurrenceKey::new(
-        WireNodeId::from_digest([1; 32]),
-        Origin::new(Role::new("temporal"), 0),
-    )
+/// The `claim` occurrence of `world`'s first clause.
+fn claim_occurrence(world: &World) -> OccurrenceKey {
+    qsl_replay::node_occurrence(&world.package.graph().temporal_clauses()[0])
 }
 
 /// The first clause of `world`, decided by EN-6 under `limits`.
@@ -127,7 +146,7 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits,
         },
@@ -136,7 +155,7 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
     .expect("EN-6 takes the claim")
 }
 
-fn deadlock(world: &World) -> Outcome {
+pub(crate) fn deadlock(world: &World) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -148,6 +167,30 @@ fn deadlock(world: &World) -> Outcome {
                 kind: ObligationKind::DeadlockFreedom,
             },
             limits: ZoneCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("EN-6 takes the item")
+}
+
+/// FR-232's time-lock-freedom item over `world`, decided by EN-6.
+pub(crate) fn time_lock_item(world: &World) -> Outcome {
+    time_lock_item_under(world, ZoneCheckLimits::default())
+}
+
+/// [`time_lock_item`] under `limits`.
+fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
+    let system: ModelSystem<'_> = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::TimeLockFreedom,
+            obligation: ItemObligation {
+                subject: SUBJECT,
+                kind: ObligationKind::TimeLockFreedom,
+            },
+            limits,
         },
         &Cancel::new(),
     )
@@ -186,6 +229,11 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "step",
                 "go",
                 "ping",
+                "idle",
+                "serve",
+                "echo",
+                "work",
+                "spin",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))
@@ -214,6 +262,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
         u64::try_from(certificate.nodes.len()).unwrap()
     );
     assert!(certificate.nodes.iter().all(|node| !node.locked));
+    assert_edges_cover(&four, &certificate);
 
     let three = rpc(3);
     let counterexample = violated(claim(&three, ZoneCheckLimits::default(), &Cancel::new()));
@@ -228,7 +277,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     assert!(counterexample.over_binding.is_some());
 
     for world in [&four, &three] {
-        assert!(matches!(deadlock(world), ZoneCheckOutcome::Holds { .. }));
+        assert_edges_cover(world, &proved(deadlock(world)));
     }
 }
 
@@ -360,7 +409,7 @@ pub(crate) fn ticker(locked: bool) -> World {
 }
 
 /// [`ticker`] with `body` as its clause on origin, under the timed profile.
-fn ticker_with(locked: bool, body: &str) -> World {
+pub(crate) fn ticker_with(locked: bool, body: &str) -> World {
     let when = if locked { "true" } else { "self.phase < 2" };
     world(
         &document(&["x"], &[("step", &["phase", "x"])]),
@@ -378,15 +427,16 @@ fn ticker_with(locked: bool, body: &str) -> World {
     )
 }
 
-/// Part of FR-239-AC-5 (TC-710): over `Ticker`, `6 mod (2 - n)` is undefined
-/// at `n = 2`, reached by `step` after delay 1 twice, and the state there is
+/// FR-239-AC-5 (TC-710): over `Ticker`, `6 mod (2 - n)` is undefined at
+/// `n = 2`, reached by `step` after delay 1 twice, and the state there is
 /// quiescent, so the search is violated with an undefined evaluation of
 /// cause `division-by-zero` at position 2, time stamp 2 and `x = 0`, keyed
 /// by the model state alone. With the unconditional invariant that state is
-/// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`. Not
-/// covered: the time-lock-freedom item refuted over the time-locked
-/// variant, which FR-240's search decides (QSL-583).
-#[trace("TC-710")]
+/// a time-lock, and no behaviour diverges: `NoAdmittedBehaviour`, and the
+/// time-lock-freedom item is refuted. Its first time-lock in canonical
+/// order is the initial state itself, every continuation of which ends at
+/// the local time-lock.
+#[trace("TC-710", "FR-239-AC-5")]
 #[test]
 fn an_undefined_atom_refutes_only_where_time_diverges() {
     let counterexample = violated(claim(
@@ -428,6 +478,114 @@ fn an_undefined_atom_refutes_only_where_time_diverges() {
         }
         other => panic!("expected no admitted behaviour, got {other:?}"),
     }
+    let locked = violated(time_lock_item(&ticker(true)));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert!(locked.prefix.is_empty());
+    assert_eq!(locked.final_delay, Some(exact(0, 1)));
+    assert!(matches!(
+        time_lock_item(&ticker(false)),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+}
+
+/// FR-240-AC-3 (TC-695): the strict-guard `Rpc` variant's
+/// time-lock-freedom item is violated by a local time-lock, stem `send` at
+/// 0 and final delay 3; the unmodified `Rpc` holds under `T = 3 ms` and
+/// `T = 4 ms`. `Stall` is violated by a non-local time-lock, confirmed by a
+/// fresh exploration from its point zone: the stem is empty and the least
+/// delay reaches it. Two runs give equal counterexamples. A trap that holds
+/// only part of a zone is found: in `Hold`, `go` leaves for a quiescent
+/// state while `x <= 1`, and past 1 only `ping` loops, Zeno under `x <= 2`,
+/// so the valuations `1 < x <= 2` are trapped, reached after the midpoint
+/// delay 3/2.
+#[trace("TC-695", "FR-240-AC-3")]
+#[test]
+fn time_locks_are_found_local_and_non_local() {
+    let strict = rpc_variant(3, "> 3", ">", INFINITE, "");
+    let locked = violated(time_lock_item(&strict));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert_eq!(operations(&locked), ["send"]);
+    assert_eq!(delays(&locked), [exact(0, 1)]);
+    assert_eq!(locked.final_delay, Some(exact(3, 1)));
+    assert_eq!(violated(time_lock_item(&strict)), locked);
+    for t in [3, 4] {
+        assert!(
+            matches!(time_lock_item(&rpc(t)), ZoneCheckOutcome::Holds { .. }),
+            "T = {t}"
+        );
+    }
+
+    let stall = stall();
+    let trapped = violated(time_lock_item(&stall));
+    assert_eq!(trapped.kind, CounterexampleKind::TimeLock);
+    assert!(trapped.prefix.is_empty());
+    assert_eq!(trapped.final_delay, Some(exact(0, 1)));
+    assert_eq!(violated(time_lock_item(&stall)), trapped);
+    // With `ping` resetting `x`, time diverges through it.
+    assert!(matches!(
+        time_lock_item(&stall_resetting()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+
+    let hold = world(
+        &document(&["x"], &[("go", &["phase"]), ("ping", &[])]),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Go using v on M::Call::go {{ self.phase = 0 and self.x <= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 }}\n\
+             pre Ping using v on M::Call::ping {{ self.phase = 0 and self.x > 1 ms }}\n\
+             time invariant Hold when {{ self.phase = 0 }} {{ self.x <= 2 ms }}\n"
+        ),
+    );
+    let partial = violated(time_lock_item(&hold));
+    assert_eq!(partial.kind, CounterexampleKind::TimeLock);
+    assert!(partial.prefix.is_empty());
+    assert_eq!(partial.final_delay, Some(exact(3, 2)));
+}
+
+/// FR-236-AC-2 (TC-691): the strict-guard variant's time-lock
+/// counterexample has one step, `send` with delay 0, `final_delay` 3,
+/// `kind: TimeLock` and no lasso; a `Formula` counterexample has
+/// `final_delay: None`.
+#[trace("TC-691", "FR-236-AC-2")]
+#[test]
+fn a_time_lock_counterexample_carries_its_final_delay() {
+    let locked = violated(time_lock_item(&rpc_variant(3, "> 3", ">", INFINITE, "")));
+    assert_eq!(locked.kind, CounterexampleKind::TimeLock);
+    assert_eq!(locked.prefix.len(), 1);
+    assert_eq!(operations(&locked), ["send"]);
+    assert_eq!(delays(&locked), [exact(0, 1)]);
+    assert_eq!(locked.final_delay, Some(exact(3, 1)));
+    assert_eq!(locked.lasso, None);
+    assert_eq!(locked.over_binding, None);
+
+    let formula = violated(claim(&rpc(3), ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(formula.kind, CounterexampleKind::Formula);
+    assert_eq!(formula.final_delay, None);
+}
+
+/// FR-232-AC-3's `Stall`: one object, clock `x` never reset,
+/// `time invariant when true { x <= 1 ms }`, and `ping` with no guard that
+/// changes no data field; the claim is `always holds(true)`.
+pub(crate) fn stall() -> World {
+    windowed(
+        &["x"],
+        &[("ping", &[])],
+        "time invariant Stall when { true } { self.x <= 1 ms }\n",
+        "always holds(true)",
+    )
+}
+
+/// [`stall`] with `ping` resetting `x`.
+pub(crate) fn stall_resetting() -> World {
+    windowed(
+        &["x"],
+        &[("ping", &["x"])],
+        "post Pinged using v on M::Call::ping { self.x = 0 ms }\n\
+         time invariant Stall when { true } { self.x <= 1 ms }\n",
+        "always holds(true)",
+    )
 }
 
 /// The deadlock-freedom item over a quiescent state with no step: `go`
@@ -467,6 +625,61 @@ fn a_quiescent_terminal_state_is_a_deadlock_over_time() {
         }
         other => panic!("expected a deadlock after a delay, got {other:?}"),
     }
+}
+
+/// FR-239's aLU coverage never hides a deadlock from the deadlock-freedom
+/// item. `a` enters phase 1 at `x = 0`, and `b` enters it at `x >= 2`;
+/// `b`'s successor is covered by `a`'s and never judged. Where `go` leaves
+/// phase 1 only while `x <= 1`, the covered valuations are deadlocked, but
+/// so are the stored node's after a delay, and the item is not proved. Where
+/// `go` has no upper bound, no valuation of phase 1 is deadlocked, covered
+/// or stored, and the item holds. A quiescent zone is closed under delay
+/// and every guard is a bound on one clock, so the enabling zones cover a
+/// stored quiescent zone only when one is the universe, which then covers
+/// every valuation of that model state.
+#[trace("TC-694")]
+#[test]
+fn a_covered_successor_hides_no_deadlock() {
+    let entered = |go: &str| {
+        deadlock(&world(
+            &document(
+                &["x"],
+                &[
+                    ("a", &["phase", "x"]),
+                    ("b", &["phase"]),
+                    ("go", &["phase"]),
+                    ("rest", &[]),
+                ],
+            ),
+            "",
+            &format!(
+                "{DENSE}\
+                 pre A using v on M::Call::a {{ self.phase = 0 }}\n\
+                 post Entered using v on M::Call::a {{ self.phase = 1 and self.x = 0 ms }}\n\
+                 pre B using v on M::Call::b {{ self.phase = 0 and self.x >= 2 ms }}\n\
+                 post Late using v on M::Call::b {{ self.phase = 1 }}\n\
+                 pre Go using v on M::Call::go {{ self.phase = 1 and self.x {go} }}\n\
+                 post Gone using v on M::Call::go {{ self.phase = 2 }}\n\
+                 pre Rest using v on M::Call::rest {{ self.phase = 2 }}\n"
+            ),
+        ))
+    };
+    match entered("<= 1 ms") {
+        ZoneCheckOutcome::Undecided { cause, .. } => {
+            assert_eq!(cause, ZoneUndecided::DeadlockAfterDelay);
+        }
+        other => panic!("expected the item not proved, got {other:?}"),
+    }
+    let certificate = proved(entered(">= 0 ms"));
+    let covering = certificate
+        .edges
+        .iter()
+        .filter(|edge| edge.from == 0)
+        .map(|edge| edge.to)
+        .collect::<Vec<_>>();
+    // `a` and `b` both lead to the one stored phase-1 node.
+    assert_eq!(covering.len(), 2);
+    assert_eq!(covering[0], covering[1]);
 }
 
 /// FR-239 "Admitted behaviour" over the `Lock` model: `go` moves `A` (`0`)
@@ -510,6 +723,7 @@ fn a_violation_on_time_locked_states_holds_vacuously() {
         certificate.nodes.iter().filter(|node| node.locked).count(),
         1
     );
+    assert_edges_cover(&lock(false), &certificate);
 
     let counterexample = violated(claim(
         &lock(true),
@@ -547,10 +761,11 @@ fn a_tick_source_admits_only_behaviours_that_tick() {
         }
         other => panic!("expected no admitted behaviour, got {other:?}"),
     }
-    assert!(matches!(
-        claim(&ticks(true), ZoneCheckLimits::default(), &Cancel::new()),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+    let ticking = ticks(true);
+    assert_edges_cover(
+        &ticking,
+        &proved(claim(&ticking, ZoneCheckLimits::default(), &Cancel::new())),
+    );
 }
 
 /// FR-241: a counterexample ends at a valuation with a time-divergent
@@ -642,7 +857,7 @@ pub(crate) fn lock() -> World {
 }
 
 /// The certificate of a `Holds` outcome.
-fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
+pub(crate) fn proved(outcome: Outcome) -> Certificate {
     match outcome {
         ZoneCheckOutcome::Holds { certificate, .. } => *certificate,
         other => panic!("expected a proof, got {other:?}"),
@@ -650,7 +865,7 @@ fn proved(outcome: Outcome) -> ZoneCertificate<&'static str> {
 }
 
 /// The operation an edge's transition names.
-fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'static str {
+fn operation(certificate: &Certificate, edge: usize) -> &'static str {
     let Some(transition) = &certificate.edges[edge].transition else {
         return "stutter";
     };
@@ -663,89 +878,48 @@ fn operation(certificate: &ZoneCertificate<&'static str>, edge: usize) -> &'stat
     .unwrap_or("?")
 }
 
-/// `bound` in units of `1 / scale`.
-fn scaled(bound: &Rational, scale: &BigInt) -> BigInt {
-    let value = bound.mul(&Rational::from_integer(Integer::from_big(scale.clone())));
-    value.numerator().as_big() / value.denominator().as_big()
-}
+/// FR-244's certificate of a proof of an item over [`SUBJECT`].
+pub(crate) type Certificate = ZoneCertificate<ItemObligation<&'static str>>;
 
-/// `zone` intersected with `constraints`, bounds in units of `1 / scale`.
-fn constrain(zone: &mut Dbm, constraints: &[PlaceConstraint], scale: &BigInt) {
-    for constraint in constraints {
-        let clock = constraint.place() + 1;
-        let bound = scaled(constraint.bound(), scale);
-        match constraint.op() {
-            ClockOp::Less => zone.constrain(clock, 0, Bound::lt(bound)),
-            ClockOp::LessOrEqual => zone.constrain(clock, 0, Bound::le(bound)),
-            ClockOp::Equal => zone
-                .constrain(clock, 0, Bound::le(bound.clone()))
-                .and_then(|()| zone.constrain(0, clock, Bound::le(-bound))),
-            ClockOp::GreaterOrEqual => zone.constrain(0, clock, Bound::le(-bound)),
-            ClockOp::Greater => zone.constrain(0, clock, Bound::lt(-bound)),
-        }
-        .expect("a clock of the zone");
-    }
-}
-
-/// FR-244 "Reachability part", checked from the certificate and the
-/// subject alone: following the edges from the single initial state, each
-/// edge's step and part from its source zone (guard, resets, the target's
-/// invariants, time elapsing unless urgent) gives a successor that the
-/// target's zone covers under the aLU simulation with the listed bounds,
-/// and the target names the successor's model state.
-fn assert_edges_cover(world: &World, certificate: &ZoneCertificate<&'static str>) {
+/// FR-245's check of `certificate` against `world`'s subject, for the item
+/// its obligation names: the first clause, or a derived item.
+pub(crate) fn check(
+    world: &World,
+    certificate: &Certificate,
+    limits: CertificateCheckLimits,
+) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<&'static str>>> {
     let system = world.system();
-    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
-    let scale = &certificate.scale;
-    let lower: Vec<Option<BigInt>> = certificate
-        .lu_bounds
-        .iter()
-        .map(|b| b.lower.clone())
-        .collect();
-    let upper: Vec<Option<BigInt>> = certificate
-        .lu_bounds
-        .iter()
-        .map(|b| b.upper.clone())
-        .collect();
-    let mut states = vec![None; certificate.nodes.len()];
-    let [root] = certificate.initial.as_slice() else {
-        panic!("one initial node");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("letters");
+    let item = match certificate.obligation.kind {
+        ObligationKind::DeadlockFreedom => CertifiedItem::DeadlockFreedom,
+        ObligationKind::TimeLockFreedom => CertifiedItem::TimeLockFreedom,
+        _ => CertifiedItem::Clause {
+            clause: node.clause(),
+            letters: &letters,
+        },
     };
-    states[*root] = Some(timed.initial().remove(0).discrete().clone());
-    for edge in &certificate.edges {
-        let state = states[edge.from].clone().expect("a source reached first");
-        let steps = timed.guarded_steps(&state).expect("its steps");
-        let step = steps
-            .iter()
-            .find(|step| Some(step.transition()) == edge.transition.as_ref())
-            .expect("the edge's transition is enabled");
-        let mut zone = certificate.nodes[edge.from].zone.clone();
-        constrain(
-            &mut zone,
-            &step.parts()[edge.part.expect("a step's part")],
-            scale,
-        );
-        for (place, value) in step.resets() {
-            zone.reset(place + 1, &scaled(value, scale))
-                .expect("a place");
-        }
-        let target = timed.invariants(step.post()).expect("invariants");
-        constrain(&mut zone, &target, scale);
-        if !timed.is_urgent(step.post()).expect("urgency") {
-            zone.up();
-            constrain(&mut zone, &target, scale);
-        }
-        assert!(!zone.is_empty(), "the edge's successor is not empty");
-        let to = &certificate.nodes[edge.to];
-        assert!(
-            zone.alu_covered_by(&to.zone, &lower, &upper)
-                .expect("a shape"),
-            "edge {edge:?} is covered"
-        );
-        let (_, key) = system.state_key(step.post()).expect("a state key");
-        assert_eq!(key, to.state_key);
-        states[edge.to].get_or_insert_with(|| step.post().clone());
-    }
+    check_zone_certificate(
+        ZoneCertificateRequest {
+            simulation: world.request(),
+            model: "M",
+            item,
+        },
+        &certificate.obligation,
+        certificate_item,
+        certificate,
+        limits,
+        &Cancel::new(),
+    )
+}
+
+/// FR-244 "Reachability part", checked by the core (FR-245): every edge's
+/// successor is covered by its target, and the certificate is accepted.
+fn assert_edges_cover(world: &World, certificate: &Certificate) {
+    assert_eq!(
+        check(world, certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Accepted)
+    );
 }
 
 /// Part of FR-244-AC-1 (TC-699): `NoLateReply` over `Rpc` with `T = 4 ms`
@@ -763,10 +937,10 @@ fn a_safety_proof_carries_a_reachability_certificate() {
     assert_eq!(certificate.obligation.subject, SUBJECT);
     assert_eq!(
         certificate.obligation.kind,
-        ObligationKind::Authored(claim_occurrence())
+        ObligationKind::Authored(claim_occurrence(&four))
     );
     assert_eq!(certificate.initial, [0]);
-    assert_eq!(certificate.lu_bounds.len(), 1);
+    assert_eq!(certificate.lu_bounds.lower.len(), 1);
     assert!(certificate.nodes.len() > 1);
     // Edges by source in discovery order.
     assert!(certificate
@@ -812,8 +986,8 @@ fn a_locked_node_is_listed_with_its_edges() {
         panic!("one locked node: {locked:?}");
     };
     // `x <= 1` in scaled units: the upper bound of `x` is the scale.
-    let one = Bound::le(certificate.scale.clone());
-    assert_eq!(certificate.nodes[*b].zone.bound(1, 0).expect("x"), &one);
+    let one = Ok(Some((certificate.scale.clone(), false)));
+    assert_eq!(certificate.nodes[*b].zone.bound(1, 0), one);
     // Everything `B` reaches.
     let mut reached = vec![*b];
     let mut at = 0;
@@ -832,7 +1006,7 @@ fn a_locked_node_is_listed_with_its_edges() {
     for &node in &reached {
         let node = &certificate.nodes[node];
         assert!(node.locked);
-        assert_eq!(node.zone.bound(1, 0).expect("x"), &one);
+        assert_eq!(node.zone.bound(1, 0), one);
     }
     assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
     assert!(certificate
@@ -842,7 +1016,7 @@ fn a_locked_node_is_listed_with_its_edges() {
         .all(|&edge| !certificate.nodes[certificate.edges[edge].to].locked));
 }
 
-fn edge_index(certificate: &ZoneCertificate<&'static str>, edge: &CertEdge) -> usize {
+fn edge_index(certificate: &Certificate, edge: &CertEdge) -> usize {
     certificate
         .edges
         .iter()
@@ -851,7 +1025,7 @@ fn edge_index(certificate: &ZoneCertificate<&'static str>, edge: &CertEdge) -> u
 }
 
 /// The witness's cycle, checked to close at the path's end.
-fn witness_cycle(certificate: &ZoneCertificate<&'static str>) -> Vec<&'static str> {
+fn witness_cycle(certificate: &Certificate) -> Vec<&'static str> {
     let admitted = &certificate.admitted;
     let DivergentTarget::Cycle(cycle) = &admitted.target else {
         panic!("a cycle witness: {admitted:?}");
@@ -1006,6 +1180,7 @@ fn a_tick_source_admits_by_a_tick() {
         proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new())),
         proved(deadlock(&world)),
     ] {
+        assert_edges_cover(&world, &certificate);
         let admitted = &certificate.admitted;
         assert!(
             !matches!(admitted.target, DivergentTarget::Quiescent(_)),
@@ -1052,7 +1227,7 @@ fn a_request_obligation_must_be_its_items() {
             item: ZoneCheckItem::DeadlockFreedom,
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(&world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1092,7 +1267,7 @@ fn windowed_under(
 }
 
 /// The first clause of `world` put to EN-6, refused or decided.
-fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
+pub(crate) fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -1106,7 +1281,7 @@ fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1140,12 +1315,14 @@ fn retried_at_with(at: &str, body: &str) -> World {
 #[trace("TC-697", "FR-242-AC-2")]
 #[test]
 fn a_punctual_window_is_decided_by_a_horizon_clock() {
-    match claim(
-        &retried_at("2 ms"),
-        ZoneCheckLimits::default(),
-        &Cancel::new(),
-    ) {
-        ZoneCheckOutcome::Holds { stats, .. } => assert!(stats.automaton_states > 0),
+    let punctual = retried_at("2 ms");
+    match claim(&punctual, ZoneCheckLimits::default(), &Cancel::new()) {
+        ZoneCheckOutcome::Holds { stats, certificate } => {
+            assert!(stats.automaton_states > 0);
+            // The core rebuilds the window automaton and accepts the proof
+            // (FR-245).
+            assert_edges_cover(&punctual, &certificate);
+        }
         other => panic!("expected a proof, got {other:?}"),
     }
     let late = violated(claim(
@@ -1260,7 +1437,7 @@ pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
             },
             obligation: ItemObligation {
                 subject: SUBJECT,
-                kind: ObligationKind::Authored(claim_occurrence()),
+                kind: ObligationKind::Authored(claim_occurrence(world)),
             },
             limits: ZoneCheckLimits::default(),
         },
@@ -1289,6 +1466,7 @@ fn a_timed_invariant_builds_no_automaton() {
                     .nodes
                     .iter()
                     .all(|node| node.automaton_state == 0));
+                assert_edges_cover(&timed, &certificate);
                 stats
             }
             ZoneCheckOutcome::Violated { stats, .. } => stats,
@@ -1498,9 +1676,11 @@ fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {
                 unrolled: &unrolled,
                 p,
             };
-            let verdict = bounded_window_verdict(clause, &unrolled.stamps, &mut |atom, at| {
-                letters.reading(atom, at)
-            })
+            let verdict = qsl_eval::automaton::bounded_window_verdict(
+                clause,
+                &unrolled.stamps,
+                &mut |atom, at| letters.reading(atom, at),
+            )
             .expect("the automaton reads the lasso");
             let trace = TimedTrace::new(unrolled.stamps.clone()).expect("a timed trace");
             let mut meter = Meter::new(world.system().meter_limits());
@@ -1566,10 +1746,10 @@ fn a_window_over_a_tick_source_is_read_at_each_tick() {
 #[test]
 fn an_open_and_a_closed_end_are_read_on_their_own_pieces() {
     let open = retried_at_with("2 ms", "always[0 ms, 2 ms) holds(not c.retried)");
-    assert!(matches!(
-        claim(&open, ZoneCheckLimits::default(), &Cancel::new()),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+    assert_edges_cover(
+        &open,
+        &proved(claim(&open, ZoneCheckLimits::default(), &Cancel::new())),
+    );
     let closed = retried_at_with("2 ms", "always[0 ms, 2 ms] holds(not c.retried)");
     let counterexample = violated(claim(&closed, ZoneCheckLimits::default(), &Cancel::new()));
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
@@ -1657,12 +1837,40 @@ fn a_lower_bounded_window_is_decided_by_the_idle_tail() {
     }
     // A window that position 0 already decides needs no stutter:
     // `eventually[0 ms, 3 ms] holds(not c.retried)` is proved.
-    assert!(matches!(
-        claim(
-            &idle("eventually[0 ms, 3 ms] holds(not c.retried)"),
-            ZoneCheckLimits::default(),
-            &Cancel::new()
+    let decided = idle("eventually[0 ms, 3 ms] holds(not c.retried)");
+    assert_edges_cover(
+        &decided,
+        &proved(claim(&decided, ZoneCheckLimits::default(), &Cancel::new())),
+    );
+}
+
+/// FR-240's trap search is charged to `max_zone_bytes` (V-7): over `Rpc`
+/// with `T = 4 ms` the time-lock-freedom item holds, storing more zone
+/// bytes than the deadlock-freedom item's search of the same graph, and a
+/// budget one byte short of its count stops it.
+#[trace("TC-694")]
+#[test]
+fn the_trap_search_is_charged_to_the_zone_budget() {
+    let four = rpc(4);
+    let ZoneCheckOutcome::Holds { stats, .. } = time_lock_item(&four) else {
+        panic!("Rpc is time-lock free");
+    };
+    let ZoneCheckOutcome::Holds {
+        stats: searched, ..
+    } = deadlock(&four)
+    else {
+        panic!("Rpc is deadlock free");
+    };
+    assert!(stats.zone_bytes > searched.zone_bytes);
+    let short = ZoneCheckLimits {
+        max_zone_bytes: stats.zone_bytes - 1,
+        ..ZoneCheckLimits::default()
+    };
+    match time_lock_item_under(&four, short) {
+        ZoneCheckOutcome::Stopped { cause, .. } => assert_eq!(
+            cause,
+            ZoneStop::LimitReached(ZoneCheckLimit::MaxZoneBytes(stats.zone_bytes - 1))
         ),
-        ZoneCheckOutcome::Holds { .. }
-    ));
+        other => panic!("expected a stop, got {other:?}"),
+    }
 }

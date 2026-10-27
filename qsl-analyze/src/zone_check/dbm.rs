@@ -326,6 +326,25 @@ impl Dbm {
         Self { dim, bounds }
     }
 
+    /// This zone with its last clock projected away: the valuations of the
+    /// other clocks some value of it extends into the zone. A closed matrix
+    /// projects by dropping the clock's row and column.
+    #[must_use]
+    pub fn without_last_clock(&self) -> Self {
+        let dim = self.dim.saturating_sub(1);
+        let mut bounds = Vec::with_capacity(dim * dim);
+        for i in 0..dim {
+            for j in 0..dim {
+                bounds.push(self.at(i, j).clone());
+            }
+        }
+        let mut projected = Self { dim, bounds };
+        if self.is_empty() {
+            projected.set_empty();
+        }
+        projected
+    }
+
     /// Free `clock`: drop every constraint on it but `clock >= 0`, the
     /// inverse image of a reset once the reset value is constrained.
     ///
