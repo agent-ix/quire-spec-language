@@ -164,6 +164,14 @@ pub enum ZoneError {
         /// The zone's clock count.
         clocks: usize,
     },
+    /// A matrix whose cell count is not its dimension squared.
+    #[error("{cells} bounds cannot form a zone of dimension {dim}")]
+    MatrixShape {
+        /// The bounds given.
+        cells: usize,
+        /// The dimension named.
+        dim: usize,
+    },
     /// LU bounds whose length is not the zone's clock count.
     #[error("LU bounds for {lower} lower and {upper} upper clocks over {clocks} clocks")]
     LuLength {
@@ -235,6 +243,40 @@ impl<W: Exact> Zone<W> {
             zone.cells[k] = zero_le();
         }
         zone
+    }
+
+    /// The zone of the matrix `bounds`, row-major, each `x_i - x_j ≺ c` as
+    /// `Some((c, strict))` or `None` for `∞`, closed to canonical form: how
+    /// a certificate written by another DBM implementation is read.
+    ///
+    /// # Errors
+    ///
+    /// [`ZoneError::MatrixShape`] when there are not `dim * dim` bounds.
+    pub fn from_matrix(
+        dim: usize,
+        bounds: impl IntoIterator<Item = Option<(W, bool)>>,
+    ) -> Result<Self, ZoneError> {
+        let cells: Vec<Cell<W>> = bounds
+            .into_iter()
+            .map(|bound| {
+                bound.map(|(value, is_strict)| {
+                    if is_strict {
+                        strict(&value)
+                    } else {
+                        non_strict(&value)
+                    }
+                })
+            })
+            .collect();
+        if cells.len() != dim.saturating_mul(dim) {
+            return Err(ZoneError::MatrixShape {
+                cells: cells.len(),
+                dim,
+            });
+        }
+        let mut zone = Self { dim, cells };
+        zone.close();
+        Ok(zone)
     }
 
     /// The dimension: the clock count plus the reference clock.
@@ -380,6 +422,29 @@ impl<W: Exact> Zone<W> {
         Ok(())
     }
 
+    /// Free `clock` in a canonical zone: every constraint on it is dropped
+    /// but `clock >= 0`, leaving it canonical. With the reset value
+    /// constrained first, this is the inverse image of a reset.
+    pub fn free(&mut self, clock: usize) -> Result<(), ZoneError> {
+        self.check_clock(clock)?;
+        if clock == 0 {
+            return Err(ZoneError::ResetReferenceClock);
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        let dim = self.dim;
+        for k in 0..dim {
+            if k == clock {
+                continue;
+            }
+            self.cells[clock * dim + k] = None;
+            self.cells[k * dim + clock] = self.cell(k, 0).clone();
+        }
+        self.cells[clock] = zero_le();
+        Ok(())
+    }
+
     /// Let time elapse in a canonical zone: every clock's upper bound
     /// against the reference clock becomes `∞`.
     pub fn up(&mut self) {
@@ -389,6 +454,63 @@ impl<W: Exact> Zone<W> {
         for k in 1..self.dim {
             self.cells[k * self.dim] = None;
         }
+    }
+
+    /// The valuations from which time elapsing reaches this canonical zone:
+    /// every clock's lower bound against the reference clock is dropped to
+    /// what the other clocks' differences imply, left canonical.
+    pub fn down(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        let dim = self.dim;
+        for i in 1..dim {
+            let mut lower = zero_le();
+            for j in 1..dim {
+                if tighter(self.cell(j, i), &lower) {
+                    lower.clone_from(self.cell(j, i));
+                }
+            }
+            self.cells[i] = lower;
+        }
+        self.close();
+    }
+
+    /// This canonical zone without canonical `other`, as disjoint canonical
+    /// zones: each the part outside one more of `other`'s bounds.
+    ///
+    /// # Errors
+    ///
+    /// [`ZoneError::DimensionMismatch`] for zones of different dimensions.
+    pub fn minus(&self, other: &Self) -> Result<Vec<Self>, ZoneError> {
+        self.check_dim(other)?;
+        if other.is_empty() || self.is_empty() {
+            return Ok(if self.is_empty() {
+                Vec::new()
+            } else {
+                vec![self.clone()]
+            });
+        }
+        let mut pieces = Vec::new();
+        let mut rest = self.clone();
+        for i in 0..self.dim {
+            for j in (0..self.dim).filter(|&j| j != i) {
+                let Some((value, is_strict)) = other.bound(i, j)? else {
+                    continue;
+                };
+                // Not `x_i - x_j ≺ c`: `x_j - x_i ≺' -c`, `<` for `<=`.
+                let mut outside = rest.clone();
+                outside.constrain(j, i, &value.negated(), !is_strict)?;
+                if !outside.is_empty() {
+                    pieces.push(outside);
+                }
+                rest.constrain(i, j, &value, is_strict)?;
+                if rest.is_empty() {
+                    return Ok(pieces);
+                }
+            }
+        }
+        Ok(pieces)
     }
 
     /// Whether this canonical zone includes canonical `other`.

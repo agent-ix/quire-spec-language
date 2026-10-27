@@ -171,8 +171,8 @@ pub use refinement::{
     ProtocolStepKind, RefinementCatalogClass, RefinementCatalogNode, RefinementCause,
     RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
     RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
-    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget, SubjectSide,
-    UnsupportedFeature,
+    RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
+    StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -3071,6 +3071,22 @@ impl PackageDeclarations {
             .zip(selected_protocols)
             .filter_map(|(checked, selected)| Some((checked?, selected)))
             .unzip();
+        for checked in &mut refinements {
+            let abstract_model = models
+                .iter()
+                .find(|model| model.alias() == Some(checked.abstract_model()));
+            checked.abstract_subject_declaration =
+                abstract_model.and_then(AdmittedModel::state_machine_declaration);
+            checked.abstract_subject_node =
+                abstract_model.and_then(|model| model.state_machine_node_key(self.identity));
+            let concrete_model = models
+                .iter()
+                .find(|model| model.alias() == Some(checked.concrete_model()));
+            checked.concrete_subject_declaration =
+                concrete_model.and_then(AdmittedModel::state_machine_declaration);
+            checked.concrete_subject_node =
+                concrete_model.and_then(|model| model.state_machine_node_key(self.identity));
+        }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions and `on each` guard typed over its
@@ -3998,6 +4014,14 @@ impl PackageDeclarations {
                         body: typed.body.root(),
                         body_slots: &typed.slot_names,
                         population_types: &typed.population_types,
+                        // Gated (QSL-1082): the pinned IR V2 reader refuses
+                        // a state_clause member or operation_anchor body
+                        // carrying an execution point (unknown member /
+                        // body shape), so the production check emits none
+                        // until the IR reader admits the carrier. The keying
+                        // and lowering above are exercised with a point by
+                        // their tests.
+                        execution_point: None,
                     };
                     match lowering.state_clause(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4837,7 +4861,7 @@ impl PackageDeclarations {
         );
         let mut unwritten = Vec::new();
         if !self.emit_unwritten_refinements {
-            unwritten.extend(self.refinements.iter().map(|declaration| {
+            unwritten.extend(self.refinements.iter().filter_map(|declaration| {
                 // FR-136-AC-12: a subject without exactly one state machine is
                 // refused by name before the generic not-emitted refusal. S3
                 // checked every declaration (an unchecked one refused above
@@ -4847,7 +4871,7 @@ impl PackageDeclarations {
                     .iter()
                     .find(|checked| checked.name() == declaration.form.name.name)
                 else {
-                    return CheckRefusal {
+                    return Some(CheckRefusal {
                         location: Location::root(Origin::Expression),
                         cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
                             quire_semantic_value::catalog::InternalFault::new(
@@ -4855,21 +4879,16 @@ impl PackageDeclarations {
                                 "refinement-declaration-checked",
                             ),
                         ))),
-                    };
+                    });
                 };
-                refinement::subject_refusal(checked, declaration.form.span, |alias| {
-                    models
-                        .iter()
-                        .filter(|model| model.alias() == Some(alias))
-                        .map(AdmittedModel::state_machine_count)
-                        .sum()
-                })
-                .unwrap_or_else(|| {
+                (!checked.v2_empty_model_body()).then(|| {
                     refinement::not_emitted(
                         declaration.form.name.name.clone(),
                         declaration.form.span,
                     )
                 })
+                // `None` means this checked declaration is included by the
+                // current V2 emission slice.
             }));
         }
         if !self.emit_unwritten_timed_members {
@@ -5933,7 +5952,9 @@ impl CheckedGraph {
     }
 }
 
-/// FR-096: the sites a protocol's nodes are located at. Each `run` control
+/// FR-096: the sites a protocol's nodes are located at. Each capture binder
+/// resolves to the span of its name and its initializer, like the activation
+/// guard, to its own expression tree. Each `run` control
 /// and the `finish` node resolve to the span of their declared name, and the
 /// `finish` constraint's expression tree to its own spans.
 fn register_protocol_sites(
@@ -5944,6 +5965,26 @@ fn register_protocol_sites(
 ) {
     use lowering::{protocol_site, ProtocolSite};
     let name = protocol.name.name.as_str();
+    if let qsl_forms::ActivationForm::Each {
+        when: Some(guard), ..
+    } = &protocol.activation
+    {
+        site_spans.insert(
+            protocol_site(name, ProtocolSite::ActivationGuard),
+            guard.spans.clone(),
+        );
+    }
+    for capture in &protocol.captures {
+        let capture_name = capture.parameter.name.name.as_str();
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Capture(capture_name)),
+            capture.parameter.name.span,
+        );
+        site_spans.insert(
+            protocol_site(name, ProtocolSite::CaptureInitializer(capture_name)),
+            capture.value.spans.clone(),
+        );
+    }
     for role in &protocol.roles {
         type_spans.insert(
             protocol_site(name, ProtocolSite::Role(&role.name.name)),

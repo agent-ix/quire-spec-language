@@ -1706,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0a365dbbec6b3592c646ea0dedea38800ff8c94c"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#2cab5d0bc66567f6753657f79726fb76bd0a048d"
 dependencies = [
  "quire-canonical",
  "quire-exact",

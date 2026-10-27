@@ -788,10 +788,14 @@ pub enum ProtocolConstruct {
     /// A control of the `run` tree other than a `sequence`, by its keyword
     /// (FR-466): QSL-1126.
     Control(&'static str),
-    /// A protocol `capture` (FR-464 "Clause body"): QSL-1121e.
-    Captures,
-    /// An `activation on each` guard (FR-464 "Clause body"): QSL-1121e.
-    ActivationGuard,
+    /// A protocol `capture` whose initializer calls a function or refers to
+    /// a protocol: the clause is written before the functions are, so the
+    /// initializer cannot name them yet. QSL-1121g.
+    CaptureReadsDeclaration,
+    /// An `activation on each` guard that calls a function or refers to a
+    /// protocol: the clause is written before the functions are, so the
+    /// guard cannot name them yet. QSL-1121g.
+    ActivationGuardReadsDeclaration,
     /// A `terminal` member (FR-465 "Terminal"): QSL-1121f.
     Terminal,
     /// A `relationship` member (FR-464 "Clause body"): a real model package
@@ -824,9 +828,10 @@ impl ProtocolConstruct {
             Self::WholeModelRole => "IR-874",
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
-            Self::Captures | Self::ActivationGuard => "QSL-1121e",
             Self::Terminal => "QSL-1121f",
-            Self::FinishReadsDeclaration => "QSL-1121g",
+            Self::FinishReadsDeclaration
+            | Self::CaptureReadsDeclaration
+            | Self::ActivationGuardReadsDeclaration => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
@@ -2626,10 +2631,28 @@ pub struct DispatchSubtypeFailure {
     )>,
 }
 
+/// Why an accepted execution point cannot be carried by the clause it
+/// accompanies (QSpec FR-341 "Execution point", FR-342): refused before any
+/// node is keyed, so no package carries a point its V2 read would refuse.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExecutionPointRefusal {
+    /// The point's variant is not one this clause kind takes: an invariant
+    /// takes `initialization` or `handler`; a precondition `pre`; a
+    /// postcondition `post`.
+    InapplicableVariant,
+    /// A `pre` or `post` point names an operation other than the one the
+    /// clause (and so its anchor) names.
+    OperationMismatch,
+}
+
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// An accepted execution point its clause cannot carry (QSpec FR-341,
+    /// FR-342): the variant is inapplicable to the clause kind, or its
+    /// operation is not the clause's.
+    ExecutionPoint(ExecutionPointRefusal),
     /// The private intake owner lost its corresponding assembled model.
     MissingAdmittedModel(String),
     /// A staged-admission read the conformance stage made for an admitted
@@ -2734,6 +2757,7 @@ impl KeyFault {
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),
             Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
             Self::UncheckedProtocolFact => "protocol-fact-checked",
+            Self::ExecutionPoint(_) => "execution-point-matches-clause",
         }
     }
 }
