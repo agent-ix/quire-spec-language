@@ -274,13 +274,22 @@ for a `passed` vector the bytes its subject's entry point returned, SHALL be
 the same whatever number of other threads the calling process runs, so
 state shared between vectors or between threads cannot change a result.
 
-For a `passed` vector the compared output bytes are:
+Settlement compares the subject's typed result with `expected.value`. The
+bytes used for determinism are a separate observation and are never substituted
+for that expected value. For replay, the adapter SHALL map the FR-072
+`ReplayResult` into the FR-323 envelope `{"results":[one FR-072 result]}` for
+settlement. Separately, determinism compares the raw FR-286 outcome-document
+bytes returned by two executions of the same replay request; those bytes are
+compared only with each other, never with `expected.value`.
 
-| Entry point | Output bytes |
-| --- | --- |
-| `compile` | the encoded checked package |
-| `run`, `replay` | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
-| `format` | the formatted text |
+For a `passed` vector, settlement and determinism use these representations:
+
+| Entry point | Value compared with `expected.value` for settlement | Output bytes compared between repeated executions for determinism |
+| --- | --- | --- |
+| `compile` | the encoded checked package | the encoded checked package |
+| `run` | the FR-323 result envelope containing the typed FR-072 result | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
+| `replay` | the FR-323 `{"results":[one FR-072 result]}` envelope mapped from the typed FR-072 `ReplayResult` | the raw FR-286 outcome-document bytes |
+| `format` | the formatted text | the formatted text |
 
 Vector ids are ordered bytewise on their id strings, as FR-075 orders
 `BackendId`s. This is also the ascending vector-id order of the FR-352
