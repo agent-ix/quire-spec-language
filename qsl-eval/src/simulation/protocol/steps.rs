@@ -1386,8 +1386,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 "a-potential-shared-location-has-a-cell",
             ));
         };
-        let unchanged =
-            observed.cell(cell).map(value_enc) == applied.state.cell(cell).map(value_enc);
+        let unchanged = observed
+            .cell(cell)
+            .map(|value| value_enc(value, self.model.typing()))
+            == applied
+                .state
+                .cell(cell)
+                .map(|value| value_enc(value, self.model.typing()));
         Ok(Access {
             class: if *class == AccessClass::Rmw && unchanged {
                 AccessClass::Load

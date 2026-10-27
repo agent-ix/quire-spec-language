@@ -375,16 +375,6 @@ pub(crate) struct StateWeakAccesses {
 }
 
 impl StateWeakAccesses {
-    pub(crate) fn enables(&self, node: &str, transition: &ModelTransition) -> bool {
-        self.attempts.values().any(|attempt| {
-            attempt.node == node
-                && attempt
-                    .instances
-                    .iter()
-                    .any(|instance| instance.transition == *transition)
-        })
-    }
-
     pub(crate) fn attempt(&self, key: &ThreadAttempt) -> Option<&WeakAttempt> {
         self.attempts.get(key)
     }
