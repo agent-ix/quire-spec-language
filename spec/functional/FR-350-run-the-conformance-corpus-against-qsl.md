@@ -24,10 +24,15 @@ the runner SHALL execute every vector whose applicability names a QSL
 subject through the QSL public entry point for that subject, and SHALL
 compare the typed result with the vector's expected disposition.
 
-The corpus is QSpec's (QSpec FR-336, interface_019). QSpec owns its vector
-shape, its classes (positive, boundary, just-outside, refusal, incomplete,
-metamorphic) and each vector's expected disposition. This requirement
-specifies how QSL executes and compares them.
+The corpus is QSpec's (QSpec FR-336, interface_019), and its wire shape is
+the closed `quire.conformance-corpus/v1` schema. QSpec owns each vector's
+`id`, `capability_id`, `class`, `subject`, `applicability`, `input` and
+`expected` members, and the primary capability entries under
+`coverage.primary`. This requirement specifies how QSL executes and compares
+them. A vector's `expected.disposition` is `value` or `refusal`; the `value` is
+the subject operation's typed JSON result, while a refusal expectation
+(including an expected resource-limit refusal) carries its `code`, `cause`
+and optional `details`.
 
 ## Inputs
 
@@ -61,11 +66,14 @@ the entry point a caller of that subject uses:
 | `runtime` | the reference runtime, and the replay facade for a vector whose input is a replay request | `run`, `replay` |
 | `tool` | the formatter | `format` |
 
-QSL reads QSpec FR-336 `applicability` at two levels. A capability is in
-the default scope (FR-351) when its applicability names a QSL consumer type
-and a semantic profile QSL's definition catalog holds. A vector SHALL run
-when its capability is in the selected scope and its own applicability
-names a QSL consumer type, through that type's entry point. Vectors of an
+QSL reads capability applicability from each
+`coverage.primary[*].applicability` and vector applicability from each
+`vectors[*].applicability`. A primary capability is in the default scope
+(FR-351) when its `consumer_types` includes a QSL consumer type and one of
+its `semantic_profiles` is in QSL's definition catalog. A vector SHALL run
+when its `capability_id` selects that primary row, its own
+`applicability.consumer_types` includes its `subject.consumer_type`, and
+that subject maps to a QSL entry point in the table above. Vectors of an
 out-of-scope capability SHALL NOT execute. The runner calls no internal
 function a caller cannot reach.
 If applicability filtering leaves the scope empty, then the runner SHALL
@@ -74,10 +82,12 @@ refuse before vector execution under
 
 ### Corpus and limits ownership
 
-The runner SHALL read the selected QSpec corpus and the inputs it names
-without rewriting its vectors, expected dispositions, `results` or
-`coverage`. Expected dispositions come from the corpus's independent oracle;
-the runner SHALL NOT replace them with results calculated by QSL.
+The runner SHALL read the selected QSpec corpus and the files named by each
+vector's `input.files` without rewriting its vectors, `expected`
+dispositions, `results` or `coverage`. Expected dispositions come from the
+corpus's independent oracle; the runner SHALL NOT replace them with results
+calculated by QSL. A syntactically valid file path that is not readable is
+that vector's `tool-failure`, not a corpus preflight refusal.
 
 The runner SHALL resolve `--limit` operands through the existing
 [FR-255 settings operation](FR-255-name-the-setting-that-raises-a-reached-limit.md).
