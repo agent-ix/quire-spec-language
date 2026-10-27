@@ -1193,13 +1193,14 @@ fn a_refused_read_is_classified_in_the_order_the_criteria_state() {
     assert_eq!(universe.classify("order", &at_protocol), ReadClass::Stage);
 }
 
-/// FR-092-AC-18, FR-383: a protocol with an `each` guard, captures and a
-/// `compensate` template is never checked to a package without them: with a
-/// protocol profile selected the production check refuses `NotEmitted` for
-/// each, naming QSL-1121e and QSL-1127.
+/// FR-092-AC-18, FR-383: a protocol with an `each` guard, a capture and a
+/// `compensate` template is never checked to a package without the template:
+/// with a protocol profile selected the production check refuses
+/// `NotEmitted` for the template and its controls, naming QSL-1127 and
+/// QSL-1126, and none for the guard and the capture, which are written.
 #[trace("FR-092-AC-18", "FR-383-AC-1")]
 #[test]
-fn a_guard_a_capture_and_a_compensation_refuse_the_protocol_naming_their_tickets() {
+fn a_compensation_refuses_the_protocol_naming_its_ticket_and_a_guard_and_a_capture_do_not() {
     use super::super::refusal::{ProtocolConstruct, ProtocolReferenceCause};
     let (_, assembled) = assemble_with(
         obligation_model(),
@@ -1226,11 +1227,7 @@ fn a_guard_a_capture_and_a_compensation_refuse_the_protocol_naming_their_tickets
             ProtocolConstruct::Control("attempt"),
             ProtocolConstruct::Control("effect"),
             ProtocolConstruct::Control("commit"),
-            ProtocolConstruct::Captures,
-            ProtocolConstruct::ActivationGuard
         ]
     );
     assert_eq!(constructs[0].tracking(), "QSL-1127");
-    assert_eq!(constructs[4].tracking(), "QSL-1121e");
-    assert_eq!(constructs[5].tracking(), "QSL-1121e");
 }

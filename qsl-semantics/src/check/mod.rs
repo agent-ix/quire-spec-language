@@ -5885,7 +5885,9 @@ impl CheckedGraph {
     }
 }
 
-/// FR-096: the sites a protocol's nodes are located at. Each `run` control
+/// FR-096: the sites a protocol's nodes are located at. Each capture binder
+/// resolves to the span of its name and its initializer, like the activation
+/// guard, to its own expression tree. Each `run` control
 /// and the `finish` node resolve to the span of their declared name, and the
 /// `finish` constraint's expression tree to its own spans.
 fn register_protocol_sites(
@@ -5896,6 +5898,26 @@ fn register_protocol_sites(
 ) {
     use lowering::{protocol_site, ProtocolSite};
     let name = protocol.name.name.as_str();
+    if let qsl_forms::ActivationForm::Each {
+        when: Some(guard), ..
+    } = &protocol.activation
+    {
+        site_spans.insert(
+            protocol_site(name, ProtocolSite::ActivationGuard),
+            guard.spans.clone(),
+        );
+    }
+    for capture in &protocol.captures {
+        let capture_name = capture.parameter.name.name.as_str();
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Capture(capture_name)),
+            capture.parameter.name.span,
+        );
+        site_spans.insert(
+            protocol_site(name, ProtocolSite::CaptureInitializer(capture_name)),
+            capture.value.spans.clone(),
+        );
+    }
     for role in &protocol.roles {
         type_spans.insert(
             protocol_site(name, ProtocolSite::Role(&role.name.name)),
