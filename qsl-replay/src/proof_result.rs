@@ -72,6 +72,10 @@ pub enum ProofBasis {
         /// Completed unrolling depth.
         depth: u64,
     },
+    /// FR-235 (ADR-026 CF-4): EN-6's zone search completed with no
+    /// admitted violation and the core's checker accepted its zone
+    /// certificate (FR-245).
+    ZoneCertified,
     /// The property was established by induction.
     Inductive {
         /// Induction depth.
@@ -435,6 +439,8 @@ pub enum UnavailabilityCause {
         /// The rule that placed the clause in HP-4.
         reason: HyperUnsupported,
     },
+    /// FR-182 V-8: an SMT hyper encoding is outside its supported fragment.
+    UnsupportedSmtFragment,
     /// A refinement with a strong constraint in `F_A`, whose liveness half
     /// the second phase does not decide: it reads a class as weak. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -542,6 +548,7 @@ impl UnavailabilityCause {
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::UnsupportedHyperForm { .. }
+            | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => "unsupported-requested-capability",
             Self::NotMarkov => "not-markov",
@@ -570,6 +577,7 @@ impl UnavailabilityCause {
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::UnsupportedHyperForm { .. }
+            | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => Some("unsupported_projection"),
         }
@@ -655,6 +663,13 @@ pub enum InconclusiveCause {
     /// none of: a harness defect. The agreement names the claim and the
     /// outcome, and no predicate verdict.
     ScalarAgrees(ScalarAgreement),
+    /// FR-235 (ADR-026 TD-6): EN-6 found no admitted violation, but no
+    /// initial state reaches a time-divergent behaviour, so the proof is
+    /// vacuous.
+    NoAdmittedBehaviour,
+    /// FR-235 (ADR-026 CT-2): EN-6 found a violating symbolic lasso, but no
+    /// concrete timed lasso through it was found.
+    LassoNotConcretized,
     /// AMC-rtb's high-mode criterion failed; the test is sufficient and
     /// not necessary, so it decides nothing (ADR-026 RT-6).
     SufficientTestFailed,
@@ -816,6 +831,8 @@ impl InconclusiveCause {
             Self::SolverInconclusive { .. } => "solver-inconclusive",
             Self::InsufficientHorizon { .. } => "insufficient-horizon",
             Self::SufficientTestFailed => "sufficient-test-failed",
+            Self::NoAdmittedBehaviour => "no-admitted-behaviour",
+            Self::LassoNotConcretized => "lasso-not-concretized",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
@@ -839,6 +856,8 @@ impl InconclusiveCause {
             | Self::VacuousMatch
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
+            | Self::NoAdmittedBehaviour
+            | Self::LassoNotConcretized
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }
@@ -973,6 +992,7 @@ impl TerminalValue {
                 basis:
                     ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
+                    | ProofBasis::ZoneCertified
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }

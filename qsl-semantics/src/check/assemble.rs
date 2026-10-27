@@ -2125,6 +2125,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 } => forms.push(TypeForm::name(name.clone(), *span)),
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
+                | ExprNode::Float32(_)
+                | ExprNode::Float64(_)
                 | ExprNode::Rational(..)
                 | ExprNode::Quantity(_)
                 | ExprNode::String(_)

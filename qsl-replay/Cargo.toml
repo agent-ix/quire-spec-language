@@ -16,6 +16,10 @@ default = []
 # `run_clause` accepts an I3 extracted source (`qsl_source::ExtractedSource`)
 # as its unit only with this feature.
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
+# FR-237's `replay_timed_counterexample`: the timed replay core without
+# FR-128's recompile and identity checks, for tests only until S4 writes
+# timed members (QSL-580). Only dev-dependencies enable it.
+test-support = []
 
 [dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

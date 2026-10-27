@@ -130,6 +130,7 @@ impl Case {
                 request(&document(), self.documents.snapshots.iter(), &unit, id),
                 &ProtocolTraceSubject {
                     model: ModelTraceSubject {
+                        timed: None,
                         initial: self.initial.clone(),
                         universes: universe(&["c"]),
                         expansion: ExpansionLimits {

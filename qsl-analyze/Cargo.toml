@@ -44,6 +44,9 @@ test-support = []
 
 [dev-dependencies]
 qsl-analyze = { path = ".", features = ["test-support"] }
+# FR-237's timed replay core (`replay_timed_counterexample`), driven by the
+# zone replay tests until S4 writes timed members (QSL-580).
+qsl-replay = { path = "../qsl-replay", features = ["test-support"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # The model-check tests compile a modelled unit through S1 to S4 and check
 # its temporal clauses with `qsl-semantics`' test-only `check_clauses`.

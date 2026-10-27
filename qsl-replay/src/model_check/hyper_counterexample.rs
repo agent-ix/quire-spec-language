@@ -146,6 +146,62 @@ pub struct HyperCounterexample {
     pub trace_position: u64,
 }
 
+/// A candidate non-vacuity witness for FR-182's HP-2 induction settlement
+/// (FR-183). It contains only the universal traces, in quantifier order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MatchWitness {
+    /// The clause instance, in object-parameter order.
+    pub instance: Vec<(String, String)>,
+    /// One fair trace per universal variable, in quantifier order.
+    pub traces: Vec<HyperTrace>,
+    /// The common loop entry.
+    pub loop_entry: u64,
+}
+
+impl MatchWitness {
+    /// Structural byte count for FR-183's replay input bound.
+    pub fn measured_bytes(&self) -> usize {
+        let trace_bytes = self.traces.iter().fold(0usize, |bytes, trace| {
+            bytes
+                .saturating_add(std::mem::size_of::<HyperTrace>())
+                .saturating_add(trace.variable.len())
+                .saturating_add(trace.alias.len())
+                .saturating_add(
+                    trace
+                        .steps
+                        .len()
+                        .saturating_mul(std::mem::size_of::<HyperStep>()),
+                )
+                .saturating_add(
+                    trace
+                        .marks
+                        .len()
+                        .saturating_mul(std::mem::size_of::<StepMark>()),
+                )
+        });
+        let instance_bytes = self
+            .instance
+            .iter()
+            .fold(0usize, |bytes, (parameter, key)| {
+                bytes
+                    .saturating_add(parameter.len())
+                    .saturating_add(key.len())
+            });
+        std::mem::size_of_val(self)
+            .saturating_add(trace_bytes)
+            .saturating_add(instance_bytes)
+    }
+}
+
+/// The result of checking a candidate non-vacuity witness.
+#[derive(Debug)]
+pub enum MatchWitnessCheck {
+    /// Its universal traces replay as a matched, fair lasso.
+    Accepted,
+    /// The witness could not be established by replay.
+    Refused(crate::execute::ReplayRefusal),
+}
+
 impl FamilyPayload for HyperCounterexample {
     /// The inline size plus each trace's steps and the strings it holds.
     fn measured_bytes(&self) -> usize {

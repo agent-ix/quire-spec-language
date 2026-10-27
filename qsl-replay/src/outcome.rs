@@ -427,6 +427,8 @@ impl ItemCause {
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::NoAdmittedBehaviour
+                | InconclusiveCause::LassoNotConcretized
                 | InconclusiveCause::SolverInconclusive { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
@@ -615,6 +617,7 @@ impl OutcomeItem {
                     | UnavailabilityCause::UnsupportedReduction { .. }
                     | UnavailabilityCause::HiddenFieldLiveness
                     | UnavailabilityCause::UnsupportedHyperForm { .. }
+                    | UnavailabilityCause::UnsupportedSmtFragment
                     | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
                     | UnavailabilityCause::ConfidenceBeyondPrecision
