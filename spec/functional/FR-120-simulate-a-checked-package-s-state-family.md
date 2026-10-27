@@ -435,7 +435,7 @@ FR-120-AC-26 pin them.
   union, a `Reference<Clock>` (data that names a clock place, not a clock
   place itself, so it is not covered by the clock-place rule), and every other
   type that this section's list does not name: `Integer` with no range, a
-  collection with no declared maximum, a `Map` (it needs its own ruling for
+  collection with no declared maximum other than `Set<Clock>`, a `Map` (it needs its own ruling for
   its key domain), an ordered set, a decimal, a quantity, a UUID or a Timestamp,
   for example. This is the narrowest reading where FR-230 does not say what a
   candidate holds for a union, for a `Reference<Clock>`, for a map or for an
