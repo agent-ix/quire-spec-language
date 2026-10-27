@@ -654,3 +654,64 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
         );
     }
 }
+
+/// QSL-1082 / FR-105-AC-12 gate: the pinned IR reader
+/// (`quire-contract-model` 9a84e654) admits a `state_clause` member of exactly
+/// `{kind, clause}` and an `operation_anchor` body of exactly three bindings,
+/// so a QSL-emitted package whose clause or anchor carries the QSpec
+/// FR-341/FR-342 `execution_point` is refused by the real reader at either
+/// carrier. QSL therefore emits no point (`check::mod`'s
+/// `execution_point: None`) until IR admits the carrier. The control proves
+/// the same package is admitted after the same rekey without a point, so each
+/// refusal is the point's. When IR admits the carrier this test fails; it and
+/// the production gate are then replaced by the admit-and-round-trip test
+/// (TC-463 step 5).
+#[test]
+fn the_pinned_ir_reader_refuses_an_execution_point_at_either_carrier() {
+    let emitted = emit(&["own"], &[]);
+    assert!(
+        matches!(emitted.read(), Read::Verified { .. }),
+        "the emitted package reads back"
+    );
+    let mut control = emitted.wire.clone();
+    rekey_stale(&mut control);
+    assert!(
+        matches!(emitted.read_envelope(&control), Read::Verified { .. }),
+        "the rekeyed package is admitted without a point"
+    );
+
+    let points = [
+        json!({"kind": "initialization", "name": "boot"}),
+        json!({"kind": "handler", "name": "validate"}),
+        json!({"kind": "pre", "operation": "own"}),
+        json!({"kind": "post", "operation": "own"}),
+    ];
+    for point in &points {
+        for carrier in ["state_clause member", "operation_anchor binding"] {
+            let mut envelope = emitted.wire.clone();
+            let mut mutated = 0_usize;
+            for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
+                match (carrier, node["semantic_form"].as_str()) {
+                    ("state_clause member", Some("state_clause")) => {
+                        node["body"]["operation"]["member"]["execution_point"] = point.clone();
+                        mutated += 1;
+                    }
+                    ("operation_anchor binding", Some("operation_anchor")) => {
+                        node["body"]["members"].as_array_mut().unwrap().push(
+                            json!({"term": "binding", "name": "execution_point", "value": point}),
+                        );
+                        mutated += 1;
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(mutated, 1, "{carrier}: one carrier node");
+            rekey_stale(&mut envelope);
+            let outcome = emitted.read_envelope(&envelope);
+            assert!(
+                matches!(outcome, Read::Refused(_)),
+                "{carrier} with {point}: the pinned reader refuses it: {outcome:?}"
+            );
+        }
+    }
+}

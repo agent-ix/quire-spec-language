@@ -9,10 +9,10 @@ review_set: all
 
 ## Summary
 
-The specified test case exercises the call conversion, admitted population name lookup and replay byte-path mapping. The source tests are pending the implementation slice, as intended by the spec-before-code order.
+TC-970 specifies schema mutations and byte-path refusal cases; QSL replay adapter tests remain pending the implementation slice, as intended by spec-before-code order.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No method mismatch found. FR-350-AC-8 through AC-10 use Test and TC-875 provides the planned harness scenarios; the matrix remains open until the implementation carries the corresponding trace tags. | FR-350-AC-8, FR-350-AC-9, FR-350-AC-10 |
+| FND-001 | low | The new replay adapter mapping is test-verifiable; implementation must bind every case before the ticket can close. | FR-350-AC-10; FR-336-AC-7/8; TC-970 |

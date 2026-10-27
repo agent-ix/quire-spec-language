@@ -34,9 +34,12 @@ pub(super) struct Stage {
     /// The step and the convex part of its guard taken; `None` for an
     /// idle-tail stutter position, which comes after a positive delay.
     pub step: Option<(GuardedStep, usize)>,
-    /// What a claim automaton requires of its horizon clock at the
-    /// position (FR-242).
+    /// What a claim automaton requires of its own clocks at the position
+    /// (FR-242), read after the step's resets.
     pub position: Vec<PlaceConstraint>,
+    /// The claim automaton's clocks reset at the position, after its
+    /// guard is read: indices past the clock places.
+    pub position_resets: Vec<usize>,
     /// The zone over clock places, in units of the concretisation's scale,
     /// the valuation before the position's step, after its delay, lies in:
     /// the cell of the liveness product's symbolic state the step leaves
@@ -227,6 +230,11 @@ pub(super) fn concretise(
         for constraint in stage.target.iter().chain(&stage.position) {
             resets.constrain(&mut times, at, constraint, scale)?;
         }
+        for &clock in &stage.position_resets {
+            if let Some(slot) = resets.0.get_mut(clock) {
+                *slot = (at, zero.clone());
+            }
+        }
         if let Some(piece) = &stage.piece {
             resets.within(&mut times, at, piece, scale)?;
         }
@@ -288,6 +296,12 @@ pub(super) fn concretise(
             *value = stamp
                 .sub(&stamps[since])
                 .add(&resets_value(stages, place, since));
+        }
+        for &clock in &stage.position_resets {
+            if let Some(slot) = values.get_mut(clock) {
+                *slot = zero.clone();
+                last_reset[clock] = at;
+            }
         }
         let Some((step, _)) = &stage.step else {
             if stage.silent {

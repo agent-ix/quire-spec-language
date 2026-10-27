@@ -386,6 +386,7 @@ impl Run<'_, '_, '_> {
             target: invariants,
             step: None,
             position: Vec::new(),
+            position_resets: Vec::new(),
             before: None,
             piece: None,
             silent: false,

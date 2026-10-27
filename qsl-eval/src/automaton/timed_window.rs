@@ -27,7 +27,10 @@
 //! is in its idle tail and takes no further step.
 //!
 //! An interval operator under another temporal operator needs a clock per
-//! activation: such a clause is refused (spec gap STD-493; QSL-583).
+//! activation: this automaton refuses such a clause
+//! ([`WindowRefusal::NestedWindow`]), and the engine and the checker read
+//! it with FR-242's timed claim automaton,
+//! [`TimedClaim`](crate::automaton::TimedClaim), instead.
 //!
 //! The zone search (EN-6, `qsl-analyze`) and the zone certificate checker
 //! (FR-245, `qsl-replay`) both build this one automaton, so the checker

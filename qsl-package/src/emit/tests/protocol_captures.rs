@@ -435,18 +435,51 @@ fn the_capture_types_without_an_initializer_refuse_where_written() {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
-        format!("language \"ix:native\" edition \"1-draft\";\n{decimal}").as_bytes(),
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+             model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{decimal}",
+            "0".repeat(64)
+        )
+        .as_bytes(),
         qsl_cst::Limits::default(),
     )
     .expect("S1 admits the unit");
+    let refused = qsl_forms::build_unit(&parsed).expect_err("decimal(...) has no S2 value");
     assert!(
-        qsl_forms::build_unit(&parsed).is_err(),
-        "decimal(...) has no S2 value"
+        matches!(
+            refused.cause,
+            qsl_forms::FormsCause::UnrepresentedConstruct {
+                production: qsl_cst::Production::ExactNumber
+            }
+        ),
+        "{refused:?}"
     );
+    let causes = |text: &str| -> Vec<CheckCause> {
+        checked(text, false)
+            .expect_err(text)
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect()
+    };
     let text = capture_of(&declarations, "Text[0, 5; nfc]", "\"abc\"");
+    let [CheckCause::ProtocolObligation(cause)] = &causes(&text)[..] else {
+        panic!("one obligation refusal for the Text capture");
+    };
     assert!(
-        checked(&text, false).is_err(),
-        "a string literal is no Text"
+        matches!(&**cause, ObligationCause::CaptureType { capture, .. } if capture == "c")
+            && format!("{cause:?}").contains("actual: String"),
+        "{cause:?}"
+    );
+    let float = capture_of(
+        &declarations,
+        "Float64",
+        "float64(bits: 0x3ff0000000000000)",
+    );
+    assert_eq!(
+        causes(&float),
+        [CheckCause::IeeeProfileNotAdmitted],
+        "Float64"
     );
 }
 

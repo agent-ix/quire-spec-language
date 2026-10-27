@@ -36,6 +36,52 @@ use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 
+/// One step of a clock place's path below its object (FR-230 "Places"): a
+/// field of a record by name.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum PlaceStep {
+    /// A field, by its member name.
+    Field(String),
+}
+
+/// One clock place of an object type of the package (FR-230 "Places",
+/// QSpec FR-415 "Clock places").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PackagePlace {
+    /// The object type whose field holds the place.
+    pub(crate) owner: EffectiveId,
+    /// The object's field the place is under: the member an operation's
+    /// frame names to reset it.
+    pub(crate) field: DeclarationKey,
+    /// The path from the object to the clock, the object's field first.
+    pub(crate) path: Vec<PlaceStep>,
+    /// Whether an optional member (`presence: optional`, `Option<Clock>`)
+    /// is on the path.
+    pub(crate) optional: bool,
+    /// Whether the place is an element of a clock collection: a member on
+    /// its path whose multiplicity is not `[1, 1]`.
+    pub(crate) collection: bool,
+}
+
+/// Whether the place path `place` lies strictly below `path`: the value at
+/// `path` holds the place.
+pub(crate) fn strictly_below(place: &[PlaceStep], path: &[PlaceStep]) -> bool {
+    place.len() > path.len() && place.starts_with(path)
+}
+
+impl PackagePlace {
+    /// The place's path written with `.` between its steps.
+    pub(crate) fn name(&self) -> String {
+        self.path
+            .iter()
+            .map(|step| match step {
+                PlaceStep::Field(name) => name.as_str(),
+            })
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+}
+
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and
 /// its effective view's `type_identities`, read from `EffectiveId` to
@@ -58,6 +104,13 @@ pub struct AdmittedModel {
     /// `bound` declarations name, by the population's declaration key.
     /// Empty until the assembler resolves the unit's bounds.
     population_bounds: BTreeMap<DeclarationKey, AuthoredBound>,
+    /// Every clock place of the package's object types
+    /// ([`Self::clock_places`]), found once from `records`.
+    places: Vec<PackagePlace>,
+    /// Every required single-valued field whose type is a package object
+    /// type, `(owner, field name, target)`: [`Self::referenced_object`],
+    /// found once from `records`.
+    references: Vec<(EffectiveId, String, EffectiveId)>,
 }
 
 /// One population of an admitted package as FR-391 names it
@@ -457,6 +510,8 @@ impl AdmittedModel {
                 .collect(),
             alias: None,
             population_bounds: BTreeMap::new(),
+            places: Vec::new(),
+            references: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -471,6 +526,14 @@ impl AdmittedModel {
                 .map(|(key, id)| (*id, key.clone()))
                 .collect(),
         }
+        .with_places()
+    }
+
+    /// The model with its clock places found.
+    fn with_places(mut self) -> Self {
+        self.places = self.find_places();
+        self.references = self.find_references();
+        self
     }
 
     /// `domain_package` with the given `EffectiveId` of each object type,
@@ -488,6 +551,8 @@ impl AdmittedModel {
             supertypes: BTreeMap::new(),
             alias: None,
             population_bounds: BTreeMap::new(),
+            places: Vec::new(),
+            references: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -498,6 +563,7 @@ impl AdmittedModel {
             units: domain_package.units.clone(),
             types: types.into_iter().collect(),
         }
+        .with_places()
     }
 
     /// This package admitted for the `model` declaration `alias`: FR-115's
@@ -632,6 +698,25 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every state-machine declaration of this package and its effective
+    /// identity. Refinement field-set rows address these declarations through
+    /// the same field type environment as object-type rows.
+    pub(crate) fn state_machine_types(
+        &self,
+    ) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {
+        self.types
+            .iter()
+            .filter(|(_, key)| {
+                matches!(self.records.get(*key), Some(DomainPackageRecord::StateMachine(_)))
+                    // A refinement object row maps a state-machine *field
+                    // set*. A machine with no fields has no such set to map.
+                    && self.records.values().any(|record| {
+                        matches!(record, DomainPackageRecord::FieldMember(field) if &field.owner == *key)
+                    })
+            })
+            .map(|(id, key)| (key, *id))
+    }
+
     /// Every semantic object-type model node in this selected package, in
     /// declaration-key order. FR-230 resolves a time-source alias only when
     /// this package names exactly one such node.
@@ -674,14 +759,6 @@ impl AdmittedModel {
         let declaring = self.effective_id(&operation.owner)?;
         let name = crate::model::intake::member_identity_name(&operation.owner.node, &key.node)?;
         Some((declaring, name.to_owned()))
-    }
-
-    /// How many `state_machine` records this package declares.
-    pub(crate) fn state_machine_count(&self) -> usize {
-        self.records
-            .values()
-            .filter(|record| matches!(record, DomainPackageRecord::StateMachine(_)))
-            .count()
     }
 
     /// The content key of the package's sole state-machine declaration.
@@ -922,29 +999,328 @@ impl AdmittedModel {
             .collect()
     }
 
-    /// FR-230 "Clock fields and the domain package": every field typed
-    /// `ix://quire/native/Clock` of an object type of this package, with its
-    /// owner's effective identity and its member name, in ascending
-    /// declaration-key order.
-    pub(crate) fn clock_fields(&self) -> Vec<(EffectiveId, &DeclarationKey, &str)> {
+    /// FR-230 "Places": every clock place of an object type of this
+    /// package, in ascending declaration-key order of the object's fields
+    /// and, below a field, of each record's fields. A field typed `Clock` is
+    /// one place, and a field of a package record type holds the places of
+    /// the record's fields. The FCD semantic IR admits `Clock` only as a
+    /// field type, so a package has no clock alias, clock union case,
+    /// optional clock or clock collection to place.
+    pub(crate) fn clock_places(&self) -> &[PackagePlace] {
+        &self.places
+    }
+
+    /// The clock places [`Self::clock_places`] lists, found from `records`.
+    fn find_places(&self) -> Vec<PackagePlace> {
+        let mut places = Vec::new();
+        for record in self.records.values() {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                continue;
+            };
+            let Some(owner) = self.object_type_id(&field.owner) else {
+                continue;
+            };
+            let Some(name) =
+                crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)
+            else {
+                continue;
+            };
+            let root = PackagePlace {
+                owner,
+                field: field.key.clone(),
+                path: vec![PlaceStep::Field(name.to_owned())],
+                optional: false,
+                collection: false,
+            };
+            self.places_of(field, root, &mut Vec::new(), &mut places);
+        }
+        places
+    }
+
+    /// The places a member `field` holds below `at`, which already names the
+    /// member itself. `visiting` holds the record types on the path, so a
+    /// recursive record holds no place twice.
+    fn places_of<'m>(
+        &'m self,
+        field: &'m crate::model::domain_package::FieldMemberRecord,
+        mut at: PackagePlace,
+        visiting: &mut Vec<&'m DeclarationKey>,
+        places: &mut Vec<PackagePlace>,
+    ) {
+        use crate::model::domain_package::ValueTypeRef;
+        let single = field.multiplicity.lower == 1 && field.multiplicity.upper == Some(1);
+        at.collection |= !single;
+        at.optional |= matches!(field.presence, quire_exact::Presence::Optional);
+        let key = match &field.value_type {
+            ValueTypeRef::Clock => {
+                places.push(at);
+                return;
+            }
+            ValueTypeRef::Package(key) => key,
+            ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => return,
+        };
+        match self.records.get(key) {
+            Some(DomainPackageRecord::RecordValueType(_)) if !visiting.contains(&key) => {
+                visiting.push(key);
+                for record in self.records.values() {
+                    let DomainPackageRecord::FieldMember(inner) = record else {
+                        continue;
+                    };
+                    if &inner.owner != key {
+                        continue;
+                    }
+                    let Some(name) =
+                        crate::model::intake::member_identity_name(&key.node, &inner.key.node)
+                    else {
+                        continue;
+                    };
+                    let mut below = at.clone();
+                    below.path.push(PlaceStep::Field(name.to_owned()));
+                    self.places_of(inner, below, visiting, places);
+                }
+                visiting.pop();
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether an object of type `object` has the fields of `owner`: the
+    /// two are one type or `owner` is an ancestor of `object`.
+    pub(crate) fn conforms(&self, object: EffectiveId, owner: EffectiveId) -> bool {
+        match (self.types.get(&object), self.types.get(&owner)) {
+            (Some(specific), Some(general)) => self.reaches_owner(specific, general),
+            _ => false,
+        }
+    }
+
+    /// The clock place an object of type `object` holds at `path`: one
+    /// declared on `object` itself or on one of its ancestors.
+    pub(crate) fn clock_place(
+        &self,
+        object: EffectiveId,
+        path: &[PlaceStep],
+    ) -> Option<&PackagePlace> {
+        self.clock_places()
+            .iter()
+            .find(|place| place.path == path && self.conforms(object, place.owner))
+    }
+
+    /// The package record type a written name `T` or `M::T` names, when
+    /// exactly one does.
+    pub(crate) fn record_named(&self, written: &NameForm) -> Option<&DeclarationKey> {
+        let name = match &written.segments[..] {
+            [name] => name.as_str(),
+            [qualifier, name] if self.alias() == Some(qualifier.as_str()) => name.as_str(),
+            _ => return None,
+        };
+        let mut found = self
+            .records
+            .iter()
+            .filter(|(key, record)| {
+                matches!(record, DomainPackageRecord::RecordValueType(_))
+                    && key.node.rsplit('/').next() == Some(name)
+            })
+            .map(|(key, _)| key);
+        let key = found.next()?;
+        found.next().is_none().then_some(key)
+    }
+
+    /// Whether the record literal `written` (`T` or `M::T`) names a record
+    /// type of this package that holds a clock: a clock field, or a field of
+    /// a record type that holds one.
+    pub(crate) fn literal_bears_clock(&self, written: &NameForm) -> bool {
+        self.record_named(written)
+            .is_some_and(|key| self.type_bears_clock(key, &mut Vec::new()))
+    }
+
+    /// The written names `M::T` of this package's record types that hold a
+    /// clock, under the model alias.
+    pub(crate) fn clock_bearing_record_names(&self) -> Vec<String> {
+        let Some(alias) = self.alias() else {
+            return Vec::new();
+        };
+        self.records
+            .iter()
+            .filter(|(key, record)| {
+                matches!(record, DomainPackageRecord::RecordValueType(_))
+                    && self.type_bears_clock(key, &mut Vec::new())
+            })
+            .filter_map(|(key, _)| Some(format!("{alias}::{}", key.node.rsplit('/').next()?)))
+            .collect()
+    }
+
+    /// The field members `owner` declares, each with its member name.
+    fn members_of<'m>(
+        &'m self,
+        owner: &'m DeclarationKey,
+    ) -> impl Iterator<Item = (&'m str, &'m crate::model::domain_package::FieldMemberRecord)> + 'm
+    {
+        self.records.values().filter_map(move |record| {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                return None;
+            };
+            if &field.owner != owner {
+                return None;
+            }
+            let name = crate::model::intake::member_identity_name(&owner.node, &field.key.node)?;
+            Some((name, field))
+        })
+    }
+
+    /// The clock places of a value of the package record type `key`, each by
+    /// its path below the value, in the order [`Self::clock_places`] lists
+    /// them.
+    pub(crate) fn record_clock_paths(&self, key: &DeclarationKey) -> Vec<Vec<PlaceStep>> {
+        use crate::model::domain_package::ValueTypeRef;
+        let mut paths = Vec::new();
+        let mut pending: Vec<(&DeclarationKey, Vec<PlaceStep>, Vec<&DeclarationKey>)> =
+            vec![(key, Vec::new(), vec![key])];
+        while let Some((record, prefix, visiting)) = pending.pop() {
+            for (name, field) in self.members_of(record) {
+                let mut path = prefix.clone();
+                path.push(PlaceStep::Field(name.to_owned()));
+                match &field.value_type {
+                    ValueTypeRef::Clock => paths.push(path),
+                    ValueTypeRef::Package(inner)
+                        if matches!(
+                            self.records.get(inner),
+                            Some(DomainPackageRecord::RecordValueType(_))
+                        ) && !visiting.contains(&inner) =>
+                    {
+                        let mut visiting = visiting.clone();
+                        visiting.push(inner);
+                        pending.push((inner, path, visiting));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        paths.sort();
+        paths
+    }
+
+    /// The object type a required single-valued field `name` of an object
+    /// of type `object` refers to: the field's type is a package object
+    /// type, so its value is a reference to one object of it (FR-230-AC-10's
+    /// `peer`).
+    pub(crate) fn referenced_object(&self, object: EffectiveId, name: &str) -> Option<EffectiveId> {
+        self.references
+            .iter()
+            .find(|(owner, field, _)| field == name && self.conforms(object, *owner))
+            .map(|(_, _, target)| *target)
+    }
+
+    /// Every required single-valued field of a package object type
+    /// referring to one: `(owner, field name, target)`.
+    fn find_references(&self) -> Vec<(EffectiveId, String, EffectiveId)> {
+        use crate::model::domain_package::ValueTypeRef;
         self.records
             .values()
             .filter_map(|record| {
                 let DomainPackageRecord::FieldMember(field) = record else {
                     return None;
                 };
-                if !matches!(
-                    field.value_type,
-                    crate::model::domain_package::ValueTypeRef::Clock
-                ) {
-                    return None;
-                }
                 let owner = self.object_type_id(&field.owner)?;
                 let name =
                     crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
-                Some((owner, &field.key, name))
+                let single = field.multiplicity.lower == 1
+                    && field.multiplicity.upper == Some(1)
+                    && field.presence == quire_exact::Presence::Required;
+                match &field.value_type {
+                    ValueTypeRef::Package(target) if single => {
+                        Some((owner, name.to_owned(), self.object_type_id(target)?))
+                    }
+                    _ => None,
+                }
             })
             .collect()
+    }
+
+    /// `path` from an object of type `object` split where it leaves the
+    /// objects it reaches by reference: the leading reference fields walked,
+    /// counted, and the object type the rest of the path starts from.
+    pub(crate) fn through_references(
+        &self,
+        object: EffectiveId,
+        path: &[PlaceStep],
+    ) -> (usize, EffectiveId) {
+        let mut at = object;
+        for (walked, PlaceStep::Field(name)) in path.iter().enumerate() {
+            match self.referenced_object(at, name) {
+                Some(next) => at = next,
+                None => return (walked, at),
+            }
+        }
+        (path.len(), at)
+    }
+
+    /// The package record type of the value an object of type `object`
+    /// holds at `path`: a record field of the object, or of a record below
+    /// it.
+    pub(crate) fn record_at(
+        &self,
+        object: EffectiveId,
+        path: &[PlaceStep],
+    ) -> Option<&DeclarationKey> {
+        use crate::model::domain_package::ValueTypeRef;
+        let (PlaceStep::Field(first), rest) = path.split_first()?;
+        let mut held = self.records.values().find_map(|record| {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                return None;
+            };
+            let owner = self.object_type_id(&field.owner)?;
+            let name =
+                crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+            (name == first && self.conforms(object, owner)).then_some(&field.value_type)
+        })?;
+        for PlaceStep::Field(step) in rest {
+            let ValueTypeRef::Package(record) = held else {
+                return None;
+            };
+            held = self
+                .members_of(record)
+                .find(|(name, _)| name == step)
+                .map(|(_, field)| &field.value_type)?;
+        }
+        match held {
+            ValueTypeRef::Package(key)
+                if matches!(
+                    self.records.get(key),
+                    Some(DomainPackageRecord::RecordValueType(_))
+                ) =>
+            {
+                Some(key)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the package type `key` holds a clock place.
+    fn type_bears_clock<'m>(
+        &'m self,
+        key: &'m DeclarationKey,
+        visiting: &mut Vec<&'m DeclarationKey>,
+    ) -> bool {
+        use crate::model::domain_package::ValueTypeRef;
+        match self.records.get(key) {
+            Some(DomainPackageRecord::RecordValueType(_)) if !visiting.contains(&key) => {
+                visiting.push(key);
+                let bears = self.records.values().any(|record| {
+                    let DomainPackageRecord::FieldMember(field) = record else {
+                        return false;
+                    };
+                    &field.owner == key
+                        && match &field.value_type {
+                            ValueTypeRef::Clock => true,
+                            ValueTypeRef::Package(inner) => self.type_bears_clock(inner, visiting),
+                            ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => false,
+                        }
+                });
+                visiting.pop();
+                bears
+            }
+            _ => false,
+        }
     }
 
     /// The object type a type name `T` or `M::T` denotes, when exactly one
@@ -991,17 +1367,8 @@ impl AdmittedModel {
     /// The clock field `name` an object of type `object` holds: one declared
     /// on `object` itself or on one of its ancestors.
     pub(crate) fn clock_field(&self, object: EffectiveId, name: &str) -> Option<&DeclarationKey> {
-        let specific = self.types.get(&object)?;
-        self.clock_fields()
-            .into_iter()
-            .find(|(owner, _, field)| {
-                *field == name
-                    && self
-                        .types
-                        .get(owner)
-                        .is_some_and(|general| self.reaches_owner(specific, general))
-            })
-            .map(|(_, key, _)| key)
+        self.clock_place(object, &[PlaceStep::Field(name.to_owned())])
+            .map(|place| &place.field)
     }
 
     /// The key of every declaration record of the package, of any kind.

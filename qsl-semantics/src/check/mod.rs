@@ -172,7 +172,7 @@ pub use refinement::{
     RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
     RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
     RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
-    StepRow, StepTarget, SubjectSide, UnsupportedFeature,
+    StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -290,6 +290,8 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
+    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
     TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
@@ -397,6 +399,7 @@ pub use state_graph_claim::{
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
 
+pub use lowering::PlaceStep;
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
@@ -1084,8 +1087,29 @@ impl PackageDeclarations {
                 &self.units,
                 self.nominal_spans.keys().copied(),
                 &self.models,
+                &self.dimension_equivalences,
                 self.identity,
             );
+            // The model a `time invariant` or `urgent` declaration belongs
+            // to (FR-230 "Timed facet gate"): the one model the unit's
+            // `time` members name, else the unit's one selected model.
+            let timed_model: Option<&str> = {
+                let named: std::collections::BTreeSet<&str> = self
+                    .timed_forms
+                    .iter()
+                    .filter_map(|form| match form {
+                        TimedDeclaration::TimeSource(source) => Some(source.model.name.as_str()),
+                        TimedDeclaration::TimeInvariant(_)
+                        | TimedDeclaration::Urgent(_)
+                        | TimedDeclaration::ClockType(_) => None,
+                    })
+                    .collect();
+                match (named.len(), self.models.as_slice()) {
+                    (1, _) => named.into_iter().next(),
+                    (0, [model]) => model.alias(),
+                    _ => None,
+                }
+            };
             let mut seen_time_sources = BTreeMap::new();
             let refusals = self
                 .timed_forms
@@ -1223,15 +1247,27 @@ impl PackageDeclarations {
                                         ) {
                                             Ok(value) => value,
                                             Err(cause) => {
+                                                // A period of another time
+                                                // dimension refuses at the
+                                                // period; one that is no time
+                                                // unit, at the unit.
+                                                let span = if matches!(
+                                                    cause,
+                                                    TimeUnitCause::OtherTimeDimension { .. }
+                                                ) {
+                                                    period.span
+                                                } else {
+                                                    period.unit.span
+                                                };
                                                 return Some(CheckRefusal {
                                                     location: root(Origin::Expression),
                                                     cause: CheckCause::Temporal(Box::new(
                                                         TemporalCause::TimeQuantity {
                                                             cause: Box::new(cause),
-                                                            span: period.unit.span,
+                                                            span,
                                                         },
                                                     )),
-                                                })
+                                                });
                                             }
                                         };
                                         if converted.is_zero()
@@ -1277,26 +1313,45 @@ impl PackageDeclarations {
                                 )),
                             });
                         }
+                        // FR-230 "Clock-typed positions": a `Clock` in a
+                        // declared type position is admitted (the assembler
+                        // kept its declaration out of the value world); one
+                        // inside an expression has no checked form.
+                        if let TimedDeclaration::ClockType(position) = form {
+                            return match position.site {
+                                ClockSite::Declaration => None,
+                                // FR-230 "Records, tuples and unions": a
+                                // clock-bearing value read whole, or a
+                                // literal with a clock component outside a
+                                // reset.
+                                ClockSite::Expression(used) => Some(CheckRefusal {
+                                    location: root(Origin::Expression),
+                                    cause: CheckCause::Temporal(Box::new(match used {
+                                        ClockUse::Literal => TemporalCause::ClockWrite {
+                                            span: position.span,
+                                        },
+                                        ClockUse::Conversion
+                                        | ClockUse::Instances
+                                        | ClockUse::Accumulation => {
+                                            TemporalCause::ClockReadOutsideConstraint {
+                                                span: position.span,
+                                            }
+                                        }
+                                    })),
+                                }),
+                            };
+                        }
                         // A time invariant and an `urgent` declaration are
                         // checked with the clauses they read (`timed_model`).
                         return None;
                     }
-                    let cause = {
-                        let owner = match form {
-                            TimedDeclaration::TimeSource(source) => source.model.name.clone(),
-                            TimedDeclaration::TimeInvariant(invariant) => {
-                                invariant.name.name.clone()
-                            }
-                            TimedDeclaration::Urgent(urgent) => urgent.name.name.clone(),
-                        };
-                        CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
-                            construct: form.construct(),
-                            owner,
-                            selected: selected.clone(),
-                            required,
-                            span: form.span(),
-                        }))
-                    };
+                    let cause = CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
+                        construct: form.construct(),
+                        owner: form.owner(timed_model).to_owned(),
+                        selected: selected.clone(),
+                        required,
+                        span: form.span(),
+                    }));
                     Some(CheckRefusal {
                         location: root(Origin::Expression),
                         cause,
@@ -1314,6 +1369,7 @@ impl PackageDeclarations {
                 &self.units,
                 self.nominal_spans.keys().copied(),
                 &self.models,
+                &self.dimension_equivalences,
                 self.identity,
             );
             timed_model::prepare(
@@ -1322,6 +1378,8 @@ impl PackageDeclarations {
                     types: &self.types,
                     time_sources: &self.time_sources,
                     timed_forms: &self.timed_forms,
+                    clock_reading: &self.clock_reading,
+                    operation_bodies: &self.operation_bodies,
                     units: &units,
                     rational_bits: limits.rational_bits(),
                     nodes: limits.nodes(),
@@ -1362,6 +1420,7 @@ impl PackageDeclarations {
                     &self.units,
                     self.nominal_spans.keys().copied(),
                     &self.models,
+                    &self.dimension_equivalences,
                     self.identity,
                 );
                 let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
@@ -1479,6 +1538,12 @@ impl PackageDeclarations {
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
         .with_known_populations(refinement::population_names(&self.models))
+        .with_clock_reading(
+            self.clock_reading
+                .iter()
+                .map(|declaration| declaration.function.name.clone())
+                .collect(),
+        )
         .with_history_names(refinement::history_names(&self.refinements))
         .with_complete_model(complete_model)
         .with_model_selections(
@@ -3052,6 +3117,7 @@ impl PackageDeclarations {
             &self.units,
             self.nominal_spans.keys().copied(),
             &models,
+            &self.dimension_equivalences,
             self.identity,
         );
         let temporal_declarations = temporal_clause::TemporalDeclarations {
@@ -3968,6 +4034,14 @@ impl PackageDeclarations {
                         body: typed.body.root(),
                         body_slots: &typed.slot_names,
                         population_types: &typed.population_types,
+                        // Gated (QSL-1082): the pinned IR V2 reader refuses
+                        // a state_clause member or operation_anchor body
+                        // carrying an execution point (unknown member /
+                        // body shape), so the production check emits none
+                        // until the IR reader admits the carrier. The keying
+                        // and lowering above are exercised with a point by
+                        // their tests.
+                        execution_point: None,
                     };
                     match lowering.state_clause(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4827,20 +4901,11 @@ impl PackageDeclarations {
                         ))),
                     });
                 };
-                refinement::subject_refusal(checked, declaration.form.span, |alias| {
-                    models
-                        .iter()
-                        .filter(|model| model.alias() == Some(alias))
-                        .map(AdmittedModel::state_machine_count)
-                        .sum()
-                })
-                .or_else(|| {
-                    (!checked.v2_empty_model_body()).then(|| {
-                        refinement::not_emitted(
-                            declaration.form.name.name.clone(),
-                            declaration.form.span,
-                        )
-                    })
+                (!checked.v2_empty_model_body()).then(|| {
+                    refinement::not_emitted(
+                        declaration.form.name.name.clone(),
+                        declaration.form.span,
+                    )
                 })
                 // `None` means this checked declaration is included by the
                 // current V2 emission slice.

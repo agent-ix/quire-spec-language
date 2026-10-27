@@ -40,6 +40,7 @@ use quire_semantic_value::unit::{
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";
+const EQUIVALENCE_VERSION: &str = "quire.dimension-equivalence-node/v1";
 
 // ---- dimensions --------------------------------------------------------------
 
@@ -202,6 +203,103 @@ impl DimensionPreimage {
 }
 
 impl NodeIdentityPreimage for DimensionPreimage {
+    fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
+        preimage_digest(&self.canonical(), identity)
+    }
+}
+
+// ---- dimension equivalences ---------------------------------------------------
+
+#[derive(Serialize, FixedShape)]
+struct CanonicalEquivalence<'a> {
+    dimension_node_ids: Vec<CanonicalNodeId>,
+    owner: CanonicalOwner<'a>,
+    root_scale: CanonicalRational,
+    version: &'static str,
+}
+
+/// A `quire.dimension-equivalence-node/v1` preimage (FR-091 "Dimension
+/// keys", QSpec FR-142 "Dimension equivalence"): the two related dimension
+/// nodes in ascending digest order and the root ratio stated for the node
+/// listed first, so a pair written in either order has one key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DimensionEquivalencePreimage {
+    owner: NodeOwner,
+    dimensions: [NodeKey; 2],
+    root_scale: Rational,
+}
+
+impl DimensionEquivalencePreimage {
+    /// The preimage of `first ~ second` whose canonical root of `first` is
+    /// `root_ratio` canonical roots of `second`. The nodes are put in
+    /// ascending digest order, the ratio inverted when that swaps them.
+    /// `None` for two equal nodes or a ratio that is not positive, which
+    /// the assembler refuses first.
+    pub fn new(
+        owner: NodeOwner,
+        first: NodeKey,
+        second: NodeKey,
+        root_ratio: &Rational,
+    ) -> Option<Self> {
+        if first == second
+            || !owner.is_well_formed()
+            || root_ratio.numerator().is_negative()
+            || root_ratio.is_zero()
+        {
+            return None;
+        }
+        let (dimensions, root_scale) = if first.as_bytes() < second.as_bytes() {
+            ([first, second], root_ratio.clone())
+        } else {
+            (
+                [second, first],
+                Rational::from_integer(Integer::one()).div(root_ratio)?,
+            )
+        };
+        Some(Self {
+            owner,
+            dimensions,
+            root_scale,
+        })
+    }
+
+    /// The two related dimension nodes, in ascending digest order.
+    pub fn dimensions(&self) -> [NodeKey; 2] {
+        self.dimensions
+    }
+
+    /// One canonical root of the first node in canonical roots of the
+    /// second.
+    pub fn root_scale(&self) -> &Rational {
+        &self.root_scale
+    }
+
+    fn canonical(&self) -> CanonicalEquivalence<'_> {
+        CanonicalEquivalence {
+            dimension_node_ids: self
+                .dimensions
+                .iter()
+                .map(|key| CanonicalNodeId::from(*key.as_bytes()))
+                .collect(),
+            owner: self.owner.canonical(),
+            root_scale: CanonicalRational::new(
+                self.root_scale.numerator(),
+                self.root_scale.denominator(),
+            ),
+            version: EQUIVALENCE_VERSION,
+        }
+    }
+
+    /// The RFC 8785 bytes whose SHA-256 is the equivalence's node key.
+    pub(crate) fn preimage_bytes(
+        &self,
+        identity: IdentityLimits,
+    ) -> Result<Vec<u8>, NominalRefusal> {
+        preimage_bytes(&self.canonical(), identity)
+    }
+}
+
+impl NodeIdentityPreimage for DimensionEquivalencePreimage {
     fn digest(&self, identity: IdentityLimits) -> Result<[u8; 32], NominalRefusal> {
         preimage_digest(&self.canonical(), identity)
     }

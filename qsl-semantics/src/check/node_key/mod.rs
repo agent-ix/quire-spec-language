@@ -83,7 +83,7 @@ use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Time
 
 use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
-use crate::value::member::Member;
+use crate::value::member::{AcceptedPoint, Member};
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// FR-322's application-node preimage version.
@@ -419,6 +419,10 @@ pub enum BindingValue {
     Group(GroupTerm),
     /// A Tuple.
     Tuple(TupleTerm),
+    /// The accepted `ClauseBinding.execution_point` of an `operation_anchor`
+    /// body's `execution_point` binding (QSpec FR-342): the IR's closed
+    /// four-variant shape, which is not a term and holds no node reference.
+    ExecutionPoint(AcceptedPoint),
 }
 
 /// The Member stratum: an application argument or a body aggregate's
@@ -954,6 +958,7 @@ impl BindingValue {
             Self::Leaf(leaf) => vec![leaf],
             Self::Group(group) => group.leaves().collect(),
             Self::Tuple(tuple) => tuple.leaves(),
+            Self::ExecutionPoint(_) => Vec::new(),
         }
     }
 
@@ -962,6 +967,7 @@ impl BindingValue {
             Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
             Self::Group(group) => Self::Group(group.map_keys(map)),
             Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
+            Self::ExecutionPoint(point) => Self::ExecutionPoint(point.clone()),
         }
     }
 }
@@ -2256,6 +2262,9 @@ enum PreimageTerm<'a> {
         name: &'a str,
         value: Box<PreimageTerm<'a>>,
     },
+    /// An `execution_point` binding's value, serialized as the IR's closed
+    /// `{kind, name | operation}` object.
+    ExecutionPoint(&'a AcceptedPoint),
 }
 
 /// A preimage term with no subterm.
@@ -2303,6 +2312,7 @@ impl Encode for PreimageTerm<'_> {
         while let Some(task) = tasks.pop() {
             match task {
                 Task::Term(PreimageTerm::Leaf(leaf)) => writer.serialize(leaf)?,
+                Task::Term(PreimageTerm::ExecutionPoint(point)) => writer.serialize(*point)?,
                 Task::Term(PreimageTerm::Application {
                     operator,
                     operation,
@@ -2387,7 +2397,13 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         },
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
         // No `declaration`: nothing for `map` to remap.
-        Member::StateClause { clause } => Member::StateClause { clause },
+        Member::StateClause {
+            clause,
+            execution_point,
+        } => Member::StateClause {
+            clause,
+            execution_point,
+        },
         Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
         timed @ Member::TimedInterval(_) => timed,
         Member::Fairness {
@@ -2515,6 +2531,7 @@ impl Walk<'_> {
                     BindingValue::Leaf(leaf) => self.leaf(leaf)?,
                     BindingValue::Group(group) => self.group(group)?,
                     BindingValue::Tuple(tuple) => self.tuple(tuple)?,
+                    BindingValue::ExecutionPoint(point) => PreimageTerm::ExecutionPoint(point),
                 };
                 Self::binding(&binding.name, value)
             }

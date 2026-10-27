@@ -301,6 +301,23 @@ impl Dbm {
         Self { dim, bounds }
     }
 
+    /// This zone over `dim >= self.dim()` clocks, the added clocks
+    /// unconstrained but for `x >= 0`.
+    #[must_use]
+    pub fn widened(&self, dim: usize) -> Self {
+        let mut wide = Self::universe(dim.max(self.dim));
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                wide.bounds[i * wide.dim + j] = self.at(i, j).clone();
+            }
+        }
+        wide.close();
+        if self.is_empty() {
+            wide.set_empty();
+        }
+        wide
+    }
+
     /// Every finite bound multiplied by `factor > 0`: the same zone in units
     /// `factor` times finer.
     pub fn scale_by(&mut self, factor: &BigInt) {
