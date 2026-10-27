@@ -145,21 +145,25 @@ the protocol's qualified name.
 - S4 writes the rows above in stages (QSL-1121). A protocol with a selected
   profile whose checked graph holds only static and replicated roles on a
   model type, channels with their queues, a `sequence` run
-  tree, a `finish`, an `origin` or unguarded `each` activation and a
-  `scheduling` member emits the clause with its thirteen arguments in order
-  (every set it does not hold an empty Group, `relationships` always), the `over` and trigger binders
-  at levels 0 and 1, a replicated role's binder and a FIFO channel's message
-  binder at the level that follows them, the `finish` binder at the level that
-  follows them, and each role, channel, `sequence` and `finish` node at its
+  tree, a `finish`, an `origin` or `each` activation (with or without a
+  guard), protocol captures and a `scheduling` member emits the clause with its
+  thirteen arguments in order (every set it does not hold an empty Group,
+  `relationships` always), the `over` and trigger binders at levels 0 and 1,
+  the capture binders at the consecutive levels that follow them (the count of
+  `over` and the trigger, then each later capture the next level) with the
+  `captures` argument one `binder`/`initializer` Group per capture in source
+  order, an `each` guard as the `guard` member of the `activation` Group, a
+  replicated role's binder, a FIFO channel's message binder and the `finish`
+  binder at the level that follows the captures, and each role, channel, `sequence` and `finish` node at its
   declaration path and each queue with none; the `roles`,
   `channels` and `queues` sets are ascending by node digest whatever the
   source order. A protocol that holds any other construct refuses
   `unsupported_construct`/`not-yet-implemented` at its declaration, once for
   each such construct and naming it, and so does a reference to it: a control
   other than `sequence` (QSL-1126); a requirement or a compensation template
-  (QSL-1127); a capture or an `each` guard (QSL-1121e); a `terminal` member
-  (QSL-1121f); a `finish` constraint that calls a function or refers to a
-  protocol (QSL-1121g); a `relationship` member (QSL-1141: a real model package
+  (QSL-1127); a `terminal` member (QSL-1121f); a `finish` constraint, a capture
+  initializer or an `each` guard that calls a function, dispatches a call or
+  refers to a protocol (QSL-1121g); a `relationship` member (QSL-1141: a real model package
   cannot name a relationship yet, so the `relationships` set is unproved
   against the reader); a channel that carries a bounded scalar or collection
   (QSL-1137: a `bounded_domain` node, which the reader does not admit as
