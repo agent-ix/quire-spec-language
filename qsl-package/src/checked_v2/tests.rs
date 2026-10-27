@@ -4215,3 +4215,18 @@ fn published_extension_definitions_conform_to_their_schema_and_pairing() {
         }
     }
 }
+
+/// IR FR-038-AC-292: a `wrong_snapshot` envelope (a `choice`/`repeat` decision
+/// reading a fact outside its role's visible set) reaches QSL as the typed
+/// `wrong_snapshot` code, not as a generic invalid package.
+#[test]
+fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
+    use quire_contract_model::CheckedPackageRefusalCode as Ir;
+    for (ir, qsl) in [
+        (Ir::WrongSnapshot, Code::WrongSnapshot),
+        (Ir::IllTyped, Code::IllTyped),
+        (Ir::InvalidPackage, Code::InvalidPackage),
+    ] {
+        assert_eq!(super::map_refusal_code(ir), qsl);
+    }
+}

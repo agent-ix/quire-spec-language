@@ -674,7 +674,7 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
     // A second protocol, which the cases refer to.
     let with_other = |text: String| {
         format!(
-            "{text}protocol Other using v over (input: Boolean) on origin {{\n\
+            "{text}protocol Other using v over (input: M::Order) on origin {{\n\
              {BUYER}\nrun sequence Main {{ }}\n\
              finish End as (outcome: Boolean) {{ true }};\n}}\n"
         )
