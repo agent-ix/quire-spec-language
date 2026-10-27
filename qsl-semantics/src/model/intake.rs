@@ -3110,6 +3110,7 @@ fn read_value_bounds(
 /// The rational number `text` spells canonically, as a unit's `scale` is
 /// spelled: `n` or `n/d` in lowest terms with `d > 1`, no sign but a `-`
 /// on a negative `n`, no leading zero.
+#[ix_trace_rs::string_edge]
 fn canonical_rational(text: &str) -> Option<quire_exact::Rational> {
     let (numerator, denominator) = match text.split_once('/') {
         Some((numerator, denominator)) => (numerator, Some(denominator)),
