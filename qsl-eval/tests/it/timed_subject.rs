@@ -3239,8 +3239,7 @@ fn a_bounded_collection_of_finite_elements_is_a_finite_domain() {
         );
         let held = system(&world);
         let bounded = check_model_bounds(&held, BOUND_POSITIONS).is_ok();
-        let values = bounded.then(|| granted_values(&world, "work", "g"));
-        values
+        bounded.then(|| granted_values(&world, "work", "g"))
     };
     let sequence = |element, max| granted(element, Some(max), true, false);
     let set = |element, max| granted(element, Some(max), false, true);
